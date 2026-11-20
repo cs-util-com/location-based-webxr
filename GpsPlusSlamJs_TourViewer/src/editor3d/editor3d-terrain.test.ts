@@ -12,8 +12,8 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { osmGateLimits, worldFromEcefAt } from "gps-plus-slam-globe/editor";
-import { OSM_TILE_MAX_ZOOM } from "gps-plus-slam-app-framework/utils/osm-tiles";
+import { createGlobeTerrain } from "gps-plus-slam-globe/editor";
+import type * as GlobeEditor from "gps-plus-slam-globe/editor";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
 
@@ -27,6 +27,13 @@ import {
   reliefDeviceClass,
 } from "./editor3d-terrain.js";
 
+// The relief itself, watched: what it was made with is the caller's
+// imagery and template, not a fallback.
+vi.mock("gps-plus-slam-globe/editor", async (importOriginal) => {
+  const actual = await importOriginal<typeof GlobeEditor>();
+  return { ...actual, createGlobeTerrain: vi.fn(actual.createGlobeTerrain) };
+});
+
 describe("the editor's map gate", () => {
   // Why: the values measured for the editor's views: faded out at 2400 m
   // (also the request reach), asked for at z14 and finer over a mesh of
@@ -37,7 +44,7 @@ describe("the editor's map gate", () => {
   // camera within 1100 m of its centre, so the reach already bounds the
   // requests, and a height line switched the whole map off over a deep
   // valley: measured 2026-10-25).
-  it("is the measured one, and the overlay accepts it", () => {
+  it("is the measured one", () => {
     expect(EDITOR_OSM_LIMITS).toEqual({
       minZoom: 14,
       maxAboveGroundM: Number.POSITIVE_INFINITY,
@@ -48,9 +55,6 @@ describe("the editor's map gate", () => {
     expect(EDITOR_OSM_FADE_M).toBe(2400);
     expect(EDITOR_OSM_FADE_START_SHARE).toBe(0.2);
     expect(EDITOR_MESH_LEVEL).toBe(17);
-    expect(osmGateLimits(EDITOR_OSM_LIMITS, OSM_TILE_MAX_ZOOM)).toEqual(
-      EDITOR_OSM_LIMITS,
-    );
   });
 });
 
@@ -90,11 +94,27 @@ describe("createEditorTerrain", () => {
     vi.unstubAllGlobals();
   });
 
+  // The look the globe view passes: an imagery that draws nothing here
+  // (these tests never draw a tile) and a standard material.
+  const look = () => ({
+    imagery: {
+      tiling: { maxLevel: 0, projection: { scheme: "EPSG:4326" } },
+      init: () => Promise.resolve(),
+      hasContent: () => false,
+      lockTexture: () => Promise.resolve(null),
+      getTexture: () => {
+        throw new Error("no texture in this test");
+      },
+      releaseTexture: () => {},
+    },
+    template: new THREE.MeshStandardMaterial(),
+  });
+
   const make = () =>
     createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
     });
 
   // Why: the map's darkening gain reaches the shader: the link's value
@@ -107,8 +127,8 @@ describe("createEditorTerrain", () => {
     plain.dispose();
     const tuned = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
       osmGain: 0.45,
     });
     expect(tuned.osm.uniforms.uOsmGain.value).toBe(0.45);
@@ -123,8 +143,8 @@ describe("createEditorTerrain", () => {
     plain.dispose();
     const compressed = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
+      ...look(),
       osmGainMode: "compress",
     });
     expect(compressed.osm.uniforms.uOsmFlat.value).toBe(0);
@@ -155,7 +175,9 @@ describe("createEditorTerrain", () => {
   });
 
   // Why: the map must be on the relief from the start, enabled, under the
-  // editor's gate; the relief must stand in the world the page draws in.
+  // editor's gate. `osm.limits` is the overlay's `osmGateLimits` of the
+  // editor's own limits, so its equality pins that the gate takes them
+  // unchanged (every key set, nothing filled from the flight's).
   it("attaches the map at once, enabled, under the editor's gate", () => {
     const ground = make();
     const plugins = (ground.terrain.tiles as unknown as { plugins: unknown[] })
@@ -167,17 +189,6 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.uniforms.uOsmFadeStart.value).toBe(
       EDITOR_OSM_FADE_START_SHARE,
     );
-    const frame = worldFromEcefAt(
-      ground.terrain.tiles.ellipsoid,
-      { lat: 48.137393, lng: 11.575493 },
-      new THREE.Matrix4(),
-    );
-    expect(ground.worldFromEcef.equals(frame)).toBe(true);
-    ground.terrain.tiles.group.updateMatrix();
-    const placed = ground.terrain.tiles.group.matrix.elements;
-    frame.elements.forEach((v, i) => {
-      expect(placed[i]).toBeCloseTo(v, 6);
-    });
     ground.dispose();
   });
 
@@ -217,8 +228,8 @@ describe("createEditorTerrain", () => {
   it("keeps as many released map regions on a phone as on a desktop", () => {
     const phone = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "phone",
+      ...look(),
     });
     expect(phone.osm.stats().keep).toBe(64);
     phone.dispose();
@@ -242,21 +253,32 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.stats().active).toBe(false);
     ground.dispose();
   });
-  // Why: on the globe view the relief hangs in the view's Earth-centred
-  // group, which places it; placed again in the tour's frame it would
-  // stand 6,400 km off. The frame is still given for the tour's objects.
-  it("stays in ECEF when its parent places it, the frame still given", () => {
+
+  // Why: the globe view is the only caller, and it passes the globe's own
+  // imagery and template (so the ground keeps the globe's look where the
+  // relief takes over) and lets its Earth-centred group place the relief.
+  // This pins that the relief is drawn with exactly those, unwrapped and
+  // unreplaced, and stays in ECEF.
+  it("draws the relief with the caller's imagery and template, in ECEF", () => {
+    const { imagery, template } = look();
+    const made = vi.mocked(createGlobeTerrain);
+    made.mockClear();
     const ground = createEditorTerrain({
       renderer: {} as THREE.WebGLRenderer,
-      centre: { lat: 48.137393, lng: 11.575493 },
       device: "desktop",
-      placement: "ecef",
+      imagery,
+      template,
     });
+    expect(made).toHaveBeenCalledTimes(1);
+    const options = made.mock.calls[0]?.[0];
+    expect(options?.imagery).toBe(imagery);
+    expect(options?.template).toBe(template);
+    expect(options?.meshMaxLevel).toBe(EDITOR_MESH_LEVEL);
+    expect(options?.heightScale).toBe(1);
     const group = ground.terrain.tiles.group;
     expect(group.position.length()).toBe(0);
     expect(group.quaternion.equals(new THREE.Quaternion())).toBe(true);
-    expect(ground.worldFromEcef.equals(make().worldFromEcef)).toBe(true);
-    expect(make().terrain.tiles.group.position.length()).toBeGreaterThan(6e6);
+    expect(group.scale.equals(new THREE.Vector3(1, 1, 1))).toBe(true);
     ground.dispose();
   });
 });

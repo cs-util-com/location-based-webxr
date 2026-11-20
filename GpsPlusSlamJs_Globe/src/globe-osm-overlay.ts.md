@@ -345,17 +345,14 @@ ceilingWaitS }`: the street map's loading state for an interface to
   showCredit(osm.credit);
   ```
 
-- Tests: the limits on their own are in `globe-osm-gate.test.ts` and `globe-osm-gate.property.test.ts`, the fade patch on its own in `globe-osm-fade.test.ts`. `globe-osm-overlay.test.ts` (the plan's limits, the credit from
-  the framework's text, the active rule and unknowns, the hysteresis
-  (both edges, the band kept, a property over paths that the state
-  changes only at the band's edges), the ramp (steps, landing, no time,
-  a property that it never overshoots), `sleepFor` rejecting at once on
-  an aborted signal and leaving no listener, the factory's update
-  through the band and the ramp, the sliding
-  ceiling, the region test by extent and on the sampled ground, the fade
-  patch against the library's own blend line (and the gain compressing
-  the map's luma before the blend or multiplying flat, the factory's gain,
-  its range and its mode), the
+- Tests: the gate's rules on their own (the plan's limits, the active
+  rule and unknowns, the hysteresis, the ramp, the sliding request
+  ceiling, the region test) are in `globe-osm-gate.test.ts` and
+  `globe-osm-gate.property.test.ts`, the fade patch and its gain on their
+  own in `globe-osm-fade.test.ts`. `globe-osm-overlay.test.ts` (the
+  credit from the framework's text, `sleepFor` rejecting at once on an
+  aborted signal and leaving no listener, the factory's update through
+  the band and the ramp, the factory's gain, its range and its mode, the
   gated lock and release
   through the library class, the finest level asked for, the fetch held
   to the ceiling, the

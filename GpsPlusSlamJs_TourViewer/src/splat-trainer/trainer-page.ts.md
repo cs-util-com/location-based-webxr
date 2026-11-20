@@ -21,8 +21,12 @@ thing it keeps itself is which dialog is open.
   `saveContentsLine`, `stopDialogText`, `showable`, `liveText` and
   `liveNextText`: a training print's stage line, "Loading the trainer",
   "Preparing the graphics card", "Training N %" or "Checking the result",
-  and its "about 3 min left, new look in 12 s", each part when known) stay module-private
+  and its "about 3 min left, a new look about every 15 s", each part when known) stay module-private
   and are tested through the mounted page.
+- A not-good-enough print offers "Train again with more time" only when
+  `canTrainAgain` allows it: a failure whose judgement says `retryHelps:
+false` offers only "Save anyway, marked" and "Discard", and its caption
+  says why it failed.
 
 ## States it shows
 

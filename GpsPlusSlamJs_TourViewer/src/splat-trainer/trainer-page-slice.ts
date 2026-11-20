@@ -56,7 +56,7 @@ export interface WindowState {
   /** 0 to 1 while training; 0 otherwise until done (then 1). */
   readonly progress: number;
   readonly secondsLeft: number | null;
-  readonly nextPreviewInS: number | null;
+  readonly previewEveryS: number | null;
   /** What the trainer does for this stretch while it trains; null when
    *  it does not train. */
   readonly stage: TrainStage | null;
@@ -156,7 +156,7 @@ function freshWindow(p: StretchSummary): WindowState {
     attempt: 1,
     progress: 0,
     secondsLeft: null,
-    nextPreviewInS: null,
+    previewEveryS: null,
     stage: null,
     previews: 0,
     outcome: null,
@@ -197,7 +197,7 @@ function startNext(s: S): void {
   w.status = "training";
   w.progress = 0;
   w.secondsLeft = null;
-  w.nextPreviewInS = null;
+  w.previewEveryS = null;
   w.stage = "loading";
   w.previews = 0;
 }
@@ -329,7 +329,7 @@ const trainerPageSlice = createSlice({
         attempt: number;
         fraction: number;
         secondsLeft: number | null;
-        nextPreviewInS: number | null;
+        previewEveryS: number | null;
         stage: TrainStage;
       }>,
     ) {
@@ -341,7 +341,7 @@ const trainerPageSlice = createSlice({
       if (w === undefined || fraction === null) return;
       w.progress = Math.max(w.progress, fraction);
       w.secondsLeft = finiteOrNull(p.secondsLeft);
-      w.nextPreviewInS = finiteOrNull(p.nextPreviewInS);
+      w.previewEveryS = finiteOrNull(p.previewEveryS);
     },
     previewed(s, a: PayloadAction<{ id: string; attempt: number }>) {
       if (!isRunning(s, a.payload.id, a.payload.attempt)) return;
@@ -366,7 +366,7 @@ const trainerPageSlice = createSlice({
       w.status = "done";
       w.progress = 1;
       w.secondsLeft = null;
-      w.nextPreviewInS = null;
+      w.previewEveryS = null;
       w.stage = null;
       w.outcome = p.outcome;
       w.metrics = p.metrics;
@@ -407,7 +407,7 @@ const trainerPageSlice = createSlice({
         w.progress = 0;
         w.previews = 0;
         w.secondsLeft = null;
-        w.nextPreviewInS = null;
+        w.previewEveryS = null;
         w.stage = null;
         s.queue.unshift(w.id);
       }
@@ -489,6 +489,9 @@ export function canTrainAgain(
   w: Pick<WindowState, "status" | "judgement" | "attempt">,
 ): boolean {
   if (w.status !== "done" || w.judgement === null) return false;
+  // A cause a second try cannot change (a library that will not load, a
+  // broken photo, a stretch too large for the card) is not offered again.
+  if (w.judgement.retryHelps === false) return false;
   return (
     w.judgement.verdict === "poor" ||
     (w.judgement.verdict === "weak" && w.attempt === 1)

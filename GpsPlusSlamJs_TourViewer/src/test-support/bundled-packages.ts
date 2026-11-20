@@ -32,8 +32,8 @@ const globeConsumerEntry: Plugin = {
           "  createGlobeOsmOverlay,",
           "  groundHit,",
           "  groundReachM,",
-          "  applyEyeControls,",
-          "  reliefCacheBudget,",
+          "  GLOBE_EYE,",
+          "  reliefTerrainOptions,",
           '} from "gps-plus-slam-globe/editor";',
         ].join("\n")
       : null,

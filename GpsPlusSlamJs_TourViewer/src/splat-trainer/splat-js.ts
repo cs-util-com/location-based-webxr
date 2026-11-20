@@ -122,7 +122,7 @@ export type ModuleImporter = (url: string) => Promise<unknown>;
  * importer. An `import()` takes its referrer policy from the module it is
  * written in: written in the `blob:` module it inherits the page's
  * `no-referrer`; written in a module served by this site it would send
- * the site's origin to the CDN.
+ * this page's address to the CDN as the Referer.
  */
 export const SHIM_IMPORT_KEY = "__splatTrainerImport";
 

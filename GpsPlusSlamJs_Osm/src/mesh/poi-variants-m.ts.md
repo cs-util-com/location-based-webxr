@@ -22,8 +22,8 @@ deleted with the losing models (DEC-R7b-2a).
 
 - `M_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   M's own scale. The registry grounds and rescales; this file does not.
-- `M_PALETTE` — the palette values an M port may paint with, under the source's
-  own names. Pinned in `poi-variants.test.ts`.
+- The palette is the module's own `M` (not exported), under the
+  source's own names. No test compares it with the house palette.
 
 ## Invariants & assumptions
 
@@ -71,8 +71,9 @@ const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what `adopted()` do
 
 ## Tests
 
-- `poi-variants.test.ts` — the shared registry contract (base at `y = 0`, finite
-  positions, outward winding, height matching the shipped model) plus the
-  palette assertion that keeps `M_PALETTE` from drifting.
+- `poi-models.test.ts` - the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
 - `poi-primitives.test.ts` — the primitives each port composes, including
   `sphere`'s `radiusY` and `box`'s per-face painting.

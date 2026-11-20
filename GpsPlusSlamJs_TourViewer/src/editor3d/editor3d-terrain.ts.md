@@ -3,8 +3,9 @@
 ## Purpose
 
 The 3D editor's ground: the globe's relief carrier on Mapterhorn's
-heights, plain (no whole-Earth imagery), with the OpenStreetMap map on it
-near the camera under the editor's own gate, and the credits both need.
+heights, drawn with the imagery and look the globe view gives it, with the
+OpenStreetMap map on it near the camera under the editor's own gate, and
+the credits both need.
 
 ## Public API
 
@@ -20,19 +21,15 @@ near the camera under the editor's own gate, and the credits both need.
 - `DESKTOP_MIN_WIDTH_PX` - 768; `reliefDeviceClass(widthPx)` -> `"desktop"`
   wider than 768 px (tablets included), `"phone"` otherwise and for a
   width that is not finite and > 0.
-- `createEditorTerrain({ renderer, centre, device, placement?, imagery?, template?, osmGain?, osmGainMode? })` ->
-  `EditorTerrain`. `osmGain` is the map's darkening gain (the link's
-  `osmGain`, `../editor/globe-switch.ts`; its default 0.55 where not
-  given), `osmGainMode` how it darkens
-  ("flat" where not given, the link's `osmGainMode`). `placement` `"ecef"` leaves the tiles' group in ECEF
-  for a parent that places it (the globe view's Earth-centred group,
-  `editor3d-globe.ts`); the default `"world"` decomposes `worldFromEcef`
-  into it:
+- `createEditorTerrain({ renderer, device, imagery, template, osmGain?, osmGainMode? })` ->
+  `EditorTerrain`. `imagery` and `template` are the relief's look (the
+  globe view passes the globe's own). `osmGain` is the map's darkening
+  gain (the link's `osmGain`, `../editor/globe-switch.ts`; its default
+  0.55 where not given), `osmGainMode` how it darkens ("flat" where not
+  given, the link's `osmGainMode`). The tiles' group is left in ECEF for
+  its parent to place (the globe view's Earth-centred group,
+  `editor3d-globe.ts`):
   - `terrain` - the globe's `GlobeTerrain`;
-  - `worldFromEcef` - ECEF to the frame of `centre` (x east, y up, z
-    south there, the ellipsoid's point of the centre at the origin); with
-    `placement: "world"` the world itself, decomposed into the tiles'
-    group; with `"ecef"` not the world (the parent places the relief);
   - `osm` - the attached, enabled map overlay;
   - `credits` - the heights' sources, then the map's (the globe's credit
     shape: `short`, full text, `href`);
@@ -50,7 +47,7 @@ near the camera under the editor's own gate, and the credits both need.
 ## Invariants & assumptions
 
 - **No whole-Earth imagery reaches this app from here:** the relief's
-  imagery is `plainImagery()` unless the caller passes its own. The globe
+  imagery and template are the caller's, never imported here. The globe
   view (`editor3d-globe.ts`, behind its lazy import) passes the globe's
   (`createGlobeImagery()` and `globe.template` from
   `gps-plus-slam-globe/view`), so its relief has the globe's ground and
@@ -141,20 +138,17 @@ near the camera under the editor's own gate, and the credits both need.
   the desktop's keep was not exercised.
 - **The map is attached before any tile loads:** attached to a relief
   already loaded it asked the library for levels it could not give yet.
-- **The template is a plain standard material** (a light ground colour,
-  roughness 1). The globe's lit copy declares the detail's geodetic
-  normal itself under such a template (`globe-terrain.ts`), which is what
-  lets a plain template compile.
 
 ## Examples
 
 ```ts
 const ground = createEditorTerrain({
   renderer,
-  centre: { lat: 48.137, lng: 11.575 },
   device: reliefDeviceClass(window.innerWidth),
+  imagery: createGlobeImagery(),
+  template: globe.template,
 });
-scene.add(ground.terrain.tiles.group);
+globe.group.add(ground.terrain.tiles.group);
 renderer.setAnimationLoop((now) => {
   ground.update(camera, renderer, now);
   renderer.render(scene, camera);
@@ -168,7 +162,8 @@ them; the map's gain given or the link's default; the map kept on at any height 
 unknown one); the map's keep by device class (64 on a phone and on a
 desktop); the device class at 768, 769 and NaN; the credits (Mapterhorn, its
 elevation data, OpenStreetMap); the map attached at once, enabled, under
-the gate and fade; the group's matrix equal to `worldFromEcefAt`; a frame
-with no ground loaded asking for no map. Real drawing:
+the gate and fade; a frame with no ground loaded asking for no map; the
+relief made with exactly the caller's imagery and template and left in
+ECEF. Real drawing:
 `playwright-tests/editor3d.spec.js` (the map asked for at the start
 view).

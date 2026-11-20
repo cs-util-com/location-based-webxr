@@ -25,6 +25,9 @@ import {
   type RunResult,
 } from "./window-run.js";
 
+const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
 /** A decoded photo: RGBA bytes, row by row. */
 export interface DecodedPhoto {
   readonly width: number;
@@ -40,7 +43,8 @@ export interface TrainMessage {
   readonly photos: readonly Blob[];
 }
 
-export type ToWorker = TrainMessage | { readonly type: "cancel" };
+/** The page stops a window by ending its worker, so "train" is all it sends. */
+export type ToWorker = TrainMessage;
 
 export type FromWorker =
   | { readonly type: "progress"; readonly progress: RunProgress }
@@ -97,12 +101,14 @@ export async function trainInWorker<P = unknown>(
   const early = (
     outcome: "failed" | "cancelled",
     detail?: string,
+    retryHelps?: false,
   ): RunResult => ({
     outcome,
     metrics: null,
     trainingS: Math.max(0, (deps.clock.now() - t0) / 1000),
     ply: null,
     ...(detail === undefined ? {} : { detail }),
+    ...(retryHelps === false ? { retryHelps } : {}),
   });
   const { job, photos } = msg;
   if (photos.length !== job.photos.length) {
@@ -112,13 +118,15 @@ export async function trainInWorker<P = unknown>(
     stage: "loading",
     fraction: 0,
     secondsLeft: null,
-    nextPreviewInS: null,
+    previewEveryS: null,
   });
   let mod: SplatJsModule;
   try {
     mod = await deps.load();
   } catch (err) {
-    return early("failed", err instanceof Error ? err.message : String(err));
+    // A library that will not download or is not the pinned one will not
+    // on a second try either.
+    return early("failed", errorText(err), false);
   }
   const depthPts = [];
   const shellPts = [];
@@ -152,7 +160,8 @@ export async function trainInWorker<P = unknown>(
   } catch (err) {
     return early(
       "failed",
-      `A photo could not be read (${err instanceof Error ? err.message : String(err)}).`,
+      `A photo could not be read (${errorText(err)}).`,
+      false,
     );
   }
   const seeds = [
@@ -174,10 +183,50 @@ export async function trainInWorker<P = unknown>(
       keepM: job.keepM,
       trainPositions: job.trainPositions,
       etaMinIterations: job.etaMinIterations,
+      prepareCapMs: job.prepareCapMs,
     },
     onProgress,
     signal,
     deps.clock,
     deps.preview,
   );
+}
+
+/**
+ * The worker's message handler: trains the window of the first "train"
+ * message (one window per worker; the page spawns a fresh one for each)
+ * and posts its progress and result through `post`. A training that
+ * rejects (the library throwing past its own handling) still posts a
+ * failed result with the reason, so the page never waits for ever.
+ */
+export function serveTrainer<P = unknown>(
+  post: (message: FromWorker) => void,
+  deps: WorkerTrainDeps<P>,
+  train: typeof trainInWorker<P> = trainInWorker,
+): (msg: ToWorker) => void {
+  let started = false;
+  return (msg) => {
+    if (started) return;
+    started = true;
+    void train(
+      msg,
+      (progress) => post({ type: "progress", progress }),
+      new AbortController().signal,
+      deps,
+    ).then(
+      (result) => post({ type: "result", result }),
+      (err: unknown) => {
+        post({
+          type: "result",
+          result: {
+            outcome: "failed",
+            metrics: null,
+            trainingS: 0,
+            ply: null,
+            detail: `The trainer stopped unexpectedly (${errorText(err)}).`,
+          },
+        });
+      },
+    );
+  };
 }

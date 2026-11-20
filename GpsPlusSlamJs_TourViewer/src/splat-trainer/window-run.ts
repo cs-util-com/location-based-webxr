@@ -1,7 +1,8 @@
 /**
  * Trains one window with Splat.js: a session on known cameras and given
  * seeds, trained until it finishes, the deadline passes, the graphics
- * device is lost or the caller aborts; then scored at its training photos
+ * device is lost or the caller aborts (and ended as failed, in words, when
+ * preparing the graphics card takes longer than its cap); then scored at its training photos
  * and its held-out photos, exported, and cropped to what lies within the
  * window's reach of its training cameras. Says which stage it is in
  * (preparing, training, checking) and, given a preview, draws a look at
@@ -41,6 +42,9 @@ export interface RunInput {
   readonly maxIters: number;
   /** Training time allowed after the session is seeded (ms). */
   readonly deadlineMs: number;
+  /** Time allowed to prepare the graphics card (upload the photos and
+   *  seed the session) before the run ends as failed (ms). */
+  readonly prepareCapMs: number;
   /** The shell crop keeps splats within this distance of a training
    *  camera (m). */
   readonly keepM: number;
@@ -54,10 +58,11 @@ export interface RunProgress {
   readonly stage: TrainStage;
   /** 0 to 1. */
   readonly fraction: number;
-  /** Seconds left at the measured rate, or null while not yet measured. */
+  /** Seconds left at the measured rate, never more than the deadline
+   *  leaves; null while not yet measured. */
   readonly secondsLeft: number | null;
-  /** Seconds to the next look while training with a preview, else null. */
-  readonly nextPreviewInS: number | null;
+  /** Seconds between looks while training with a preview, else null. */
+  readonly previewEveryS: number | null;
 }
 
 /**
@@ -83,6 +88,8 @@ export interface RunResult {
   readonly ply: Blob | null;
   /** Why a `failed` run failed, in words; absent otherwise. */
   readonly detail?: string;
+  /** False when training again cannot fix the failure. */
+  readonly retryHelps?: false;
 }
 
 export interface RunClock {
@@ -93,9 +100,13 @@ export interface RunClock {
 
 type Ending = "finished" | "deadline" | "gpu-lost" | "cancelled";
 
+/** The run's own early endings: the outcomes, plus a preparation that
+ *  outlasted its cap (which ends as `failed`). */
+type StopReason = Exclude<Ending, "finished"> | "prepare-timeout";
+
 /** Thrown inside the run when it must end before the stage finished. */
 class Stop extends Error {
-  constructor(readonly ending: Ending) {
+  constructor(readonly ending: StopReason) {
     super(`stopped: ${ending}`);
   }
 }
@@ -108,7 +119,8 @@ const evalEvery = (maxIters: number): number =>
 /**
  * Trains `input` with `mod`. Never rejects: a thrown error ends as
  * `failed` with its message in `detail`; an abort through `signal` ends
- * as `cancelled`; a lost device as `gpu-lost`, neither with a splat. A
+ * as `cancelled`; a lost device as `gpu-lost`, neither with a splat; a
+ * preparation longer than `prepareCapMs` as `failed`, saying so. A
  * run that reaches its deadline is paused and scored and exported like a
  * finished one. The session is disposed on every path.
  */
@@ -130,14 +142,16 @@ export async function runWindow<P = unknown>(
     trainingS: Math.max(0, (clock.now() - t0) / 1000),
     ply: rest.ply ?? null,
     ...(rest.detail === undefined ? {} : { detail: rest.detail }),
+    ...(rest.retryHelps === false ? { retryHelps: false as const } : {}),
   });
   if (signal.aborted) return end("cancelled");
 
   let session: SplatSessionLike | null = null;
   let timer: unknown = null;
-  // Resolves once with the first reason to stop early (abort, lost device).
-  let stopNow: (e: Ending) => void = () => {};
-  const stopped = new Promise<Ending>((resolve) => (stopNow = resolve));
+  // Resolves once with the first reason to stop early (abort, lost
+  // device, a preparation past its cap).
+  let stopNow: (e: StopReason) => void = () => {};
+  const stopped = new Promise<StopReason>((resolve) => (stopNow = resolve));
   const onAbort = (): void => stopNow("cancelled");
   signal.addEventListener("abort", onAbort, { once: true });
   const guard = async <T>(p: Promise<T>): Promise<T> => {
@@ -154,8 +168,13 @@ export async function runWindow<P = unknown>(
       stage: "preparing",
       fraction,
       secondsLeft: null,
-      nextPreviewInS: null,
+      previewEveryS: null,
     });
+    // One timer slot: the preparation cap, then the training deadline.
+    timer = clock.setTimeout(
+      () => stopNow("prepare-timeout"),
+      input.prepareCapMs,
+    );
     const s = mod.createSession({
       maxIters: input.maxIters,
       holdout: -1,
@@ -176,6 +195,8 @@ export async function runWindow<P = unknown>(
     let mark: { iter: number; at: number } | null = null;
     // The first look comes with the first report.
     let nextLookAt: number | null = null;
+    // Set when training starts; the time left never runs past it.
+    let deadlineAt: number | null = null;
     s.on("metrics", (m) => {
       if (!Number.isFinite(m.iter)) return;
       const at = clock.now();
@@ -193,12 +214,17 @@ export async function runWindow<P = unknown>(
         nextLookAt = at + preview.everyMs;
       }
       fraction = Math.min(1, Math.max(0, m.iter / input.maxIters));
+      const leftMs =
+        ms === null
+          ? null
+          : deadlineAt === null
+            ? ms
+            : Math.max(0, Math.min(ms, deadlineAt - at));
       onProgress({
         stage: "training",
         fraction,
-        secondsLeft: ms === null ? null : ms / 1000,
-        nextPreviewInS:
-          nextLookAt === null ? null : Math.max(0, (nextLookAt - at) / 1000),
+        secondsLeft: leftMs === null ? null : leftMs / 1000,
+        previewEveryS: preview === undefined ? null : preview.everyMs / 1000,
       });
     });
 
@@ -209,7 +235,10 @@ export async function runWindow<P = unknown>(
       points: [...input.seeds],
     });
     await guard(s.seed({ evalFrames: [...input.evalFrames] }));
+    clock.clearTimeout(timer);
+    timer = null;
 
+    deadlineAt = clock.now() + input.deadlineMs;
     const deadline = new Promise<"deadline">((resolve) => {
       timer = clock.setTimeout(() => resolve("deadline"), input.deadlineMs);
     });
@@ -222,24 +251,27 @@ export async function runWindow<P = unknown>(
       stage: "checking",
       fraction,
       secondsLeft: null,
-      nextPreviewInS: null,
+      previewEveryS: null,
     });
 
     const metrics = await guard(scoreOf(s));
     if (preview !== undefined) look(s, preview);
     const raw = await guard(s.exportPlyBlob());
     const bytes = await guard(raw.arrayBuffer());
-    const keep = shellCrop(
-      readPly(bytes).positions,
-      input.trainPositions,
-      input.keepM,
-    );
-    const ply = new Blob([cropPly(bytes, keep)], {
+    const view = readPly(bytes);
+    const keep = shellCrop(view.positions, input.trainPositions, input.keepM);
+    const ply = new Blob([cropPly(bytes, keep, view)], {
       type: "application/octet-stream",
     });
     return end(ending, { metrics, ply });
   } catch (err) {
-    if (err instanceof Stop) return end(err.ending);
+    if (err instanceof Stop) {
+      return err.ending === "prepare-timeout"
+        ? end("failed", {
+            detail: `Preparing the graphics card took more than ${durationWords(input.prepareCapMs)}.`,
+          })
+        : end(err.ending);
+    }
     return end("failed", {
       detail: err instanceof Error ? err.message : String(err),
     });
@@ -255,6 +287,13 @@ export async function runWindow<P = unknown>(
       }
     }
   }
+}
+
+/** A duration in words: whole minutes from a minute on, else seconds. */
+function durationWords(ms: number): string {
+  return ms >= 60_000
+    ? `${String(Math.round(ms / 60_000))} min`
+    : `${String(Math.round(ms / 1000))} s`;
 }
 
 /** The camera a look is drawn from: the middle test camera, else the

@@ -63,4 +63,25 @@ describe("probeWebGpu", () => {
     );
     expect(await kindOf(undefined)).toBe("ready");
   });
+
+  // Why: the window check reads the card's memory limits from the probe;
+  // a probe that dropped them left the too-large refusal unreachable.
+  // Limits that are missing or not positive numbers are left out.
+  it("passes the adapter's memory limits on", async () => {
+    const limits = { maxStorageBufferBindingSize: 1e8, maxBufferSize: 2e8 };
+    expect(
+      await probeWebGpu(gpuWith({ info: { vendor: "nvidia" }, limits })),
+    ).toEqual({ kind: "ready", limits });
+    expect(
+      await probeWebGpu(gpuWith({ info: { vendor: "intel" }, limits })),
+    ).toEqual({ kind: "integrated", limits });
+    expect(
+      await probeWebGpu(
+        gpuWith({
+          info: { vendor: "nvidia" },
+          limits: { maxStorageBufferBindingSize: 0, maxBufferSize: 2e8 },
+        }),
+      ),
+    ).toEqual({ kind: "ready" });
+  });
 });

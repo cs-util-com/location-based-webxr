@@ -30,7 +30,8 @@ lostStretch? }`. `timer` is `{ now, set, clear }` (the internal
   with `practice-prints.ts`.
 - `createPracticeTrainer(options) -> TrainerAdapter` - `probe` reports
   `options.gpu`; `trainWindow` ticks every 250 ms, reports progress, a
-  picture at each preview time and the scripted ending; an abort resolves
+  picture at each preview time (`previewEveryS` is the 4 s interval at
+  pace 1) and the scripted ending; an abort resolves
   `cancelled` and clears its timers; `judge` maps the scripted ending to a
   verdict, and a lost graphics card or failure to not good enough.
 

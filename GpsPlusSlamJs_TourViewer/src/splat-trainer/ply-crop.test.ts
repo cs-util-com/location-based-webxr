@@ -95,4 +95,33 @@ describe("cropPly", () => {
   it("refuses a keep list of the wrong length", () => {
     expect(() => cropPly(ply([[1, 0, 0, 0, 0, 1]]), [])).toThrow(RangeError);
   });
+
+  // Why: a count the reader accepts but the rewrite does not find (written
+  // as 1e0) left the old count in the header over fewer vertices: a file
+  // a viewer reads past its end. The crop refuses instead.
+  it("refuses a header whose vertex count it cannot rewrite", () => {
+    const src = ply([
+      [1, 0, 0, 0, 0, 1],
+      [2, 0, 0, 0, 0, 2],
+    ]);
+    const text = new TextDecoder().decode(src);
+    const odd = new TextEncoder().encode(
+      text.replace("element vertex 2\n", "element vertex 2e0\n"),
+    );
+    expect(readPly(odd.buffer).count).toBe(2);
+    expect(() => cropPly(odd.buffer, [true, false])).toThrow(/vertex count/);
+  });
+
+  // Why: the run reads the file once for its positions and crops it with
+  // that reading, rather than parsing it twice.
+  it("crops with a reading it is given", () => {
+    const src = ply([
+      [1, 0, 0, 0, 0, 1],
+      [2, 0, 0, 0, 0, 2],
+    ]);
+    const view = readPly(src);
+    expect(readPly(cropPly(src, [false, true], view)).positions).toEqual([
+      [2, 0, 0],
+    ]);
+  });
 });

@@ -1,7 +1,6 @@
 /**
- * Why these tests matter: both 3D views give the Performance tab their
- * draw calls and triangles through one accessor, so a fix to how they are
- * counted lands in both at once; this pins what the accessor reads.
+ * Why these tests matter: the 3D view gives the Performance tab its draw
+ * calls and triangles through this accessor; this pins what it reads.
  */
 import type * as THREE from "three";
 import { describe, expect, it } from "vitest";
