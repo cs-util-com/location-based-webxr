@@ -16,14 +16,25 @@ recording: Blob }` (the recording file, for its photos);
 - `TrainStage` - `loading | preparing | training | checking`: loading the
   trainer, preparing the graphics card (photos and seeds uploaded, before
   the first step), training, and checking the result (scoring, export).
-- `TrainProgress` - `{ stage, fraction, secondsLeft | null, nextPreviewInS
+- `TrainProgress` - `{ stage, fraction, secondsLeft | null, previewEveryS
 | null }`; the practice trainer only ever says `training`.
 - `TrainEvents` (internal, the type of `trainWindow`'s second argument) -
   `onProgress(progress)`, `onPreview(picture)`.
 - `TrainOutcome` - `finished | deadline | gpu-lost | failed | cancelled`.
 - `WindowMetrics` - `{ atCameraDb, heldOutDb | null, photosUsed }`.
-- `WindowTrainResult` - `{ outcome, metrics | null, trainingS, ply: Blob | null }`.
-- `WindowJudgement` - `{ verdict: good | weak | poor, reasons, say }`.
+- `WindowTrainResult` - `{ outcome, metrics | null, trainingS, ply: Blob
+| null, detail?, retryHelps? }`: `detail` says why a `failed` run
+  failed; `retryHelps: false` that a second try cannot fix it (a library
+  that will not download, a photo that will not read, a stretch too large
+  for the card).
+- `WindowJudgement` - `{ verdict: good | weak | poor, reasons, say,
+retryHelps? }`; `retryHelps: false` keeps "Train again" off the print.
+- `failedJudgement(result)` - poor, "the trainer stopped", saying
+  "Training stopped: <detail>" (or "Training stopped with an error."
+  without one) and passing `retryHelps: false` on.
+- `GpuProbe` - `ready` and `integrated` carry the adapter's `limits`
+  (`maxStorageBufferBindingSize`, `maxBufferSize`) when it reports both as
+  positive numbers; the GPU trainer's window check reads them.
 - `TrainerAdapter` - `{ kind: "practice" | "gpu", probe(),
 trainWindow(request, events, signal), judge(request, result) }`.
   `trainWindow` resolves `cancelled` once `signal` aborts.
@@ -33,7 +44,8 @@ trainWindow(request, events, signal), judge(request, result) }`.
   Intel's graphics-card families (Arc: `xe-hpg`, `xe2-hpg`), or an
   architecture or description naming integrated, UHD or Iris graphics, is
   `integrated`. `adapter.info` may say too little to be sure, so the page
-  words this as likely ("seems to use"). Never throws.
+  words this as likely ("seems to use"). Passes the adapter's memory
+  limits on when both are positive. Never throws.
 
 ## Invariants and decisions
 
@@ -44,4 +56,4 @@ trainWindow(request, events, signal), judge(request, result) }`.
 
 `trainer-adapter.test.ts`: every probe branch (missing, null adapter,
 fallback, throwing, rejecting, built-in graphics, an Intel Arc card,
-graphics card).
+graphics card), and the memory limits passed on or left out.

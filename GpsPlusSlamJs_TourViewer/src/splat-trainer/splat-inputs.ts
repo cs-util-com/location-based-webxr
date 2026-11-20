@@ -61,6 +61,8 @@ export interface WindowJob {
   readonly evalFrames: readonly string[];
   readonly maxIters: number;
   readonly deadlineMs: number;
+  /** Time allowed to prepare the graphics card before the run fails (ms). */
+  readonly prepareCapMs: number;
   /** The shell crop keeps splats within this distance of a training
    *  camera (m). */
   readonly keepM: number;
@@ -247,8 +249,9 @@ const photoName = (index: number): string =>
  * One window's job: its training photos and its held-out photos in frame
  * order, each with its camera; the depth samples and shell flag of the
  * training photos; the step budget for its training photo count; a
- * deadline of `deadlineS` times `timeScale` (a scale that is not a
- * positive number counts as 1); and the shell crop's distance.
+ * deadline of `deadlineS` and a preparation cap of `prepareCapS`, both
+ * times `timeScale` (a scale that is not a positive number counts as 1);
+ * and the shell crop's distance.
  */
 export function planWindowJob(
   inputs: SplatInputs,
@@ -289,6 +292,7 @@ export function planWindowJob(
     evalFrames: photos.filter((p) => !p.train).map((p) => p.name),
     maxIters: iterationBudget(trainPhotos.length, settings),
     deadlineMs: settings.deadlineS * 1000 * scale,
+    prepareCapMs: settings.prepareCapS * 1000 * scale,
     keepM: settings.keepFraction * settings.shellDistanceM,
     trainPositions: frames
       .filter((i) => train.has(i))

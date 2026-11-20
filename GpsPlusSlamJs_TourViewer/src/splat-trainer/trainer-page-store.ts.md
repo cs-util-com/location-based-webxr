@@ -9,11 +9,14 @@ aborting it the moment the state says otherwise), and saving.
 
 ## Public API
 
-- `TrainerPageDeps` - `{ adapter, read, plan, write, download }`: the
+- `TrainerPageDeps` - `{ adapter, read, plan, write, download,
+thumbnail? }`: the
   trainer, the recording reader (`read(file, onProgress)`, the page's is
   `readSplatInputs` with its `onProgress`), the window planner
-  (`windowPlanner()`), a write into a picked file handle, and a download
-  that resolves false when cancelled.
+  (`windowPlanner()`), a write into a picked file handle, a download
+  that resolves false when cancelled, and `thumbnail(picture)`, a small
+  copy of a finished stretch's look (the page's shrinks to 480 px on the
+  longest side; absent, the picture is kept as it is).
 - `TrainerSideTables` - `files`, `inputs` and `plans` keyed by recording
   id; `previews` and `splats` keyed by stretch id. The recording's file
   stays in `files` while it trains: every stretch's `TrainRequest`
@@ -37,13 +40,18 @@ save, dispose }`.
   that key aborts the old job first. A stopped or queued stretch loses
   its preview. Every preview picture that is replaced or dropped is
   closed (`ImageBitmap.close()` where it has one), and a picture that
-  arrives after its job was aborted is closed at once.
+  arrives after its job was aborted is closed at once. When a stretch
+  finishes, its full-size look is swapped for `thumbnail`'s copy and
+  closed; a copy that cannot be made drops the look; a look replaced
+  meanwhile is left alone and the copy closed.
 - A trainer that reports `cancelled` without the page asking for it is
   judged as `failed`: only the page's own stop is never judged.
 - Each attempt's `timeScale` is the slice's `attemptTimeScale`.
 - A trainer that throws, or a judge that throws, ends the stretch as not
   good enough ("the trainer stopped"), so the run never hangs at
-  "Training".
+  "Training". A failed run is judged by `failedJudgement`, so the
+  stretch says why ("Training stopped: ...") and carries `retryHelps:
+false` when a second try cannot help.
 - The reader's progress becomes `readProgressed` only when its whole
   percent changes (the first report always), so a recording of thousands
   of entries re-renders the page about a hundred times at most; a report
@@ -58,6 +66,8 @@ save, dispose }`.
 (census, planned windows, refusals), the read's progress in whole-percent
 steps, the practice trainer on a manual
 clock (a whole run, stop aborting the job with no timer left, continue,
-a throwing trainer, an unasked cancel, preview pictures closed), and
+a throwing trainer, an unasked cancel, preview pictures closed, the
+small copy kept or the look dropped, a failure's words and no second
+try), and
 saving (picked, cancelled, download, failed then retried, the picked file
 released), with the saved zip read back.

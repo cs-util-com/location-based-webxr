@@ -18,7 +18,7 @@ import {
   type SplatTrainerLike,
 } from "./splat-js.js";
 import {
-  trainInWorker,
+  serveTrainer,
   type DecodedPhoto,
   type FromWorker,
   type ToWorker,
@@ -52,7 +52,7 @@ async function decode(photo: Blob): Promise<DecodedPhoto> {
  * (`trainer-worker-spawn.ts`). Read when called, not when this module
  * loads: the start module's body runs after its import of this script.
  * Without the importer nothing is loaded, so no request can carry this
- * site's origin.
+ * page's address as its Referer.
  */
 const shimImport: ModuleImporter = (url) => {
   const importer = (
@@ -114,36 +114,20 @@ function takeLook(trainer: SplatTrainerLike, ci: number): ImageBitmap | null {
   return look.canvas.transferToImageBitmap();
 }
 
-let running: AbortController | null = null;
-
-ctx.addEventListener("message", (event) => {
-  const msg = event.data;
-  if (msg.type === "cancel") {
-    running?.abort();
-    return;
-  }
-  // One window per worker: the page spawns a fresh one for each.
-  if (running !== null) return;
-  const ctrl = new AbortController();
-  running = ctrl;
-  void trainInWorker(
-    msg,
-    (progress) => ctx.postMessage({ type: "progress", progress }),
-    ctrl.signal,
-    {
-      load: () => loadSplatJs(shimImport),
-      decode,
-      clock: {
-        now: () => performance.now(),
-        setTimeout: (fn, ms) => setTimeout(fn, ms),
-        clearTimeout: (id) => clearTimeout(id as number),
-      },
-      preview: {
-        everyMs: PREVIEW_EVERY_MS,
-        take: takeLook,
-        post: (picture) =>
-          ctx.postMessage({ type: "preview", picture }, [picture]),
-      },
-    },
-  ).then((result) => ctx.postMessage({ type: "result", result }));
+// The page stops a window by ending this worker, so it only ever trains.
+const serve = serveTrainer((message) => ctx.postMessage(message), {
+  load: () => loadSplatJs(shimImport),
+  decode,
+  clock: {
+    now: () => performance.now(),
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (id) => clearTimeout(id as number),
+  },
+  preview: {
+    everyMs: PREVIEW_EVERY_MS,
+    take: takeLook,
+    post: (picture) => ctx.postMessage({ type: "preview", picture }, [picture]),
+  },
 });
+
+ctx.addEventListener("message", (event) => serve(event.data));

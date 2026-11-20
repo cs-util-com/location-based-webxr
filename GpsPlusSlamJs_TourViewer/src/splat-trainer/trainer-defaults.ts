@@ -80,9 +80,20 @@ export interface TrainerSettings {
    *  it. Picked, not swept: a window of 100 photos took minutes on the
    *  graphics cards measured so far. */
   readonly deadlineS: number;
+  /** Preparing the graphics card (uploading the photos, seeding) may take
+   *  at most this long (s) before the stretch fails in words; "train
+   *  again" scales it. Picked, not measured: 120 s would likely cut off a
+   *  slow integrated card uploading 100 photos, 600 s leaves the creator
+   *  watching a stuck print for ten minutes; 300 s sits between. A
+   *  measured upload time on a slow card would replace it. */
+  readonly prepareCapS: number;
   /** Held-out sharpness (dB) from which a stretch is good, and from which
    *  it is at least weak. Picked, not swept: they stand until the stretch
-   *  judge is measured against people's ratings. */
+   *  judge is measured against people's ratings. Provisional and laxer
+   *  than the plan's gate bars (good at 21 dB held out and 27 dB at the
+   *  camera with SSIM 0.70; not good under 19 dB held out or 25 dB at the
+   *  camera): this judge reads held-out sharpness only, with no SSIM and
+   *  no camera bar, until a measured judge replaces both. */
   readonly goodHeldOutDb: number;
   readonly weakHeldOutDb: number;
 }
@@ -112,6 +123,7 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   shellEveryPhoto: 4,
   shellVoxelM: 1,
   deadlineS: 1200,
+  prepareCapS: 300,
   goodHeldOutDb: 20,
   weakHeldOutDb: 16,
 });

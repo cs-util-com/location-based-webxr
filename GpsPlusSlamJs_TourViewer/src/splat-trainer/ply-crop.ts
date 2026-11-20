@@ -96,25 +96,30 @@ export function readPly(bytes: ArrayBuffer): PlyView {
 
 /**
  * A new splat file with the vertices whose `keep` entry is true, in their
- * order, every property passed through. Throws a RangeError when `keep`
- * does not have one entry per vertex.
+ * order, every property passed through. `view` is the file's reading,
+ * when the caller already has it. Throws a RangeError when `keep` does
+ * not have one entry per vertex, and an Error when the header's vertex
+ * count is written in a form it cannot rewrite.
  */
 export function cropPly(
   bytes: ArrayBuffer,
   keep: readonly boolean[],
+  view: PlyView = readPly(bytes),
 ): ArrayBuffer {
-  const view = readPly(bytes);
   if (keep.length !== view.count) {
     throw new RangeError(
       `keep has ${String(keep.length)} entries for ${String(view.count)} vertices`,
     );
   }
   const kept = keep.filter(Boolean).length;
+  const countLine = /^element vertex \d+$/m;
+  if (!countLine.test(view.header)) {
+    // Left as it was, the old count would promise more vertices than the
+    // file holds.
+    throw new Error("The splat file's vertex count is not a plain number.");
+  }
   const header = new TextEncoder().encode(
-    view.header.replace(
-      /^element vertex \d+$/m,
-      `element vertex ${String(kept)}`,
-    ),
+    view.header.replace(countLine, `element vertex ${String(kept)}`),
   );
   const out = new Uint8Array(header.length + kept * view.stride);
   out.set(header);
