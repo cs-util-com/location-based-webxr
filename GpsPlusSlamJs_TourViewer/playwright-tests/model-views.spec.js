@@ -249,6 +249,8 @@ test("opened by a person, it shows the stand-in and switches its views from a ba
   });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/check.html?view=model-views");
+  // The check page loads the view's module after the page's load event.
+  await page.waitForFunction(() => window.__modelViewsCheck !== undefined);
   const bar = page.locator("nav.mvc-views");
   const buttons = bar.locator("button.btn");
   await expect(buttons).toHaveText([
