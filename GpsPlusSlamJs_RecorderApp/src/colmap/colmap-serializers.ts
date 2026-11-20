@@ -24,7 +24,8 @@
  */
 
 import type { Vector3 } from 'gps-plus-slam-app-framework/core';
-import type { ColmapPose, PinholeIntrinsics } from './colmap-conversions';
+import type { PinholeIntrinsics } from 'gps-plus-slam-app-framework/utils/pinhole-from-projection';
+import type { ColmapPose } from './colmap-conversions';
 
 /**
  * An sRGB triple (0–255 per channel). Structurally matches the framework's

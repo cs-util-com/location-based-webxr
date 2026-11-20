@@ -33,10 +33,10 @@ import type {
 } from 'gps-plus-slam-app-framework/storage/zip-export';
 import type { ArImageCapture, Matrix4 } from 'gps-plus-slam-app-framework/core';
 import type { OccupancyGrid } from 'gps-plus-slam-app-framework/ar/occupancy-grid';
+import { pinholeFromProjection } from 'gps-plus-slam-app-framework/utils/pinhole-from-projection';
 import {
   webxrToColmapPose,
   webxrToColmapWorldPoint,
-  pinholeFromProjection,
 } from './colmap-conversions';
 import {
   serializeCamerasTxt,

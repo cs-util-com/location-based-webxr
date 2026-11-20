@@ -274,6 +274,9 @@ const entryFiles = [
   // floor-estimate → offset chain against a demo-owned grid. Advertised by the
   // `./test-utils/*` wildcard, so it must be built per-file like the rest.
   'src/test-utils/synthetic-depth-samples.ts',
+  // Upright look-at camera poses, used by the Tour Viewer's synthetic
+  // recording builder for its walk.
+  'src/test-utils/synthetic-qr-walk.ts',
   // The STORE-mode central-directory reader - it reads an archive back
   // with a parser independent of the library that wrote it, so a shared
   // misreading of the zip format cannot cancel itself out. Consumed by
@@ -361,6 +364,9 @@ const entryFiles = [
   // tsc and vitest resolve it while Vite in the browser does not (found by
   // the recorder e2e stage, 26 minutes into a cascade).
   'src/utils/median.ts',
+  // PINHOLE intrinsics from a projection matrix - deep-imported by the
+  // Recorder's COLMAP export and the Tour Viewer's splat trainer reader.
+  'src/utils/pinhole-from-projection.ts',
   // The nearest-rank percentile - deep-imported by QrTrackingDemo's
   // ?qrperf tallies and by the frame-time helpers below; per-file for the
   // './utils/*' wildcard, like median.ts.

@@ -27,13 +27,10 @@ Part of the COLMAP/3DGS export — see
     points and cameras stay registered. This is the **upside-down fix**
     (follow-up Item B): viewers treat the COLMAP world as Y-down gravity, so the
     flip makes the reconstruction load **upright** (det = +1 → no mirroring).
-- `pinholeFromProjection(projectionMatrix: Matrix4, width, height): PinholeIntrinsics`
-  - Input: a column-major WebXR/ARCore projection matrix and the **JPEG frame's
-    pixel dimensions** (after any `resolutionDivisor`).
-  - Output: `{ fx, fy, cx, cy }` in pixels for the COLMAP `PINHOLE` model.
-  - Throws `RangeError` on a non-16/non-finite matrix, non-positive `width`/
-    `height`, or a recovered non-positive focal length (degenerate /
-    non-forward-facing matrix).
+- The intrinsics, `pinholeFromProjection`, moved to the framework
+  (`gps-plus-slam-app-framework/utils/pinhole-from-projection`), shared with
+  the Tour Viewer's splat trainer reader; the COLMAP contributor imports it
+  from there.
 
 ## Derivations
 
@@ -56,21 +53,10 @@ still projects to the pixel its camera saw. `G` is a proper rotation (det = +1),
 so it is upright **without** mirroring. For identity camera pose the camera flip
 and the world flip cancel → the extrinsic is identity.
 
-Intrinsics: for a column-major OpenGL-style perspective matrix `m`
-(`m[col*4+row]`), projecting a view point and mapping NDC → pixels (top-left
-origin, y down):
-
-- `fx = 0.5·W·m[0]`, `fy = 0.5·H·m[5]`
-- `cx = 0.5·W·(1 − m[8])`, `cy = 0.5·H·(1 + m[9])`
-
 ## Invariants & assumptions
 
 - `qvec` is unit length (asserted in the property test).
 - The basis change is a proper rotation, so no sign folds into the quaternion.
-- **Principal-point caveat:** the `cx`/`cy` formulas are derived (and verified
-  against a symmetric frustum → `W/2, H/2`), but their off-center sign
-  convention against _real_ ARCore matrices is only decisively confirmed by the
-  Iter 4 on-device check (plan §6). `fx`/`fy` are well-established.
 - `Quaternion` input is `[x,y,z,w]`; COLMAP `qvec` output is `[w,x,y,z]` — the
   reordering is the most common foot-gun, kept explicit via the `ColmapQuat`
   type.
@@ -82,9 +68,6 @@ const { qvec, tvec } = webxrToColmapPose([0, 0, 0], [0, 0, 0, 1]);
 // qvec ≈ [1, 0, 0, 0] (identity: camera flip cancels world flip), tvec ≈ [0,0,0]
 
 webxrToColmapWorldPoint([1, 2, 3]); // → [1, -2, -3] (negate Y,Z)
-
-const intr = pinholeFromProjection(view.projectionMatrix, 1280, 960);
-// e.g. { fx: 1000, fy: 1100, cx: 640, cy: 480 } for a symmetric frustum
 ```
 
 ## Tests
@@ -94,8 +77,7 @@ const intr = pinholeFromProjection(view.projectionMatrix, 1280, 960);
   camera coords (= basis-changed WebXR view coords), proving cameras + points
   stay registered after the world flip (500 runs over random poses); the world
   flip negates exactly Y,Z and preserves pairwise distances (proper rotation, no
-  mirror/scale); intrinsics: round-trip recovery from a synthetic perspective
-  matrix (500 runs over FOV/aspect/resolution/principal-point).
+  mirror/scale).
 - `colmap-conversions.test.ts` — hand-verifiable fixtures (identity → identity
   extrinsic, point ahead → +Z, point above → −Y, a non-trivial rotated pose, all
-  feeding flipped world points) and the `pinholeFromProjection` error paths.
+  feeding flipped world points).

@@ -1,24 +1,19 @@
 /**
- * Example + edge-case tests for COLMAP coordinate + intrinsics conversions.
+ * Example + edge-case tests for COLMAP coordinate conversions.
  *
  * Why this test file matters:
  * Complements the property tests with concrete, hand-verifiable fixtures (so a
- * regression points at a specific wrong number, not just "a property failed")
- * and pins the error paths. Includes a deliberately NON-identity pose because
+ * regression points at a specific wrong number, not just "a property failed").
+ * Includes a deliberately NON-identity pose because
  * identity fixtures hide axis/sign bugs (lessons-learned, repeatedly).
  */
 
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import type {
-  Matrix4,
-  Quaternion,
-  Vector3,
-} from 'gps-plus-slam-app-framework/core';
+import type { Quaternion, Vector3 } from 'gps-plus-slam-app-framework/core';
 import {
   webxrToColmapPose,
   webxrToColmapWorldPoint,
-  pinholeFromProjection,
 } from './colmap-conversions';
 
 describe('webxrToColmapPose', () => {
@@ -98,58 +93,5 @@ describe('webxrToColmapPose', () => {
     expect(actual.x).toBeCloseTo(expected.x, 5);
     expect(actual.y).toBeCloseTo(expected.y, 5);
     expect(actual.z).toBeCloseTo(expected.z, 5);
-  });
-});
-
-describe('pinholeFromProjection', () => {
-  it('recovers W/2, H/2 principal point from a symmetric frustum', () => {
-    const W = 1280;
-    const H = 960;
-    // Symmetric perspective: m20 = m21 = 0, m00 = 2fx/W, m11 = 2fy/H.
-    const fx = 1000;
-    const fy = 1100;
-    const m = new Array(16).fill(0) as number[];
-    m[0] = (2 * fx) / W;
-    m[5] = (2 * fy) / H;
-    m[10] = -1;
-    m[11] = -1;
-    m[14] = -0.2;
-    const intr = pinholeFromProjection(m as unknown as Matrix4, W, H);
-    expect(intr.fx).toBeCloseTo(fx, 4);
-    expect(intr.fy).toBeCloseTo(fy, 4);
-    expect(intr.cx).toBeCloseTo(W / 2, 4);
-    expect(intr.cy).toBeCloseTo(H / 2, 4);
-  });
-
-  it('throws on a non-16-length or non-finite matrix', () => {
-    expect(() =>
-      pinholeFromProjection([1, 2, 3] as unknown as Matrix4, 100, 100)
-    ).toThrow(RangeError);
-    const bad = new Array(16).fill(0) as number[];
-    bad[0] = Number.NaN;
-    expect(() =>
-      pinholeFromProjection(bad as unknown as Matrix4, 100, 100)
-    ).toThrow(RangeError);
-  });
-
-  it('throws on non-positive width/height', () => {
-    const m = new Array(16).fill(0) as number[];
-    m[0] = 1.5;
-    m[5] = 1.5;
-    expect(() =>
-      pinholeFromProjection(m as unknown as Matrix4, 0, 100)
-    ).toThrow(RangeError);
-    expect(() =>
-      pinholeFromProjection(m as unknown as Matrix4, 100, -10)
-    ).toThrow(RangeError);
-  });
-
-  it('throws when the matrix yields a non-positive focal length', () => {
-    const m = new Array(16).fill(0) as number[];
-    m[0] = 0; // fx = 0
-    m[5] = 1.5;
-    expect(() =>
-      pinholeFromProjection(m as unknown as Matrix4, 100, 100)
-    ).toThrow(RangeError);
   });
 });

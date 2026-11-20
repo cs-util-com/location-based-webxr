@@ -8,23 +8,17 @@
  * `depth-unprojection.ts` / `frame-conversions.ts` (one tested seam owning the
  * axis/sign conventions).
  *
- * Two independent conversions:
- *  - {@link webxrToColmapPose}: a WebXR camera pose (−Z forward, +Y up,
- *    camera-to-world) → COLMAP `(qvec, tvec)` (+Z forward, +Y down,
- *    world-to-camera).
- *  - {@link pinholeFromProjection}: a WebXR/ARCore column-major projection
- *    matrix + image pixel size → PINHOLE intrinsics `(fx, fy, cx, cy)`.
+ * The pose conversion {@link webxrToColmapPose}: a WebXR camera pose (−Z
+ * forward, +Y up, camera-to-world) → COLMAP `(qvec, tvec)` (+Z forward, +Y
+ * down, world-to-camera). The intrinsics (`pinholeFromProjection`) live in
+ * the framework (`utils/pinhole-from-projection.ts`), shared with the Tour
+ * Viewer.
  *
- * @see colmap-conversions.ts.md for the derivations and the on-device
- *   verification caveat on the principal point.
+ * @see colmap-conversions.ts.md for the derivations.
  */
 
 import * as THREE from 'three';
-import type {
-  Matrix4,
-  Quaternion,
-  Vector3,
-} from 'gps-plus-slam-app-framework/core';
+import type { Quaternion, Vector3 } from 'gps-plus-slam-app-framework/core';
 
 /**
  * World-to-camera quaternion in COLMAP's storage order `[qw, qx, qy, qz]`
@@ -40,14 +34,6 @@ type ColmapQuat = readonly [number, number, number, number];
 export interface ColmapPose {
   readonly qvec: ColmapQuat;
   readonly tvec: Vector3;
-}
-
-/** PINHOLE intrinsics in pixels (COLMAP camera model `PINHOLE`). */
-export interface PinholeIntrinsics {
-  readonly fx: number;
-  readonly fy: number;
-  readonly cx: number;
-  readonly cy: number;
 }
 
 /**
@@ -134,69 +120,3 @@ export function webxrToColmapWorldPoint(point: Vector3): Vector3 {
 }
 
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
-
-/**
- * Recover PINHOLE intrinsics from a column-major WebXR/ARCore projection
- * matrix and the image's pixel dimensions.
- *
- * Derivation (see sidecar): for an OpenGL-style perspective matrix `m` stored
- * column-major (`m[col*4 + row]`), projecting a view-space point and mapping
- * NDC → pixels (top-left origin, y down) gives:
- *  - `fx = 0.5 · W · m[0]`   (m00)
- *  - `fy = 0.5 · H · m[5]`   (m11)
- *  - `cx = 0.5 · W · (1 − m[8])`   (m20, the x skew/offset term)
- *  - `cy = 0.5 · H · (1 + m[9])`   (m21, the y skew/offset term)
- *
- * For a centered, symmetric frustum (`m[8] = m[9] = 0`) this yields the
- * expected `cx = W/2`, `cy = H/2`. The off-center principal-point terms are
- * derived, not eyeballed, but their sign convention against real ARCore
- * matrices is only decisively confirmed by the Iter 4 on-device check.
- *
- * **W, H are the JPEG frame's pixel dimensions** (after any
- * `resolutionDivisor`), not the depth buffer's — the matrix is resolution
- * independent (it encodes the frustum in normalized coords).
- *
- * @throws RangeError if the matrix is not 16 finite numbers or W/H are not
- *   positive finite numbers, or if the recovered focal lengths are not finite
- *   (a degenerate/non-perspective matrix).
- */
-export function pinholeFromProjection(
-  projectionMatrix: Matrix4,
-  width: number,
-  height: number
-): PinholeIntrinsics {
-  if (
-    projectionMatrix.length !== 16 ||
-    !projectionMatrix.every(Number.isFinite)
-  ) {
-    throw new RangeError('projectionMatrix must be 16 finite numbers');
-  }
-  if (!isPositiveFinite(width) || !isPositiveFinite(height)) {
-    throw new RangeError(
-      `width and height must be positive finite numbers, got ${width}×${height}`
-    );
-  }
-
-  const m00 = projectionMatrix[0];
-  const m11 = projectionMatrix[5];
-  const m20 = projectionMatrix[8];
-  const m21 = projectionMatrix[9];
-
-  const fx = 0.5 * width * m00;
-  const fy = 0.5 * height * m11;
-  const cx = 0.5 * width * (1 - m20);
-  const cy = 0.5 * height * (1 + m21);
-
-  if (!(fx > 0) || !(fy > 0)) {
-    throw new RangeError(
-      `recovered non-positive focal length (fx=${fx}, fy=${fy}); ` +
-        'matrix is not a forward-facing perspective projection'
-    );
-  }
-
-  return { fx, fy, cx, cy };
-}
-
-function isPositiveFinite(v: number): boolean {
-  return Number.isFinite(v) && v > 0;
-}
