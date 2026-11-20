@@ -111,9 +111,11 @@ export interface SetupPathState {
   readonly answer: SetupAnswer | null;
 }
 
+const initialState: SetupPathState = { answer: null };
+
 const setupPathSlice = createSlice({
   name: "setupPath",
-  initialState: { answer: null } as SetupPathState,
+  initialState,
   reducers: {
     /** An answer chosen, inferred from an open, or read from the device;
      *  null puts the question back. */

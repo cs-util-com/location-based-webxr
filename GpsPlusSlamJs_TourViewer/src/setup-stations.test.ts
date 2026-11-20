@@ -105,9 +105,7 @@ describe("stationView", () => {
           const va = stationView(path, path[ia] ?? null);
           expect(va.states.filter((s) => s === "current")).toHaveLength(1);
           expect(va.states.slice(0, ia).every((s) => s === "done")).toBe(true);
-          expect(va.states.slice(ia + 1).every((s) => s === "todo")).toBe(
-            true,
-          );
+          expect(va.states.slice(ia + 1).every((s) => s === "todo")).toBe(true);
           expect(va.back === null || path.indexOf(va.back) === ia - 1).toBe(
             true,
           );

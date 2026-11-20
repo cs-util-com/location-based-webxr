@@ -29,7 +29,11 @@ export function stationSlot(pathLength: number, i: number): number {
 /** Steps whose own action moves on: "Start creating", and the two that
  *  open a tour from this phone (a Next past them would reach "Create"
  *  with no tour open, where nothing can be placed). */
-const NO_NEXT: ReadonlySet<WizardStep> = new Set(["measure", "file", "starter"]);
+const NO_NEXT: ReadonlySet<WizardStep> = new Set([
+  "measure",
+  "file",
+  "starter",
+]);
 
 export interface StationView {
   /** 1-based number of the open step on the path. */
