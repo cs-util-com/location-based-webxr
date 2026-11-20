@@ -20,19 +20,20 @@ import {
   ZipReader,
 } from "@zip.js/zip.js";
 
-/** Below this the camera is framing something on the ground, not the
- *  Earth (whose whole view stands thousands of kilometres up). */
-const FRAMED_MAX_M = 20_000;
-
 /**
  * Why these tests matter: the editor on the globe view is the default
  * (`globe=1` still names it). These open the sample tour on it and check,
  * through the page's test hook (a software-drawn WebGL shows little a
  * screenshot could assert on), that the globe view opens at street level
  * with the three stations in its Earth-centred group, its sky follows the
- * clock, a gizmo drag is the gizmo's alone, and a pinch steps toward the
- * ground under the fingers.
+ * clock, a gizmo drag is the gizmo's alone, a pinch steps toward the
+ * ground under the fingers, and a recording with nothing else positioned
+ * is flown to.
  */
+
+/** Below this the camera is framing something on the ground, not the
+ *  Earth (whose whole view stands thousands of kilometres up). */
+const FRAMED_MAX_M = 20_000;
 
 /**
  * The sky's colour: the per-channel median (0-255) of the canvas's top
