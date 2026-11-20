@@ -8,6 +8,7 @@
  */
 import { drawMatches, sideBySide } from "./bench-draw";
 import {
+  allFilesZip,
   assertPlainPng,
   FRAME_FILES,
   framesInfo,
@@ -26,6 +27,7 @@ import {
   buildMethods,
   parseRuns,
   precisionsFrom,
+  selectionGaps,
 } from "./bench-methods";
 import { errorText, formatBytes, type LoadDeps } from "./bench-net";
 import {
@@ -53,6 +55,8 @@ const PICTURE_MAX_WIDTH = 640;
 /** Match lines drawn per picture at most (spread evenly over all). */
 const PICTURE_LINE_CAP = 200;
 const PICTURE_GAP = 8;
+/** Save's label after a camera run that measured nothing. */
+const NOTHING_MEASURED = "nothing measured: tap to save the photos anyway";
 
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -367,49 +371,55 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     refresh();
   };
 
+  /** Opens the camera stream and plays it; never rejects. */
+  const openCamera = async (): Promise<CameraStart> => {
+    const generation = cameraGeneration;
+    const stoppedMeanwhile = () => generation !== cameraGeneration;
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1920 },
+        },
+        audio: false,
+      });
+      if (stoppedMeanwhile()) {
+        for (const t of s.getTracks()) {
+          t.stop();
+        }
+        return "stopped";
+      }
+      stream = s;
+      ui.video.srcObject = s;
+      refresh();
+      await ui.video.play();
+      if (stoppedMeanwhile()) {
+        return "stopped";
+      }
+      log("camera on");
+      return "on";
+    } catch (e) {
+      if (stoppedMeanwhile()) {
+        return "stopped";
+      }
+      fail("camera", e);
+      stopCamera();
+      return "failed";
+    }
+  };
+
   /** Starts the camera once; "on" when it is running. */
   const startCamera = (): Promise<CameraStart> => {
     if (stream) {
       return Promise.resolve("on");
     }
-    starting ??= (async (): Promise<CameraStart> => {
-      const generation = cameraGeneration;
-      const stoppedMeanwhile = () => generation !== cameraGeneration;
-      try {
-        const s = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: "environment" },
-            width: { ideal: 1920 },
-          },
-          audio: false,
-        });
-        if (stoppedMeanwhile()) {
-          for (const t of s.getTracks()) {
-            t.stop();
-          }
-          return "stopped";
-        }
-        stream = s;
-        ui.video.srcObject = s;
-        refresh();
-        await ui.video.play();
-        if (stoppedMeanwhile()) {
-          return "stopped";
-        }
-        log("camera on");
-        return "on";
-      } catch (e) {
-        if (stoppedMeanwhile()) {
-          return "stopped";
-        }
-        fail("camera", e);
-        stopCamera();
-        return "failed";
-      } finally {
-        starting = null;
-        refresh();
-      }
-    })();
+    // Forgotten once settled. The callback runs in a later microtask, after
+    // the assignment, so a start that fails before awaiting anything (no
+    // camera API at all) is forgotten too and the next tap tries again.
+    starting ??= openCamera().finally(() => {
+      starting = null;
+      refresh();
+    });
     return starting;
   };
 
@@ -490,6 +500,12 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       [FRAME_FILES.info, "sizes and device (JSON)", json(info)],
       [FRAME_FILES.matches, "keypoints and matches (JSON)", json(matches)],
     ];
+    // The zip comes first: one tap saves everything, the log included.
+    const zip = await allFilesZip(
+      files.map(([name, , blob]) => ({ name, blob })),
+      { log: ui.log.textContent ?? "", report: ui.report.value },
+    );
+    files.unshift([FRAME_FILES.all, "Download all (zip)", zip]);
     ui.saveLinks.replaceChildren(
       ...files.map(([file, text, blob]) => {
         const url = URL.createObjectURL(blob);
@@ -512,7 +528,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     saveFiles()
       .then(() => {
         saved = true;
-        ui.saveState.textContent = `${String(savedUrls.length)} files ready: tap each to save`;
+        ui.saveState.textContent = `ready: tap Download all (zip), or each file`;
         log("files ready to save");
       })
       .catch((e: unknown) => {
@@ -629,7 +645,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         })
       : 0;
     fig.firstElementChild!.textContent =
-      `${head}: keypoints A ${String(sample.a.x.length)}, B ${String(sample.b.x.length)}` +
+      `${head}, last round: keypoints A ${String(sample.a.x.length)}, B ${String(sample.b.x.length)}` +
       ` | matches ${String(matches)}` +
       (shown < matches ? ` (${String(shown)} drawn)` : "") +
       (s.correct === null ? "" : ` | correct ${String(s.correct)}`) +
@@ -646,16 +662,22 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     if (!pair) {
       return { text: "not run: no input", results: null };
     }
-    const methods = buildMethods(
-      {
-        sift: checked(root, "#m-sift"),
-        xfeat: checked(root, "#m-xfeat"),
-        aliked: checked(root, "#m-aliked"),
-        backends: backendsFrom(tickedValues(root, "backend")),
-        precisions: precisionsFrom(tickedValues(root, "model")),
-      },
-      browserDeps,
-    );
+    const selection = {
+      sift: checked(root, "#m-sift"),
+      xfeat: checked(root, "#m-xfeat"),
+      aliked: checked(root, "#m-aliked"),
+      backends: backendsFrom(tickedValues(root, "backend")),
+      precisions: precisionsFrom(tickedValues(root, "model")),
+    };
+    const gaps = selectionGaps(selection);
+    if (gaps.length > 0) {
+      fail("options", new Error(gaps.join("; ")));
+      return {
+        text: "not run: a ticked method has nothing to run on (see log)",
+        results: null,
+      };
+    }
+    const methods = buildMethods(selection, browserDeps);
     const sizes = chosenSizes(root);
     if (methods.length === 0 || sizes.length === 0) {
       fail(
@@ -671,6 +693,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     ui.table.replaceChildren();
     ui.pictures.replaceChildren();
     ui.report.value = "";
+    if (kind === "synthetic") {
+      withdrawCameraRun();
+    }
     const images = {
       a: frameCanvas(pair.input.a),
       b: frameCanvas(pair.input.b),
@@ -724,6 +749,22 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   };
 
   /**
+   * A synthetic run replaces what Results shows, so the camera run it
+   * hides is withdrawn with its offered files: Save must never describe
+   * results no longer on screen.
+   */
+  const withdrawCameraRun = (): void => {
+    if (cameraRun !== "done" && cameraRun !== "failed") {
+      return;
+    }
+    cameraRun = "none";
+    cameraResults = [];
+    clearSaved("after the run");
+    ui.runState.textContent = "replaced by the synthetic run: tap Run again";
+    refresh();
+  };
+
+  /**
    * Runs the benchmark on the camera pair or on the synthetic one. The
    * camera pair's run is step 3; one run or save at a time.
    */
@@ -750,7 +791,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         if (kind === "camera") {
           cameraRun = results ? "done" : "failed";
           cameraResults = results ?? [];
-          ui.saveState.textContent = "ready: tap to prepare the files";
+          ui.saveState.textContent = results
+            ? "ready: tap to prepare the files"
+            : NOTHING_MEASURED;
         }
       })
       .catch((e: unknown) => {
@@ -758,6 +801,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         state.textContent = "failed (see log)";
         if (kind === "camera") {
           cameraRun = "failed";
+          cameraResults = [];
+          ui.saveState.textContent = NOTHING_MEASURED;
         }
       })
       .finally(() => {
