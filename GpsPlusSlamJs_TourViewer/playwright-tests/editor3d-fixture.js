@@ -339,7 +339,8 @@ export async function openSample(page) {
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
   // No tour, nothing to show in 3D: the switch waits for one.
   await expect(page.locator("#view-switch")).toBeDisabled();
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   // The sample's three stations and its two pins (its lectern has no row).
   await expect(page.locator("#rail .row-title")).toHaveCount(5);
 }
@@ -369,7 +370,8 @@ export async function gotoEditor(page) {
 export async function openSampleIn3d(page) {
   await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 60_000,
   });
@@ -385,10 +387,12 @@ export async function openSampleIn3d(page) {
  */
 export async function openZip(page, zip, name) {
   const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").click();
   await (
     await chooser
   ).setFiles({ name, mimeType: "application/zip", buffer: zip });
+  await page.locator("#start-open").click();
 }
 
 /**

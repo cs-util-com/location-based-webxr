@@ -79,10 +79,15 @@ export async function zip(entries) {
 }
 
 /**
- * @param {{ station?: boolean, farStation?: boolean }} [options] - a story
- *   station at the first code; two more stations, one far from every code
+ * @param {{ station?: boolean, farStation?: boolean, tourId?: string }} [options] -
+ *   a story station at the first code; two more stations, one far from
+ *   every code; the tour's own id (none by default)
  */
-export async function editorTour({ station = false, farStation = false } = {}) {
+export async function editorTour({
+  station = false,
+  farStation = false,
+  tourId = undefined,
+} = {}) {
   const codes = [];
   for (const [i, place] of [geo(0, 0), geo(30, 40)].entries()) {
     const id = await qrCodeId(
@@ -100,6 +105,7 @@ export async function editorTour({ station = false, farStation = false } = {}) {
   // and photos as their free blocks).
   const manifest = {
     ...createEmptyTourManifest(),
+    ...(tourId === undefined ? {} : { tourId }),
     title: "Editor fixture",
     assets: [
       imageAsset("photo-ok", "content/photo-ok.png", 1, 1),
@@ -208,8 +214,10 @@ export async function answerTiles(page) {
  */
 export async function openThroughChooser(page, buffer, name) {
   const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").click();
   await (await chooser).setFiles({ name, mimeType: "application/zip", buffer });
+  await page.locator("#start-open").click();
 }
 
 /** A tour in the wrapped shape ("compress this folder") carrying a walk

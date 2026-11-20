@@ -71,7 +71,8 @@ test("the relief keeps a mapped tile until its finer tiles have their street map
   });
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
@@ -222,7 +223,8 @@ test("a street-map tile whose first request failed gets its map", async ({
   });
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });
@@ -278,7 +280,8 @@ test("a zoom-in in steps never draws a tile bare in place of a mapped one", asyn
   await noClouds(page);
   await page.goto("/edit.html?globe=1");
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });

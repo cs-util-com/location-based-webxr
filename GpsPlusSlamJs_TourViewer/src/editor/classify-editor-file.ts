@@ -1,3 +1,4 @@
+import { ArchiveLimitError } from "gps-plus-slam-app-framework/storage";
 import { tourManifestEntryOf } from "gps-plus-slam-app-framework/ar/tour-archive";
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import {
@@ -59,7 +60,14 @@ export async function classifyEditorFile(file: File): Promise<EditorFileKind> {
       return { kind: "scan", file, scan: read };
     });
   } catch (err) {
-    return { kind: "neither", file, reason: describeOpenError(err) };
+    // A cap words itself; anything else is a damaged zip, said as the
+    // open says a file that is no zip (it refuses it in its own words).
+    return {
+      kind: "neither",
+      file,
+      reason:
+        err instanceof ArchiveLimitError ? describeOpenError(err) : NOT_A_ZIP,
+    };
   }
 }
 

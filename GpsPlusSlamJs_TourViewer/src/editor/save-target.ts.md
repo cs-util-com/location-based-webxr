@@ -17,6 +17,10 @@ the move: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan
 
 ## Public API
 
+- `pickScanFile(win): Promise<PickOutcome>` - the framework's
+  `pickReadableFile` with a zip filter, for a scan shown beside the tour:
+  only read, so no permission is asked; its handle may be remembered
+  (`scan-memory.ts`). `unavailable` as below: the page uses its file input.
 - `pickTourFile(win): Promise<PickOutcome>` - the framework's
   `pickWritableFile` for one `.zip` ("Tour file"): the permission asked
   before the read (E2b plan review #8); `unavailable` (no picker, an

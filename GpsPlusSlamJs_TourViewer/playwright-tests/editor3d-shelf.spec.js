@@ -276,7 +276,8 @@ test("a 3D model and a sound added from the tree's menu stand in the tree, in 3D
   await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
   await page.reload();
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   const offer = page.locator(".toast.draft-offer");
   await offer.locator("button", { hasText: "Restore" }).click();
   await expect(offer).toHaveCount(0);

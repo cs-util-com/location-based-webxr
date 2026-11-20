@@ -3,7 +3,7 @@
 ## Purpose
 
 The composition root of the desktop editor (`edit.html`, M6 E1): opens a
-tour (chosen, dropped, or the sample), builds its model and wires the map,
+tour (chosen, dropped, from a link, new, or the example), builds its model and wires the map,
 the rail and the card in the chosen variant 1 layout, and edits it (E2a);
 where the browser allows it, it saves the opened file in place (E2b-1,
 `save-target.ts`) - by itself too, a few seconds after a change (E2b-2,
@@ -27,33 +27,74 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   drop box opens it, so a stray drop never takes the open tour away (PR
   #609 review).
 
-- **Open:** the file input's change, "Choose…" and a drop on `#drop`
-  (every file of the drop) go through `enterFiles`: each file is sorted
-  first (`classify-editor-file.ts`, its zip directory only), then planned
-  (`editor-entry.ts` `planEditorEntry`). A tour opens through
-  `openTourForEditing` (`editor-open.ts`); a tour with a scan opens and
-  then gets the scan as one busy state (`openWithScan`, the store's
-  `editorView.entryStep`, a held line naming both files; a scan that
-  fails keeps the tour and says so in a toast that stays; one added under
-  a tour that changed meanwhile says nothing; an open that threw says
-  its error in `#open-error` and ends the busy state); a scan alone
-  is added beside the open tour as one busy state ("Adding the scan
-  <name>…", the store's `entryStep` `"adding-scan"`, so a second drop
-  waits) and closes the dialog, or is refused in the dialog when no tour
-  is open; several tours or scans are refused; a file that is neither
-  for no zip or no tour goes to the open, which refuses it in its own
-  words, and one with a precise reason is refused with it; a file left
-  out of a drop is named in a toast; every entry (a drop, the sample, a
-  link) starts only while `isEntryIdle` (`editor-view.ts`); "Use the sample tour" fetches
-  `samples/marienplatz-tour.zip` beside the page; `#link-form` fetches a
-  hosted tour from its link (`editor-link.ts`, the viewer's transport and
-  Drive proxy, tour editor plan 2026-10-17-1816 W1) and opens it as a
-  chosen file - without a file handle, so Save downloads the new copy -
-  saying "Fetching the tour from its link…" meanwhile and the refusal in
-  `#open-error` (`linkOpenErrorText`). While a file is read the
-  modal says "Opening <name>…" and its buttons are disabled; then the tour
-  is drawn and a toast names what opened, or the reason shows in
-  `#open-error` and the modal stays (root `CLAUDE.md`, async feedback).
+- **Open: the start card** (`start-card.ts`, the store's `editorStart`
+  slice). The open dialog asks two questions and opens with one button,
+  `#start-open` ("Open the editor"): question 1 (`#start-from`) is where
+  the creator starts from - a tour they made, a new empty tour, or the
+  example; question 2 (`#start-scan-step`, for the first two only) is an
+  optional scan, shown while editing and never part of the tour. Nothing
+  opens before the button: a file chosen (`#choose-btn`, the file input)
+  or dropped on `#drop` is classified (`classify-editor-file.ts`) and
+  held (`holdTourFiles`, `sortTourPick`): at most one tour and one scan,
+  a scan never held as the tour (alone it is kept as the card's scan and
+  `#open-status` says so), files left out named in a toast, several tours
+  or scans refused in `#open-error`. The scan button holds a scan
+  (`chooseScan`: the browser's read-only picker, `pickScanFile`, else
+  `#start-scan-input`; then `holdScanFile`, `sortScanPick`; a tour there is
+  refused with where it goes). The Files themselves sit in the page's `startFiles` side table
+  (a Blob is never store state); the slice holds their names, and
+  `renderStartCard` draws the card from it (`startCardView`'s steps,
+  button and summary line, `#start-summary`). Every show of the dialog
+  (`showModal(true)`, after the unsaved-work guard of "Open…") starts the
+  card afresh (`resetStartCard`), so an earlier answer or file never
+  carries into the next open. `openFromStart` then runs the answer:
+  - **A tour I made**: a held file opens through `openTourWithScan`
+    (`openWithScan`: the tour first, then its scan, as one busy state, the
+    store's `editorView.entryStep`, a held line naming both files; a scan
+    that fails keeps the tour and says so in a toast that stays; one added
+    under a tour that changed meanwhile says nothing; an open that threw
+    says its error in `#open-error`); a link typed in `#link-input`
+    (Enter or the button) is fetched (`editor-link.ts`, the viewer's
+    transport and Drive proxy), saying "Fetching the tour from its link…"
+    meanwhile and the refusal in `#open-error` (`linkOpenErrorText`), then
+    opened with the held scan. A file chosen replaces a link typed, and a
+    link typed lets a held file go.
+  - **A new, empty tour**: `startNewTour` (`new-tour.ts`) asks where it is
+    saved in the click (`askOpenSaveFile`, `new-tour.zip` dated), with a
+    held toast saying "Where should your new tour be saved?" until the pick
+    settles (the browser's dialog takes no title); every new tour mints its
+    own tour id, so it is never offered another's draft. It opens with the
+    held scan, and a held toast says how to begin: "Right-click the ground
+    to place your first station."
+  - **The example**: `samples/marienplatz-tour.zip` beside the page,
+    fetched with no save question ("Fetching the example tour…", a failure
+    in `#open-error`), then opened through `openTourWithScan` as every
+    tour is; it is saved only when the creator chooses Save, whose first
+    press asks for a file.
+  - **The remembered scan** (`scan-memory.ts`): a scan added with a file
+    handle - picked through `chooseScan` or the tour picker, kept in the
+    `scanHandles` side table keyed by the File - is remembered by the
+    tour's id (`rememberScan`, from `EditorSession.debugTour().tourId`) in
+    IndexedDB: the handle, never its bytes, never in the tour. A scan added
+    without one (dropped, a file input) forgets the earlier one. A tour
+    that opens with no scan (`openTourWithScan`, the example included)
+    offers a remembered one in a held toast, "Show the scan again"
+    (`offerRememberedScan`, `runShowScanAgain`): read permission asked in
+    the click, the button busy meanwhile, the scan added as any add is; a
+    refusal or failed read said in a toast with the offer kept, a file gone
+    since said, forgotten and the offer withdrawn. The offer is a file
+    toast, so it goes when another tour opens.
+    The store is IndexedDB (`scanStore`), except in the dev server an
+    e2e may set `window.__tourEditorScanStore` (an init script, a
+    `HandleStore`): a real handle read back from IndexedDB crashes the
+    headless test browsers. Inert in a production build.
+    Every entry starts only while `isEntryIdle` (`editor-view.ts`), and
+    every control of the card (answers, pickers, link field, "Open the
+    editor") is off while it is not - `renderStartCard` draws that from
+    the store, so the card is off too while a tour's scan is being added
+    after its open; while a file is read the modal says "Opening <name>…"; then the tour is drawn and a toast names what opened, or the
+    reason shows in `#open-error` and the card stays (root `CLAUDE.md`,
+    async feedback).
 - **The top bar's menus** (`menu-button.ts`): File (Open…, Save, Save a
   copy…, Tour details…, Add debug data…, the keep-the-walk checkbox,
   Share and publish…), Edit (Undo, Redo; the 3D view's, at a phone's
@@ -260,8 +301,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     else the opened file when it carries a walk (`tourWalk`, its
     pictures from the copy the page reads now), else none.
 - **Add debug data…** (`addDebugData`, M2 step 5 of the debug-captures
-  plan; the panel shows it for every open tour; its file input, or a file
-  dropped on the panel): a debug bundle or a plain Recorder zip, opened
+  plan; the panel shows it for every open tour; the browser's read-only
+  picker through `chooseScan`, else its file input, or a file dropped on
+  the panel): a debug bundle or a plain Recorder zip, opened
   as any zip is (`openTourFile`: the archive caps; the picture cap for
   its thumbnails) and read for whose it is (`readDebugBundle`, given the
   entries' declared sizes so an oversized identity is never read;
@@ -270,7 +312,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   (`added-debug-data.ts`) ahead of the layer's line; a file that is no
   debug data is refused in a toast (`notAddedLine`, from
   `addDebugDataSaying`; `addDebugData` itself returns the outcome, so the
-  open dialog's scan path says it its own way), the layer kept.
+  start card's scan path says it its own way), the layer kept. Every add
+  goes through `addScan`: refused in words while another add runs (a file
+  dropped on the panel then is said, never dropped silently), and a throw
+  said as a refusal (`addScanSafely`), never an unhandled rejection.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
@@ -279,11 +324,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   shows, where the docking takes it into the view's pane with the map
   controls, at its foot on the left and never wider than the pane; back
   in its place in the page over the map; hidden over the 3D view on a
-  phone, whose docks are sheets over the canvas's foot): both open the one `#debug-add-input` and
-  `createAddDebugButton` drives both. The panel over the 3D view is an
+  phone, whose docks are sheets over the canvas's foot): both run the one
+  `chooseScan` (else `#debug-add-input`) and `createAddDebugButton` drives
+  both. The panel over the 3D view is an
   interim place, until the 3D view's bottom panel takes it.
-  Never saved, never drafted, closed with the tour and forgotten at a
-  reload (Q-H); a newer add replaces it; an add that ends after another
+  Never saved, never drafted, closed with the tour and not shown again
+  by itself after a reload (Q-H; only its handle may be remembered, see
+  the remembered scan above); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.
 - **Save** builds the tour (`keepScan` from File's "Keep the debug data
   in the tour file" checkbox item, shown only for a tour that carries a walk and
@@ -342,16 +389,16 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   the page may not write (a refused permission, another tab's name), which
   still downloads, and "Download instead" after an in-place refusal (no
   pick: a download). The fine print says which the browser does.
-- **A tour opened from a link or the sample asks where to save it as it
-  opens**, where the browser adopts a chosen file (`adoptsSavedFile`, the
+- **A tour opened from a link, and a new tour, ask where to save it as it
+  opens** (the example does not: it is only looked at), where the browser adopts a chosen file (`adoptsSavedFile`, the
   first Save's rule: both file dialogs, Android included):
-  `askOpenSaveFile` opens the save dialog IN the sample's click or the
+  `askOpenSaveFile` opens the save dialog IN the start card's click or the
   link's submit, before the fetch, suggesting the name the fetched file
-  will carry (`linkFileName`, the sample's own name; a Drive link without
+  will carry (`linkFileName`, or `new-tour.zip`; a Drive link without
   a `.zip` name gives `tour-<start of its file id>.zip`, so a second Drive
   tour does not offer the first one's file), dated to the second
   (`datedFileName`, local time: `<name>-YYYY-MM-DD-HHMMSS.zip`), so the
-  same link or the sample reopened does not offer the file holding its
+  same link reopened, or a second new tour, does not offer the file holding its
   edited tour, where Enter plus Replace would write the original over it. Asking
   before the fetch is kept on purpose: Chromium opens the dialog only
   within a few seconds of the click, and the fetch can take longer. The fetch runs
@@ -999,7 +1046,8 @@ each followed by a save that still carries the walk - among them; the
 debug layer and "Add debug data…": an added file's captures and line,
 another tour's and a plain recording's lines, a refusal, no save carrying
 it, a reload forgetting it, a drop on the panel shown in place of the
-tour's walk) and `editor-entry.spec.js` (the
+tour's walk, a picked scan remembered across a reload and shown again,
+then said gone) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.
 
 `editor.spec.js` also renames a station through the test hook, closes the

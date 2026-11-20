@@ -138,7 +138,8 @@ test("the sample tour opens with its story's stations on the map", async ({
   // tries; the sample is a story tour, and an editor
   // that listed only codes and notes opened it as an empty world map.
   await page.goto("/edit.html");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator(".toast")).toHaveText(
     "Opened marienplatz-tour.zip: 0 codes, 2 notes, 3 stations",
   );
@@ -407,6 +408,88 @@ test("adds the debug data back beside a tour from its own button, and forgets it
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(0);
 });
 
+test("remembers a scan picked in the picker by tour id, shows it again after a reload, and says when it is gone", async ({
+  page,
+}) => {
+  // Why (editor entry, the remembered scan): a scan is a large file the
+  // creator picked once. This browser remembers where it is - its file
+  // handle, by the tour's id, never its bytes and never in the tour - so
+  // reopening the tour offers "Show the scan again", which asks to read it
+  // again in that click and shows it as the first add did. A file deleted
+  // since is said in words, forgotten, and the offer withdrawn. The store
+  // is a stand-in: a real handle read back from IndexedDB crashes the
+  // headless test browsers (the IndexedDB adapter has its unit tests).
+  await page.addInitScript(() => {
+    // The page's store, kept across reloads in sessionStorage: the stored
+    // handle's name, read back as a handle that looks the file up in OPFS
+    // when read (a deleted file is NotFoundError, as a real handle's).
+    const prefix = "scan-store:";
+    Reflect.set(window, "__tourEditorScanStore", {
+      get: async (key) => {
+        const name = sessionStorage.getItem(prefix + key);
+        if (name === null) return undefined;
+        return {
+          kind: "file",
+          name,
+          requestPermission: async () => "granted",
+          getFile: async () => {
+            const root = await navigator.storage.getDirectory();
+            return (await root.getFileHandle(name)).getFile();
+          },
+        };
+      },
+      put: async (key, handle) => {
+        sessionStorage.setItem(prefix + key, handle.name);
+      },
+      delete: async (key) => {
+        sessionStorage.removeItem(prefix + key);
+      },
+    });
+  });
+  const tour = await editorTour({ tourId: "remembered-scan" });
+  const shown =
+    /^Scan walk-scan\.zip: shown while you edit\..*2 camera captures shown\.$/;
+  const offer = page.locator(".toast", {
+    hasText: "The scan walk-scan.zip was shown beside this tour before.",
+  });
+  const again = offer.getByRole("button", { name: "Show the scan again" });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await offerOpfsFile(
+    page,
+    await debugBundleOf({ tour: "Editor fixture", file: "editor-fixture.zip" }),
+    "walk-scan.zip",
+  );
+  await page.locator("#debug-add").click();
+  await expect(page.locator("#debug-status")).toHaveText(shown);
+
+  await page.reload();
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toHaveText("");
+  await again.click();
+  await expect(page.locator("#debug-status")).toHaveText(shown);
+  await expect(offer).toHaveCount(0);
+
+  // Gone since: said, and the offer withdrawn.
+  await page.reload();
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(again).toBeVisible();
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry("walk-scan.zip");
+  });
+  await again.click();
+  await expect(
+    page.locator(".toast", {
+      hasText: "The scan walk-scan.zip is no longer where it was",
+    }),
+  ).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator("#debug-status")).toHaveText("");
+});
+
 test("File's Add debug data opens the same add as the panel's button", async ({
   page,
 }) => {
@@ -551,55 +634,96 @@ async function dropOnOpenBox(page, files) {
     },
     files.map(({ name, buffer }) => ({ name, bytes: Array.from(buffer) })),
   );
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").dispatchEvent("drop", { dataTransfer: dropped });
+  await page.locator("#start-open").click();
 }
 
-test("a scan chosen in the open dialog is added beside the open tour, and refused with no tour", async ({
+test("a scan chosen where the tour is asked for is kept as the scan, never opened as a tour, and shown once the tour opens", async ({
   page,
 }) => {
-  // Why: a scan is not a tour, so the open dialog never opens it as one.
-  // With no tour open it says what to do first; with a tour open, the same
-  // file is added beside that tour as a scan and the dialog closes, its
-  // status line saying so while it reads (the async-UI rule).
+  // Why: a scan is not a tour, so the start card never opens it as one.
+  // Given where the tour is asked for, it is kept as the card's scan and
+  // the card says so; "Open the editor" waits for a tour; once one is
+  // chosen, the editor opens it and shows the scan beside it, which is
+  // never part of the tour (nothing pending).
   const bundle = await debugBundleOf({
     tour: "Editor fixture",
     file: "editor-fixture.zip",
   });
   await page.goto("/edit.html");
-  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
-  await expect(page.locator("#open-error")).toHaveText(
-    "editor-fixture-debug.zip is a scan, not a tour. Open a tour or start a new one first, then add the scan to it.",
-  );
-  await expect(page.locator("#open-modal")).toBeVisible();
-  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
-  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
-  await openAnother(page);
-  // Every text the status line shows, kept: the add may be quicker than a
-  // poll.
-  await page.evaluate(() => {
-    const status = document.getElementById("open-status");
-    const seen = /** @type {string[]} */ ([]);
-    Object.assign(window, { statusSeen: seen });
-    if (status === null) return;
-    new MutationObserver(() => {
-      seen.push(status.textContent ?? "");
-    }).observe(status, { childList: true, characterData: true, subtree: true });
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
+  await page.locator("#drop").click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "editor-fixture-debug.zip",
+    mimeType: "application/zip",
+    buffer: bundle,
   });
-  await openThroughChooser(page, bundle, "editor-fixture-debug.zip");
+  await expect(page.locator("#open-status")).toHaveText(
+    "editor-fixture-debug.zip is a scan, not a tour: it is kept below as the scan. Now choose your tour.",
+  );
+  await expect(page.locator("#start-scan-held")).toHaveText(
+    "Scan: editor-fixture-debug.zip",
+  );
+  await expect(page.locator("#start-open")).toBeDisabled();
+  await expect(page.locator("#start-summary")).toHaveText(
+    "Choose your tour file or paste its link first.",
+  );
+  await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#open-modal")).toBeHidden();
-  expect(
-    await page.evaluate(
-      () =>
-        /** @type {{ statusSeen: string[] }} */ (
-          /** @type {unknown} */ (window)
-        ).statusSeen,
-    ),
-  ).toContain("Adding the scan editor-fixture-debug.zip…");
-  await expect(page.locator("#open-status")).toHaveText("");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await expect(page.locator("#debug-status")).toContainText(
     "Scan editor-fixture-debug.zip: shown while you edit.",
   );
+  await expect(page.locator("#save-status")).toHaveText("No changes");
+});
+
+test("a new tour takes a scan on the start card, opens with it shown and the first station's hint, and a tour is refused as the scan", async ({
+  page,
+}) => {
+  // Why: the start card's second question adds a scan of the place to a
+  // new tour too. A tour given there is refused in words that say where it
+  // goes (it would otherwise be lost as a scan); a scan is held, named in
+  // the summary, and shown beside the new tour once it opens - never part
+  // of the tour, so nothing is pending. An empty tour says how to begin.
+  await noSavePicker(page);
+  await page.goto("/edit.html");
+  await page.locator(".start-choice:has(#start-new)").click();
+  await expect(page.locator("#start-scan-step")).toBeVisible();
+  await expect(page.locator("#start-tour-step")).toBeHidden();
+  await page.locator("#start-scan-input").setInputFiles({
+    name: "editor-fixture.zip",
+    mimeType: "application/zip",
+    buffer: await editorTour(),
+  });
+  await expect(page.locator("#open-error")).toHaveText(
+    'editor-fixture.zip is a tour, not a scan. To open it, choose "A tour I made" above.',
+  );
+  await expect(page.locator("#start-scan-held")).toHaveText("No scan");
+  await page.locator("#start-scan-input").setInputFiles({
+    name: "walk-debug.zip",
+    mimeType: "application/zip",
+    buffer: await debugBundleOf({ tour: null, file: null }),
+  });
+  await expect(page.locator("#start-scan-held")).toHaveText(
+    "Scan: walk-debug.zip",
+  );
+  await expect(page.locator("#start-summary")).toHaveText(
+    "Starts a new, empty tour. The editor asks where to save it first, then shows the scan walk-debug.zip.",
+  );
+  await page.locator("#start-open").click();
+  await expect(page.locator("#open-modal")).toBeHidden();
+  await expect(page.locator("#debug-status")).toContainText(
+    "Scan walk-debug.zip: shown while you edit.",
+  );
+  await expect(
+    page.locator(".toast", {
+      hasText: "Right-click the ground to place your first station.",
+    }),
+  ).toBeVisible();
   await expect(page.locator("#save-status")).toHaveText("No changes");
 });
 
@@ -643,7 +767,7 @@ test("a tour and a scan dropped together open the tour, then add the scan; an un
   );
 });
 
-test("says the sample is being fetched while it is, and why it failed when it does", async ({
+test("says the example is being fetched while it is, and why it failed when it does", async ({
   page,
 }) => {
   // Why (root CLAUDE.md, async feedback; E1 review #5): the in-progress
@@ -659,16 +783,17 @@ test("says the sample is being fetched while it is, and why it failed when it do
     await route.fulfill({ status: 404, body: "" });
   });
   await page.goto("/edit.html");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#open-status")).toHaveText(
-    "Fetching the sample tour…",
+    "Fetching the example tour…",
   );
-  await expect(page.locator("#sample-btn")).toBeDisabled();
+  await expect(page.locator("#start-open")).toBeDisabled();
   answer();
   await expect(page.locator("#open-error")).toHaveText(
-    "The sample tour could not be fetched: the sample answered 404",
+    "The example tour could not be fetched: the example answered 404",
   );
-  await expect(page.locator("#sample-btn")).toBeEnabled();
+  await expect(page.locator("#start-open")).toBeEnabled();
 });
 
 test("Open another tour can be cancelled, and a refused file keeps the open tour", async ({
@@ -1058,7 +1183,8 @@ test("the file chooser can be reached and opened from the keyboard", async ({
 }) => {
   // Why (PR #612 review): the chooser was a styled span in a label around
   // a hidden input, none of which is in the tab order, so a keyboard user
-  // could open only the sample.
+  // could open only the sample. The whole start card answers the keyboard:
+  // the answer by Space, the chooser and "Open the editor" by Enter.
   // Listening from before the page loads: Playwright starts catching file
   // choosers when the first listener is added, asynchronously, and under
   // load an Enter pressed right after it opened a chooser it had not yet
@@ -1068,6 +1194,9 @@ test("the file chooser can be reached and opened from the keyboard", async ({
   // The button answers once the page script is wired; before, Enter on a
   // button inside a label does nothing.
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await page.locator("#start-tour").focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator("#start-tour")).toBeChecked();
   const choose = page.locator("#choose-btn");
   await choose.focus();
   await expect(choose).toBeFocused();
@@ -1079,6 +1208,10 @@ test("the file chooser can be reached and opened from the keyboard", async ({
     mimeType: "application/zip",
     buffer: await editorTour(),
   });
+  const open = page.locator("#start-open");
+  await expect(open).toBeEnabled();
+  await open.focus();
+  await page.keyboard.press("Enter");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
 });
 
@@ -1093,7 +1226,9 @@ async function inPlaceTourEdited(page, text) {
   await autosaveOutOfTheWay(page);
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await editPin(page, "Town hall", text);
 }
@@ -1237,7 +1372,9 @@ test("saves in place to the file it opened, and keeps the walk recording @pr", a
   // only copy of the walk, an in-place save never leaves the walk out.
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await expect(fileItem(page, "keepWalk")).toHaveJSProperty("hidden", true);
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
@@ -1263,7 +1400,9 @@ test("refuses to write over a file that changed meanwhile, and offers the downlo
   await noSavePicker(page);
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("Saved first");
@@ -1306,7 +1445,9 @@ test("opens a file it may not write and saves it as a download", async ({
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip", {
     permission: "denied",
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(
     page.locator(".toast", { hasText: "did not allow saving to this file" }),
   ).toBeVisible();
@@ -1357,12 +1498,16 @@ test("a second tab on a file of the same name saves a copy unless told to edit h
   // overwrite the other's work; the second is told, and may still choose.
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   const second = await context.newPage();
   await second.goto("/edit.html");
   await offerOpfsFile(second, await wrappedTour({ pin: true }), "wrapped.zip");
+  await second.locator(".start-choice:has(#start-tour)").click();
   await second.locator("#choose-btn").click();
+  await second.locator("#start-open").click();
   const told = second.locator(".toast", { hasText: "Another tab is editing" });
   await expect(told).toBeVisible();
   await expect(
@@ -1382,13 +1527,17 @@ test("a second tab that edits anyway keeps the walk, in its copy and in place", 
   // this rule alone keeps it (seen red with the rule switched off).
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   const second = await context.newPage();
   await noSavePicker(second);
   await second.goto("/edit.html");
   await offerOpfsFile(second, await wrappedTour({ pin: true }), "wrapped.zip");
+  await second.locator(".start-choice:has(#start-tour)").click();
   await second.locator("#choose-btn").click();
+  await second.locator("#start-open").click();
   const told = second.locator(".toast", { hasText: "Another tab is editing" });
   await expect(told).toBeVisible();
   await expect(fileItem(second, "keepWalk")).toHaveJSProperty("hidden", true);
@@ -1444,7 +1593,9 @@ test("a write that fails keeps the changes and offers the download", async ({
       ];
     };
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("Not written");
@@ -1463,10 +1614,14 @@ test("the same file opened again in the same tab is still saved in place", async
   // go, so the tab was told another tab was editing its own file.
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await openAnother(page);
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("Opened twice");
@@ -1517,7 +1672,9 @@ test("a refusal after a save was built still offers the download, and a later op
       ];
     };
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await page.locator("#rail .row", { hasText: "Wrapped pin" }).click();
   await page.locator("#card textarea").fill("Built, not written");
@@ -1546,7 +1703,9 @@ test("a refusal after a save was built still offers the download, and a later op
     void dialog.accept();
   });
   await openAnother(page);
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await expect(fileItem(page, "keepWalk")).toHaveJSProperty("hidden", true);
   await expect(
@@ -1662,7 +1821,9 @@ test("saves by itself a few seconds after a change, quietly, and the next open f
   await page.clock.install();
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "Saved by itself");
   await expect(page.locator("body")).toHaveAttribute(
@@ -1683,7 +1844,9 @@ test("saves by itself a few seconds after a change, quietly, and the next open f
   await answerTiles(next);
   await next.goto("/edit.html");
   await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator(".start-choice:has(#start-tour)").click();
   await next.locator("#choose-btn").click();
+  await next.locator("#start-open").click();
   await expect(
     next.locator("#rail .row", { hasText: "Saved by itself" }),
   ).toHaveCount(1);
@@ -1704,7 +1867,9 @@ test("a delete is not written while its Undo is offered, and Ctrl+Z still brings
   await page.clock.install();
   await page.goto("/edit.html");
   await offerOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
@@ -1769,7 +1934,9 @@ async function fountainDeletedInPlace(page, options = {}) {
   if (options.clock === true) await page.clock.install();
   await page.goto("/edit.html");
   await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await page.locator("#rail .row", { hasText: "Fountain" }).click();
   await page.locator("#card button", { hasText: "Delete" }).click();
@@ -1821,7 +1988,9 @@ test("an undo across an in-place save writes the file again at once, and a reloa
   await answerTiles(next);
   await next.goto("/edit.html");
   await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator(".start-choice:has(#start-tour)").click();
   await next.locator("#choose-btn").click();
+  await next.locator("#start-open").click();
   await expect(next.locator("#rail .row", { hasText: "Fountain" })).toHaveCount(
     1,
   );
@@ -2154,7 +2323,9 @@ test("a write that fails pauses autosave until Save, with no write loop", async 
     // @ts-expect-error - read by the picker.
     window.__failWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "First try");
   await page.clock.runFor(3_500);
@@ -2212,7 +2383,9 @@ test("an edit made while an autosave writes is kept for the next one, and by the
     // @ts-expect-error - read by the picker.
     window.__holdWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "In the first autosave");
   await page.clock.runFor(600_500);
@@ -2243,7 +2416,9 @@ test("an edit made while an autosave writes is kept for the next one, and by the
   await answerTiles(next);
   await next.goto("/edit.html");
   await offerExistingOpfsFile(next, "editor-fixture.zip");
+  await next.locator(".start-choice:has(#start-tour)").click();
   await next.locator("#choose-btn").click();
+  await next.locator("#start-open").click();
   await expect(
     next.locator("#rail .row", { hasText: "In the first autosave" }),
   ).toHaveCount(1);
@@ -2268,7 +2443,9 @@ test("autosave waits while another tour is being chosen, and goes on when that i
   await page.clock.install();
   await page.goto("/edit.html");
   await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "Kept while choosing");
   page.once("dialog", (dialog) => {
@@ -2301,7 +2478,9 @@ test("a large tour is saved when Save is pressed, and the status line says so", 
   await page.clock.install();
   await page.goto("/edit.html");
   await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await editTownHall(page, "Saved by hand");
   await expect(page.locator("#save-status")).toHaveText(
@@ -2327,7 +2506,9 @@ test("a Save that fails does not start an autosave at once", async ({
   await page.clock.install();
   await page.goto("/edit.html");
   await offerCountedOpfsFile(page, await editorTour(), "editor-fixture.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await page.evaluate(() => {
     // @ts-expect-error - read by the picker.
@@ -2379,7 +2560,9 @@ test("a Ctrl+S pressed while the last tour's save still ran is not run later, un
     // @ts-expect-error - read by the picker.
     window.__holdWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "Written while the next tour opens");
   await page.clock.runFor(3_500);
@@ -2392,7 +2575,9 @@ test("a Ctrl+S pressed while the last tour's save still ran is not run later, un
   });
   await openAnother(page);
   await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
   await page.keyboard.press("Control+s");
   await page.evaluate(() => {
@@ -2460,7 +2645,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's save still ran sav
     // @ts-expect-error - read by the picker.
     window.__holdWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "Written while the next tour opens");
   await page.clock.runFor(3_500);
@@ -2473,7 +2660,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's save still ran sav
   });
   await openAnother(page);
   await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
   await editTownHall(page, "Saved by Ctrl+S in the second tour");
   await page.keyboard.press("Control+s");
@@ -2510,7 +2699,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's Ctrl+S save still 
     // @ts-expect-error - read by the picker.
     window.__holdWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
   await editTownHall(page, "Saved by Ctrl+S in the first tour");
   await page.keyboard.press("Control+s");
@@ -2523,7 +2714,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's Ctrl+S save still 
   });
   await openAnother(page);
   await offerCountedOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
   await editTownHall(page, "Saved by Ctrl+S in the second tour");
   await page.keyboard.press("Control+s");
@@ -2562,7 +2755,9 @@ test("a Ctrl+S pressed in the sample while its file waits for the last tour's sa
     // @ts-expect-error - read by the picker.
     window.__holdWrites = true;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("editor-fixture.zip");
   await editTownHall(page, "Saved by Ctrl+S in the first tour");
   await page.keyboard.press("Control+s");
@@ -2575,7 +2770,8 @@ test("a Ctrl+S pressed in the sample while its file waits for the last tour's sa
   });
   await openAnother(page);
   await clickBoundSavePicker(page, "my-sample.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   await page.locator("#no-gps-input").check();
   await page.keyboard.press("Control+s");
@@ -2626,7 +2822,9 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
     await editorTour({ station: true, farStation: true }),
     "nogps.zip",
   );
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   const setting = page.locator("#no-gps-input");
   const warnings = page.locator("#no-gps-warnings");
@@ -2658,7 +2856,9 @@ test("the needs-no-GPS setting: saved in tour.json, shown on when reopened, left
   await answerTiles(next);
   await next.goto("/edit.html");
   await offerExistingOpfsFile(next, "nogps.zip");
+  await next.locator(".start-choice:has(#start-tour)").click();
   await next.locator("#choose-btn").click();
+  await next.locator("#start-open").click();
   await expect(next.locator("#tour-name")).toHaveText("Editor fixture");
   await expect(next.locator("#no-gps-input")).toBeChecked();
   await expect(next.locator("#no-gps-warnings")).toContainText(
@@ -2863,7 +3063,9 @@ test("Done saves what is pending, says where it is and how to update the tour, a
   await noSavePicker(page);
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await editPin(page, "Wrapped pin", "Done saves this");
   await publish(page);
@@ -2952,7 +3154,9 @@ test("Done shows its save in progress and stays shut when the save fails, and a 
     await wrappedTour({ pin: true }),
     "wrapped.zip",
   );
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await editPin(page, "Wrapped pin", "Held, then failed");
   await page.evaluate(() => {
@@ -3194,7 +3398,9 @@ async function clickBoundSavePicker(page, name, options = {}) {
 async function doneWithWrappedTour(page) {
   await page.goto("/edit.html");
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   await editPin(page, "Wrapped pin", "Before the move");
   await publish(page);
@@ -3294,7 +3500,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's debug data was mov
   });
   await expect(page.locator("#done-modal")).toBeHidden();
   await offerOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
   await editTownHall(page, "Saved by Ctrl+S during the move");
   await page.keyboard.press("Control+s");
@@ -3503,7 +3711,9 @@ test("a tour with no file to write into is downloaded without the walk on a seco
   await offerOpfsFile(page, await wrappedTour({ pin: true }), "wrapped.zip", {
     permission: "denied",
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("Wrapped fixture");
   // Nothing edited: Done opens without a save.
   await publish(page);
@@ -3818,6 +4028,7 @@ test("an undo across the first save into a chosen file writes that file again", 
  * @param {string} name
  */
 async function dropOnDropBox(page, buffer, name) {
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.evaluate(
     ({ bytes, fileName }) => {
       const data = new DataTransfer();
@@ -3840,6 +4051,7 @@ async function dropOnDropBox(page, buffer, name) {
     },
     { bytes: [...buffer], fileName: name },
   );
+  await page.locator("#start-open").click();
 }
 
 /**
@@ -3998,8 +4210,9 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   page.on("download", () => {
     downloads += 1;
   });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#link-input").fill(LINKED_TOUR);
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   // Asked once, in the click, under the name the link's file carries,
   // dated.
@@ -4058,22 +4271,23 @@ test("a tour opened from its link asks where to save it in the click, and is tha
   );
 });
 
-test("the sample asks where to save it in its click, and the chosen file holds it", async ({
+test("a new tour asks where to save it in its click, and the chosen file holds it", async ({
   page,
 }) => {
-  // Why: the sample is the other tour without a file of its own; it must
+  // Why: a new tour is the other tour without a file of its own; it must
   // ask in its own click as a link does, and the file must hold the tour.
   await withBothDialogs(page);
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "my-sample.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("my-sample.zip", {
     timeout: 15000,
   });
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
-  const title = await page.locator("#tour-name").textContent();
+  // The new, empty tour itself: no stations yet.
   expect(tourJsonOf(await readOpfsTour(page, "my-sample.zip"))).toContain(
-    `"title": ${JSON.stringify(title)}`,
+    `"stations": []`,
   );
 });
 
@@ -4091,10 +4305,11 @@ test("a link that fails after a file was picked writes nothing into it, keeps th
   await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page
     .locator("#link-input")
     .fill("http://127.0.0.1:5197/no-cors/tour.zip");
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#open-error")).toContainText(
     "Download the file to this computer, then choose it above.",
     { timeout: 15000 },
@@ -4111,7 +4326,7 @@ test("a link that fails after a file was picked writes nothing into it, keeps th
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
   expect(await opfsSize(page, "never-written.zip")).toBe(0);
   await expect(page.locator("#topbar")).toBeHidden();
-  await expect(page.locator("#link-btn")).toBeEnabled();
+  await expect(page.locator("#start-open")).toBeEnabled();
 });
 
 test("a link that fails after an existing file was picked never deletes it, and says so", async ({
@@ -4124,10 +4339,11 @@ test("a link that fails after an existing file was picked never deletes it, and 
   await withBothDialogs(page);
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "kept.zip", { seed: "an older tour" });
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page
     .locator("#link-input")
     .fill("http://127.0.0.1:5197/no-cors/tour.zip");
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(
     page.locator(".toast", {
       hasText:
@@ -4150,7 +4366,8 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "full-disk.zip", { failWrite: true });
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   const toastLine = page.locator(".toast", {
     hasText: "The tour is open, but full-disk.zip could not be written",
   });
@@ -4160,7 +4377,7 @@ test("a write refused at the open says so in a toast that stays, keeps the file,
   );
   await expect(toastLine).not.toContainText("Save asks for a file again");
   await expect(page.locator("#save-status")).toHaveText("No changes");
-  await expect(page.locator("#tour-file")).toHaveText("marienplatz-tour.zip");
+  await expect(page.locator("#tour-file")).toHaveText("new-tour.zip");
   expect(await opfsSize(page, "full-disk.zip")).toBe(0);
   // A toast that stays: still there long after a passing one would go.
   await page.clock.runFor(30_000);
@@ -4187,8 +4404,9 @@ test("while the write at the open runs, it holds the save slot: Save is unavaila
   await page.clock.install({ time: new Date(2026, 9, 7, 9, 0) });
   await page.goto("/edit.html");
   await heldWriteSavePicker(page, "slow.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#link-input").fill(LINKED_TOUR);
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#save-status")).toHaveText(
     "Saving into slow.zip…",
     { timeout: 15000 },
@@ -4232,7 +4450,8 @@ test("a file chosen at the open that another tab is editing is not said to save 
     );
   });
   await clickBoundSavePicker(page, "locked.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   await expect(
     page.locator(".toast", {
       hasText: "Another tab is editing a file named locked.zip.",
@@ -4262,7 +4481,8 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "never-written.zip", { dismiss: true });
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#topbar")).toBeVisible({ timeout: 15000 });
   expect(await page.evaluate(() => Reflect.get(window, "__walkPicks"))).toBe(1);
   expect(await opfsSize(page, "never-written.zip")).toBe(0);
@@ -4277,11 +4497,11 @@ test("a dismissed dialog at the open leaves the tour in this browser, said in th
   );
   expect(names).toHaveLength(2);
   for (const suggested of names) {
-    expect(suggested).toMatch(/^marienplatz-tour-2026-10-07-0905\d{2}\.zip$/);
+    expect(suggested).toMatch(/^new-tour-2026-10-07-0905\d{2}\.zip$/);
   }
 });
 
-test("on Android a tour from the sample asks for its file as on a desktop, and saves into it by itself", async ({
+test("on Android a new tour asks for its file as on a desktop, and saves into it by itself", async ({
   page,
 }) => {
   // Why: Android was held back from adopting a picked file (a content URI,
@@ -4299,7 +4519,8 @@ test("on Android a tour from the sample asks for its file as on a desktop, and s
   await page.clock.install();
   await page.goto("/edit.html");
   await clickBoundSavePicker(page, "phone-sample.zip");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-new)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("phone-sample.zip", {
     timeout: 15000,
   });
@@ -4330,8 +4551,9 @@ test("Done names the hosted file by the dated save's name, in the session that o
   await page.clock.install({ time: new Date(2026, 9, 7, 9, 5) });
   await page.goto("/edit.html");
   await heldWriteSavePicker(page, dated);
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#link-input").fill(LINKED_TOUR);
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#save-status")).toHaveText(
     `Saving into ${dated}…`,
     { timeout: 15000 },
@@ -4373,12 +4595,17 @@ test("a write at the open still running when another tour is opened lets the sav
   await autosaveOutOfTheWay(page);
   await page.goto("/edit.html");
   await heldWriteSavePicker(page, "slow.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#link-input").fill(LINKED_TOUR);
-  await page.locator("#link-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#save-status")).toHaveText(
     "Saving into slow.zip…",
     { timeout: 15000 },
   );
+  // The write still runs, so the unsaved-work guard asks first.
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
   await openAnother(page);
   await dropOnDropBox(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
@@ -4412,7 +4639,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's copy was written s
   });
   await openAnother(page);
   await offerOpfsFile(page, await editorTour(), "second.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
   await editTownHall(page, "Saved in the second tour");
   await page.keyboard.press("Control+s");

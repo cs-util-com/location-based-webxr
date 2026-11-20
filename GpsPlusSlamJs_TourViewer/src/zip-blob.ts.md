@@ -23,7 +23,10 @@ carry.
   `sizeOf` and `read` use the first entry of such a name. `maxEntryBytes`
   caps what one read inflates (the framework's `readZipEntryBlob` cap,
   an `ArchiveLimitError` of kind `"entry-bytes"` past it), below the
-  archive's budget, for an entry a caller wants small. Reads only the directory's
+  archive's budget, for an entry a caller wants small. Every read of one
+  directory is charged to ONE decompression budget (the framework's rule:
+  one budget per archive), so many reads cannot each inflate the whole
+  allowance. Reads only the directory's
   bytes plus what `use` reads, so it suits a large File too: the editor's
   file classifier (`editor/classify-editor-file.ts`) sorts a scan by it
   without reading the scan.

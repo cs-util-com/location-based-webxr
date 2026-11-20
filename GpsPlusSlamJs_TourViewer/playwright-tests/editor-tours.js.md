@@ -36,7 +36,8 @@ moved to a spec of their own, so both specs build the same tours.
     hour.
 - Files:
   - `openThroughChooser(page, buffer, name)` - the tour opened through the
-    real file chooser of `#drop`.
+    start card: "A tour I made" answered, the real file chooser of `#drop`,
+    then "Open the editor".
   - `offerOpfsFile(page, buffer, name, { permission })` - the bytes written
     to the origin-private file `name`, which the page's open picker hands
     out (a real handle, so an in-place write runs for real).

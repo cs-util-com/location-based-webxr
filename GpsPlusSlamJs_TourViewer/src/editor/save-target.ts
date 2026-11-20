@@ -16,6 +16,7 @@ import {
   createSaveTarget as createFileSaveTarget,
   holdLock,
   pickSaveFile as pickSaveFileOfType,
+  pickReadableFile,
   pickWritableFile,
   releaseUnusedPick as releaseUnusedPickSaying,
   type LockHold,
@@ -49,6 +50,14 @@ const LOCK_PREFIX = "gps-plus-slam/tour-viewer-editor/";
 /** The open dialog's filter: a tour is a zip. */
 const TOUR_FILE_TYPE: DownloadFileType = {
   description: "Tour file",
+  mimeType: "application/zip",
+  extension: ".zip",
+};
+
+/** The scan dialog's filter: a scan (debug data, a Recorder recording)
+ *  is a zip too. */
+const SCAN_FILE_TYPE: DownloadFileType = {
+  description: "Scan",
   mimeType: "application/zip",
   extension: ".zip",
 };
@@ -105,6 +114,16 @@ export function saveFinePrint(win: PickerWindow & SavePickerWindow): string {
  */
 export function pickTourFile(win: PickerWindow): Promise<PickOutcome> {
   return pickWritableFile(win, TOUR_FILE_TYPE);
+}
+
+/**
+ * Let the creator pick a scan to show beside the tour: only read, so no
+ * permission is asked (the framework's `pickReadableFile`); its handle
+ * may be remembered (`scan-memory.ts`). `unavailable` as for a tour: the
+ * page then uses its file input.
+ */
+export function pickScanFile(win: PickerWindow): Promise<PickOutcome> {
+  return pickReadableFile(win, SCAN_FILE_TYPE);
 }
 
 /**

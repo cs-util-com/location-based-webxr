@@ -114,12 +114,24 @@ AR (tour editor plan 2026-10-17-1816, W1).
 - `#rail` - the codes, pins and photos (`src/editor/editor-rail.ts`).
 - `#card`, `#offscreen-chip` - the card beside the selected marker
   (`src/editor/editor-card.ts`).
-- `#open-modal` - "Open a tour": the file input inside `#drop` (a click
-  opens the chooser; a drop works too), `#open-status` (the async state),
-  `#open-error`, "Use the sample tour", and `#link-form` (`#link-input`,
-  `#link-btn` "Open the link": a hosted tour from its link, tour editor
-  plan 2026-10-17-1816 W1; a text input, so the dialog, not the browser,
-  says what is wrong with a link).
+- `#open-modal` - the start card, "Start in the editor"
+  (`src/editor/start-card.ts`): `#start-from`, question 1 "What do you
+  start from?" as three `.start-choice` radios (`#start-tour` "A tour I
+  made (.zip or link)", `#start-new` "A new, empty tour", `#start-example`
+  "The example tour - just look around"); `#start-tour-step` (shown for
+  the first) with the file input inside `#drop` (a click opens the
+  chooser; a drop works too; `#start-tour-held` names the held file) and
+  `#link-form` (`#link-input`, a text input, so the dialog, not the
+  browser, says what is wrong with a link; Enter opens it);
+  `#start-scan-step` (shown for the first two), question 2 "Add a scan of
+  the place? (optional)", its line saying the scan is shown while editing
+  and never saved into the tour, `#start-scan-held`, `#start-scan-remove`
+  and `#start-scan-btn` (the browser's file picker where it exists, so the
+  scan can be remembered by the tour's id, else `#start-scan-input`); then
+  `#open-status` (the
+  async state), `#open-error`, `#start-summary` (what the button will do)
+  and `#start-open` "Open the editor", disabled until the answers name
+  something to open.
 - `#open-fineprint` - what Save does, written per browser by
   `edit-main.ts` (`saveFinePrint`); the markup's text is the one for a
   browser without the file picker. A span inside the fine print, beside
