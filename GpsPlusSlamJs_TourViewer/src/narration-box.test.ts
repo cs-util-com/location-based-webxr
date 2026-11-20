@@ -803,6 +803,43 @@ describe("createNarrationBox in travel mode", () => {
     expect(box.element.classList.contains("nb-nopointer")).toBe(false);
   });
 
+  // Why: the flying words land on the ghost's resting place; it is read
+  // from the layout (offsets, which ignore the box's fade-in shift), not
+  // from the DOM on every frame, and the box is centred by a -50 % shift.
+  it("gives its resting rectangle from the layout", () => {
+    const { box, content } = make();
+    const el = box.element;
+    const set = (name: string, value: number): void => {
+      Object.defineProperty(el, name, { configurable: true, value });
+    };
+    set("offsetLeft", 512);
+    set("offsetTop", 640);
+    set("offsetWidth", 272);
+    set("offsetHeight", 108);
+    expect(box.restingRect()).toBeNull();
+    box.show(content, "travel");
+    expect(box.restingRect()).toEqual({ x: 376, y: 640, w: 272, h: 108 });
+    set("offsetTop", 600);
+    expect(box.restingRect()?.y).toBe(640);
+    window.dispatchEvent(new Event("resize"));
+    expect(box.restingRect()?.y).toBe(600);
+    box.hide();
+    expect(box.restingRect()).toBeNull();
+  });
+
+  // Why: the scrub's e2e reads the line the voice is on, as a float, to
+  // pin that one line of finger travel is one line of text.
+  it("reports the voice's line as a float", () => {
+    const { box, clock, content } = make();
+    box.show(content, "travel");
+    clock.seek(2 * 4 * WORD_MS);
+    box.tick();
+    expect(box.state().line).toBeCloseTo(2, 6);
+    clock.seek(2 * 4 * WORD_MS + 2 * WORD_MS);
+    box.tick();
+    expect(box.state().line).toBeCloseTo(2.5, 6);
+  });
+
   it("has a head row with the hint only in travel mode", () => {
     const { box, clock, content } = make();
     box.show(content);

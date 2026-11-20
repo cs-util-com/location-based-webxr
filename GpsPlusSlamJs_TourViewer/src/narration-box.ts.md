@@ -41,6 +41,11 @@ and what.
     at the last `layout()` (the same object until the box is laid out
     anew) and this frame's voice time, lit word, scroll, scrub and hint;
     null when hidden or in the natural mode.
+  - `restingRect()` - where the box rests on the page, `{ x, y, w, h }`
+    in CSS px from its layout (`offsetLeft` less half its width, as the
+    box is centred with a translate; `offsetTop`), not from
+    `getBoundingClientRect`, so a fade or a transform never moves it; the
+    travelling box docks its words there. Null while not shown.
   - `beginPress({ id, x, y, linePx })`, `movePress(x, y)`,
     `endPress("up" | "cancel", x, y)` - a finger forwarded from
     elsewhere (the plate), in screen px, with one line of the words as
@@ -51,7 +56,9 @@ and what.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
   - `state()` - what a test or the check page reads: shown, key, lit word
-    and its text, lines, rows, scroll (in lines), scrubbing.
+    and its text, lines, rows, scroll (in lines), scrubbing. `line` is the
+    voice's line as a float (`lineFloatAt` at the scrub time while
+    dragging, else at the voice time).
   - `dispose()` - removes the box and its signs and tells the store it is
     hidden.
 - `NarrationBoxContent` - `key`, `title`, `speaker { name, color }`,

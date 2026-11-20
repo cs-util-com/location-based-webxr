@@ -10,19 +10,35 @@
  * @see travelling-box-rules.ts.md
  */
 
-/** Where the words are: on their plate in the world, docked, or hidden. */
-export type TravelPlace = "plate" | "dock" | "hidden";
+/** Where a travelling surface is: on its plate in the world, docked at
+ *  the screen, folded into a small mark (a surface that wants the dock
+ *  while another holds it, when it can fold), or hidden. */
+export type TravelPlace = "plate" | "dock" | "fold" | "hidden";
+
+/** Why a surface hides, as its adapter reports it (the words: no voice,
+ *  outside the station, the reading sheet open; in that order). */
+export type TravelHideWhy = "no voice" | "outside the station" | "sheet open";
 
 /** Why `wantPlace` chose its place, for the log and the debug readout. */
 export type TravelWhy =
   | "not travelling"
-  | "no voice"
-  | "outside the station"
-  | "sheet open"
+  | TravelHideWhy
   | "out of view"
   | "turned away"
   | "too small"
+  | "slot taken"
   | "readable";
+
+/** One size the plate must reach on screen to be used there: the letter
+ *  (em, CSS px), a picture's height or the smallest control to touch. */
+export interface TravelGate {
+  readonly kind: "letter" | "picture" | "touch";
+  /** Its size on screen this frame (CSS px). */
+  readonly px: number;
+  /** The size it must reach (a plate already shown keeps down to
+   *  `thr x keep`). */
+  readonly thr: number;
+}
 
 /** Which letter size the threshold reads: the smaller of the drawn
  *  height and width (catches squashed text), or the height alone. */
@@ -72,12 +88,12 @@ export const TRAVEL_EDGE = { enter: 0.88, keep: 0.95 } as const;
 
 /** A corner's clip coordinates with w at or under this are behind, or too
  *  close to, the eye to measure. */
-const MIN_W = 0.05;
+export const TRAVEL_MIN_W = 0.05;
 
 /**
  * The plate's size (m) for a box of `boxCssW` x `boxCssH` CSS px at
- * `fontPx`: one em is `TRAVEL_PLATE.emM`, so the plate keeps the box's
- * aspect exactly.
+ * `fontPx`: one em is `emM` metres (the sign's words: `TRAVEL_PLATE.emM`),
+ * so the plate keeps the box's aspect exactly.
  *
  * @throws RangeError when a size is not a positive finite number.
  */
@@ -85,13 +101,14 @@ export function plateSizeM(
   boxCssW: number,
   boxCssH: number,
   fontPx: number,
+  emM: number = TRAVEL_PLATE.emM,
 ): { widthM: number; heightM: number } {
-  for (const v of [boxCssW, boxCssH, fontPx]) {
+  for (const v of [boxCssW, boxCssH, fontPx, emM]) {
     if (!Number.isFinite(v) || v <= 0) {
       throw new RangeError(`plate sizes must be positive, got ${String(v)}`);
     }
   }
-  const m = TRAVEL_PLATE.emM / fontPx;
+  const m = emM / fontPx;
   return { widthM: boxCssW * m, heightM: boxCssH * m };
 }
 
@@ -193,10 +210,10 @@ export function plateMetrics(
   }
   for (let i = 0; i < 4; i++) {
     if (!Number.isFinite(centreClip[i])) return INVALID;
-    if (cornersClip[i * 4 + 3]! <= MIN_W) return INVALID;
+    if (cornersClip[i * 4 + 3]! <= TRAVEL_MIN_W) return INVALID;
   }
   const cw = centreClip[3]!;
-  if (cw <= MIN_W) return INVALID;
+  if (cw <= TRAVEL_MIN_W) return INVALID;
   const ndcX = centreClip[0]! / cw;
   const ndcY = centreClip[1]! / cw;
   const letterPxH =
@@ -233,49 +250,66 @@ export function facingAngleDeg(
 
 /** What `wantPlace` reads this frame. */
 export interface WantInput {
-  /** The travelling box is in use (the text's words travel). */
+  /** The surface travels at all (its words are in the travel mode). */
   readonly travelling: boolean;
-  /** The voice is there to be followed. */
-  readonly voice: boolean;
-  readonly inStation: boolean;
-  /** The reading sheet is open over the view. */
-  readonly sheetOpen: boolean;
+  /** Why the surface hides, from its adapter, or null. */
+  readonly hideWhy: TravelHideWhy | null;
+  /** The sizes the plate must reach on screen (`letterGate` for words). */
+  readonly gates: readonly TravelGate[];
   readonly metrics: PlateMetrics;
   /** `facingAngleDeg` of the plate. */
   readonly angleDeg: number;
-  /** The words are on their plate now (the hysteresis side). */
+  /** The surface is on its plate now (the hysteresis side). */
   readonly onPlate: boolean;
+  /** The surface owns its screen slot (a surface alone always does). */
+  readonly slotFree: boolean;
+  /** It can fold into a mark when it would dock without the slot. */
+  readonly canFold: boolean;
 }
 
-/** Where the words want to be this frame, and why, in the prototype's
- *  order: the hiding reasons first, then what docks, then the plate. */
+/** The letter gate of a words plate: the em as drawn (the knob's metric:
+ *  the smaller of height and width, or the height alone) against `thr`. */
+export function letterGate(
+  metrics: PlateMetrics,
+  knobs: Pick<TravellingBoxKnobs, "metric" | "thr">,
+): TravelGate {
+  return {
+    kind: "letter",
+    px: knobs.metric === "h" ? metrics.letterPxH : metrics.letterPx,
+    thr: knobs.thr,
+  };
+}
+
+/** Where the surface wants to be this frame, and why, in the prototype's
+ *  order: the hiding reasons first, then what docks, then the plate. A
+ *  surface that would dock without owning its slot folds when it can,
+ *  else stays on its plate ("slot taken"). */
 export function wantPlace(
   input: WantInput,
   knobs: TravellingBoxKnobs,
 ): { place: TravelPlace; why: TravelWhy } {
-  const hide = hiddenWhy(input);
-  if (hide !== null) return { place: "hidden", why: hide };
+  if (!input.travelling) return { place: "hidden", why: "not travelling" };
+  if (input.hideWhy !== null) return { place: "hidden", why: input.hideWhy };
+  const dock = dockWhy(input, knobs);
+  if (dock === null) return { place: "plate", why: "readable" };
+  if (input.slotFree) return { place: "dock", why: dock };
+  return { place: input.canFold ? "fold" : "plate", why: "slot taken" };
+}
+
+/** Why the plate cannot be used where it is, or null when it can. */
+function dockWhy(
+  input: WantInput,
+  knobs: TravellingBoxKnobs,
+): TravelWhy | null {
   const m = input.metrics;
   const edge = input.onPlate ? TRAVEL_EDGE.keep : TRAVEL_EDGE.enter;
   if (!m.valid || Math.abs(m.ndcX) >= edge || Math.abs(m.ndcY) >= edge) {
-    return { place: "dock", why: "out of view" };
+    return "out of view";
   }
-  if (!(input.angleDeg <= knobs.angle)) {
-    return { place: "dock", why: "turned away" };
-  }
-  const letter = knobs.metric === "h" ? m.letterPxH : m.letterPx;
-  // Written so a NaN letter size docks: NaN >= thr is false.
-  if (!(letter >= knobs.thr * (input.onPlate ? knobs.keep : 1))) {
-    return { place: "dock", why: "too small" };
-  }
-  return { place: "plate", why: "readable" };
-}
-
-function hiddenWhy(input: WantInput): TravelWhy | null {
-  if (!input.travelling) return "not travelling";
-  if (!input.voice) return "no voice";
-  if (!input.inStation) return "outside the station";
-  if (input.sheetOpen) return "sheet open";
+  if (!(input.angleDeg <= knobs.angle)) return "turned away";
+  const keep = input.onPlate ? knobs.keep : 1;
+  // Written so a NaN size docks: NaN >= thr is false.
+  if (input.gates.some((g) => !(g.px >= g.thr * keep))) return "too small";
   return null;
 }
 
@@ -291,7 +325,8 @@ export interface SettleState {
 
 /**
  * One frame of the settling: a want that differs from the place must hold
- * `holdDock` or `holdPlate` seconds before the words move. Hiding, and
+ * `holdPlate` seconds (to the plate) or `holdDock` (to the dock or the
+ * fold) before the words move. Hiding, and
  * appearing from hidden, act at once, under a finger too (the words must
  * go with the voice or under the sheet). Between plate and dock nothing
  * moves while a finger is down nor until `lock` seconds after it lifts
@@ -312,7 +347,9 @@ export function settlePlace(
     return { place: want, pending: null, pendingS: 0 };
   }
   const pendingS = state.pending === want ? state.pendingS + validDt(dtS) : 0;
-  const held = pendingS >= (want === "dock" ? knobs.holdDock : knobs.holdPlate);
+  // A fold is a claim of the dock that did not win: it holds as one.
+  const held =
+    pendingS >= (want === "plate" ? knobs.holdPlate : knobs.holdDock);
   const still = input.fingerDown || !(input.sinceReleaseS >= knobs.lock);
   if (held && !still) return { place: want, pending: null, pendingS: 0 };
   return { place: state.place, pending: want, pendingS };
@@ -394,7 +431,8 @@ export function quadOfClip(
 ): [number, number][] | null {
   for (let i = 0; i < 4; i++) {
     const w = clip[i * 4 + 3];
-    if (w === undefined || !(Number.isFinite(w) && w > MIN_W)) return null;
+    if (w === undefined || !(Number.isFinite(w) && w > TRAVEL_MIN_W))
+      return null;
   }
   return [0, 1, 3, 2].map((i) =>
     screenOf(clip[i * 4]!, clip[i * 4 + 1]!, clip[i * 4 + 3]!, viewW, viewH),

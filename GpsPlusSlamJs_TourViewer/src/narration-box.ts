@@ -98,6 +98,16 @@ export interface NarrationBoxViewState {
   readonly pressing: boolean;
   /** The travel mode's head row hint, empty in the natural mode. */
   readonly hint: string;
+  /** The voice's line as a float (the finger's while it scrubs). */
+  readonly line: number;
+}
+
+/** The box at rest on the page (CSS px). */
+interface NarrationBoxRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 /**
@@ -129,6 +139,9 @@ export interface NarrationBox {
   setPointer(on: boolean): void;
   /** What the plate paints, or null when hidden or not in travel mode. */
   paintModel(): WordsPaintModel | null;
+  /** Where the box rests while shown, from its layout (it ignores the
+   *  fade-in shift); null while hidden or not laid out. */
+  restingRect(): NarrationBoxRect | null;
   /** Starts a forwarded press; false when one is already down. */
   beginPress(press: NarrationBoxPress): boolean;
   movePress(x: number, y: number): void;
@@ -324,6 +337,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   let mode: NarrationBoxMeasure = "natural";
   let hint = "";
   let paintLayout: WordsPaintLayout | null = null;
+  let rest: NarrationBoxRect | null = null;
   const signs = new Set<HTMLElement>();
 
   function totalMs(): number {
@@ -432,6 +446,18 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     scroll = target(content?.player.nowMs() ?? 0);
     paintLayout =
       travel && content !== null ? measurePaint(content, textW) : null;
+    // Centred by translateX(-50%) (narration-box.css); offsets ignore
+    // transforms, so this is the box at rest, its fade-in shift aside.
+    const w = root.offsetWidth;
+    rest =
+      w > 0
+        ? {
+            x: root.offsetLeft - w / 2,
+            y: root.offsetTop,
+            w,
+            h: root.offsetHeight,
+          }
+        : null;
   }
 
   function fontOf(el: Element, fallback: string): string {
@@ -902,6 +928,11 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     setPointer(on) {
       root.classList.toggle("nb-nopointer", !on);
     },
+    restingRect() {
+      if (!shown) return null;
+      if (dirty) layout();
+      return rest;
+    },
     paintModel() {
       const c = content;
       if (!shown || c === null) return null;
@@ -933,6 +964,10 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         scrubbing: dragging,
         pressing: press !== null,
         hint,
+        line:
+          !shown || content === null
+            ? 0
+            : lineFloatAt(ls, dragging ? dragMs : content.player.nowMs()),
       };
     },
     dispose() {

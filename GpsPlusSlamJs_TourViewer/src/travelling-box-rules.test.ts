@@ -19,6 +19,7 @@ import {
   facingAngleDeg,
   flightClip,
   inQuad,
+  letterGate,
   plateMetrics,
   plateSizeM,
   quadOfClip,
@@ -49,15 +50,19 @@ function seen(letterPx: number, ndc = 0): PlateMetrics {
   };
 }
 
+/** A want input whose letter gate reads its metrics (the default knobs'
+ *  metric), unless the gates are given. */
 function want(over: Partial<WantInput> = {}): WantInput {
+  const metrics = over.metrics ?? seen(20);
   return {
     travelling: true,
-    voice: true,
-    inStation: true,
-    sheetOpen: false,
-    metrics: seen(20),
+    hideWhy: null,
+    gates: [letterGate(metrics, K)],
+    metrics,
     angleDeg: 0,
     onPlate: false,
+    slotFree: true,
+    canFold: false,
     ...over,
   };
 }
@@ -66,22 +71,18 @@ describe("wantPlace", () => {
   it("names each reason, in the prototype's order", () => {
     // Each case breaks every later rule too, so a reordering shows.
     const invalid: PlateMetrics = { ...seen(5), valid: false };
-    expect(wantPlace(want({ travelling: false, sheetOpen: true }), K)).toEqual({
-      place: "hidden",
-      why: "not travelling",
-    });
-    expect(wantPlace(want({ voice: false, inStation: false }), K)).toEqual({
-      place: "hidden",
-      why: "no voice",
-    });
-    expect(wantPlace(want({ inStation: false, sheetOpen: true }), K)).toEqual({
-      place: "hidden",
-      why: "outside the station",
-    });
-    expect(wantPlace(want({ sheetOpen: true, metrics: invalid }), K)).toEqual({
-      place: "hidden",
-      why: "sheet open",
-    });
+    expect(
+      wantPlace(want({ travelling: false, hideWhy: "sheet open" }), K),
+    ).toEqual({ place: "hidden", why: "not travelling" });
+    for (const hideWhy of [
+      "no voice",
+      "outside the station",
+      "sheet open",
+    ] as const) {
+      expect(
+        wantPlace(want({ hideWhy, metrics: invalid, slotFree: false }), K),
+      ).toEqual({ place: "hidden", why: hideWhy });
+    }
     expect(wantPlace(want({ metrics: invalid, angleDeg: 89 }), K)).toEqual({
       place: "dock",
       why: "out of view",
@@ -151,9 +152,46 @@ describe("wantPlace", () => {
       letterPx: 8,
     };
     expect(wantPlace(want({ metrics: squashed }), K).place).toBe("dock");
+    const h = { ...K, metric: "h" } as const;
     expect(
-      wantPlace(want({ metrics: squashed }), { ...K, metric: "h" }).place,
+      wantPlace(
+        want({ metrics: squashed, gates: [letterGate(squashed, h)] }),
+        h,
+      ).place,
     ).toBe("plate");
+  });
+
+  // Why: other surfaces bring other sizes to reach (a picture, a control
+  // to touch); any one below its own threshold docks, and the keep factor
+  // applies to each.
+  it("docks when any gate is under its threshold, each kept to 0.95", () => {
+    const gates = [
+      { kind: "letter", px: 20, thr: 12 },
+      { kind: "touch", px: 43, thr: 44 },
+    ] as const;
+    expect(wantPlace(want({ gates }), K)).toEqual({
+      place: "dock",
+      why: "too small",
+    });
+    expect(wantPlace(want({ gates, onPlate: true }), K).place).toBe("plate");
+    expect(wantPlace(want({ gates: [] }), K).place).toBe("plate");
+  });
+
+  // Why: a surface that would dock while another owns the slot must not
+  // queue there; it folds into its mark, or stays on its plate when it
+  // has none. A readable plate is never sent to fold.
+  it("folds, or stays on the plate, when it would dock without its slot", () => {
+    const small = seen(5);
+    expect(
+      wantPlace(want({ metrics: small, slotFree: false, canFold: true }), K),
+    ).toEqual({ place: "fold", why: "slot taken" });
+    expect(
+      wantPlace(want({ metrics: small, slotFree: false, canFold: false }), K),
+    ).toEqual({ place: "plate", why: "slot taken" });
+    expect(wantPlace(want({ slotFree: false, canFold: true }), K)).toEqual({
+      place: "plate",
+      why: "readable",
+    });
   });
 });
 
@@ -187,6 +225,23 @@ describe("settlePlace", () => {
     s = settlePlace(s, "dock", 0.2, free, K);
     s = settlePlace(s, "dock", 0.2, free, K);
     expect(s.place).toBe("plate");
+  });
+
+  // Why: a fold is a dock claim that did not win, so it waits the dock's
+  // hold, not the plate's.
+  it("waits the dock's hold to fold", () => {
+    const k = { ...K, holdDock: 0.2, holdPlate: 1 };
+    let s = settlePlace(
+      { place: "plate", pending: null, pendingS: 0 },
+      "fold",
+      0.1,
+      free,
+      k,
+    );
+    s = settlePlace(s, "fold", 0.1, free, k);
+    expect(s.place).toBe("plate");
+    s = settlePlace(s, "fold", 0.1, free, k);
+    expect(s.place).toBe("fold");
   });
 
   it("hides at once, and appears from hidden at once", () => {
@@ -320,6 +375,8 @@ describe("plateSizeM", () => {
     expect(size.widthM).toBeCloseTo(2.312, 9);
     expect(size.heightM).toBeCloseTo(0.918, 9);
     expect(() => plateSizeM(272, 108, 0)).toThrow(RangeError);
+    expect(plateSizeM(272, 108, 16, 0.17).widthM).toBeCloseTo(2.89, 9);
+    expect(() => plateSizeM(272, 108, 16, 0)).toThrow(RangeError);
   });
 });
 

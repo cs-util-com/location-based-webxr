@@ -251,9 +251,9 @@ interface WordsPlateSize {
 /** One frame of a sign: the viewer in the root's parent frame, and the
  *  growth while words hang under it (`signGrowth` of the distance when
  *  absent; one that is not a positive finite number grows nothing). */
-export interface ReadingSignFrame {
+interface ReadingSignFrame {
   readonly viewer: readonly [number, number, number];
-  readonly growth?: number;
+  readonly growth?: number | undefined;
 }
 
 /** A built sign: the groups, the two plates and what moves them. */

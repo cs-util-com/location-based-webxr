@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   easeInOutCubic,
   flightClip,
+  letterGate,
   plateMetrics,
   settlePlace,
   TRAVELLING_BOX_DEFAULTS,
@@ -170,12 +171,13 @@ describe("settlePlace for any input", () => {
             const w = wantPlace(
               {
                 travelling: true,
-                voice: true,
-                inStation: true,
-                sheetOpen: false,
+                hideWhy: null,
+                gates: [letterGate(metrics, K)],
                 metrics,
                 angleDeg: 0,
                 onPlate: s.place === "plate",
+                slotFree: true,
+                canFold: false,
               },
               K,
             );
