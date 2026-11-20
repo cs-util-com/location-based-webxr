@@ -17,6 +17,15 @@ export interface TrainerChoice {
   readonly practice: boolean;
   readonly gpu: GpuProbe["kind"];
   readonly pace: number;
+  /** The stretch (1-based) whose first try loses the graphics card in
+   *  the practice run (`lost=<n>`), or null. */
+  readonly lost: number | null;
+}
+
+function positiveIntegerOrNull(raw: string | null): number | null {
+  if (raw === null || !/^\d+$/.test(raw)) return null;
+  const n = Number(raw);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
 export function trainerChoiceFrom(search: string): TrainerChoice {
@@ -26,5 +35,6 @@ export function trainerChoiceFrom(search: string): TrainerChoice {
     practice: q.get("trainer") === "practice",
     gpu: gpu === "integrated" || gpu === "no-webgpu" ? gpu : "ready",
     pace: parsePace(q.get("pace")),
+    lost: positiveIntegerOrNull(q.get("lost")),
   };
 }

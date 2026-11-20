@@ -13,6 +13,7 @@ describe("trainerChoiceFrom", () => {
       practice: false,
       gpu: "ready",
       pace: 1,
+      lost: null,
     });
     expect(trainerChoiceFrom("?trainer=fake").practice).toBe(false);
   });
@@ -24,7 +25,10 @@ describe("trainerChoiceFrom", () => {
       practice: true,
       gpu: "integrated",
       pace: 40,
+      lost: null,
     });
+    // Which stretch loses the graphics card on its first try (1-based).
+    expect(trainerChoiceFrom("?trainer=practice&lost=2").lost).toBe(2);
     expect(trainerChoiceFrom("?trainer=practice&gpu=no-webgpu").gpu).toBe(
       "no-webgpu",
     );
@@ -36,5 +40,8 @@ describe("trainerChoiceFrom", () => {
     expect(c.gpu).toBe("ready");
     expect(trainerChoiceFrom("?pace=-3").pace).toBe(1);
     expect(trainerChoiceFrom("?pace=Infinity").pace).toBe(1);
+    for (const bad of ["0", "-1", "1.5", "two", ""]) {
+      expect(trainerChoiceFrom(`?lost=${bad}`).lost).toBeNull();
+    }
   });
 });

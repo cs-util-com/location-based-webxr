@@ -110,12 +110,17 @@ export interface GpuAdapterLike {
 }
 
 const BUILT_IN = /\b(integrated|uhd|iris)\b/i;
+/** Intel's graphics-card families (Arc: Xe-HPG, Xe2-HPG); every other
+ *  Intel architecture is built into the processor. */
+const INTEL_CARD = /\bxe\d*-hpg\b/i;
 
 /**
  * Asks the browser for its fastest graphics adapter. No WebGPU, a refused
  * request, no adapter or a software fallback adapter all mean the page
- * cannot train; an Intel adapter, or one that describes itself as built-in
- * graphics, trains slowly. Never throws.
+ * cannot train; an Intel adapter that is not one of Intel's graphics
+ * cards, or one that describes itself as built-in graphics, trains slowly
+ * (`adapter.info` may say too little to be sure, so the page words this
+ * as likely, not certain). Never throws.
  */
 export async function probeWebGpu(
   gpu: GpuLike | undefined | null,
@@ -151,7 +156,9 @@ export async function probeWebGpu(
   const info = adapter.info ?? {};
   const vendor = String(info.vendor ?? "").toLowerCase();
   const text = `${info.architecture ?? ""} ${info.description ?? ""}`;
-  return vendor === "intel" || BUILT_IN.test(text)
+  const intelBuiltIn =
+    vendor === "intel" && !INTEL_CARD.test(String(info.architecture ?? ""));
+  return intelBuiltIn || BUILT_IN.test(text)
     ? { kind: "integrated" }
     : { kind: "ready" };
 }

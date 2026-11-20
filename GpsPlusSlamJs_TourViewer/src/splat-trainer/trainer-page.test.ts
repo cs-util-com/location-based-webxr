@@ -210,4 +210,166 @@ describe("bar texts", () => {
     expect(minutesText(3 * 3600)).toBe("about 3 hours");
     expect(minutesText(5)).toBe("about 1 min");
   });
+
+  it("says nothing for a time that is not a number", () => {
+    // Why: "about NaN min" or "about Infinity hours" is worse than no
+    // estimate at all.
+    expect(minutesText(Number.NaN)).toBe("");
+    expect(minutesText(Number.POSITIVE_INFINITY)).toBe("");
+    expect(minutesText(-5)).toBe("");
+  });
+
+  it("counts one finished stretch in the singular", () => {
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store);
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w1" }));
+    expect(barText(store.getState())?.[0]).toBe(
+      "Stopped. 1 of 3 stretches is finished and kept while this page stays open.",
+    );
+  });
+
+  it("names a save made while stopped", () => {
+    // Why: after "Save the finished ones" the stopped bar read exactly
+    // as before, so nothing said the save had worked.
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store);
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w1" }));
+    store.dispatch(A.saveStarted());
+    store.dispatch(A.saveSucceeded({ count: 1 }));
+    expect(barText(store.getState())?.[1]).toBe(
+      "Saved: 1 stretch is in the file. Continue starts at stretch 2.",
+    );
+  });
+});
+
+describe("refusals by code", () => {
+  function refusedWith(reason: string, code?: "no-depth") {
+    const { store, q } = mount(storeAt(2));
+    store.dispatch(A.anotherRecordingChosen());
+    store.dispatch(A.readingStarted({ id: "r2", name: "b.zip" }));
+    store.dispatch(
+      A.readRefused(
+        code === undefined ? { id: "r2", reason } : { id: "r2", reason, code },
+      ),
+    );
+    return q('[data-ref="refusalHead"]').textContent;
+  }
+
+  it("says the recording has no depth only for the reader's no-depth refusal", () => {
+    // Why: matching the word "depth" in the sentence called a recording
+    // whose depth data was damaged a recording without depth.
+    expect(refusedWith("No depth was recorded.", "no-depth")).toBe(
+      "This recording has no depth",
+    );
+    expect(
+      refusedWith("This recording's depth data does not include the lens."),
+    ).toBe("This recording cannot be used");
+  });
+});
+
+describe("saving", () => {
+  function atSave() {
+    const h = mount(storeAt(2));
+    h.store.dispatch(A.trainingStarted());
+    finishCurrent(h.store);
+    finishCurrent(h.store);
+    h.q<HTMLButtonElement>('[data-ref="saveBtn"]').click();
+    return h;
+  }
+
+  it("cannot be cancelled while it saves", () => {
+    // Why: closing the dialog mid-save left the page with no sign of the
+    // save still running, and a second Save could start beside it.
+    const { root, store, q } = atSave();
+    store.dispatch(A.saveStarted());
+    const cancel = q<HTMLButtonElement>('.modal [data-act="close"]');
+    expect(cancel.disabled).toBe(true);
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    expect(q('[data-ref="veil"]').hidden).toBe(false);
+    q('[data-ref="veil"]').dispatchEvent(
+      new MouseEvent("click", { bubbles: true }),
+    );
+    expect(q('[data-ref="veil"]').hidden).toBe(false);
+    root.querySelector<HTMLButtonElement>('[data-ref="saveBtn"]')?.click();
+    expect(store.getState().save.status).toBe("saving");
+  });
+
+  it("says what became of the picked file when saving fails", () => {
+    const { store, q } = atSave();
+    store.dispatch(A.saveStarted());
+    store.dispatch(
+      A.saveFailed({
+        message: "disk full",
+        left: 'The file "a.zip" you picked was not written, and may now be empty.',
+      }),
+    );
+    const text = q(".save-error").textContent ?? "";
+    expect(text).not.toContain("Nothing was lost");
+    expect(text).toContain('The file "a.zip" you picked was not written');
+  });
+});
+
+describe("focus and the rest of the page behind a dialog", () => {
+  it("makes the page inert behind a dialog and gives the focus back on close", () => {
+    // Why: with the page still reachable behind the veil, Tab walked out
+    // of the dialog; on close the focus fell to the body, so a keyboard
+    // user started again from the top of the page.
+    const { root, store, q } = mount();
+    store.dispatch(A.trainingStarted());
+    const stop = q<HTMLButtonElement>('[data-ref="stopBtn"]');
+    stop.focus();
+    stop.click();
+    const app = root.querySelector(".app");
+    expect(app?.hasAttribute("inert")).toBe(true);
+    q<HTMLButtonElement>('[data-act="close"]').click();
+    expect(app?.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(stop);
+  });
+
+  it("moves the focus to the new phase's action when its button goes away", () => {
+    const { q } = mount();
+    const start = q<HTMLButtonElement>('[data-ref="startBtn"]');
+    start.focus();
+    start.click();
+    expect(document.activeElement).toBe(q('[data-ref="stopBtn"]'));
+  });
+});
+
+describe("checking the graphics again", () => {
+  it("shows the check running on its button, keeps the card, and says when nothing changed", () => {
+    const { store, q } = mount(storeAt(2));
+    store.dispatch(A.probeFinished("integrated"));
+    const recheck = q<HTMLButtonElement>('[data-ref="gpuRecheck"]');
+    recheck.click();
+    expect(q('[data-ref="gpuWarn"]').hidden).toBe(false);
+    expect(recheck.textContent).toBe("Checking...");
+    expect(recheck.disabled).toBe(true);
+    expect(recheck.getAttribute("aria-busy")).toBe("true");
+    store.dispatch(A.probeFinished("integrated"));
+    expect(recheck.textContent).toBe("Check again");
+    expect(recheck.disabled).toBe(false);
+    expect(q('[data-ref="gpuRecheckLine"]').textContent).toBe(
+      "Still the built-in graphics.",
+    );
+    recheck.click();
+    store.dispatch(A.probeFinished("ready"));
+    expect(q('[data-ref="gpuWarn"]').hidden).toBe(true);
+  });
+});
+
+describe("the page root", () => {
+  it("carries the class its stylesheet is scoped under only while mounted", () => {
+    // Why: every rule of the page's stylesheet is scoped under this class;
+    // a root without it shows an unstyled page, and one that keeps it
+    // after dispose keeps the page's colours on whatever comes next.
+    const { root } = mount();
+    expect(root.classList.contains("splat-page")).toBe(true);
+    mounted?.dispose();
+    mounted = null;
+    expect(root.classList.contains("splat-page")).toBe(false);
+  });
 });

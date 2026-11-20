@@ -12,7 +12,10 @@
  */
 
 import { configureStore, createListenerMiddleware } from "@reduxjs/toolkit";
-import type { SaveFilePick } from "gps-plus-slam-app-framework/storage/save-target";
+import {
+  releaseUnusedPick,
+  type SaveFilePick,
+} from "gps-plus-slam-app-framework/storage/save-target";
 
 import type { SplatInputs, SplatInputsRead } from "./recording-reader.js";
 import { buildPackage, packageFileName } from "./save-package.js";
@@ -23,6 +26,7 @@ import type {
   WindowTrainResult,
 } from "./trainer-adapter.js";
 import {
+  attemptTimeScale,
   currentWindow,
   initialTrainerPageState,
   trainerPageActions as A,
@@ -63,6 +67,28 @@ const FAILED_JUDGEMENT: WindowJudgement = {
   say: "Training stopped with an error.",
 };
 
+/** What a failed save says of the file the person picked: the browser
+ *  empties it as the dialog returns, and a new file and a replaced one
+ *  cannot be told apart, so this must be true of both. */
+const unwrittenPick = (name: string): string =>
+  `The file "${name}" you picked was not written, and may now be empty.`;
+
+const errorText = (err: unknown): string =>
+  err instanceof Error ? err.message : String(err);
+
+/** Lets go of a preview picture: an ImageBitmap holds its pixels until
+ *  it is closed. */
+function closePicture(picture: CanvasImageSource | undefined): void {
+  const close = (picture as { close?: unknown } | undefined)?.close;
+  if (typeof close === "function") {
+    try {
+      (close as () => void).call(picture);
+    } catch {
+      // A picture that cannot be closed is left to the garbage collector.
+    }
+  }
+}
+
 const runKeyOf = (s: TrainerPageState): string | null => {
   const w = currentWindow(s);
   return w === undefined ? null : `${w.id}#${w.attempt}`;
@@ -83,6 +109,21 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     splats: new Map(),
   };
   let job: { key: string; ctrl: AbortController } | null = null;
+
+  function setPreview(id: string, picture: CanvasImageSource): void {
+    const old = sides.previews.get(id);
+    if (old !== picture) closePicture(old);
+    sides.previews.set(id, picture);
+  }
+
+  function dropPreview(id: string): void {
+    closePicture(sides.previews.get(id));
+    sides.previews.delete(id);
+  }
+
+  function dropAllPreviews(): void {
+    for (const id of [...sides.previews.keys()]) dropPreview(id);
+  }
   let nextRecording = 1;
   let disposed = false;
 
@@ -107,25 +148,32 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
       try {
         read = await deps.read(file);
       } catch (err) {
-        read = {
-          kind: "refused",
-          reason: err instanceof Error ? err.message : String(err),
-        };
+        read = { kind: "refused", reason: errorText(err) };
       }
       if (api.getState().recording?.id !== id) return;
       if (read.kind === "refused") {
         sides.files.delete(id);
-        api.dispatch(A.readRefused({ id, reason: read.reason }));
+        api.dispatch(
+          A.readRefused(
+            read.code === undefined
+              ? { id, reason: read.reason }
+              : { id, reason: read.reason, code: read.code },
+          ),
+        );
         return;
       }
       const { inputs } = read;
-      sides.inputs.set(id, inputs);
       let planned: readonly PlannedWindow[];
       try {
         planned = deps.plan(inputs);
-      } catch {
-        planned = [];
+      } catch (err) {
+        // The planner's own words: an empty plan would claim the
+        // recording has no camera positions.
+        sides.files.delete(id);
+        api.dispatch(A.readRefused({ id, reason: errorText(err) }));
+        return;
       }
+      sides.inputs.set(id, inputs);
       sides.plans.set(id, planned);
       const c = inputs.census;
       api.dispatch(
@@ -152,7 +200,7 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
       sides.files.clear();
       sides.inputs.clear();
       sides.plans.clear();
-      sides.previews.clear();
+      dropAllPreviews();
       sides.splats.clear();
     },
   });
@@ -168,8 +216,7 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
         job = null;
       }
       for (const w of state.windows) {
-        if (w.status === "stopped" || w.status === "queued")
-          sides.previews.delete(w.id);
+        if (w.status === "stopped" || w.status === "queued") dropPreview(w.id);
       }
       const w = currentWindow(state);
       const recording = state.recording;
@@ -180,11 +227,11 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
       if (inputs === undefined || planned === undefined) return;
       const ctrl = new AbortController();
       job = { key, ctrl };
-      sides.previews.delete(w.id);
+      dropPreview(w.id);
       const request: TrainRequest = {
         window: planned,
         attempt: w.attempt,
-        timeScale: 2 ** (w.attempt - 1),
+        timeScale: attemptTimeScale(w.attempt),
         inputs,
       };
       void runJob(request, ctrl);
@@ -207,8 +254,11 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
             if (live()) store.dispatch(A.progressed({ id, attempt, ...p }));
           },
           onPreview: (picture) => {
-            if (!live()) return;
-            sides.previews.set(id, picture);
+            if (!live()) {
+              closePicture(picture);
+              return;
+            }
+            setPreview(id, picture);
             store.dispatch(A.previewed({ id, attempt }));
           },
         },
@@ -217,8 +267,13 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     } catch {
       result = { outcome: "failed", metrics: null, trainingS: 0, ply: null };
     }
-    if (!live() || result.outcome === "cancelled") return;
+    if (!live()) return;
     if (job?.ctrl === ctrl) job = null;
+    // A cancel nobody asked for (the signal was not aborted) is a trainer
+    // that gave up: judged like a failure, so the run goes on.
+    if (result.outcome === "cancelled") {
+      result = { ...result, outcome: "failed", ply: null };
+    }
     let judgement: WindowJudgement;
     try {
       judgement =
@@ -257,7 +312,9 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
   /**
    * Saves the package to where `pick` says (asked for in the click, before
    * this awaits anything). A cancelled pick ends quietly; any failure ends
-   * in the error state, and nothing on this computer is lost.
+   * in the error state, naming what became of a picked file
+   * (`releaseUnusedPick`: never deleted, but the browser may have emptied
+   * it). The finished stretches stay on the page either way.
    */
   async function save(pick: Promise<SaveFilePick>): Promise<void> {
     if (store.getState().save.status === "saving") return;
@@ -279,11 +336,8 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
       }
       store.dispatch(A.saveSucceeded({ count: windowsInFile(state).length }));
     } catch (err) {
-      store.dispatch(
-        A.saveFailed({
-          message: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      const left = await releaseUnusedPick(pick, unwrittenPick);
+      store.dispatch(A.saveFailed({ message: errorText(err), left }));
     }
   }
 
@@ -291,6 +345,7 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     disposed = true;
     job?.ctrl.abort();
     job = null;
+    dropAllPreviews();
     listener.clearListeners();
   }
 

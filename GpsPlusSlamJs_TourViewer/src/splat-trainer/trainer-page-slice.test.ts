@@ -17,6 +17,7 @@ import {
 } from "../test-support/splat-trainer-fixtures.js";
 import type { WindowJudgement } from "./trainer-adapter.js";
 import {
+  attemptTimeScale,
   secondsLeftInRun,
   trainerPageActions as A,
   trainerPageReducer,
@@ -71,6 +72,42 @@ describe("starting", () => {
     store.dispatch(A.integratedAccepted());
     store.dispatch(A.trainingStarted());
     expect(store.getState().phase).toBe("training");
+  });
+
+  it("checks the graphics again without hiding the warning, and says when nothing changed", () => {
+    // Why: "Check again" took the warning card away while the probe ran
+    // (the status went back to probing), and a probe that found the same
+    // built-in graphics gave no sign that it had looked at all.
+    const store = storeAt(3);
+    store.dispatch(A.probeFinished("integrated"));
+    store.dispatch(A.recheckRequested());
+    expect(store.getState().gpu).toMatchObject({
+      status: "integrated",
+      recheck: "checking",
+    });
+    store.dispatch(A.probeFinished("integrated"));
+    expect(store.getState().gpu.recheck).toBe("unchanged");
+    store.dispatch(A.recheckRequested());
+    store.dispatch(A.probeFinished("ready"));
+    expect(store.getState().gpu).toMatchObject({
+      status: "ready",
+      recheck: "idle",
+    });
+  });
+
+  it("carries a refusal code from the reader into the state", () => {
+    // Why: the page words a "no depth" refusal by this code, never by
+    // matching the sentence.
+    const store = configureStore({ reducer: trainerPageReducer });
+    store.dispatch(A.readingStarted({ id: "r1", name: "a.zip" }));
+    store.dispatch(
+      A.readRefused({ id: "r1", reason: "No depth.", code: "no-depth" }),
+    );
+    expect(store.getState().refusal).toEqual({
+      kind: "recording",
+      reason: "No depth.",
+      code: "no-depth",
+    });
   });
 
   it("refuses the page when the probe finds no WebGPU", () => {
@@ -298,6 +335,22 @@ describe("verdicts and decisions", () => {
     expect(poor.getState().windows[0]?.attempt).toBe(3);
   });
 
+  it("marks a run saved while stopped unsaved again when a stretch finishes", () => {
+    // Why: a save while stopped wrote the finished stretches; one that
+    // finishes after Continue is not in that file, so "Saved" would hide
+    // a stretch that a closed page loses.
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store);
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w1" }));
+    store.dispatch(A.saveStarted());
+    store.dispatch(A.saveSucceeded({ count: 1 }));
+    store.dispatch(A.continued());
+    finishCurrent(store);
+    expect(store.getState().save.status).toBe("idle");
+  });
+
   it("marks a saved run unsaved again after a change", () => {
     const store = doneWith(["poor"]);
     store.dispatch(A.saveStarted());
@@ -325,5 +378,55 @@ describe("secondsLeftInRun", () => {
     );
     // 30 s of stretch 2, then stretch 3 at the 60 s stretch 1 took.
     expect(secondsLeftInRun(store.getState())).toBe(90);
+  });
+
+  it("scales retries by the same doubling the trainer is given", () => {
+    // Why: the trainer runs attempt n with 2^(n-1) times the time; an
+    // estimate that scaled by n was wrong from the third attempt on.
+    expect([1, 2, 3, 4].map(attemptTimeScale)).toEqual([1, 2, 4, 8]);
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    finishCurrent(store);
+    store.dispatch(
+      A.progressed({
+        id: "w1",
+        attempt: 1,
+        fraction: 0.5,
+        secondsLeft: 30,
+        nextPreviewInS: 3,
+      }),
+    );
+    const s = store.getState();
+    const [w0, w1, w2] = s.windows;
+    if (w0 === undefined || w1 === undefined || w2 === undefined)
+      throw new Error("three stretches");
+    // Stretch 1 took 120 s on its third attempt (30 s per unit of time);
+    // stretch 3 waits for its third attempt too: 4 units.
+    const at: TrainerPageState = {
+      ...s,
+      windows: [
+        { ...w0, attempt: 3, trainingS: 120 },
+        w1,
+        { ...w2, attempt: 3 },
+      ],
+    };
+    expect(secondsLeftInRun(at)).toBe(30 + 30 * 4);
+  });
+
+  it("is null or a finite number, also at the end of a stretch", () => {
+    // Why: progress 1 with no finished stretch divided by zero and the
+    // bar read "about Infinity hours".
+    const store = storeAt(3);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(
+      A.progressed({
+        id: "w0",
+        attempt: 1,
+        fraction: 1,
+        secondsLeft: 5,
+        nextPreviewInS: null,
+      }),
+    );
+    expect(secondsLeftInRun(store.getState())).toBeNull();
   });
 });

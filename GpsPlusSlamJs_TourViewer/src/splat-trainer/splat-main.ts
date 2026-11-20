@@ -25,9 +25,8 @@ const root = document.getElementById("splat-root");
 if (root !== null) {
   const choice = trainerChoiceFrom(location.search);
   const paper = (): string =>
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--print-paper")
-      .trim() || "#2c3142";
+    getComputedStyle(root).getPropertyValue("--print-paper").trim() ||
+    "#2c3142";
   const adapter = choice.practice
     ? createPracticeTrainer({
         timer: {
@@ -37,6 +36,7 @@ if (root !== null) {
         },
         pace: choice.pace,
         gpu: choice.gpu,
+        lostStretch: choice.lost,
         picture: practicePictures(document, paper),
       })
     : createUnavailableTrainer(
@@ -55,7 +55,10 @@ if (root !== null) {
     isPhone,
   });
   if (!isPhone) void controller.probe();
-  window.addEventListener("pagehide", () => {
+  // A page kept in the back/forward cache comes back alive (pageshow
+  // with persisted): only a page that is really going away is torn down.
+  window.addEventListener("pagehide", (event) => {
+    if (event.persisted) return;
     page.dispose();
     controller.dispose();
   });

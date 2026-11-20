@@ -120,7 +120,8 @@ interface SplatFingerprint {
    *  and CRC-32s from the zip's directory, so a same-size change of
    *  content changes it too. The tour kit's own authored files are left
    *  out, so a tour and the recording under it share the key; a re-zip
-   *  that adds or drops a wrapping folder keeps it. */
+   *  that adds or drops a wrapping folder keeps it, and so does a macOS
+   *  Finder re-zip (its `__MACOSX/` and `._` entries are left out). */
   readonly contentKey: string;
 }
 
@@ -138,10 +139,26 @@ export interface SplatInputs {
 
 export type SplatInputsRead =
   | { readonly kind: "read"; readonly inputs: SplatInputs }
-  | { readonly kind: "refused"; readonly reason: string };
+  | {
+      readonly kind: "refused";
+      readonly reason: string;
+      /** Set for a refusal the page words on its own; absent otherwise. */
+      readonly code?: ReadRefusalCode;
+    };
+
+/** A refusal the page names by code: `no-depth`, a recording with no
+ *  depth samples at all. */
+export type ReadRefusalCode = "no-depth";
 
 /** A refusal carried out of the reading steps; caught at the boundary. */
-class Refusal extends Error {}
+class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly code?: ReadRefusalCode,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Read `file` (a recorder zip) into the trainer's inputs, or say in words
@@ -161,6 +178,9 @@ export async function readSplatInputs(
   try {
     return { kind: "read", inputs: await readInputs(file, limits, budget) };
   } catch (err) {
+    if (err instanceof Refusal && err.code !== undefined) {
+      return { kind: "refused", reason: err.message, code: err.code };
+    }
     if (err instanceof Refusal || err instanceof ArchiveLimitError) {
       return { kind: "refused", reason: err.message };
     }
@@ -257,7 +277,7 @@ async function readEntries(
   const depthSamples = depthSamplesOf(actions);
   const reference = depthSamples[0]?.projectionMatrix;
   if (reference === undefined) {
-    throw new Refusal(depthRefusal(actions));
+    throw depthRefusal(actions);
   }
   const projectionSpread = depthSamples.reduce(
     (spread, s) =>
@@ -281,7 +301,7 @@ async function readEntries(
   const stretch = Math.abs(intrinsics.fx / intrinsics.fy - 1);
   if (stretch > ASPECT_TOL) {
     throw new Refusal(
-      `The recording's lens does not fit the shape of its photos (it would stretch them by ${(stretch * 100).toFixed(1)} %).`,
+      `The recording's lens does not fit the shape of its photos (it would stretch them by ${stretchText(stretch)}).`,
     );
   }
 
@@ -459,12 +479,25 @@ function frameSizeOf(sizes: readonly unknown[][]): {
   return { width: width as number, height: height as number };
 }
 
+/** A stretch past the tolerance in words that never read as the
+ *  tolerance itself: one decimal, or "just over 2 %" where one decimal
+ *  would round down to it. */
+function stretchText(stretch: number): string {
+  const pct = (stretch * 100).toFixed(1);
+  return Number(pct) > ASPECT_TOL * 100
+    ? `${pct} %`
+    : `just over ${String(ASPECT_TOL * 100)} %`;
+}
+
 /** Why no depth sample gave a lens: none recorded, none carrying the
  *  lens, or the lens there but the rest of every such sample unreadable. */
-function depthRefusal(actions: readonly RecordedAction[]): string {
+function depthRefusal(actions: readonly RecordedAction[]): Refusal {
   const depth = actions.filter((a) => a.type === DEPTH_SAMPLE_ACTION_TYPE);
   if (depth.length === 0) {
-    return "This recording has no depth data, so the camera's lens is unknown. Record with depth on.";
+    return new Refusal(
+      "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
+      "no-depth",
+    );
   }
   const withLens = depth.some((a) => {
     const s = a.payload as Partial<DepthSample> | null | undefined;
@@ -474,9 +507,11 @@ function depthRefusal(actions: readonly RecordedAction[]): string {
       isFiniteTuple(s.projectionMatrix, 16)
     );
   });
-  return withLens
-    ? "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used."
-    : "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.";
+  return new Refusal(
+    withLens
+      ? "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used."
+      : "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.",
+  );
 }
 
 /** The depth samples carrying a well-formed projection matrix, camera

@@ -50,6 +50,9 @@ export interface PracticeOptions {
   /** What the probe reports. */
   readonly gpu?: GpuProbe["kind"];
   readonly script?: PracticeScript;
+  /** The stretch (1-based) whose first try loses the graphics card
+   *  halfway, ending `gpu-lost`; absent or null for none. */
+  readonly lostStretch?: number | null;
   /** Draws a picture; null draws nothing (tests). */
   readonly picture?: (
     index: number,
@@ -175,6 +178,7 @@ export function createPracticeTrainer(
   const script = options.script ?? DEFAULT_PRACTICE_SCRIPT;
   const picture = options.picture ?? (() => null);
   const gpu = options.gpu ?? "ready";
+  const lostStretch = options.lostStretch ?? null;
 
   const endingOf = (r: TrainRequest): PracticeEnding =>
     script(r.window.index, r.attempt);
@@ -193,6 +197,10 @@ export function createPracticeTrainer(
     const previewMs = PRACTICE_PREVIEW_MS / pace;
     const measureMs = PRACTICE_MEASURE_MS / pace;
     const tickMs = Math.min(TICK_MS, totalMs / 20);
+    const losesCard =
+      lostStretch !== null &&
+      request.window.index === lostStretch - 1 &&
+      request.attempt === 1;
     const t0 = timer.now();
     let nextPreview = previewMs;
     let pending: number | null = null;
@@ -241,6 +249,15 @@ export function createPracticeTrainer(
               ? Math.max(0, (nextPreview - elapsed) / 1000)
               : null,
         });
+        if (losesCard && fraction >= 0.5) {
+          end({
+            outcome: "gpu-lost",
+            metrics: null,
+            trainingS: elapsed / 1000,
+            ply: null,
+          });
+          return;
+        }
         if (fraction >= 1) {
           const last = picture(
             request.window.index,

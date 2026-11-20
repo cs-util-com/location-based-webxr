@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import { judged, storeAt } from "../test-support/splat-trainer-fixtures.js";
 import {
   currentWindow,
+  secondsLeftInRun,
   trainerPageActions as A,
   type TrainerPageState,
 } from "./trainer-page-slice.js";
@@ -37,7 +38,7 @@ const command = fc.oneof(
 type Command = typeof command extends fc.Arbitrary<infer C> ? C : never;
 type Store = ReturnType<typeof storeAt>;
 
-function run(store: Store, c: Command, againAsked: Set<string>): void {
+function run(store: Store, c: Command): void {
   const s = store.getState();
   const cur = currentWindow(s);
   switch (c.k) {
@@ -91,7 +92,6 @@ function run(store: Store, c: Command, againAsked: Set<string>): void {
       store.dispatch(A.continued());
       return;
     case "again":
-      againAsked.add(`w${c.w}`);
       store.dispatch(A.trainAgainAsked({ id: `w${c.w}` }));
       return;
     case "decide":
@@ -101,6 +101,9 @@ function run(store: Store, c: Command, againAsked: Set<string>): void {
 }
 
 function checkInvariants(s: TrainerPageState): void {
+  // The bar shows this as minutes: never NaN or Infinity.
+  const left = secondsLeftInRun(s);
+  expect(left === null || Number.isFinite(left)).toBe(true);
   expect(new Set(s.queue).size).toBe(s.queue.length);
   if (s.current !== null) expect(s.queue).not.toContain(s.current);
   const training = s.windows.filter((w) => w.status === "training");
@@ -138,7 +141,6 @@ describe("the run's invariants under any order of actions (property)", () => {
         (n, commands) => {
           const store = storeAt(n);
           store.dispatch(A.trainingStarted());
-          const againAsked = new Set<string>();
           for (const c of commands) {
             const before = store.getState();
             const doneBefore = new Set(
@@ -146,16 +148,14 @@ describe("the run's invariants under any order of actions (property)", () => {
                 .filter((w) => w.status === "done")
                 .map((w) => w.id),
             );
-            run(store, c, againAsked);
+            run(store, c);
             const after = store.getState();
             // A finished stretch is unfinished again only by "train again" for it.
             const reopened = after.windows
               .filter((w) => doneBefore.has(w.id) && w.status !== "done")
               .map((w) => w.id);
             const allowed =
-              c.k === "again"
-                ? reopened.filter((id) => againAsked.has(id))
-                : [];
+              c.k === "again" ? reopened.filter((id) => id === `w${c.w}`) : [];
             expect(reopened).toEqual(allowed);
             checkInvariants(after);
           }

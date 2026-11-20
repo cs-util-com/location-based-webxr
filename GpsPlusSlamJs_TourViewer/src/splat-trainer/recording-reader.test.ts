@@ -406,6 +406,9 @@ describe("readSplatInputs refuses, in words", () => {
     expect(reasonOf(read)).toBe(
       "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
     );
+    // Why: the page words this refusal by its code, never by matching the
+    // sentence, so a reworded reason cannot change the page's heading.
+    expect(read.kind === "refused" && read.code).toBe("no-depth");
   });
 
   it("refuses depth data that carries no lens, in its own words", async () => {
@@ -417,6 +420,8 @@ describe("readSplatInputs refuses, in words", () => {
     expect(reasonOf(read)).toBe(
       "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.",
     );
+    // A recording that has depth is not a "no depth" refusal.
+    expect(read.kind === "refused" && read.code).toBeUndefined();
   });
 
   it("refuses depth data whose lens is there but whose poses are broken, in its own words", async () => {
@@ -476,6 +481,22 @@ describe("readSplatInputs refuses, in words", () => {
     );
     expect(reasonOf(read)).toBe(
       "The recording's lens does not fit the shape of its photos (it would stretch them by 2.4 %).",
+    );
+  });
+
+  it("never prints the tolerance itself for a stretch just past it", async () => {
+    // Why: one decimal rounds a 2.03 % stretch to "2.0 %", which reads as
+    // the 2 % tolerance it was refused for.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () =>
+            nudged(0, (SYNTHETIC_PROJECTION[0] ?? 0) * 0.0203),
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "The recording's lens does not fit the shape of its photos (it would stretch them by just over 2 %).",
     );
   });
 

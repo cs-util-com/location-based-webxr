@@ -9,12 +9,15 @@ or in tests, and the page shows a "Practice run" chip whenever it runs.
 
 ## Public API
 
-- `PracticeTimer` - `{ now, set, clear }`; the page passes the window's
-  timers, tests a manual clock (`src/test-support/manual-timer.ts`).
-- `PracticeOptions` - `{ timer, pace?, gpu?, script?, picture? }`.
-- `PRACTICE_STRETCH_MS` (20 s per first try at pace 1),
-  `PRACTICE_PREVIEW_MS` (a new picture every 4 s),
-  `PRACTICE_MEASURE_MS` (no time estimate in the first 3 s).
+- `PracticeOptions` - `{ timer, pace?, gpu?, script?, picture?,
+lostStretch? }`. `timer` is `{ now, set, clear }` (the internal
+  `PracticeTimer` shape): the page passes the window's timers, tests a
+  manual clock (`src/test-support/manual-timer.ts`). `lostStretch` (1-based,
+  from the page's `lost=<n>`) makes that stretch's first try lose the
+  graphics card halfway and end `gpu-lost`.
+- `PRACTICE_STRETCH_MS` (20 s per first try at pace 1).
+- Internal, not exported: `PRACTICE_PREVIEW_MS` (a new picture every
+  4 s) and `PRACTICE_MEASURE_MS` (no time estimate in the first 3 s).
 - `DEFAULT_PRACTICE_SCRIPT(index, attempt)` - how each attempt ends, by
   the stretch's position modulo 8: mostly good, one weak, one not good
   enough that is weak on its second try, one that runs out of time. Its
@@ -33,4 +36,5 @@ or in tests, and the page shows a "Practice run" chip whenever it runs.
 
 `fake-trainer.test.ts`: timing at pace 1 and faster, previews, the
 measuring phase, the scripted verdicts and retries, cancel clearing every
-timer, and `parsePace` on bad input.
+timer, `parsePace` on bad input, and the lost graphics card of
+`lostStretch` (first try only, judged not good enough).

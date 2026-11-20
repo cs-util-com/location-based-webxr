@@ -160,11 +160,31 @@ test("stop asks first, stops the training stretch and continues it", async ({
   await expect(bar(page)).toContainText("Training stretch 1 of");
 });
 
+test("a stretch that loses the graphics card is not good enough and trains again", async ({
+  page,
+}) => {
+  // Why: losing the graphics card mid-stretch must end in a verdict the
+  // person can act on, never a stuck print or a stopped run.
+  await page.goto("/splat/?trainer=practice&pace=400&lost=2");
+  await chooseRecording(page, WALK);
+  const second = page.locator(".print").nth(1);
+  await page.getByRole("button", { name: "Make the splat" }).click();
+  await expect(second).toHaveAttribute("data-verdict", "poor");
+  await expect(second.locator(".print-reasons")).toContainText(
+    "the graphics card stopped",
+  );
+  await expect(page.locator('[data-ref="barSub"]')).toContainText("Stretch 2");
+  await second
+    .getByRole("button", { name: "Train again with more time" })
+    .click();
+  await expect(second).toHaveAttribute("data-verdict", /good|weak/);
+});
+
 test("built-in graphics warn before the start", async ({ page }) => {
   await page.goto("/splat/?trainer=practice&gpu=integrated");
   await chooseRecording(page, { frames: 60, spacingM: 1.2 });
   await expect(
-    page.getByText("This computer is using its built-in graphics"),
+    page.getByText("This computer seems to use its built-in graphics"),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Make the splat" }),

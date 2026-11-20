@@ -81,6 +81,33 @@ describe("reading", () => {
       reason: "disk gone",
     });
   });
+
+  it("refuses with the planner's own words when planning throws", async () => {
+    // Why: a throwing planner was swallowed into an empty plan, and the
+    // page said the recording had no camera positions, which was untrue.
+    const h = setup({
+      plan: () => {
+        throw new Error("The walk cannot be split into stretches.");
+      },
+    });
+    await h.c.probe();
+    const { file } = await buildSyntheticRecording({ frames: 60 });
+    h.c.chooseRecording(file);
+    await h.settled();
+    expect(h.c.store.getState().refusal?.reason).toBe(
+      "The walk cannot be split into stretches.",
+    );
+    expect(h.c.sides.inputs.size).toBe(0);
+  });
+
+  it("passes the reader's refusal code on", async () => {
+    const h = setup();
+    await h.c.probe();
+    const { file } = await buildSyntheticRecording({ depth: false });
+    h.c.chooseRecording(file);
+    await h.settled();
+    expect(h.c.store.getState().refusal?.code).toBe("no-depth");
+  });
 });
 
 describe("training", () => {
@@ -136,6 +163,80 @@ describe("training", () => {
   });
 });
 
+describe("a run that ends on its own", () => {
+  it("counts a cancel nobody asked for as a failure and goes on", async () => {
+    // Why: a trainer that reports "cancelled" without an abort (a worker
+    // that died) was ignored like a real cancel, and the page stayed at
+    // "Training" with no job running.
+    const timer = manualTimer();
+    const real = createPracticeTrainer({ timer });
+    const quits: TrainerAdapter = {
+      ...real,
+      trainWindow: (request, events, signal) =>
+        request.window.index === 0
+          ? Promise.resolve({
+              outcome: "cancelled",
+              metrics: null,
+              trainingS: 1,
+              ply: null,
+            })
+          : real.trainWindow(request, events, signal),
+    };
+    const h = setup({}, quits);
+    await h.c.probe();
+    const { file } = await buildSyntheticRecording({
+      frames: 60,
+      spacingM: 1.2,
+    });
+    h.c.chooseRecording(file);
+    await h.settled();
+    h.c.store.dispatch(A.trainingStarted());
+    await h.settled();
+    expect(h.c.store.getState().windows[0]?.judgement?.reasons).toEqual([
+      "the trainer stopped",
+    ]);
+    expect(h.c.store.getState().current).toBe("w1");
+    timer.advance(PRACTICE_STRETCH_MS);
+    await h.settled();
+    expect(h.c.store.getState().phase).toBe("done");
+  });
+
+  it("closes a preview picture when a newer one replaces it or it is dropped", async () => {
+    // Why: an ImageBitmap holds decoded pixels until it is closed; a run
+    // of hundreds of previews would keep every one of them.
+    const timer = manualTimer();
+    const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
+    const real = createPracticeTrainer({
+      timer,
+      picture: () => {
+        const p = { close: vi.fn() };
+        pictures.push(p);
+        return p as unknown as CanvasImageSource;
+      },
+    });
+    const h = setup({}, real);
+    await h.c.probe();
+    const { file } = await buildSyntheticRecording({
+      frames: 60,
+      spacingM: 1.2,
+    });
+    h.c.chooseRecording(file);
+    await h.settled();
+    h.c.store.dispatch(A.trainingStarted());
+    timer.advance(9000);
+    await h.settled();
+    expect(pictures.length).toBeGreaterThan(1);
+    const shown = pictures.at(-1);
+    for (const p of pictures) {
+      expect(p.close).toHaveBeenCalledTimes(p === shown ? 0 : 1);
+    }
+    h.c.store.dispatch(A.stopAsked());
+    h.c.store.dispatch(A.stopConfirmed({ id: "w0" }));
+    await h.settled();
+    expect(shown?.close).toHaveBeenCalledTimes(1);
+  });
+});
+
 async function settleAll(c: ReturnType<typeof setup>["c"]) {
   await settle(() => [c.store.getState()]);
 }
@@ -173,7 +274,11 @@ describe("saving", () => {
     expect(write).toHaveBeenCalledTimes(1);
     const blob = write.mock.calls[0]?.[1] as Blob;
     const manifest = await manifestOf(blob);
-    expect(manifest).toMatchObject({ placeholder: true, version: 0 });
+    expect(manifest).toMatchObject({
+      placeholder: true,
+      version: 0,
+      trainer: "practice",
+    });
     expect(manifest.stretches).toHaveLength(WINDOWS);
   });
 
@@ -196,6 +301,25 @@ describe("saving", () => {
     (g.deps.download as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
     await g.c.save(Promise.resolve({ kind: "unavailable" }));
     expect(g.c.store.getState().save.status).toBe("idle");
+  });
+
+  it("names what became of a picked file that a failed save did not write", async () => {
+    // Why: the browser empties a chosen file as the dialog returns, so
+    // "nothing was lost" was untrue when the person picked an existing
+    // file to replace.
+    const h = await doneRun();
+    (h.deps.write as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("disk full"),
+    );
+    await h.c.save(
+      Promise.resolve({
+        kind: "picked",
+        handle: { name: "walk-splat.zip" } as FileSystemFileHandle,
+      }),
+    );
+    expect(h.c.store.getState().save.left).toBe(
+      'The file "walk-splat.zip" you picked was not written, and may now be empty.',
+    );
   });
 
   it("reports a failed write and stays ready to try again", async () => {

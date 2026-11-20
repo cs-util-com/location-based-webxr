@@ -7,12 +7,15 @@ practice trainer is never a silent default.
 
 ## Public API
 
-- `trainerChoiceFrom(search) -> { practice, gpu, pace }`
+- `trainerChoiceFrom(search) -> { practice, gpu, pace, lost }`
   - `practice`: true only for `trainer=practice`.
   - `gpu`: `integrated` or `no-webgpu` when asked for, else `ready`; the
     practice trainer's probe reports it (the real probe ignores it).
   - `pace`: `parsePace` of `pace` - a speed-up, 1 for anything that is
     not a positive finite number.
+  - `lost`: the stretch (1-based) whose first try loses the graphics card
+    in the practice run, from `lost=<n>` with `n` a positive whole number;
+    null otherwise (the e2e of a lost card uses it).
 
 ## Examples
 
@@ -26,4 +29,5 @@ practice trainer is never a silent default.
 ## Tests
 
 `trainer-choice.test.ts`: the default, the flags, and unknown values
-falling back (never NaN).
+falling back (never NaN), and `lost` refusing anything but a positive
+whole number.

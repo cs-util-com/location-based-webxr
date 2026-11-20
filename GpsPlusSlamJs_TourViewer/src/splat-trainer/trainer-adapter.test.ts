@@ -50,6 +50,21 @@ describe("probeWebGpu", () => {
       "integrated",
     );
     expect(await kindOf({ vendor: "nvidia" })).toBe("ready");
+    // Why: Intel also makes graphics cards (Arc, the Xe-HPG family);
+    // calling one built-in graphics sent the person using it to Windows settings
+    // for nothing. Intel's integrated families stay integrated.
+    expect(await kindOf({ vendor: "intel", architecture: "xe-hpg" })).toBe(
+      "ready",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "xe2-hpg" })).toBe(
+      "ready",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "xe-lpg" })).toBe(
+      "integrated",
+    );
+    expect(await kindOf({ vendor: "intel", architecture: "gen-12lp" })).toBe(
+      "integrated",
+    );
     expect(await kindOf(undefined)).toBe("ready");
   });
 });

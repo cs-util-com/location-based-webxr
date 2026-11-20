@@ -11,7 +11,10 @@ creator can read. Nothing decodes a photo here.
 ## Public API
 
 - `readSplatInputs(file, { limits? }) -> Promise<SplatInputsRead>`
-  - `{ kind: "read", inputs }` or `{ kind: "refused", reason }`. Never
+  - `{ kind: "read", inputs }` or `{ kind: "refused", reason, code? }`;
+    `code` is `"no-depth"` for a recording with no depth sample at all
+    (`ReadRefusalCode`), so the page words it without matching the
+    sentence, and absent for every other refusal. Never
     rejects for a bad file; an invalid `limits` override (0, NaN) rejects
     with a `RangeError`, a programming mistake.
   - `limits` tightens the framework's archive caps (`ArchiveLimits`),
@@ -74,7 +77,7 @@ frameHeight)` from the framework, unchanged: it already is the
   different sizes (one lens fits one size). The size judged is the kept
   capture's: a capture another one replaced has no say.
 - No depth sample at all: "This recording has no depth data, so the
-  camera's lens is unknown. Record with depth on."
+  camera's lens is unknown. Record with depth on." (code `no-depth`)
 - Depth samples, none with a projection matrix: "This recording's depth
   data does not include the camera's lens, so the lens is unknown.
   Recordings from a current recorder include it."
@@ -87,6 +90,8 @@ frameHeight)` from the framework, unchanged: it already is the
 - A lens whose pixels are not square within `ASPECT_TOL` on the photos'
   size (a frustum made for another frame shape): "The recording's lens
   does not fit the shape of its photos (it would stretch them by N %)."
+  N has one decimal; where one decimal would round down to the tolerance
+  itself (2.03 % to "2.0 %") it reads "just over 2 %".
 - Anything else that fails while reading (an action file over the
   framework's 1 MB action cap, a damaged entry): "The recording could not
   be read (...)".

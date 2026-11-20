@@ -10,7 +10,7 @@ graphics card.
 ## Behaviour
 
 - `?trainer=practice` - the practice trainer on the window's timers, with
-  `pace` and `gpu` from the address and painted practice pictures.
+  `pace`, `gpu` and `lost` from the address and painted practice pictures.
 - Otherwise - the unavailable trainer with the browser's real WebGPU
   probe: no WebGPU refuses the page; with WebGPU the page reads
   recordings and says the splat maker is not ready yet.
@@ -18,7 +18,11 @@ graphics card.
   is probed.
 - Saving writes through the framework's `writeFileOrAbort`, or downloads
   with `downloadBlob` where there is no save dialog.
-- On `pagehide` the page and the store are disposed (the job is aborted).
+- On `pagehide` the page and the store are disposed (the job is aborted),
+  unless the page goes into the back/forward cache (`event.persisted`): it
+  comes back alive from there and must keep running.
+- The paper colour for practice pictures is read from the page root, where
+  the page's tokens live (`.splat-page`).
 
 ## Tests
 

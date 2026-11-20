@@ -15,7 +15,10 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
   block the RecorderApp uses): `__BUILD_COMMIT__`, `__BUILD_TIME__`,
   `__APP_VERSION__`, `__LIB_VERSION__`, `__FW_VERSION__`, each bare and as
   `globalThis.__NAME__`.
-- `build.rollupOptions.input`: `index.html` (the app) and
+- `build.rollupOptions.input`: `index.html` (the app); `splat/index.html`,
+  the splat trainer page (`splat/index.html.md`), linked from nothing and
+  reachable at `/tour/splat/`; `splat-scene-check.html`, the check page of
+  the splat trainer's reader (`splat-scene-check.html.md`); and
   `write-probe.html`, an on-device measurement page linked from nothing
   (`write-probe.html.md`); an entry so that it is built and reachable at
   `/tour/write-probe.html` on a branch preview, as the Recorder does for its
