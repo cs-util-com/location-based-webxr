@@ -179,19 +179,19 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
    *  one (the visitor left, or another text shows) says where its voice
    *  stopped, wherever it still stands; a sign gone is left alone. */
   function chips(blocks: readonly TourBlock[], shown: TourBlock | null): void {
-    const sign =
+    const shownSign =
       shown === null || content === null ? null : deps.signOf(shown.id);
     if (
       chipped !== null &&
-      chipped.sign !== sign &&
+      chipped.sign !== shownSign &&
       deps.signOf(chipped.id) === chipped.sign
     ) {
       chipped.sign.setVoiceState(chipOf(chipped.voice, false));
     }
     chipped =
-      shown === null || sign === null || content === null
+      shown === null || shownSign === null || content === null
         ? null
-        : { id: shown.id, sign, voice: content.player };
+        : { id: shown.id, sign: shownSign, voice: content.player };
     for (const block of blocks) {
       if (!readsAlong(block, deps.narration.verdictOf(block))) continue;
       const sign = deps.signOf(block.id);
