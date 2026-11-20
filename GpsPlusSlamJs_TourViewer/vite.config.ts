@@ -52,10 +52,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),
-        // On-device measurement page, linked from nothing
-        // (`write-probe.html.md`). An entry so that it is built and therefore
-        // reachable on a deployed branch preview; nothing imports it.
-        writeProbe: fileURLToPath(new URL("write-probe.html", import.meta.url)),
         // The desktop editor (M6 E1, `edit.html.md`): its own page, linked
         // from the setup page's "You already have a tour?" box and step 5
         // on a device without AR.
@@ -69,23 +65,12 @@ export default defineConfig({
         // The splat trainer page (`splat/index.html.md`), linked from nothing
         // yet: an entry so that it is built and reachable on a branch preview.
         splat: fileURLToPath(new URL("splat/index.html", import.meta.url)),
-        // On-device check of what a phone's browser lets the editor do with a
-        // file it saves (`file-access-check.html.md`), linked from nothing:
-        // an entry so that it is built and reachable on a branch preview.
-        fileAccessCheck: fileURLToPath(
-          new URL("file-access-check.html", import.meta.url),
-        ),
         // The prototype-parity views without an AR session, one per
         // `?view=` (`check.html.md`), linked from nothing.
         check: fileURLToPath(new URL("check.html", import.meta.url)),
         // A new kind of item in a story and in a station, side by side
         // (`item-lab.html.md`), linked from nothing.
         itemLab: fileURLToPath(new URL("item-lab.html", import.meta.url)),
-        // A narration circle in its look without an AR session
-        // (`narration-look-check.html.md`), linked from nothing.
-        narrationLookCheck: fileURLToPath(
-          new URL("narration-look-check.html", import.meta.url),
-        ),
         // Keypoint extraction and matching timed per method on the device
         // (`feature-match-check.html.md`), linked from nothing.
         featureMatchCheck: fileURLToPath(

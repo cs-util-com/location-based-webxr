@@ -209,7 +209,6 @@
         "src/checks/check-page.ts",
         "src/checks/item-lab.ts",
         "src/checks/asset-optimizer-check-page.ts",
-        "src/checks/narration-look-check.ts",
         "src/checks/feature-match/feature-match-check.ts",
         "src/characters/maker-main.ts",
         "src/splat-trainer/splat-main.ts",

@@ -22,7 +22,6 @@ import {
 import { AUTOSAVE_MAX_BYTES } from "gps-plus-slam-app-framework/storage/autosave";
 import { shellIcon } from "gps-plus-slam-editor-kit/chrome";
 
-import { sizeWords } from "../../checks/file-access-check.js";
 import { clockText } from "../../read-along.js";
 import {
   normalVoiceCredit,
@@ -128,6 +127,14 @@ const BUSY_WORDS: Record<Busy, string> = {
 let sections = 0;
 
 /** A voice file by its name: one of the tour's allowlisted sound types. */
+/** `bytes` as a person reads a size: "812 B", "1.5 KiB", "50.0 MiB". */
+function sizeWords(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "an unknown size";
+  if (bytes < 1024) return `${String(bytes)} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
 const VOICE_FILE = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i;
 /** A timing file by its name. */
 const TIMING_FILE = /\.(vtt|json|txt)$/i;
