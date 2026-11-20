@@ -351,9 +351,23 @@ for (const viewport of [
     const undo = await box(page, "setup-undo");
     const newStation = await box(page, "setup-new-station");
     const pin = await box(page, "setup-pin");
-    // Under the readout and Done, never over them.
+    // Under the readout and Done, never over them: under the readout's
+    // two clamped lines too, the tallest it gets while the card shows,
+    // whatever it says now (its fixed offset is sized for them).
     expect(card.top).toBeGreaterThanOrEqual(readout.bottom);
     expect(card.top).toBeGreaterThanOrEqual(done.bottom);
+    const twoLinesBottom = await page
+      .getByTestId("setup-status")
+      .evaluate((el) => {
+        const s = getComputedStyle(el);
+        return (
+          el.getBoundingClientRect().top +
+          parseFloat(s.borderTopWidth) +
+          2 * parseFloat(s.lineHeight) +
+          parseFloat(s.borderBottomWidth)
+        );
+      });
+    expect(card.top).toBeGreaterThanOrEqual(twoLinesBottom);
     // Above the strip: its topmost chip, the Undo, and the rest below it.
     expect(card.bottom).toBeLessThanOrEqual(undo.top);
     expect(card.bottom).toBeLessThanOrEqual(newStation.top);
@@ -370,6 +384,21 @@ for (const viewport of [
     expect(close.bottom - close.top).toBeGreaterThanOrEqual(44);
     expect(close.right).toBeLessThanOrEqual(card.right);
     expect(close.top).toBeGreaterThanOrEqual(card.top);
+    // The size offer shows above the readout and pushes it below the
+    // card's offset, so the card steps aside while it shows. Read in one
+    // synchronous step: the next render may hide the offer again.
+    expect(
+      await page.evaluate(() => {
+        const offer = document.querySelector('[data-testid="size-offer"]');
+        const card = document.querySelector('[data-testid="scan-card"]');
+        if (!(offer instanceof HTMLElement) || card === null) return "missing";
+        const was = offer.hidden;
+        offer.hidden = false;
+        const display = getComputedStyle(card).display;
+        offer.hidden = was;
+        return display;
+      }),
+    ).toBe("none");
   });
 }
 
