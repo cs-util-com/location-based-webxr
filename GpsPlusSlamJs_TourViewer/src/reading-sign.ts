@@ -4,12 +4,20 @@
  * how long it takes to read, that opens the whole text in the reading
  * sheet (`long-text-sheet.ts`) on a tap. Built as the narrated-text
  * prototype builds its sign (`public/prototypes/station-blocks-1-narrated-text/`,
- * `drawLabel`), without its voice: the format has no narration for a long
- * text yet, so the sign always says "READ".
+ * `drawLabel`). A text with a voice says so on the sign's face, in a chip
+ * that follows the voice (`setVoiceState`, the travelling box
+ * prototype's words: `public/prototypes/sign-speaks-r6-2-travelling-box/`).
  *
  * The plate turns about its upright axis to face the viewer each frame
  * (the prototype's rule), so it reads from any side; the stem and the ring
  * on the ground are round and need no turning.
+ *
+ * Under the sign a narrated text's words can hang on a plate of their own
+ * (`attachWords`, the travelling box's plate: `travelling-box-rules.ts`).
+ * It turns with the sign and is a sibling of the tap target, never its
+ * child, so a tap on it never opens the sheet; while it hangs there the
+ * sign grows with the distance, on its own group, never on the root the
+ * renderer scales.
  *
  * A mounted sign is a world part in the one mounted set (`world-part.ts`),
  * so the visitor's tap finds it as it finds every part.
@@ -20,19 +28,23 @@
 import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourStationBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
 import {
+  type Camera,
   type CanvasTexture,
   CylinderGeometry,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
   PlaneGeometry,
   RingGeometry,
+  type Texture,
   Vector3,
   type Object3D,
 } from "three";
 
 import { readMinutes, wordCount } from "./long-text-sheet.js";
+import { signGrowth, TRAVEL_PLATE } from "./travelling-box-rules.js";
 import {
   mountWorldPart,
   canvasTexture,
@@ -66,6 +78,10 @@ const INK = {
   title: "#ffffff",
   hint: "#b9b2a5",
   stem: "#2a2b2f",
+  voice: "#f9a8d4",
+  voiceFill: "rgba(255,255,255,0.08)",
+  voiceFillSpeaking: "rgba(249,168,212,0.22)",
+  voiceWords: "#ffffff",
 } as const;
 const SERIF =
   '"Iowan Old Style","Palatino Linotype","Book Antiqua",Palatino,Georgia,serif';
@@ -79,6 +95,19 @@ export function readingSignOverLine(minutes: number): string {
 
 /** The line under the title. */
 export const READING_SIGN_HINT = "Tap to open the text";
+
+/** Where the sign's voice is: not started, speaking, paused or heard. */
+export type ReadingSignVoice = "idle" | "playing" | "paused" | "ended";
+
+/** The chip's words for each voice state (the prototype's). */
+export const READING_SIGN_VOICE_WORDS: Readonly<
+  Record<ReadingSignVoice, string>
+> = {
+  idle: "Has a voice",
+  playing: "Speaking",
+  paused: "Paused",
+  ended: "Heard to the end",
+};
 
 /** The 2D context calls the sign uses (a recording context in tests). */
 export type SignContext = Pick<
@@ -121,7 +150,12 @@ function wrapWords(g: SignContext, text: string, maxPx: number): string[] {
  */
 export function drawReadingSign(
   g: SignContext,
-  sign: { readonly title: string; readonly minutes: number },
+  sign: {
+    readonly title: string;
+    readonly minutes: number;
+    /** The voice's state for the chip; absent or null draws none. */
+    readonly voice?: ReadingSignVoice | null;
+  },
 ): void {
   const W = READING_SIGN.canvasWidthPx;
   const H = READING_SIGN.canvasHeightPx;
@@ -164,9 +198,36 @@ export function drawReadingSign(
   g.fillStyle = INK.hint;
   g.font = `500 29px ${SANS}`;
   g.fillText(READING_SIGN_HINT, 218, 352);
+  if (sign.voice !== undefined && sign.voice !== null) {
+    drawVoiceChip(g, sign.voice);
+  }
+}
+
+/** The chip at the bottom right: a dot and the voice's state, its right
+ *  edge 60 px in, at the prototype's size. */
+function drawVoiceChip(g: SignContext, voice: ReadingSignVoice): void {
+  const words = READING_SIGN_VOICE_WORDS[voice];
+  g.font = `700 30px ${SANS}`;
+  const width = g.measureText(words).width + 82;
+  const x = READING_SIGN.canvasWidthPx - 60 - width;
+  g.beginPath();
+  g.roundRect(x, 326, width, 64, 32);
+  g.fillStyle = voice === "playing" ? INK.voiceFillSpeaking : INK.voiceFill;
+  g.fill();
+  g.lineWidth = 3;
+  g.strokeStyle = INK.voice;
+  g.stroke();
+  g.beginPath();
+  g.arc(x + 34, 358, 10, 0, 2 * Math.PI);
+  g.fillStyle = INK.voice;
+  g.fill();
+  g.fillStyle = INK.voiceWords;
+  g.fillText(words, x + 56, 369);
 }
 
 const toViewer = new Vector3();
+const viewerAt = new Vector3();
+const toGrow = new Matrix4();
 
 /** Turn `plate` about its parent's upright axis to face `viewerLocal` (a
  *  point in the parent's frame). The prototype's facing rule. */
@@ -181,17 +242,53 @@ export function turnToward(plate: Object3D, viewerLocal: Vector3): void {
   );
 }
 
-/** The sign's geometry: its root on the ground, the plate showing `map`
- *  (turning to the viewer as it is drawn), the stem and the ring. A null
- *  map draws a blank plate (the tests). */
-export function buildReadingSign(map: CanvasTexture | null): {
-  root: Group;
-  plate: Mesh;
+/** The words plate's size on the sign (m): `plateSizeM` of the box. */
+interface WordsPlateSize {
+  readonly widthM: number;
+  readonly heightM: number;
+}
+
+/** A built sign: the groups, the two plates and what moves them. */
+export interface ReadingSignParts {
+  /** The renderer's: its pose and a scaled folder's scale. */
+  readonly root: Group;
+  /** The growth while words hang under the sign, else 1. */
+  readonly grow: Group;
+  /** Turned about up to the viewer; holds the sign and the words plate. */
+  readonly turn: Group;
+  /** The sign plate, the tap target. */
+  readonly plate: Mesh;
+  /** The words plate, a sibling of the sign plate while attached. */
+  readonly words: Mesh;
+  /** Hangs `texture` under the sign at `size` (replacing what hung). */
+  attachWords(texture: Texture, size: WordsPlateSize): void;
+  detachWords(): void;
+  /** One frame: the viewer in the root's parent frame. */
+  update(frame: { readonly viewer: readonly [number, number, number] }): void;
   dispose(): void;
-} {
+}
+
+/** The sign's geometry: its root on the ground, the plate showing `map`
+ *  (turning to the viewer as it is drawn), the stem and the ring, and the
+ *  words plate to hang under it. A null map draws a blank plate (the
+ *  tests). */
+export function buildReadingSign(map: CanvasTexture | null): ReadingSignParts {
   const S = READING_SIGN;
   const root = new Group();
   root.name = "reading-sign";
+  const grow = new Group();
+  grow.name = "reading-sign-grow";
+  root.add(grow);
+  const turn = new Group();
+  turn.name = "reading-sign-turn";
+  grow.add(turn);
+  /** Turns the sign to this frame's camera, whichever plate draws first
+   *  (the camera's XR pose is set only inside the render). */
+  const faceCamera = (camera: Camera): void => {
+    camera.getWorldPosition(toViewer);
+    turnToward(turn, grow.worldToLocal(toViewer));
+    turn.updateMatrixWorld();
+  };
   const plateGeometry = new PlaneGeometry(S.widthM, READING_SIGN_HEIGHT_M);
   const plateMaterial = new MeshBasicMaterial({
     map,
@@ -204,13 +301,25 @@ export function buildReadingSign(map: CanvasTexture | null): {
   plate.position.y = S.centreM;
   plate.renderOrder = 2;
   plate.onBeforeRender = (_renderer, _scene, camera) => {
-    const parent = plate.parent;
-    if (parent === null) return;
-    camera.getWorldPosition(toViewer);
-    turnToward(plate, parent.worldToLocal(toViewer));
-    plate.updateMatrixWorld();
+    faceCamera(camera);
   };
-  root.add(plate);
+  turn.add(plate);
+  const wordsGeometry = new PlaneGeometry(1, 1);
+  const wordsMaterial = new MeshBasicMaterial({
+    toneMapped: false,
+    transparent: true,
+    depthWrite: false,
+  });
+  const words = new Mesh(wordsGeometry, wordsMaterial);
+  words.name = "reading-sign-words";
+  words.renderOrder = 3;
+  // Belt and braces: a sibling of the tap target is never picked as it,
+  // and the plate takes no ray of its own either.
+  words.raycast = () => undefined;
+  words.onBeforeRender = (_renderer, _scene, camera) => {
+    faceCamera(camera);
+  };
+  let attached = false;
   const stemHeight = S.centreM - READING_SIGN_HEIGHT_M / 2;
   const stemGeometry = new CylinderGeometry(
     S.stemRadiusM,
@@ -225,7 +334,7 @@ export function buildReadingSign(map: CanvasTexture | null): {
   });
   const stem = new Mesh(stemGeometry, stemMaterial);
   stem.position.y = stemHeight / 2;
-  root.add(stem);
+  grow.add(stem);
   const ringGeometry = new RingGeometry(S.ringInnerM, S.ringOuterM, 48);
   const ringMaterial = new MeshBasicMaterial({
     color: INK.amber,
@@ -236,17 +345,68 @@ export function buildReadingSign(map: CanvasTexture | null): {
   const ring = new Mesh(ringGeometry, ringMaterial);
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 0.025;
-  root.add(ring);
+  grow.add(ring);
   return {
     root,
+    grow,
+    turn,
     plate,
+    words,
+    attachWords(texture, size) {
+      for (const v of [size.widthM, size.heightM]) {
+        if (!Number.isFinite(v) || v <= 0) {
+          throw new RangeError(
+            `a words plate needs a positive size, got ${String(v)}`,
+          );
+        }
+      }
+      if (wordsMaterial.map !== texture) {
+        wordsMaterial.map = texture;
+        wordsMaterial.needsUpdate = true;
+      }
+      words.scale.set(size.widthM, size.heightM, 1);
+      words.position.set(
+        0,
+        S.centreM -
+          READING_SIGN_HEIGHT_M / 2 -
+          TRAVEL_PLATE.gapM -
+          size.heightM / 2,
+        TRAVEL_PLATE.frontM,
+      );
+      if (!attached) turn.add(words);
+      attached = true;
+    },
+    detachWords() {
+      if (!attached) return;
+      turn.remove(words);
+      attached = false;
+      grow.scale.setScalar(1);
+    },
+    update(frame) {
+      viewerAt.set(frame.viewer[0], frame.viewer[1], frame.viewer[2]);
+      const d = Math.hypot(
+        viewerAt.x - root.position.x,
+        viewerAt.z - root.position.z,
+      );
+      grow.scale.setScalar(attached ? signGrowth(d) : 1);
+      root.updateMatrix();
+      grow.updateMatrix();
+      toGrow.multiplyMatrices(root.matrix, grow.matrix).invert();
+      turnToward(turn, viewerAt.applyMatrix4(toGrow));
+    },
     dispose() {
-      for (const geometry of [plateGeometry, stemGeometry, ringGeometry]) {
+      for (const geometry of [
+        plateGeometry,
+        stemGeometry,
+        ringGeometry,
+        wordsGeometry,
+      ]) {
         geometry.dispose();
       }
       plateMaterial.dispose();
       stemMaterial.dispose();
       ringMaterial.dispose();
+      wordsMaterial.dispose();
     },
   };
 }
@@ -264,6 +424,15 @@ export interface ReadingSignHandle extends WorldPart {
   readonly block: ReadingSignBlock;
   /** The plate. */
   readonly tapTarget: Object3D;
+  /** The words plate (hung by `attachWords`). */
+  readonly wordsPlate: Object3D;
+  /** Turns the sign, and grows it while words hang under it. */
+  update(frame: { readonly viewer: readonly [number, number, number] }): void;
+  /** Hangs the words' texture under the sign (the caller owns it). */
+  attachWords(texture: Texture, size: WordsPlateSize): void;
+  detachWords(): void;
+  /** The chip on the face; null for none. Repaints only on a change. */
+  setVoiceState(state: ReadingSignVoice | null): void;
 }
 
 /**
@@ -284,10 +453,9 @@ export function mountReadingSign(
   canvas.height = READING_SIGN.canvasHeightPx;
   const g = canvas.getContext("2d");
   if (g === null) throw new Error("the reading sign needs a 2D canvas");
-  drawReadingSign(g, {
-    title: block.title,
-    minutes: readMinutes(wordCount(block.body)),
-  });
+  const minutes = readMinutes(wordCount(block.body));
+  let voice: ReadingSignVoice | null = null;
+  drawReadingSign(g, { title: block.title, minutes, voice });
   const texture = canvasTexture(canvas);
   const sign = buildReadingSign(texture);
   sign.root.userData["objectId"] = block.id;
@@ -296,6 +464,22 @@ export function mountReadingSign(
     block: shown,
     object: sign.root,
     tapTarget: sign.plate,
+    wordsPlate: sign.words,
+    update: (frame) => {
+      sign.update(frame);
+    },
+    attachWords: (words, size) => {
+      sign.attachWords(words, size);
+    },
+    detachWords: () => {
+      sign.detachWords();
+    },
+    setVoiceState(state) {
+      if (state === voice) return;
+      voice = state;
+      drawReadingSign(g, { title: block.title, minutes, voice });
+      texture.needsUpdate = true;
+    },
     ...(open === undefined
       ? {}
       : {
