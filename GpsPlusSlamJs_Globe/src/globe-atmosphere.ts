@@ -37,6 +37,8 @@ import {
   atmosphereLook,
   ellipsoidToModel,
 } from "./globe-atmosphere-frame.js";
+import { fullScreenPass } from "./globe-full-screen.js";
+import { SCENE_DEPTH_GLSL } from "./globe-scene-depth.js";
 
 /**
  * A full-screen triangle; each corner's ray direction in the model frame
@@ -99,8 +101,7 @@ uniform float uGroundShare;
 // hand-over): the hard edge. The weight follows the hand-over's, so at its
 // 80 km edge (weight 0) the pass is exactly the one without the depth, and
 // the depth does not switch on as a jump.
-uniform sampler2D uSceneDepth;
-uniform mat4 uSceneInverseProjection;
+${SCENE_DEPTH_GLSL}
 uniform float uSceneDepthWeight;
 // The vertex shader's view-to-model map: linear, so a view point's model
 // length is the march's t along the same (normalised) ray.
@@ -157,8 +158,7 @@ void main() {
     vec2 depthUv = gl_FragCoord.xy / vec2( textureSize( uSceneDepth, 0 ) );
     float sceneDepth = texture2D( uSceneDepth, depthUv ).r;
     if ( sceneDepth < 1.0 ) {
-      vec4 viewPoint = uSceneInverseProjection * vec4( depthUv * 2.0 - 1.0, sceneDepth * 2.0 - 1.0, 1.0 );
-      float tRelief = length( uViewToModel * ( viewPoint.xyz / viewPoint.w ) );
+      float tRelief = length( uViewToModel * sceneViewPoint( depthUv, sceneDepth ) );
       tEnd = mix( tEnd, min( tEnd, tRelief ), uSceneDepthWeight );
       groundness = max( groundness, uSceneDepthWeight );
     }
@@ -340,16 +340,7 @@ export function createGlobeAtmosphere(
     blendSrcAlpha: THREE.ZeroFactor,
     blendDstAlpha: THREE.OneFactor,
   });
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3),
-  );
-  const triangle = new THREE.Mesh(geometry, material);
-  triangle.frustumCulled = false;
-  const scene = new THREE.Scene();
-  scene.add(triangle);
-  const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const triangle = fullScreenPass(material);
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
   const cameraEcef = new THREE.Vector3();
@@ -431,7 +422,7 @@ export function createGlobeAtmosphere(
       // per unit of that, times the scene's sun and the look's strength.
       uniforms.uRadiance.value =
         (sunIntensity * look.strength) / ATMOSPHERE_RADIANCE_SCALE;
-      renderer.render(scene, quadCamera);
+      triangle.render(renderer);
     },
     transmittance() {
       if (!device.supported) return null;
@@ -442,7 +433,7 @@ export function createGlobeAtmosphere(
       stopListening();
       device.dispose();
       material.dispose();
-      geometry.dispose();
+      triangle.dispose();
     },
   };
 }

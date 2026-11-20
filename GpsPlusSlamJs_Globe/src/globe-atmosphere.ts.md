@@ -4,7 +4,7 @@
   a bright white-cyan band just inside the lit limb, a soft blue halo just
   outside it, only where the sun shines, and a blue veil over the day side)
   and DEC-GL4-11 (the rim as wide as in the reference by default, a
-  thickness slider back down to the physical width). One full-screen pass,
+  thickness slider back down to the physical width). One full-screen pass (its triangle and camera from `globe-full-screen.ts`),
   drawn after the Earth, marches each pixel's ray through the framework's
   PHYSICAL atmosphere, reusing its transmittance and multi-scattering
   tables (`gps-plus-slam-app-framework/visualization/atmosphere/`), which depend on neither the

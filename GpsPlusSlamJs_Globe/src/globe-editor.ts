@@ -66,13 +66,15 @@ export {
 } from "./globe-eye-camera.js";
 export {
   GLOBE_OSM,
+  osmGateLimits,
+  type OsmGateLimits,
+} from "./globe-osm-gate.js";
+export type { OsmGainMode } from "./globe-osm-fade.js";
+export {
   createGlobeOsmOverlay,
   osmCredit,
-  osmGateLimits,
   type GlobeOsmOverlay,
-  type OsmGateLimits,
   type OsmCameraPose,
-  type OsmGainMode,
   type OsmMapLoad,
   type OsmMapTile,
   type OsmRetryAsk,

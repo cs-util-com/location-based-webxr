@@ -21,12 +21,8 @@ import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 import { XYZTilesOverlay } from "3d-tiles-renderer/plugins";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  GLOBE_OSM,
-  GatedOsmOverlay,
-  createGlobeOsmOverlay,
-  createRequestCeiling,
-} from "./globe-osm-overlay.js";
+import { GLOBE_OSM, createRequestCeiling } from "./globe-osm-gate.js";
+import { GatedOsmOverlay, createGlobeOsmOverlay } from "./globe-osm-overlay.js";
 
 const DEG = Math.PI / 180;
 const TEMPLATE = "https://tiles.example.test/{z}/{x}/{y}.png";

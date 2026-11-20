@@ -51,7 +51,7 @@ observerKm, rebuildPending, lastStage, rebuilds }`, `rebuilds` counting each sta
   one rebuild per step and no frame carries a whole one.
 - **It works a width above the edge** (`altitudeKm < edgeKm + widthKm`), so
   its tables are built before its weight leaves 0.
-- **The composite** does the tone mapping and the output colour space
+- **The composite** (a full-screen triangle over a half-float sky target, both from `globe-full-screen.ts`) does the tone mapping and the output colour space
   (three applies neither when drawing into a target): the result is the
   sky drawn straight to the canvas, faded. The space sky's stars and sun
   disc fade under it while its own disc fades in, so the two discs are
