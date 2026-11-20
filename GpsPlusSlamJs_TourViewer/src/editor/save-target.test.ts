@@ -13,6 +13,7 @@ import {
   holdEditorDraftLock,
   holdEditorLock,
   pickSaveFile,
+  pickScanFile,
   pickTourFile,
   releaseUnusedPick,
   saveFinePrint,
@@ -77,6 +78,27 @@ function fakeHandle(initial: string, name = "tour.zip") {
   } as unknown as WritableFileHandle;
   return { handle, state };
 }
+
+// Why: a scan is only shown, never written; asking to let the page edit
+// it reads as a threat, so its pick asks no permission at all - its handle
+// is remembered and asks to READ again when it is shown again.
+describe("pickScanFile", () => {
+  it("picks a zip without asking for any permission", async () => {
+    const { handle, state } = fakeHandle("zip bytes", "walk-scan.zip");
+    const asked: unknown[] = [];
+    const outcome = await pickScanFile({
+      showOpenFilePicker: (options) => {
+        asked.push(options);
+        return Promise.resolve([handle]);
+      },
+    });
+    expect(state.calls).toEqual(["getFile"]);
+    expect(asked).toMatchObject([
+      { types: [{ accept: { "application/zip": [".zip"] } }], multiple: false },
+    ]);
+    expect(outcome).toMatchObject({ kind: "picked", handle, writable: false });
+  });
+});
 
 describe("pickTourFile", () => {
   it("is unavailable without the picker, so the page uses its file input", async () => {

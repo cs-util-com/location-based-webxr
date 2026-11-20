@@ -143,6 +143,7 @@ export const SPECS = {
     lane: 2,
   },
   "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
+  "feature-match-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "file-access-check.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "item-lab.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing-film.spec.js": { project: "webgl", area: "viewer", lane: 4 },

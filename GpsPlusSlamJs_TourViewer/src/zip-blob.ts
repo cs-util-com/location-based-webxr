@@ -81,6 +81,9 @@ export function withZipBlobDirectory<T>(
       names.push(e.filename);
       if (!files.has(e.filename)) files.set(e.filename, e);
     }
+    // One budget for every read of this directory: it bounds what the
+    // archive may inflate in total, not what each read may.
+    const budget = DecompressionBudget.forArchive(blob.size);
     return use({
       names,
       sizeOf: (name) => files.get(name)?.uncompressedSize,
@@ -91,7 +94,7 @@ export function withZipBlobDirectory<T>(
         }
         return readZipEntryBlob(
           entry,
-          DecompressionBudget.forArchive(blob.size),
+          budget,
           "application/octet-stream",
           maxEntryBytes,
         );

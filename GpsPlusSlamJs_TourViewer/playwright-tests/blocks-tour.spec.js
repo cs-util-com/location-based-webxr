@@ -155,6 +155,7 @@ async function openInEditor(page, zip) {
   );
   await page.goto("/edit.html");
   const chooser = page.waitForEvent("filechooser");
+  await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#drop").click();
   await (
     await chooser
@@ -163,6 +164,7 @@ async function openInEditor(page, zip) {
     mimeType: "application/zip",
     buffer: zip,
   });
+  await page.locator("#start-open").click();
   await expect(page.locator("#tour-name")).toHaveText("E2E castle");
 }
 

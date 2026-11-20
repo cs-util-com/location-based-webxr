@@ -32,9 +32,10 @@ chrome reads, one copy for every view of the page.
     with a scan opens and then gets its scan (`editor-entry.ts`), null
     otherwise; one busy state to the person across both halves.
     `isEntryIdle(view)` - no open running (`busy`) and no entry between
-    its steps (`entryStep`): what every entry (a drop, the sample, a
-    link) asks before it starts, since `busy` alone is false between
-    the open and the add;
+    its steps (`entryStep`): what every entry of the start card (its
+    pickers, its drop, its link, "Open the editor") asks before it
+    starts, and what keeps those controls off meanwhile, since `busy`
+    alone is false between the open and the add;
   - `duplicating` - a Duplicate is reading its pictures before it
     writes: another one does nothing meanwhile (a second Ctrl+D makes
     no copy);

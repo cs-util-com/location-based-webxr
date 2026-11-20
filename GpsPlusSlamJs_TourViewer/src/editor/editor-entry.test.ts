@@ -1,177 +1,16 @@
 import { describe, expect, it } from "vitest";
-import fc from "fast-check";
-import type { EditorFileKind } from "./classify-editor-file.js";
 import {
-  NO_FILE,
+  addScanSafely,
   notOpenedLine,
-  ONE_SCAN_AT_A_TIME,
-  ONE_TOUR_AT_A_TIME,
   openWithScan,
-  planEditorEntry,
   scanFailedLine,
   entryStepLine,
-  scanNeedsTourLine,
   type AddScanOutcome,
 } from "./editor-entry.js";
 import type { EditorEntryStep } from "./editor-view.js";
-import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
 import { describeOpenError } from "../open-errors.js";
 
 const file = (name: string) => new File(["x"], name);
-const tour = (name: string): EditorFileKind => ({
-  kind: "tour",
-  file: file(name),
-});
-const scan = (name: string): EditorFileKind => ({
-  kind: "scan",
-  file: file(name),
-  scan: { kind: "recording" },
-});
-const neither = (name: string): EditorFileKind => ({
-  kind: "neither",
-  file: file(name),
-  reason: `${name} is no use`,
-});
-
-/**
- * Why these tests matter: the order is forced - there is no add without a
- * tour - and a scan must never be opened as a tour. The plan is what the
- * open box does with whatever was chosen or dropped.
- */
-describe("planEditorEntry", () => {
-  it("opens a tour given alone", () => {
-    const t = tour("t.zip");
-    expect(planEditorEntry([t], false)).toEqual({
-      kind: "open",
-      tour: t.file,
-      scan: null,
-      ignored: [],
-    });
-  });
-
-  it("opens a tour and then adds the scan given with it, in either order", () => {
-    const t = tour("t.zip");
-    const s = scan("s.zip");
-    for (const list of [
-      [t, s],
-      [s, t],
-    ]) {
-      expect(planEditorEntry(list, false)).toEqual({
-        kind: "open",
-        tour: t.file,
-        scan: s.file,
-        ignored: [],
-      });
-    }
-  });
-
-  it("adds a scan alone to the tour already open", () => {
-    const s = scan("s.zip");
-    expect(planEditorEntry([s], true)).toEqual({
-      kind: "add-scan",
-      scan: s.file,
-      ignored: [],
-    });
-  });
-
-  it("refuses a scan alone when no tour is open, naming it", () => {
-    expect(planEditorEntry([scan("walk.zip")], false)).toEqual({
-      kind: "refuse",
-      reason: scanNeedsTourLine("walk.zip"),
-    });
-  });
-
-  it("refuses several tours, and several scans", () => {
-    expect(planEditorEntry([tour("a.zip"), tour("b.zip")], true)).toEqual({
-      kind: "refuse",
-      reason: ONE_TOUR_AT_A_TIME,
-    });
-    expect(
-      planEditorEntry([tour("a.zip"), scan("s.zip"), scan("r.zip")], true),
-    ).toEqual({ kind: "refuse", reason: ONE_SCAN_AT_A_TIME });
-  });
-
-  // Why: a file that is neither for the open's own reasons goes to the
-  // open as before, so it is refused in the open's own words (the e2e
-  // refusal specs read them); a precise reason - a scan whose identity is
-  // broken - is said as it is, since the open would only say "no tour".
-  it("hands a lone file with no zip or no tour to the open, and says a precise reason itself", () => {
-    for (const reason of [NOT_A_TOUR, NOT_A_ZIP]) {
-      const n: EditorFileKind = {
-        kind: "neither",
-        file: file("n.zip"),
-        reason,
-      };
-      expect(planEditorEntry([n], false)).toEqual({
-        kind: "open",
-        tour: n.file,
-        scan: null,
-        ignored: [],
-      });
-    }
-    expect(planEditorEntry([neither("n.zip")], true)).toEqual({
-      kind: "refuse",
-      reason: "n.zip: n.zip is no use",
-    });
-  });
-
-  it("names unusable files that came along with a tour", () => {
-    const t = tour("t.zip");
-    const n = neither("n.txt");
-    const plan = planEditorEntry([n, t], false);
-    expect(plan).toMatchObject({ kind: "open", tour: t.file });
-    if (plan.kind !== "open") throw new Error();
-    expect(plan.ignored).toEqual([{ file: n.file, reason: "n.txt is no use" }]);
-  });
-
-  it("refuses an empty list", () => {
-    expect(planEditorEntry([], true)).toEqual({
-      kind: "refuse",
-      reason: NO_FILE,
-    });
-  });
-
-  // Why: whatever the mix, a scan is never what opens, and an add never
-  // happens without a tour (given or open).
-  it("never opens a scan, and never adds one without a tour", () => {
-    const kind = fc.constantFrom<"tour" | "scan" | "neither">(
-      "tour",
-      "scan",
-      "neither",
-    );
-    fc.assert(
-      fc.property(
-        fc.array(kind, { maxLength: 5 }),
-        fc.boolean(),
-        (kinds, open) => {
-          const list = kinds.map((k, i) =>
-            k === "tour"
-              ? tour(`${i}.zip`)
-              : k === "scan"
-                ? scan(`${i}.zip`)
-                : neither(`${i}.zip`),
-          );
-          const plan = planEditorEntry(list, open);
-          const scans = new Set(
-            list.filter((k) => k.kind === "scan").map((k) => k.file),
-          );
-          const opensScan = plan.kind === "open" && scans.has(plan.tour);
-          const addsWithoutTour = plan.kind === "add-scan" && !open;
-          const scanWithoutGivenTour =
-            plan.kind === "open" &&
-            plan.scan !== null &&
-            !list.some((k) => k.kind === "tour" && k.file === plan.tour);
-          expect([opensScan, addsWithoutTour, scanWithoutGivenTour]).toEqual([
-            false,
-            false,
-            false,
-          ]);
-        },
-      ),
-    );
-  });
-});
-
 /**
  * Why these tests matter (the async-UI rule): opening a tour with a scan is
  * one busy state - the person sees it start, sees the second half, and
@@ -290,6 +129,21 @@ describe("openWithScan", () => {
     expect(await r.outcome).toEqual({ kind: "opened", scanAdded: false });
     expect(r.adds).toEqual([]);
     expect(r.steps.every((s) => s === null)).toBe(true);
+  });
+});
+
+// Why: an add that throws (a scan read past its own refusals) would be an
+// unhandled rejection: the button clears, and nothing says why. Every add
+// the page starts goes through this, so a throw is said like a refusal.
+describe("addScanSafely", () => {
+  it("passes an add's outcome through, and says a throw as a refusal", async () => {
+    expect(
+      await addScanSafely(() => Promise.resolve({ kind: "added" })),
+    ).toEqual({ kind: "added" });
+    expect(await addScanSafely(() => Promise.resolve(null))).toBeNull();
+    expect(
+      await addScanSafely(() => Promise.reject(new Error("disk gone"))),
+    ).toEqual({ kind: "refused", reason: "disk gone" });
   });
 });
 

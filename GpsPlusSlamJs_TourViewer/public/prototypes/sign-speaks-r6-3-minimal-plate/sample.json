@@ -1,0 +1,32 @@
+{
+  "note": "Invented records for the kind's read(): the usual one, the longest, and one with its voice missing. No real places, people or recordings.",
+  "records": [
+    {
+      "title": "The old pump house",
+      "text": "This little house once held the pump for the whole lane. Every morning a keeper turned the big wheel, and water climbed from a deep spring into the trough outside.",
+      "speaker": { "name": "Narrator", "color": "#f9a8d4" },
+      "synthetic": true,
+      "voice": "pump-house-voice.ogg",
+      "words": "sign"
+    },
+    {
+      "title": "A title long enough to be cut where the sign has no more room for it at all",
+      "text": "Long text: the kind keeps the first 4000 characters and says so in its problems list.",
+      "speaker": {
+        "name": "A speaker name far too long for one sign line",
+        "color": "#7dd3fc"
+      },
+      "synthetic": false,
+      "voice": "long-voice.ogg",
+      "words": "screen"
+    },
+    {
+      "title": "The trough",
+      "text": "No voice file: the sign says No voice and offers the whole text to read.",
+      "speaker": { "name": "Narrator", "color": "#f9a8d4" },
+      "synthetic": true,
+      "voice": "",
+      "words": "sign"
+    }
+  ]
+}

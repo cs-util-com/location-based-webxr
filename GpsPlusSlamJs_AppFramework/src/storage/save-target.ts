@@ -95,9 +95,34 @@ export type PickOutcome =
  * no second dialog. Note that this differs from the save dialog's rule
  * ({@link pickSaveFile}), where a refusal lets the caller download.
  */
-export async function pickWritableFile(
+export function pickWritableFile(
   win: PickerWindow,
   fileType: DownloadFileType
+): Promise<PickOutcome> {
+  return pickOneFile(win, fileType, askToWrite);
+}
+
+/**
+ * Let the user pick one file of `fileType` that is only READ (shown, never
+ * written): no permission is asked - the picker's choice grants reading -
+ * so the user is never asked to let the page edit a file it only shows.
+ * The handle may be kept (IndexedDB) and read again later; a later read
+ * asks `requestPermission({ mode: 'read' })` itself. The picker's
+ * outcomes are those of {@link pickWritableFile}, `writable` always false.
+ */
+export function pickReadableFile(
+  win: PickerWindow,
+  fileType: DownloadFileType
+): Promise<PickOutcome> {
+  return pickOneFile(win, fileType, () => Promise.resolve(false));
+}
+
+/** One file from the open dialog, `ask` run on its handle before the
+ *  read (the two picks' one rule for the dialog's outcomes). */
+async function pickOneFile(
+  win: PickerWindow,
+  fileType: DownloadFileType,
+  ask: (handle: WritableFileHandle) => Promise<boolean>
 ): Promise<PickOutcome> {
   const picker = win.showOpenFilePicker;
   if (typeof picker !== 'function') return { kind: 'unavailable' };
@@ -118,7 +143,7 @@ export async function pickWritableFile(
   }
   const handle = handles[0];
   if (handle === undefined) return { kind: 'cancelled' };
-  const writable = await askToWrite(handle);
+  const writable = await ask(handle);
   try {
     return { kind: 'picked', file: await handle.getFile(), handle, writable };
   } catch (err) {

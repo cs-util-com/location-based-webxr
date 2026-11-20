@@ -4729,7 +4729,7 @@ body[data-view="3d"] #toasts {
   display: none;
 }
 
-.backdrop :is(.btn, .drop, .cover-choice),
+.backdrop :is(.btn, .drop, .cover-choice, .start-choice),
 #view3d-failed .btn,
 #view3d .debug-panel .btn,
 .backdrop .link-row input,
@@ -4770,7 +4770,7 @@ body[data-view="3d"] #toasts {
   background-color: var(--s-accent-bg);
 }
 
-.backdrop .cover-choice:has(input:checked) {
+.backdrop :is(.cover-choice, .start-choice):has(input:checked) {
   border-color: var(--s-accent);
   background-color: var(--s-accent-bg);
 }

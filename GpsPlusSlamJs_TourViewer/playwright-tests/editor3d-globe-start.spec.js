@@ -66,7 +66,8 @@ async function approachLasting(page, durationMs) {
 async function openSampleOnGlobe(page, extra = "") {
   await page.goto(`/edit.html?globe=1${extra}`);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 120_000,
   });

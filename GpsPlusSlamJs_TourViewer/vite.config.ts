@@ -100,6 +100,11 @@ export default defineConfig({
         narrationLookCheck: fileURLToPath(
           new URL("narration-look-check.html", import.meta.url),
         ),
+        // Keypoint extraction and matching timed per method on the device
+        // (`feature-match-check.html.md`), linked from nothing.
+        featureMatchCheck: fileURLToPath(
+          new URL("feature-match-check.html", import.meta.url),
+        ),
         // A long text in its reading sheet without an AR session
         // (`long-text-check.html.md`), linked from nothing.
         longTextCheck: fileURLToPath(

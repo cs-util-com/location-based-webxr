@@ -32,7 +32,8 @@ test("a tour whose 3D view cannot load opens on a page that says so, the tour st
   );
   await gotoEditor(page);
   await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  await page.locator("#sample-btn").click();
+  await page.locator(".start-choice:has(#start-example)").click();
+  await page.locator("#start-open").click();
   await expect(
     page.locator("#view3d-failed", {
       hasText: "The 3D view could not be loaded",

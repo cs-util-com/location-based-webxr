@@ -21,8 +21,9 @@ directory can understate it) - never a scan's walk.
     (`recordingEntryNames`); `scan` is `readDebugBundle`'s
     `{ kind: "bundle", identity }` or `{ kind: "recording" }`.
   - `{ kind: "neither", file, reason }` - `NOT_A_ZIP` for a name and type
-    that are no zip, `describeOpenError` words for bytes that are not a
-    readable zip, `NOT_A_TOUR` for a zip with neither a tour nor a
+    that are no zip, and also for bytes that are not a readable zip (the
+    open then refuses it in its own words, never the zip reader's raw
+    message), `describeOpenError` words for a file past an archive cap, `NOT_A_TOUR` for a zip with neither a tour nor a
     recording (the same words the open used), or the bundle reader's
     refusal (two identities, an oversized or broken one).
 - `classifyEditorFiles(files) -> Promise<EditorFileKind[]>` - each file,

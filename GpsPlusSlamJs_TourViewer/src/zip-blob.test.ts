@@ -7,7 +7,7 @@
  * and bytes the zip holds, and on a name it lacks being an error, never an
  * empty picture.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   BlobWriter,
   TextReader,
@@ -16,6 +16,7 @@ import {
 } from "@zip.js/zip.js";
 import {
   ArchiveLimitError,
+  DecompressionBudget,
   packFilesAsZip,
 } from "gps-plus-slam-app-framework/storage";
 
@@ -106,6 +107,26 @@ describe("withZipBlobDirectory", () => {
     // The bytes inflated before it stopped: one chunk past the cap at most.
     expect(limit.observed).toBeGreaterThan(16 * 1024);
     expect(limit.observed).toBeLessThan(1 << 20);
+  });
+
+  // Why: a budget bounds what ONE archive may inflate in total; a budget
+  // minted per read would let a caller reading many entries of one
+  // directory inflate the whole budget again for each of them.
+  it("charges every read of one directory to one budget", async () => {
+    const zip = await packFilesAsZip([
+      { path: "a.txt", data: "a" },
+      { path: "b.txt", data: "b" },
+    ]);
+    const minted = vi.spyOn(DecompressionBudget, "forArchive");
+    try {
+      await withZipBlobDirectory(zip, async (dir) => {
+        await dir.read("a.txt");
+        await dir.read("b.txt");
+      });
+      expect(minted).toHaveBeenCalledTimes(1);
+    } finally {
+      minted.mockRestore();
+    }
   });
 
   // Why: a zip may carry one name twice; listing it once would hide the
