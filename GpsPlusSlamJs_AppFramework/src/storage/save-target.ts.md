@@ -28,6 +28,13 @@ Deep import: `gps-plus-slam-app-framework/storage/save-target` (not in the
   - `picked` - `{ file, handle, writable }`; `writable` is false for a
     refused, dismissed or failing permission request, or a handle without
     one: the file opens all the same and is saved another way.
+- `pickReadableFile(win, fileType): Promise<PickOutcome>` - the same
+  dialog and the same four outcomes for a file that is only READ (a scan
+  shown beside a tour): no permission is asked, so the user is never asked
+  to let the page edit a file it only shows; `writable` is always false.
+  Its handle may be kept (in IndexedDB) and read again later; that read
+  asks `requestPermission({ mode: 'read' })` itself. Both picks share one
+  private `pickOneFile`, so their reading of the dialog cannot drift.
 - `pickSaveFile(win, suggestedName, fileType): Promise<SaveFilePick>` - the
   save dialog filtered to `fileType`, opened BEFORE the call returns, so
   the caller calls it in the click before any await (Chromium refuses the
@@ -127,7 +134,8 @@ if (picked.kind === 'picked' && picked.writable) {
 
 `save-target.test.ts` on fake handles: the open dialog's filter, its
 unavailable and cancelled cases, the permission before the read, the
-refusals that still open, an unreadable pick; the save dialog's filter,
+refusals that still open, an unreadable pick, the read-only pick asking
+no permission; the save dialog's filter,
 its call before it returns, cancelled only by a dismissal; the released
 pick's sentence; both checks writing, refusing a changed file, accepting a
 touched one, a gone file, a failed write keeping the baseline; the hash

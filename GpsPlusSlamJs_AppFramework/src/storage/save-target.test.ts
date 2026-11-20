@@ -19,6 +19,7 @@ import {
   holdLock,
   isSameFile,
   pickSaveFile,
+  pickReadableFile,
   pickWritableFile,
   releaseUnusedPick,
   type SameFileCheck,
@@ -161,6 +162,74 @@ describe('pickWritableFile', () => {
     state.gone = true;
     expect(
       await pickWritableFile(
+        { showOpenFilePicker: () => Promise.resolve([handle]) },
+        JSON_TYPE
+      )
+    ).toMatchObject({ kind: 'unreadable' });
+  });
+});
+
+// Why: a file only read (a scan shown beside a tour) must not ask the user
+// for write permission - a prompt to let the page EDIT a file it only
+// shows reads as a threat - while its picker follows the open dialog's
+// rules for an unusable or dismissed picker, as the writable pick does.
+describe('pickReadableFile', () => {
+  it('picks and reads the file without asking for any permission', async () => {
+    const { handle, state } = fakeHandle('{}', 'pins.json');
+    const asked: unknown[] = [];
+    const outcome = await pickReadableFile(
+      {
+        showOpenFilePicker: (options) => {
+          asked.push(options);
+          return Promise.resolve([handle]);
+        },
+      },
+      JSON_TYPE
+    );
+    expect(state.calls).toEqual(['getFile']);
+    expect(asked).toEqual([
+      {
+        types: [
+          { description: 'Pins', accept: { 'application/json': ['.json'] } },
+        ],
+        multiple: false,
+      },
+    ]);
+    expect(outcome).toMatchObject({ kind: 'picked', handle, writable: false });
+  });
+
+  it('reads an unusable, dismissed or emptied picker as the writable pick does', async () => {
+    expect(await pickReadableFile({}, JSON_TYPE)).toEqual({
+      kind: 'unavailable',
+    });
+    expect(
+      await pickReadableFile(
+        {
+          showOpenFilePicker: () =>
+            Promise.reject(new DOMException('iframe', 'SecurityError')),
+        },
+        JSON_TYPE
+      )
+    ).toEqual({ kind: 'unavailable' });
+    expect(
+      await pickReadableFile(
+        {
+          showOpenFilePicker: () =>
+            Promise.reject(new DOMException('no', 'AbortError')),
+        },
+        JSON_TYPE
+      )
+    ).toEqual({ kind: 'cancelled' });
+    expect(
+      await pickReadableFile(
+        { showOpenFilePicker: () => Promise.resolve([]) },
+        JSON_TYPE
+      )
+    ).toEqual({ kind: 'cancelled' });
+    const { handle, state } = fakeHandle('{}');
+    state.gone = true;
+    expect(
+      await pickReadableFile(
         { showOpenFilePicker: () => Promise.resolve([handle]) },
         JSON_TYPE
       )
