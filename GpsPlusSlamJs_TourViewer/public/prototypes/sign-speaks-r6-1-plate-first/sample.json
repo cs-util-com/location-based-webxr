@@ -1,0 +1,44 @@
+{
+  "name": "A narrated long text on a reading sign, words on the plate first",
+  "records": {
+    "normal": {
+      "kind": "longText",
+      "view": "reading",
+      "title": "The rope walk",
+      "body": "Stand where the long lane starts and look along it. For two hundred years this lane was a rope walk. Spinners walked backwards from the wheel at this end, feeding hemp from a bundle at the waist, while a boy turned the wheel all day. A good rope was as long as the lane, so the houses were built well back from it. When steel cable came, the rope makers left, and the lane became the market's back street. Look at the doorsteps on your left: the worn grooves are where finished ropes were dragged out to the carts. Nothing else is left of the trade, except the name painted over the corner shop.",
+      "narration": {
+        "audio": "rope-walk-voice",
+        "synthetic": true,
+        "voiceCredit": "A generated sample voice",
+        "speaker": "Narrator",
+        "color": "#f9a8d4"
+      }
+    },
+    "longest": {
+      "kind": "longText",
+      "view": "reading",
+      "title": "The rope walk, the tar house and the long argument about who owned the lane, told from the wheel end",
+      "body": "Stand where the long lane starts and look along it. For two hundred years this lane was a rope walk. Spinners walked backwards from the wheel at this end, feeding hemp from a bundle at the waist, while a boy turned the wheel all day, in summer heat and in winter wind. A good rope was as long as the lane, so the houses were built well back from it, and nobody was allowed to park a cart in the way. Behind the third house on the right stood the tar house, where the finished yarn was pulled through hot tar so that it would last at sea; on still days the smell reached the market. The lane belonged to nobody in particular, and for forty years the rope makers and the town argued about who should mend its stones. When steel cable came, the rope makers left, and the lane became the market's back street. Look at the doorsteps on your left: the worn grooves are where finished ropes were dragged out to the carts. Nothing else is left of the trade, except the name painted over the corner shop, and the habit, which older people here still have, of walking this lane backwards for luck.",
+      "narration": {
+        "audio": "rope-walk-voice-long",
+        "synthetic": true,
+        "voiceCredit": "A generated sample voice, read slowly for this longer text",
+        "speaker": "Narrator",
+        "color": "#f9a8d4"
+      }
+    },
+    "missing": {
+      "kind": "longText",
+      "view": "reading",
+      "title": "The rope walk",
+      "body": "Stand where the long lane starts and look along it. For two hundred years this lane was a rope walk.",
+      "narration": {
+        "audio": "",
+        "synthetic": true,
+        "speaker": "Narrator",
+        "color": "#f9a8d4"
+      }
+    }
+  },
+  "assets": []
+}

@@ -1,0 +1,147 @@
+<!doctype html>
+<!-- Prototype: the sign speaks, round 6, variant 3 - the creator's side. Throwaway; linked from nothing in the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sign speaks 6.3 - Creator</title>
+    <link rel="stylesheet" href="sign-speaks.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body class="creator">
+    <header class="ctop">
+      <a href="index.html">&larr; The visitor's side</a>
+      <span>Tour editor (mock) &middot; Station 3 of 5</span>
+    </header>
+
+    <div class="cgrid">
+      <section class="ced" aria-label="Station editor">
+        <h1>The old pump house</h1>
+
+        <h2>Narration</h2>
+        <div class="cfield">
+          <span class="clabel">Voice</span>
+          <div class="cvoice">
+            <span id="voiceName">pump-house-voice.ogg &middot; 0:58</span>
+            <button type="button" id="voiceBtn">Remove voice</button>
+          </div>
+        </div>
+        <div class="cfield">
+          <span class="clabel">Synthetic voice</span>
+          <span class="cvalue">On &middot; visitors see "AI voice"</span>
+        </div>
+        <div class="cfield">
+          <span class="clabel">Spoken by</span>
+          <span class="cvalue"
+            ><b class="cwho" id="who">Narrator</b> &middot; pink</span
+          >
+        </div>
+
+        <div class="cfield cwords" id="wordsField">
+          <span class="clabel" id="wordsLabel"
+            >Words while the voice plays</span
+          >
+          <div class="cseg" role="radiogroup" aria-labelledby="wordsLabel">
+            <button type="button" role="radio" data-words="screen">
+              On screen
+            </button>
+            <button type="button" role="radio" data-words="sign">
+              On the sign
+            </button>
+          </div>
+          <p class="chelp" id="wordsHelp"></p>
+          <p class="chelp cpick">
+            A visitor who picks Captions in the view menu always reads them in
+            the box at the bottom, whatever you choose here.
+          </p>
+        </div>
+        <p class="chelp" id="noVoiceHelp" hidden>
+          Add a voice to choose where its words show while it plays. Without a
+          voice the sign offers the whole text to read.
+        </p>
+
+        <h2>Where visitors stand</h2>
+        <div class="cfield">
+          <span class="clabel" id="distLabel">Usual distance to the sign</span>
+          <div class="cchips" role="radiogroup" aria-labelledby="distLabel">
+            <button type="button" role="radio" data-d="3">3 m</button>
+            <button type="button" role="radio" data-d="5">5 m</button>
+            <button type="button" role="radio" data-d="7">7 m</button>
+            <button type="button" role="radio" data-d="9">9 m</button>
+            <button type="button" role="radio" data-d="12">12 m</button>
+            <button type="button" role="radio" data-d="16">16 m</button>
+          </div>
+        </div>
+        <div class="cmsg" id="msg" role="status"></div>
+        <svg
+          class="cplan"
+          id="plan"
+          viewBox="-110 -110 220 220"
+          role="img"
+          aria-label="Top view: the station circle, where the plate can be read, and where visitors stand"
+        ></svg>
+        <p class="clegend">
+          <i class="lg-st"></i> station (voice plays inside)
+          <i class="lg-up"></i> plate legible, phone upright
+          <i class="lg-sd"></i> sideways <i class="lg-me"></i> visitor
+        </p>
+
+        <details class="cknobs">
+          <summary>Prototype settings</summary>
+          <div class="row">
+            <span>Legible from</span
+            ><button type="button" data-cfg="thr" data-v="10">10 px</button
+            ><button type="button" data-cfg="thr" data-v="12">12 px</button
+            ><button type="button" data-cfg="thr" data-v="14">14 px</button
+            ><button type="button" data-cfg="thr" data-v="16">16 px</button>
+          </div>
+          <div class="row">
+            <span>Far sign grows</span
+            ><button type="button" data-cfg="grow" data-v="on">on</button
+            ><button type="button" data-cfg="grow" data-v="off">off</button
+            ><span></span><span></span>
+          </div>
+          <div class="row">
+            <span>Preview phone</span
+            ><button type="button" data-cfg="orient" data-v="portrait">
+              upright</button
+            ><button type="button" data-cfg="orient" data-v="landscape">
+              sideways</button
+            ><span></span><span></span>
+          </div>
+          <p class="chelp">
+            Letters are measured as the height of one line of the plate's type
+            on a phone 390 px wide upright (844 px sideways), camera 42 degrees
+            across upright, 50 degrees top to bottom sideways.
+          </p>
+        </details>
+      </section>
+
+      <section class="cprev" aria-label="Preview at that distance">
+        <p class="ccap" id="cap"></p>
+        <div class="cphone" id="phoneWrap">
+          <div class="cdev" id="cdev">
+            <canvas
+              id="pcam"
+              aria-label="Preview: the sign and its plate from where visitors stand"
+            ></canvas>
+          </div>
+        </div>
+        <p class="ccost" id="cost"></p>
+      </section>
+    </div>
+
+    <script type="module" src="creator.js"></script>
+  </body>
+</html>

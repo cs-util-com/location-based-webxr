@@ -1,0 +1,186 @@
+<!doctype html>
+<!-- Prototype: the sign speaks, round 6, variant 1 - plate first, box as fallback. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Sign speaks 6.1 - Plate first</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="plate-first.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="device" id="device">
+      <canvas
+        id="cam"
+        aria-label="Simulated camera view of a lane with a reading sign"
+      ></canvas>
+
+      <!-- demo strip: this page's controls, not part of the design; at the top so the bottom edge belongs to the box -->
+      <nav class="strip" id="strip" aria-label="Prototype beats">
+        <button type="button" data-beat="walk">Walk up</button>
+        <button type="button" data-beat="d3">3 m</button>
+        <button type="button" data-beat="d7">7 m</button>
+        <button type="button" data-beat="d16">16 m</button>
+        <button type="button" data-beat="side">65°</button>
+        <button type="button" data-beat="turn" id="turnBtn">Turn away</button>
+        <button type="button" data-beat="pause">Pause</button>
+        <button type="button" data-beat="back">Back 2 lines</button>
+        <button type="button" data-beat="end">End</button>
+        <button type="button" data-beat="missing" id="missingBtn">
+          No voice file
+        </button>
+        <button type="button" id="menuBtn" aria-label="Settings">
+          Settings
+        </button>
+      </nav>
+      <p class="readout" id="readout" aria-live="off"></p>
+
+      <div class="hud" id="hud">
+        <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 3l10 10M13 3L3 13" />
+          </svg>
+        </button>
+        <!-- the visitor's own view pick for this text (the app's view menu, reduced to the one choice) -->
+        <button
+          class="vpill"
+          id="vpill"
+          type="button"
+          aria-haspopup="true"
+          aria-expanded="false"
+        ></button>
+        <div class="vmenu" id="vmenu" hidden>
+          <button type="button" data-words="sign">
+            <b>Words on the sign</b
+            ><span
+              >The box takes over when the sign is out of view or too small to
+              read.</span
+            >
+          </button>
+          <button type="button" data-words="box">
+            <b>Words in the box</b
+            ><span>Always at the bottom of the screen.</span>
+          </button>
+        </div>
+
+        <!-- the round-5 narration box: the fallback place of the same words -->
+        <section
+          class="nbox off"
+          id="nbox"
+          tabindex="0"
+          aria-roledescription="narration"
+          aria-label="Narration. Tap to pause or play, drag up or down to move through what is said."
+        >
+          <div class="win" id="win">
+            <div class="col" id="col"></div>
+            <div class="sbar" id="sbar"><i id="thumb"></i></div>
+          </div>
+        </section>
+
+        <!-- the whole text, opened through the sign's Read half -->
+        <section class="sheet" id="sheet" hidden aria-label="The whole text">
+          <header>
+            <b id="sheetTitle"></b
+            ><button type="button" id="sheetClose" aria-label="Close the text">
+              Close
+            </button>
+          </header>
+          <div class="sheet-body" id="sheetBody"></div>
+        </section>
+
+        <p class="hint" id="hint">Tap <b>Listen</b> on the sign.</p>
+        <p class="toast" id="toast" role="status"></p>
+      </div>
+    </main>
+
+    <!-- settings: beside the phone on a desktop, behind "Settings" on a phone (not part of the design) -->
+    <aside class="demo" id="demo" hidden>
+      <h4>What this is</h4>
+      <p>
+        The reading sign speaks. While the plate under it can be read, the
+        spoken words run there; when the sign leaves the view or gets too small,
+        the same words go on in the box at the bottom. Never in both places.
+      </p>
+      <p>
+        Tap the plate or the box to pause or play; drag the words up or down to
+        go back or ahead. A drag off the plate turns the view (in AR the phone
+        does that).
+      </p>
+      <h4>Knobs</h4>
+      <div class="row">
+        <span>Legible from</span><button data-cfg="th" data-v="10">10 px</button
+        ><button data-cfg="th" data-v="12">12 px</button
+        ><button data-cfg="th" data-v="14">14 px</button
+        ><button data-cfg="th" data-v="16">16 px</button>
+      </div>
+      <div class="row">
+        <span>Text size</span><button data-cfg="fs" data-v="14">14</button
+        ><button data-cfg="fs" data-v="16">16</button
+        ><button data-cfg="fs" data-v="18">18</button>
+      </div>
+      <div class="row">
+        <span>Sign grows</span><button data-cfg="grow" data-v="on">On</button
+        ><button data-cfg="grow" data-v="off">Off</button>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button data-cfg="frame" data-v="portrait">Upright</button
+        ><button data-cfg="frame" data-v="landscape">Sideways</button>
+      </div>
+      <div class="row">
+        <span>Tour's choice</span
+        ><button data-cfg="creator" data-v="sign">Sign</button
+        ><button data-cfg="creator" data-v="box">Box</button>
+      </div>
+      <div class="row">
+        <span>Sign</span><button data-cfg="turn" data-v="turns">Turns</button
+        ><button data-cfg="turn" data-v="fixed">Fixed</button>
+      </div>
+      <div class="row">
+        <span>Hand shake</span><button data-cfg="shake" data-v="off">Off</button
+        ><button data-cfg="shake" data-v="calm">Calm</button
+        ><button data-cfg="shake" data-v="one">One hand</button>
+      </div>
+      <div class="row">
+        <span>Plate drag</span
+        ><button data-cfg="drag" data-v="finger">Finger</button
+        ><button data-cfg="drag" data-v="hit">Re-hit</button>
+      </div>
+      <div class="row">
+        <span>Tone</span><button data-cfg="tone" data-v="on">On</button
+        ><button data-cfg="tone" data-v="off">Off</button>
+      </div>
+      <div class="row">
+        <span>Text</span><button data-cfg="rec" data-v="normal">Normal</button
+        ><button data-cfg="rec" data-v="longest">Longest</button
+        ><button data-cfg="rec" data-v="missing">No voice</button>
+      </div>
+      <p class="note">
+        "Plate drag: Re-hit" is for comparison only: it reads a drag on the
+        plate by hitting the moving plate again every frame, as the design must
+        not. With "One hand" shake, try both.
+      </p>
+      <p class="note">
+        By URL too:
+        <code
+          >?th=12&amp;fs=16&amp;grow=on&amp;frame=portrait&amp;creator=sign&amp;shake=calm&amp;drag=finger&amp;stand=d7&amp;autostart</code
+        >
+      </p>
+      <button type="button" class="close" id="demoClose">Close</button>
+    </aside>
+
+    <script type="module" src="plate-first.js"></script>
+  </body>
+</html>
