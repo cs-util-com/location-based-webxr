@@ -48,6 +48,7 @@ import { signGrowth, TRAVEL_PLATE } from "./travelling-box-rules.js";
 import {
   mountWorldPart,
   canvasTexture,
+  mountedWorldParts,
   unmountWorldPart,
   type WorldPart,
 } from "./world-part.js";
@@ -446,6 +447,23 @@ export interface ReadingSignHandle extends WorldPart {
   setVoiceState(state: ReadingSignVoice | null): void;
 }
 
+/** Every reading sign this page mounted (a part is a sign only if it is
+ *  here, whatever its fields). */
+const signs = new WeakSet<WorldPart>();
+
+/** The mounted reading sign standing for the text `blockId`, or null. */
+export function mountedReadingSign(
+  blockId: string,
+  parts: readonly WorldPart[] = mountedWorldParts(),
+): ReadingSignHandle | null {
+  for (const part of parts) {
+    if (signs.has(part) && (part as ReadingSignHandle).block.id === blockId) {
+      return part as ReadingSignHandle;
+    }
+  }
+  return null;
+}
+
 /**
  * Build the reading sign for a long text: its title and its reading time
  * (the words of its body's plain text at 200 a minute, `readMinutes`).
@@ -505,6 +523,7 @@ export function mountReadingSign(
       texture.dispose();
     },
   };
+  signs.add(handle);
   mountWorldPart(handle);
   return handle;
 }

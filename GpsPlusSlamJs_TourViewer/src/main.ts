@@ -39,6 +39,12 @@ import { pictureAssetPath } from "./long-text-pictures.js";
 import { createLongTextSheet } from "./long-text-sheet.js";
 import { createCaptionsFollow } from "./captions-follow.js";
 import { createNarrationBox } from "./narration-box.js";
+import { selectNarrationBox } from "./narration-box-slice.js";
+import { wordsPaintScale } from "./narration-words-paint.js";
+import { createTravelRegistry } from "./travel-registry.js";
+import { createTravellingBox } from "./travelling-box.js";
+import { TRAVELLING_BOX_DEFAULTS } from "./travelling-box-rules.js";
+import { signWordsSurface } from "./travelling-box-sign.js";
 import { createNarrationVisitor } from "./narration-visitor.js";
 import { createViewSwitch, switchBlocks } from "./view-switch.js";
 import {
@@ -46,7 +52,7 @@ import {
   visitorPrefsLoaded,
 } from "./visitor-prefs-slice.js";
 import { loadVisitorPrefs, storeVisitorChoice } from "./visitor-prefs.js";
-import { readingSheetContent } from "./reading-sign.js";
+import { mountedReadingSign, readingSheetContent } from "./reading-sign.js";
 import "./model-visitor.css";
 import { screenIn, tapShownWorldPart, tickWorldParts } from "./world-part.js";
 import { createWorldSound } from "./world-sound.js";
@@ -1134,6 +1140,9 @@ hooks.tickStations = () => {
     undefined,
     window.innerHeight,
   );
+  // A narrated text's words travelling from its sign, after the sign
+  // turned and grew this frame.
+  travelRegistry.frame();
 };
 hooks.stationCodeLocked = stations.codeLocked;
 hooks.unlockStationAudio = stations.unlockAudio;
@@ -1196,23 +1205,69 @@ function presentBlocks() {
     contentPlaced: ctx.stationContent?.showsAny() === true,
   });
 }
+// The travelling words (`travelling-box.ts`): one registry runs every
+// travel's frame, and takes the presses and the XR selects on its words.
+const travelRegistry = createTravelRegistry();
+/** The AR view's rectangle on the page: it fills the window. */
+const travelView = { left: 0, top: 0, width: 1, height: 1 };
 // The narration box (a visitor's view of a narrated text): the words at
-// the bottom of the AR view, scrolled with the voice; it tells the page's
-// store what it shows (`narration-box-slice.ts`).
+// the bottom of the AR view, scrolled with the voice, or travelling from
+// the text's reading sign; it tells the page's store what it shows
+// (`narration-box-slice.ts`).
 const captionsFollow =
   mode === "visitor"
-    ? createCaptionsFollow({
-        box: createNarrationBox({ host: element("ar-root"), store: arStore }),
-        narration,
-        read: () => {
-          const state = arStore.getState();
-          return {
-            blocks: presentBlocks(),
-            presentId: selectPresentStationId(state),
-            stored: selectVisitorPrefs(state),
-          };
-        },
-      })
+    ? (() => {
+        const box = createNarrationBox({
+          host: element("ar-root"),
+          store: arStore,
+        });
+        return createCaptionsFollow({
+          box,
+          narration,
+          read: () => {
+            const state = arStore.getState();
+            return {
+              blocks: presentBlocks(),
+              presentId: selectPresentStationId(state),
+              stored: selectVisitorPrefs(state),
+            };
+          },
+          // No scene or camera yet: the words stay at the bottom.
+          travel: (start) => {
+            const scene = seams.getScene();
+            const camera = seams.getViewerCamera();
+            if (scene === null || camera === null) return null;
+            return createTravellingBox({
+              surface: signWordsSurface({
+                ...start,
+                box,
+                scale: wordsPaintScale(window.devicePixelRatio),
+              }),
+              scene,
+              camera,
+              knobs: TRAVELLING_BOX_DEFAULTS,
+              now: () => performance.now(),
+              reduceMotion: () =>
+                window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+              viewRect: () => {
+                travelView.width = window.innerWidth;
+                travelView.height = window.innerHeight;
+                return travelView;
+              },
+              upload: (texture) => {
+                seams.uploadTexture(texture);
+              },
+              registry: travelRegistry,
+            });
+          },
+          signOf: (id) => mountedReadingSign(id),
+          sheetOpen: () => longTextSheet.isOpen(),
+          playing: (key) => {
+            const shown = selectNarrationBox(arStore.getState());
+            return shown.key === key && shown.playing;
+          },
+        });
+      })()
     : null;
 // The visitor's view preference (station blocks design §4): read from
 // this device at the start, kept in the page's store; a choice is merged
@@ -1253,16 +1308,31 @@ const viewSwitch =
       })()
     : null;
 if (mode === "visitor") {
+  // A select on an overlay, or while a finger is on the travelling
+  // words, is not the world's.
   element("ar-root").addEventListener("beforexrselect", (event) => {
     if (
-      cancelsXrSelect(event.target instanceof Element ? event.target : null)
+      cancelsXrSelect(event.target instanceof Element ? event.target : null) ||
+      travelRegistry.pressing()
     ) {
       event.preventDefault();
     }
   });
+  // A finger on the travelling words (on the plate under a sign, or in
+  // flight) takes them; a press on an overlay stays the overlay's.
+  element("ar-root").addEventListener("pointerdown", (event) => {
+    if (
+      cancelsXrSelect(event.target instanceof Element ? event.target : null)
+    ) {
+      return;
+    }
+    travelRegistry.pointerDown(event, element("ar-root"));
+  });
 }
 hooks.visitorTap = (tap) => {
   routeVisitorTap(tap, {
+    // A select the travelling words own (a press, or its grace) is theirs.
+    words: () => travelRegistry.ownsTap(),
     character: stations.characterTapped,
     model: (t) => modelVisitor.tapped(t),
     // A world part under the tap: a reading stand turns its page, a

@@ -18,6 +18,8 @@ finger.
     no-op;
   - `ownsTap()`: any box owns the current XR select (a press, or the grace
     after it);
+  - `pressing()`: a finger is on any box's words now (`main.ts` cancels
+    the XR select meanwhile);
   - `pointerDown(e, target)` gives the press to the topmost words under
     the pointer and answers whether one took it;
   - `size()`.
@@ -51,5 +53,5 @@ renderer.setAnimationLoop(() => {
 
 - `travel-registry.test.ts`: the quad first, then the nearest plate; no
   words under the pointer gives no press; each box once a frame and never
-  from inside one; `ownsTap` while any box owns it; a tie between quads
-  goes to the later one.
+  from inside one; `ownsTap` while any box owns it; `pressing` while any
+  box is; a tie between quads goes to the later one.

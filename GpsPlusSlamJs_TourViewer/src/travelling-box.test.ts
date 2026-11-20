@@ -312,6 +312,30 @@ describe("createTravellingBox", () => {
     expect(box.state().place).toBe("dock");
   });
 
+  // Why: an XR select fires at the touch's end, and a phone may offer it
+  // before the page's pointerdown; a press that starts on the plate and
+  // is dragged off it must still own that select, through the grace after
+  // the finger lifts, and the next tap must reach the world again.
+  it("owns the select of a press dragged off the plate, until the grace ends", () => {
+    box.frame();
+    run(320);
+    const target = new Target();
+    const c = box.state().plateQuad;
+    if (c === null) throw new Error("no plate on screen");
+    const cx = (c[0]![0] + c[2]![0]) / 2;
+    const cy = (c[0]![1] + c[2]![1]) / 2;
+    expect(box.ownsTap()).toBe(false);
+    expect(box.pointerDown(pointer("pointerdown", cx, cy), target)).toBe(true);
+    target.dispatchEvent(pointer("pointermove", cx + 150, cy + 300));
+    expect(box.ownsTap()).toBe(true);
+    target.dispatchEvent(pointer("pointerup", cx + 150, cy + 300));
+    expect(box.ownsTap()).toBe(true);
+    t += CLOSING_TAP_GRACE_MS - 1;
+    expect(box.ownsTap()).toBe(true);
+    t += 1;
+    expect(box.ownsTap()).toBe(false);
+  });
+
   // Why: a finger that catches the words mid-flight holds them there.
   it("freezes the flight under a finger", () => {
     box.frame();

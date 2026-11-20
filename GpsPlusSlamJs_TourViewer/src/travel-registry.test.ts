@@ -15,6 +15,7 @@ function fake(name: string, hit: TravelHit | null, log: string[]) {
     ownsTap(): boolean {
       return this.owns;
     },
+    pressing: () => false,
   };
 }
 
@@ -66,6 +67,23 @@ describe("createTravelRegistry", () => {
     reg.frame();
     expect(log).toEqual(["frame a", "frame b", "frame a"]);
     expect(reg.size()).toBe(1);
+  });
+
+  // Why: the page cancels the XR select while a finger is on the words,
+  // so a drag over the world never also taps it.
+  it("is pressing while any box is", () => {
+    const reg = createTravelRegistry();
+    const a = {
+      ...fake("a", null, []),
+      down: false,
+      pressing(): boolean {
+        return this.down;
+      },
+    };
+    reg.add(a);
+    expect(reg.pressing()).toBe(false);
+    a.down = true;
+    expect(reg.pressing()).toBe(true);
   });
 
   it("owns a tap while any box does", () => {

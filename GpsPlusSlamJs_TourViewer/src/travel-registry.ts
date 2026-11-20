@@ -13,7 +13,10 @@ import type {
   TravellingBox,
 } from "./travelling-box.js";
 
-type Entry = Pick<TravellingBox, "frame" | "hit" | "pointerDown" | "ownsTap">;
+type Entry = Pick<
+  TravellingBox,
+  "frame" | "hit" | "pointerDown" | "ownsTap" | "pressing"
+>;
 
 export interface TravelRegistry {
   /** Adds a box; the returned function takes it out again. */
@@ -22,6 +25,9 @@ export interface TravelRegistry {
   frame(): void;
   /** Any box owns the current XR select (a press, or its grace). */
   ownsTap(): boolean;
+  /** A finger is on any box's words now (the page cancels the XR select
+   *  meanwhile). */
+  pressing(): boolean;
   /** Gives the press to the topmost words under the pointer: a flying or
    *  docked quad over any plate in the world, then the nearest plate. */
   pointerDown(e: TravelPointer, target: TravelPointerTarget): boolean;
@@ -54,6 +60,7 @@ export function createTravelRegistry(): TravelRegistry {
       }
     },
     ownsTap: () => boxes.some((box) => box.ownsTap()),
+    pressing: () => boxes.some((box) => box.pressing()),
     pointerDown(e, target) {
       let best: Entry | null = null;
       let bestQuad = false;
