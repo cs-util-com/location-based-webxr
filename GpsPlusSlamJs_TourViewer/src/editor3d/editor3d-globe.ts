@@ -580,9 +580,7 @@ export async function openGlobeEditor(
 
     const ground = createEditorTerrain({
       renderer,
-      centre: { lat: centre.lat, lng: centre.lng },
       device: reliefDeviceClass(window.innerWidth),
-      placement: "ecef",
       // The globe's own ground and look (as the globe lab's relief), so
       // the ground keeps its colour where the relief takes over.
       imagery: createGlobeImagery(),

@@ -30,9 +30,9 @@
   - A frame of exactly 50 ms is not slow.
   - The window is measured from the last tick, not the wall clock: a view
     that stops drawing keeps its last count until it draws again. A pause
-    is a signal, never a gap length: the views call `pause()` when they
-    skip a frame for a canvas without a size (the globe view) and on a
-    hidden page (`pauseWhenHidden`, both views), so a real hitch of any
+    is a signal, never a gap length: the globe view calls `pause()` when
+    it skips a frame for a canvas without a size and on a hidden page
+    (`pauseWhenHidden`), so a real hitch of any
     length (a shader compile, a tile burst) is still timed and counted.
 - Example:
   ```ts

@@ -23,8 +23,8 @@ deleted with the losing models (DEC-R7b-2a).
 - `G_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   G's own compressed scale. The registry grounds and rescales; this file does
   not.
-- `G_PALETTE` — the palette values a G port may paint with, abbreviated as the
-  source names them. Pinned in `poi-variants.test.ts`.
+- The palette is the module's own `G` (not exported), abbreviated as the
+  source names it. No test compares it with the house palette.
 
 ## Invariants & assumptions
 
@@ -58,7 +58,8 @@ const mesh = scaledToHeight(groundedMesh(build!()), 2.2); // what `adopted()` do
 
 ## Tests
 
-- `poi-variants.test.ts` — the shared registry contract (base at `y = 0`, finite
-  positions, outward winding, height matching the shipped model) plus the
-  palette assertion that keeps `G_PALETTE` from drifting.
+- `poi-models.test.ts` - the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
 - `poi-primitives.test.ts` — the primitives each port composes.
