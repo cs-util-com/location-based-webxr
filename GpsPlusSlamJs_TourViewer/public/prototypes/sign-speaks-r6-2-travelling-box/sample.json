@@ -1,0 +1,36 @@
+{
+  "name": "The weighing house",
+  "words": "A narrated long text whose words travel between the sign and the screen.",
+  "records": {
+    "normal": {
+      "kind": "long-text",
+      "view": "reading",
+      "title": "The weighing house",
+      "body": "This house was built for one job: weighing what came to market. Every sack of grain, every bale of wool and every cheese passed over the great scale inside the door. The scale master wrote each weight in a ledger, and the town took one coin in twenty. Look up at the gable. The iron hook still hangs there, where the heaviest loads were lifted with a rope and a wheel. In winter the hall became a dance floor, and the scale was pushed against the wall. When the market moved to the new square, the house stood empty for many years. Today the ground floor is open again, and on the first morning of each month the old scale weighs whatever you bring.",
+      "narration": {
+        "audio": "voice/weighing-house.ogg",
+        "synthetic": true,
+        "words": "sign"
+      }
+    },
+    "longest": {
+      "kind": "long-text",
+      "view": "reading",
+      "title": "The weighing house and the long quarrel over the town's one true pound",
+      "body": "This house was built for one job: weighing what came to market. Every sack of grain, every bale of wool and every cheese passed over the great scale inside the door. The scale master wrote each weight in a ledger, and the town took one coin in twenty. For a hundred years the merchants quarrelled about the pound itself, because the pound of the town and the pound of the river port were not the same, and a careful trader could earn more from the difference than from the goods. In the end the council cast one bronze weight, stamped it, and kept it in a chest with three locks. Look up at the gable. The iron hook still hangs there, where the heaviest loads were lifted with a rope and a wheel. In winter the hall became a dance floor, and the scale was pushed against the wall. When the market moved to the new square, the house stood empty for many years. Today the ground floor is open again, and on the first morning of each month the old scale weighs whatever you bring.",
+      "narration": {
+        "audio": "voice/weighing-house-long.ogg",
+        "synthetic": true,
+        "words": "sign"
+      }
+    },
+    "missing": {
+      "kind": "long-text",
+      "view": "reading",
+      "title": "The weighing house",
+      "body": "This house was built for one job: weighing what came to market. Every sack of grain, every bale of wool and every cheese passed over the great scale inside the door. The scale master wrote each weight in a ledger, and the town took one coin in twenty. Look up at the gable. The iron hook still hangs there, where the heaviest loads were lifted with a rope and a wheel.",
+      "narration": { "audio": "", "synthetic": true, "words": "sign" }
+    }
+  },
+  "assets": []
+}
