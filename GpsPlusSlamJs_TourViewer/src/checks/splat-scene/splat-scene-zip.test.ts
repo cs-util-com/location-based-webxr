@@ -7,7 +7,12 @@ import {
   sceneWalk,
   type WalkKind,
 } from "./splat-scene.js";
-import { zipSceneWalk, type SceneFrame } from "./splat-scene-zip.js";
+import {
+  actionEntries,
+  photoEntryName,
+  zipSceneWalk,
+  type SceneFrame,
+} from "./splat-scene-zip.js";
 
 /** A JPEG's start and end markers: the reader never decodes a photo. */
 const PHOTO = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
@@ -64,5 +69,17 @@ describe("zipSceneWalk", () => {
     ]) {
       await expect(zipSceneWalk(frames, w!, h!)).rejects.toThrow(RangeError);
     }
+  });
+
+  // Why: the check page's zip and the reader's test recordings share
+  // these names; the reader matches captures to photos and orders actions
+  // by them, so both must spell them as the Recorder does.
+  it("names photos and actions as the Recorder does", () => {
+    expect(photoEntryName(0)).toBe("images/frame-000001.jpg");
+    expect(photoEntryName(41)).toBe("images/frame-000042.jpg");
+    expect(actionEntries([{ a: 1 }, "b"], "walk/")).toEqual([
+      { path: "walk/actions/000001.json", data: '{"a":1}' },
+      { path: "walk/actions/000002.json", data: '"b"' },
+    ]);
   });
 });

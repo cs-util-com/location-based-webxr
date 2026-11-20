@@ -24,7 +24,8 @@ interface WalkWindow {
   /** Index of the segment the window lies in. */
   readonly segment: number;
   /** The frames the window stands for, hold-outs included. The cores of
-   *  all windows partition the walk. */
+   *  all windows partition the walk, except for a segment of hold-outs
+   *  alone, whose frames no window stands for. */
   readonly core: readonly number[];
   /** The frames it trains on: its core's non-hold-outs plus its
    *  neighbours' within the overlap reach, never a hold-out. */
@@ -113,7 +114,8 @@ export function holdoutIndices(count: number, every: number): Set<number> {
  * frames left to no window. Each window then trains on its neighbours'
  * frames within `overlapFraction * windowM` along the walk of its core,
  * and, while it has fewer than `minHoldouts`, borrows the hold-outs of
- * its segment nearest its core along the walk. Throws a RangeError for settings that cannot hold
+ * its segment nearest its core along the walk. Throws a RangeError for
+ * settings that cannot hold
  * (`maxFrames < 2 * minFrames`, or a non-positive length).
  */
 export function planWindows(

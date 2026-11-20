@@ -28,7 +28,8 @@ const JPEG_QUALITY = 0.9;
  * Render the scene at each pose into `width` x `height` JPEGs with
  * `projection`, in pose order. `onFrame` hears each finished frame's
  * index (for a progress line). Rejects when WebGL or JPEG encoding is not
- * available; the renderer and every texture are freed either way.
+ * available; the WebGL context is given back and the renderer and every
+ * texture are freed either way.
  */
 export async function renderSceneFrames(
   poses: readonly ScenePose[],
@@ -71,6 +72,8 @@ export async function renderSceneFrames(
     }
     return out;
   } finally {
+    // A browser keeps few WebGL contexts and dispose() alone keeps this one.
+    renderer.forceContextLoss();
     for (const d of disposables) d.dispose();
   }
 }

@@ -6,6 +6,8 @@ Writes a walk through the synthetic splat scene as a recorder-shaped zip, so the
 
 ## Public API
 
+- `photoEntryName(index) -> string` - the photo entry of capture `index` (0-based), `images/frame-000001.jpg` for the first.
+- `actionEntries(actions, folder?) -> ZipEntryInput[]` - one entry per action, `actions/000001.json` on, inside `folder` (with its slash). The reader's test recordings (`src/test-support/synthetic-recording.ts`) build their zips with these two as well.
 - `zipSceneWalk(frames, width, height, name?) -> Promise<File>` - `frames` are `{ jpeg, depth }`; the depth sample's pose and time are the photo's too. Rejects with a RangeError for no frames or a size that is not a positive integer.
 
 ## Invariants & assumptions
@@ -26,4 +28,4 @@ const file = await zipSceneWalk(
 
 ## Tests
 
-- `splat-scene-zip.test.ts` - a straight and a loop walk with placeholder photos are read by `readSplatInputs` whole (frames, size, depth samples, poses, square-pixel lens, depths within float32); the RangeErrors. The rendered walk is covered by `playwright-tests/splat-scene-check.spec.js`.
+- `splat-scene-zip.test.ts` - a straight and a loop walk with placeholder photos are read by `readSplatInputs` whole (frames, size, depth samples, poses, square-pixel lens, depths within float32); the RangeErrors; the entry names. The rendered walk is covered by `playwright-tests/splat-scene-check.spec.js`.

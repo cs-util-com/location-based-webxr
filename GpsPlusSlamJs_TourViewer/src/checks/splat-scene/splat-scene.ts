@@ -1,6 +1,6 @@
 /**
  * The splat trainer's synthetic scene, as pure geometry: a closed room
- * (floor and four walls) with an asymmetric object in its middle, the
+ * (floor, four walls and a ceiling) with an asymmetric object in its middle, the
  * camera walks through it (a straight walk and a loop), the lens, the
  * depth a camera would measure at each pose, and each surface's texture.
  * Nothing here draws: `splat-scene-render.ts` renders these boxes, and
@@ -160,18 +160,33 @@ export function lookAt(eye: Vector3, target: Vector3): ScenePose {
 
 /**
  * The poses of a walk of `frames` captures (an integer of at least 2):
- * - `straight`: along +x at `EYE_HEIGHT_M`, each camera looking ahead
- *   over the object (towards -z) and slightly down;
- * - `loop`: once round the object at `LOOP_RADIUS_M`, every camera facing
- *   it; the last capture is one step short of the first, so the walk ends
- *   where it began.
- * Throws a RangeError for any other `frames`.
+ * - `straight`: walking along +x at `EYE_HEIGHT_M` on the line
+ *   z = 3.5, every camera turned to look towards -z, at the object and the
+ *   wall behind it, and slightly down;
+ * - `loop`: `laps` times round the object at `LOOP_RADIUS_M`, every
+ *   camera facing it, `frames` spread evenly over all laps; the last
+ *   capture is one step short of the first, so the walk ends where it
+ *   began. With two laps or more every spot is seen again from a later
+ *   lap: the revisit case of the ownership rules.
+ * Throws a RangeError for any other `frames`, for `laps` that is not a
+ * positive integer, and for more than one lap of the straight walk.
  */
-export function sceneWalk(kind: WalkKind, frames: number): ScenePose[] {
+export function sceneWalk(
+  kind: WalkKind,
+  frames: number,
+  laps = 1,
+): ScenePose[] {
   if (!Number.isInteger(frames) || frames < 2) {
     throw new RangeError(
       `A walk needs an integer of at least 2 frames, got ${String(frames)}`,
     );
+  }
+  if (
+    !Number.isInteger(laps) ||
+    laps < 1 ||
+    (kind === "straight" && laps !== 1)
+  ) {
+    throw new RangeError(`A ${kind} walk cannot have ${String(laps)} laps`);
   }
   const poses: ScenePose[] = [];
   for (let i = 0; i < frames; i++) {
@@ -181,7 +196,7 @@ export function sceneWalk(kind: WalkKind, frames: number): ScenePose[] {
         (2 * STRAIGHT_HALF_LENGTH_M * i) / (frames - 1);
       poses.push(lookAt([x, EYE_HEIGHT_M, STRAIGHT_Z_M], [x * 0.5, 0.6, -2]));
     } else {
-      const a = (2 * Math.PI * i) / frames;
+      const a = (2 * Math.PI * laps * i) / frames;
       poses.push(
         lookAt(
           [
@@ -231,9 +246,10 @@ export function sceneProjection(width: number, height: number): Matrix4 {
 
 /**
  * The first box a ray from `origin` along `direction` (any length) meets,
- * and the hit point, or null when it meets none.
+ * and the hit point, or null when it meets none: a box behind another
+ * along the ray is hidden by it.
  */
-function castRay(
+export function castRay(
   origin: Vector3,
   direction: Vector3,
 ): { readonly box: SceneBox; readonly point: Vector3 } | null {
@@ -260,12 +276,45 @@ function castRay(
 }
 
 /**
+ * The first box the ray of the pixel at (`screenX`, `screenY`) meets
+ * (0 to 1, top-left origin) for a camera at `pose` with `projection`,
+ * and the hit point, or null when it meets none: what the photo shows at
+ * that pixel and what the depth sample measures there.
+ */
+export function sceneHitAt(
+  pose: ScenePose,
+  projection: Matrix4,
+  screenX: number,
+  screenY: number,
+): ReturnType<typeof castRay> {
+  return pixelHit(
+    pose,
+    new THREE.Matrix4().fromArray([...projection]).invert(),
+    screenX,
+    screenY,
+  );
+}
+
+function pixelHit(
+  pose: ScenePose,
+  inverseProjection: THREE.Matrix4,
+  screenX: number,
+  screenY: number,
+): ReturnType<typeof castRay> {
+  // NDC on the near plane, y flipped to bottom-up.
+  const world = new THREE.Vector3(2 * screenX - 1, 1 - 2 * screenY, -1)
+    .applyMatrix4(inverseProjection)
+    .applyQuaternion(new THREE.Quaternion(...pose.rotation));
+  return castRay(pose.position, [world.x, world.y, world.z]);
+}
+
+/**
  * The depth sample a camera at `pose` measures on a `grid` x `grid` grid
  * at the sampler's screen positions (`(i + 1) / (grid + 1)`, top-left
  * origin): each point's z-depth along the camera's -z to the first box its
- * pixel's ray meets, as float32. A ray that meets nothing gives no point
- * (the room is closed, so none does). Throws a RangeError for a grid that
- * is not a positive integer.
+ * pixel's ray meets ({@link sceneHitAt}), as float32. A ray that meets
+ * nothing gives no point (the room is closed, so none does). Throws a
+ * RangeError for a grid that is not a positive integer.
  */
 export function sceneDepthSample(
   pose: ScenePose,
@@ -279,22 +328,16 @@ export function sceneDepthSample(
     );
   }
   const inverse = new THREE.Matrix4().fromArray([...projection]).invert();
-  const rotation = new THREE.Quaternion(...pose.rotation);
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation);
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+    new THREE.Quaternion(...pose.rotation),
+  );
   const eye = new THREE.Vector3(...pose.position);
   const points: DepthPoint[] = [];
   for (let row = 0; row < grid; row++) {
     for (let col = 0; col < grid; col++) {
       const screenX = (col + 1) / (grid + 1);
       const screenY = (row + 1) / (grid + 1);
-      // NDC on the near plane, y flipped to bottom-up.
-      const view = new THREE.Vector3(
-        2 * screenX - 1,
-        1 - 2 * screenY,
-        -1,
-      ).applyMatrix4(inverse);
-      const world = view.applyQuaternion(rotation);
-      const hit = castRay(pose.position, [world.x, world.y, world.z]);
+      const hit = pixelHit(pose, inverse, screenX, screenY);
       if (hit === null) continue;
       const depthM = new THREE.Vector3(...hit.point).sub(eye).dot(forward);
       points.push({ screenX, screenY, depthM: Math.fround(depthM) });
@@ -310,7 +353,9 @@ export function sceneDepthSample(
 }
 
 /** A surface's tint, RGB 0-1, multiplied into its grey texture. */
-const TINT: Readonly<Record<SurfaceKind, readonly [number, number, number]>> = {
+export const SURFACE_TINT: Readonly<
+  Record<SurfaceKind, readonly [number, number, number]>
+> = {
   floor: [1, 0.85, 0.65],
   wall: [0.9, 0.95, 1],
   object: [0.45, 0.75, 1],
@@ -330,7 +375,7 @@ export function surfaceTexture(
   size: number,
 ): Uint8Array {
   const grey = syntheticTexture(size, size, seed).rgba;
-  const tint = TINT[kind];
+  const tint = SURFACE_TINT[kind];
   const data = new Uint8Array(grey.length);
   for (let i = 0; i < grey.length; i += 4) {
     data[i] = Math.round((grey[i] ?? 0) * tint[0]);
@@ -339,4 +384,28 @@ export function surfaceTexture(
     data[i + 3] = 255;
   }
   return data;
+}
+
+/**
+ * The distance from `p` to the nearest face of any box it lies on or in
+ * (m): 0 on a surface. What a reconstruction of the scene is measured
+ * against.
+ */
+export function distanceToScene(p: Vector3): number {
+  let best = Infinity;
+  for (const b of SCENE_BOXES) {
+    // Outside distance per axis (0 inside the slab).
+    const out = [0, 1, 2].map((k) =>
+      Math.max((b.min[k] ?? 0) - (p[k] ?? 0), 0, (p[k] ?? 0) - (b.max[k] ?? 0)),
+    );
+    const outside = Math.hypot(...out);
+    const inside = Math.min(
+      ...[0, 1, 2].flatMap((k) => [
+        (p[k] ?? 0) - (b.min[k] ?? 0),
+        (b.max[k] ?? 0) - (p[k] ?? 0),
+      ]),
+    );
+    best = Math.min(best, outside > 0 ? outside : Math.max(0, inside));
+  }
+  return best;
 }

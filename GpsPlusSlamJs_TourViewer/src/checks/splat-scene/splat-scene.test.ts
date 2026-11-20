@@ -1,16 +1,26 @@
 import type { Vector3 } from "gps-plus-slam-app-framework/core";
 import { createDepthUnprojector } from "gps-plus-slam-app-framework/ar/depth-unprojection";
 import { lookAtPose } from "gps-plus-slam-app-framework/test-utils/synthetic-qr-walk";
+import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { sees } from "../../splat-trainer/splat-ownership.js";
+import {
+  createOwnership,
+  sees,
+  type OwnershipCamera,
+} from "../../splat-trainer/splat-ownership.js";
+import { TRAINER_DEFAULTS } from "../../splat-trainer/trainer-defaults.js";
+import { planWindows } from "../../splat-trainer/walk-windows.js";
 import {
   EYE_HEIGHT_M,
   LOOP_RADIUS_M,
   OBJECT_CENTRE,
   SCENE_BOXES,
+  castRay,
+  distanceToScene,
   lookAt,
   sceneDepthSample,
+  sceneHitAt,
   sceneProjection,
   sceneWalk,
   surfaceTexture,
@@ -42,23 +52,6 @@ function insideObject(p: Vector3): boolean {
         (k) => p[k]! > b.min[k]! + 1e-9 && p[k]! < b.max[k]! - 1e-9,
       ),
   );
-}
-
-/** Distance from `p` to the nearest face of any box it lies on or in. */
-function distanceToSurface(p: Vector3): number {
-  let best = Infinity;
-  for (const b of SCENE_BOXES) {
-    // Outside distance per axis (0 inside the slab).
-    const out = [0, 1, 2].map((k) =>
-      Math.max(b.min[k]! - p[k]!, 0, p[k]! - b.max[k]!),
-    );
-    const outside = Math.hypot(...out);
-    const inside = Math.min(
-      ...[0, 1, 2].flatMap((k) => [p[k]! - b.min[k]!, b.max[k]! - p[k]!]),
-    );
-    best = Math.min(best, outside > 0 ? outside : Math.max(0, inside));
-  }
-  return best;
 }
 
 describe("the synthetic splat scene", () => {
@@ -114,8 +107,9 @@ describe("the synthetic splat scene", () => {
     });
   });
 
-  // Why: the loop is the revisit case of the ownership rules; it must
-  // close on itself and keep the object in the middle of every photo.
+  // Why: the loop must close on itself and keep the object in the middle
+  // of every photo; walked twice (`laps`) it is the revisit case of the
+  // ownership rules, pinned below.
   it("walks once round the object and ends where it began", () => {
     const frames = 16;
     const poses = sceneWalk("loop", frames);
@@ -145,6 +139,20 @@ describe("the synthetic splat scene", () => {
         12,
       );
     }
+  });
+
+  it("walks the loop twice with the frames spread over both laps", () => {
+    const poses = sceneWalk("loop", 32, 2);
+    const once = sceneWalk("loop", 16);
+    // The second lap passes the first lap's spots again.
+    poses.slice(16).forEach((p, i) => {
+      once[i]!.position.forEach((v, k) =>
+        expect(p.position[k]).toBeCloseTo(v, 9),
+      );
+    });
+    expect(() => sceneWalk("loop", 32, 0)).toThrow(RangeError);
+    expect(() => sceneWalk("loop", 32, 1.5)).toThrow(RangeError);
+    expect(() => sceneWalk("straight", 32, 2)).toThrow(RangeError);
   });
 
   it("refuses a walk of fewer than two frames or a fraction", () => {
@@ -221,12 +229,52 @@ describe("the synthetic splat scene", () => {
         for (const point of sample.points) {
           const p = unproject?.unproject(point);
           expect(p).not.toBeNull();
-          expect(distanceToSurface(p!)).toBeLessThan(
-            1e-5 * point.depthM + 1e-6,
-          );
+          expect(distanceToScene(p!)).toBeLessThan(1e-5 * point.depthM + 1e-6);
         }
       }
     }
+  });
+
+  // Why: depth is only ground truth if a box behind another along the ray
+  // is hidden by it, as a camera would see it.
+  it("hits the nearest box along a ray, never one hidden behind it", () => {
+    // From the straight walk's line straight at the block: the block's
+    // +z face (z = 0) hides the far wall (z = -6) behind it.
+    const hit = castRay([0, 0.3, 3.5], [0, 0, -1]);
+    expect(hit?.box.name).toBe("block");
+    expect(hit?.point[2]).toBeCloseTo(0, 9);
+    // Just above the block the ray reaches the far wall.
+    expect(castRay([0, 0.7, 3.5], [0, 0, -1])?.box.name).toBe("wall -z");
+    // Out of the room, away from every box: nothing.
+    expect(castRay([0, 10, 0], [0, 1, 0])).toBeNull();
+  });
+
+  // Why: the browser check compares each photo's colour at the depth
+  // grid with the surface this names, so it must agree with the depth
+  // sample: the same pixel ray, the same first box.
+  it("names the surface a pixel sees, where the depth sample measures it", () => {
+    const pose = sceneWalk("loop", 6)[0]!;
+    const projection = sceneProjection(320, 240);
+    expect(sceneHitAt(pose, projection, 0.5, 0.5)?.box.kind).toBe("object");
+    expect(sceneHitAt(pose, projection, 0.5, 0.98)?.box.kind).toBe("floor");
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
+      new THREE.Quaternion(...pose.rotation),
+    );
+    const sample = sceneDepthSample(pose, projection, 5, 0);
+    expect(sample.points.length).toBe(25);
+    for (const p of sample.points) {
+      const hit = sceneHitAt(pose, projection, p.screenX, p.screenY)!;
+      const depth = new THREE.Vector3(...hit.point)
+        .sub(new THREE.Vector3(...pose.position))
+        .dot(forward);
+      expect(Math.fround(depth)).toBe(p.depthM);
+    }
+  });
+
+  it("measures the distance to the scene: 0 on a surface, positive off it", () => {
+    expect(distanceToScene([0, 0, 0])).toBe(0);
+    expect(distanceToScene([0, 1.5, 3.5])).toBeCloseTo(1.5, 9);
+    expect(distanceToScene([2, 1.5, 2])).toBeCloseTo(1.5, 9);
   });
 
   it("refuses a depth grid that is not a positive integer", () => {
@@ -248,5 +296,76 @@ describe("the synthetic splat scene", () => {
     expect(new Set(SCENE_BOXES.map((b) => b.seed)).size).toBe(
       SCENE_BOXES.length,
     );
+  });
+});
+
+describe("the twice-walked loop and the ownership rules", () => {
+  const FRAMES = 67;
+  const LAPS = 2;
+  const perLap = FRAMES / LAPS;
+  const poses = sceneWalk("loop", FRAMES, LAPS);
+  const plan = planWindows(
+    poses.map((p, i) => ({ position: p.position, capturedAt: i * 500 })),
+    { ...TRAINER_DEFAULTS, windowM: 5, minFrames: 4, minHoldouts: 2 },
+  );
+  const held = new Set(plan.holdouts);
+  const cameras: OwnershipCamera[] = plan.windows.flatMap((w, window) =>
+    w.core
+      .filter((i) => !held.has(i))
+      .map((i) => ({
+        position: poses[i]!.position,
+        rotation: poses[i]!.rotation,
+        window,
+        along: plan.along[i]!,
+      })),
+  );
+  const lap2Only = new Set(
+    plan.windows.flatMap((w, window) =>
+      w.core.every((i) => i >= perLap) ? [window] : [],
+    ),
+  );
+  /** Spots of the scene the first lap saw, at its depth grid. */
+  const spots: Vector3[] = poses
+    .slice(0, Math.floor(perLap))
+    .flatMap((pose) => {
+      const sample = sceneDepthSample(pose, PROJECTION, 6, 0);
+      const u = createDepthUnprojector(
+        sample.cameraPos,
+        sample.cameraRot,
+        sample.projectionMatrix,
+      );
+      return sample.points.flatMap((pt) => {
+        const p = u?.unproject(pt);
+        return p === null || p === undefined ? [] : [p];
+      });
+    });
+  const onObject = (p: Vector3): boolean =>
+    SCENE_BOXES.some(
+      (b) =>
+        b.kind === "object" &&
+        [0, 1, 2].every(
+          (k) => p[k]! >= b.min[k]! - 1e-4 && p[k]! <= b.max[k]! + 1e-4,
+        ),
+    );
+  const objectSpots = spots.filter(onObject);
+  /** How many of the object's spots a window of the second lap alone owns. */
+  const ownedBySecondLap = (range: number): number => {
+    const own = createOwnership(cameras, plan.windows, PROJECTION, range);
+    return objectSpots.filter((p) => lap2Only.has(own.ownerOf(p))).length;
+  };
+
+  // Why: a revisit is decided by distance along the walk against twice
+  // the range. At a range of 4 or 8 m (16 m of walk at most) the second
+  // lap, 22 m of walk later, is a revisit: the first lap keeps every spot
+  // of the object, so one surface is never kept twice. At 20 or 40 m the
+  // whole 44 m walk counts as one pass and the nearest camera wins, so
+  // the second lap owns some spots. At 2 m the object is out of range and
+  // the nearest seeing camera names the owner, revisit or not.
+  it("keeps the object with the first lap when the range makes the second a revisit", () => {
+    expect(lap2Only.size).toBeGreaterThan(0);
+    expect(objectSpots.length).toBeGreaterThan(50);
+    for (const range of [4, 8]) expect(ownedBySecondLap(range)).toBe(0);
+    for (const range of [20, 40])
+      expect(ownedBySecondLap(range)).toBeGreaterThan(0);
   });
 });

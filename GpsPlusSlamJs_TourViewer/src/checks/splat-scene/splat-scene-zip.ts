@@ -61,7 +61,7 @@ export async function zipSceneWalk(
   ];
   const actions: unknown[] = [];
   frames.forEach((frame, i) => {
-    const imageFile = `images/frame-${pad6(i + 1)}.jpg`;
+    const imageFile = photoEntryName(i);
     actions.push(
       packDepthAction({ type: DEPTH_SAMPLE_ACTION_TYPE, payload: frame.depth }),
     );
@@ -79,14 +79,27 @@ export async function zipSceneWalk(
     });
     entries.push({ path: imageFile, data: frame.jpeg });
   });
-  actions.forEach((action, i) => {
-    entries.push({
-      path: `actions/${pad6(i + 1)}.json`,
-      data: JSON.stringify(action),
-    });
-  });
+  entries.push(...actionEntries(actions));
   const blob = await packFilesAsZip(entries);
   return new File([blob], name, { type: "application/zip" });
+}
+
+/** The zip entry name of the photo of capture `index` (0-based), as the
+ *  Recorder names it: `images/frame-000001.jpg` for the first. */
+export function photoEntryName(index: number): string {
+  return `images/frame-${pad6(index + 1)}.jpg`;
+}
+
+/** One zip entry per recorded action, `actions/000001.json` on, in
+ *  order, as the Recorder writes them, inside `folder` (with its slash). */
+export function actionEntries(
+  actions: readonly unknown[],
+  folder = "",
+): ZipEntryInput[] {
+  return actions.map((action, i) => ({
+    path: `${folder}actions/${pad6(i + 1)}.json`,
+    data: JSON.stringify(action),
+  }));
 }
 
 function pad6(n: number): string {

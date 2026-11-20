@@ -12,6 +12,8 @@
  *
  * @see splat-scene-check.ts.md
  */
+import { DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE } from "gps-plus-slam-app-framework/ar/depth-sampler";
+
 import { readSplatInputs } from "../../splat-trainer/recording-reader.js";
 import {
   sceneDepthSample,
@@ -22,8 +24,11 @@ import {
 import { renderSceneFrames } from "./splat-scene-render.js";
 import { zipSceneWalk } from "./splat-scene-zip.js";
 
-/** The depth grid's side, as the recorder's sampler writes it. */
-const DEPTH_GRID = 8;
+/** The depth grid's side, the recorder's reconstruction grid. */
+const DEPTH_GRID = DEFAULT_RECONSTRUCTION_DEPTH_GRID_SIZE;
+/** The most photos one walk renders; the frame field's `max` says the
+ *  same, but only as a hint a typed value can pass. */
+const MAX_FRAMES = 400;
 /** The walk's first capture time and the time between captures. */
 const T0_MS = 1_700_000_000_000;
 const INTERVAL_MS = 500;
@@ -78,7 +83,7 @@ export function startSplatSceneCheck(
     shown = null;
     try {
       const kind: WalkKind = walk.value === "loop" ? "loop" : "straight";
-      const count = Number(frames.value);
+      const count = Math.min(Number(frames.value), MAX_FRAMES);
       const [width, height] = SIZES[size.value] ?? [320, 240];
       const projection = sceneProjection(width, height);
       const poses = sceneWalk(kind, count);
