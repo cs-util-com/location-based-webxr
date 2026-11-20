@@ -231,6 +231,16 @@ import {
 } from "./editor-entry.js";
 import { startNewTour } from "./new-tour.js";
 import {
+  SHOW_SCAN_AGAIN_LABELS,
+  createScanMemory,
+  indexedDbHandleStore,
+  type HandleStore,
+  reopenScan,
+  runShowScanAgain,
+  scanRememberedLine,
+  type ScanHandle,
+} from "./scan-memory.js";
+import {
   EMPTY_GLOBE_HINT,
   NEW_TOUR_SAVE_QUESTION,
   editorStartActions,
@@ -315,6 +325,7 @@ import {
   isSameFile,
   pickSaveFile,
   releaseUnusedPick,
+  pickScanFile,
   pickTourFile,
   saveFinePrint,
   InPlaceRefusal,
@@ -411,6 +422,23 @@ function autosaveSettings(): AutosaveSettings {
 
 const { maxBytes: autosaveMaxBytes = AUTOSAVE_MAX_BYTES, ...autosaveTimings } =
   autosaveSettings();
+
+/**
+ * Where scans are remembered: the browser's IndexedDB, except in the dev
+ * server an e2e may set `window.__tourEditorScanStore` (an init script),
+ * because a real file handle read back from IndexedDB crashes the headless
+ * test browsers. Inert in a production build, as `autosaveSettings`.
+ */
+function scanStore(): HandleStore | null {
+  if (import.meta.env.DEV && !import.meta.env.VITEST) {
+    const set = (window as { __tourEditorScanStore?: HandleStore })
+      .__tourEditorScanStore;
+    if (set !== undefined) return set;
+  }
+  return indexedDbHandleStore(
+    typeof indexedDB === "undefined" ? undefined : indexedDB,
+  );
+}
 
 /**
  * Whether an opened tour shows in the 3D view (the editor's default view)
@@ -678,6 +706,14 @@ let lock: EditorLock | null = null;
 let letGo: Promise<void> = Promise.resolve();
 /** Toasts about this file that mean nothing once another tour is open. */
 const fileToasts: HTMLElement[] = [];
+/** Scans remembered in this browser by tour id: where the file is (its
+ *  handle), never its bytes, never in the tour (`scan-memory.ts`). */
+const scanMemory = createScanMemory(scanStore());
+/** The handle a picked file came through, keyed by the File (a side
+ *  table: files and handles are resources, never store state). A scan
+ *  added with one is remembered; one dropped or given through a file
+ *  input has none. */
+const scanHandles = new WeakMap<File, ScanHandle>();
 let editor: EditorSession | null = null;
 
 /** The character maker's library on this device, opened once. */
@@ -3192,8 +3228,83 @@ async function addDebugData(file: File): Promise<AddScanOutcome | null> {
     forgetAddedDebug();
     addedDebug = { session: added.session, line: added.line };
     startDebugLayer();
+    rememberScan(mine, file);
     return { kind: "added" };
   });
+}
+
+/**
+ * The scan just added becomes the one this tour offers to show again
+ * after a reload: its handle remembered by the tour's id. A scan with no
+ * handle (dropped, or from a file input) cannot be read again, so the
+ * one remembered before is forgotten: "again" never means an older scan
+ * than the last one shown.
+ */
+function rememberScan(mine: EditorSession, file: File): void {
+  const tourId = mine.debugTour().tourId;
+  const handle = scanHandles.get(file);
+  void (handle === undefined
+    ? scanMemory.forget(tourId)
+    : scanMemory.remember(tourId, handle));
+}
+
+/**
+ * After a tour opened with no scan: when this browser remembers one for
+ * it, a held toast offers "Show the scan again" (`runShowScanAgain`:
+ * read permission asked in the click, busy meanwhile, a failure said; a
+ * scan gone since is forgotten and the offer withdrawn).
+ */
+async function offerRememberedScan(mine: EditorSession): Promise<void> {
+  const tourId = mine.debugTour().tourId;
+  const handle = await scanMemory.recall(tourId);
+  if (handle === null || editor !== mine || addedDebug !== null) return;
+  const offer = toast(
+    scanRememberedLine(handle.name),
+    {
+      label: SHOW_SCAN_AGAIN_LABELS.idle,
+      run: (button) => {
+        void runShowScanAgain(button, handle.name, {
+          reopen: () => reopenScan(handle),
+          add: (file) => {
+            scanHandles.set(file, handle);
+            return addScan(file);
+          },
+          forget: () => {
+            void scanMemory.forget(tourId);
+          },
+        }).then((result) => {
+          if (result.kind === "done" || !result.keepOffer) offer.remove();
+          if (result.kind === "failed") {
+            fileToasts.push(toast(result.line, undefined, null));
+          }
+        });
+      },
+    },
+    null,
+  );
+  fileToasts.push(offer);
+}
+
+/**
+ * A scan chosen through the browser's picker (its handle kept, so the
+ * scan can be remembered), else through `input`, for `use`.
+ */
+async function chooseScan(
+  input: HTMLInputElement,
+  use: (file: File) => Promise<void>,
+): Promise<void> {
+  const outcome = await pickScanFile(window as unknown as PickerWindow);
+  if (outcome.kind === "unavailable") {
+    input.click();
+    return;
+  }
+  if (outcome.kind === "cancelled") return;
+  if (outcome.kind === "unreadable") {
+    toast(`The chosen file could not be read: ${outcome.reason}`);
+    return;
+  }
+  scanHandles.set(outcome.file, outcome.handle);
+  await use(outcome.file);
 }
 
 /** Said when a scan started no add: another add ran. */
@@ -3316,6 +3427,9 @@ async function openTourWithScan(
   });
   if (outcome.kind === "scan-failed") {
     fileToasts.push(toast(outcome.line, undefined, null));
+  }
+  if (outcome.kind === "opened" && scan === null && editor !== null) {
+    void offerRememberedScan(editor);
   }
   const thrown = notOpenedLine(outcome);
   if (thrown !== null) {
@@ -3724,6 +3838,8 @@ async function chooseTour(): Promise<void> {
     openError.hidden = false;
     return;
   }
+  // A scan chosen here instead of a tour may be remembered too.
+  scanHandles.set(outcome.file, outcome.handle);
   await holdTourFiles([outcome.file], {
     file: outcome.file,
     handle: outcome.writable ? outcome.handle : null,
@@ -3800,7 +3916,9 @@ async function openExample(): Promise<void> {
     return;
   }
   setBusy(false, "");
-  if (await openFile(file)) datedSave = true;
+  if ((await openTourWithScan(file, null, null)).kind !== "not-opened") {
+    datedSave = true;
+  }
 }
 
 /**
@@ -4780,7 +4898,7 @@ store.subscribe(() => {
 // document's own drop guard keeps the browser from opening the file.
 for (const button of [debugAddButton, fileDebugAdd]) {
   button.addEventListener("click", () => {
-    debugAddInput.click();
+    void chooseScan(debugAddInput, addDebugDataSaying);
   });
 }
 debugAddInput.addEventListener("change", () => {
@@ -4916,7 +5034,7 @@ linkForm.addEventListener("submit", (event) => {
 });
 startOpen.addEventListener("click", openFromStart);
 startScanButton.addEventListener("click", () => {
-  startScanInput.click();
+  void chooseScan(startScanInput, holdScanFile);
 });
 startScanInput.addEventListener("change", () => {
   const file = startScanInput.files?.[0];

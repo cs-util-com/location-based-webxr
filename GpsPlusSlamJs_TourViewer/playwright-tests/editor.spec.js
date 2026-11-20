@@ -408,6 +408,88 @@ test("adds the debug data back beside a tour from its own button, and forgets it
   await expect(page.locator(".mk-debug-wrap")).toHaveCount(0);
 });
 
+test("remembers a scan picked in the picker by tour id, shows it again after a reload, and says when it is gone", async ({
+  page,
+}) => {
+  // Why (editor entry, the remembered scan): a scan is a large file the
+  // creator picked once. This browser remembers where it is - its file
+  // handle, by the tour's id, never its bytes and never in the tour - so
+  // reopening the tour offers "Show the scan again", which asks to read it
+  // again in that click and shows it as the first add did. A file deleted
+  // since is said in words, forgotten, and the offer withdrawn. The store
+  // is a stand-in: a real handle read back from IndexedDB crashes the
+  // headless test browsers (the IndexedDB adapter has its unit tests).
+  await page.addInitScript(() => {
+    // The page's store, kept across reloads in sessionStorage: the stored
+    // handle's name, read back as a handle that looks the file up in OPFS
+    // when read (a deleted file is NotFoundError, as a real handle's).
+    const prefix = "scan-store:";
+    Reflect.set(window, "__tourEditorScanStore", {
+      get: async (key) => {
+        const name = sessionStorage.getItem(prefix + key);
+        if (name === null) return undefined;
+        return {
+          kind: "file",
+          name,
+          requestPermission: async () => "granted",
+          getFile: async () => {
+            const root = await navigator.storage.getDirectory();
+            return (await root.getFileHandle(name)).getFile();
+          },
+        };
+      },
+      put: async (key, handle) => {
+        sessionStorage.setItem(prefix + key, handle.name);
+      },
+      delete: async (key) => {
+        sessionStorage.removeItem(prefix + key);
+      },
+    });
+  });
+  const tour = await editorTour({ tourId: "remembered-scan" });
+  const shown =
+    /^Scan walk-scan\.zip: shown while you edit\..*2 camera captures shown\.$/;
+  const offer = page.locator(".toast", {
+    hasText: "The scan walk-scan.zip was shown beside this tour before.",
+  });
+  const again = offer.getByRole("button", { name: "Show the scan again" });
+  await page.goto("/edit.html");
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(page.locator("#debug-panel")).toBeVisible();
+  await offerOpfsFile(
+    page,
+    await debugBundleOf({ tour: "Editor fixture", file: "editor-fixture.zip" }),
+    "walk-scan.zip",
+  );
+  await page.locator("#debug-add").click();
+  await expect(page.locator("#debug-status")).toHaveText(shown);
+
+  await page.reload();
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
+  await expect(page.locator("#debug-status")).toHaveText("");
+  await again.click();
+  await expect(page.locator("#debug-status")).toHaveText(shown);
+  await expect(offer).toHaveCount(0);
+
+  // Gone since: said, and the offer withdrawn.
+  await page.reload();
+  await openThroughChooser(page, tour, "editor-fixture.zip");
+  await expect(again).toBeVisible();
+  await page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry("walk-scan.zip");
+  });
+  await again.click();
+  await expect(
+    page.locator(".toast", {
+      hasText: "The scan walk-scan.zip is no longer where it was",
+    }),
+  ).toBeVisible();
+  await expect(offer).toHaveCount(0);
+  await expect(page.locator("#debug-status")).toHaveText("");
+});
+
 test("File's Add debug data opens the same add as the panel's button", async ({
   page,
 }) => {

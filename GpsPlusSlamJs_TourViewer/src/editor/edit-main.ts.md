@@ -39,8 +39,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   a scan never held as the tour (alone it is kept as the card's scan and
   `#open-status` says so), files left out named in a toast, several tours
   or scans refused in `#open-error`. The scan button holds a scan
-  (`holdScanFile`, `sortScanPick`; a tour there is refused with where it
-  goes). The Files themselves sit in the page's `startFiles` side table
+  (`chooseScan`: the browser's read-only picker, `pickScanFile`, else
+  `#start-scan-input`; then `holdScanFile`, `sortScanPick`; a tour there is
+  refused with where it goes). The Files themselves sit in the page's `startFiles` side table
   (a Blob is never store state); the slice holds their names, and
   `renderStartCard` draws the card from it (`startCardView`'s steps,
   button and summary line, `#start-summary`). Every show of the dialog
@@ -67,8 +68,26 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     to place your first station."
   - **The example**: `samples/marienplatz-tour.zip` beside the page,
     fetched with no save question ("Fetching the example tour…", a failure
-    in `#open-error`); it is saved only when the creator chooses Save,
-    whose first press asks for a file.
+    in `#open-error`), then opened through `openTourWithScan` as every
+    tour is; it is saved only when the creator chooses Save, whose first
+    press asks for a file.
+  - **The remembered scan** (`scan-memory.ts`): a scan added with a file
+    handle - picked through `chooseScan` or the tour picker, kept in the
+    `scanHandles` side table keyed by the File - is remembered by the
+    tour's id (`rememberScan`, from `EditorSession.debugTour().tourId`) in
+    IndexedDB: the handle, never its bytes, never in the tour. A scan added
+    without one (dropped, a file input) forgets the earlier one. A tour
+    that opens with no scan (`openTourWithScan`, the example included)
+    offers a remembered one in a held toast, "Show the scan again"
+    (`offerRememberedScan`, `runShowScanAgain`): read permission asked in
+    the click, the button busy meanwhile, the scan added as any add is; a
+    refusal or failed read said in a toast with the offer kept, a file gone
+    since said, forgotten and the offer withdrawn. The offer is a file
+    toast, so it goes when another tour opens.
+    The store is IndexedDB (`scanStore`), except in the dev server an
+    e2e may set `window.__tourEditorScanStore` (an init script, a
+    `HandleStore`): a real handle read back from IndexedDB crashes the
+    headless test browsers. Inert in a production build.
     Every entry starts only while `isEntryIdle` (`editor-view.ts`), and
     every control of the card (answers, pickers, link field, "Open the
     editor") is off while it is not - `renderStartCard` draws that from
@@ -282,8 +301,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     else the opened file when it carries a walk (`tourWalk`, its
     pictures from the copy the page reads now), else none.
 - **Add debug data…** (`addDebugData`, M2 step 5 of the debug-captures
-  plan; the panel shows it for every open tour; its file input, or a file
-  dropped on the panel): a debug bundle or a plain Recorder zip, opened
+  plan; the panel shows it for every open tour; the browser's read-only
+  picker through `chooseScan`, else its file input, or a file dropped on
+  the panel): a debug bundle or a plain Recorder zip, opened
   as any zip is (`openTourFile`: the archive caps; the picture cap for
   its thumbnails) and read for whose it is (`readDebugBundle`, given the
   entries' declared sizes so an oversized identity is never read;
@@ -304,11 +324,13 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   shows, where the docking takes it into the view's pane with the map
   controls, at its foot on the left and never wider than the pane; back
   in its place in the page over the map; hidden over the 3D view on a
-  phone, whose docks are sheets over the canvas's foot): both open the one `#debug-add-input` and
-  `createAddDebugButton` drives both. The panel over the 3D view is an
+  phone, whose docks are sheets over the canvas's foot): both run the one
+  `chooseScan` (else `#debug-add-input`) and `createAddDebugButton` drives
+  both. The panel over the 3D view is an
   interim place, until the 3D view's bottom panel takes it.
-  Never saved, never drafted, closed with the tour and forgotten at a
-  reload (Q-H); a newer add replaces it; an add that ends after another
+  Never saved, never drafted, closed with the tour and not shown again
+  by itself after a reload (Q-H; only its handle may be remembered, see
+  the remembered scan above); a newer add replaces it; an add that ends after another
   tour opened is closed unseen.
 - **Save** builds the tour (`keepScan` from File's "Keep the debug data
   in the tour file" checkbox item, shown only for a tour that carries a walk and
@@ -1024,7 +1046,8 @@ each followed by a save that still carries the walk - among them; the
 debug layer and "Add debug data…": an added file's captures and line,
 another tour's and a plain recording's lines, a refusal, no save carrying
 it, a reload forgetting it, a drop on the panel shown in place of the
-tour's walk) and `editor-entry.spec.js` (the
+tour's walk, a picked scan remembered across a reload and shown again,
+then said gone) and `editor-entry.spec.js` (the
 "Nothing to save" toast, the open from a link); `way-in.spec.js` checks its first paint.
 
 `editor.spec.js` also renames a station through the test hook, closes the
