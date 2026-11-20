@@ -75,4 +75,4 @@ if (hit !== null) edits.model(id, pickedEdit(pick, noteSpotOf(drawn, hit)!));
   focused disc marked, a disc's click asking for focus, and `dispose`.
 - `playwright-tests/editor3d-model.spec.js` - in the page: add, type,
   place again, focus from the disc and delete a note; add, name, flip and
-  delete a section; the gizmo in each view.
+  delete a section; the gizmo.

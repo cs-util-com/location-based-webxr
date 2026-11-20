@@ -3,8 +3,8 @@
 ## Purpose
 
 Paints a narrated text's words into a 2D canvas: the one visible box of
-the travel mode, shown on the words plate under the reading sign (and, in
-a later step, in flight and at the dock). The narration box
+the travel mode, shown on the words plate under the reading sign, in flight and at the
+dock (one texture, `travelling-box.ts`). The narration box
 (`narration-box.ts`) lays the words out in its invisible ghost and hands
 the measured layout over; this module draws it. The look is the
 travelling box prototype's (`public/prototypes/sign-speaks-r6-2-travelling-box/`)

@@ -43,8 +43,6 @@ export interface GlobeDetailUniforms {
   readonly uDetailHalfM: { value: number };
 }
 
-const DEG = Math.PI / 180;
-
 /**
  * Where a geodetic latitude and longitude falls in a grid placed at
  * `centre` (the shader's mapping, for tests): the texture coordinate (u
@@ -61,7 +59,9 @@ export function detailPlace(
   let dLng = lngDeg - centre.lng;
   dLng -= 360 * Math.floor((dLng + 180) / 360);
   const x =
-    dLng * Math.cos(centre.lat * DEG) * GLOBE_DETAIL.metresPerDegLngEquator;
+    dLng *
+    Math.cos(centre.lat * THREE.MathUtils.DEG2RAD) *
+    GLOBE_DETAIL.metresPerDegLngEquator;
   const y = (latDeg - centre.lat) * GLOBE_DETAIL.metresPerDegLat;
   const spacing = (2 * grid.extentM) / (grid.side - 1);
   const edge = Math.max(Math.abs(x), Math.abs(y));

@@ -22,8 +22,8 @@ deleted with the losing models (DEC-R7b-2a).
 - `D_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   **D's own diorama scale**. The registry grounds and rescales; this file does
   not.
-- `D_PALETTE` — the palette values a D port may paint with, under the source's
-  own names. Pinned in `poi-variants.test.ts`.
+- The palette is the module's own `D` (not exported), under the
+  source's own names. No test compares it with the house palette.
 
 ## Invariants & assumptions
 
@@ -64,9 +64,10 @@ stripped.
 
 ## Tests
 
-- `poi-variants.test.ts` — the shared registry contract (base at `y = 0`, finite
-  positions, outward winding, height matching the shipped model) plus the
-  palette assertion that keeps `D_PALETTE` from drifting from the house one.
+- `poi-models.test.ts` - the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
 - `poi-primitives.test.ts` — the primitives each port composes.
 
 ## Exported for the hybrid

@@ -75,7 +75,7 @@ function run(store: Store, c: Command): void {
           attempt: cur.attempt,
           fraction: c.f,
           secondsLeft: c.f,
-          nextPreviewInS: null,
+          previewEveryS: null,
           stage: "training",
         }),
       );

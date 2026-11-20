@@ -9,14 +9,17 @@ The splat trainer's module Worker: wires `worker-train.ts` to the real
 
 ## Behaviour
 
-- `{ type: "train" }` starts the stretch (one per worker: a second train
+- The message handler is `serveTrainer` (`worker-train.ts`):
+  `{ type: "train" }` starts the stretch (one per worker: a second train
   message is ignored); progress and the result are posted back as
-  `FromWorker` messages.
-- `{ type: "cancel" }` aborts the stretch; the result still follows.
+  `FromWorker` messages, and a training that rejects still posts a
+  failed result with its reason.
+- There is no cancel message: the page stops a stretch by ending this
+  worker.
 - Splat.js is loaded only through the importer its `blob:` start module
   leaves (`trainer-worker-spawn.ts`); started any other way, the load
   fails ("the worker was not started from its shim") rather than send
-  this site's origin to the CDN.
+  this page's address to the CDN as the Referer.
 - Photos are decoded with `createImageBitmap` and an `OffscreenCanvas`
   (no DOM in a worker).
 - Looks at the model (`PREVIEW_EVERY_MS`, 15 s): `takeLook` draws the

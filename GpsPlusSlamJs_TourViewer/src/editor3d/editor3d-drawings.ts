@@ -1,8 +1,8 @@
 /**
- * The builders both 3D views (the flat view and the globe) hand the
- * stations layer to draw a station's items with: the visitor's own, so
- * the editor shows an item as the phone does. One list for both views,
- * so a builder added for one is never missing in the other.
+ * The builders the globe view hands the stations layer to draw a
+ * station's items with: the visitor's own, so the editor shows an item as
+ * the phone does. One list, so a builder the layer gains is never missing
+ * from the view.
  *
  * @see editor3d-drawings.ts.md
  */

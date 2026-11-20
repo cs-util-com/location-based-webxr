@@ -930,6 +930,7 @@ describe("createNarrationBox in travel mode", () => {
     box.show(content, "travel");
     expect(box.beginPress({ id: 7, x: 100, y: 700, linePx: 44 })).toBe(true);
     expect(box.state().pressing).toBe(true);
+    expect(box.pressing()).toBe(true);
     // A second finger is not a second press.
     expect(box.beginPress({ id: 8, x: 0, y: 0, linePx: 44 })).toBe(false);
     box.movePress(100, 700 - 44);
@@ -939,6 +940,7 @@ describe("createNarrationBox in travel mode", () => {
     // 88 px at 44 px a line is two lines (the box's own 22 px would be four).
     expect(clock.now).toBe(8 * WORD_MS);
     expect(box.state().pressing).toBe(false);
+    expect(box.pressing()).toBe(false);
     expect(document.querySelector(".nb-tapfx")).toBeNull();
   });
 

@@ -12,7 +12,8 @@
  * ring stays. In the editor (`edit`) the tag always stands over its spot.
  *
  * The placement on the screen is pure (`edgeHintPlace`,
- * `edgeHintFullyInView`) and tested apart from three.
+ * `edgeHintFullyInView`, `edgeHintStepAside` for tags that overlap) and
+ * tested apart from three.
  *
  * @see edge-hint.ts.md
  */
@@ -78,6 +79,10 @@ export const EDGE_HINT = {
   captionMax: 200,
   edgeCaptionMax: 140,
   descMaxLines: 3,
+  /** Tags that overlap step aside: the gap kept between two (px), and
+   *  how many tags one may step past. */
+  stepPad: 6,
+  stepTries: 6,
   /** The tag's fill: quieter than a sign's plate. */
   fill: "rgba(15,18,24,0.78)",
 } as const;
@@ -190,6 +195,99 @@ export function edgeHintFullyInView(
       c.sy >= insetTop + margin &&
       c.sy <= screenH - insetBottom - margin,
   );
+}
+
+/** A tag's box on the screen (px, its top left) as placed alone, whether
+ *  at the edge, and its spot's distance (m), for the step aside. */
+export interface HintRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly edge: boolean;
+  readonly distance: number;
+}
+
+/**
+ * The tops (px, in the order of `tags`) after tags that overlap step
+ * aside, nearest first: the nearest keeps its place, a farther tag in
+ * view moves up over one it overlaps and a tag at the edge down below
+ * it, `EDGE_HINT.stepPad` apart, past at most `EDGE_HINT.stepTries`
+ * tags. A stepped tag stays inside the insets of a `screenH` px tall
+ * screen (with no room it may then overlap again: readable beats apart).
+ */
+export function edgeHintStepAside(
+  tags: readonly HintRect[],
+  screenH: number,
+): number[] {
+  const { stepPad: pad, stepTries, insetTop, insetBottom } = EDGE_HINT;
+  const ys = tags.map((t) => t.y);
+  const order = tags
+    .map((t, i) => ({ t, i }))
+    .sort((a, b) => a.t.distance - b.t.distance);
+  const placed: { x: number; y: number; w: number; h: number }[] = [];
+  for (const { t, i } of order) {
+    let y = t.y;
+    for (let tries = 0; tries < stepTries; tries++) {
+      const hit = placed.find(
+        (r) =>
+          t.x < r.x + r.w + pad &&
+          t.x + t.w + pad > r.x &&
+          y < r.y + r.h + pad &&
+          y + t.h + pad > r.y,
+      );
+      if (hit === undefined) break;
+      y = t.edge ? hit.y + hit.h + pad : hit.y - t.h - pad;
+    }
+    if (y !== t.y) {
+      y = Math.min(Math.max(y, insetTop), screenH - insetBottom - t.h);
+    }
+    placed.push({ x: t.x, y, w: t.w, h: t.h });
+    ys[i] = y;
+  }
+  return ys;
+}
+
+/**
+ * The hints on the screen, so that each part's tag can step aside from
+ * the others' (`edgeHintStepAside`): each part puts in its tag as placed
+ * alone and takes out its stepped top. Every part lays out the same set,
+ * this frame's tags and, for a part not yet updated this frame, its tag
+ * of the frame before; a part not updated for a frame (its station
+ * hidden) drops out, and one disposed leaves at once. A frame is told
+ * by its clock (`seconds`), the same for every part of one frame.
+ *
+ * It is a resource of the frame loop, like the set of mounted parts
+ * (`world-part.ts`): screen boxes of one frame, no state of the app.
+ */
+const board = {
+  seconds: Number.NaN,
+  current: new Map<object, HintRect>(),
+  previous: new Map<object, HintRect>(),
+};
+
+function stepAsideOnBoard(
+  self: object,
+  tag: HintRect,
+  seconds: number,
+  screenH: number,
+): number {
+  if (seconds !== board.seconds) {
+    board.previous = board.current;
+    board.current = new Map();
+    board.seconds = seconds;
+  }
+  board.current.set(self, tag);
+  const all = new Map(board.previous);
+  for (const [key, rect] of board.current) all.set(key, rect);
+  const keys = [...all.keys()];
+  const ys = edgeHintStepAside([...all.values()], screenH);
+  return ys[keys.indexOf(self)] ?? tag.y;
+}
+
+function leaveBoard(self: object): void {
+  board.current.delete(self);
+  board.previous.delete(self);
 }
 
 /** The tag's three looks: over its spot, fully in view, at the edge. */
@@ -529,7 +627,8 @@ export function edgeHintPart(
         dirY: at.camY,
       };
       object.getWorldPosition(v);
-      const distance = `${String(Math.round(Math.hypot(v.x - camPos.x, v.z - camPos.z)))} m`;
+      const metres = Math.hypot(v.x - camPos.x, v.z - camPos.z);
+      const distance = `${String(Math.round(metres))} m`;
       let mode: TagMode;
       let place: TagPlace;
       if (play) {
@@ -555,12 +654,21 @@ export function edgeHintPart(
           );
         mode = first.edge ? "edge" : full ? "full" : "spot";
         const shown = pictureOf(mode, distance).picture;
-        place = edgeHintPlace(spot, screen.w, screen.h, {
+        const alone = edgeHintPlace(spot, screen.w, screen.h, {
           w: shown.w,
           h: shown.h,
           fitW: compact.w,
           fitH: compact.h,
         });
+        place = {
+          ...alone,
+          y: stepAsideOnBoard(
+            object,
+            { ...alone, w: shown.w, h: shown.h, distance: metres },
+            frame.seconds,
+            screen.h,
+          ),
+        };
       } else {
         mode = "spot";
         place = {
@@ -611,6 +719,7 @@ export function edgeHintPart(
       }
     },
     dispose() {
+      leaveBoard(object);
       ringGeometry.dispose();
       ringMaterial.dispose();
       quad.dispose();

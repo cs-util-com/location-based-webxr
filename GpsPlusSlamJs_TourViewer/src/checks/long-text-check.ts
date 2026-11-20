@@ -464,6 +464,11 @@ function startVoice(
           box: narrationBox,
           narration,
           read: () => ({ blocks: [made.block], presentId: "check", stored }),
+          // Captions only: no sign, no travel, no sheet over the box.
+          travel: () => null,
+          signOf: () => null,
+          sheetOpen: () => false,
+          playing: () => false,
         });
   return {
     made,

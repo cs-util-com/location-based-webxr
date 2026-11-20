@@ -2,7 +2,26 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The page runs Splat.js from one pinned commit on jsDelivr in a worker.
+      Scripts come only from this site, the worker's blob: start module and
+      that commit; workers only from blob: and this site (a module worker's
+      static imports are fetched as worker scripts, so the start module's
+      import of the built worker script needs 'self' here); requests only
+      to this site ('self' also covers the dev server's live-reload socket). Keep the
+      commit in step with SPLAT_JS_COMMIT (src/splat-trainer/splat-js.ts);
+      splat-js.test.ts checks it.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' blob: https://cdn.jsdelivr.net/gh/arrival-space/splat.js@a84620c05f210a304b2d8de1d5c9f19d3657126f/; worker-src blob: 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!--
+      Load-bearing: the policy above limits where requests go, not what
+      they carry. This keeps the page's address out of the CDN's request
+      for Splat.js (see src/splat-trainer/trainer-worker-spawn.ts).
+    -->
     <meta name="referrer" content="no-referrer" />
     <meta name="robots" content="noindex" />
     <meta name="color-scheme" content="light dark" />

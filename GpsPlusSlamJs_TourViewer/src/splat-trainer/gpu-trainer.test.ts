@@ -8,6 +8,7 @@ import {
 } from "./gpu-trainer.js";
 import { readSplatInputs } from "./recording-reader.js";
 import type {
+  GpuLike,
   TrainProgress,
   TrainRequest,
   WindowTrainResult,
@@ -85,22 +86,27 @@ async function request(): Promise<TrainRequest> {
   };
 }
 
-function setup(over: { readPhotos?: () => Promise<Blob[]> } = {}) {
+function setup(
+  over: { readPhotos?: () => Promise<Blob[]>; gpu?: GpuLike } = {},
+) {
   const worker = new FakeWorker();
+  let spawned = 0;
   const timer = manualTimer();
   const progress: TrainProgress[] = [];
   let reads: readonly string[] = [];
   const trainer = createGpuTrainer({
-    gpu: null,
+    gpu: over.gpu ?? null,
     readPhotos:
       over.readPhotos ??
       ((_rec, entries) => {
         reads = entries;
         return Promise.resolve(entries.map(() => new Blob(["jpg"])));
       }),
-    spawn: () => worker,
+    spawn: () => {
+      spawned++;
+      return worker;
+    },
     timer,
-    cancelGraceMs: 1000,
   });
   const previews: unknown[] = [];
   const events = {
@@ -115,6 +121,7 @@ function setup(over: { readPhotos?: () => Promise<Blob[]> } = {}) {
     trainer,
     events,
     reads: () => reads,
+    spawned: () => spawned,
   };
 }
 
@@ -164,7 +171,7 @@ describe("createGpuTrainer", () => {
         stage: "training",
         fraction: 0.5,
         secondsLeft: 30,
-        nextPreviewInS: 12,
+        previewEveryS: 15,
       },
     });
     s.worker.reply(finished());
@@ -174,45 +181,30 @@ describe("createGpuTrainer", () => {
         stage: "loading",
         fraction: 0,
         secondsLeft: null,
-        nextPreviewInS: null,
+        previewEveryS: null,
       },
-      { stage: "training", fraction: 0.5, secondsLeft: 30, nextPreviewInS: 12 },
+      { stage: "training", fraction: 0.5, secondsLeft: 30, previewEveryS: 15 },
     ]);
     expect(r.outcome).toBe("finished");
     expect(r.metrics?.heldOutDb).toBe(22);
     expect(s.worker.terminated).toBe(true);
   });
 
-  // Why: a cancel must reach the worker, and a worker that answers ends
-  // the window as cancelled without its splat.
-  it("asks the worker to stop on cancel and ends as cancelled", async () => {
+  // Why: the page needs no answer from a stopped worker, and one left to
+  // wind down kept the graphics card busy while Continue started a second
+  // worker beside it. A stop ends the worker at once and reads as
+  // cancelled, without a splat.
+  it("ends the worker at once on a stop", async () => {
     const s = setup();
     const ctrl = new AbortController();
     const run = s.trainer.trainWindow(await request(), s.events, ctrl.signal);
     await settle();
     ctrl.abort();
-    expect(s.worker.sent.at(-1)).toEqual({ type: "cancel" });
-    s.worker.reply(finished());
+    expect(s.worker.terminated).toBe(true);
     const r = await run;
     expect(r).toMatchObject({ outcome: "cancelled", ply: null });
-    expect(s.worker.terminated).toBe(true);
+    expect(s.worker.sent.map((m) => m.type)).toEqual(["train"]);
     expect(s.timer.pending()).toBe(0);
-  });
-
-  // Why: a worker stuck in a long GPU step may never answer; the page must
-  // not wait on it, and ending it frees the card.
-  it("ends a worker that does not answer a cancel in time", async () => {
-    const s = setup();
-    const ctrl = new AbortController();
-    const run = s.trainer.trainWindow(await request(), s.events, ctrl.signal);
-    await settle();
-    ctrl.abort();
-    s.timer.advance(999);
-    expect(s.worker.terminated).toBe(false);
-    s.timer.advance(1);
-    const r = await run;
-    expect(r.outcome).toBe("cancelled");
-    expect(s.worker.terminated).toBe(true);
   });
 
   // Why: a stop before the photos are read must not start a worker.
@@ -255,8 +247,24 @@ describe("createGpuTrainer", () => {
       new AbortController().signal,
     );
     await settle();
-    a.worker.reply(finished({ outcome: "failed", metrics: null, ply: null }));
-    expect((await runA).outcome).toBe("failed");
+    const blocked =
+      "The splat trainer library could not be downloaded (blocked).";
+    a.worker.reply(
+      finished({
+        outcome: "failed",
+        metrics: null,
+        ply: null,
+        detail: blocked,
+        retryHelps: false,
+      }),
+    );
+    // The worker's reason, and whether a second try can help, reach the
+    // page.
+    expect(await runA).toMatchObject({
+      outcome: "failed",
+      detail: blocked,
+      retryHelps: false,
+    });
 
     const b = setup();
     const runB = b.trainer.trainWindow(
@@ -268,6 +276,8 @@ describe("createGpuTrainer", () => {
     b.worker.onerror?.(new Error("worker script failed"));
     const r = await runB;
     expect(r).toMatchObject({ outcome: "failed", ply: null });
+    expect(r.detail).toMatch(/trainer stopped unexpectedly/);
+    expect(r.retryHelps).toBeUndefined();
     expect(b.worker.terminated).toBe(true);
   });
 
@@ -279,8 +289,59 @@ describe("createGpuTrainer", () => {
       s.events,
       new AbortController().signal,
     );
-    expect(r.outcome).toBe("failed");
+    // A broken file stays broken: training again cannot read it either.
+    expect(r).toMatchObject({ outcome: "failed", retryHelps: false });
+    expect(r.detail).toMatch(/photos could not be read .*bad zip/);
     expect(s.worker.sent).toEqual([]);
+  });
+
+  // Why: a stretch whose photos do not fit the card's memory even at the
+  // smallest size the trainer allows would fail deep in the library; it
+  // is refused before any worker starts, in words, and a second try
+  // (more time, same size) is not offered. The card's limits are read
+  // whether or not the page probed first.
+  it("refuses a stretch whose photos the card cannot hold", async () => {
+    const limits = { maxStorageBufferBindingSize: 2e5, maxBufferSize: 4e5 };
+    const gpu: GpuLike = {
+      requestAdapter: () =>
+        Promise.resolve({ info: { vendor: "nvidia" }, limits }),
+    };
+    for (const probeFirst of [true, false]) {
+      const s = setup({ gpu });
+      if (probeFirst) await s.trainer.probe();
+      const r = await s.trainer.trainWindow(
+        await request(),
+        s.events,
+        new AbortController().signal,
+      );
+      expect(r).toMatchObject({ outcome: "failed", retryHelps: false });
+      expect(r.detail).toMatch(/graphics memory/);
+      expect(s.spawned()).toBe(0);
+    }
+  });
+
+  // Why: the same check must let an ordinary stretch through on a card
+  // with the WebGPU default limits (128 MiB per binding, 256 MiB buffer).
+  it("trains a stretch that fits the card's default limits", async () => {
+    const limits = {
+      maxStorageBufferBindingSize: 128 * 2 ** 20,
+      maxBufferSize: 256 * 2 ** 20,
+    };
+    const s = setup({
+      gpu: {
+        requestAdapter: () =>
+          Promise.resolve({ info: { vendor: "nvidia" }, limits }),
+      },
+    });
+    const run = s.trainer.trainWindow(
+      await request(),
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    s.worker.reply(finished());
+    expect((await run).outcome).toBe("finished");
+    expect(s.spawned()).toBe(1);
   });
 });
 
@@ -323,6 +384,30 @@ describe("judgeGpuRun", () => {
     expect(
       judgeGpuRun({ ...run("failed", null), metrics: null }, t).verdict,
     ).toBe("poor");
+  });
+
+  // Why: "Training stopped with an error" told the creator nothing; the
+  // reason is said, and a cause a second try cannot fix is marked so the
+  // page does not offer "Train again" as the fix.
+  it("says why a run failed and whether training again can help", () => {
+    const failed: WindowTrainResult = {
+      outcome: "failed",
+      metrics: null,
+      trainingS: 1,
+      ply: null,
+      detail: "The splat trainer library could not be downloaded (blocked).",
+      retryHelps: false,
+    };
+    const j = judgeGpuRun(failed, TRAINER_DEFAULTS);
+    expect(j.verdict).toBe("poor");
+    expect(j.say).toContain("could not be downloaded (blocked)");
+    expect(j.retryHelps).toBe(false);
+    const plain = judgeGpuRun(
+      { outcome: "failed", metrics: null, trainingS: 1, ply: null },
+      TRAINER_DEFAULTS,
+    );
+    expect(plain.say).toBe("Training stopped with an error.");
+    expect(plain.retryHelps).toBeUndefined();
   });
 });
 

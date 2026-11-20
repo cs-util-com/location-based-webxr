@@ -75,4 +75,13 @@ moved.
   under the sign and its centre against values from the prototype's
   numbers, the width ratio against each edge's depth along the pitched
   view (within 0.2 %); and the painted ink against the ghost's
-  word rectangles.
+  word rectangles; the ghost runs no animation while the voice plays.
+  Part 2, the travel (phone unless named): the words go to the dock and
+  back and hide with the sheet; a slow walk at the threshold for 10 s
+  keeps the place; reduced motion moves them without a flight; the dock
+  sits at the foot with the docked words on the ghost (three viewports);
+  the flight leaves from the plate's corners and lands on the ghost on
+  time; the flying quad keeps the plate's perspective looking down; a
+  tap on the plate pauses (its ring at the finger), a drag of two lines
+  moves the voice two lines on the plate and at the dock, and a walk
+  away under the finger waits for the release and the lock.

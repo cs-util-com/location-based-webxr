@@ -2,8 +2,8 @@
 
 ## Purpose
 
-What the editor's file specs share (`editor.spec.js`, on the 2D map, and
-`editor-files.spec.js`, with no 3D view): the fixture tours built in the
+What the editor's file specs share (`editor.spec.js` and
+`editor-files.spec.js`, both with no 3D view): the fixture tours built in the
 test, the real file chooser, the browser's download read back, an
 origin-private file offered by a stand-in picker, and the draft's
 readiness mark. Moved out of `editor.spec.js` when its file and draft walks

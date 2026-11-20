@@ -257,7 +257,8 @@ function actionsFor(w: WindowState): PrintAction[] {
   };
   if (w.judgement.verdict === "poor") {
     return [
-      { ...again, tone: "accent" },
+      // Only when a second try can change the outcome.
+      ...(canTrainAgain(w) ? [{ ...again, tone: "accent" as const }] : []),
       { key: "keep", label: "Save anyway, marked", tone: "quiet" },
       { key: "discard", label: "Discard", tone: "quiet" },
     ];
@@ -289,8 +290,8 @@ function liveNextText(w: WindowState): string {
   const parts: string[] = [];
   const left = w.secondsLeft === null ? "" : minutesText(w.secondsLeft);
   if (left !== "") parts.push(`${left} left`);
-  if (w.nextPreviewInS !== null)
-    parts.push(`new look in ${Math.ceil(w.nextPreviewInS)} s`);
+  if (w.previewEveryS !== null)
+    parts.push(`a new look about every ${Math.ceil(w.previewEveryS)} s`);
   return parts.join(", ");
 }
 

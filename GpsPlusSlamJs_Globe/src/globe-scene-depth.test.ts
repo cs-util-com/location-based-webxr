@@ -14,7 +14,10 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { createGlobeSceneDepth } from "./globe-scene-depth.js";
+import {
+  SCENE_DEPTH_GLSL,
+  createGlobeSceneDepth,
+} from "./globe-scene-depth.js";
 
 /** A renderer that records its draws and what each mesh wrote meanwhile. */
 const fakeRenderer = () => {
@@ -232,5 +235,52 @@ describe("createGlobeSceneDepth", () => {
     expect(drawnInto?.depthTexture).toBe(texture);
     expect([drawnInto?.width, drawnInto?.height]).toEqual([320, 200]);
     depth.dispose();
+  });
+});
+
+describe("SCENE_DEPTH_GLSL", () => {
+  // Why this test matters: the atmosphere's pass ends its rays at the
+  // relief by reading the depth through this chunk (the cloud passes still
+  // reconstruct it inline, so a change to the math here must be made there
+  // too), so its uniforms must be the ones the pass sets, and its
+  // reconstruction must invert the depth camera's
+  // projection under WebGL's conventions (uv and depth in [0, 1], clip
+  // coordinates in [-1, 1]). A wrong sign or a missing divide would put
+  // every relief point at the wrong distance on every page at once.
+  it("declares the uniforms the passes set and defines sceneViewPoint", () => {
+    expect(SCENE_DEPTH_GLSL).toContain("uniform sampler2D uSceneDepth;");
+    expect(SCENE_DEPTH_GLSL).toContain("uniform mat4 uSceneInverseProjection;");
+    expect(SCENE_DEPTH_GLSL).toContain(
+      "vec3 sceneViewPoint( vec2 uv, float z )",
+    );
+  });
+
+  it("maps a drawn point's uv and depth back to its view-space point", () => {
+    expect(SCENE_DEPTH_GLSL).toContain(
+      "vec4 v = uSceneInverseProjection * vec4( uv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0 );",
+    );
+    expect(SCENE_DEPTH_GLSL).toContain("return v.xyz / v.w;");
+    // Documents the convention only: the same arithmetic in JS through
+    // three's own inverse projection, over a camera like the depth's (near
+    // 10 m). It cannot fail on a GLSL edit; the string pins above can.
+    const camera = new THREE.PerspectiveCamera(60, 1.6, 10, 1e7);
+    camera.updateProjectionMatrix();
+    for (const point of [
+      new THREE.Vector3(0, 0, -20_000),
+      new THREE.Vector3(1_500, -800, -3_000),
+      new THREE.Vector3(-40, 25, -60),
+    ]) {
+      const ndc = point.clone().applyMatrix4(camera.projectionMatrix);
+      const uv = [(ndc.x + 1) / 2, (ndc.y + 1) / 2];
+      const z = (ndc.z + 1) / 2;
+      const v = new THREE.Vector4(
+        (uv[0] ?? 0) * 2 - 1,
+        (uv[1] ?? 0) * 2 - 1,
+        z * 2 - 1,
+        1,
+      ).applyMatrix4(camera.projectionMatrixInverse);
+      const back = new THREE.Vector3(v.x, v.y, v.z).divideScalar(v.w);
+      expect(back.distanceTo(point) / point.length()).toBeLessThan(1e-6);
+    }
   });
 });

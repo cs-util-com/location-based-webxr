@@ -153,6 +153,7 @@ export const SPECS = {
   "long-text-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "long-text-narration.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "model-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "narration-stacking.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "object-editing.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "older-format.spec.js": { project: "webgl", area: "both", lane: 4 },
   "open-file.spec.js": { project: "dom", area: "viewer", lane: 1 },

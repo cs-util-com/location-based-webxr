@@ -12,8 +12,8 @@
     constructor throws or the context is null (the renderer is then
     disposed).
   - `drawnCounts(renderer)` - `{ drawCalls, triangles }` of the last
-    frame (`renderer.info.render`): the one accessor both views' readouts
-    use, so a change to how they count lands in both.
+    frame (`renderer.info.render`): the one accessor the view's readouts
+    use.
 - Invariants & assumptions: no state; the DOM is the page's.
 - Examples:
   ```ts

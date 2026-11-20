@@ -1,81 +1,36 @@
 /**
- * The globe's building blocks for the 3D tour editor (tour editor plan
- * 2026-10-17-1816 §13, milestone G1): the one module an app imports for
- * them (G2). Re-exports only; each block's own module and sidecar hold its
- * rules and tests.
+ * The globe's building blocks for the 3D tour editor: the one module an
+ * app imports for them. Re-exports only, and only what a consumer imports
+ * through it (the Tour Viewer's editor and the globe lab); each block's
+ * own module and sidecar hold its rules and tests.
  *
  * @see globe-editor.ts.md
  */
+export { createGlobeTerrain, type GlobeTerrain } from "./globe-terrain.js";
+export { worldFromEcefAt, type EcefPose } from "./globe-frame.js";
 export {
-  GLOBE_TERRAIN,
-  createGlobeTerrain,
-  type GlobeTerrain,
-} from "./globe-terrain.js";
-export { plainImagery } from "./globe-plain-imagery.js";
-export {
-  applyEcefPose,
-  ecefPoseOf,
-  worldFromEcefAt,
-  type EcefPose,
-} from "./globe-frame.js";
-export { GLOBE_CLIP, clipPlanes, reliefClearanceM } from "./globe-camera.js";
-export {
-  RELIEF_SOURCES,
-  awsTerrariumRelief,
   mapterhornRelief,
-  meshLevelForSpacing,
   reliefCredits,
   reliefTerrainOptions,
-  vertexSpacingM,
-  type GlobeReliefSource,
-  type ReliefSourceConstants,
 } from "./globe-relief-source.js";
-export {
-  RELIEF_CACHE,
-  reliefCacheBudget,
-  type ReliefCacheBudget,
-  type ReliefCacheState,
-  type ReliefDeviceClass,
-} from "./globe-relief-cache.js";
-export {
-  drawnHeightM,
-  ellipsoidalHeightM,
-  type GlobeGeoid,
-  type GlobeHeightPlace,
-} from "./globe-heights.js";
+export { type ReliefDeviceClass } from "./globe-relief-cache.js";
+export { drawnHeightM } from "./globe-heights.js";
 export {
   GROUND_HIT,
   groundHit,
   ellipsoidPointOfRay,
   groundPointOfRay,
   groundReachM,
-  marchToGround,
   terrainAboveGround,
-  type GroundHit,
-  type GroundHitOptions,
-  type GroundHitResult,
-  type GroundMiss,
-  type GroundMissReason,
 } from "./globe-ground-hit.js";
+export { GLOBE_EYE } from "./globe-eye-camera.js";
+export type { OsmGateLimits } from "./globe-osm-gate.js";
+export type { OsmGainMode } from "./globe-osm-fade.js";
 export {
-  GLOBE_EYE,
-  applyEyeControls,
-  eyeClipPlanes,
-  eyeNearM,
-  nearestItemDistanceM,
-} from "./globe-eye-camera.js";
-export {
-  GLOBE_OSM,
   createGlobeOsmOverlay,
-  osmCredit,
-  osmGateLimits,
   type GlobeOsmOverlay,
-  type OsmGateLimits,
-  type OsmCameraPose,
-  type OsmGainMode,
   type OsmMapLoad,
   type OsmMapTile,
   type OsmRetryAsk,
   type OsmRetryOutcome,
-  type OsmOverlayTerrain,
 } from "./globe-osm-overlay.js";

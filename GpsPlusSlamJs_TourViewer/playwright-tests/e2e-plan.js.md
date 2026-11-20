@@ -217,10 +217,21 @@ call through the test hook, read back from the manifest, with no map rail
 or card. Their shared tour builders and file helpers are in
 `editor-tours.js`.
 
-**Still in class (a):** `editor.spec.js` has 104 titles, about 86 of them
-class (a). The autosave and undo walks are next, though some of them press
-the map's card or its delete control and cannot be expressed through the
-hook. Also still in (a): `editor-entry` (4) and `blocks-tour` (2).
+**Third batch, `editor.spec.js` without a 3D view (2026-11-20).** The
+rest of `editor.spec.js` (the open, save, autosave, resave, undo, Done and
+second-tab walks) runs the same way: WebGL refused, each edit one session
+call through the test hook, a delete through the hook's
+`deleteSelection` (the page's own Delete with its Undo toast), the
+tour's "no GPS" choice through Tour details, what the tour holds read
+back from the manifest. The helpers both specs use are in
+`editor-session.js`. Eight tests of the 2D map's card and markers were
+deleted with it (the card's counter, refusals and focus, a map framing,
+a card blur race); the framing of a recording's captures with nothing
+else positioned moved to the globe (`editor3d-globe.spec.js`). Measured
+at two workers on one machine: 103 tests in 613 s on the map, 95 in 543 s
+without a 3D view, about 5.8 s a test either way.
+
+**Still in class (a):** `editor-entry` (4) and `blocks-tour` (2).
 Classes (b), (c) and (d) are unchanged.
 
 **Third batch, every `?globe=0` spec moved and the older view removed

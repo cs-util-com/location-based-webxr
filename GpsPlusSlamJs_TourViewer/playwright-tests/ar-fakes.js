@@ -18,7 +18,12 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
 
 /**
  * @param {import('@playwright/test').Page} page
- * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean, pdfViewer?: boolean }} [options]
+ * @param {{ shareRoute?: boolean, printSizeM?: number, saveOutcome?: boolean, pdfViewer?: boolean, viewer?: boolean }} [options]
+ *   `viewer`: the seams hand the world parts a viewer standing at the last
+ *   fix's AR pose (`getViewerCamera`), so a narration circle sees the
+ *   visitor inside it and opens its card. A position and a forward look,
+ *   not a camera: nothing projects through it, and a narrated text's words
+ *   cannot travel from their sign with it (they stay at the bottom).
  *   `pdfViewer`: the browser shows PDFs itself, so the print PDF opens in a
  *   tab (recorded in `pdfTabs`) instead of being downloaded (M0b).
  *   `printSizeM`: what the print-size estimate reports (QR size consensus
@@ -36,8 +41,9 @@ export async function installTourViewerArFakes(page, options = {}) {
   // F4), so a spec that needs it to fail says so before the page loads.
   const saveOutcome = options.saveOutcome ?? true;
   const pdfViewer = options.pdfViewer === true;
+  const viewer = options.viewer === true;
   await page.addInitScript(
-    ({ shareRoute, printSizeM, saveOutcome, pdfViewer }) => {
+    ({ shareRoute, printSizeM, saveOutcome, pdfViewer, viewer }) => {
       const test = {
         /** @type {{ hasCameraFrame: boolean, isolationOptions: unknown }[]} */
         initARCalls: [],
@@ -435,6 +441,26 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
         getIntrinsics: () => ({ fx: 500, fy: 500, cx: 1, cy: 1 }),
         getScene: () => (test.initARCalls.length > 0 ? fakeScene : null),
+        // The visitor's place for the world parts (`viewer`), as the
+        // three.js calls they make on it read it.
+        ...(viewer
+          ? {
+              getViewerCamera: () =>
+                test.arPose === null
+                  ? null
+                  : {
+                      /** @param {any} out */
+                      getWorldPosition(out) {
+                        const { x, y, z } = test.arPose.position;
+                        return out.set(x, y, z);
+                      },
+                      /** @param {any} out */
+                      getWorldDirection(out) {
+                        return out.set(0, 0, -1);
+                      },
+                    },
+            }
+          : {}),
         getArPose: () => test.arPose,
         createQrDebugView: () => ({
           update: () => {
@@ -633,7 +659,7 @@ export async function installTourViewerArFakes(page, options = {}) {
         },
       };
     },
-    { shareRoute, printSizeM, saveOutcome, pdfViewer },
+    { shareRoute, printSizeM, saveOutcome, pdfViewer, viewer },
   );
 }
 

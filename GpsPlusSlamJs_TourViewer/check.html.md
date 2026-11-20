@@ -96,11 +96,11 @@ plate under it, as the travelling box prototype
 - Shows: the prototype's weighing house text on the app's reading sign,
   its words on the plate under it, from the visitor's eye 3 m away. The
   voice stands still until the hook moves it.
-- Does not show: the camera image, the station and its pose chain, a real
-  voice, taps on the plate, and the flight of the words to the bottom of
-  the screen and back (a later step).
-- Tests: `playwright-tests/travelling-box-check.spec.js`;
-  `src/checks/travelling-box-check.test.ts`.
+- Does not show: the camera image, the station and its pose chain, and a
+  real voice (the hook moves a clocked one). The taps, drags, the flight to
+  the bottom of the screen and back, and the hiding are shown and tested
+  here; the app's own wiring is tested in the Tour Viewer's AR specs.
+- Tests: `playwright-tests/travelling-box-check.spec.js`.
 
 ### `model-views` - a tour model in each world view
 

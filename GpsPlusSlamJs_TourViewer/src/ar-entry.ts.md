@@ -94,7 +94,9 @@ since the flows plan M6.
     while `scanCardShown` holds (never for a tour not finished yet,
     whose line says so), carrying the visitor's sentence, with the
     status line hidden meanwhile (kept under `?debug=1`, whose technical
-    line the card does not carry); the live region is unchanged.
+    line the card does not carry); the live region is unchanged. In a
+    creator's session it leaves the card alone (`creator-setup.ts` writes
+    the creator's variant) and only keeps the status line shown.
   - The render also writes `data-ar-state` (the controller status, for
     the page CSS: V4 steps the round button down on `unsupported`) and
     `data-step` (`visitorStep`: "1 of 2" / "2 of 2", removed otherwise)

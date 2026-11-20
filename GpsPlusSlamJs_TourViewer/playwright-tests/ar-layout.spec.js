@@ -212,6 +212,19 @@ const WIDE_UI_FONT =
  * @param {{ width: number, height: number }} viewport
  */
 async function enterTheStrip(page, viewport) {
+  await enterBeforeTheCode(page, viewport);
+  await measureWithGpsFirst(page);
+}
+
+/**
+ * A creator's AR session on `viewport`, in the wide face, with the hosted
+ * tour open (its code measured in an earlier visit) and nothing seen yet
+ * in this one: the visit as it starts, with the scan card up.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{ width: number, height: number }} viewport
+ */
+async function enterBeforeTheCode(page, viewport) {
   await page.setViewportSize(viewport);
   await installTourViewerArFakes(page);
   await page.goto("/");
@@ -234,7 +247,6 @@ async function enterTheStrip(page, viewport) {
   }
   await expect(page.getByTestId("enter-ar")).toBeEnabled({ timeout: 10000 });
   await page.getByTestId("enter-ar").click();
-  await measureWithGpsFirst(page);
 }
 
 for (const viewport of [
@@ -313,6 +325,51 @@ for (const viewport of [
     expect(undo.top - card.bottom).toBeGreaterThan(viewport.height * 0.3);
     // The technical line is ?debug=1's only.
     await expect(page.getByTestId("ar-status")).toBeHidden();
+  });
+}
+
+for (const viewport of [
+  { width: 360, height: 640 },
+  { width: 320, height: 640 },
+  { width: 412, height: 915 },
+  { width: 915, height: 412 },
+]) {
+  test(`the creator's scan card sits under the readout on ${viewport.width}x${viewport.height}, clear of the strip and the screen centre`, async ({
+    page,
+  }) => {
+    // Why: the visitor's card sits in the middle of the camera view, where
+    // a creator aims the placing ring; the creator's variant must leave the
+    // middle and the action strip free, or the hint would cover what it
+    // asks the creator to do. Pinned by positions, in the wide face.
+    await enterBeforeTheCode(page, viewport);
+    await expect(page.getByTestId("setup-controls")).toBeVisible();
+    await expect(page.getByTestId("scan-card")).toBeVisible();
+    const card = await box(page, "scan-card-panel");
+    const readout = await box(page, "setup-status");
+    const done = await box(page, "enter-ar");
+    const close = await box(page, "scan-card-close");
+    const undo = await box(page, "setup-undo");
+    const newStation = await box(page, "setup-new-station");
+    const pin = await box(page, "setup-pin");
+    // Under the readout and Done, never over them.
+    expect(card.top).toBeGreaterThanOrEqual(readout.bottom);
+    expect(card.top).toBeGreaterThanOrEqual(done.bottom);
+    // Above the strip: its topmost chip, the Undo, and the rest below it.
+    expect(card.bottom).toBeLessThanOrEqual(undo.top);
+    expect(card.bottom).toBeLessThanOrEqual(newStation.top);
+    expect(card.bottom).toBeLessThanOrEqual(pin.top);
+    // The screen centre, where the ring aims, stays clear.
+    expect(card.bottom).toBeLessThan(viewport.height / 2 - 16);
+    // On screen, centred, and its close a 44 px target inside it.
+    expect(card.left).toBeGreaterThanOrEqual(0);
+    expect(card.right).toBeLessThanOrEqual(viewport.width);
+    expect(
+      Math.abs((card.left + card.right) / 2 - viewport.width / 2),
+    ).toBeLessThan(2);
+    expect(close.right - close.left).toBeGreaterThanOrEqual(44);
+    expect(close.bottom - close.top).toBeGreaterThanOrEqual(44);
+    expect(close.right).toBeLessThanOrEqual(card.right);
+    expect(close.top).toBeGreaterThanOrEqual(card.top);
   });
 }
 

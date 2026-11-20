@@ -23,7 +23,20 @@ import {
   saveAndRead,
   wrappedTour,
 } from "./editor-tours.js";
-import { stationBlocks } from "./tour-fixture.mjs";
+import {
+  ADDED_ELSEWHERE,
+  FOUNTAIN,
+  TOWN_HALL,
+  WRAPPED_PIN,
+  captionOf,
+  editText,
+  expectCaption,
+  placeOf,
+  remove,
+  sessionEdit,
+  tourShown,
+  withoutWebgl,
+} from "./editor-session.js";
 
 /**
  * Why these tests matter: what the editor keeps of a creator's work - the
@@ -45,20 +58,10 @@ import { stationBlocks } from "./tour-fixture.mjs";
 
 // The page prefers the browser's file picker; these open through the file
 // input, so the picker is taken away (a walk that opens in place puts its
-// own back after the page loads). The refused WebGL holds for every page of
+// own back after the page loads), and WebGL is refused for every page of
 // the context, so a second tab opens without a 3D view too.
 test.beforeEach(async ({ context }) => {
-  await context.addInitScript(() => {
-    // @ts-expect-error - the e2e takes the picker away on purpose.
-    delete window.showOpenFilePicker;
-    const real = HTMLCanvasElement.prototype.getContext;
-    /** @type {any} */ (HTMLCanvasElement.prototype).getContext = function (
-      /** @type {string} */ kind,
-      /** @type {unknown[]} */ ...rest
-    ) {
-      return kind.startsWith("webgl") ? null : real.call(this, kind, ...rest);
-    };
-  });
+  await withoutWebgl(context);
 });
 
 /**
@@ -70,7 +73,7 @@ test.beforeEach(async ({ context }) => {
  */
 async function openFile(page, buffer, name) {
   await openThroughChooser(page, buffer, name);
-  await expect(page.locator("#view3d-failed")).toBeVisible();
+  await tourShown(page);
 }
 
 /**
@@ -82,105 +85,8 @@ async function openOffered(page) {
   await page.locator(".start-choice:has(#start-tour)").click();
   await page.locator("#choose-btn").click();
   await page.locator("#start-open").click();
-  await expect(page.locator("#view3d-failed")).toBeVisible();
+  await tourShown(page);
 }
-
-/**
- * One edit through the editor session, followed as an edit of the page's
- * own controls is; the session's answer must be `expected`.
- * @param {import("@playwright/test").Page} page
- * @param {{ act: "editText" | "remove" | "move", id: string, args?: unknown[] }} edit
- * @param {string} expected
- */
-async function sessionEdit(page, edit, expected) {
-  const kind = await page.evaluate(({ act, id, args }) => {
-    // @ts-expect-error - the editor's dev-only test hook.
-    const hook = window.__tourEditor;
-    const outcome = hook.editor()[act](id, ...(args ?? []));
-    hook.edited();
-    return outcome.kind;
-  }, edit);
-  expect(kind).toBe(expected);
-}
-
-/** @param {import("@playwright/test").Page} page @param {string} id @param {string} text */
-const editText = (page, id, text) =>
-  sessionEdit(page, { act: "editText", id, args: [text] }, "edited");
-
-/** @param {import("@playwright/test").Page} page @param {string} id */
-const remove = (page, id) =>
-  sessionEdit(page, { act: "remove", id }, "deleted");
-
-/**
- * The tour as the page would write it, read back into the test (the
- * helpers that walk it are not in the page).
- * @param {import("@playwright/test").Page} page
- * @returns {Promise<any>}
- */
-function editorManifest(page) {
-  return page.evaluate(() =>
-    // @ts-expect-error - the editor's dev-only test hook.
-    window.__tourEditor.manifest(),
-  );
-}
-
-/**
- * The text (a pin's) or caption (a photo's) of the tour's object `id` as
- * the page would write it, or `undefined` when the tour has no such object.
- * @param {import("@playwright/test").Page} page
- * @param {string} id
- * @returns {Promise<string | undefined>}
- */
-async function captionOf(page, id) {
-  const manifest = await editorManifest(page);
-  const block = manifest.stations
-    .flatMap((/** @type {any} */ s) => stationBlocks(s))
-    .find((/** @type {{ id: string }} */ b) => b.id === id);
-  return block === undefined ? undefined : block.caption;
-}
-
-/**
- * Where the tour's object `id` stands as the page would write it: its
- * station's place (an object placed on its own is a station of its own)
- * and its pose's position in that station's frame, or `undefined` when
- * the tour has no such object.
- * @param {import("@playwright/test").Page} page
- * @param {string} id
- * @returns {Promise<{ lat: number, lon: number, position: number[] } | undefined>}
- */
-async function placeOf(page, id) {
-  const manifest = await editorManifest(page);
-  for (const station of manifest.stations) {
-    const block = stationBlocks(station).find(
-      (/** @type {{ id: string }} */ b) => b.id === id,
-    );
-    if (block !== undefined) {
-      return {
-        lat: station.geo.lat,
-        lon: station.geo.lon,
-        position: [...block.pose.position],
-      };
-    }
-  }
-  return undefined;
-}
-
-/**
- * Wait until the tour's object `id` reads `caption` (`undefined`: gone).
- * @param {import("@playwright/test").Page} page
- * @param {string} id
- * @param {string | undefined} caption
- */
-async function expectCaption(page, id, caption) {
-  await expect.poll(() => captionOf(page, id)).toBe(caption);
-}
-
-// The editor fixture's objects (editor-tours.js): the "Town hall" pin, the
-// "Fountain" photo; the wrapped tour's pin and the one another program adds.
-const TOWN_HALL = "pin-markup";
-const FOUNTAIN = "photo-ok";
-const WRAPPED_PIN = "pin-wrapped";
-const ADDED_ELSEWHERE = "pin-elsewhere";
 
 // ---------------------------------------------------------------------------
 // The editor's draft (M6 E2c): edits survive a closed tab.

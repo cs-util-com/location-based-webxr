@@ -22,7 +22,8 @@ import {
 
 const PACKAGE_MANIFEST = "splat-package.json";
 const PACKAGE_FORMAT = "splat-package";
-/** 0 while the format is a placeholder; the first real format is 1. */
+/** 0 while the format is provisional: practice files and GPU-trained
+ *  files alike, until the format is settled and given its first number. */
 const PACKAGE_VERSION = 0;
 
 /** `<recording name>-splat.zip`, from a name a person chose: kept to safe characters. */

@@ -47,8 +47,6 @@ import { sunDirectionEcef } from "./globe-sun.js";
 import { cloudLonOffsetRad } from "./globe-surface-material.js";
 import { createGlobeSurface, type GlobeSurface } from "./globe-surface.js";
 
-const DEG = Math.PI / 180;
-
 /** The fit's margin around the globe (a tenth of its radius). */
 const FIT_MARGIN = 0.1;
 
@@ -65,7 +63,7 @@ export function globeViewFitM(options: {
   readonly aspect: number;
 }): number {
   return orbitDistanceToFit({
-    fovYRad: options.fovYDeg * DEG,
+    fovYRad: options.fovYDeg * THREE.MathUtils.DEG2RAD,
     aspect: options.aspect,
     margin: FIT_MARGIN,
     radius: options.radiusM,
@@ -257,17 +255,23 @@ export function viewPoseEcef(
     throw new RangeError(`a view needs finite values, got ${values.join(",")}`);
   }
   const position = ellipsoid.getCartographicToPosition(
-    lat * DEG,
-    lng * DEG,
+    lat * THREE.MathUtils.DEG2RAD,
+    lng * THREE.MathUtils.DEG2RAD,
     altitudeKm * 1000,
     new THREE.Vector3(),
   );
   const east = new THREE.Vector3();
   const north = new THREE.Vector3();
   const up = new THREE.Vector3();
-  ellipsoid.getEastNorthUpAxes(lat * DEG, lng * DEG, east, north, up);
-  const h = headingDeg * DEG;
-  const p = pitchDeg * DEG;
+  ellipsoid.getEastNorthUpAxes(
+    lat * THREE.MathUtils.DEG2RAD,
+    lng * THREE.MathUtils.DEG2RAD,
+    east,
+    north,
+    up,
+  );
+  const h = headingDeg * THREE.MathUtils.DEG2RAD;
+  const p = pitchDeg * THREE.MathUtils.DEG2RAD;
   const forward = east
     .clone()
     .multiplyScalar(Math.sin(h) * Math.cos(p))
@@ -393,7 +397,10 @@ export function createGlobeView(options: GlobeViewOptions): GlobeView {
     const next = frameRecentreTarget(
       ellipsoid,
       worldFrame.target,
-      { lat: c.lat / DEG, lng: c.lon / DEG },
+      {
+        lat: c.lat / THREE.MathUtils.DEG2RAD,
+        lng: c.lon / THREE.MathUtils.DEG2RAD,
+      },
       c.height,
     );
     if (next) {

@@ -142,6 +142,7 @@ const input: RunInput = {
   evalFrames: ["b.jpg"],
   maxIters: 4000,
   deadlineMs: 60_000,
+  prepareCapMs: 600_000,
   keepM: 10,
   trainPositions: [[0, 0, 0]],
   etaMinIterations: 200,
@@ -348,7 +349,7 @@ describe("runWindow", () => {
       stage: RunProgress["stage"],
       fraction: number,
       secondsLeft: number | null,
-    ): RunProgress => ({ stage, fraction, secondsLeft, nextPreviewInS: null });
+    ): RunProgress => ({ stage, fraction, secondsLeft, previewEveryS: null });
     expect(seen).toEqual([
       at("preparing", 0, null),
       at("training", 0.025, null),
@@ -358,6 +359,67 @@ describe("runWindow", () => {
       at("checking", 0.075, null),
     ]);
   });
+
+  // Why: a stretch cannot finish after its deadline, so a time left
+  // longer than the deadline's remaining time was a promise the run
+  // could not keep.
+  it("never says more time is left than the deadline allows", async () => {
+    const seen: RunProgress[] = [];
+    const clock = manualClock();
+    const s = scripted({});
+    const run = runWindow(
+      s.mod,
+      { ...input, deadlineMs: 20_000 },
+      (p) => seen.push(p),
+      new AbortController().signal,
+      clock,
+    );
+    await tick();
+    clock.t = 5000;
+    s.report({ iter: 100 });
+    clock.t = 7000;
+    s.report({ iter: 300 });
+    clock.fire();
+    await run;
+    // The rate says 37 s (3700 steps at 100 per second); the deadline,
+    // set at 0, leaves 13 s.
+    expect(seen.find((p) => p.secondsLeft !== null)?.secondsLeft).toBe(13);
+  });
+
+  // Why: nothing bounded preparing the graphics card: a photo upload or
+  // seeding that never returned left the print at "Preparing the graphics
+  // card" for ever. The preparation has its own cap and ends in words.
+  it.each(["load", "seed"] as const)(
+    "ends as failed in words when preparing takes too long (%s)",
+    async (stage) => {
+      const hold = gate();
+      const s = scripted({ hold: { [stage]: hold.promise } });
+      const clock = manualClock();
+      const run = runWindow(
+        s.mod,
+        { ...input, prepareCapMs: 300_000 },
+        () => {},
+        new AbortController().signal,
+        clock,
+      );
+      await tick();
+      clock.t = 300_000;
+      clock.fire();
+      const r = await Promise.race([
+        run,
+        tick()
+          .then(() => tick())
+          .then(() => "still preparing" as const),
+      ]);
+      expect(r).toMatchObject({ outcome: "failed", ply: null });
+      if (typeof r === "string") return;
+      expect(r.detail).toMatch(
+        /Preparing the graphics card took more than 5 min/,
+      );
+      expect(s.calls).not.toContain("start");
+      expect(s.calls.at(-1)).toBe("dispose");
+    },
+  );
 
   // Why: a stray abort listener would keep the run's closure alive after
   // it ended and fire into a finished run.
@@ -435,9 +497,11 @@ describe("runWindow", () => {
     expect(r.outcome).toBe("deadline");
     expect(posted).toEqual([{ look: 1 }, { look: 2 }, { look: 3 }]);
     expect(taken).toEqual([1, 1, 1]);
+    // The interval, not a countdown: a countdown sent with each report
+    // stood still on the page between reports.
     expect(
-      seen.filter((p) => p.stage === "training").map((p) => p.nextPreviewInS),
-    ).toEqual([15, 11, 15]);
+      seen.filter((p) => p.stage === "training").map((p) => p.previewEveryS),
+    ).toEqual([15, 15, 15]);
   });
 
   // Why: without a test set the look comes from the middle training

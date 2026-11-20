@@ -799,6 +799,37 @@ test("with the list open while the tour waits on its last station, 'Finish the t
   await expect(page.getByTestId("walk-done")).toBeVisible();
 });
 
+test("the completion card offers 'Make your own tour': its tap opens the start page in a new tab and leaves AR", async ({
+  page,
+}) => {
+  // Why this test matters: the end of a tour is where a visitor who liked
+  // it may want to make one; the card carries the way there, also after a
+  // finish with skips. A link inside the AR overlay may be blocked or keep
+  // a camera view running nobody watches, so its tap also ends the
+  // session through the same way out as the X: the visitor comes back to
+  // the start page, the new tab opens beside it.
+  await openTheWalk(page);
+  await enterAtTheCode(page);
+  await page.getByTestId("walk-grab").click();
+  for (const station of STATIONS) {
+    await walkRowControl(page, station.title, "act").click();
+    await walkRowControl(page, station.title, "confirm").click();
+  }
+  await expect(page.getByTestId("walk-sheet")).toHaveAttribute(
+    "data-complete",
+    "true",
+  );
+  const own = page.getByTestId("walk-own-tour");
+  await expect(own).toBeVisible();
+  await expect(own).toHaveText("Make your own tour");
+  await expect(own).toHaveAttribute("target", "_blank");
+  const popup = page.waitForEvent("popup");
+  await own.click();
+  const opened = await popup;
+  expect(new URL(opened.url()).pathname).toBe("/");
+  await expect(page.getByTestId("enter-ar")).toHaveText("Back to the tour");
+});
+
 test("leaving AR shows the progress on the start page; coming back is welcomed", async ({
   page,
 }) => {

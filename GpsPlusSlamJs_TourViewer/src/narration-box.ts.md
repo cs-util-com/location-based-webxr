@@ -55,6 +55,8 @@ and what.
     tap.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
+  - `pressing()` - a finger is down on the box (its own or a forwarded
+    press); cheap, for the travelling box's per-frame read.
   - `state()` - what a test or the check page reads: shown, key, lit word
     and its text, lines, rows, scroll (in lines), scrubbing. `line` is the
     voice's line as a float (`lineFloatAt` at the scrub time while

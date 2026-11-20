@@ -596,6 +596,11 @@ test("a tap on the plate pauses, and a drag of two lines moves the voice two lin
   s = await state(page);
   expect(s.voice.playing).toBe(false);
   await expect(page.locator(".nb-tapfx")).toHaveCount(1);
+  // The ring answers where the finger is, not where the ghost rests.
+  const ring = await page.getByTestId("narration-box-tap").boundingBox();
+  if (ring === null) throw new Error("no tap ring");
+  expect(Math.abs(ring.x + ring.width / 2 - cx)).toBeLessThanOrEqual(2);
+  expect(Math.abs(ring.y + ring.height / 2 - cy)).toBeLessThanOrEqual(2);
 
   // Into the text, then two lines down on the plate: two lines back.
   await hook(page, "at", s.voice.totalMs / 2);

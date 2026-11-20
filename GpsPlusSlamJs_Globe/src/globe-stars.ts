@@ -35,11 +35,12 @@ export const GLOBE_STARS = {
  * 266.405°, Dec -28.936°), J2000. The plane is tilted 62.87° to the
  * celestial equator.
  */
-const DEG = Math.PI / 180;
 const radec = (raDeg: number, decDeg: number): [number, number, number] => [
-  Math.cos(decDeg * DEG) * Math.cos(raDeg * DEG),
-  Math.cos(decDeg * DEG) * Math.sin(raDeg * DEG),
-  Math.sin(decDeg * DEG),
+  Math.cos(decDeg * THREE.MathUtils.DEG2RAD) *
+    Math.cos(raDeg * THREE.MathUtils.DEG2RAD),
+  Math.cos(decDeg * THREE.MathUtils.DEG2RAD) *
+    Math.sin(raDeg * THREE.MathUtils.DEG2RAD),
+  Math.sin(decDeg * THREE.MathUtils.DEG2RAD),
 ];
 export const GALACTIC_NORTH_POLE = radec(192.85948, 27.12825);
 export const GALACTIC_CENTRE = radec(266.40499, -28.93617);
@@ -223,7 +224,7 @@ export function greenwichSiderealAngleRad(ms: number): number {
     0.000387933 * t * t -
     (t * t * t) / 38_710_000;
   const wrapped = ((deg % 360) + 360) % 360;
-  return wrapped >= 360 ? 0 : wrapped * DEG;
+  return wrapped >= 360 ? 0 : wrapped * THREE.MathUtils.DEG2RAD;
 }
 
 /**

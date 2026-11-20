@@ -1,9 +1,7 @@
 /**
- * Why these tests matter: the flat view and the globe view each handed
- * the stations layer their own list of builders, and the two lists
- * drifted: the globe, the default view, never got the reading sign's
- * builder, so a long text shown as a sign was drawn in the flat view
- * only. One list, used by both views, cannot drift; these pin that it
+ * Why these tests matter: a builder missing from the list the view hands
+ * the stations layer draws nothing and raises no error (a list kept per
+ * view once lost the reading sign's builder this way). These pin that it
  * carries every builder the layer draws an item with, the same ones the
  * visitor's page uses.
  */

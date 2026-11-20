@@ -251,11 +251,9 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
   let knobs = TRAVELLING_BOX_DEFAULTS;
   const events: TravelPlaceEvent[] = [];
   let travel: TravellingBox | null = null;
-  let leave = (): void => undefined;
 
   /** A fresh controller for the current knobs. */
   function startTravel(): void {
-    leave();
     travel?.stop();
     travel = createTravellingBox({
       surface,
@@ -271,8 +269,8 @@ export function startTravellingBoxCheck(host: HTMLElement): void {
         renderer.initTexture(texture);
       },
       onPlace: (event) => events.push(event),
+      registry,
     });
-    leave = registry.add(travel);
   }
   startTravel();
   renderer.domElement.addEventListener("pointerdown", (e) => {
