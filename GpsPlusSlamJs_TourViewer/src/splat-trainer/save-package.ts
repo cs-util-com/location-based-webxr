@@ -1,8 +1,8 @@
 /**
  * The file the splat trainer page saves: a zip with a manifest,
  * `splat-package.json`, and one splat per stretch that goes into the file.
- * While the page runs the practice trainer there are no splats, and the
- * manifest says plainly that the file is a placeholder. The manifest
+ * A file from the practice trainer holds no splats, and the manifest says
+ * plainly that it is a placeholder and which trainer made it. The manifest
  * carries the walk's numbers and each stretch's verdict, never a file
  * name of the recording.
  *
@@ -43,10 +43,13 @@ function packageManifest(
   splats: ReadonlyMap<string, Blob>,
 ): Record<string, unknown> {
   const census = state.recording?.census ?? null;
-  const placeholder = windowsInFile(state).every((w) => !splats.has(w.id));
+  // Decided by the trainer, not by which splats happen to exist: a
+  // practice file is a placeholder even if a splat were in the table.
+  const placeholder = state.trainer === "practice";
   return {
     format: PACKAGE_FORMAT,
     version: PACKAGE_VERSION,
+    trainer: state.trainer,
     placeholder,
     ...(placeholder
       ? { note: "A placeholder from a practice run: it holds no splat." }

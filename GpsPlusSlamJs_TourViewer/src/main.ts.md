@@ -208,6 +208,10 @@ listed in `index.html.md`. The concerns and their modules:
   DOM-overlay root; `tests/repo-config/hud-overlay-nesting.test.js`).
 - The `?qr=` boot's rejection reaches the error box: a printed code is the
   one flow with no retry.
+- The completion card's "Make your own tour" (`#walk-own-tour`) opens the
+  start page through its own default action (inside the tap's activation)
+  and ends a live AR session with the same `disable()` as the X; a failed
+  end goes to the error box (`visitor-walk.spec.js`).
 
 ## Examples
 

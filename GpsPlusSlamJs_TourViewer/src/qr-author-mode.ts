@@ -51,6 +51,7 @@ import {
 import type { TourRelation } from "./code-tour.js";
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
 import type { CodeTourStatus } from "./scan-open.js";
+import { isLockableLevel } from "./scan-gate.js";
 
 /**
  * Geo-less until minted (QD-4): `syntheticAccuracyM` is required by the
@@ -303,21 +304,38 @@ export function codeTourLine(status: CodeTourStatus): string {
 }
 
 /**
- * The first thing the panel says in an AR visit (authoring plan
- * 2026-09-28-0953 §3.2a, decision D5): look at the tour's code first, until
- * this visit has seen it. A later visit's notes are corrected through the
- * code only when the code was seen in that visit (D10b); the owner chose a
- * hint over a rule, so nothing is blocked while it shows. Empty with no
- * tour open - there is no "code of this tour" yet. It names the PRINTED
+ * The creator's scan card in AR: look at the tour's printed code first,
+ * until this visit has seen it. A later visit's notes are corrected through
+ * the code only when the code was seen in that visit; nothing is blocked
+ * while the card shows, so it is a hint, not a rule. It names the PRINTED
  * code, not "the code you scanned to open this tour": a tour opened from a
- * file or a link was opened by no scan (plan 2026-10-15-0348 M0, T8).
+ * file or a link was opened by no scan.
  */
-export function entryHint(state: {
-  tourOpen: boolean;
+export const CREATOR_SCAN_CARD = {
+  title: "First, point the camera at this tour's printed code",
+  line: "Pins and photos placed before it is seen are less exact.",
+} as const;
+
+/**
+ * Whether the creator's scan card shows: in a running session, for a tour
+ * with at least one measured code (`isLockableLevel`: a printed size and a
+ * geo pose; a tour without one has no code to point at), while this visit
+ * has not seen the code and the creator has not closed the card. `levels`
+ * is null while no tour's levels are known.
+ */
+export function creatorScanCardShown(state: {
+  sessionLive: boolean;
+  levels: ReadonlyMap<string, QrLevel> | null;
   codeSeen: boolean;
-}): string {
-  if (!state.tourOpen || state.codeSeen) return "";
-  return "First, point the camera at this tour's printed code: pins and photos placed before it is seen are less exact.";
+  dismissed: boolean;
+}): boolean {
+  return (
+    state.sessionLive &&
+    !state.codeSeen &&
+    !state.dismissed &&
+    state.levels !== null &&
+    [...state.levels.values()].some(isLockableLevel)
+  );
 }
 
 /**

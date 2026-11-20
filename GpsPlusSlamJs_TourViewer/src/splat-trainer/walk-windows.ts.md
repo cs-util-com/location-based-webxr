@@ -21,15 +21,21 @@ at their seams. Pure functions over frame indices.
   `i % every === floor(every / 2)`: the middle of every block, never the
   first frame. RangeError for `every` below 2 or not an integer.
 - `planWindows(frames, settings) -> WalkPlan` - `{ segments, holdouts,
-windows }`. Each `WalkWindow`:
+along, windows }`. `along[i]` is frame `i`'s distance along its
+  segment's walk from the segment's first frame (m); ownership decides a
+  revisit by it (`splat-ownership.ts`). Each `WalkWindow`:
   - `segment` - its segment's index;
   - `core` - its frames, hold-outs included; the cores partition the
-    walk;
+    walk, except the frames of a segment with no training frame at all
+    (a segment of hold-outs alone), which get no window;
   - `train` - its core's non-hold-outs plus its segment's non-hold-outs
     within `overlapFraction * windowM` along the walk of the core's first
     and last frame;
-  - `holdouts` - its core's hold-outs, plus the nearest windows' of the
-    same segment while fewer than `minHoldouts`;
+  - `holdouts` - its core's hold-outs, topped up while fewer than
+    `minHoldouts` with the segment's other hold-outs nearest the core
+    along the walk (from either side; on a tie the earlier frame), so a
+    window is scored where it trained, not at the far end of a
+    neighbour;
   - `tooFewHoldouts`, `tooFewFrames` - the shortfalls a caller shows.
 
 ## Invariants & assumptions
@@ -40,8 +46,9 @@ windows }`. Each `WalkWindow`:
   scored about +1 dB at a revisited place, at three times the frames and
   time, so it is recorded here and not built.
   Frames are binned by their distance along the segment in bins of
-  `windowM`; a bin with fewer than `minFrames` training frames joins the
-  window before it (the first joins the next); a window over `maxFrames`
+  `windowM`; a group with fewer than `minFrames` training frames absorbs
+  the bins after it until it reaches `minFrames`, and a short last group
+  joins the one before it; a window over `maxFrames`
   is split into `ceil(train / max)` parts of equal training count, a
   hold-out going with the training frame before it. With
   `maxFrames >= 2 * minFrames` (validated) no split part is under the
@@ -53,7 +60,12 @@ windows }`. Each `WalkWindow`:
 - **No window crosses a segment**: cores, overlap and borrowed hold-outs
   all stay in the window's segment. The two sides of a jump are in
   different frames of reference.
-- Distances are straight steps between consecutive frames of a segment.
+- **A window always has something to train.** A core with no training
+  frame is dropped (only a segment of hold-outs alone, such as one frame
+  between two jumps, makes one); the budgets could not size it and the
+  trainer could not run it.
+- Distances are straight steps between consecutive frames of a segment
+  (`distance` and `requirePositive` come from `splat-math.ts`).
 - Defensive: settings are validated (RangeError); frames are trusted to
   carry finite positions (the reader refuses any other).
 
@@ -68,10 +80,13 @@ for (const w of plan.windows) train(w.train, w.holdouts);
 
 - `walk-windows.test.ts` - jump cuts (fast step, zero time, untimed), the
   hold-out rule, window cutting, the overlap's frames, merging a short
-  tail, splitting a dense window, hold-out borrowing and its shortfall, no
-  window across a jump, settings rejected.
+  tail, splitting a dense window, hold-out borrowing nearest-first and its
+  shortfall, the distance along the walk, a window with nothing to train
+  dropped, no window across a jump, settings rejected.
 - `walk-windows.property.test.ts` - over random walks (turns, jumps,
-  untimed frames) and settings over the swept ranges: every frame in
-  exactly one core; no hold-out trained on; everything inside one
+  untimed frames) and settings over the swept ranges: every frame of a
+  segment with something to train in exactly one core, and every window
+  with a training frame; the distance along the walk exact; no hold-out
+  trained on; everything inside one
   segment; core training counts within the limits; hold-out borrowing
   exact.

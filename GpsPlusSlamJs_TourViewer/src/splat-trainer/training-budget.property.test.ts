@@ -66,10 +66,21 @@ describe("training budget (property)", () => {
         fc.integer({ min: 1, max: 2048 * MB }),
         (settings, frames, width, height, budget) => {
           const scale = photoScale(frames, width, height, budget, settings);
-          // Too large only when even the shortest side would not fit.
-          expect(scale.kind === "fits" || scale.neededBytes > budget).toBe(
-            true,
-          );
+          // The smallest size allowed, worked out here rather than read
+          // back from the function: the shortest side at `minShortSidePx`,
+          // or the photo's own when that is smaller (never upscaled).
+          const shortSide = Math.min(width, height);
+          const minShort = Math.min(settings.minShortSidePx, shortSide);
+          const minBytes =
+            frames *
+            Math.floor((width * minShort) / shortSide) *
+            Math.floor((height * minShort) / shortSide) *
+            settings.bytesPerPixel;
+          // Too large exactly when even that size would not fit.
+          expect(scale.kind).toBe(minBytes > budget ? "too-large" : "fits");
+          expect(
+            scale.kind === "too-large" ? scale.neededBytes : minBytes,
+          ).toBe(minBytes);
           if (scale.kind === "too-large") return;
           expect(scale.bytes).toBeLessThanOrEqual(budget);
           expect(scale.bytes).toBe(

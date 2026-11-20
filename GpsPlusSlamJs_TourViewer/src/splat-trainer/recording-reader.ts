@@ -40,6 +40,7 @@ import {
 } from "../capture-geo-join.js";
 import { tourFileKey } from "../tour-file-key.js";
 import { isActionEntryName, recordingFoldersOf } from "../tour-read-set.js";
+import { withZipBlobDirectory } from "../zip-blob.js";
 
 /**
  * How far two depth samples' lenses may differ and still be one lens: per
@@ -115,9 +116,13 @@ interface SplatFingerprint {
   readonly size: number;
   /** The File's last-modified time, or null for a plain Blob. */
   readonly lastModified: number | null;
-  /** The recording's content key (`tourFileKey`): a hash of every file
-   *  entry's name, unpacked size and CRC-32 from the zip's directory, so a
-   *  same-size change of content changes it too. */
+  /** The recording's content key (`tourFileKey`): a hash of its file
+   *  entries' names (relative to a shared wrapping folder), unpacked sizes
+   *  and CRC-32s from the zip's directory, so a same-size change of
+   *  content changes it too. The tour kit's own authored files are left
+   *  out, so a tour and the recording under it share the key; a re-zip
+   *  that adds or drops a wrapping folder keeps it, and so does a macOS
+   *  Finder re-zip (its `__MACOSX/` and `._` entries are left out). */
   readonly contentKey: string;
 }
 
@@ -135,20 +140,42 @@ export interface SplatInputs {
 
 export type SplatInputsRead =
   | { readonly kind: "read"; readonly inputs: SplatInputs }
-  | { readonly kind: "refused"; readonly reason: string };
+  | {
+      readonly kind: "refused";
+      readonly reason: string;
+      /** Set for a refusal the page words on its own; absent otherwise. */
+      readonly code?: ReadRefusalCode;
+    };
+
+/** A refusal the page names by code: `no-depth`, a recording with no
+ *  depth samples at all. */
+export type ReadRefusalCode = "no-depth";
 
 /** A refusal carried out of the reading steps; caught at the boundary. */
-class Refusal extends Error {}
+class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly code?: ReadRefusalCode,
+  ) {
+    super(message);
+  }
+}
 
 /**
  * Read `file` (a recorder zip) into the trainer's inputs, or say in words
  * why it cannot be trained. `limits` tightens the archive caps (tests;
  * the defaults are the framework's). The zip is read lazily: its
  * directory, `session.json` and the action stream, never a photo.
+ * `onProgress` hears how many text entries are read of a total known
+ * before the first: (0, total) first, then one step per entry, ending at
+ * (total, total) once all are read.
  */
 export async function readSplatInputs(
   file: Blob,
-  options: { readonly limits?: Partial<ArchiveLimits> } = {},
+  options: {
+    readonly limits?: Partial<ArchiveLimits>;
+    readonly onProgress?: ReadProgress;
+  } = {},
 ): Promise<SplatInputsRead> {
   // Outside the refusals on purpose: a cap of 0 or NaN is a configuration
   // mistake that throws, not a bad file. One budget serves every read of
@@ -156,8 +183,14 @@ export async function readSplatInputs(
   const limits = resolveArchiveLimits(options.limits);
   const budget = DecompressionBudget.forArchive(file.size, limits);
   try {
-    return { kind: "read", inputs: await readInputs(file, limits, budget) };
+    return {
+      kind: "read",
+      inputs: await readInputs(file, limits, budget, options.onProgress),
+    };
   } catch (err) {
+    if (err instanceof Refusal && err.code !== undefined) {
+      return { kind: "refused", reason: err.message, code: err.code };
+    }
     if (err instanceof Refusal || err instanceof ArchiveLimitError) {
       return { kind: "refused", reason: err.message };
     }
@@ -169,10 +202,14 @@ export async function readSplatInputs(
   }
 }
 
+/** Text entries read so far, of the total to read. */
+export type ReadProgress = (done: number, total: number) => void;
+
 async function readInputs(
   file: Blob,
   limits: ArchiveLimits,
   budget: DecompressionBudget,
+  onProgress: ReadProgress | undefined,
 ): Promise<SplatInputs> {
   if (file.size > limits.maxArchiveBytes) {
     throw new ArchiveLimitError(
@@ -195,7 +232,7 @@ async function readInputs(
       if (err instanceof ArchiveLimitError) throw err;
       throw new Refusal("This file is not a zip recording.");
     }
-    return await readEntries(file, entries, limits, budget);
+    return await readEntries(file, entries, limits, budget, onProgress);
   } finally {
     await reader.close();
   }
@@ -206,6 +243,7 @@ async function readEntries(
   entries: readonly Entry[],
   limits: ArchiveLimits,
   budget: DecompressionBudget,
+  onProgress: ReadProgress | undefined,
 ): Promise<SplatInputs> {
   const files = entries.filter((e): e is FileEntry => !e.directory);
   const names = files.map((e) => e.filename);
@@ -219,17 +257,41 @@ async function readEntries(
     );
   }
   const folder = folders[0] ?? "";
-  const readText = (entry: FileEntry, maxBytes: number): Promise<string> =>
-    readZipEntryText(
+  // session.json and every action entry: what is read before a photo.
+  const total = 1 + names.filter(isActionEntryName).length;
+  let done = 0;
+  const report = (): void => {
+    try {
+      onProgress?.(done, total);
+    } catch {
+      // A listener that throws must not refuse the recording.
+    }
+  };
+  report();
+  const readText = async (
+    entry: FileEntry,
+    maxBytes: number,
+  ): Promise<string> => {
+    const text = await readZipEntryText(
       entry,
       budget,
       Math.min(maxBytes, limits.maxTextEntryBytes),
     );
+    if (done < total) {
+      done++;
+      report();
+    }
+    return text;
+  };
 
   const era = await readEra(files, `${folder}session.json`, readText);
   const actions = (await loadActionsFromEntries(entries, readText)).map(
     (e) => e.action,
   );
+  if (done < total) {
+    done = total;
+    report();
+  }
   const preflight = preflightCaptureJoin(
     { odomCoordVersion: era },
     actions.map((a) => a.type),
@@ -254,11 +316,7 @@ async function readEntries(
   const depthSamples = depthSamplesOf(actions);
   const reference = depthSamples[0]?.projectionMatrix;
   if (reference === undefined) {
-    throw new Refusal(
-      actions.some((a) => a.type === DEPTH_SAMPLE_ACTION_TYPE)
-        ? "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it."
-        : "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
-    );
+    throw depthRefusal(actions);
   }
   const projectionSpread = depthSamples.reduce(
     (spread, s) =>
@@ -282,7 +340,7 @@ async function readEntries(
   const stretch = Math.abs(intrinsics.fx / intrinsics.fy - 1);
   if (stretch > ASPECT_TOL) {
     throw new Refusal(
-      `The recording's lens does not fit the shape of its photos (it would stretch them by ${String(Math.round(stretch * 100))} %).`,
+      `The recording's lens does not fit the shape of its photos (it would stretch them by ${stretchText(stretch)}).`,
     );
   }
 
@@ -460,7 +518,43 @@ function frameSizeOf(sizes: readonly unknown[][]): {
   return { width: width as number, height: height as number };
 }
 
-/** The depth samples carrying a well-formed projection matrix. */
+/** A stretch past the tolerance in words that never read as the
+ *  tolerance itself: one decimal, or "just over 2 %" where one decimal
+ *  would round down to it. */
+function stretchText(stretch: number): string {
+  const pct = (stretch * 100).toFixed(1);
+  return Number(pct) > ASPECT_TOL * 100
+    ? `${pct} %`
+    : `just over ${String(ASPECT_TOL * 100)} %`;
+}
+
+/** Why no depth sample gave a lens: none recorded, none carrying the
+ *  lens, or the lens there but the rest of every such sample unreadable. */
+function depthRefusal(actions: readonly RecordedAction[]): Refusal {
+  const depth = actions.filter((a) => a.type === DEPTH_SAMPLE_ACTION_TYPE);
+  if (depth.length === 0) {
+    return new Refusal(
+      "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
+      "no-depth",
+    );
+  }
+  const withLens = depth.some((a) => {
+    const s = a.payload as Partial<DepthSample> | null | undefined;
+    return (
+      typeof s === "object" &&
+      s !== null &&
+      isFiniteTuple(s.projectionMatrix, 16)
+    );
+  });
+  return new Refusal(
+    withLens
+      ? "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used."
+      : "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.",
+  );
+}
+
+/** The depth samples carrying a well-formed projection matrix, camera
+ *  pose and point list. */
 function depthSamplesOf(actions: readonly RecordedAction[]): DepthSample[] {
   const samples: DepthSample[] = [];
   for (const action of actions) {
@@ -546,4 +640,21 @@ function isPositiveInteger(value: unknown): value is number {
 function asSentence(reason: string): string {
   const text = reason.charAt(0).toUpperCase() + reason.slice(1);
   return text.endsWith(".") ? text : `${text}.`;
+}
+
+/**
+ * The photos `entries` of the recording, in the order given, read through
+ * one pass over the zip's directory. Rejects, naming it, when an entry is
+ * missing; the archive's decompression budget bounds what the reads may
+ * inflate together.
+ */
+export function readRecordingPhotos(
+  recording: Blob,
+  entries: readonly string[],
+): Promise<Blob[]> {
+  return withZipBlobDirectory(recording, async (dir) => {
+    const out: Blob[] = [];
+    for (const name of entries) out.push(await dir.read(name));
+    return out;
+  });
 }

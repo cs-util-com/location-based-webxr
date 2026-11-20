@@ -1,5 +1,7 @@
 import type { QrFusedPose } from "gps-plus-slam-app-framework/ar/qr";
 import { describe, expect, it, vi } from "vitest";
+import fc from "fast-check";
+import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import type { QrDetectionEvent } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
@@ -15,7 +17,8 @@ import {
   NO_TOUR_LEAD,
   finishReadiness,
   setupHint,
-  entryHint,
+  creatorScanCardShown,
+  CREATOR_SCAN_CARD,
   codeIndexFromInput,
   buildAuthorControllerConfig,
   syntheticAuthorLevel,
@@ -280,24 +283,74 @@ describe("authorStatusLine", () => {
   });
 });
 
-describe("entryHint (authoring plan 2026-09-28-0953 §3.2a, decision D5)", () => {
-  it("asks for the code first while a tour is open and the code was not seen in this AR visit", () => {
-    // Why this matters: a later visit's notes are only corrected through
-    // the code when the code was seen in THAT visit (D10b). The owner chose
-    // a hint over a rule: nothing blocks placing, so the hint is all that
-    // tells the author what to do first. It names the tour's PRINTED code
-    // and the creator's own reason (plan 2026-10-15-0348 M0, T8): it used
-    // to say "the code you scanned to open this tour", which is false for a
-    // tour opened from a file or a link, and the owner did not understand
-    // it.
-    const hint = entryHint({ tourOpen: true, codeSeen: false });
-    expect(hint).toBe(
-      "First, point the camera at this tour's printed code: pins and photos placed before it is seen are less exact.",
+describe("creatorScanCardShown: the creator's scan card in AR", () => {
+  // Why this matters: a later visit's notes are corrected through the code
+  // only when the code was seen in THAT visit, and nothing blocks placing
+  // before it, so this card is all that tells the creator what to do first.
+  // It shows only where it is true: a tour with no measured code has no
+  // code to point at (the old line in the readout asked for one anyway),
+  // and a creator who has read it closes it at once.
+  const measured: QrLevel = {
+    version: 1,
+    qr: {
+      physicalSizeM: 0.16,
+      geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+    },
+  };
+  const unmeasured: QrLevel = { version: 1, qr: {} };
+  const base = {
+    sessionLive: true,
+    levels: new Map([["a", measured]]),
+    codeSeen: false,
+    dismissed: false,
+  };
+
+  it("shows in a session of a tour with a measured code not seen yet in this visit", () => {
+    expect(creatorScanCardShown(base)).toBe(true);
+  });
+
+  it("never shows for a tour without a measured code, or with no levels known", () => {
+    expect(
+      creatorScanCardShown({ ...base, levels: new Map([["a", unmeasured]]) }),
+    ).toBe(false);
+    expect(creatorScanCardShown({ ...base, levels: new Map() })).toBe(false);
+    expect(creatorScanCardShown({ ...base, levels: null })).toBe(false);
+  });
+
+  it("closes when the code is seen, when dismissed, and outside a session", () => {
+    expect(creatorScanCardShown({ ...base, codeSeen: true })).toBe(false);
+    expect(creatorScanCardShown({ ...base, dismissed: true })).toBe(false);
+    expect(creatorScanCardShown({ ...base, sessionLive: false })).toBe(false);
+  });
+
+  it("shows exactly when all four hold (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.boolean(),
+        fc.boolean(),
+        fc.boolean(),
+        fc.boolean(),
+        fc.boolean(),
+        (sessionLive, lockable, extraUnmeasured, codeSeen, dismissed) => {
+          const levels = new Map<string, QrLevel>();
+          if (lockable) levels.set("m", measured);
+          if (extraUnmeasured) levels.set("u", unmeasured);
+          expect(
+            creatorScanCardShown({ sessionLive, levels, codeSeen, dismissed }),
+          ).toBe(sessionLive && lockable && !codeSeen && !dismissed);
+        },
+      ),
     );
-    expect(hint).not.toMatch(/scanned/);
-    expect(entryHint({ tourOpen: true, codeSeen: true })).toBe("");
-    // No tour open: there is no "code of this tour" to point at yet.
-    expect(entryHint({ tourOpen: false, codeSeen: false })).toBe("");
+  });
+
+  it("gives the creator's own reason and names the PRINTED code", () => {
+    // A tour opened from a file or a link was opened by no scan, so the
+    // card never says "the code you scanned".
+    expect(CREATOR_SCAN_CARD.title).toMatch(/printed code/);
+    expect(CREATOR_SCAN_CARD.line).toMatch(/less exact/);
+    expect(`${CREATOR_SCAN_CARD.title} ${CREATOR_SCAN_CARD.line}`).not.toMatch(
+      /scanned/,
+    );
   });
 });
 
