@@ -278,6 +278,8 @@ async function openClocked(page, viewport) {
   await page.clock.install({ time: 0 });
   await page.clock.pauseAt(1000);
   await page.goto("/check.html?view=travelling-box");
+  // The check page loads the view's module after the page's load event.
+  await page.waitForFunction(() => window.__travellingBoxCheck !== undefined);
   await hook(page, "standAt", 3);
   // The words fade in over 0.3 s.
   await page.clock.runFor(500);
