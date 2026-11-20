@@ -360,7 +360,7 @@ describe("the twice-walked loop and the ownership rules", () => {
   // of the object, so one surface is never kept twice. At 20 or 40 m the
   // whole 44 m walk counts as one pass and the nearest camera wins, so
   // the second lap owns some spots. At 2 m the object is out of range and
-  // the nearest seeing camera names the owner, revisit or not.
+  // the nearest seeing camera keeps the spot, revisit or not.
   it("keeps the object with the first lap when the range makes the second a revisit", () => {
     expect(lap2Only.size).toBeGreaterThan(0);
     expect(objectSpots.length).toBeGreaterThan(50);

@@ -27,7 +27,7 @@ maxBufferSize)`, rounded down. RangeError for limits that are not
   `itersPerFrame * trainFrames` within `[minIterations, maxIterations]`.
   RangeError when `maxIterations < minIterations` (the clamp would
   return less than the minimum).
-- `liveEta({ done, total, elapsedMs }, settings) -> number | null` - ms
+- `liveEta({ done, total, elapsedMs }, { etaMinIterations }) -> number | null` - ms
   left at the measured rate. `done`, `total` and `elapsedMs` count from a
   mark the caller takes after warm-up (shader compilation, first upload),
   never from the start of training, or the one-off cost would skew the

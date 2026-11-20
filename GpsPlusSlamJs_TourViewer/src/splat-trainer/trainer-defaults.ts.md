@@ -60,6 +60,23 @@ it has run.
   64 px would lower it; unusable ones at 128 would raise it.
 - `etaMinIterations` 200: steps measured before a time estimate shows.
 
+The GPU trainer's values below are provisional: they are set from the
+synthetic scene's acceptance run and await field recordings.
+
+- `depthMaxDtMs` 200: a depth sample seeds a photo only when it was taken
+  within this time of the photo. Larger pulls readings from a moved
+  camera; smaller loses readings on a slow recorder.
+- `seedVoxelM` 0.05: depth seeds sharing a 5 cm cube merge into one.
+- `shellDistanceM` 40, `shellGridPx` 48, `shellEveryPhoto` 4,
+  `shellVoxelM` 1: a background shell of one point per 48 px square at
+  40 m, on every 4th training photo, merged per 1 m cube; it gives sky
+  and far facades a start. The shell crop keeps `keepFraction` of
+  `shellDistanceM` around the training cameras.
+- `deadlineS` 1200: the longest a first try may train (a retry gets
+  `timeScale` times it); the run then ends as `deadline`.
+- `goodHeldOutDb` 20, `weakHeldOutDb` 16: the judge's held-out sharpness
+  for good and weak; below weak is poor.
+
 ## Invariants & assumptions
 
 - Nothing reads the defaults implicitly: each consumer validates the

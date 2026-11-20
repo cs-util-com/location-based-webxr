@@ -10,19 +10,26 @@ import { trainerChoiceFrom } from "./trainer-choice.js";
 describe("trainerChoiceFrom", () => {
   it("is the unavailable trainer without a query", () => {
     expect(trainerChoiceFrom("")).toEqual({
-      practice: false,
+      trainer: "unavailable",
       gpu: "ready",
       pace: 1,
       lost: null,
     });
-    expect(trainerChoiceFrom("?trainer=fake").practice).toBe(false);
+    expect(trainerChoiceFrom("?trainer=fake").trainer).toBe("unavailable");
+  });
+
+  // Why: the real trainer is opt-in while it is measured; only the exact
+  // value turns it on.
+  it("runs the GPU trainer only on request", () => {
+    expect(trainerChoiceFrom("?trainer=gpu").trainer).toBe("gpu");
+    expect(trainerChoiceFrom("?trainer=GPU").trainer).toBe("unavailable");
   });
 
   it("reads the practice flags", () => {
     expect(
       trainerChoiceFrom("?trainer=practice&pace=40&gpu=integrated"),
     ).toEqual({
-      practice: true,
+      trainer: "practice",
       gpu: "integrated",
       pace: 40,
       lost: null,

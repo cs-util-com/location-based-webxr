@@ -239,7 +239,6 @@ describe("recordingEntryNames", () => {
     ).toEqual(["rec/session.json", "rec/actions/000001.json"]);
   });
 
-
   // Why (the M4b milestone review #8): the debug bundle (the editor's
   // "Move the debug data out") puts the walk into a file of its own, and that file must be the whole
   // recording, every frame included (frames a tour kept for its visitors

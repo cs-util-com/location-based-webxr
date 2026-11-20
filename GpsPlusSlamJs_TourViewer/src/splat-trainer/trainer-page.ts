@@ -1055,9 +1055,9 @@ export function mountSplatTrainerPage(
       const lead = censusLeadHtml(s);
       if (els.censusLead.innerHTML !== lead) els.censusLead.innerHTML = lead;
       const warn = integrated && !s.gpu.accepted;
-      els.gpuWarn.hidden = !warn || s.trainer !== "practice";
-      els.unavailable.hidden = s.trainer === "practice";
-      els.startBtn.hidden = s.trainer !== "practice";
+      els.gpuWarn.hidden = !warn || s.trainer === "unavailable";
+      els.unavailable.hidden = s.trainer !== "unavailable";
+      els.startBtn.hidden = s.trainer === "unavailable";
       els.startBtn.disabled = warn || s.gpu.status === "probing";
       const checking = s.gpu.recheck === "checking";
       els.gpuRecheck.disabled = checking;

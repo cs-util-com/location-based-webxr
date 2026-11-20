@@ -149,7 +149,7 @@ export function liveEta(
     readonly total: number;
     readonly elapsedMs: number;
   },
-  settings: TrainerSettings,
+  settings: Pick<TrainerSettings, "etaMinIterations">,
 ): number | null {
   const { done, total, elapsedMs } = progress;
   if (![done, total, elapsedMs].every(Number.isFinite)) return null;

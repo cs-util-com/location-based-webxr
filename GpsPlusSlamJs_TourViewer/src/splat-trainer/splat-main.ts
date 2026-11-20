@@ -1,8 +1,9 @@
 /**
  * Entry of the splat trainer page (`splat/index.html`): picks the trainer
  * from the address, builds the page's store with the real recording reader,
- * and mounts the page. Without `?trainer=practice` the trainer is the one
- * that is not available yet, so the page says so instead of pretending.
+ * and mounts the page. Without `?trainer=gpu` or `?trainer=practice` the
+ * trainer is the one that is not available yet, so the page says so
+ * instead of pretending.
  *
  * @see splat-main.ts.md
  */
@@ -14,9 +15,11 @@ import {
 import { writeFileOrAbort } from "gps-plus-slam-app-framework/storage/write-file-or-abort";
 
 import { createPracticeTrainer, practicePictures } from "./fake-trainer.js";
-import { readSplatInputs } from "./recording-reader.js";
+import { createGpuTrainer } from "./gpu-trainer.js";
+import { readRecordingPhotos, readSplatInputs } from "./recording-reader.js";
 import { createUnavailableTrainer, type GpuLike } from "./trainer-adapter.js";
 import { trainerChoiceFrom } from "./trainer-choice.js";
+import { spawnTrainerWorker } from "./trainer-worker-spawn.js";
 import { mountSplatTrainerPage } from "./trainer-page.js";
 import { createTrainerPageStore } from "./trainer-page-store.js";
 import { windowPlanner } from "./window-plan.js";
@@ -27,21 +30,29 @@ if (root !== null) {
   const paper = (): string =>
     getComputedStyle(root).getPropertyValue("--print-paper").trim() ||
     "#2c3142";
-  const adapter = choice.practice
-    ? createPracticeTrainer({
-        timer: {
-          now: () => performance.now(),
-          set: (fn, ms) => window.setTimeout(fn, ms),
-          clear: (id) => window.clearTimeout(id),
-        },
-        pace: choice.pace,
-        gpu: choice.gpu,
-        lostStretch: choice.lost,
-        picture: practicePictures(document, paper),
-      })
-    : createUnavailableTrainer(
-        (navigator as Navigator & { gpu?: GpuLike }).gpu,
-      );
+  const timer = {
+    now: () => performance.now(),
+    set: (fn: () => void, ms: number) => window.setTimeout(fn, ms),
+    clear: (id: unknown) => window.clearTimeout(id as number),
+  };
+  const gpu = (navigator as Navigator & { gpu?: GpuLike }).gpu;
+  const adapter =
+    choice.trainer === "practice"
+      ? createPracticeTrainer({
+          timer,
+          pace: choice.pace,
+          gpu: choice.gpu,
+          lostStretch: choice.lost,
+          picture: practicePictures(document, paper),
+        })
+      : choice.trainer === "gpu"
+        ? createGpuTrainer({
+            gpu,
+            readPhotos: readRecordingPhotos,
+            spawn: spawnTrainerWorker,
+            timer,
+          })
+        : createUnavailableTrainer(gpu);
   const controller = createTrainerPageStore({
     adapter,
     read: (file) => readSplatInputs(file),

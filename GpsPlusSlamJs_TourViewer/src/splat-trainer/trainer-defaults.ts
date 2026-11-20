@@ -60,6 +60,31 @@ export interface TrainerSettings {
   /** Steps measured before a time estimate is shown: earlier ones carry
    *  shader compilation and warm-up. */
   readonly etaMinIterations: number;
+  /** A depth sample seeds a training photo when it was taken within this
+   *  many milliseconds of it. Picked, not swept: the recorder takes them
+   *  in the same frame, so any value above a frame or two keeps them. */
+  readonly depthMaxDtMs: number;
+  /** Seeds from depth readings are merged per cube of this side (m).
+   *  Picked, not swept: finer keeps more seeds than training needs. */
+  readonly seedVoxelM: number;
+  /** The background shell's distance from each camera along every pixel
+   *  ray (m). Picked, not swept: beyond what the depth readings reach. */
+  readonly shellDistanceM: number;
+  /** One shell point per square of this side in pixels. */
+  readonly shellGridPx: number;
+  /** Every n-th training photo grows shell points. */
+  readonly shellEveryPhoto: number;
+  /** Shell points are merged per cube of this side (m). */
+  readonly shellVoxelM: number;
+  /** A first try trains for at most this long (s); "train again" scales
+   *  it. Picked, not swept: a window of 100 photos took minutes on the
+   *  graphics cards measured so far. */
+  readonly deadlineS: number;
+  /** Held-out sharpness (dB) from which a stretch is good, and from which
+   *  it is at least weak. Picked, not swept: they stand until the stretch
+   *  judge is measured against people's ratings. */
+  readonly goodHeldOutDb: number;
+  readonly weakHeldOutDb: number;
 }
 
 /** The provisional defaults (see the module comment). */
@@ -80,4 +105,13 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   bytesPerPixel: 12,
   minShortSidePx: 128,
   etaMinIterations: 200,
+  depthMaxDtMs: 200,
+  seedVoxelM: 0.05,
+  shellDistanceM: 40,
+  shellGridPx: 48,
+  shellEveryPhoto: 4,
+  shellVoxelM: 1,
+  deadlineS: 1200,
+  goodHeldOutDb: 20,
+  weakHeldOutDb: 16,
 });

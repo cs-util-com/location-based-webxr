@@ -9,6 +9,9 @@ graphics card.
 
 ## Behaviour
 
+- `?trainer=gpu` - the GPU trainer (`gpu-trainer.ts`): the real probe,
+  photos read with `readRecordingPhotos`, one worker per stretch started
+  by `spawnTrainerWorker` (no Referer reaches the CDN).
 - `?trainer=practice` - the practice trainer on the window's timers, with
   `pace`, `gpu` and `lost` from the address and painted practice pictures.
 - Otherwise - the unavailable trainer with the browser's real WebGPU

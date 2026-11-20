@@ -3,15 +3,16 @@
 ## Purpose
 
 The interface between the splat trainer page and whatever trains a
-stretch: today the scripted practice trainer (`fake-trainer.ts`) and the
-unavailable trainer below; later the GPU trainer, which plugs in behind
-the same interface without the page changing.
+stretch: the scripted practice trainer (`fake-trainer.ts`), the
+unavailable trainer below, and the GPU trainer (`gpu-trainer.ts`), which
+plugs in behind the same interface without the page changing.
 
 ## Public API
 
 - `GpuProbe` - `{ kind: "ready" } | { kind: "integrated" } | { kind:
 "no-webgpu", detail }`.
-- `TrainRequest` - `{ window: PlannedWindow, attempt, timeScale, inputs }`;
+- `TrainRequest` - `{ window: PlannedWindow, attempt, timeScale, inputs,
+recording: Blob }` (the recording file, for its photos);
   `timeScale` is 2 to the power `attempt - 1` (a retry gets twice the time).
 - `TrainProgress` - `{ fraction, secondsLeft | null, nextPreviewInS | null }`.
 - `TrainEvents` (internal, the type of `trainWindow`'s second argument) -
@@ -20,7 +21,7 @@ the same interface without the page changing.
 - `WindowMetrics` - `{ atCameraDb, heldOutDb | null, photosUsed }`.
 - `WindowTrainResult` - `{ outcome, metrics | null, trainingS, ply: Blob | null }`.
 - `WindowJudgement` - `{ verdict: good | weak | poor, reasons, say }`.
-- `TrainerAdapter` - `{ kind: "practice" | "unavailable", probe(),
+- `TrainerAdapter` - `{ kind: "practice" | "unavailable" | "gpu", probe(),
 trainWindow(request, events, signal), judge(request, result) }`.
   `trainWindow` resolves `cancelled` once `signal` aborts.
 - `probeWebGpu(gpu) -> Promise<GpuProbe>` - asks for a high-performance
@@ -36,9 +37,9 @@ trainWindow(request, events, signal), judge(request, result) }`.
 ## Invariants and decisions
 
 - `judge` lives on the adapter, so the page carries no verdict thresholds
-  of its own; the real verdict rules arrive with the real trainer.
+  of its own; the GPU trainer's provisional rules are in `gpu-trainer.ts`.
 - The page never calls `trainWindow` on the unavailable trainer: the slice
-  allows starting only with the practice trainer.
+  allows starting with every trainer but that one.
 
 ## Tests
 

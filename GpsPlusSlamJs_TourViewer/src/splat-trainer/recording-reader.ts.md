@@ -21,6 +21,12 @@ creator can read. Nothing decodes a photo here.
     resolved once by the framework's `resolveArchiveLimits` (defaults
     `DEFAULT_ARCHIVE_LIMITS`); the same resolved caps feed the budget and
     every cap check.
+- `readRecordingPhotos(recording, entries) -> Promise<Blob[]>` - the
+  named photo entries in the order given, read through one pass over the
+  zip's directory (`withZipBlobDirectory` of `../zip-blob.ts`, so the
+  archive's decompression budget bounds them together). Rejects, naming
+  it, for an entry the zip lacks. The GPU trainer reads a stretch's photos
+  with it.
 - `SplatInputs`
   - `captures: SplatCapture[]` - one per photo the zip carries, in
     capture-time order when every kept capture carries a time, else in

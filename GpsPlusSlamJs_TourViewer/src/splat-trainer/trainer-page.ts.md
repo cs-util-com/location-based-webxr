@@ -74,7 +74,8 @@ refusals (phone, no WebGPU, a recording without depth by the reader's
 
 ## Tests
 
-`trainer-page.test.ts` (jsdom): the practice chip and start button versus
+`trainer-page.test.ts` (jsdom): the practice chip and start button, the
+GPU trainer's start button without the chip, versus
 the production note, the phone refusal, focus after a decision and across
 a progress tick, the stop dialog's live text and target, Keep training
 starting the held stretch, the closer look skipping waiting stretches, and

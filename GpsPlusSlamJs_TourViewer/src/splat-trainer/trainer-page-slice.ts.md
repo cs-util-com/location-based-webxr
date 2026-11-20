@@ -19,7 +19,7 @@ pictures, splats and the running job live outside it, keyed by its ids.
 recheck }`; `recheck` is `idle | checking | unchanged`: "Check again" runs
   (`checking`) while the status stays what it was, and a probe that finds
   the same again says so (`unchanged`).
-- `trainer`: `practice | unavailable` (from the adapter).
+- `trainer`: `practice | unavailable | gpu` (from the adapter).
 - `recording`: `{ id, name, census }` or null.
 - `windows`: one `WindowState` per stretch - the `StretchSummary` fields
   plus `status` (`waiting | training | stopped | queued | done`),
@@ -43,7 +43,8 @@ savedCount, left }`; `left` is the sentence about a picked file a failed
   `readFinished({ id, census, windows })` (ignored for a stale id; an
   empty plan refuses the recording), `readRefused({ id, reason, code? })`,
   `anotherRecordingChosen` (keeps the probe result).
-- Run: `trainingStarted` (needs a census, the practice trainer and a ready
+- Run: `trainingStarted` (needs a census, a trainer that is not the
+  unavailable one, and a ready
   graphics card, or built-in graphics accepted), `progressed` (clamped to
   0..1, never backwards, non-finite values ignored), `previewed`,
   `windowFinished` (ignored unless that stretch and attempt is the one

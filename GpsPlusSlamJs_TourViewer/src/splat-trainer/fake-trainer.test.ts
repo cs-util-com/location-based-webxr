@@ -37,6 +37,7 @@ const request = (index: number, attempt = 1, timeScale = 1): TrainRequest => ({
   attempt,
   timeScale,
   inputs: {} as TrainRequest["inputs"],
+  recording: new Blob(),
 });
 
 function harness(pace = 1) {

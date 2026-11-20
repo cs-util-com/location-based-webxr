@@ -3,7 +3,7 @@
  * the page asks a {@link TrainerAdapter} to probe the graphics card, to
  * train one stretch (reporting progress and preview pictures while it
  * runs, stoppable through an AbortSignal) and to judge the result. The
- * GPU trainer implements this interface when it lands; until then the
+ * GPU trainer (`gpu-trainer.ts`) implements it on request; otherwise the
  * page runs either the {@link createUnavailableTrainer} (production: it
  * probes the real card but cannot train) or the scripted practice trainer
  * (`fake-trainer.ts`, only on request).
@@ -27,6 +27,8 @@ export interface TrainRequest {
   /** How much more time than a first try this attempt gets (2 = twice). */
   readonly timeScale: number;
   readonly inputs: SplatInputs;
+  /** The recording file the inputs were read from (its photos). */
+  readonly recording: Blob;
 }
 
 export interface TrainProgress {
@@ -80,8 +82,9 @@ export interface WindowJudgement {
 }
 
 export interface TrainerAdapter {
-  /** `practice` is the scripted stand-in; the page says so visibly. */
-  readonly kind: "practice" | "unavailable";
+  /** `practice` is the scripted stand-in; the page says so visibly.
+   *  `gpu` trains for real (`gpu-trainer.ts`). */
+  readonly kind: "practice" | "unavailable" | "gpu";
   probe(): Promise<GpuProbe>;
   /** Resolves with outcome `cancelled` (never rejects) when aborted. */
   trainWindow(

@@ -40,6 +40,7 @@ import {
 } from "../capture-geo-join.js";
 import { tourFileKey } from "../tour-file-key.js";
 import { isActionEntryName, recordingFoldersOf } from "../tour-read-set.js";
+import { withZipBlobDirectory } from "../zip-blob.js";
 
 /**
  * How far two depth samples' lenses may differ and still be one lens: per
@@ -601,4 +602,21 @@ function isPositiveInteger(value: unknown): value is number {
 function asSentence(reason: string): string {
   const text = reason.charAt(0).toUpperCase() + reason.slice(1);
   return text.endsWith(".") ? text : `${text}.`;
+}
+
+/**
+ * The photos `entries` of the recording, in the order given, read through
+ * one pass over the zip's directory. Rejects, naming it, when an entry is
+ * missing; the archive's decompression budget bounds what the reads may
+ * inflate together.
+ */
+export function readRecordingPhotos(
+  recording: Blob,
+  entries: readonly string[],
+): Promise<Blob[]> {
+  return withZipBlobDirectory(recording, async (dir) => {
+    const out: Blob[] = [];
+    for (const name of entries) out.push(await dir.read(name));
+    return out;
+  });
 }

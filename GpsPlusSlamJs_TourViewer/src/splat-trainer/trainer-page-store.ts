@@ -224,7 +224,9 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
         return;
       const inputs = sides.inputs.get(recording.id);
       const planned = sides.plans.get(recording.id)?.find((p) => p.id === w.id);
-      if (inputs === undefined || planned === undefined) return;
+      const file = sides.files.get(recording.id);
+      if (inputs === undefined || planned === undefined || file === undefined)
+        return;
       const ctrl = new AbortController();
       job = { key, ctrl };
       dropPreview(w.id);
@@ -233,6 +235,7 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
         attempt: w.attempt,
         timeScale: attemptTimeScale(w.attempt),
         inputs,
+        recording: file,
       };
       void runJob(request, ctrl);
     },

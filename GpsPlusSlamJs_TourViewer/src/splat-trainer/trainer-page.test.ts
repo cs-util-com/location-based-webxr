@@ -64,6 +64,15 @@ describe("census and the trainer that is not there yet", () => {
     expect(q('[data-ref="modeChip"]').hidden).toBe(false);
   });
 
+  // Why: the GPU trainer trains for real, so the page offers the start
+  // and shows neither the practice chip nor the not-ready note.
+  it("offers a real run, not a practice one, with the GPU trainer", () => {
+    const { q } = mount(storeAt(4, "gpu"));
+    expect(q('[data-ref="startBtn"]').hidden).toBe(false);
+    expect(q('[data-ref="unavailable"]').hidden).toBe(true);
+    expect(q('[data-ref="modeChip"]').hidden).toBe(true);
+  });
+
   it("says the trainer is not available yet in production, with no start button", () => {
     const { q } = mount(storeAt(4, "unavailable"));
     expect(q('[data-ref="startBtn"]').hidden).toBe(true);

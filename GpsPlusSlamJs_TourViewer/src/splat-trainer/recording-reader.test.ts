@@ -19,6 +19,7 @@ import { readZipBlobEntry } from "../zip-blob.js";
 import {
   ASPECT_TOL,
   PROJ_TOL,
+  readRecordingPhotos,
   readSplatInputs,
   type SplatInputs,
   type SplatInputsRead,
@@ -739,6 +740,35 @@ describe("readSplatInputs holds the archive caps", () => {
     });
     expect(reasonOf(await readSplatInputs(file))).toMatch(
       /^The recording could not be read \(Action file "actions\/900000\.json" .* exceeds maximum allowed size/,
+    );
+  });
+});
+
+describe("readRecordingPhotos", () => {
+  // Why: the GPU trainer reads only a window's photos, in the job's order;
+  // a reordered list trains each camera on another camera's photo, and a
+  // missing entry must fail in words instead of training on nothing.
+  it("reads the named photos in the order asked", async () => {
+    const rec = await buildSyntheticRecording();
+    const names = [rec.photoEntries[2], rec.photoEntries[0]].filter(
+      (n): n is string => n !== undefined,
+    );
+    const photos = await readRecordingPhotos(rec.file, names);
+    const expected = await Promise.all(
+      names.map((n) => readZipBlobEntry(rec.file, n)),
+    );
+    expect(photos).toHaveLength(2);
+    for (const [i, p] of photos.entries()) {
+      expect(new Uint8Array(await p.arrayBuffer())).toEqual(
+        new Uint8Array(await (expected[i] as Blob).arrayBuffer()),
+      );
+    }
+  });
+
+  it("rejects, naming it, a photo the recording lacks", async () => {
+    const rec = await buildSyntheticRecording();
+    await expect(readRecordingPhotos(rec.file, ["nope.jpg"])).rejects.toThrow(
+      /nope\.jpg/,
     );
   });
 });

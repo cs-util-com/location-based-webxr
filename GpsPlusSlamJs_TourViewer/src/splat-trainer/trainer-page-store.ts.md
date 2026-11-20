@@ -14,7 +14,9 @@ aborting it the moment the state says otherwise), and saving.
   (`windowPlanner()`), a write into a picked file handle, and a download
   that resolves false when cancelled.
 - `TrainerSideTables` - `files`, `inputs` and `plans` keyed by recording
-  id; `previews` and `splats` keyed by stretch id.
+  id; `previews` and `splats` keyed by stretch id. The recording's file
+  stays in `files` while it trains: every stretch's `TrainRequest`
+  carries it, for the GPU trainer's photos.
 - `createTrainerPageStore(deps) -> { store, sides, probe, chooseRecording,
 save, dispose }`.
   - `probe()` - runs the adapter's probe; a throw counts as no WebGPU.

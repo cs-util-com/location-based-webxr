@@ -85,7 +85,7 @@ export interface TrainerPageState {
      */
     readonly recheck: "idle" | "checking" | "unchanged";
   };
-  readonly trainer: "practice" | "unavailable";
+  readonly trainer: "practice" | "unavailable" | "gpu";
   readonly recording: {
     readonly id: string;
     readonly name: string;
@@ -203,7 +203,7 @@ function markUnsaved(s: S): void {
 }
 
 const canTrain = (s: S): boolean =>
-  s.trainer === "practice" &&
+  s.trainer !== "unavailable" &&
   (s.gpu.status === "ready" ||
     (s.gpu.status === "integrated" && s.gpu.accepted));
 

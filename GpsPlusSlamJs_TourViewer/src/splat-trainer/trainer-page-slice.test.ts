@@ -64,6 +64,13 @@ describe("starting", () => {
     expect(store.getState().phase).toBe("census");
   });
 
+  // Why: the GPU trainer starts exactly as the practice one does.
+  it("starts with the GPU trainer", () => {
+    const store = storeAt(3, "gpu");
+    store.dispatch(A.trainingStarted());
+    expect(store.getState().phase).toBe("training");
+  });
+
   it("waits for a yes before training on built-in graphics", () => {
     const store = storeAt(3);
     store.dispatch(A.probeFinished("integrated"));

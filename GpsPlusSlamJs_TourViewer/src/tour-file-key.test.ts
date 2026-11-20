@@ -215,7 +215,11 @@ describe("tourFileKey and a macOS re-zip", () => {
     const finder: TourFileKeyEntry[] = [
       ...flat.map((e) => ({ ...e, filename: `walk/${e.filename}` })),
       { filename: "__MACOSX/", directory: true, uncompressedSize: 0 },
-      { filename: "__MACOSX/walk/._session.json", uncompressedSize: 120, crc32: 1 },
+      {
+        filename: "__MACOSX/walk/._session.json",
+        uncompressedSize: 120,
+        crc32: 1,
+      },
       {
         filename: "__MACOSX/walk/actions/._000001.json",
         uncompressedSize: 120,
