@@ -150,6 +150,13 @@ and what.
   rectangles from the box's own offsets (transform-proof), and the
   fonts, grey and tint from the computed style (`--nb-grey`,
   `--nb-tint`), with fallbacks (16 px, 0.55, 0.72).
+  The punctuation between the spans (a colon, a full stop, an opening
+  quote) is measured with a Range and painted as runs too, fading with
+  the word it is glued to (else the word before).
+- The box lays itself out again when its own size changes
+  (`ResizeObserver`, where there is one): a stylesheet or a web font that
+  arrives after the first layout would otherwise leave the plate painting
+  the words at the old places.
 - Intended differences from the prototype:
   - the speaker's name is not a line of its own and has no coloured
     mark: it starts the words, bold, in the speaker's colour, once per
@@ -212,7 +219,8 @@ box.hide();
   pointer switches, the paint model (null in the natural mode, the same
   layout object until laid out anew), the hints, and forwarded presses
   (a tap, a drag scaled by `linePx`, a cancel that is no tap, a second
-  press refused).
+  press refused); the punctuation runs and their words; a new layout
+  after a size change.
 - `playwright-tests/travelling-box-check.spec.js` - the travel box's
   shape and the painted words against the ghost's spans.
 - `narration-box-timeline.test.ts` and

@@ -902,3 +902,87 @@ describe("createNarrationBox in travel mode", () => {
     expect(document.querySelector(".nb-tapfx")).not.toBeNull();
   });
 });
+
+describe("the travel box's punctuation and late styles", () => {
+  // Why this test matters: the punctuation between the words lives in the
+  // text between the word spans, not in them. A painter fed only the spans
+  // drew "one job  weighing" for "one job: weighing" (found side by side
+  // with the prototype). jsdom measures no Range, so each chunk gets a
+  // rectangle from its place in the text; what is pinned is that every
+  // chunk becomes a run that fades with the right word.
+  it("paints the punctuation between the words, fading with its word", () => {
+    const plain = 'one two: "three four.';
+    const rect = Range.prototype.getBoundingClientRect as unknown;
+    Range.prototype.getBoundingClientRect = function (this: Range) {
+      const x = this.startOffset * 8;
+      return new DOMRect(x, 0, 8, 22);
+    };
+    try {
+      const { box, content } = make();
+      box.show(
+        {
+          ...content,
+          plain,
+          timing: {
+            segments: wordsOf(plain, 0, plain.length).map((w, i) => ({
+              startMs: i * WORD_MS,
+              endMs: (i + 1) * WORD_MS,
+              from: w.from,
+              to: w.to,
+            })),
+          },
+        },
+        "travel",
+      );
+      const runs = box.paintModel()?.layout.runs ?? [];
+      const marks = runs
+        .filter((r) => r.kind === "word" && !/\w/.test(r.text))
+        .map((r) => [r.text, r.word]);
+      // The colon after "two" (word 1); the quote glued to "three" (word 2)
+      // fades with it; the full stop after the last word with it.
+      expect(marks).toEqual([
+        [":", 1],
+        ['"', 2],
+        [".", 3],
+      ]);
+    } finally {
+      if (rect === undefined) {
+        delete (Range.prototype as { getBoundingClientRect?: unknown })
+          .getBoundingClientRect;
+      } else {
+        Range.prototype.getBoundingClientRect =
+          rect as Range["getBoundingClientRect"];
+      }
+    }
+  });
+
+  // Why this test matters: in a page whose stylesheet a module injects
+  // after the box's first layout (the dev server, a late web font), the
+  // box measured itself without its padding and the plate painted every
+  // word 15 px off, for good. A change of the box's size must lay it out
+  // again.
+  it("lays itself out again when its size changes", () => {
+    const watched: (() => void)[] = [];
+    const real = globalThis.ResizeObserver as unknown;
+    globalThis.ResizeObserver = class {
+      constructor(private readonly cb: () => void) {}
+      observe(): void {
+        watched.push(this.cb);
+      }
+      unobserve(): void {}
+      disconnect(): void {}
+    } as unknown as typeof ResizeObserver;
+    try {
+      const { box, content } = make();
+      box.show(content, "travel");
+      const before = box.paintModel()?.layout;
+      box.tick();
+      expect(box.paintModel()?.layout).toBe(before);
+      for (const cb of watched) cb();
+      box.tick();
+      expect(box.paintModel()?.layout).not.toBe(before);
+    } finally {
+      globalThis.ResizeObserver = real as typeof ResizeObserver;
+    }
+  });
+});

@@ -17,8 +17,9 @@ import { expect, test } from "@playwright/test";
  *   they are the view, not the thing under test;
  * - the painted words can drift from where the browser broke the lines in
  *   the ghost (so the plate and the box the visitor taps disagree), which
- *   the ink test catches: every shown word's ink lies inside its span's
- *   rectangle, and nearly no ink lies outside all of them.
+ *   the ink test catches: every shown word's and punctuation mark's
+ *   ink lies inside its own rectangle (a dropped colon or full stop
+ *   leaves its rectangle empty), and nearly no ink lies outside them.
  *
  * What they cannot catch: a wrong colour or fade (the painter's unit
  * tests pin those), a plate mirrored inside its own rectangle, and the
@@ -147,10 +148,25 @@ test("the painted words lie where the ghost box broke its lines", async ({
       y1: Math.ceil((r.bottom - box.top) * k),
     });
     // The words, the name and the disclosure on the rows the window shows.
+    // And the punctuation between them (a colon, a full stop), which
+    // lives in the text between the spans: a Range finds it.
+    const col = root.querySelector(".nb-col");
+    const range = document.createRange();
+    const gaps = [...(col?.childNodes ?? [])]
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .flatMap((n) =>
+        [...(n.textContent ?? "").matchAll(/\S+/g)].map((m) => {
+          range.setStart(n, m.index ?? 0);
+          range.setEnd(n, (m.index ?? 0) + m[0].length);
+          return range.getBoundingClientRect();
+        }),
+      );
     const spans = [
-      ...root.querySelectorAll(".nb-w, .nb-who span, .nb-disc span"),
+      ...[...root.querySelectorAll(".nb-w, .nb-who span, .nb-disc span")].map(
+        (el) => el.getBoundingClientRect(),
+      ),
+      ...gaps,
     ]
-      .map((el) => el.getBoundingClientRect())
       .filter(
         (r) =>
           r.width > 0 &&

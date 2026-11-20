@@ -457,6 +457,56 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     }));
   }
 
+  /**
+   * The punctuation between the word spans (a colon, a full stop, an
+   * opening quote), as runs at the browser's place: it lives in the text
+   * between the spans, which only a Range can measure. A chunk glued to the
+   * next word fades with it, any other with the word before.
+   */
+  function gapRuns(): WordsPaintRun[] {
+    const range = doc.createRange();
+    if (typeof range.getBoundingClientRect !== "function") return [];
+    const colRect = col.getBoundingClientRect();
+    const out: WordsPaintRun[] = [];
+    let seen = 0;
+    for (const node of col.childNodes) {
+      if (node.nodeType === 3) {
+        out.push(...chunkRuns(node, seen, range, colRect));
+      } else if (spans.includes(node as HTMLSpanElement)) {
+        seen += 1;
+      }
+    }
+    range.detach();
+    return out;
+  }
+
+  /** The non-space chunks of one text node between the words. */
+  function chunkRuns(
+    node: ChildNode,
+    seen: number,
+    range: Range,
+    colRect: DOMRect,
+  ): WordsPaintRun[] {
+    const text = node.textContent ?? "";
+    const beforeWord = spans.includes(node.nextSibling as HTMLSpanElement);
+    const out: WordsPaintRun[] = [];
+    for (const m of text.matchAll(/\S+/g)) {
+      range.setStart(node, m.index);
+      range.setEnd(node, m.index + m[0].length);
+      const r = range.getBoundingClientRect();
+      if (r.width <= 0) continue;
+      const glued = beforeWord && m.index + m[0].length === text.length;
+      out.push({
+        kind: "word",
+        text: m[0],
+        x: r.left - colRect.left,
+        line: lineIndices([r.top - colRect.top], lh, whoEl?.offsetTop)[0] ?? 0,
+        word: glued ? seen : Math.max(0, seen - 1),
+      });
+    }
+    return out;
+  }
+
   /** The words as the browser laid them out, in the box's CSS px (offsets
    *  ignore transforms, so a box that moves or scales measures the same). */
   function measurePaint(
@@ -510,6 +560,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         ...runsOf(whoParts, "who"),
         ...runsOf(discParts, "disc"),
         ...words,
+        ...gapRuns(),
       ],
       startsMs: starts,
     };
@@ -767,6 +818,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   root.addEventListener("lostpointercapture", onUp);
   root.addEventListener("keydown", onKey);
   win?.addEventListener("resize", onResize);
+  // The box's own size changes when its styles or fonts arrive after the
+  // first layout (a stylesheet a module injects, a late web font): lay it
+  // out again, or the plate keeps painting the words where they were.
+  const sizeWatch =
+    typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
+  sizeWatch?.observe(root);
 
   /** A drag cut off (the box hides, another text comes): the voice keeps
    *  the dragged place but does not play on, and a voice the drag held is
@@ -874,6 +931,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       root.removeEventListener("lostpointercapture", onUp);
       root.removeEventListener("keydown", onKey);
       win?.removeEventListener("resize", onResize);
+      sizeWatch?.disconnect();
       for (const fx of signs) fx.remove();
       signs.clear();
       root.remove();
