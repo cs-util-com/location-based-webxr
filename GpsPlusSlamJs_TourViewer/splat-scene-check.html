@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Synthetic splat scene</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/design.css" />
+    <style>
+      body {
+        margin: 0;
+        padding: 16px;
+        background: #f3f5f7;
+        color: #1b2328;
+        font:
+          15px/1.4 system-ui,
+          sans-serif;
+        overflow-x: hidden;
+      }
+      h1 {
+        font-size: 1.25rem;
+        margin: 0 0 4px;
+      }
+      .intro {
+        margin: 0 0 12px;
+        color: #4a565e;
+        max-width: 60ch;
+      }
+      form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        align-items: end;
+        margin: 0 0 12px;
+      }
+      label {
+        display: grid;
+        gap: 2px;
+        font-size: 0.9rem;
+      }
+      #state {
+        min-height: 1.4em;
+        margin: 0 0 8px;
+      }
+      #state[data-state="refused"],
+      #state[data-state="error"] {
+        color: #a3271f;
+      }
+      #first-photo {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+      #result {
+        color: #4a565e;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Synthetic splat scene</h1>
+    <p class="intro">
+      Renders a walk through a textured room with an object in its middle, at
+      known camera poses, with depth measured from the scene itself, and zips it
+      as a recording. The splat trainer's reader then reads it back.
+    </p>
+    <form id="options" onsubmit="return false;">
+      <label
+        >Walk
+        <select id="walk">
+          <option value="straight" selected>Straight</option>
+          <option value="loop">Loop round the object</option>
+        </select>
+      </label>
+      <label
+        >Photos
+        <input id="frames" type="number" min="2" max="400" value="24" />
+      </label>
+      <label
+        >Photo size
+        <select id="size">
+          <option value="320x240" selected>320 x 240</option>
+          <option value="640x480">640 x 480</option>
+          <option value="960x720">960 x 720</option>
+        </select>
+      </label>
+      <button id="build" type="button">Build the walk</button>
+    </form>
+    <p id="state" aria-live="polite" data-state="idle"></p>
+    <p>
+      <span id="result"></span>
+      <a id="save" hidden>Save the zip</a>
+    </p>
+    <img id="first-photo" alt="The walk&#39;s first photo" width="320" hidden />
+    <script type="module">
+      import { startSplatSceneCheck } from "./src/checks/splat-scene/splat-scene-check.ts";
+
+      startSplatSceneCheck(document);
+    </script>
+  </body>
+</html>

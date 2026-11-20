@@ -105,6 +105,12 @@ export default defineConfig({
         featureMatchCheck: fileURLToPath(
           new URL("feature-match-check.html", import.meta.url),
         ),
+        // A synthetic walk rendered, zipped as a recording and read back by
+        // the splat trainer's reader (`splat-scene-check.html.md`), linked
+        // from nothing.
+        splatSceneCheck: fileURLToPath(
+          new URL("splat-scene-check.html", import.meta.url),
+        ),
         // A long text in its reading sheet without an AR session
         // (`long-text-check.html.md`), linked from nothing.
         longTextCheck: fileURLToPath(
