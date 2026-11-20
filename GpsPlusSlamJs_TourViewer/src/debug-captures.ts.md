@@ -55,8 +55,7 @@ stations at the open (`capture-bake.ts`); that half went with M1.
   file would show nothing.
 - **A capture's file is looked up under the recording's own folder**: the
   folder of its action stream (the same rule as the framework's parser:
-  an `actions/` path segment ending `.json`, `tour-read-set.ts`
-  `isActionEntryName`), `""` for a flat zip, `mytour/` for a
+  `tour-read-set.ts` `recordingFolderOf`), `""` for a flat zip, `mytour/` for a
   re-zipped one - cut at the first of those entries (r901 review),
   so a sibling folder whose name ends in it (`mytour/myactions/`) sorting
   first never gives the folder. A capture's `imageFile` is relative to the recording,

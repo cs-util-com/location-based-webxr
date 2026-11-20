@@ -28,10 +28,17 @@ which a visitor never sees.
     recorded frame (an earlier file's `captureSpots` named some, read as
     the tour's content until M1 of the debug-captures plan; the field is
     gone from the format).
-- `ACTIONS_SEGMENT`, `isActionEntryName(name)` - the recording's action
-  stream as the framework's parser reads it (it does not export its rule):
-  an `actions/` path segment, and for an action entry `.json`. Shared by
-  `tour-session.ts` (`hasRecording`) and `debug-captures.ts`.
+- `isActionEntryName(name)` - the recording's action stream as the
+  framework's parser reads it (it does not export its rule): an `actions/`
+  path segment, ending `.json`. Used by `tour-session.ts` (`hasRecording`).
+- `recordingFolderOf(entryNames) -> string` - the folder the action stream
+  sits under, with its trailing slash: `""` for a flat zip, `mytour/` for a
+  recording re-zipped from its folder. Cut at the `actions/` segment of the
+  first action entry in the parser's order, so a sibling folder whose name
+  only ends in it (`mytour/myactions/`) never gives the folder. A capture's
+  `imageFile` is relative to the recording, so its entry is this folder
+  plus that name. Shared by `debug-captures.ts` and the splat trainer's
+  reader (`splat-trainer/recording-reader.ts`).
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the walk, in
   archive order: the entries a RECORDING writes (`session.json`, anything
   under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy

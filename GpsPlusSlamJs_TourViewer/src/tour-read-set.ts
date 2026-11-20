@@ -91,12 +91,33 @@ const RECORDED_FRAME = new RegExp(
  *  SEGMENT, at the start or after a slash, so a sibling folder whose name
  *  only ends in it (`myactions/`) is not it. The framework's parser
  *  (`zip-reader.ts`) holds the same rule; it does not export it. */
-export const ACTIONS_SEGMENT = /(^|\/)actions\//;
+const ACTIONS_SEGMENT = /(^|\/)actions\//;
 
 /** An action entry the framework's parser replays: under an `actions/`
  *  segment, ending `.json`. */
 export function isActionEntryName(name: string): boolean {
   return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+}
+
+/**
+ * The folder the recording's action stream sits under, with its trailing
+ * slash (`""` for a flat zip, `"mytour/"` for a recording re-zipped from
+ * its folder). A capture's `imageFile` is relative to the recording, so
+ * its entry is this folder plus that name. The action entries are found
+ * by the same rule as the framework's parser (`isActionEntryName`) and in
+ * its order, so this is the folder of exactly the stream that parser
+ * replays: a sibling folder whose name only ends in it
+ * (`mytour/myactions/`) never gives the folder.
+ */
+export function recordingFolderOf(entryNames: readonly string[]): string {
+  const at = entryNames
+    .filter(isActionEntryName)
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => ACTIONS_SEGMENT.exec(name))
+    .find((match) => match !== null);
+  return at === undefined
+    ? ""
+    : at.input.slice(0, at.index + (at[1] ?? "").length);
 }
 
 /**
