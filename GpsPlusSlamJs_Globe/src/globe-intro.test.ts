@@ -2,17 +2,16 @@
  * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, DEC-GL5-1..3).
  *
  * Why this test matters: the intro starts far out (DEC-GL5-1), turns from
- * the sun side towards the user by at most 90 degrees (DEC-GL5-3) and ends,
- * whatever the variant, at ONE pose and field of view (DEC-GL5-2: 50
- * degrees), because the lab then hands the camera and `fovY` over at that
- * pose: a variant that ended a little elsewhere would jump. The variants
- * differ only in how distance and field of view trade on the way.
+ * the sun side towards the user by at most 90 degrees (DEC-GL5-3) and ends
+ * exactly at the target and the fitted distance, because the lab then
+ * hands the camera over at that pose: an intro that ended a little
+ * elsewhere would jump. It flies by distance only; the field of view is
+ * the page's throughout.
  */
 import { describe, expect, it } from "vitest";
 
 import {
   GLOBE_INTRO,
-  INTRO_VARIANTS,
   blendTarget,
   flyInStart,
   introCameraPose,
@@ -47,9 +46,7 @@ const fromLatLng = (lat: number, lng: number): Vec3 => [
 describe("GLOBE_INTRO", () => {
   it("holds the decided values", () => {
     expect(GLOBE_INTRO.maxKm).toBe(50_000);
-    expect(GLOBE_INTRO.endFovDeg).toBe(50);
     expect(GLOBE_INTRO.turnCapDeg).toBe(90);
-    expect(INTRO_VARIANTS).toEqual(["distance", "narrow", "fov", "dolly"]);
   });
 });
 
@@ -86,74 +83,39 @@ describe("introStartDirection", () => {
 describe("introCameraPose", () => {
   const target = fromLatLng(50.94, 6.96);
   const start = introStartDirection(target, fromLatLng(-5, -60), 90);
-  const base = { start, target, startKm: 50_000, endKm: 16_500, endFovDeg: 50 };
+  const base = { start, target, startKm: 50_000, endKm: 16_500 };
 
-  it.each(INTRO_VARIANTS)(
-    "%s ends exactly at the target, the end distance and the end field of view",
-    (variant) => {
-      const end = introCameraPose(1, { ...base, variant });
-      expect(angleDeg(end.direction, target)).toBeLessThan(1e-9);
-      expect(end.distanceKm).toBeCloseTo(16_500, 9);
-      expect(end.fovDeg).toBeCloseTo(50, 9);
-    },
-  );
+  it("ends exactly at the target and the end distance", () => {
+    const end = introCameraPose(1, base);
+    expect(angleDeg(end.direction, target)).toBeLessThan(1e-9);
+    expect(end.distanceKm).toBeCloseTo(16_500, 9);
+  });
 
   it("starts at the start: far out, on the sun side", () => {
-    for (const variant of INTRO_VARIANTS) {
-      const s = introCameraPose(0, { ...base, variant });
-      expect(angleDeg(s.direction, start), variant).toBeLessThan(1e-9);
-      expect(s.distanceKm, variant).toBeCloseTo(50_000, 9);
-    }
+    const s = introCameraPose(0, base);
+    expect(angleDeg(s.direction, start)).toBeLessThan(1e-9);
+    expect(s.distanceKm).toBeCloseTo(50_000, 9);
+    expect(introCameraPose(0.5, base).distanceKm).toBeLessThan(50_000);
   });
 
-  it("gives each variant its own field of view on the way", () => {
-    const at = (variant: (typeof INTRO_VARIANTS)[number], t: number) =>
-      introCameraPose(t, { ...base, variant });
-    expect(at("distance", 0).fovDeg).toBe(50);
-    expect(at("narrow", 0).fovDeg).toBe(GLOBE_INTRO.wideFovDeg);
-    expect(at("fov", 0).fovDeg).toBe(GLOBE_INTRO.wideFovDeg);
-    expect(at("dolly", 0).fovDeg).toBe(GLOBE_INTRO.dollyStartFovDeg);
-    // The fov variant holds the start distance while the FOV narrows.
-    expect(at("fov", GLOBE_INTRO.fovPhase * 0.9).distanceKm).toBeCloseTo(
-      50_000,
-      9,
-    );
-    expect(at("distance", 0.5).distanceKm).toBeLessThan(50_000);
-  });
-
-  it("moves monotonically in distance and field of view", () => {
-    for (const variant of INTRO_VARIANTS) {
-      let previous = introCameraPose(0, { ...base, variant });
-      for (let i = 1; i <= 100; i++) {
-        const p = introCameraPose(i / 100, { ...base, variant });
-        expect(p.distanceKm, variant).toBeLessThanOrEqual(
-          previous.distanceKm + 1e-9,
-        );
-        expect(Math.abs(p.fovDeg - 50), variant).toBeLessThanOrEqual(
-          Math.abs(previous.fovDeg - 50) + 1e-9,
-        );
-        previous = p;
-      }
+  it("moves monotonically in distance", () => {
+    let previous = introCameraPose(0, base);
+    for (let i = 1; i <= 100; i++) {
+      const p = introCameraPose(i / 100, base);
+      expect(p.distanceKm).toBeLessThanOrEqual(previous.distanceKm + 1e-9);
+      previous = p;
     }
   });
 
   it("clamps t outside 0-1 and refuses bad input", () => {
-    const before = introCameraPose(-1, { ...base, variant: "distance" });
+    const before = introCameraPose(-1, base);
     expect(before.distanceKm).toBeCloseTo(50_000, 9);
-    const after = introCameraPose(2, { ...base, variant: "distance" });
+    const after = introCameraPose(2, base);
     expect(after.distanceKm).toBeCloseTo(16_500, 9);
-    expect(() =>
-      introCameraPose(0.5, { ...base, variant: "vertigo" as never }),
-    ).toThrow(RangeError);
-    expect(() =>
-      introCameraPose(0.5, { ...base, variant: "distance", endKm: 0 }),
-    ).toThrow(RangeError);
-    expect(() =>
-      introCameraPose(Number.NaN, { ...base, variant: "distance" }),
-    ).toThrow(RangeError);
-    expect(() =>
-      introCameraPose(0.5, { ...base, variant: "distance", endFovDeg: 180 }),
-    ).toThrow(RangeError);
+    expect(() => introCameraPose(0.5, { ...base, endKm: 0 })).toThrow(
+      RangeError,
+    );
+    expect(() => introCameraPose(Number.NaN, base)).toThrow(RangeError);
   });
 });
 
@@ -311,12 +273,10 @@ describe("the great-circle interpolation at degenerate pairs", () => {
   it("flies the fly-in between nearly equal and nearly opposite starts and targets", () => {
     for (const target of [nearA, nearOpposite]) {
       const p = introCameraPose(0.5, {
-        variant: "distance",
         start: a,
         target,
         startKm: 50_000,
         endKm: 16_000,
-        endFovDeg: 50,
       });
       finiteUnit(p.direction);
       // Half-way (eased 0.5): on the start for a nearly equal target,
@@ -339,12 +299,10 @@ describe("the great-circle interpolation at degenerate pairs", () => {
     const start: Vec3 = [-0.9999999999999899, 1.4253799930397765e-7, 0];
     for (const t of [0.05, 0.16219, 0.5, 0.84]) {
       const p = introCameraPose(t, {
-        variant: "distance",
         start,
         target: [1, 0, 0],
         startKm: 7000,
         endKm: 7000,
-        endFovDeg: 50,
       });
       expect(p.direction.every((c) => Number.isFinite(c))).toBe(true);
       expect(Math.hypot(...p.direction)).toBeCloseTo(1, 12);

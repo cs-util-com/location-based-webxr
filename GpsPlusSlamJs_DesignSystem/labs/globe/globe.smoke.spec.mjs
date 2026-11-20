@@ -638,7 +638,6 @@ test("every control on the plate writes the hash and applies", async ({
       "space",
       "starGlow",
       "landKm",
-      "intro",
       "maxKm",
       "milkyWay",
       "nightGain",

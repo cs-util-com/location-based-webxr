@@ -54,10 +54,7 @@ export { createGlobeCityStep, type GlobeCityStep } from "./globe-city-step.js";
 // place) and the frame loop's drive, for a page that lands on a place.
 export { createGlobeApproach } from "./globe-approach.js";
 export { createGlobeLandingFlight } from "./globe-landing-flight.js";
-export {
-  createApproachDrive,
-  createFovReturn,
-} from "./globe-approach-camera.js";
+export { createApproachDrive } from "./globe-approach-camera.js";
 export { METEOR_PACE, PIN_FLIGHT, pinEnd } from "./pin-flight.js";
 // The zoom-out limit the controls hold and the intro's farthest distance:
 // a page starts its approach there, as the lab's intro does.

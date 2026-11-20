@@ -1,7 +1,7 @@
 /**
  * Why this test matters: the approach is the camera's only owner from the
  * page's first frame to the landing, and the smokes read its phase history
- * instead of racing it. For any timing, intro variant, target and frame
+ * instead of racing it. For any timing, target and frame
  * times the lab can produce, the properties pin what the camera may never
  * do: the phases only move forward (spin, turning, arrived); the fly-in's
  * distance never grows and stays between the fitted distance and the
@@ -21,7 +21,6 @@ import {
   createGlobeApproach,
 } from "./globe-approach.js";
 import { orbitPose } from "./globe-camera.js";
-import { INTRO_VARIANTS } from "./globe-intro.js";
 
 const FIT_M = 20_000_000;
 const ZOOM_OUT_M = 60_000_000;
@@ -42,7 +41,6 @@ const knobs = fc.record({
   url: fc.option(latLng, { nil: undefined }),
   spinMs: fc.integer({ min: 0, max: 5000 }),
   turnMs: fc.integer({ min: 0, max: 10_000 }),
-  intro: fc.constantFrom(...INTRO_VARIANTS),
   turnCap: fc.integer({ min: 0, max: 180 }),
 });
 /** Increasing frame times, ms after the restart. */
@@ -70,14 +68,10 @@ function approachWith(sunDir: [number, number, number]) {
   };
 }
 
-type Knobs = Pick<
-  GlobeApproachParams,
-  "url" | "spinMs" | "turnMs" | "intro" | "turnCap"
->;
+type Knobs = Pick<GlobeApproachParams, "url" | "spinMs" | "turnMs" | "turnCap">;
 const params = (k: Knobs): GlobeApproachParams => ({
   ...k,
   maxKm: 50_000,
-  fovY: 50,
   pitchLow: 50,
 });
 const orbitOf = (s: ApproachStep) => s as ApproachOrbitStep;
@@ -136,7 +130,6 @@ describe("createGlobeApproach (properties)", () => {
           expect(step.pose.direction.toArray()).toEqual(to.direction.toArray());
           expect(step.pose.up.toArray()).toEqual(to.up.toArray());
           expect(step.distanceM).toBeNull();
-          expect(step.fovDeg).toBe(50);
         }
       }),
     );
@@ -158,7 +151,6 @@ describe("createGlobeApproach (properties)", () => {
               url: from,
               spinMs: 0,
               turnMs: 0,
-              intro: "distance",
               turnCap: 90,
             }),
           );

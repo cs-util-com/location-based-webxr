@@ -43,10 +43,8 @@ const params = (
   url: BERN,
   spinMs: 3000,
   turnMs: 5000,
-  intro: "narrow",
   maxKm: 50_000,
   turnCap: 90,
-  fovY: 50,
   pitchLow: 50,
   ...over,
 });
@@ -97,7 +95,7 @@ describe("createGlobeApproach: the spin", () => {
     expect(approach.drives).toBe(true);
   });
 
-  it("spins over the sun at the zoom-out distance, at the variant's start field of view", () => {
+  it("spins over the sun at the zoom-out distance", () => {
     const { approach, at } = setup();
     approach.restart(at(0), params({ url: undefined }));
     const step = orbit(approach.pose(at(1000)));
@@ -107,8 +105,6 @@ describe("createGlobeApproach: the spin", () => {
     expect(step.pose.direction.toArray()).toEqual(expected.direction.toArray());
     expect(step.pose.up.toArray()).toEqual(expected.up.toArray());
     expect(step.distanceM).toBe(ZOOM_OUT_M);
-    // `narrow` starts wide (GLOBE_INTRO.wideFovDeg).
-    expect(step.fovDeg).toBe(GLOBE_INTRO.wideFovDeg);
     expect(approach.state().phase).toBe("spin");
   });
 
@@ -162,15 +158,12 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     const start = approach.state().flyInStart;
     expect(start).not.toBeNull();
     const expected = introCameraPose(0, {
-      variant: "narrow",
       start: start as [number, number, number],
       target: orbitPose(WGS84_ELLIPSOID, BERN).direction.toArray(),
       startKm: ZOOM_OUT_M / 1000,
       endKm: FIT_M / 1000,
-      endFovDeg: 50,
     });
     expect(first.distanceM).toBeCloseTo(expected.distanceKm * 1000, 3);
-    expect(first.fovDeg).toBeCloseTo(expected.fovDeg, 9);
     expect(approach.state().firstTurn).toEqual([...expected.direction]);
     // The frame loop reports where it placed that first frame, once.
     approach.cameraPlaced(123);
@@ -192,7 +185,6 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     expect(held.pose.direction.toArray()).toEqual(to.direction.toArray());
     expect(held.pose.up.toArray()).toEqual(to.up.toArray());
     expect(held.distanceM).toBeNull();
-    expect(held.fovDeg).toBe(50);
     expect(approach.state().history.map((h) => h.phase)).toEqual([
       "spin",
       "turning",
@@ -254,28 +246,6 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     expect(approach.state().flyInSettled).toBe(false);
     at(3000 + GLOBE_INTRO.lateFixBlendMs);
     expect(approach.state().flyInSettled).toBe(true);
-  });
-});
-
-describe("createGlobeApproach: the distance intro keeps the field of view", () => {
-  // Why: the intro flies by distance only, so its field of view is the
-  // page's `fovY` in every phase (the spin, the fly-in, the hold); a
-  // camera that never leaves `fovY` needs no ease back to it when the
-  // user takes it mid-flight.
-  it("returns fovY on every orbit frame of a whole run", () => {
-    for (const fovY of [30, 50, 75]) {
-      const { approach, at } = setup();
-      approach.restart(
-        at(0),
-        params({ url: undefined, intro: "distance", fovY }),
-      );
-      const fovs = new Set<number>();
-      for (let t = 0; t <= 3000 + 5000 + 1000; t += 100) {
-        fovs.add(orbit(approach.pose(at(t))).fovDeg);
-      }
-      expect(approach.state().phase).toBe("arrived");
-      expect([...fovs]).toEqual([fovY]);
-    }
   });
 });
 
@@ -415,13 +385,12 @@ describe("approachRestartKey", () => {
       { url: ZURICH },
       { spinMs: 1 },
       { turnMs: 1 },
-      { intro: "fov" as const },
       { maxKm: 60_000 },
       { turnCap: 10 },
     ]) {
       expect(approachRestartKey({ ...base, ...over })).not.toBe(key);
     }
-    expect(approachRestartKey({ ...base, fovY: 70, pitchLow: 80 })).toBe(key);
+    expect(approachRestartKey({ ...base, pitchLow: 80 })).toBe(key);
   });
 });
 

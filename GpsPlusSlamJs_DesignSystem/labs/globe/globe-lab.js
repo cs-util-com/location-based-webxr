@@ -64,10 +64,7 @@ import {
   approachRestartKey,
   createGlobeApproach,
 } from "/globe/globe-approach.js";
-import {
-  createApproachDrive,
-  createFovReturn,
-} from "/globe/globe-approach-camera.js";
+import { createApproachDrive } from "/globe/globe-approach-camera.js";
 import { createArrivalPrefetch } from "/globe/globe-arrival-prefetch.js";
 import { createGlobeLandingFlight } from "/globe/globe-landing-flight.js";
 import {
@@ -75,7 +72,7 @@ import {
   landedLineText,
   readoutThrottle,
 } from "/globe/globe-readout.js";
-import { GLOBE_INTRO, INTRO_VARIANTS } from "/globe/globe-intro.js";
+import { GLOBE_INTRO } from "/globe/globe-intro.js";
 import { globeZoomOutLimitM } from "/globe/globe-zoom-limit.js";
 import {
   GLOBE_TERRAIN,
@@ -336,8 +333,7 @@ const PARAMS = {
   // The fly-in (round-5 plan 2026-10-01-0945 §3.1; `turnMs` is its
   // length): how far out it starts, which is also how far the controls may
   // zoom out (km from the centre, DEC-GL5-1), and how far it may turn from
-  // the sun side to the target (degrees, DEC-GL5-3). The variant is the
-  // `intro=` text key (`readHashParams`).
+  // the sun side to the target (degrees, DEC-GL5-3).
   maxKm: { fallback: GLOBE_INTRO.maxKm, min: 20_000, max: 100_000 },
   turnCap: { fallback: GLOBE_INTRO.turnCapDeg, min: 0, max: 180 },
   // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length (where
@@ -899,11 +895,6 @@ function readHashParams() {
     // A camera pose to open at (volume-cloud plan §16): the Debug export's
     // `link`; the intro is skipped and the camera handed to the controls.
     view: parseViewText(params.get("view")),
-    // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
-    // `narrow` (the default case) when absent or unknown.
-    intro: INTRO_VARIANTS.includes(params.get("intro"))
-      ? params.get("intro")
-      : "narrow",
     clock,
     timeScale: clock.scale ?? (clock.startMs === null ? 1 : 0),
     // The recorder's sweep (null: one run) and the place of a single run
@@ -1778,14 +1769,6 @@ async function start() {
   let heldView = false;
   /** While the plate measures the atmosphere's cost: "on", "off" or null. */
   let costMode = null;
-  /**
-   * The field of view easing back to fovY when the fly-in is interrupted
-   * (`/globe/globe-approach-camera.js`); its last ease is kept for the
-   * `fovReturnAt` test hook.
-   */
-  const fovReturn = createFovReturn(camera, () => params.fovY);
-  /** One frame of the ease back to fovY, if one is due. */
-  const returnFov = (now) => fovReturn.step(now);
   // The nearest drawn ground and the highest drawn peak for the clip planes
   // (F2a, M4): the relief's sampler at the camera's ground point and on a
   // ring of eight points as far out as the camera stands above that ground
@@ -2216,8 +2199,6 @@ async function start() {
   /** One frame of the approach on the camera (`/globe/globe-approach-camera.js`). */
   const driveApproach = createApproachDrive({
     approach: flight,
-    camera,
-    fovReturn,
     placeCameraEcef,
     fitDistance: () => view.fitDistance(),
   });
@@ -2230,15 +2211,12 @@ async function start() {
       // The recorder's paths (§4.2) place the camera themselves.
       perf.drive(now);
     } else if (flight.drives) {
-      // The intro's orbit frame, or the dive's (which sets no field of
-      // view: one the fly-in left eases back).
+      // The intro's orbit frame, or the dive's.
       driveApproach(now);
       camera.updateMatrixWorld();
       controls.followIntro();
       if (params.flight === 2 && flight.pinFlight) recentreFrame();
     } else {
-      // The user took the camera, perhaps mid-fly-in: ease back to fovY.
-      returnFov(now);
       controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
       recentreFrame();
@@ -3116,18 +3094,6 @@ void main() {
       frame();
     },
     /**
-     * A test hook (round-5 M1): the last ease of the field of view back to
-     * fovY, read by TIME rather than by the frames that happened to land:
-     * `{ from, to, ms, at, lastFrameAt, fov }`, `fov` being what the frame
-     * loop sets `fraction` x `ms` after the ease began (at `at`,
-     * performance.now()); `lastFrameAt` is when a frame last applied it, so
-     * a test can check the camera holds exactly that frame's value (review
-     * 2026-10-01-2124 Minor 5). Null before any ease.
-     */
-    fovReturnAt(fraction) {
-      return fovReturn.at(fraction);
-    },
-    /**
      * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to
      * back, then one pixel read so the GPU has finished them; the wall
      * time in ms. Under SwiftShader it is relative only: compare two
@@ -3689,7 +3655,6 @@ void main() {
             pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
           );
         placeCameraEcef(cameraPose.position, cameraPose.quaternion);
-        returnFov(now);
         controls.followIntro();
       },
       updateControls: () => controls.update(),

@@ -8,15 +8,15 @@
  * fly-in), then `arrived`, holding it; `user` once the user has taken the
  * camera; `diving` down to the pin's position and `landed` at the landing
  * altitude. `pose(now)` returns either an orbit `pose` (with `distanceM`,
- * null for the fitted distance, and `fovDeg`) or, during the dive and the
- * pin flight, the camera's `position` and `quaternion`. `history` records
+ * null for the fitted distance) or, during the dive and the pin flight,
+ * the camera's `position` and `quaternion`. The field of view is the
+ * page's throughout: the approach never changes it. `history` records
  * each phase and source change with its time since the start, and `runs`
  * counts the starts, so a test reads the sequence instead of racing it.
  *
  * The fly-in starts at the zoom-out limit on the sun side (the target
  * turned towards the sub-solar point by at most `turnCap`) and ends at the
- * target at the fitted distance, over `turnMs`, in the `intro` variant, at
- * the lab's `fovY`. While it waits for a target it spins out there; when a
+ * target at the fitted distance, over `turnMs`. While it waits for a target it spins out there; when a
  * target arrives (a link, a position, the fallback) the start is computed
  * from it and, if the spin was shown, blended to from the spin's direction
  * over `GLOBE_INTRO.lateFixBlendMs`. A position that arrives while the
@@ -33,7 +33,6 @@ import { diveStep, planDive, type Dive, type DiveStart } from "./globe-dive.js";
 import { flightCameraAt, flightFrameAt } from "./flight-replan.js";
 import {
   GLOBE_INTRO,
-  type INTRO_VARIANTS,
   type Vec3,
   blendTarget,
   flyInStart,
@@ -63,18 +62,15 @@ export interface GlobeApproachParams {
   readonly url: LatLng | undefined;
   readonly spinMs: number;
   readonly turnMs: number;
-  readonly intro: (typeof INTRO_VARIANTS)[number];
   readonly maxKm: number;
   readonly turnCap: number;
-  readonly fovY: number;
   readonly pitchLow: number;
 }
 
-/** An orbit frame: the pose, its distance (null: the fitted one), its fov. */
+/** An orbit frame: the pose and its distance (null: the fitted one). */
 export interface ApproachOrbitStep {
   readonly pose: OrbitPose;
   readonly distanceM: number | null;
-  readonly fovDeg: number;
 }
 
 /** A placed frame (the dive, the pin flight): the camera's own pose. */
@@ -102,7 +98,6 @@ export const approachRestartKey = (p: GlobeApproachParams): string =>
     p.url?.lng,
     p.spinMs,
     p.turnMs,
-    p.intro,
     p.maxKm,
     p.turnCap,
   ]);
@@ -211,16 +206,6 @@ export function createGlobeApproach(
     blend = null;
     note(now);
   };
-  /** The variant's field of view at the fly-in's start. */
-  const startFov = () =>
-    introCameraPose(0, {
-      variant: params.intro,
-      start: [1, 0, 0],
-      target: [1, 0, 0],
-      startKm: zoomOutM() / 1000,
-      endKm: zoomOutM() / 1000,
-      endFovDeg: params.fovY,
-    }).fovDeg;
   /** The target's direction now, a late fix blending in. */
   const targetDirection = (now: number): Vec3 => {
     if (!blend) return asArray(to.direction);
@@ -274,7 +259,7 @@ export function createGlobeApproach(
     }
     if (phase !== "spin") return null;
     spinShown = true;
-    return { pose: spinPose(now), distanceM: zoomOutM(), fovDeg: startFov() };
+    return { pose: spinPose(now), distanceM: zoomOutM() };
   };
   /** The fly-in: its frame, or null once it reached the target (`arrived`). */
   const turnStep = (now: number): ApproachOrbitStep | null => {
@@ -285,22 +270,16 @@ export function createGlobeApproach(
       return null;
     }
     const p = introCameraPose(t, {
-      variant: params.intro,
       start: startDirection(now, arrival),
       target: targetDirection(now),
       startKm: zoomOutM() / 1000,
       endKm: fitDistance() / 1000,
-      endFovDeg: params.fovY,
     });
     if (firstTurn === null) {
       firstTurn = [...p.direction];
       firstTurnPending = true;
     }
-    return {
-      pose: poseToward(p.direction),
-      distanceM: p.distanceKm * 1000,
-      fovDeg: p.fovDeg,
-    };
+    return { pose: poseToward(p.direction), distanceM: p.distanceKm * 1000 };
   };
   /** The spin, the turn and the hold. */
   const introPose = (now: number): ApproachOrbitStep => {
@@ -315,7 +294,6 @@ export function createGlobeApproach(
     return {
       pose: blend ? poseToward(targetDirection(now)) : to,
       distanceM: null,
-      fovDeg: params.fovY,
     };
   };
   /** The pin flight's camera this frame (a held time for the smokes). */
@@ -512,7 +490,6 @@ export function createGlobeApproach(
       runs,
       spinMs: params.spinMs,
       turnMs: params.turnMs,
-      intro: params.intro,
       fixState: fixState(),
       ...flyInFacts(),
     }),
