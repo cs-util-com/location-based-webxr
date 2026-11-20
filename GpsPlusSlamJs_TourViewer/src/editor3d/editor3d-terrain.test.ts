@@ -12,7 +12,11 @@
 import * as THREE from "three";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { osmGateLimits, worldFromEcefAt } from "gps-plus-slam-globe/editor";
+import {
+  createGlobeTerrain,
+  osmGateLimits,
+  worldFromEcefAt,
+} from "gps-plus-slam-globe/editor";
 import { OSM_TILE_MAX_ZOOM } from "gps-plus-slam-app-framework/utils/osm-tiles";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
@@ -26,6 +30,14 @@ import {
   createEditorTerrain,
   reliefDeviceClass,
 } from "./editor3d-terrain.js";
+
+// The relief itself, watched: what it was made with is the caller's
+// imagery and template, not a fallback.
+vi.mock("gps-plus-slam-globe/editor", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("gps-plus-slam-globe/editor")>();
+  return { ...actual, createGlobeTerrain: vi.fn(actual.createGlobeTerrain) };
+});
 
 describe("the editor's map gate", () => {
   // Why: the values measured for the editor's views: faded out at 2400 m
@@ -242,6 +254,46 @@ describe("createEditorTerrain", () => {
     expect(ground.osm.stats().active).toBe(false);
     ground.dispose();
   });
+  // Why: the globe view is the only caller, and it passes the globe's own
+  // imagery and template (so the ground keeps the globe's look where the
+  // relief takes over) and lets its Earth-centred group place the relief.
+  // This pins that the relief is drawn with exactly those, unwrapped and
+  // unreplaced, and stays in ECEF.
+  it("draws the relief with the caller's imagery and template, in ECEF", () => {
+    const imagery = {
+      tiling: { maxLevel: 0, projection: { scheme: "EPSG:4326" } },
+      init: () => Promise.resolve(),
+      hasContent: () => false,
+      lockTexture: () => Promise.resolve(null),
+      getTexture: () => {
+        throw new Error("no texture in this test");
+      },
+      releaseTexture: () => {},
+    };
+    const template = new THREE.MeshStandardMaterial();
+    const made = vi.mocked(createGlobeTerrain);
+    made.mockClear();
+    const ground = createEditorTerrain({
+      renderer: {} as THREE.WebGLRenderer,
+      centre: { lat: 48.137393, lng: 11.575493 },
+      device: "desktop",
+      placement: "ecef",
+      imagery,
+      template,
+    });
+    expect(made).toHaveBeenCalledTimes(1);
+    const options = made.mock.calls[0]?.[0];
+    expect(options?.imagery).toBe(imagery);
+    expect(options?.template).toBe(template);
+    expect(options?.meshMaxLevel).toBe(EDITOR_MESH_LEVEL);
+    expect(options?.heightScale).toBe(1);
+    const group = ground.terrain.tiles.group;
+    expect(group.position.length()).toBe(0);
+    expect(group.quaternion.equals(new THREE.Quaternion())).toBe(true);
+    expect(group.scale.equals(new THREE.Vector3(1, 1, 1))).toBe(true);
+    ground.dispose();
+  });
+
   // Why: on the globe view the relief hangs in the view's Earth-centred
   // group, which places it; placed again in the tour's frame it would
   // stand 6,400 km off. The frame is still given for the tour's objects.
