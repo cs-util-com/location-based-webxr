@@ -425,28 +425,12 @@ export function signGrowth(d: number, from = 4.5, max = 1.6): number {
 /** Plane order (TL TR BL BR) to polygon order (TL TR BR BL). */
 const POLYGON = [0, 1, 3, 2] as const;
 
-/** A quad's corners on screen (px), in polygon order: top-left, top-right,
- *  bottom-right, bottom-left, from clip corners in plane order; null when
- *  a corner's w is at or under `minW` (the eye's margin by default) or
- *  not finite, which has no place on the screen. */
-export function quadOfClip(
-  clip: ArrayLike<number>,
-  viewW: number,
-  viewH: number,
-  minW: number = TRAVEL_MIN_W,
-): [number, number][] | null {
-  const out: [number, number][] = [
-    [0, 0],
-    [0, 0],
-    [0, 0],
-    [0, 0],
-  ];
-  return quadOfClipInto(clip, viewW, viewH, out, minW) ? out : null;
-}
-
-/** `quadOfClip` written into `out` (four pairs), allocating nothing: the
- *  controller's per-frame form. False (and `out` untouched) where
- *  `quadOfClip` gives null. */
+/** A quad's corners on screen (px) written into `out` (four pairs), in
+ *  polygon order: top-left, top-right, bottom-right, bottom-left, from
+ *  clip corners in plane order, allocating nothing (the controller runs it
+ *  every frame). False (and `out` untouched) when a corner's w is at or
+ *  under `minW` (the eye's margin by default) or not finite, which has no
+ *  place on the screen. */
 export function quadOfClipInto(
   clip: ArrayLike<number>,
   viewW: number,

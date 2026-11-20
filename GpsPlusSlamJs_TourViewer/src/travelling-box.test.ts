@@ -27,12 +27,27 @@ import {
   easeInOutCubic,
   flightClip,
   letterGate,
-  quadOfClip,
+  quadOfClipInto,
   TRAVELLING_BOX_DEFAULTS,
   type TravelHideWhy,
 } from "./travelling-box-rules.js";
 import { createTravelRegistry } from "./travel-registry.js";
 import { CLOSING_TAP_GRACE_MS } from "./view-switch.js";
+
+/** `quadOfClipInto` into fresh pairs, or null: the tests' readable form. */
+function quadOfClip(
+  clip: ArrayLike<number>,
+  viewW: number,
+  viewH: number,
+): [number, number][] | null {
+  const out: [number, number][] = [
+    [0, 0],
+    [0, 0],
+    [0, 0],
+    [0, 0],
+  ];
+  return quadOfClipInto(clip, viewW, viewH, out) ? out : null;
+}
 
 /**
  * The controller in node with a real camera and a fake surface: a plate
