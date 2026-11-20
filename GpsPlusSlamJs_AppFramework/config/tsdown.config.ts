@@ -228,6 +228,9 @@ const entryFiles = [
   'src/storage/zip-export.ts',
   'src/storage/zip-reader.ts',
   'src/storage/zip-coverage-embed.ts',
+  // Archive caps and their validation: the splat trainer's reader deep-imports
+  // `resolveArchiveLimits` via the `./storage/*` wildcard.
+  'src/storage/archive-limits.ts',
   // The store-mode writer trio behind the Tour Viewer's zip rebuild
   // (guided-setup plan M1, absorbed from community PR #321): deep-imported
   // via the `./storage/*` wildcard, so each must be built per-file.

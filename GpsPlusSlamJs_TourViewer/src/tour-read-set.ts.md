@@ -30,7 +30,9 @@ which a visitor never sees.
     gone from the format).
 - `isActionEntryName(name)` - the recording's action stream as the
   framework's parser reads it (it does not export its rule): an `actions/`
-  path segment, ending `.json`. Used by `tour-session.ts` (`hasRecording`).
+  path segment, ending `.json`. Used by `tour-session.ts` (`hasRecording`),
+  by the splat trainer's reader (`splat-trainer/recording-reader.ts`) and
+  inside `recordingFoldersOf` here.
 - `recordingFolderOf(entryNames) -> string` - the folder the action stream
   sits under, with its trailing slash: `""` for a flat zip, `mytour/` for a
   recording re-zipped from its folder. Cut at the `actions/` segment of the
@@ -39,6 +41,11 @@ which a visitor never sees.
   `imageFile` is relative to the recording, so its entry is this folder
   plus that name. Shared by `debug-captures.ts` and the splat trainer's
   reader (`splat-trainer/recording-reader.ts`).
+- `recordingFoldersOf(entryNames) -> string[]` - every folder holding an
+  action stream, each once, in the same order (the first is
+  `recordingFolderOf`'s). More than one means the zip carries more than one
+  recording, which the framework's parser would replay as one stream; the
+  splat trainer's reader refuses such a zip.
 - `scanEntryNames(entryNames, manifest, wrap) -> string[]` - the walk, in
   archive order: the entries a RECORDING writes (`session.json`, anything
   under `actions/`, `frame-NNNNNN.<ext>` in `images/` or the legacy

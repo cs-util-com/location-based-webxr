@@ -2,9 +2,11 @@
  * TEST ONLY: a recorder-shaped zip built in memory from a synthetic walk,
  * so the splat trainer's reader is tested without a binary fixture and
  * without any real recording. A straight walk along +x at eye height,
- * looking ahead and slightly down; one depth sample per capture on the
- * sampler's grid (written packed, as the Recorder writes it); tiny
- * placeholder photos that are not decodable images.
+ * looking ahead and slightly down, turning a little further right at every
+ * capture (so no two captures share a rotation); one depth sample per
+ * capture on the sampler's grid (written packed, as the Recorder writes
+ * it), whose lens fits the photos' shape; tiny placeholder photos that are
+ * not decodable images.
  */
 import type {
   Matrix4,
@@ -20,7 +22,6 @@ import {
   type ZipEntryInput,
 } from "gps-plus-slam-app-framework/storage";
 import { packDepthAction } from "gps-plus-slam-app-framework/storage/depth-sample-codec";
-import { WIDE_TEST_PROJECTION } from "gps-plus-slam-app-framework/test-utils/synthetic-depth-samples";
 import { lookAtPose } from "gps-plus-slam-app-framework/test-utils/synthetic-qr-walk";
 
 /** A JPEG's start and end markers: enough bytes to be a photo entry. */
@@ -31,7 +32,8 @@ export interface SyntheticRecordingOptions {
   readonly frames?: number;
   /** Metres between consecutive captures (default 0.5). */
   readonly spacingM?: number;
-  /** Milliseconds between consecutive captures (default 1000). */
+  /** Milliseconds between consecutive captures (default 1000); a negative
+   *  value makes the capture times run against the recorded order. */
   readonly intervalMs?: number;
   /** `session.json` `odomCoordVersion`; `undefined` leaves the field out,
    *  `"no-session"` leaves `session.json` out (default 5). */
@@ -47,9 +49,9 @@ export interface SyntheticRecordingOptions {
   readonly depth?: boolean;
   /** Depth samples written packed, as the Recorder writes them (default true). */
   readonly packDepth?: boolean;
-  /** The projection of the depth sample at `index` (default the same
-   *  matrix for every sample). */
-  readonly projectionAt?: (index: number) => Matrix4;
+  /** The projection of the depth sample at `index`; null writes the
+   *  sample without one (default `SYNTHETIC_PROJECTION` for every sample). */
+  readonly projectionAt?: (index: number) => Matrix4 | null;
   /** Capture indices whose photo the zip does not carry. */
   readonly missingPhotos?: readonly number[];
   /** An action type written once in the middle of the walk. */
@@ -74,6 +76,26 @@ export interface SyntheticRecording {
 export const SYNTHETIC_DEPTH_GRID = 4;
 /** The photo size every capture records by default. */
 export const SYNTHETIC_FRAME_SIZE = { width: 64, height: 48 } as const;
+
+/**
+ * A perspective projection (column-major, float32 values as a device
+ * records them) whose frustum has the default photos' aspect, so their
+ * pixels come out square: about 69 degrees vertical field of view, near
+ * 0.1 m, far 100 m, centred.
+ */
+export const SYNTHETIC_PROJECTION: Matrix4 = (() => {
+  const f = 1 / Math.tan(0.6);
+  const aspect = SYNTHETIC_FRAME_SIZE.width / SYNTHETIC_FRAME_SIZE.height;
+  const near = 0.1;
+  const far = 100;
+  const m = new Array<number>(16).fill(0);
+  m[0] = f / aspect;
+  m[5] = f;
+  m[10] = (far + near) / (near - far);
+  m[11] = -1;
+  m[14] = (2 * far * near) / (near - far);
+  return m.map(Math.fround) as unknown as Matrix4;
+})();
 /** The walk's first capture time. */
 const SYNTHETIC_T0_MS = 1_700_000_000_000;
 /** The File's last-modified time. */
@@ -118,17 +140,21 @@ export async function buildSyntheticRecording(
 
   for (let i = 0; i < frames; i++) {
     const eye: [number, number, number] = [i * spacingM, 1.5, 0];
-    const pose = lookAtPose(eye, [eye[0], 1, -3]);
+    const pose = lookAtPose(eye, [eye[0] + 0.3 * i, 1, -3]);
     const position = pose.position;
     const rotation = pose.rotation;
     const time = SYNTHETIC_T0_MS + i * intervalMs;
     if (options.depth ?? true) {
+      const projection =
+        options.projectionAt === undefined
+          ? SYNTHETIC_PROJECTION
+          : options.projectionAt(i);
       const sample: DepthSample = {
         timestamp: time,
         cameraPos: position,
         cameraRot: rotation,
         points: gridPoints(SYNTHETIC_DEPTH_GRID, i),
-        projectionMatrix: options.projectionAt?.(i) ?? WIDE_TEST_PROJECTION,
+        ...(projection === null ? {} : { projectionMatrix: projection }),
       };
       depthSamples.push(sample);
       const action = { type: "recording/recordDepthSample", payload: sample };

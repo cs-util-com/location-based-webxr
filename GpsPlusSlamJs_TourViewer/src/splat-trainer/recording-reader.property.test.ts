@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import * as fc from "fast-check";
 import type { Matrix4 } from "gps-plus-slam-app-framework/core";
 import { SEGMENTING_ACTION_TYPES } from "gps-plus-slam-app-framework/state/segmenting-actions";
-import { WIDE_TEST_PROJECTION } from "gps-plus-slam-app-framework/test-utils/synthetic-depth-samples";
 
-import { buildSyntheticRecording } from "../test-support/synthetic-recording.js";
-import { PROJ_TOL, readSplatInputs } from "./recording-reader.js";
+import {
+  buildSyntheticRecording,
+  SYNTHETIC_PROJECTION,
+} from "../test-support/synthetic-recording.js";
+import { ASPECT_TOL, PROJ_TOL, readSplatInputs } from "./recording-reader.js";
 
 /**
  * Why these properties matter: the example tests pin one walk each; here
@@ -16,6 +18,9 @@ import { PROJ_TOL, readSplatInputs } from "./recording-reader.js";
  */
 
 const RUNS = { numRuns: 25 };
+
+/** The projection elements the lens is made of (focal and centre terms). */
+const LENS_ELEMENTS: readonly number[] = [0, 5, 8, 9];
 
 describe("readSplatInputs (property)", () => {
   it("keeps every pose with a photo, counts the rest, and measures the kept path", async () => {
@@ -122,14 +127,14 @@ describe("readSplatInputs (property)", () => {
     magnitude: number,
     negative: boolean,
   ): Promise<{ file: File; spread: number }> {
-    const base = WIDE_TEST_PROJECTION[element] ?? 0;
+    const base = SYNTHETIC_PROJECTION[element] ?? 0;
     const delta = (negative ? -1 : 1) * magnitude * Math.max(Math.abs(base), 1);
-    const moved = [...WIDE_TEST_PROJECTION];
+    const moved = [...SYNTHETIC_PROJECTION];
     moved[element] = base + delta;
     const rec = await buildSyntheticRecording({
       frames: 3,
       projectionAt: (i) =>
-        i === 1 ? (moved as unknown as Matrix4) : WIDE_TEST_PROJECTION,
+        i === 1 ? (moved as unknown as Matrix4) : SYNTHETIC_PROJECTION,
     });
     return {
       file: rec.file,
@@ -142,7 +147,7 @@ describe("readSplatInputs (property)", () => {
     // The spread is at most `magnitude`, so below the tolerance it reads.
     await fc.assert(
       fc.asyncProperty(
-        fc.integer({ min: 0, max: 15 }),
+        fc.constantFrom(...LENS_ELEMENTS),
         fc.double({ min: 0, max: 0.99 * PROJ_TOL, noNaN: true }),
         fc.boolean(),
         async (element, magnitude, negative) => {
@@ -161,12 +166,64 @@ describe("readSplatInputs (property)", () => {
     // tolerance for every magnitude drawn here.
     await fc.assert(
       fc.asyncProperty(
-        fc.integer({ min: 0, max: 15 }),
+        fc.constantFrom(...LENS_ELEMENTS),
         fc.double({ min: 1.01 * PROJ_TOL, max: 0.1, noNaN: true }),
         fc.boolean(),
         async (element, magnitude, negative) => {
           const { file } = await jittered(element, magnitude, negative);
-          expect((await readSplatInputs(file)).kind).toBe("refused");
+          const read = await readSplatInputs(file);
+          expect(read.kind === "refused" ? read.reason : "read").toMatch(
+            /^The camera's lens changed during the recording/,
+          );
+        },
+      ),
+      RUNS,
+    );
+  });
+
+  it("never counts the projection's other elements as a change of lens", async () => {
+    // Why: elements other than 0, 5, 8 and 9 (the clip planes among them)
+    // do not enter the lens; moving them must neither refuse nor show as
+    // spread.
+    await fc.assert(
+      fc.asyncProperty(
+        fc
+          .integer({ min: 0, max: 15 })
+          .filter((e) => !LENS_ELEMENTS.includes(e)),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.boolean(),
+        async (element, magnitude, negative) => {
+          const { file } = await jittered(element, magnitude, negative);
+          const read = await readSplatInputs(file);
+          if (read.kind !== "read") throw new Error(read.reason);
+          expect(read.inputs.census.projectionSpread).toBe(0);
+        },
+      ),
+      RUNS,
+    );
+  });
+
+  it("reads a lens within the aspect tolerance of its photos and refuses one beyond it", async () => {
+    // Why: the frustum's shape must match the photos' shape, or fx and fy
+    // disagree and every view is stretched; a fraction of a percent, as
+    // real lenses show, must still read.
+    await fc.assert(
+      fc.asyncProperty(
+        fc.double({ min: -0.5, max: 0.5, noNaN: true }),
+        async (stretch) => {
+          fc.pre(Math.abs(Math.abs(stretch) - ASPECT_TOL) > 0.01 * ASPECT_TOL);
+          const lens = [...SYNTHETIC_PROJECTION];
+          lens[0] = (lens[0] ?? 0) * (1 + stretch);
+          const rec = await buildSyntheticRecording({
+            frames: 2,
+            projectionAt: () => lens as unknown as Matrix4,
+          });
+          const read = await readSplatInputs(rec.file);
+          expect(read.kind === "refused" ? read.reason : "read").toMatch(
+            Math.abs(stretch) < ASPECT_TOL
+              ? /^read$/
+              : /does not fit the shape of its photos/,
+          );
         },
       ),
       RUNS,
