@@ -32,6 +32,8 @@
            "light dark" while painting neither, which was a lie the UA
            acted on. */
         color-scheme: dark;
+        /* The portrait setup map's inset square. */
+        --setup-inset: min(7.5rem, 22svh);
       }
 
       /* And light when the device asks, which has to be declared HERE
@@ -1619,10 +1621,6 @@
         width: 100%;
         height: auto;
       }
-      :root {
-        --setup-inset: min(7.5rem, 22svh);
-      }
-
       /* Portrait: the map is a small square inset beside the card's title,
          well under a quarter of the screen, so the step itself leads. */
       @media not ((orientation: landscape) and (width >= 640px)) {
@@ -1964,7 +1962,7 @@
         width: 18px;
         height: 18px;
         border-radius: 50%;
-        border: 1.5px solid currentColor;
+        border: 1.5px solid currentcolor;
         font-size: 0.7rem;
       }
       .setup-item[data-state="done"] {
