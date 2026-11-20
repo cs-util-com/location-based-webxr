@@ -57,7 +57,7 @@ cannot reach.
   (`EDITOR_PAGES`: `edit.html` and `asset-optimizer-check.html`, the check
   page that runs the editor's own optimizers); `viewer` opens only other
   pages; `both` opens an editor page and another page.
-- **What `pathArea` calls editor-only:** the editor's pages, `src/editor/`,
+- **What `pathArea` calls editor-only:** the editor's pages, the optimizer check page's module `src/checks/asset-optimizer-check-page.ts`, `src/editor/`,
   `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
   a new kit folder is `null` until classified), and the editor-only spec
   helpers `editor3d-fixture.js`, `editor-menus.js` and `editor-tours.js`. **Viewer-only:** `index.html` and `src/landing/`,

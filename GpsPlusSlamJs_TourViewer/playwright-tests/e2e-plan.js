@@ -257,7 +257,13 @@ export const EDITOR_PAGES = Object.freeze([
 ]);
 
 /** Package paths only the editor reaches (a file, or a folder's contents). */
-const EDITOR_ONLY = [...EDITOR_PAGES, "src/editor", "src/editor3d"];
+const EDITOR_ONLY = [
+  ...EDITOR_PAGES,
+  // The optimizer check page's own module, which only that page loads.
+  "src/checks/asset-optimizer-check-page.ts",
+  "src/editor",
+  "src/editor3d",
+];
 
 /**
  * Shared modules under an area's folder: the editor imports them too
