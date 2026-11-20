@@ -6,8 +6,8 @@
   camera is handed over without a jump and needs no ease back. Pure; directions are unit `[x, y, z]` (ECEF), distances
   km from the Earth's centre, angles degrees.
 - Public API:
-  - `GLOBE_INTRO`: `maxKm` 50,000 (DEC-GL5-1, the controls' new limit and
-    the intro's start), `turnCapDeg` 90 (DEC-GL5-3), `lateFixBlendMs` 1500.
+  - `GLOBE_INTRO`: `maxKm` 50,000 (the controls' limit and the intro's
+    start), `turnCapDeg` 90, `lateFixBlendMs` 1500.
   - `introStartDirection(target, sun, capDeg)`: the target turned towards
     the sub-solar point along their great circle by min(cap, their angle).
     RangeError for a zero vector or a cap that is not a finite angle of 0

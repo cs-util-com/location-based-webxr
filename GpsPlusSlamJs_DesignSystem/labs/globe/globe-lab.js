@@ -332,8 +332,8 @@ const PARAMS = {
   turnMs: { fallback: 5000, min: 0, max: 10_000 },
   // The fly-in (round-5 plan 2026-10-01-0945 §3.1; `turnMs` is its
   // length): how far out it starts, which is also how far the controls may
-  // zoom out (km from the centre, DEC-GL5-1), and how far it may turn from
-  // the sun side to the target (degrees, DEC-GL5-3).
+  // zoom out (km from the centre), and how far it may turn from the sun
+  // side to the target (degrees).
   maxKm: { fallback: GLOBE_INTRO.maxKm, min: 20_000, max: 100_000 },
   turnCap: { fallback: GLOBE_INTRO.turnCapDeg, min: 0, max: 180 },
   // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length (where

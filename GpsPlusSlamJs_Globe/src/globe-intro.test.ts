@@ -1,8 +1,8 @@
 /**
- * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, DEC-GL5-1..3).
+ * The globe's fly-in.
  *
- * Why this test matters: the intro starts far out (DEC-GL5-1), turns from
- * the sun side towards the user by at most 90 degrees (DEC-GL5-3) and ends
+ * Why this test matters: the intro starts far out, turns from the sun
+ * side towards the user by at most 90 degrees and ends
  * exactly at the target and the fitted distance, because the lab then
  * hands the camera over at that pose: an intro that ended a little
  * elsewhere would jump. It flies by distance only; the field of view is

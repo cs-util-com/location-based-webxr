@@ -1,6 +1,5 @@
 /**
- * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, decisions
- * DEC-GL5-1..3): from far out on the sun side to the user, by distance
+ * The globe's fly-in: from far out on the sun side to the user, by distance
  * alone (the field of view stays the page's throughout). Pure: directions
  * are unit [x, y, z] vectors (ECEF), distances km from the Earth's centre,
  * angles degrees.
