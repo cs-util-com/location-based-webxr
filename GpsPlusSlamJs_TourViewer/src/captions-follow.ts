@@ -150,6 +150,9 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
     readonly sign: ReadingSignHandle;
     readonly voice: Pick<NarrationClock, "nowMs" | "durationMs">;
   } | null = null;
+  /** The voice of every text shown in this session, by its id: a sign
+   *  whose text is not the shown one says where that voice stopped. */
+  const heard = new Map<string, Pick<NarrationClock, "nowMs" | "durationMs">>();
 
   function stopTravel(): void {
     const running = travel;
@@ -175,12 +178,28 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
   }
 
   /** Every fitting narrated sign's chip: the shown text's follows its
-   *  voice, the others are idle. A sign whose text stops being the shown
-   *  one (the visitor left, or another text shows) says where its voice
-   *  stopped, wherever it still stands; a sign gone is left alone. */
+   *  voice; another text's says where its voice stopped (paused or
+   *  ended), or idle when it was not heard. The sign whose text stops
+   *  being the shown one (the visitor left, or another text shows) says
+   *  so outside the station's blocks too, wherever it still stands; a
+   *  sign gone is left alone. */
   function chips(blocks: readonly TourBlock[], shown: TourBlock | null): void {
     const shownSign =
       shown === null || content === null ? null : deps.signOf(shown.id);
+    if (shown !== null && content !== null) heard.set(shown.id, content.player);
+    for (const block of blocks) {
+      if (!readsAlong(block, deps.narration.verdictOf(block))) continue;
+      const sign = deps.signOf(block.id);
+      if (sign === null) continue;
+      const voice = heard.get(block.id);
+      sign.setVoiceState(
+        block === shown && content !== null
+          ? chipOf(content.player, deps.playing(block.id))
+          : voice === undefined
+            ? "idle"
+            : chipOf(voice, false),
+      );
+    }
     if (
       chipped !== null &&
       chipped.sign !== shownSign &&
@@ -192,16 +211,6 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
       shown === null || shownSign === null || content === null
         ? null
         : { id: shown.id, sign: shownSign, voice: content.player };
-    for (const block of blocks) {
-      if (!readsAlong(block, deps.narration.verdictOf(block))) continue;
-      const sign = deps.signOf(block.id);
-      if (sign === null) continue;
-      sign.setVoiceState(
-        block === shown && content !== null
-          ? chipOf(content.player, deps.playing(block.id))
-          : "idle",
-      );
-    }
   }
 
   /** A voice does not follow the visitor out of its station. */
@@ -240,6 +249,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
       presentSeen = null;
       content = null;
       chipped = null;
+      heard.clear();
       stopTravel();
       deps.box.hide();
       deps.narration.pauseAll();

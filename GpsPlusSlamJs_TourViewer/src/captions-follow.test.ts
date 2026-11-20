@@ -145,6 +145,9 @@ describe("createCaptionsFollow", () => {
     };
     const signs = new Map<string, ReadingSignHandle>();
     const chips = new Map<string, ReadingSignVoice | null>();
+    // Every chip each sign object was given, in order: a sign painted
+    // twice in one frame, or a disposed sign painted again, shows here.
+    const history = new Map<ReadingSignHandle, (ReadingSignVoice | null)[]>();
     const starts: TravelStart[] = [];
     const stops = vi.fn();
     let camera = true;
@@ -170,6 +173,7 @@ describe("createCaptionsFollow", () => {
       starts,
       stops,
       chips,
+      calls: (sign: ReadingSignHandle) => history.get(sign) ?? [],
       set: (n: Partial<typeof now>) => {
         now = { ...now, ...n };
       },
@@ -177,9 +181,14 @@ describe("createCaptionsFollow", () => {
         content = c;
       },
       mount: (id: string) => {
+        const calls: (ReadingSignVoice | null)[] = [];
         const sign = {
-          setVoiceState: (s: ReadingSignVoice | null) => chips.set(id, s),
+          setVoiceState: (s: ReadingSignVoice | null) => {
+            calls.push(s);
+            chips.set(id, s);
+          },
         } as unknown as ReadingSignHandle;
+        history.set(sign, calls);
         signs.set(id, sign);
         return sign;
       },
@@ -427,13 +436,25 @@ describe("createCaptionsFollow", () => {
   // while without it) must stop saying it speaks; so must a sign whose
   // text is no longer the one shown.
   it("stops a sign's chip saying it plays once its text is no longer shown", () => {
-    const { follow, set, give, mount, chips, playing, unmount } = make();
-    mount("a");
+    const { follow, set, give, mount, chips, calls, playing, unmount } = make();
+    const first = mount("a");
     set({ blocks: [text("a")], presentId: "s1", stored: null });
     give(at(4000));
     playing(true);
     follow.sync();
+    follow.sync();
+    follow.sync();
     expect(chips.get("a")).toBe("playing");
+    // While it stays shown it is never let go: no "paused" between the
+    // frames (that would repaint the sign twice a frame).
+    expect(calls(first)).not.toContain("paused");
+    // Remounted under the same id: the new sign shows the voice, and the
+    // old, disposed one is not painted again.
+    const before = calls(first).length;
+    const again = mount("a");
+    follow.sync();
+    expect(calls(first)).toHaveLength(before);
+    expect(calls(again)).toEqual(["playing"]);
     // Walking out: the store may still say it plays for a frame.
     set({ blocks: [], presentId: null });
     follow.sync();
@@ -455,5 +476,35 @@ describe("createCaptionsFollow", () => {
     set({ blocks: [], presentId: null });
     follow.sync();
     expect(chips.has("b")).toBe(false);
+  });
+
+  // Why: another text of the same station can take the words over (here
+  // the visitor's Reading pick turns the station's first text, a lectern
+  // till then, into a sign that reads along). The old text's voice
+  // stands mid-way, so its sign must say paused, not idle.
+  it("lets the old sign say paused when another text of the station is shown", () => {
+    const { follow, set, give, mount, chips, calls, playing } = make();
+    const b = text("b", { view: "lectern" });
+    const a = text("a");
+    mount("b");
+    const signA = mount("a");
+    set({ blocks: [b, a], presentId: "s1", stored: null });
+    give(at(4000));
+    playing(true);
+    follow.sync();
+    expect(chips.get("a")).toBe("playing");
+    // b's own voice has not started; a's stands at 4 s.
+    playing(false);
+    give(at(0));
+    set({ stored: READING });
+    follow.sync();
+    expect(chips.get("b")).toBe("idle");
+    expect(chips.get("a")).toBe("paused");
+    // The switch leaves it at paused, not a pause painted over by idle,
+    // and the frames after it do not paint it idle either.
+    follow.sync();
+    follow.sync();
+    expect(calls(signA)).not.toContain("idle");
+    expect(chips.get("b")).toBe("idle");
   });
 });
