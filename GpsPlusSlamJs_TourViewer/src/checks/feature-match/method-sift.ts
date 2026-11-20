@@ -13,7 +13,11 @@ import type { BenchMethod, Features, MethodRunner } from "./bench-run";
 export const SIFT_URL =
   "https://cdn.jsdelivr.net/gh/arrival-space/splat.js@a84620c05f210a304b2d8de1d5c9f19d3657126f/src/sfm/sift.js";
 
-/** The same keypoint budget as the learned methods, for a fair count. */
+/**
+ * The same keypoint budget as XFeat, for a fair count. sift.js caps its
+ * detections, then adds a keypoint per extra dominant orientation, so the
+ * result is cut to this budget again.
+ */
 export const SIFT_MAX_FEATURES = 1024;
 
 const DIM = 128;
@@ -48,15 +52,23 @@ export function siftApi(mod: unknown): DetectSift {
   return fn as DetectSift;
 }
 
-/** A detector result as benchmark features, checked for size. */
-export function siftFeatures(r: SiftResult): Features {
-  const n = r.n;
-  if (!Number.isInteger(n) || n < 0 || r.x.length < n || r.y.length < n) {
-    throw new Error(`sift.js: malformed result (n=${String(n)})`);
+/**
+ * A detector result as benchmark features, checked for size and cut to the
+ * first `max` keypoints (sift.js orders them strongest first).
+ */
+export function siftFeatures(r: SiftResult, max = Infinity): Features {
+  if (
+    !Number.isInteger(r.n) ||
+    r.n < 0 ||
+    r.x.length < r.n ||
+    r.y.length < r.n
+  ) {
+    throw new Error(`sift.js: malformed result (n=${String(r.n)})`);
   }
-  if (!(r.desc instanceof Uint8Array) || r.desc.length < n * DIM) {
+  if (!(r.desc instanceof Uint8Array) || r.desc.length < r.n * DIM) {
     throw new Error("sift.js: descriptor buffer too short");
   }
+  const n = Math.min(r.n, max);
   return {
     count: n,
     descriptorBytes: n * DIM,
@@ -97,6 +109,7 @@ export function siftMethod(deps: LoadDeps): BenchMethod {
                 frame.height,
                 SIFT_MAX_FEATURES,
               ),
+              SIFT_MAX_FEATURES,
             ),
           ),
         match: (a, b) =>

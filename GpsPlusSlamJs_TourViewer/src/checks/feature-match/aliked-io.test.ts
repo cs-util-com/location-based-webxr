@@ -51,11 +51,19 @@ describe("stackPair", () => {
 describe("pairsFromMatches", () => {
   it("keeps only real matches, from int32 or int64 output", () => {
     expect(
-      Array.from(pairsFromMatches(new Int32Array([2, -1, 0, 9]), 3)),
+      Array.from(pairsFromMatches(new Int32Array([2, -1, 0, 9]), 4, 3)),
     ).toEqual([0, 2, 2, 0]);
     expect(
-      Array.from(pairsFromMatches(new BigInt64Array([-1n, 1n]), 2)),
+      Array.from(pairsFromMatches(new BigInt64Array([-1n, 1n]), 2, 2)),
     ).toEqual([1, 1]);
+  });
+
+  // Why this test matters: a padded matcher output can be longer than A's
+  // keypoints; an index past A must not become a pair.
+  it("drops entries past A's keypoints", () => {
+    expect(
+      Array.from(pairsFromMatches(new Int32Array([0, 1, 2]), 2, 3)),
+    ).toEqual([0, 0, 1, 1]);
   });
 });
 

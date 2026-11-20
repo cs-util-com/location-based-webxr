@@ -6,7 +6,7 @@ Downloads and their accounting for the benchmark: timed fetches, resource-timing
 
 ## Public API
 
-- `DownloadRecord { label, bytes | null, ms, cached | null, files }`.
+- `DownloadRecord { label, bytes | null, ms, cached | null, files }`. `bytes` is the decoded body length for a `fetchBytes` record, and the bytes over the wire (or a cached file's body size) for a resource-timing summary.
 - `ResourceLike`: the fields of a `PerformanceResourceTiming` the page reads.
 - `errorText(e)`: `Name: message` for errors, `String(e)` otherwise.
 - `formatBytes(n | null)`: B, KB, MB in powers of 1000; `-` for null.

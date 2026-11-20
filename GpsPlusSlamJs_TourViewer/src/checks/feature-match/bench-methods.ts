@@ -48,26 +48,31 @@ export function buildMethods(
   return out;
 }
 
-/** The backend select's value as a list ("both" is WebGPU then WASM). */
-export function backendsFor(value: string): Backend[] {
-  if (value === "webgpu" || value === "wasm") {
-    return [value];
+const BACKENDS: readonly Backend[] = ["webgpu", "wasm"];
+const PRECISIONS: readonly XFeatPrecision[] = ["fp16", "fp32"];
+
+/** The values of the ticked boxes, known ones in a fixed order. */
+function ticked<T extends string>(
+  values: readonly string[],
+  known: readonly T[],
+  what: string,
+): T[] {
+  for (const v of values) {
+    if (!(known as readonly string[]).includes(v)) {
+      throw new RangeError(`unknown ${what} "${v}"`);
+    }
   }
-  if (value === "both") {
-    return ["webgpu", "wasm"];
-  }
-  throw new RangeError(`unknown backend choice "${value}"`);
+  return known.filter((k) => values.includes(k));
 }
 
-/** The precision select's value as a list ("both" is fp16 then fp32). */
-export function precisionsFor(value: string): XFeatPrecision[] {
-  if (value === "fp16" || value === "fp32") {
-    return [value];
-  }
-  if (value === "both") {
-    return ["fp16", "fp32"];
-  }
-  throw new RangeError(`unknown precision choice "${value}"`);
+/** The ticked backend boxes, WebGPU first. */
+export function backendsFrom(values: readonly string[]): Backend[] {
+  return ticked(values, BACKENDS, "backend");
+}
+
+/** The ticked XFeat model file boxes, fp16 first. */
+export function precisionsFrom(values: readonly string[]): XFeatPrecision[] {
+  return ticked(values, PRECISIONS, "model file");
 }
 
 /** The runs field: a whole number from 1 to 50, else the default 5. */
