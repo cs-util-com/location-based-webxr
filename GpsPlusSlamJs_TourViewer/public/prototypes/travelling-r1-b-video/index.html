@@ -1,0 +1,322 @@
+<!doctype html>
+<!-- Prototype: travelling surface, round 1, variant B - the screen comes with you. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Travelling surface B - The screen comes with you</title>
+    <link rel="stylesheet" href="travelling-screen.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <main class="device" id="device">
+        <canvas
+          id="cam"
+          aria-label="Simulated camera view of a town square with a video screen"
+        ></canvas>
+
+        <div class="strip" id="strip">
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="walk"
+              title="Walk up from outside the station; at 3 m a finger taps the picture to play"
+            >
+              Walk up
+            </button>
+            <button
+              type="button"
+              data-beat="d3"
+              title="Stand 3 m in front of the screen"
+            >
+              3 m
+            </button>
+            <button
+              type="button"
+              data-beat="d7"
+              title="Stand 7 m in front of the screen"
+            >
+              7 m
+            </button>
+            <button
+              type="button"
+              data-beat="d15"
+              title="Stand 15 m in front of the screen"
+            >
+              15 m
+            </button>
+            <button
+              type="button"
+              data-beat="side"
+              title="Stand 5 m away, 65 degrees to the side"
+            >
+              65&deg;
+            </button>
+            <button type="button" id="menuBtn" aria-label="Settings">
+              &#9776;
+            </button>
+          </div>
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="turn"
+              id="turnBtn"
+              aria-pressed="false"
+              title="Turn away from the screen, then back"
+            >
+              Turn
+            </button>
+            <button
+              type="button"
+              data-beat="taps"
+              title="A finger plays, mutes, switches captions off and on, pauses and plays"
+            >
+              Taps
+            </button>
+            <button
+              type="button"
+              data-beat="narr"
+              id="narrBtn"
+              aria-pressed="false"
+              title="A narration box speaks at the bottom centre while the docked video plays in its corner"
+            >
+              Voice box
+            </button>
+            <button
+              type="button"
+              data-beat="two"
+              id="twoBtn"
+              aria-pressed="false"
+              title="A second video (a porthole) in the same station: only one docks"
+            >
+              2 videos
+            </button>
+            <button
+              type="button"
+              data-beat="leave"
+              id="leaveBtn"
+              aria-pressed="false"
+              title="Walk out of the station, then come back"
+            >
+              Leave
+            </button>
+            <button
+              type="button"
+              data-beat="end"
+              title="Jump to the clip's last seconds"
+            >
+              End
+            </button>
+          </div>
+        </div>
+        <div class="readout" id="readout" aria-live="off"></div>
+
+        <div class="hud" id="hud">
+          <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Another item's narration box (round 5), owning the bottom centre. A stand-in: silent. -->
+        <section class="narr" id="narr" hidden aria-label="Narration">
+          <div class="narr-who">
+            <i></i><b>Narrator</b><span class="narr-badge">AI voice</span
+            ><span class="narr-hint" id="narrHint"></span>
+          </div>
+          <div class="narr-win"><p id="narrText"></p></div>
+        </section>
+
+        <!-- a brief ring around the docked player when its empty place in the world is tapped -->
+        <div class="dock-ring" id="dockRing" hidden></div>
+
+        <i class="finger" id="finger" hidden></i>
+      </main>
+    </div>
+
+    <aside
+      class="demo"
+      id="demo"
+      hidden
+      aria-label="About this page and settings"
+    >
+      <p>
+        <b>The screen comes with you.</b> A video's player is one object. While
+        its picture is big enough on the screen and in view, it plays on its
+        screen in the world. When it is not, and the video plays, the same
+        player flies to a small corner of the phone's screen and keeps playing
+        there; when the screen can be watched again it flies back. The bottom
+        centre belongs to the narration box, so the player docks in its own
+        corner beside it. One picture, one place, never two.
+      </p>
+
+      <h4>Try</h4>
+      <ul>
+        <li>
+          Tap the picture to play or pause; the bar holds sound and captions,
+          in the world and in the corner alike.
+        </li>
+        <li>
+          "15 m", "Turn" and "65&deg;": the playing player docks. "3 m": it flies
+          back.
+        </li>
+        <li>
+          "Voice box": a narration speaks at the bottom centre while the video
+          plays in its corner. "2 videos": only the last one tapped docks.
+        </li>
+        <li>Drag sideways on the view to look around.</li>
+      </ul>
+
+      <h4>Settings</h4>
+      <div class="row">
+        <span>Picture from</span
+        ><button type="button" data-cfg="thr" data-v="80">80 px</button
+        ><button type="button" data-cfg="thr" data-v="120">120 px</button
+        ><button type="button" data-cfg="thr" data-v="160">160 px</button
+        ><button type="button" data-cfg="thr" data-v="220">220 px</button>
+      </div>
+      <div class="row">
+        <span>Play control</span
+        ><button type="button" data-cfg="ctl" data-v="picture">picture</button
+        ><button type="button" data-cfg="ctl" data-v="button">bar button</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Tap target</span
+        ><button type="button" data-cfg="tap" data-v="40">40 px</button
+        ><button type="button" data-cfg="tap" data-v="48">48 px</button
+        ><button type="button" data-cfg="tap" data-v="56">56 px</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Docks</span
+        ><button type="button" data-cfg="mode" data-v="playing">
+          while playing</button
+        ><button type="button" data-cfg="mode" data-v="always">
+          once started</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Corner</span
+        ><button type="button" data-cfg="corner" data-v="br">
+          bottom right</button
+        ><button type="button" data-cfg="corner" data-v="bl">bottom left</button
+        ><button type="button" data-cfg="corner" data-v="tr">top right</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Screen width</span
+        ><button type="button" data-cfg="size" data-v="1.6">1.6 m</button
+        ><button type="button" data-cfg="size" data-v="2.5">2.5 m</button
+        ><button type="button" data-cfg="size" data-v="4">4 m</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Clip shape</span
+        ><button type="button" data-cfg="aspect" data-v="16:9">16:9</button
+        ><button type="button" data-cfg="aspect" data-v="4:3">4:3</button
+        ><button type="button" data-cfg="aspect" data-v="9:16">9:16</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Flight</span
+        ><button type="button" data-cfg="fly" data-v="0">off</button
+        ><button type="button" data-cfg="fly" data-v="0.35">0.35 s</button
+        ><button type="button" data-cfg="fly" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="fly" data-v="1.2">1.2 s</button>
+      </div>
+      <div class="row">
+        <span>Hold before move</span
+        ><button type="button" data-cfg="settle" data-v="0.15">0.15 s</button
+        ><button type="button" data-cfg="settle" data-v="0.3">0.3 s</button
+        ><button type="button" data-cfg="settle" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="settle" data-v="1">1 s</button>
+      </div>
+      <div class="row">
+        <span>Hysteresis</span
+        ><button type="button" data-cfg="hyst" data-v="5">5 %</button
+        ><button type="button" data-cfg="hyst" data-v="10">10 %</button
+        ><button type="button" data-cfg="hyst" data-v="15">15 %</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Angle limit</span
+        ><button type="button" data-cfg="angle" data-v="35">35&deg;</button
+        ><button type="button" data-cfg="angle" data-v="50">50&deg;</button
+        ><button type="button" data-cfg="angle" data-v="60">60&deg;</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Sound</span
+        ><button type="button" data-cfg="sound" data-v="tone">tone</button
+        ><button type="button" data-cfg="sound" data-v="silent">silent</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Clip</span
+        ><button type="button" data-cfg="text" data-v="normal">normal</button
+        ><button type="button" data-cfg="text" data-v="longest">longest</button
+        ><button type="button" data-cfg="text" data-v="missing">missing</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button type="button" data-cfg="stage" data-v="auto">window</button
+        ><button type="button" data-cfg="stage" data-v="portrait">
+          upright</button
+        ><button type="button" data-cfg="stage" data-v="landscape">
+          sideways</button
+        ><span></span>
+      </div>
+      <p class="note">
+        URL options:
+        <code
+          >?thr=120&amp;ctl=picture&amp;tap=48&amp;mode=playing&amp;corner=br&amp;size=1.6&amp;aspect=16:9&amp;fly=0.6&amp;settle=0.3&amp;hyst=5&amp;angle=60&amp;sound=tone&amp;text=normal&amp;stage=auto&amp;at=d7</code
+        >; <code>&amp;narr=on</code>, <code>&amp;two=on</code>,
+        <code>?autostart</code> (stands in for the first tap).
+      </p>
+      <p class="note">
+        Where the words of a narration show is one pick for the whole tour, in
+        the tour's own settings; this page adds no pick of its own.
+      </p>
+
+      <h4>Where it docks</h4>
+      <p class="cost" id="dist">-</p>
+
+      <h4>Cost</h4>
+      <p class="cost" id="cost">-</p>
+
+      <h4>Faked here</h4>
+      <ul>
+        <li>
+          The clips are canvas drawings driven by the clip's own clock, with a
+          soft generated tone for sound. No real footage, no recording.
+        </li>
+        <li>
+          The camera, the square and the walk are simulated; nothing runs in AR.
+          The sideways drag on the view stands in for turning the phone.
+        </li>
+        <li>
+          The narration box is a silent stand-in for round 5's box. The station
+          circle is 20 m around the screen.
+        </li>
+      </ul>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="travelling-screen.js"></script>
+  </body>
+</html>
