@@ -13,7 +13,6 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
 import type { EditorFileKind } from "./classify-editor-file.js";
-import { planEditorEntry, type IgnoredFile } from "./editor-entry.js";
 import { NOT_A_TOUR, NOT_A_ZIP } from "./editor-open.js";
 
 /** Where the creator starts from: a tour they made, a new one, the
@@ -151,6 +150,23 @@ export function startCardView(
   };
 }
 
+/** A file left out of a pick, and why. */
+interface IgnoredFile {
+  readonly file: File;
+  readonly reason: string;
+}
+
+/** Said when more than one tour came at once. */
+export const ONE_TOUR_AT_A_TIME =
+  "These are several tours. Choose one tour at a time.";
+
+/** Said when more than one scan came at once. */
+export const ONE_SCAN_AT_A_TIME =
+  "These are several scans. Add one scan at a time.";
+
+/** Said when the file list was empty. */
+export const NO_FILE = "No file was given.";
+
 /** Files chosen or dropped in the tour picker, sorted. */
 export type TourPick =
   | {
@@ -169,23 +185,32 @@ export function scanKeptInsteadLine(name: string): string {
 }
 
 /**
- * Files given to the tour picker, sorted as the open box sorts them
- * (`planEditorEntry`): at most one tour and one scan. A scan is never held
- * as the tour: alone, it is kept for question 2. Pure.
+ * Files given to the tour picker, sorted: at most one tour and one scan,
+ * held together. A scan is never held as the tour: alone, it is kept for
+ * question 2. A file sorted as neither for the open's own reasons (no zip,
+ * no tour in it) is held as the tour when it is the only candidate, so the
+ * open refuses it in its own words; a precise reason (a scan whose
+ * identity is broken) is said now. Files left out are named. Pure.
  */
 export function sortTourPick(kinds: readonly EditorFileKind[]): TourPick {
-  // As with a tour open: a lone scan is planned as an add, not refused.
-  const plan = planEditorEntry(kinds, true);
-  if (plan.kind === "refuse") return plan;
-  if (plan.kind === "add-scan") {
-    return { kind: "held", tour: null, scan: plan.scan, ignored: plan.ignored };
+  const tours = kinds.filter((k) => k.kind === "tour");
+  const scans = kinds.filter((k) => k.kind === "scan");
+  const neither = kinds.flatMap((k) =>
+    k.kind === "neither" ? [{ file: k.file, reason: k.reason }] : [],
+  );
+  if (tours.length > 1) return { kind: "refuse", reason: ONE_TOUR_AT_A_TIME };
+  if (scans.length > 1) return { kind: "refuse", reason: ONE_SCAN_AT_A_TIME };
+  const tour = tours[0]?.file ?? null;
+  const scan = scans[0]?.file ?? null;
+  if (tour !== null || scan !== null) {
+    return { kind: "held", tour, scan, ignored: neither };
   }
-  return {
-    kind: "held",
-    tour: plan.tour,
-    scan: plan.scan,
-    ignored: plan.ignored,
-  };
+  const [first, ...rest] = neither;
+  if (first === undefined) return { kind: "refuse", reason: NO_FILE };
+  if (first.reason !== NOT_A_TOUR && first.reason !== NOT_A_ZIP) {
+    return { kind: "refuse", reason: `${first.file.name}: ${first.reason}` };
+  }
+  return { kind: "held", tour: first.file, scan: null, ignored: rest };
 }
 
 /** A file given to question 2, sorted. */

@@ -30,9 +30,16 @@ files given to either question. Pure; `edit-main.ts` wires it.
     counts as a tour to open). The example has no scan step and never names
     a scan.
 - `sortTourPick(kinds) -> TourPick` - files given where the tour is asked
-  for, sorted as `planEditorEntry` sorts them: `{ kind: "held", tour,
-scan, ignored }` or `{ kind: "refuse", reason }`. A lone scan is held
-  as the scan with `tour: null`; a scan is never held as the tour.
+  for (chosen or dropped): `{ kind: "held", tour, scan, ignored }` or
+  `{ kind: "refuse", reason }`. At most one tour and one scan, held
+  together; a lone scan is held as the scan with `tour: null`; a scan is
+  never held as the tour. A lone file sorted as neither for the open's own
+  reasons (`NOT_A_ZIP`, `NOT_A_TOUR`) is held as the tour, so the open
+  refuses it in its own words; a precise reason (a scan whose identity is
+  broken) is refused now, "<name>: <reason>". `ignored` names the files
+  sorted as neither that came along (`IgnoredFile`). Refusals: several
+  tours (`ONE_TOUR_AT_A_TIME`), several scans (`ONE_SCAN_AT_A_TIME`), no
+  file (`NO_FILE`).
 - `sortScanPick(kind) -> ScanPick` - a file given to question 2: a scan
   is held; a tour is refused with `tourNotScanLine`; a file with no
   recording is refused in plain words; a precise reason is kept.

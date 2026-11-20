@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import type { EditorFileKind } from "./classify-editor-file.js";
-import { ONE_SCAN_AT_A_TIME, ONE_TOUR_AT_A_TIME } from "./editor-entry.js";
 import { NOT_A_TOUR } from "./editor-open.js";
 import {
+  NO_FILE,
+  ONE_SCAN_AT_A_TIME,
+  ONE_TOUR_AT_A_TIME,
   editorStartActions,
   editorStartReducer,
   initialEditorStartState,
@@ -221,6 +223,18 @@ describe("sortTourPick", () => {
     expect(
       sortTourPick([neither("walk.zip", "its identity is broken")]),
     ).toEqual({ kind: "refuse", reason: "walk.zip: its identity is broken" });
+  });
+
+  it("names unusable files that came along, and refuses an empty list", () => {
+    const t = tour("t.zip");
+    const n = neither("n.txt", "n.txt is no use");
+    expect(sortTourPick([n, t])).toEqual({
+      kind: "held",
+      tour: t.file,
+      scan: null,
+      ignored: [{ file: n.file, reason: "n.txt is no use" }],
+    });
+    expect(sortTourPick([])).toEqual({ kind: "refuse", reason: NO_FILE });
   });
 
   it("refuses two tours or two scans", () => {
