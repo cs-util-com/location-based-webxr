@@ -163,6 +163,22 @@ async function freeBoxPoints(page, b) {
 }
 
 /**
+ * What a tap on the box leaves at once, read without waiting: the tap's
+ * play or pause sign (in the page for over a second) and the store's
+ * playing flag. `data-speaking` follows the voice and could turn later.
+ * @param {import("@playwright/test").Page} page
+ */
+async function tapTrace(page) {
+  return page.evaluate(() => ({
+    signs: document.querySelectorAll('[data-testid="narration-box-tap"]')
+      .length,
+    playing: /** @type {any} */ (
+      window
+    ).__tourViewerTest.alignmentStore?.getState?.()?.narrationBox?.playing,
+  }));
+}
+
+/**
  * The box speaking (`yes`) or not, frames emitted until it is.
  * @param {import("@playwright/test").Page} page
  * @param {import("@playwright/test").Locator} box
@@ -210,6 +226,8 @@ for (const viewport of [
     if (onCard === undefined) throw new Error("no plain card point");
     await expect(box).toHaveAttribute("data-speaking", "no");
     await page.mouse.click(onCard.x, onCard.y);
+    // A tap the box took would show its sign and set the store at once.
+    expect(await tapTrace(page)).toEqual({ signs: 0, playing: false });
     for (let i = 0; i < 5; i += 1) await emitFrame(page);
     await expect(box).toHaveAttribute("data-speaking", "no");
 
@@ -222,6 +240,8 @@ for (const viewport of [
     const [at] = free;
     if (at === undefined) throw new Error("no free point on the box");
     await page.mouse.click(at.x, at.y);
+    // The trace the card tap was checked for does show for a box tap.
+    expect(await tapTrace(page)).toEqual({ signs: 1, playing: true });
     await expectSpeaking(page, box, "yes");
     await page.mouse.click(at.x, at.y);
     await expectSpeaking(page, box, "no");
