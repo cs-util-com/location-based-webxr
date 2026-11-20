@@ -28,9 +28,9 @@ deleted with the losing models (DEC-R7b-2a).
 
 - `L_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   L's own scale. The registry grounds and rescales; this file does not.
-- `L_PALETTE` — **the full source palette**, not a per-port subset. L is the
-  house style, so this table is the authority the other five palettes are
-  checked against in `poi-variants.test.ts`.
+- The palette is the module's own `L` (not exported): **the full source
+  palette**, not a per-port subset. L is the house style; no test compares the
+  other ports' palettes with it.
 
 ## Invariants & assumptions
 
@@ -87,9 +87,9 @@ const mesh = scaledToHeight(groundedMesh(build!()), 12.0); // what `adopted()` d
 
 ## Tests
 
-- `poi-variants.test.ts` — the shared registry contract (base at `y = 0`, finite
-  positions, outward winding, height matching the shipped model), the palette
-  assertion, and **the gate that all 51 liked pairs exist**, which closed when
-  this file completed the sixth and last source.
+- `poi-models.test.ts` — the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
 - `poi-primitives.test.ts` — the primitives each port composes, including the
   `gable` extracted from `hut` for this file's church.

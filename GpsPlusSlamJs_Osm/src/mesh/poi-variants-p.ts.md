@@ -23,8 +23,8 @@ deleted with the losing models (DEC-R7b-2a).
 - `P_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   **P's own diorama scale**. The registry grounds and rescales; this file does
   not.
-- `P_PALETTE` — the palette values a P port may paint with, under the source's
-  own names. Pinned against the other ports' palettes in `poi-variants.test.ts`.
+- The palette is the module's own `P` (not exported), under the
+  source's own names. No test compares it with the house palette.
 
 ## Invariants & assumptions
 
@@ -67,9 +67,10 @@ const mesh = scaledToHeight(groundedMesh(build!()), 2.4); // what `adopted()` do
 
 ## Tests
 
-- `poi-variants.test.ts` — the registry contract every port shares: base at
-  `y = 0`, finite positions, outward winding, height matching the shipped model,
-  and the palette assertion that keeps `P_PALETTE` from drifting.
+- `poi-models.test.ts` — the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
 - `poi-primitives.test.ts` — `sphere`'s `radiusY`, including that a squashed
   blob carries the **ellipsoid's** normal rather than the unit sphere's.
 

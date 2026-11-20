@@ -27,17 +27,13 @@ the losing models (DEC-R7b-2a) — and
 - `H_VARIANTS: ReadonlyMap<string, () => MeshData>` — one builder per kind, at
   the DOMINANT parent's scale (D's, here). The registry grounds and rescales.
 
-There is no `H_PALETTE`: a hybrid paints with its parents' palettes, which are
-already pinned in their own files.
+There is no hybrid palette: a hybrid paints with its parents' palettes, which
+live in their own files.
 
 ## Invariants & assumptions
 
 - **`H` is not a file.** Every other source letter names a downloaded prototype;
-  this one names a request. It is therefore absent from `LIKED_VARIANTS` — that
-  table records what the owner picked out of the six prototypes, and counting a
-  hybrid there would inflate the per-source totals and send a later reader to a
-  file that does not contain the model. `poi-variants.test.ts` asserts `H: 0`
-  there deliberately.
+  this one names a request, so no prototype file contains its model.
 - **The parents are IMPORTED, not copied.** `parkGroundD` and `benchP` are
   exported from their own files for exactly this, and each is still used by its
   own source's model. A copied bench would drift into two different benches
@@ -57,9 +53,9 @@ entire plate. The registry then scales the park to the shipped 4.56 m — a fact
 of about 6.4 — so a raw graft would render a **five-metre bench**. At 0.34 the
 seat lands near 1.8 m in the world.
 
-`poi-variants.test.ts` pins this as a band on the seat's length rather than as
-the constant, so re-tuning the look does not require editing the test, but
-dropping the bench in raw does fail it.
+No test pins the graft on its own: the registry contract in `poi-models.test.ts`
+bounds the whole model's size, not the bench's, so a bench dropped in raw is
+caught only by eye.
 
 ## Examples
 
@@ -73,8 +69,9 @@ const mesh = scaledToHeight(
 
 ## Tests
 
-- `poi-variants.test.ts` — the shared registry contract, plus three tests that a
-  hybrid is genuinely **both** parents: D's ground is still 0.8 m across, a
-  two-legged bench reaches the grass (D's own bench never did), and the seat is
-  bench-sized rather than plate-sized. A hybrid that is silently just one parent
-  looks entirely correct, which is why each half is asserted separately.
+- `poi-models.test.ts` — the registry contract every adopted model meets, run
+  by iterating `POI_MODELS` (base at `y = 0`, finite positions and normals,
+  outward winding, height matching the shipped model, plausible size, low
+  polygon count, per-face painting aligned).
+  Nothing asserts that the hybrid is **both** parents (D's ground, P's bench);
+  a hybrid that is silently just one parent looks entirely correct.
