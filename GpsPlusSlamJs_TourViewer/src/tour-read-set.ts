@@ -93,10 +93,18 @@ const RECORDED_FRAME = new RegExp(
  *  (`zip-reader.ts`) holds the same rule; it does not export it. */
 const ACTIONS_SEGMENT = /(^|\/)actions\//;
 
+/** What a macOS re-zip adds: a `__MACOSX/` folder and `._` resource-fork
+ *  files, neither of them JSON. */
+const MACOS_METADATA = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
+
 /** An action entry the framework's parser replays: under an `actions/`
- *  segment, ending `.json`. */
+ *  segment, ending `.json`, and not macOS metadata. */
 export function isActionEntryName(name: string): boolean {
-  return ACTIONS_SEGMENT.test(name) && name.endsWith(".json");
+  return (
+    ACTIONS_SEGMENT.test(name) &&
+    name.endsWith(".json") &&
+    !MACOS_METADATA.test(name)
+  );
 }
 
 /**

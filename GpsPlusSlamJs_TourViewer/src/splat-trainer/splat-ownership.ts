@@ -13,6 +13,13 @@ import type {
   Vector3,
 } from "gps-plus-slam-app-framework/core";
 import { rotateVectorByQuaternion } from "gps-plus-slam-app-framework/ar/qr/qr-pose";
+import {
+  CELL_KEY_LIMIT,
+  cellCoordsInKeyRange,
+  packCellKey,
+} from "gps-plus-slam-app-framework/ar/cell-key";
+
+import { distance, requirePositive } from "./splat-math.js";
 
 /** A training camera of a window's core, raw WebXR pose (looking along
  *  its local -z). */
@@ -21,9 +28,12 @@ export interface OwnershipCamera {
   readonly rotation: Quaternion;
   /** Index of the window whose core holds this camera. */
   readonly window: number;
+  /** The camera's distance along its segment's walk (m), as the walk plan
+   *  measures it: what tells a revisit from a walk that went on. */
+  readonly along: number;
 }
 
-/** What ownership needs of a window: its segment, for adjacency. */
+/** What ownership needs of a window: its segment, for revisits. */
 export interface OwnershipWindow {
   readonly segment: number;
 }
@@ -64,18 +74,23 @@ export function sees(
 }
 
 /**
- * The ownership of a merged scene:
- * 1. Of the cameras that see the point within `ownRangeM`, the nearest
- *    names a window.
- * 2. A revisit: when a window that also sees it within range is not that
- *    window's neighbour (another segment, or not next to it in the walk),
- *    the earliest such window keeps it instead, so a spot the walk came
- *    back to is kept whole by one window, never interleaved from two.
+ * The ownership of a merged scene. Of the cameras that see the point within
+ * `ownRangeM` (its seeing cameras):
+ * 1. The nearest names a window (on equal distance, the lower camera
+ *    index).
+ * 2. A revisit: another window whose seeing cameras are all more than
+ *    `2 * ownRangeM` along the walk from every seeing camera of that
+ *    window, or lie in another segment, saw the spot on an earlier or
+ *    later pass. The earliest window that is a revisit of the nearest's
+ *    keeps it instead, so a spot the walk came back to is kept whole by
+ *    one window, never interleaved from two. Windows that saw it on one
+ *    pass share their seam by rule 1 alone, however many windows apart.
  * 3. Seen by no camera within range: the nearest camera that sees it at
  *    any distance names the window.
  * 4. Seen by none: -1.
- * Neighbours share their seam by rule 1 alone. Throws a RangeError for a
- * camera naming no window or a non-positive range.
+ * Throws a RangeError for a camera naming no window, a camera with a
+ * distance along the walk that is not finite, a camera too far out to key,
+ * or a non-positive range.
  */
 export function createOwnership(
   cameras: readonly OwnershipCamera[],
@@ -83,11 +98,7 @@ export function createOwnership(
   projection: Matrix4,
   ownRangeM: number,
 ): Ownership {
-  if (!(ownRangeM > 0) || !Number.isFinite(ownRangeM)) {
-    throw new RangeError(
-      `ownRangeM must be positive and finite, got ${String(ownRangeM)}`,
-    );
-  }
+  requirePositive("ownRangeM", ownRangeM);
   for (const c of cameras) {
     if (
       !Number.isInteger(c.window) ||
@@ -98,40 +109,58 @@ export function createOwnership(
         `A camera names window ${String(c.window)}, of ${String(windows.length)}`,
       );
     }
+    if (!Number.isFinite(c.along)) {
+      throw new RangeError(
+        `A camera's distance along the walk must be finite, got ${String(c.along)}`,
+      );
+    }
   }
-  const adjacent = (a: number, b: number): boolean =>
-    Math.abs(a - b) <= 1 && windows[a]?.segment === windows[b]?.segment;
-  const grid = new CameraGrid(cameras, ownRangeM);
+  const grid = new CameraGrid(
+    cameras.map((c) => c.position),
+    ownRangeM,
+  );
+  // Two seeing cameras this far apart along one walk are on two passes.
+  const revisitGapM = 2 * ownRangeM;
 
   return {
     ownerOf(point: Vector3): number {
       let nearest = -1;
       let nearestDistance = Infinity;
-      const candidates = new Set<number>();
-      for (const c of grid.near(point)) {
+      const alongs = new Map<number, number[]>();
+      for (const i of grid.near(point)) {
+        const c = cameras[i];
+        if (c === undefined) continue;
         const d = distance(c.position, point);
         if (d > ownRangeM || !sees(c, projection, point)) continue;
-        candidates.add(c.window);
-        if (d < nearestDistance) {
+        const list = alongs.get(c.window) ?? [];
+        list.push(c.along);
+        alongs.set(c.window, list);
+        if (d < nearestDistance || (d === nearestDistance && i < nearest)) {
           nearestDistance = d;
-          nearest = c.window;
+          nearest = i;
         }
       }
       if (nearest >= 0) {
-        let owner = nearest;
-        for (const w of candidates) {
-          if (w < owner && !adjacent(w, nearest)) owner = w;
+        const n = cameras[nearest]?.window ?? -1;
+        const own = sorted(alongs.get(n) ?? []);
+        let owner = n;
+        for (const [w, list] of alongs) {
+          if (w >= owner) continue;
+          const revisit =
+            windows[w]?.segment !== windows[n]?.segment ||
+            closestGap(sorted(list), own) > revisitGapM;
+          if (revisit) owner = w;
         }
         return owner;
       }
-      for (const c of cameras) {
+      cameras.forEach((c, i) => {
         const d = distance(c.position, point);
         if (d < nearestDistance && sees(c, projection, point)) {
           nearestDistance = d;
-          nearest = c.window;
+          nearest = i;
         }
-      }
-      return nearest;
+      });
+      return nearest < 0 ? -1 : (cameras[nearest]?.window ?? -1);
     },
   };
 }
@@ -146,43 +175,74 @@ export function shellCrop(
   cameraPositions: readonly Vector3[],
   keepM: number,
 ): boolean[] {
-  if (!(keepM > 0) || !Number.isFinite(keepM)) {
-    throw new RangeError(
-      `keepM must be positive and finite, got ${String(keepM)}`,
-    );
-  }
-  const grid = new CameraGrid(
-    cameraPositions.map((position) => ({ position })),
-    keepM,
-  );
+  requirePositive("keepM", keepM);
+  const grid = new CameraGrid(cameraPositions, keepM);
   return points.map((p) =>
-    grid.near(p).some((c) => distance(c.position, p) <= keepM),
+    grid.near(p).some((i) => {
+      const c = cameraPositions[i];
+      return c !== undefined && distance(c, p) <= keepM;
+    }),
   );
 }
 
-/** Cameras bucketed in cubes of `cell` metres: `near` returns every
+function sorted(values: readonly number[]): number[] {
+  return [...values].sort((a, b) => a - b);
+}
+
+/** The smallest |a - b| over a in `as`, b in `bs`, both ascending. */
+function closestGap(as: readonly number[], bs: readonly number[]): number {
+  let best = Infinity;
+  let i = 0;
+  let j = 0;
+  while (i < as.length && j < bs.length) {
+    const a = as[i] ?? 0;
+    const b = bs[j] ?? 0;
+    best = Math.min(best, Math.abs(a - b));
+    if (a < b) i++;
+    else j++;
+  }
+  return best;
+}
+
+/** Keys stay this many cells inside the key's range, so a query's
+ *  neighbouring cells are always keyable too. */
+const KEY_MARGIN = 2;
+
+/** Camera indices bucketed in cubes of `cell` metres: `near` returns every
  *  camera within `cell` of a point (and some farther). */
-class CameraGrid<C extends { readonly position: Vector3 }> {
-  private readonly cells = new Map<string, C[]>();
+class CameraGrid {
+  private readonly cells = new Map<number, number[]>();
 
   constructor(
-    cameras: readonly C[],
+    positions: readonly Vector3[],
     private readonly cell: number,
   ) {
-    for (const c of cameras) {
-      const key = this.key(c.position, 0, 0, 0);
+    positions.forEach((p, i) => {
+      const at = this.cellOf(p);
+      if (!cellCoordsInKeyRange(at, CELL_KEY_LIMIT - KEY_MARGIN)) {
+        throw new RangeError(
+          `A camera at (${p.join(", ")}) is too far from the origin for cells of ${String(cell)} m`,
+        );
+      }
+      const key = packCellKey(at[0], at[1], at[2]);
       const list = this.cells.get(key) ?? [];
-      list.push(c);
+      list.push(i);
       this.cells.set(key, list);
-    }
+    });
   }
 
-  near(point: Vector3): C[] {
-    const out: C[] = [];
+  near(point: Vector3): number[] {
+    const at = this.cellOf(point);
+    // Every camera's cell is inside the margin, so a point whose cell is
+    // outside it by more than one is more than a cell from all of them.
+    if (!cellCoordsInKeyRange(at, CELL_KEY_LIMIT - KEY_MARGIN + 1)) return [];
+    const out: number[] = [];
     for (let dx = -1; dx <= 1; dx++) {
       for (let dy = -1; dy <= 1; dy++) {
         for (let dz = -1; dz <= 1; dz++) {
-          const list = this.cells.get(this.key(point, dx, dy, dz));
+          const list = this.cells.get(
+            packCellKey(at[0] + dx, at[1] + dy, at[2] + dz),
+          );
           if (list !== undefined) out.push(...list);
         }
       }
@@ -190,11 +250,11 @@ class CameraGrid<C extends { readonly position: Vector3 }> {
     return out;
   }
 
-  private key(p: Vector3, dx: number, dy: number, dz: number): string {
-    return `${String(Math.floor(p[0] / this.cell) + dx)},${String(Math.floor(p[1] / this.cell) + dy)},${String(Math.floor(p[2] / this.cell) + dz)}`;
+  private cellOf(p: Vector3): [number, number, number] {
+    return [
+      Math.floor(p[0] / this.cell),
+      Math.floor(p[1] / this.cell),
+      Math.floor(p[2] / this.cell),
+    ];
   }
-}
-
-function distance(a: Vector3, b: Vector3): number {
-  return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
 }

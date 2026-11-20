@@ -48,10 +48,11 @@ export interface TrainerSettings {
   /** Most training steps for a window. */
   readonly maxIterations: number;
   /** The trainer's photo memory target (bytes), before the adapter's own
-   *  limits cap it further. */
+   *  limits cap it further. Splat.js shrinks its photos at its own
+   *  700e6-byte budget, so the default plans with the same number. */
   readonly targetMemoryBytes: number;
-  /** Bytes the trainer holds per photo pixel (colour plus its working
-   *  copies). */
+  /** Bytes per photo pixel the memory budget counts: Splat.js counts 12
+   *  (three float32 channels) against its budget. */
   readonly bytesPerPixel: number;
   /** Shortest photo side the trainer may scale down to (px); below it a
    *  window is refused as too large instead. Swept 64 / 128 / 256. */
@@ -75,7 +76,7 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   itersPerFrame: 150,
   minIterations: 4000,
   maxIterations: 30000,
-  targetMemoryBytes: 700 * 1024 * 1024,
+  targetMemoryBytes: 700e6,
   bytesPerPixel: 12,
   minShortSidePx: 128,
   etaMinIterations: 200,

@@ -35,10 +35,13 @@ frameHeight)` from the framework, unchanged: it already is the
     `medianSpacingS`, `frameWidth`, `frameHeight`, `depthSamples`,
     `projectionSpread`, `era`.
   - `fingerprint` - `size`, `lastModified` (null for a plain Blob),
-    `contentKey` (`tourFileKey` of `tour-file-key.ts`: a hash of every
-    file entry's name, unpacked size and CRC-32 from the directory, so a
-    same-size change of content changes it; the key the Tour Viewer
-    already uses for a local file).
+    `contentKey` (`tourFileKey` of `tour-file-key.ts`: a hash of the file
+    entries' names relative to a shared wrapping folder, unpacked sizes
+    and CRC-32s from the directory, so a same-size change of content
+    changes it; the key the Tour Viewer already uses for a local file).
+    It leaves out the tour kit's own authored files, so a tour and the
+    recording under it share the key, and a re-zip that adds or drops a
+    wrapping folder keeps it.
 - `PROJ_TOL` - 1e-4, the lens tolerance (below).
 - `ASPECT_TOL` - 0.02, the lens-to-photo shape tolerance (below).
 
@@ -75,6 +78,10 @@ frameHeight)` from the framework, unchanged: it already is the
 - Depth samples, none with a projection matrix: "This recording's depth
   data does not include the camera's lens, so the lens is unknown.
   Recordings from a current recorder include it."
+- Depth samples with a projection matrix, but none also with a readable
+  camera pose and point list: "This recording's depth data carries the
+  camera's lens, but its camera poses or depth points are unreadable, so
+  the lens cannot be used."
 - Lens elements that differ beyond `PROJ_TOL`, naming the spread.
 - A degenerate projection (`pinholeFromProjection` throws).
 - A lens whose pixels are not square within `ASPECT_TOL` on the photos'

@@ -118,9 +118,21 @@ export async function readZipEntries(data: ZipSource): Promise<Entry[]> {
  */
 const ACTIONS_SEGMENT = /(?:^|\/)actions\//;
 
-/** An action JSON entry name: under an `actions/` segment, ending `.json`. */
+/**
+ * What a macOS re-zip adds: a `__MACOSX/` folder mirroring the tree and a
+ * `._<name>` resource-fork file per entry. Neither is JSON, so replaying one
+ * would fail the whole load of a good recording.
+ */
+const MACOS_METADATA = /(?:^|\/)(?:__MACOSX\/|\._[^/]*$)/;
+
+/** An action JSON entry name: under an `actions/` segment, ending `.json`,
+ *  and not macOS metadata. */
 function isActionEntryName(filename: string): boolean {
-  return ACTIONS_SEGMENT.test(filename) && filename.endsWith('.json');
+  return (
+    ACTIONS_SEGMENT.test(filename) &&
+    filename.endsWith('.json') &&
+    !MACOS_METADATA.test(filename)
+  );
 }
 
 /** `session.json` as a whole path segment, at the root or in a wrapping

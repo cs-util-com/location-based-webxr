@@ -30,7 +30,9 @@ which a visitor never sees.
     gone from the format).
 - `isActionEntryName(name)` - the recording's action stream as the
   framework's parser reads it (it does not export its rule): an `actions/`
-  path segment, ending `.json`. Used by `tour-session.ts` (`hasRecording`),
+  path segment, ending `.json`, and not the metadata a macOS re-zip adds
+  (a `__MACOSX/` folder, `._` resource-fork files; neither is JSON). The
+  framework's parser holds the same rule. Used by `tour-session.ts` (`hasRecording`),
   by the splat trainer's reader (`splat-trainer/recording-reader.ts`) and
   inside `recordingFoldersOf` here.
 - `recordingFolderOf(entryNames) -> string` - the folder the action stream

@@ -52,6 +52,9 @@ export interface SyntheticRecordingOptions {
   /** The projection of the depth sample at `index`; null writes the
    *  sample without one (default `SYNTHETIC_PROJECTION` for every sample). */
   readonly projectionAt?: (index: number) => Matrix4 | null;
+  /** Depth samples written (unpacked) with camera positions that are not
+   *  numbers, their lens intact (default false). */
+  readonly brokenDepthPose?: boolean;
   /** Capture indices whose photo the zip does not carry. */
   readonly missingPhotos?: readonly number[];
   /** An action type written once in the middle of the walk. */
@@ -151,7 +154,10 @@ export async function buildSyntheticRecording(
           : options.projectionAt(i);
       const sample: DepthSample = {
         timestamp: time,
-        cameraPos: position,
+        cameraPos:
+          options.brokenDepthPose === true
+            ? (["x", "y", "z"] as unknown as Vector3)
+            : position,
         cameraRot: rotation,
         points: gridPoints(SYNTHETIC_DEPTH_GRID, i),
         ...(projection === null ? {} : { projectionMatrix: projection }),
@@ -159,7 +165,9 @@ export async function buildSyntheticRecording(
       depthSamples.push(sample);
       const action = { type: "recording/recordDepthSample", payload: sample };
       actions.push(
-        (options.packDepth ?? true) ? packDepthAction(action) : action,
+        (options.packDepth ?? true) && options.brokenDepthPose !== true
+          ? packDepthAction(action)
+          : action,
       );
     }
     if (

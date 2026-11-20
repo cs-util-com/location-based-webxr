@@ -7,6 +7,7 @@
  * @see training-budget.ts.md
  */
 
+import { requirePositive } from "./splat-math.js";
 import type { TrainerSettings } from "./trainer-defaults.js";
 
 /** The two `GPUSupportedLimits` the photo memory depends on. */
@@ -81,6 +82,7 @@ export function photoScale(
     }
   }
   requirePositive("budgetBytes", budgetBytes);
+  requirePositive("bytesPerPixel", settings.bytesPerPixel);
   const bytesAt = (w: number, h: number): number =>
     frames * w * h * settings.bytesPerPixel;
   if (bytesAt(width, height) <= budgetBytes) {
@@ -121,6 +123,11 @@ export function iterationBudget(
       `trainFrames must be a non-negative integer, got ${String(trainFrames)}`,
     );
   }
+  if (!(settings.minIterations <= settings.maxIterations)) {
+    throw new RangeError(
+      `maxIterations (${String(settings.maxIterations)}) must be at least minIterations (${String(settings.minIterations)})`,
+    );
+  }
   return Math.min(
     settings.maxIterations,
     Math.max(settings.minIterations, settings.itersPerFrame * trainFrames),
@@ -128,10 +135,13 @@ export function iterationBudget(
 }
 
 /**
- * The time left (ms) at the rate measured so far, or null before
- * `etaMinIterations` steps (the first ones carry warm-up) or for a
- * measurement that makes no sense (not finite, negative, or more steps
- * done than planned).
+ * The time left (ms) at the rate measured so far. `done` and `elapsedMs`
+ * count from a mark the caller takes after warm-up (shader compilation
+ * and the first upload), not from the start of training, or the rate
+ * would carry that one-off cost; `total` counts from the same mark. Null
+ * before `etaMinIterations` steps since the mark (too few for a steady
+ * rate) or for a measurement that makes no sense (not finite, negative,
+ * or more steps done than planned).
  */
 export function liveEta(
   progress: {
@@ -143,16 +153,13 @@ export function liveEta(
 ): number | null {
   const { done, total, elapsedMs } = progress;
   if (![done, total, elapsedMs].every(Number.isFinite)) return null;
-  if (elapsedMs < 0 || done > total || done < settings.etaMinIterations) {
+  if (
+    elapsedMs < 0 ||
+    done <= 0 ||
+    done > total ||
+    done < settings.etaMinIterations
+  ) {
     return null;
   }
   return ((total - done) * elapsedMs) / done;
-}
-
-function requirePositive(name: string, value: number): void {
-  if (!(value > 0) || !Number.isFinite(value)) {
-    throw new RangeError(
-      `${name} must be a positive finite number, got ${String(value)}`,
-    );
-  }
 }

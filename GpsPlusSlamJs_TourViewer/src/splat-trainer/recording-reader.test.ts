@@ -419,6 +419,18 @@ describe("readSplatInputs refuses, in words", () => {
     );
   });
 
+  it("refuses depth data whose lens is there but whose poses are broken, in its own words", async () => {
+    // Why: telling the creator their recording lacks the lens, when it has
+    // one and the samples are damaged, sends them to re-record with a
+    // recorder that already writes it.
+    const read = await readSplatInputs(
+      (await buildSyntheticRecording({ brokenDepthPose: true })).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used.",
+    );
+  });
+
   it("ignores a change of the near and far planes, which are not part of the lens", async () => {
     // Why: an app may move its clip planes after the first frames; only
     // the focal and centre terms (elements 0, 5, 8 and 9) are the lens,
@@ -448,7 +460,22 @@ describe("readSplatInputs refuses, in words", () => {
       ).file,
     );
     expect(reasonOf(read)).toBe(
-      "The recording's lens does not fit the shape of its photos (it would stretch them by 33 %).",
+      "The recording's lens does not fit the shape of its photos (it would stretch them by 33.3 %).",
+    );
+  });
+
+  it("names a stretch just past the tolerance with one decimal", async () => {
+    // Why: rounded to whole percent, a 2.4 % stretch read "2 %", the same
+    // number as the tolerance it was refused for.
+    const read = await readSplatInputs(
+      (
+        await buildSyntheticRecording({
+          projectionAt: () => nudged(0, (SYNTHETIC_PROJECTION[0] ?? 0) * 0.024),
+        })
+      ).file,
+    );
+    expect(reasonOf(read)).toBe(
+      "The recording's lens does not fit the shape of its photos (it would stretch them by 2.4 %).",
     );
   });
 

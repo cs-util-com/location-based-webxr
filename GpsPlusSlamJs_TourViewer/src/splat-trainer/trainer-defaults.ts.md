@@ -45,8 +45,16 @@ it has run.
   Within `minIterations` 4000 and `maxIterations` 30000 (provisional).
 - Measured trainer choices outside this block, for the training step that
   reads it: camera pose optimisation off, blur gate off.
-- `targetMemoryBytes` 700 MiB and `bytesPerPixel` 12: the photo memory
-  target before the adapter's own limits (`training-budget.ts`).
+- `targetMemoryBytes` 700e6 bytes (decimal, not 700 MiB) and
+  `bytesPerPixel` 12: the photo memory target before the adapter's own
+  limits (`training-budget.ts`). Both are Splat.js's own numbers, read
+  from its pinned source (`src/io/frames.js`): it shrinks its photos so
+  that `frames * width * height * 12` (three float32 channels) stays under
+  `TARGET_BUDGET_BYTES = 700e6`, caps the long side at 1600 px and never
+  shrinks it under 320 px. Planning with the same budget makes "native
+  size" here mean native size there. Its real photo buffer is smaller (4
+  bytes a pixel, checked against `maxStorageBufferBindingSize`), so the
+  12 is the trainer's planning rule, not its allocation.
 - `minShortSidePx` 128 (64 / 128 / 256): the smallest photo side a window
   may be scaled to before it is refused as too large. Usable splats at
   64 px would lower it; unusable ones at 128 would raise it.

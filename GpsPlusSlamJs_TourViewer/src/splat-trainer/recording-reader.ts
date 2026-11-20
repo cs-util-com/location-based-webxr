@@ -115,9 +115,12 @@ interface SplatFingerprint {
   readonly size: number;
   /** The File's last-modified time, or null for a plain Blob. */
   readonly lastModified: number | null;
-  /** The recording's content key (`tourFileKey`): a hash of every file
-   *  entry's name, unpacked size and CRC-32 from the zip's directory, so a
-   *  same-size change of content changes it too. */
+  /** The recording's content key (`tourFileKey`): a hash of its file
+   *  entries' names (relative to a shared wrapping folder), unpacked sizes
+   *  and CRC-32s from the zip's directory, so a same-size change of
+   *  content changes it too. The tour kit's own authored files are left
+   *  out, so a tour and the recording under it share the key; a re-zip
+   *  that adds or drops a wrapping folder keeps it. */
   readonly contentKey: string;
 }
 
@@ -254,11 +257,7 @@ async function readEntries(
   const depthSamples = depthSamplesOf(actions);
   const reference = depthSamples[0]?.projectionMatrix;
   if (reference === undefined) {
-    throw new Refusal(
-      actions.some((a) => a.type === DEPTH_SAMPLE_ACTION_TYPE)
-        ? "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it."
-        : "This recording has no depth data, so the camera's lens is unknown. Record with depth on.",
-    );
+    throw new Refusal(depthRefusal(actions));
   }
   const projectionSpread = depthSamples.reduce(
     (spread, s) =>
@@ -282,7 +281,7 @@ async function readEntries(
   const stretch = Math.abs(intrinsics.fx / intrinsics.fy - 1);
   if (stretch > ASPECT_TOL) {
     throw new Refusal(
-      `The recording's lens does not fit the shape of its photos (it would stretch them by ${String(Math.round(stretch * 100))} %).`,
+      `The recording's lens does not fit the shape of its photos (it would stretch them by ${(stretch * 100).toFixed(1)} %).`,
     );
   }
 
@@ -460,7 +459,28 @@ function frameSizeOf(sizes: readonly unknown[][]): {
   return { width: width as number, height: height as number };
 }
 
-/** The depth samples carrying a well-formed projection matrix. */
+/** Why no depth sample gave a lens: none recorded, none carrying the
+ *  lens, or the lens there but the rest of every such sample unreadable. */
+function depthRefusal(actions: readonly RecordedAction[]): string {
+  const depth = actions.filter((a) => a.type === DEPTH_SAMPLE_ACTION_TYPE);
+  if (depth.length === 0) {
+    return "This recording has no depth data, so the camera's lens is unknown. Record with depth on.";
+  }
+  const withLens = depth.some((a) => {
+    const s = a.payload as Partial<DepthSample> | null | undefined;
+    return (
+      typeof s === "object" &&
+      s !== null &&
+      isFiniteTuple(s.projectionMatrix, 16)
+    );
+  });
+  return withLens
+    ? "This recording's depth data carries the camera's lens, but its camera poses or depth points are unreadable, so the lens cannot be used."
+    : "This recording's depth data does not include the camera's lens, so the lens is unknown. Recordings from a current recorder include it.";
+}
+
+/** The depth samples carrying a well-formed projection matrix, camera
+ *  pose and point list. */
 function depthSamplesOf(actions: readonly RecordedAction[]): DepthSample[] {
   const samples: DepthSample[] = [];
   for (const action of actions) {

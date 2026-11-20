@@ -9,6 +9,7 @@
 
 import type { Vector3 } from "gps-plus-slam-app-framework/core";
 
+import { distance, requirePositive } from "./splat-math.js";
 import type { TrainerSettings } from "./trainer-defaults.js";
 
 /** What a plan needs of a capture: where it was and when (epoch ms or
@@ -42,6 +43,9 @@ export interface WalkPlan {
   readonly segments: readonly (readonly number[])[];
   /** Every hold-out of the walk, ascending. */
   readonly holdouts: readonly number[];
+  /** Each frame's distance along its segment's walk from the segment's
+   *  first frame (m), by frame index. */
+  readonly along: readonly number[];
   readonly windows: readonly WalkWindow[];
 }
 
@@ -83,8 +87,8 @@ function isJump(a: WalkFrame, b: WalkFrame, speed: number): boolean {
  * The walk's hold-outs: the middle frame of every block of `every`
  * (`i % every === floor(every / 2)`), counted over the whole walk rather
  * than per window, so a frame's role never depends on how the walk was
- * cut. The first frame is never one: a hold-out sits between trained
- * frames.
+ * cut. The walk's first frame is never one: a hold-out sits between
+ * trained frames.
  */
 export function holdoutIndices(count: number, every: number): Set<number> {
   if (!Number.isInteger(every) || every < 2) {
@@ -101,13 +105,15 @@ export function holdoutIndices(count: number, every: number): Set<number> {
 /**
  * The whole plan: segments, hold-outs and windows. Within a segment,
  * frames are binned by their distance along the walk into bins of
- * `windowM`; a bin with fewer than `minFrames` training frames joins the
- * window before it (the first joins the one after); a window with more
- * than `maxFrames` is split into equal parts by training count. Each
- * window then trains on its neighbours' frames within
- * `overlapFraction * windowM` along the walk of its core, and borrows
- * hold-outs from the nearest windows of its segment while it has fewer
- * than `minHoldouts`. Throws a RangeError for settings that cannot hold
+ * `windowM`; a group with fewer than `minFrames` training frames absorbs
+ * the bins after it until it reaches `minFrames`, and a short last group
+ * joins the one before it; a window with more than `maxFrames` is split
+ * into equal parts by training count. A window with no training frame at
+ * all (only possible for a segment of hold-outs alone) is dropped, its
+ * frames left to no window. Each window then trains on its neighbours'
+ * frames within `overlapFraction * windowM` along the walk of its core,
+ * and, while it has fewer than `minHoldouts`, borrows the hold-outs of
+ * its segment nearest its core along the walk. Throws a RangeError for settings that cannot hold
  * (`maxFrames < 2 * minFrames`, or a non-positive length).
  */
 export function planWindows(
@@ -121,11 +127,11 @@ export function planWindows(
   const cores: { segment: number; core: number[] }[] = [];
   segments.forEach((segment, s) => {
     for (const core of segmentCores(segment, along, held, settings)) {
-      cores.push({ segment: s, core });
+      if (core.some((i) => !held.has(i))) cores.push({ segment: s, core });
     }
   });
   const reach = settings.overlapFraction * settings.windowM;
-  const windows = cores.map(({ segment, core }, w) => {
+  const windows = cores.map(({ segment, core }) => {
     const train = trainingFrames(
       core,
       segments[segment] ?? [],
@@ -133,7 +139,13 @@ export function planWindows(
       held,
       reach,
     );
-    const holdouts = pooledHoldouts(cores, w, held, settings.minHoldouts);
+    const holdouts = pooledHoldouts(
+      core,
+      segments[segment] ?? [],
+      along,
+      held,
+      settings.minHoldouts,
+    );
     return {
       segment,
       core,
@@ -147,6 +159,7 @@ export function planWindows(
   return {
     segments,
     holdouts: [...held].sort((a, b) => a - b),
+    along,
     windows,
   };
 }
@@ -273,41 +286,28 @@ function trainingFrames(
   });
 }
 
+/** The core's own hold-outs, topped up to `minHoldouts` (while the
+ *  segment has more) with the segment's other hold-outs nearest the core
+ *  along the walk; on equal distance the earlier frame. */
 function pooledHoldouts(
-  cores: readonly { segment: number; core: readonly number[] }[],
-  w: number,
+  core: readonly number[],
+  segment: readonly number[],
+  along: readonly number[],
   held: ReadonlySet<number>,
   minHoldouts: number,
 ): number[] {
-  const own = cores[w];
-  if (own === undefined) return [];
-  const pool = own.core.filter((i) => held.has(i));
-  for (let step = 1; pool.length < minHoldouts; step++) {
-    const before = cores[w - step];
-    const after = cores[w + step];
-    const near = [before, after].filter(
-      (c): c is (typeof cores)[number] =>
-        c !== undefined && c.segment === own.segment,
-    );
-    if (near.length === 0) break;
-    for (const neighbour of near) {
-      for (const i of neighbour.core) {
-        if (pool.length >= minHoldouts) break;
-        if (held.has(i)) pool.push(i);
-      }
-    }
-  }
-  return pool.sort((a, b) => a - b);
-}
-
-function requirePositive(name: string, value: number): void {
-  if (!(value > 0) || !Number.isFinite(value)) {
-    throw new RangeError(
-      `${name} must be a positive finite number, got ${String(value)}`,
-    );
-  }
-}
-
-function distance(a: Vector3, b: Vector3): number {
-  return Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const own = core.filter((i) => held.has(i));
+  if (own.length >= minHoldouts) return own;
+  const inCore = new Set(core);
+  const start = along[core[0] ?? 0] ?? 0;
+  const end = along[core[core.length - 1] ?? 0] ?? 0;
+  const gap = (i: number): number => {
+    const s = along[i] ?? 0;
+    return Math.max(start - s, s - end, 0);
+  };
+  const borrowed = segment
+    .filter((i) => held.has(i) && !inCore.has(i))
+    .sort((a, b) => gap(a) - gap(b) || a - b)
+    .slice(0, minHoldouts - own.length);
+  return [...own, ...borrowed].sort((a, b) => a - b);
 }
