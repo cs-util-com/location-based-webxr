@@ -11,7 +11,6 @@ export {
   createGlobeTerrain,
   type GlobeTerrain,
 } from "./globe-terrain.js";
-export { plainImagery } from "./globe-plain-imagery.js";
 export {
   applyEcefPose,
   ecefPoseOf,

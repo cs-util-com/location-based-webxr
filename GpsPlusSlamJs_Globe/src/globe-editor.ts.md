@@ -8,9 +8,7 @@
   - The relief: `createGlobeTerrain`, `GLOBE_TERRAIN`, `GlobeTerrain`
     (`globe-terrain.ts`: `device` (required), `tileDimension`, `cache`,
     `ancestorFallback`,
-    `meshMaxLevel`, `reliefCache()`, `reliefFallback()`), and
-    `plainImagery` (`globe-plain-imagery.ts`: an imagery that draws none,
-    for an app that must not load the globe's whole-Earth imagery).
+    `meshMaxLevel`, `reliefCache()`, `reliefFallback()`).
   - The frame and the clip planes: `worldFromEcefAt`, `ecefPoseOf`,
     `applyEcefPose`, `EcefPose` (`globe-frame.ts`: the local world at a
     place, x east, y up, z south) and `clipPlanes`, `reliefClearanceM`,
