@@ -117,7 +117,8 @@ poster title becomes at the Finish - a line counting its places, one of
 its photos when it has one, and the round button low on the screen, with
 one line under it saying what the next tap does. What the tour needs
 (camera, location, nothing uploaded, no account) is behind "What
-happens?", and "Make your own tour" opens the setup in a new tab. A phone
+happens?", and "Make your own tour" opens the setup in a new tab; the card at the end of a
+walk offers the same link, and its tap also leaves AR. A phone
 that cannot run AR gets a "Copy link" button instead, to open the tour on
 one that can; on a computer-sized screen the same link is also shown as a
 code beside it, "Scan with your phone", and the code follows the window

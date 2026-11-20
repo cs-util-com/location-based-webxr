@@ -619,14 +619,16 @@ and `keep-listening`; while the end is asked (`data-kind="end"`) `#scene-continu
 (`walk-list-title`, `walk-chip` - "Any order" only, hidden for a fixed
 order - `walk-sound` (the sound setting for every tour, `sound-setting.ts`;
 pressed is off), `walk-close`, the completion card
-`walk-done` with `walk-done-title` and `walk-done-text`, `walk-progress`,
+`walk-done` with `walk-done-title`, `walk-done-text` and the link
+`walk-own-tour` ("Make your own tour", the start page in a new tab; its tap
+also ends the AR session, `main.ts`), `walk-progress`,
 the hint `walk-hint` (`#walk-hint`, hidden unless no station is guessed,
 M4), `walk-rows` whose rows carry `walk-row`, `data-state`, `data-id`,
 `data-chosen`, the title button `walk-row-main` with a `walk-row-sub`, the
 action `walk-row-act` (`data-k` skip, bring or undo), the confirm
 `walk-row-confirm` with `walk-row-cancel` and the undo's bar
 `walk-undobar`; the completion card has no button of its own: the X
-`#enter-ar` is the one way out). While the list
+`#enter-ar` is the one way out, besides its link, which leaves AR too). While the list
 is open the quick action `#station-skip` is not shown (the prototype: the rows
 carry its actions), except "Finish the tour" (`data-kind="finish"`) while
 the tour waits on its last station: no row carries it. In AR a visitor's

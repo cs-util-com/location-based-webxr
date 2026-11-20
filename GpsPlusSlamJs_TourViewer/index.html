@@ -3542,6 +3542,19 @@
         color: var(--walk-muted);
         font-size: 13.5px;
       }
+      /* The way to the editor at the end of a tour: a line of its own
+         under the thank-you text, a 44 px tap target. */
+      .walk-own-tour {
+        display: flex;
+        align-items: center;
+        width: fit-content;
+        min-height: 44px;
+        color: var(--walk-ink);
+        font-size: 15px;
+        font-weight: 600;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
       .walk-rows {
         margin: 0;
         padding: 0 8px 8px;
@@ -6740,6 +6753,17 @@
                         id="walk-done-text"
                         data-testid="walk-done-text"
                       ></span>
+                      <!-- The start page in a new tab; main.ts ends the AR
+                       session with the tap. -->
+                      <a
+                        id="walk-own-tour"
+                        class="walk-own-tour"
+                        href="./"
+                        target="_blank"
+                        rel="noopener"
+                        data-testid="walk-own-tour"
+                        >Make your own tour</a
+                      >
                     </div>
                   </div>
                   <p
