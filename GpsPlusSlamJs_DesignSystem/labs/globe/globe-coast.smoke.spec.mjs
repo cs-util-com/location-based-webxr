@@ -23,8 +23,6 @@ import {
   routeCityData,
 } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
-
 /**
  * The Namib desert's coast, south of Walvis Bay: bright sand against dark
  * sea, running north to south, so a row of pixels crosses it. The sun is
@@ -41,22 +39,20 @@ const NOON = "time=2025-12-21T11:00:00Z";
 const LAND_ROUGHNESS = 0.9;
 
 /**
- * The view: held over the coast at `altKm` after a short dive (the pin's,
+ * The view: parked over the coast at `altKm` (the pin's landing pose,
  * with the hand-over off), clouds off so the sea is seen, drift off.
  * Straight down (`pitchLow=90`): the sun's glint lies under the camera only
  * then; the oblique hold of F1 looks 45 degrees down and the sea's glint
  * leaves the frame (4.1 and 0.1 levels against the 12 the check needs).
  */
-async function holdOverCoast(page, context, altKm, straightDown = true) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(COAST);
+async function holdOverCoast(page, altKm, straightDown = true) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
-  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0&diveMs=1000&landKm=${altKm}${straightDown ? "&pitchLow=90" : ""}`;
-  // The pin press starts the arrival prefetch: its city data is answered here.
+  const hash = `at=${COAST.latitude},${COAST.longitude}&spinMs=0&turnMs=0&${NOON}&cloudDrift=0&cloudOpacity=0&stars=0&atmo=0${straightDown ? "&pitchLow=90" : ""}`;
+  // Parking starts the arrival prefetch: its city data is answered here.
   await routeCityData(page);
   await page.goto(`/labs/globe/#${plainGlobe(hash)}`);
   await page.waitForFunction(() => window.__globeLab?.ready, null, {
@@ -67,14 +63,9 @@ async function holdOverCoast(page, context, altKm, straightDown = true) {
     null,
     { timeout: 60_000 },
   );
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return s.phase === "landed" && s.pin.phase === "idle";
-    },
-    null,
-    { timeout: 60_000 },
+  await page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [COAST.latitude, COAST.longitude, altKm * 1000],
   );
   // Settled: nothing pending and the tile count still for a second.
   await page.waitForFunction(
@@ -168,12 +159,11 @@ const AWAY_KM = [2.5, 5, 10];
 for (const altKm of [150, 50]) {
   test(`no glint on the land beside a coast, ${altKm} km up`, async ({
     page,
-    context,
   }) => {
     // A view settles in 30-50 s under SwiftShader, more at 50 km and on a
     // slower day (the settle wait above caps it).
     test.setTimeout(360_000);
-    const { errors, hash } = await holdOverCoast(page, context, altKm);
+    const { errors, hash } = await holdOverCoast(page, altKm);
     const state = await page.evaluate(() => window.__globeLab.state());
     const { height } = await page.evaluate(() => ({
       height: document.getElementById("globe-canvas").height,
@@ -254,10 +244,9 @@ for (const altKm of [150, 50]) {
 // land beside the coast.
 test("the default oblique hold over the coast: the sea is sea, the land does not glint", async ({
   page,
-  context,
 }) => {
   test.setTimeout(120_000);
-  const { errors, hash } = await holdOverCoast(page, context, 150, false);
+  const { errors, hash } = await holdOverCoast(page, 150, false);
   const n = 401;
   const on = await middleRow(page, n);
   await page.evaluate((h) => {
