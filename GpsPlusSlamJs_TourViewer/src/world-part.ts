@@ -25,6 +25,7 @@
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
   CanvasTexture,
+  LinearFilter,
   Quaternion,
   SRGBColorSpace,
   Vector3,
@@ -231,14 +232,20 @@ export interface WorldPart {
 /**
  * A canvas as a texture, as every part shows one (painted words, a
  * figure, a shadow blob): sRGB, and `anisotropy` for a page seen at a
- * slant (three clamps it to the renderer's largest).
+ * slant (three clamps it to the renderer's largest). `mipmaps: false`
+ * skips the mipmap chain (sampled linearly instead) for a texture that is
+ * repainted often and drawn near its painted size.
  */
 export function canvasTexture(
   canvas: HTMLCanvasElement,
-  options: { readonly anisotropy?: number } = {},
+  options: { readonly anisotropy?: number; readonly mipmaps?: boolean } = {},
 ): CanvasTexture {
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
+  if (options.mipmaps === false) {
+    texture.generateMipmaps = false;
+    texture.minFilter = LinearFilter;
+  }
   if (options.anisotropy !== undefined) {
     texture.anisotropy = options.anisotropy;
   }

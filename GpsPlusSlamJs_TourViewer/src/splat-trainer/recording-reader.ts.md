@@ -10,14 +10,28 @@ creator can read. Nothing decodes a photo here.
 
 ## Public API
 
-- `readSplatInputs(file, { limits? }) -> Promise<SplatInputsRead>`
-  - `{ kind: "read", inputs }` or `{ kind: "refused", reason }`. Never
+- `readSplatInputs(file, { limits?, onProgress? }) -> Promise<SplatInputsRead>`
+  - `{ kind: "read", inputs }` or `{ kind: "refused", reason, code? }`;
+    `code` is `"no-depth"` for a recording with no depth sample at all
+    (`ReadRefusalCode`), so the page words it without matching the
+    sentence, and absent for every other refusal. Never
     rejects for a bad file; an invalid `limits` override (0, NaN) rejects
     with a `RangeError`, a programming mistake.
   - `limits` tightens the framework's archive caps (`ArchiveLimits`),
     resolved once by the framework's `resolveArchiveLimits` (defaults
     `DEFAULT_ARCHIVE_LIMITS`); the same resolved caps feed the budget and
     every cap check.
+  - `onProgress(done, total)` (`ReadProgress`) - text entries read of
+    the total to read (`session.json` and every action entry), known
+    before the first: `(0, total)` first, one step per entry, ending at
+    `(total, total)` once all are read (also when fewer were read than
+    counted). A throwing listener is ignored.
+- `readRecordingPhotos(recording, entries) -> Promise<Blob[]>` - the
+  named photo entries in the order given, read through one pass over the
+  zip's directory (`withZipBlobDirectory` of `../zip-blob.ts`, so the
+  archive's decompression budget bounds them together). Rejects, naming
+  it, for an entry the zip lacks. The GPU trainer reads a stretch's photos
+  with it.
 - `SplatInputs`
   - `captures: SplatCapture[]` - one per photo the zip carries, in
     capture-time order when every kept capture carries a time, else in
@@ -35,10 +49,13 @@ frameHeight)` from the framework, unchanged: it already is the
     `medianSpacingS`, `frameWidth`, `frameHeight`, `depthSamples`,
     `projectionSpread`, `era`.
   - `fingerprint` - `size`, `lastModified` (null for a plain Blob),
-    `contentKey` (`tourFileKey` of `tour-file-key.ts`: a hash of every
-    file entry's name, unpacked size and CRC-32 from the directory, so a
-    same-size change of content changes it; the key the Tour Viewer
-    already uses for a local file).
+    `contentKey` (`tourFileKey` of `tour-file-key.ts`: a hash of the file
+    entries' names relative to a shared wrapping folder, unpacked sizes
+    and CRC-32s from the directory, so a same-size change of content
+    changes it; the key the Tour Viewer already uses for a local file).
+    It leaves out the tour kit's own authored files, so a tour and the
+    recording under it share the key, and a re-zip that adds or drops a
+    wrapping folder keeps it.
 - `PROJ_TOL` - 1e-4, the lens tolerance (below).
 - `ASPECT_TOL` - 0.02, the lens-to-photo shape tolerance (below).
 
@@ -71,15 +88,21 @@ frameHeight)` from the framework, unchanged: it already is the
   different sizes (one lens fits one size). The size judged is the kept
   capture's: a capture another one replaced has no say.
 - No depth sample at all: "This recording has no depth data, so the
-  camera's lens is unknown. Record with depth on."
+  camera's lens is unknown. Record with depth on." (code `no-depth`)
 - Depth samples, none with a projection matrix: "This recording's depth
   data does not include the camera's lens, so the lens is unknown.
   Recordings from a current recorder include it."
+- Depth samples with a projection matrix, but none also with a readable
+  camera pose and point list: "This recording's depth data carries the
+  camera's lens, but its camera poses or depth points are unreadable, so
+  the lens cannot be used."
 - Lens elements that differ beyond `PROJ_TOL`, naming the spread.
 - A degenerate projection (`pinholeFromProjection` throws).
 - A lens whose pixels are not square within `ASPECT_TOL` on the photos'
   size (a frustum made for another frame shape): "The recording's lens
   does not fit the shape of its photos (it would stretch them by N %)."
+  N has one decimal; where one decimal would round down to the tolerance
+  itself (2.03 % to "2.0 %") it reads "just over 2 %".
 - Anything else that fails while reading (an action file over the
   framework's 1 MB action cap, a damaged entry): "The recording could not
   be read (...)".
@@ -144,7 +167,7 @@ else console.log(read.inputs.census.frames, read.inputs.intrinsics);
   captures (one with a broken pose among them), a re-captured file (its
   size judged by the kept capture) and a wrapping folder; clip-plane
   changes accepted; every refusal above with its words; each archive cap
-  (the directory cap included).
+  (the directory cap included); the read's progress from 0 to its total.
 - `recording-reader.property.test.ts` - over walk length, spacing,
   timing, folder and missing photos (poses, counts, path); over eras and
   segmenting actions (exactly eras 4 and 5 without one are read); over

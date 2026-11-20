@@ -21,7 +21,9 @@
  * files and the `content/` media - so the recording a tour is built on
  * names it, and a Finish (or the next one) keeps the creator's draft
  * attached. Names are taken relative to a folder every entry shares, so a
- * re-zip that adds or drops a wrapping folder keeps the key too. A
+ * re-zip that adds or drops a wrapping folder keeps the key too; the
+ * metadata a macOS re-zip adds (`__MACOSX/`, `._` files) is left out
+ * first, so a Finder re-zip of the folder keeps it as well. A
  * hand-built tour has nothing but those files; its key falls back to every
  * entry, and a Finish then changes it.
  *
@@ -47,6 +49,16 @@ export interface TourFileKeyEntry {
   readonly directory?: boolean;
   readonly uncompressedSize: number;
   readonly crc32?: number;
+}
+
+/** What a macOS re-zip adds: a `__MACOSX/` folder mirroring the tree and
+ *  a `._<name>` resource-fork file per entry. */
+const MACOS_METADATA = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
+
+/** True for an entry a macOS re-zip adds, which is never part of a tour
+ *  or a recording. */
+export function isMacOsMetadataName(name: string): boolean {
+  return MACOS_METADATA.test(name);
 }
 
 /** Every file-opened tour's key starts with this; a link never does. */
@@ -111,7 +123,8 @@ function sharedFolder(names: readonly string[]): string {
  * `local-file:<32 hex digits>` - the first 128 bits of the SHA-256 of the
  * sorted entry list: one line per file, `name NUL size NUL CRC-32`, names
  * relative to a shared wrapping folder, the tour kit's own files left out
- * whenever anything else remains. Directory entries are left out (re-zipping
+ * whenever anything else remains. macOS metadata entries are left out
+ * before the shared folder is found. Directory entries are left out (re-zipping
  * a folder may or may not add them), and a name listed twice counts once,
  * as its last occurrence (what readers and the rebuild resolve). Rejects
  * when WebCrypto is unavailable (an insecure origin), which the caller
@@ -120,7 +133,9 @@ function sharedFolder(names: readonly string[]): string {
 export async function tourFileKey(
   entries: readonly TourFileKeyEntry[],
 ): Promise<string> {
-  const files = entries.filter((e) => e.directory !== true);
+  const files = entries.filter(
+    (e) => e.directory !== true && !isMacOsMetadataName(e.filename),
+  );
   const folder = sharedFolder(files.map((e) => e.filename));
   const byName = new Map(
     files.map((e) => [e.filename.slice(folder.length), e] as const),

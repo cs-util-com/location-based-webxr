@@ -248,6 +248,14 @@ interface WordsPlateSize {
   readonly heightM: number;
 }
 
+/** One frame of a sign: the viewer in the root's parent frame, and the
+ *  growth while words hang under it (`signGrowth` of the distance when
+ *  absent; one that is not a positive finite number grows nothing). */
+interface ReadingSignFrame {
+  readonly viewer: readonly [number, number, number];
+  readonly growth?: number | undefined;
+}
+
 /** A built sign: the groups, the two plates and what moves them. */
 export interface ReadingSignParts {
   /** The renderer's: its pose and a scaled folder's scale. */
@@ -264,7 +272,7 @@ export interface ReadingSignParts {
   attachWords(texture: Texture, size: WordsPlateSize): void;
   detachWords(): void;
   /** One frame: the viewer in the root's parent frame. */
-  update(frame: { readonly viewer: readonly [number, number, number] }): void;
+  update(frame: ReadingSignFrame): void;
   dispose(): void;
 }
 
@@ -388,7 +396,10 @@ export function buildReadingSign(map: CanvasTexture | null): ReadingSignParts {
         viewerAt.x - root.position.x,
         viewerAt.z - root.position.z,
       );
-      grow.scale.setScalar(attached ? signGrowth(d) : 1);
+      const growth = frame.growth ?? signGrowth(d);
+      grow.scale.setScalar(
+        attached && Number.isFinite(growth) && growth > 0 ? growth : 1,
+      );
       root.updateMatrix();
       grow.updateMatrix();
       toGrow.multiplyMatrices(root.matrix, grow.matrix).invert();
@@ -427,7 +438,7 @@ export interface ReadingSignHandle extends WorldPart {
   /** The words plate (hung by `attachWords`). */
   readonly wordsPlate: Object3D;
   /** Turns the sign, and grows it while words hang under it. */
-  update(frame: { readonly viewer: readonly [number, number, number] }): void;
+  update(frame: ReadingSignFrame): void;
   /** Hangs the words' texture under the sign (the caller owns it). */
   attachWords(texture: Texture, size: WordsPlateSize): void;
   detachWords(): void;

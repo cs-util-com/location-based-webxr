@@ -25,6 +25,7 @@ export type WordsPaintContext = Pick<
   | "fill"
   | "stroke"
   | "fillText"
+  | "measureText"
   | "createLinearGradient"
   | "fillStyle"
   | "strokeStyle"
@@ -111,6 +112,10 @@ const HINT_ALPHA = 0.7;
 const TRACK_ALPHA = 0.1;
 const THUMB_ALPHA = 0.5;
 const THUMB_SCRUB_ALPHA = 0.9;
+/** Where the alphabetic baseline sits under a line's middle, in ems,
+ *  when the context reports no font metrics (a common sans's
+ *  (ascent - descent) / 2). */
+const FALLBACK_BASELINE_DROP_EM = 0.35;
 const BAR_W = 3;
 const BAR_INSET = 2;
 
@@ -128,6 +133,15 @@ function fadeStep(l: WordsPaintLayout, f: WordsPaintFrame, i: number): number {
   return Math.round(Math.min(1, Math.max(0, t)) * FADE_STEPS);
 }
 
+/** The paint scale (device px a CSS px) for a screen's device pixel
+ *  ratio: 2.5 to 3, so the plate stays sharp when the sign grows 1.6
+ *  times and on a 3x phone, and the texture never outgrows a weak GPU on
+ *  a 4x screen. A ratio that is not a finite number counts as 1. */
+export function wordsPaintScale(devicePixelRatio: number): number {
+  const dpr = Number.isFinite(devicePixelRatio) ? devicePixelRatio : 1;
+  return Math.min(3, Math.max(2.5, dpr));
+}
+
 /** The canvas size in device px for a layout painted at `scale`. */
 export function wordsCanvasSize(
   layout: WordsPaintLayout,
@@ -141,19 +155,28 @@ export function wordsCanvasSize(
 
 /**
  * A string that changes exactly when the painted image would: the lit
- * word, any said word's fade step, the scroll (to half a px), a scrub
- * and the hint. The layout is the caller's to compare (it changes per
- * text).
+ * word, the fade steps of the fading tail, the scroll (to half a px), a
+ * scrub and the hint. The layout is the caller's to compare (it changes
+ * per text).
+ *
+ * The tail runs back from the lit word to the first word whose fade has
+ * ended: the words start in order, so every word before that one ended
+ * its fade earlier and can no longer change. The key's length is bounded
+ * by the fade, not by the text.
  */
 export function wordsPaintKey(
   layout: WordsPaintLayout,
   frame: WordsPaintFrame,
 ): string {
-  const steps: number[] = [];
-  for (let i = 0; i <= frame.lit; i++) steps.push(fadeStep(layout, frame, i));
+  let tail = "";
+  for (let i = frame.lit; i >= 0; i--) {
+    const step = fadeStep(layout, frame, i);
+    tail += String(step);
+    if (step === FADE_STEPS) break;
+  }
   return [
     frame.lit,
-    steps.join(""),
+    tail,
     Math.round(frame.scroll * layout.lineHeight * 2),
     frame.scrubbing ? 1 : 0,
     frame.hint,
@@ -184,6 +207,24 @@ function runStyle(
   return { font: l.fonts.word, fill: white(l.grey + (1 - l.grey) * q) };
 }
 
+/** How far the words' alphabetic baseline sits under a line's middle:
+ * the browser centres the font's ascent + descent on the line, so it is
+ * (ascent - descent) / 2 of the word font. */
+function baselineDrop(g: WordsPaintContext, l: WordsPaintLayout): number {
+  g.font = l.fonts.word;
+  const m = typeof g.measureText === "function" ? g.measureText("Hg") : null;
+  const ascent = m?.fontBoundingBoxAscent;
+  const descent = m?.fontBoundingBoxDescent;
+  return ascent !== undefined &&
+    descent !== undefined &&
+    Number.isFinite(ascent) &&
+    Number.isFinite(descent)
+    ? (ascent - descent) / 2
+    : FALLBACK_BASELINE_DROP_EM * l.fontPx;
+}
+
+/** Every run of a line on the line's one baseline, as in the box: the
+ *  smaller disclosure sits on the words' baseline, not on its own middle. */
 function paintRuns(
   g: WordsPaintContext,
   l: WordsPaintLayout,
@@ -194,15 +235,16 @@ function paintRuns(
   g.beginPath();
   g.rect(win.x, win.y, win.w, win.h);
   g.clip();
+  const baseline = lh / 2 + baselineDrop(g, l);
   g.textAlign = "left";
-  g.textBaseline = "middle";
+  g.textBaseline = "alphabetic";
   for (const run of l.runs) {
     const top = win.y + (run.line - f.scroll) * lh;
     if (top >= win.y + win.h || top + lh <= win.y) continue;
     const style = runStyle(l, f, run);
     g.font = style.font;
     g.fillStyle = style.fill;
-    g.fillText(run.text, win.x + run.x, top + lh / 2);
+    g.fillText(run.text, win.x + run.x, top + baseline);
   }
   g.restore();
 }

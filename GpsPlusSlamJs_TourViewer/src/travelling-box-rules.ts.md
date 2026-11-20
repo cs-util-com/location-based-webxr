@@ -14,9 +14,16 @@ can be replayed offline for any knob set.
 ## Public API
 
 - **Types and constants**
-  - `TravelPlace`: `"plate" | "dock" | "hidden"`.
+  - `TravelPlace`: `"plate" | "dock" | "fold" | "hidden"`. A fold is a
+    small mark on the screen for a surface that wants the dock while
+    another surface holds it.
+  - `TravelHideWhy`: `"no voice" | "outside the station" | "sheet open"`,
+    as a surface's adapter reports it.
   - `TravelWhy`: the reason `wantPlace` names, used by the log and the
-    debug readout.
+    debug readout; the hide reasons, the dock reasons, `"slot taken"` and
+    `"readable"`.
+  - `TravelGate`: `{ kind: "letter" | "picture" | "touch", px, thr }`,
+    one size the plate must reach on screen.
   - `TravelMetric`: `"min" | "h"`.
   - `TravellingBoxKnobs` and `TRAVELLING_BOX_DEFAULTS`: threshold 12 px,
     metric min, keep 0.95, holds 0.3 / 0.3 s, lock 0.3 s, angle 60
@@ -27,9 +34,12 @@ can be replayed offline for any knob set.
     the growth.
   - `TRAVEL_EDGE`: 0.88 to enter the plate and 0.95 to keep it. These are
     NDC limits per axis for the plate's centre.
-- **`plateSizeM(boxCssW, boxCssH, fontPx)`** gives the plate in metres,
-  so the plate keeps the box's aspect exactly. It throws a `RangeError`
-  on a size that is not positive and finite.
+  - `TRAVEL_MIN_W` = 0.05: the smallest clip w a corner may have before
+    it counts as at the eye (`plateMetrics` and `quadOfClip` share it).
+- **`plateSizeM(boxCssW, boxCssH, fontPx, emM = TRAVEL_PLATE.emM)`** gives
+  the plate in metres, so the plate keeps the box's aspect exactly; one em
+  is `emM` metres (another surface may choose its own). It throws a
+  `RangeError` on a size or em that is not positive and finite.
 - **`plateMetrics(cornersClip, centreClip, viewW, viewH, boxCssW, boxCssH, fontPx, lineHeightPx)`**
   gives `{ valid, onScreen, ndcX, ndcY, letterPxH, letterPxW, letterPx, linePx }`.
   - The corners are clip coordinates in a three.js plane's vertex order:
@@ -40,36 +50,45 @@ can be replayed offline for any knob set.
     fontPx / box size. A clip-space midpoint is the projection of the
     world midpoint, so this is exact under perspective.
   - `letterPx = min(H, W)`.
-  - When any w is at or under 0.05, or any number is non-finite, the
-    result is invalid with every size 0.
+  - When any w is at or under 0.05, any number is non-finite, or a view,
+    box, font or line size is not positive, the result is invalid with
+    every size 0.
 - **`facingAngleDeg(normalXZ, toCameraXZ)`** gives degrees from 0 to 180,
   and 0 for a zero vector.
-- **`wantPlace(input, knobs)`** gives `{ place, why }`. It applies the
-  prototype's order, and the first rule that matches decides:
+- **`letterGate(metrics, knobs)`** gives the words' gate: the knob's
+  metric picks `letterPx` or `letterPxH`, against `thr`.
+- **`wantPlace(input, knobs)`** gives `{ place, why }`. The input is
+  `{ travelling, hideWhy, gates, metrics, angleDeg, onPlate, slotFree, canFold }`.
+  It applies the prototype's order, and the first rule that matches
+  decides:
   1. not travelling: hidden;
-  2. no voice: hidden;
-  3. outside the station: hidden;
-  4. sheet open: hidden;
-  5. invalid, or the centre beyond the edge margin: dock ("out of view");
-  6. the angle over the limit: dock ("turned away");
-  7. the letter under `thr` (times `keep` when on the plate): dock
+  2. `hideWhy` set: hidden, with that reason;
+  3. invalid, or the centre beyond the edge margin: dock ("out of view");
+  4. the angle over the limit: dock ("turned away");
+  5. any gate under its `thr` (times `keep` when on the plate): dock
      ("too small");
-  8. otherwise the plate ("readable").
+  6. otherwise the plate ("readable").
 
-  The knob's metric picks `letterPx` or `letterPxH`.
+  A dock goes to the dock only when `slotFree`; otherwise the surface
+  folds when `canFold`, else stays on its plate, both with "slot taken".
+  A NaN gate size docks ("too small"): the rule reads "not at least the
+  threshold".
 
 - **`settlePlace(state, want, dtS, { fingerDown, sinceReleaseS }, knobs)`**
   gives the next `SettleState { place, pending, pendingS }`.
 - **`stepToward(value, target, dtS, durationS, reduceMotion)`** is the one
-  step function for the flight's `u` and the words' presence. The plan
-  named these as `stepFlight` and `stepPresence`; one function does both.
+  step function for the flight's `u` and the words' presence; one
+  function does both.
 - **`easeInOutCubic(t)`**.
-- **`flightClip(srcClip, dockNdc, e, out?)`** gives clip corners for eased
-  progress `e`.
+- **`flightClip(srcClip, dockNdc, e, out)`** writes clip corners for eased
+  progress `e` into the caller's `out` (kept from frame to frame, so a
+  flight allocates nothing) and returns it.
 - **`signGrowth(d, from = 4.5, max = 1.6)`**.
 - **`quadOfClip(clip, viewW, viewH)`** gives screen px in polygon order
-  TL, TR, BR, BL.
-- **`inQuad(x, y, quad)`** answers for a convex quad, edge included.
+  TL, TR, BR, BL, or null when a corner's w is at or under 0.05 or not
+  finite (the flight interpolates w, so a corner can reach the eye).
+- **`inQuad(x, y, quad)`** answers for a convex quad, edge included; a
+  quad collapsed to a line or a point has no inside.
 
 ## Invariants and assumptions
 
@@ -77,8 +96,8 @@ can be replayed offline for any knob set.
   - A want equal to the place clears the pending want.
   - Hiding, and appearing from hidden, act at once, even under a finger:
     the words go with the voice and under the sheet.
-  - Between plate and dock a want must hold `holdDock` or `holdPlate`
-    seconds. The hold counts from the frame after the want first appears,
+  - Between plate and dock (or fold) a want must hold `holdPlate` (to the
+    plate) or `holdDock` (to the dock or the fold) seconds. The hold counts from the frame after the want first appears,
     so the move never comes early.
   - Nothing moves while a finger is down, or until `lock` seconds after it
     lifts. The hold keeps counting meanwhile, so a want that held through
@@ -113,12 +132,13 @@ const m = plateMetrics(
 const w = wantPlace(
   {
     travelling: true,
-    voice: true,
-    inStation: true,
-    sheetOpen: false,
+    hideWhy: null,
+    gates: [letterGate(m, knobs)],
     metrics: m,
     angleDeg,
     onPlate: s.place === "plate",
+    slotFree: true,
+    canFold: false,
   },
   knobs,
 );
@@ -128,7 +148,7 @@ s = settlePlace(s, w.place, dt, { fingerDown, sinceReleaseS }, knobs);
 ## Tests
 
 - **`travelling-box-rules.test.ts`** covers:
-  - every reason in order;
+  - every reason in order, the slot taken (fold or plate) and the gates;
   - the edge margins;
   - keep 11.4 px;
   - the angle limit and the metric;

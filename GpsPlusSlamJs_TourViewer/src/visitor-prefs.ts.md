@@ -33,6 +33,10 @@ defensive read and write of the one storage key.
   pictures: "Full text" opens the sheet, which shows them.
 - `preferredView(stored, kind, placement)` - the stored choice, or null
   for anything unreadable; captions where stored, else the world's view.
+- `travelPick(stored)` - `"screen"` when the long text's stored pick
+  is captions, else `"auto"` (reading, lectern, none, unreadable): the
+  one reading of the pick every travelling surface uses (`screen`: it
+  docks whenever its slot lets it; `auto`: the travel rules decide).
 - `withPreferredView(stored, kind, placement, view | null)` - a NEW value
   with that choice set (null clears it); every other key is kept.
   `placement` is the set's (`world` for a long text); each member is

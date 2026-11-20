@@ -1,7 +1,8 @@
 /**
  * The splat trainer page's state: one Redux slice for the one page. The
  * reducers own every rule of the run - which stretch trains next, what a
- * stop keeps, what "train again" queues, what a save writes - so the rules
+ * stop keeps, what "train again" queues, what a save writes, how far the
+ * read of a recording is and what each stretch's trainer does - so the rules
  * are testable without a page or a trainer. The recording's File, its
  * decoded inputs, preview pictures, trained splats and the running job's
  * AbortController live outside the store, in side tables keyed by the ids
@@ -15,10 +16,12 @@ import { createSlice, type Draft, type PayloadAction } from "@reduxjs/toolkit";
 import type {
   GpuProbe,
   TrainOutcome,
+  TrainStage,
   Verdict,
   WindowJudgement,
   WindowMetrics,
 } from "./trainer-adapter.js";
+import type { ReadRefusalCode } from "./recording-reader.js";
 import type { StretchSummary } from "./window-plan.js";
 
 type Phase =
@@ -54,6 +57,9 @@ export interface WindowState {
   readonly progress: number;
   readonly secondsLeft: number | null;
   readonly nextPreviewInS: number | null;
+  /** What the trainer does for this stretch while it trains; null when
+   *  it does not train. */
+  readonly stage: TrainStage | null;
   /** How many previews arrived for this attempt (the picture is a side table's). */
   readonly previews: number;
   readonly outcome: TrainOutcome | null;
@@ -70,13 +76,24 @@ export interface TrainerPageState {
   readonly refusal: {
     readonly kind: RefusalKind;
     readonly reason: string | null;
+    /** The reader's code for a refusal the page words on its own. */
+    readonly code?: ReadRefusalCode;
   } | null;
   readonly gpu: {
     readonly status: GpuStatus;
     /** The user chose to train on built-in graphics anyway. */
     readonly accepted: boolean;
+    /**
+     * "Check again": `checking` while the probe runs (the status keeps
+     * what the last probe found, so the warning stays), `unchanged` when
+     * it found the same again, `idle` otherwise.
+     */
+    readonly recheck: "idle" | "checking" | "unchanged";
   };
-  readonly trainer: "practice" | "unavailable";
+  readonly trainer: "practice" | "gpu";
+  /** How far the read of the recording is, in text entries, while it
+   *  runs; `total` is 0 until the reader knows it. Null otherwise. */
+  readonly read: { readonly done: number; readonly total: number } | null;
   readonly recording: {
     readonly id: string;
     readonly name: string;
@@ -101,6 +118,9 @@ export interface TrainerPageState {
     readonly error: string | null;
     /** How many stretches the last successful save wrote. */
     readonly savedCount: number | null;
+    /** After a failed save, what became of the file the person picked
+     *  (`releaseUnusedPick`'s sentence), or null when none was picked. */
+    readonly left: string | null;
   };
 }
 
@@ -109,8 +129,9 @@ export const initialTrainerPageState = (
 ): TrainerPageState => ({
   phase: "start",
   refusal: null,
-  gpu: { status: "probing", accepted: false },
+  gpu: { status: "probing", accepted: false, recheck: "idle" },
   trainer,
+  read: null,
   recording: null,
   windows: [],
   current: null,
@@ -118,7 +139,7 @@ export const initialTrainerPageState = (
   stopDialog: null,
   held: false,
   banner: null,
-  save: { status: "idle", error: null, savedCount: null },
+  save: { status: "idle", error: null, savedCount: null, left: null },
 });
 
 /** Stretch numbers as people count them. */
@@ -136,6 +157,7 @@ function freshWindow(p: StretchSummary): WindowState {
     progress: 0,
     secondsLeft: null,
     nextPreviewInS: null,
+    stage: null,
     previews: 0,
     outcome: null,
     metrics: null,
@@ -176,25 +198,39 @@ function startNext(s: S): void {
   w.progress = 0;
   w.secondsLeft = null;
   w.nextPreviewInS = null;
+  w.stage = "loading";
   w.previews = 0;
 }
 
 function markUnsaved(s: S): void {
   if (s.save.status === "saved") {
-    s.save = { status: "idle", error: null, savedCount: s.save.savedCount };
+    s.save = {
+      status: "idle",
+      error: null,
+      savedCount: s.save.savedCount,
+      left: null,
+    };
   }
 }
 
 const canTrain = (s: S): boolean =>
-  s.trainer === "practice" &&
-  (s.gpu.status === "ready" ||
-    (s.gpu.status === "integrated" && s.gpu.accepted));
+  s.gpu.status === "ready" || (s.gpu.status === "integrated" && s.gpu.accepted);
+
+const STAGES: readonly TrainStage[] = [
+  "loading",
+  "preparing",
+  "training",
+  "checking",
+];
 
 const trainerPageSlice = createSlice({
   name: "splatTrainer",
-  initialState: initialTrainerPageState("unavailable"),
+  initialState: initialTrainerPageState("gpu"),
   reducers: {
     probeFinished(s, a: PayloadAction<GpuProbe["kind"]>) {
+      const rechecked = s.gpu.recheck === "checking";
+      s.gpu.recheck =
+        rechecked && s.gpu.status === a.payload ? "unchanged" : "idle";
       s.gpu.status = a.payload;
       if (a.payload === "no-webgpu" && s.phase !== "refused") {
         s.phase = "refused";
@@ -202,7 +238,7 @@ const trainerPageSlice = createSlice({
       }
     },
     recheckRequested(s) {
-      s.gpu.status = "probing";
+      s.gpu.recheck = "checking";
     },
     integratedAccepted(s) {
       s.gpu.accepted = true;
@@ -215,7 +251,21 @@ const trainerPageSlice = createSlice({
       if (s.phase !== "start" && s.phase !== "census") return;
       s.phase = "reading";
       s.recording = { id: a.payload.id, name: a.payload.name, census: null };
+      s.read = { done: 0, total: 0 };
       s.windows = [];
+    },
+    /** The reader's count; only forward, only for the read that runs. */
+    readProgressed(
+      s,
+      a: PayloadAction<{ id: string; done: number; total: number }>,
+    ) {
+      const p = a.payload;
+      if (s.phase !== "reading" || s.recording?.id !== p.id || s.read === null)
+        return;
+      if (!Number.isFinite(p.done) || !Number.isFinite(p.total)) return;
+      if (!(p.total > 0)) return;
+      const done = Math.min(p.total, Math.max(s.read.done, p.done, 0));
+      s.read = { done, total: p.total };
     },
     readFinished(
       s,
@@ -226,6 +276,7 @@ const trainerPageSlice = createSlice({
       }>,
     ) {
       if (s.phase !== "reading" || s.recording?.id !== a.payload.id) return;
+      s.read = null;
       if (a.payload.windows.length === 0) {
         s.phase = "refused";
         s.refusal = {
@@ -238,10 +289,21 @@ const trainerPageSlice = createSlice({
       s.windows = a.payload.windows.map(freshWindow) as WindowDraft[];
       s.phase = "census";
     },
-    readRefused(s, a: PayloadAction<{ id: string; reason: string }>) {
+    readRefused(
+      s,
+      a: PayloadAction<{ id: string; reason: string; code?: ReadRefusalCode }>,
+    ) {
       if (s.phase !== "reading" || s.recording?.id !== a.payload.id) return;
+      s.read = null;
       s.phase = "refused";
-      s.refusal = { kind: "recording", reason: a.payload.reason };
+      s.refusal =
+        a.payload.code === undefined
+          ? { kind: "recording", reason: a.payload.reason }
+          : {
+              kind: "recording",
+              reason: a.payload.reason,
+              code: a.payload.code,
+            };
     },
     /** Back to the drop area; only from a census or a recording refusal. */
     anotherRecordingChosen(s) {
@@ -268,11 +330,13 @@ const trainerPageSlice = createSlice({
         fraction: number;
         secondsLeft: number | null;
         nextPreviewInS: number | null;
+        stage: TrainStage;
       }>,
     ) {
       const p = a.payload;
       if (!isRunning(s, p.id, p.attempt)) return;
       const w = windowOf(s, p.id);
+      if (w !== undefined && STAGES.includes(p.stage)) w.stage = p.stage;
       const fraction = finite01(p.fraction);
       if (w === undefined || fraction === null) return;
       w.progress = Math.max(w.progress, fraction);
@@ -303,11 +367,14 @@ const trainerPageSlice = createSlice({
       w.progress = 1;
       w.secondsLeft = null;
       w.nextPreviewInS = null;
+      w.stage = null;
       w.outcome = p.outcome;
       w.metrics = p.metrics;
       w.judgement = { ...p.judgement, reasons: [...p.judgement.reasons] };
       w.trainingS = Number.isFinite(p.trainingS) ? p.trainingS : null;
       w.decision = null;
+      // A stretch finished after a save is not in that file.
+      markUnsaved(s);
       if (s.stopDialog !== null) {
         s.current = null;
         s.held = true;
@@ -341,6 +408,7 @@ const trainerPageSlice = createSlice({
         w.previews = 0;
         w.secondsLeft = null;
         w.nextPreviewInS = null;
+        w.stage = null;
         s.queue.unshift(w.id);
       }
       s.current = null;
@@ -367,6 +435,7 @@ const trainerPageSlice = createSlice({
         return;
       w.attempt += 1;
       w.status = "queued";
+      w.stage = null;
       w.progress = 0;
       w.previews = 0;
       w.outcome = null;
@@ -391,16 +460,26 @@ const trainerPageSlice = createSlice({
       markUnsaved(s);
     },
     saveStarted(s) {
-      s.save = { ...s.save, status: "saving", error: null };
+      s.save = { ...s.save, status: "saving", error: null, left: null };
     },
     saveSucceeded(s, a: PayloadAction<{ count: number }>) {
-      s.save = { status: "saved", error: null, savedCount: a.payload.count };
+      s.save = {
+        status: "saved",
+        error: null,
+        savedCount: a.payload.count,
+        left: null,
+      };
     },
-    saveFailed(s, a: PayloadAction<{ message: string }>) {
-      s.save = { ...s.save, status: "failed", error: a.payload.message };
+    saveFailed(s, a: PayloadAction<{ message: string; left?: string | null }>) {
+      s.save = {
+        ...s.save,
+        status: "failed",
+        error: a.payload.message,
+        left: a.payload.left ?? null,
+      };
     },
     saveCancelled(s) {
-      s.save = { ...s.save, status: "idle", error: null };
+      s.save = { ...s.save, status: "idle", error: null, left: null };
     },
   },
 });
@@ -449,12 +528,19 @@ export function verdictCounts(s: TrainerPageState): Record<Verdict, number> {
   return c;
 }
 
+/** How much more time attempt `attempt` of a stretch gets than the
+ *  first: twice as much per retry. The store gives it to the trainer
+ *  (`timeScale`) and the run's estimate scales by it. */
+export const attemptTimeScale = (attempt: number): number =>
+  2 ** (Math.max(1, attempt) - 1);
+
 /**
  * Seconds the whole run still needs: the training stretch's own estimate
  * plus, for each queued stretch, the average time a finished stretch took
  * (scaled for retries), or the training stretch's projected total before
- * any finished. Null while the trainer has not measured yet. A stand-in
- * until the trainer's own budgets give a better estimate.
+ * any finished. Null while the trainer has not measured yet, and never
+ * NaN or Infinity. A stand-in until the trainer's own budgets give a
+ * better estimate.
  */
 export function secondsLeftInRun(s: TrainerPageState): number | null {
   const cur = currentWindow(s);
@@ -462,15 +548,18 @@ export function secondsLeftInRun(s: TrainerPageState): number | null {
   const done = finishedWindows(s).filter((w) => w.trainingS !== null);
   const perAttempt =
     done.length > 0
-      ? done.reduce((sum, w) => sum + (w.trainingS ?? 0) / w.attempt, 0) /
-        done.length
-      : cur.progress > 0.02
-        ? cur.secondsLeft / (1 - cur.progress) / cur.attempt
+      ? done.reduce(
+          (sum, w) => sum + (w.trainingS ?? 0) / attemptTimeScale(w.attempt),
+          0,
+        ) / done.length
+      : cur.progress > 0.02 && cur.progress < 1
+        ? cur.secondsLeft / (1 - cur.progress) / attemptTimeScale(cur.attempt)
         : null;
   if (perAttempt === null) return null;
   const rest = s.queue.reduce((sum, id) => {
     const w = s.windows.find((x) => x.id === id);
-    return sum + perAttempt * (w?.attempt ?? 1);
+    return sum + perAttempt * attemptTimeScale(w?.attempt ?? 1);
   }, 0);
-  return cur.secondsLeft + rest;
+  const total = cur.secondsLeft + rest;
+  return Number.isFinite(total) ? total : null;
 }

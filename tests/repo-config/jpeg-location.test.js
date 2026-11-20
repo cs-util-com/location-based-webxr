@@ -194,6 +194,20 @@ describe('jpegLocation', () => {
           `binary Exif in Photoshop resource 0x0${id.toString(16)} under ${signature}`,
           jpeg(photoshopWith(resource(id, exifBody([GPS_IFD_POINTER]), signature))),
         ]),
+        // A Photoshop thumbnail resource (0x0409, 0x040C) holds a whole JPEG
+        // after its 28-byte header, with metadata of its own: never read.
+        ...[0x0409, 0x040c].map((id) => [
+          `a JPEG thumbnail in Photoshop resource 0x0${id.toString(16)} under ${signature}`,
+          jpeg(
+            photoshopWith(
+              resource(
+                id,
+                [...Array(28).fill(0), ...jpeg(segment(0xe1, exifBody([GPS_IFD_POINTER])))],
+                signature,
+              ),
+            ),
+          ),
+        ]),
         [
           `a UTF-16 XMP packet in a Photoshop resource under ${signature}`,
           jpeg(photoshopWith(resource(0x0424, ascii('<x:xmpmeta/>').flatMap((c) => [c, 0]), signature))),
