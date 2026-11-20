@@ -1,0 +1,309 @@
+<!doctype html>
+<!-- Prototype: travelling surface, round 1, C - the note comes to you. Throwaway; not wired to the app, linked from nothing in it. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Travelling surface C - The note comes to you</title>
+    <link rel="stylesheet" href="model-note.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.185.1/build/three.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div class="stage" id="stage">
+      <main class="device" id="device">
+        <canvas
+          id="cam"
+          aria-label="Simulated camera view of a town square with a stone fountain that carries notes"
+        ></canvas>
+
+        <div class="strip" id="strip">
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="walk"
+              title="Start outside the station and walk up; then tap the lion spout's marker"
+            >
+              Walk up
+            </button>
+            <button
+              type="button"
+              data-beat="d4"
+              title="Stand 4 m in front of the fountain"
+            >
+              4 m
+            </button>
+            <button
+              type="button"
+              data-beat="d7"
+              title="Stand 7 m in front of the fountain"
+            >
+              7 m
+            </button>
+            <button
+              type="button"
+              data-beat="d11"
+              title="Stand 11 m in front of the fountain"
+            >
+              11 m
+            </button>
+            <button
+              type="button"
+              data-beat="round"
+              title="Open the basin's note and walk half way round the fountain"
+            >
+              Round
+            </button>
+            <button type="button" id="menuBtn" aria-label="Settings">
+              &#9776;
+            </button>
+          </div>
+          <div class="strip-row">
+            <button
+              type="button"
+              data-beat="pull"
+              title="Tap the card in the world: it comes to the box"
+            >
+              Pull
+            </button>
+            <button
+              type="button"
+              data-beat="next"
+              title="Press Next on the card"
+            >
+              Next
+            </button>
+            <button
+              type="button"
+              data-beat="far"
+              title="Open the note on the back of the fountain from the front"
+            >
+              Far
+            </button>
+            <button
+              type="button"
+              data-beat="turn"
+              id="turnBtn"
+              aria-pressed="false"
+              title="Turn away from the fountain, then back"
+            >
+              Turn
+            </button>
+            <button
+              type="button"
+              data-beat="voice"
+              id="voiceBtn"
+              aria-pressed="false"
+              title="Another station's voice starts and takes the box"
+            >
+              Voice
+            </button>
+            <button
+              type="button"
+              data-beat="back"
+              title="Press Back to its place on the card"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              data-beat="leave"
+              title="Walk out of the station"
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+        <div class="readout" id="readout" aria-live="off"></div>
+
+        <div class="hud" id="hud">
+          <button class="exit" id="exitBtn" type="button" aria-label="Exit AR">
+            <svg viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 3l10 10M13 3L3 13" />
+            </svg>
+          </button>
+          <button
+            class="view-pill"
+            id="viewPill"
+            type="button"
+            title="Where written words show on every stop of the tour (your own choice wins)"
+          >
+            <span class="vp-k">Words, whole tour</span
+            ><span id="viewLabel">in the world</span>
+          </button>
+          <div class="voice" id="voice" hidden>
+            <i aria-hidden="true"></i>
+            <span
+              >The voice of another stop is playing
+              <small>stand-in, silent: it owns the box while it plays</small></span
+            >
+          </div>
+        </div>
+
+        <i class="finger" id="finger" hidden></i>
+      </main>
+    </div>
+
+    <aside
+      class="demo"
+      id="demo"
+      hidden
+      aria-label="About this page and settings"
+    >
+      <p>
+        <b>The note comes to you.</b> A placed model carries notes. Tap a
+        note's marker and its card opens beside the point it names, joined to
+        it by a line. When the card cannot be read there (the point is out of
+        view, faces away, is hidden behind the model, or the card is too small
+        or too wide) the same card flies to the box at the bottom edge, and
+        back when it can be read again. One card, one place, never two.
+      </p>
+
+      <h4>Try</h4>
+      <ul>
+        <li>
+          Tap a marker on the fountain. Tap the card in the world to bring it
+          close: in the box it has Previous, Next and "Back to its place".
+        </li>
+        <li>
+          "Next" flies the card from point to point. "Round" walks behind the
+          fountain with the basin's note open: the card leaves for the box as
+          the basin turns away. "Far" opens the note on the back.
+        </li>
+        <li>
+          "Voice": another stop's voice takes the box; a card that would go
+          there folds into its marker until the voice ends.
+        </li>
+        <li>Drag sideways on the view to look around.</li>
+      </ul>
+
+      <h4>Settings</h4>
+      <div class="row">
+        <span>Legible from</span
+        ><button type="button" data-cfg="thr" data-v="10">10 px</button
+        ><button type="button" data-cfg="thr" data-v="12">12 px</button
+        ><button type="button" data-cfg="thr" data-v="14">14 px</button
+        ><button type="button" data-cfg="thr" data-v="16">16 px</button>
+      </div>
+      <div class="row">
+        <span>Letters in the world</span
+        ><button type="button" data-cfg="letter" data-v="6">6 cm</button
+        ><button type="button" data-cfg="letter" data-v="8">8 cm</button
+        ><button type="button" data-cfg="letter" data-v="10">10 cm</button
+        ><button type="button" data-cfg="letter" data-v="12">12 cm</button>
+      </div>
+      <div class="row">
+        <span>Card width</span
+        ><button type="button" data-cfg="measure" data-v="14">14 em</button
+        ><button type="button" data-cfg="measure" data-v="17">17 em</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Buttons in the world</span
+        ><button type="button" data-cfg="btns" data-v="pull">
+          tap brings close</button
+        ><button type="button" data-cfg="btns" data-v="gate">
+          on the card</button
+        ><span></span><span></span>
+      </div>
+      <div class="row">
+        <span>Touch gate</span
+        ><button type="button" data-cfg="gate" data-v="40">40 px</button
+        ><button type="button" data-cfg="gate" data-v="48">48 px</button
+        ><button type="button" data-cfg="gate" data-v="56">56 px</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Faces away past</span
+        ><button type="button" data-cfg="face" data-v="45">45&deg;</button
+        ><button type="button" data-cfg="face" data-v="60">60&deg;</button
+        ><button type="button" data-cfg="face" data-v="75">75&deg;</button
+        ><button type="button" data-cfg="face" data-v="90">90&deg;</button>
+      </div>
+      <div class="row">
+        <span>Hold before moving</span
+        ><button type="button" data-cfg="hold" data-v="0.15">0.15 s</button
+        ><button type="button" data-cfg="hold" data-v="0.3">0.3 s</button
+        ><button type="button" data-cfg="hold" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="hold" data-v="1">1 s</button>
+      </div>
+      <div class="row">
+        <span>Hysteresis</span
+        ><button type="button" data-cfg="hyst" data-v="5">5 %</button
+        ><button type="button" data-cfg="hyst" data-v="10">10 %</button
+        ><button type="button" data-cfg="hyst" data-v="15">15 %</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Flight</span
+        ><button type="button" data-cfg="fly" data-v="0">off</button
+        ><button type="button" data-cfg="fly" data-v="0.35">0.35 s</button
+        ><button type="button" data-cfg="fly" data-v="0.6">0.6 s</button
+        ><button type="button" data-cfg="fly" data-v="1.2">1.2 s</button>
+      </div>
+      <div class="row">
+        <span>Phone</span
+        ><button type="button" data-cfg="stage" data-v="auto">window</button
+        ><button type="button" data-cfg="stage" data-v="portrait">
+          upright</button
+        ><button type="button" data-cfg="stage" data-v="landscape">
+          sideways</button
+        ><span></span>
+      </div>
+      <div class="row">
+        <span>Creator chose</span
+        ><button type="button" data-cfg="creator" data-v="world">
+          in the world</button
+        ><button type="button" data-cfg="creator" data-v="screen">
+          on screen</button
+        ><button type="button" id="resetPick">reset my pick</button
+        ><span></span>
+      </div>
+      <p class="range" id="range">-</p>
+      <p class="note">
+        The "Words, whole tour" pill is the visitor's one pick for every stop;
+        once made it wins over the creator's choice. URL options:
+        <code
+          >?thr=12&amp;letter=10&amp;measure=14&amp;btns=pull&amp;gate=48&amp;face=75&amp;hold=0.3&amp;hyst=5&amp;fly=0.6&amp;creator=world&amp;stage=auto&amp;at=d4</code
+        >; <code>at</code> also takes <code>walk</code>, <code>d7</code>,
+        <code>d11</code>, <code>round</code>, <code>far</code>.
+      </p>
+
+      <h4>Cost</h4>
+      <p class="cost" id="cost">-</p>
+
+      <h4>Faked here</h4>
+      <ul>
+        <li>
+          The model is a generic fountain built from simple shapes; the notes
+          are made up.
+        </li>
+        <li>
+          The camera, the square and the walk are simulated; nothing runs in
+          AR. The sideways drag stands in for turning the phone, and the camera
+          turns to the open note by itself, as a visitor would.
+        </li>
+        <li>
+          The other stop's voice is a silent box; nothing sounds on this page.
+        </li>
+        <li>
+          "Back to its place" closes the note into its marker here. In the app
+          the same words reset a model the visitor moved.
+        </li>
+      </ul>
+      <button class="close" id="demoClose" type="button">Close</button>
+    </aside>
+
+    <script type="module" src="model-note.js"></script>
+  </body>
+</html>

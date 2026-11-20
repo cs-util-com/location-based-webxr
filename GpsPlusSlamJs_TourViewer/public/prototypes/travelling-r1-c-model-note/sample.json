@@ -1,0 +1,49 @@
+{
+  "name": "The square fountain",
+  "words": "A placed 3D model with five notes on it; the open note's card travels between its point on the model and the screen.",
+  "records": {
+    "normal": {
+      "kind": "model",
+      "view": "hotspots",
+      "title": "The square fountain",
+      "notes": [
+        {
+          "title": "The basin",
+          "text": "Eight stone panels make the basin. The worn dip in the rim is where buckets were rested, one after another, for three hundred years.",
+          "at": [0, 0.86, 1.77],
+          "normal": [0, 0.35, 1],
+          "side": "right"
+        },
+        {
+          "title": "The lion spout",
+          "text": "Water still runs from the lion's mouth. Its nose is bright and smooth because people rub it for luck as they pass.",
+          "at": [0.22, 1.46, 0.41],
+          "normal": [0.55, 0, 0.84],
+          "side": "right"
+        },
+        {
+          "title": "The upper bowl",
+          "text": "The shallow bowl spreads the water into a thin veil. On frosty mornings the veil freezes and the bowl wears a crown of ice.",
+          "at": [-0.49, 2.3, 0.62],
+          "normal": [-0.6, -0.3, 0.76],
+          "side": "left"
+        },
+        {
+          "title": "The pinecone",
+          "text": "A stone pinecone tops the column, an old sign of plenty. This one was carved again after a storm threw the first one down.",
+          "at": [0, 3.3, 0.17],
+          "normal": [0, 0.55, 0.84],
+          "side": "left"
+        },
+        {
+          "title": "The mason's mark",
+          "text": "Low on the back panel: a small carved star and two letters. Each mason signed the stone, so the guild knew whose work it was.",
+          "at": [0.45, 0.5, -1.77],
+          "normal": [0, 0, -1],
+          "side": "right"
+        }
+      ]
+    }
+  },
+  "assets": []
+}
