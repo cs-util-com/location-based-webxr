@@ -38,6 +38,9 @@ const JFXX_JPEG_THUMBNAIL = 0x10;
 /** Photoshop resources holding a whole binary Exif block (GPS IFD
  *  included), invisible to a text search. */
 const PHOTOSHOP_EXIF = new Set([0x0422, 0x0423]);
+/** Photoshop thumbnail resources (4.0 and 5.0 on): a whole JPEG after a
+ *  28-byte header, which can carry metadata of its own. */
+const PHOTOSHOP_THUMBNAIL = new Set([0x0409, 0x040c]);
 /** The Photoshop resource holding an XMP packet. */
 const PHOTOSHOP_XMP = 0x0424;
 const XMP_ID = 'http://ns.adobe.com/xap/1.0/\0';
@@ -93,7 +96,7 @@ function scanEnd(bytes, at) {
 
 /**
  * Why a Photoshop block cannot pass, or null when it can: a resource with
- * a binary Exif block, or an XMP packet that is cut short or not UTF-8.
+ * a binary Exif block or a JPEG thumbnail, or an XMP packet that is cut short or not UTF-8.
  * Every resource signature in the block ("8BIM", "MeSa", "PHUT", "AgHg",
  * "DCSR") is looked at, so one inside another resource's data can refuse
  * a clean file too (it fails closed).
@@ -107,6 +110,7 @@ function photoshopRefusal(bytes, start, end) {
     if (!RESOURCE_IDS.some((id) => startsWith(bytes, i, id, end))) continue;
     const id = (bytes[i + 4] << 8) | bytes[i + 5];
     if (PHOTOSHOP_EXIF.has(id)) return 'a Photoshop resource holds binary Exif';
+    if (PHOTOSHOP_THUMBNAIL.has(id)) return 'a Photoshop resource holds a JPEG thumbnail';
     if (id !== PHOTOSHOP_XMP) continue;
     // A Pascal name padded to an even length, a 4-byte size, the data.
     if (i + 7 > end) return 'a Photoshop XMP resource is cut short';
