@@ -66,6 +66,9 @@ export default defineConfig({
         // The character maker and the on-device library of characters
         // (`characters.html.md`); the editor opens it in a dialog.
         characters: fileURLToPath(new URL("characters.html", import.meta.url)),
+        // The splat trainer page (`splat/index.html.md`), linked from nothing
+        // yet: an entry so that it is built and reachable on a branch preview.
+        splat: fileURLToPath(new URL("splat/index.html", import.meta.url)),
         // On-device check of what a phone's browser lets the editor do with a
         // file it saves (`file-access-check.html.md`), linked from nothing:
         // an entry so that it is built and reachable on a branch preview.

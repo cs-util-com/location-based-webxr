@@ -1,0 +1,59 @@
+# trainer-page.ts
+
+## Purpose
+
+The splat trainer page's view, in the "darkroom" look chosen among the
+prototypes (`public/prototypes/splat-trainer-r1-c-darkroom/`): a contact
+sheet with one print per stretch that develops while it trains, a quiet
+bar at the bottom, and dialogs for stopping, saving and a closer look. It
+renders from the store and dispatches what the person does; the only
+thing it keeps itself is which dialog is open.
+
+## Public API
+
+- `mountSplatTrainerPage(root, controller, env) -> { dispose }`
+  - `controller`: `PageController` - the store (`getState`, `dispatch`,
+    `subscribe`), `sides.previews`, `chooseRecording`, `save`;
+    `createTrainerPageStore` provides it.
+  - `env`: `{ win, isPhone }`; on a phone the page refuses at once.
+- Pure text helpers, exported for tests: `VERDICT_WORD`, `minutesText`,
+  `censusLeadHtml`, `sayFor`, `actionsFor`, `barText`, `saveContentsLine`,
+  `stopDialogText`, `showable`, `loupeWord`.
+
+## States it shows
+
+Start (drop or choose), reading, census (sentences, the built-in graphics
+warning, and in production the note that the splat maker is not ready
+yet in place of the start button), training (developing prints, strip,
+time left), the stop dialog, stopped (continue, save the finished ones),
+done (verdicts with reasons and actions, save), the save dialog (contents,
+the location privacy note, saving, failure), the closer look, and the
+refusals (phone, no WebGPU, a recording that cannot be used).
+
+## Invariants
+
+- **Focus survives re-renders.** Action buttons are rebuilt only when
+  their list changes; when the focus was inside the rebuilt list it moves
+  to the new first button (or the print's frame), never to the body.
+- **The stop dialog is live and bound.** Its text re-renders from the
+  state on every change; Stop dispatches `stopConfirmed` with the id the
+  dialog was opened for, and a stretch that finishes under the open dialog
+  holds the next start, so Stop never stops another stretch.
+- **The closer look never shows a stretch that has not started.** Clicks
+  on a waiting print do nothing, Previous and Next skip waiting stretches,
+  and a stretch queued to train again reads "Waiting", never "Still
+  training".
+- All dynamic text goes in through `textContent` or `escapeHtml`.
+- The save click asks for the save dialog before any await (browsers
+  require the click's user activation).
+- The phone and no-WebGPU refusals copy the page's link with
+  `copyWithFeedback`.
+
+## Tests
+
+`trainer-page.test.ts` (jsdom): the practice chip and start button versus
+the production note, the phone refusal, focus after a decision and across
+a progress tick, the stop dialog's live text and target, Keep training
+starting the held stretch, the closer look skipping waiting stretches, and
+the bar texts. The e2e `playwright-tests/splat-trainer.spec.js` runs the
+page in a browser, including its layout.
