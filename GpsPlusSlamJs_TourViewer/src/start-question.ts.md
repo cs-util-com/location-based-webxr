@@ -11,8 +11,6 @@ phone.
 
 ## Public API
 
-- `START_ANSWERS` - `new`, `link`, `file`, `later`, in the page's order;
-  `StartPanel` adds `share`.
 - `START_BLOCKS` - step 2's blocks: `host` (the host tiles, their steps
   and the starter, `host-picker.ts`), `linkField` (the link form and its
   notes), `codeHangs` ("Your code already hangs?"), `file` (the file
@@ -33,7 +31,11 @@ phone.
   `failed` (the pack or the save threw). Never rejects.
 - `START_LABELS` - the start button's labels: idle, busy, then one per
   outcome.
-- `wireStartQuestion({ dom, initial, openStep, hosted, onPanel?, start })`
+- `wireStartQuestion({ dom, store, initial, openStep, hosted, onPanel?, start })`
+  - the answer lives in the page's store (`start-question-slice.ts`,
+    which also holds `START_ANSWERS` and `StartPanel`): a tap dispatches
+    `startPanelShown`, and step 2 draws whatever the store holds,
+    `onPanel` telling the host tiles when it changed;
   - an answer card shows its panel and opens step 2 (`link`); nothing
     else happens on that tap;
   - every "back to the question" link opens step 1;
@@ -49,16 +51,17 @@ phone.
   - `initial` draws a panel without opening a step (the wizard opens the
     first step: `link` for a creator with a stored host, whose panel is
     `new`).
-  - Returns `{ panel() }`.
+  - Returns nothing: a reader of the answer uses `selectStartPanel`.
 
 ## Invariants & assumptions
 
 - **A tap on an answer only routes.** Nothing is packed, saved, opened or
   stored by it (tested as a property over the answers).
-- **The answer is page UI state, not store state.** Like the open step
-  (`wizard.ts`), it is which panel one page shows, read by no other view
-  and never saved; a reload starts at the question again (or at `new` for
-  a stored host). The tour itself is the store's.
+- **The answer is store state, the open step is not.** Two views read the
+  answer (step 2's panel and the host tiles, which offer no starter for
+  `share`), so it is the store's (`start-question-slice.ts`); it is never
+  saved, and a reload starts at the question again (or at `new` for a
+  stored host). Which step is open stays the wizard's (`wizard.ts`).
 - **Save before open.** A dismissed save opens nothing: a tour opened from
   a file the creator did not keep would hold their work only in the page's
   backup. The save runs after a short await (packing an empty zip takes
@@ -88,7 +91,8 @@ const start = wireStartQuestion({
 
 ## Tests
 
-- `start-question.test.ts` - every panel's heading, why and blocks; the
+- `start-question.test.ts` - every panel's heading, why and blocks; a
+  panel dispatched from elsewhere is drawn; the
   routing as a property (a tap shows its panel, opens step 2, does nothing
   else); the back links; "Start at the code"; Done's "Make your code now"
   for a tour with and without a link and its route to `share`; save before

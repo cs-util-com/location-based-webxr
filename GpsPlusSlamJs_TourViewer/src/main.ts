@@ -64,7 +64,8 @@ import type { ScanOpen } from "./scan-open.js";
 import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
-import { wireStartQuestion, type StartQuestion } from "./start-question.js";
+import { wireStartQuestion } from "./start-question.js";
+import { selectStartPanel } from "./start-question-slice.js";
 import { wireSetupStage } from "./setup-stage.js";
 import { mountMapSizeKnob, wireMapSize } from "./map-size.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
@@ -403,10 +404,6 @@ const wizard = wireWizard({
     status.hidden = false;
   }
 }
-// The start question (setup flow round 2) is wired once the archive's
-// file open exists, further down; the host tiles read its panel through
-// this reference, a wired component like the others here, not state.
-let startQuestion: StartQuestion | null = null;
 // Step 2's host tiles for "new tour" and "share" (polish round M2,
 // A6/A7): the choice is stored with the wizard's other state.
 const hostPicker =
@@ -421,7 +418,8 @@ const hostPicker =
         },
         store: stepStore,
         createElement: (tag) => document.createElement(tag),
-        saved: () => startQuestion?.panel() === "share",
+        // The start answer is store state (`start-question-slice.ts`).
+        saved: () => selectStartPanel(arStore.getState()) === "share",
       })
     : null;
 hooks.presentTourForPrint = (url, origin) => {
@@ -1393,7 +1391,8 @@ scanOpen = archive.scanOpen;
 // Step 1's question and step 2's panels (setup flow round 2): a tap only
 // routes; "start on this phone" saves the starter and opens that file.
 if (mode === "creator") {
-  startQuestion = wireStartQuestion({
+  wireStartQuestion({
+    store: arStore,
     dom: {
       answers: {
         new: element("start-answer-new"),

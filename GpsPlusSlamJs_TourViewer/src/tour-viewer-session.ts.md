@@ -263,3 +263,9 @@ unchanged across the split (the split's behaviour-neutrality proof).
   narrated text the bottom box shows, and whether its voice plays or is
   held by a scrub. Not persisted; the voice itself
   stays in its audio element.
+
+## The setup's start answer
+
+- The store also mounts `startQuestion` (`start-question-slice.ts`): the
+  panel step 2 shows, which the host tiles read too. Not persisted; a
+  reload starts at the question.

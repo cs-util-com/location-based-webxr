@@ -5,9 +5,9 @@
  * one action. A fifth panel, "share", is reached from Done's "Make your
  * code now" for a tour started on this phone.
  *
- * The answer is page UI state held here, not in the Redux store: like the
- * open step (`wizard.ts`), it is which panel one page shows, read by no
- * other view and never saved; the tour itself is the store's.
+ * The answer is store state (`start-question-slice.ts`): step 2 draws
+ * from it and the host tiles read it too. Which step is open stays the
+ * wizard's (`wizard.ts`).
  *
  * The DOM surface is structural, like the wizard's, so the unit tests run
  * in node with plain objects.
@@ -16,14 +16,14 @@
  */
 
 import type { WizardStep } from "./wizard.js";
-
-/** The four answers of step 1, in the page's order. */
-export const START_ANSWERS = ["new", "link", "file", "later"] as const;
-type StartAnswer = (typeof START_ANSWERS)[number];
-
-/** Step 2's panel: an answer, or "share" - a tour started on this phone
- *  being put online from Done. */
-export type StartPanel = StartAnswer | "share";
+import {
+  selectStartPanel,
+  START_ANSWERS,
+  startPanelShown,
+  type StartAnswer,
+  type StartPanel,
+  type StartQuestionState,
+} from "./start-question-slice.js";
 
 /** Step 2's blocks: the host tiles and their steps, the link field, the
  *  "your code already hangs" line, the file open, and the start-here
@@ -157,13 +157,17 @@ export interface StartQuestionDom {
   };
 }
 
-export interface StartQuestion {
-  /** The panel step 2 shows, or null before any answer. */
-  panel(): StartPanel | null;
+/** The page's store as the start question reaches it. */
+export interface StartQuestionStore {
+  dispatch(action: ReturnType<typeof startPanelShown>): unknown;
+  getState(): { readonly startQuestion: StartQuestionState };
+  subscribe(listener: () => void): () => void;
 }
 
 export function wireStartQuestion(deps: {
   dom: StartQuestionDom;
+  /** Holds the answer; step 2 draws whatever it holds. */
+  store: StartQuestionStore;
   /** A returning creator's panel (a stored host reads as "new"). */
   initial: StartPanel | null;
   /** `wizard.openStep`, the one owner of which step is open. */
@@ -173,13 +177,17 @@ export function wireStartQuestion(deps: {
   /** The panel changed (the host tiles redraw for "share"). */
   onPanel?: (panel: StartPanel) => void;
   start: StartDeps;
-}): StartQuestion {
-  const { dom } = deps;
-  let current: StartPanel | null = null;
+}): void {
+  const { dom, store } = deps;
+  /** The panel last drawn: a render cache, the answer is the store's. */
+  let drawn: StartPanel | null = null;
+  /** False for the first draw: the host tiles draw themselves. */
+  let notify = false;
 
-  /** `notify` false for the first draw: the host tiles draw themselves. */
-  function show(panel: StartPanel, notify = true): void {
-    current = panel;
+  function render(): void {
+    const panel = selectStartPanel(store.getState());
+    if (panel === null || panel === drawn) return;
+    drawn = panel;
     const view = panelView(panel);
     dom.heading.textContent = view.heading;
     dom.why.textContent = view.why;
@@ -187,6 +195,11 @@ export function wireStartQuestion(deps: {
       dom.blocks[block].hidden = !view.blocks[block];
     }
     if (notify) deps.onPanel?.(panel);
+  }
+  store.subscribe(render);
+
+  function show(panel: StartPanel): void {
+    store.dispatch(startPanelShown(panel));
   }
 
   for (const answer of START_ANSWERS) {
@@ -231,8 +244,9 @@ export function wireStartQuestion(deps: {
     });
   });
 
-  if (deps.initial !== null) show(deps.initial, false);
-  return { panel: () => current };
+  if (deps.initial !== null) show(deps.initial);
+  render();
+  notify = true;
 }
 
 const OUTCOME_LABEL: Readonly<Record<StartOutcome, string>> = {

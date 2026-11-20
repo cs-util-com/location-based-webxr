@@ -11,19 +11,25 @@
  * opens it, never open a tour the creator did not get to keep, and say so
  * in its button when the save is dismissed or fails (async-UI rule).
  */
+import { configureStore } from "@reduxjs/toolkit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
   panelView,
-  START_ANSWERS,
   START_BLOCKS,
   START_LABELS,
   startOnThisPhone,
   wireStartQuestion,
   type StartBlock,
-  type StartPanel,
 } from "./start-question.js";
+import {
+  selectStartPanel,
+  START_ANSWERS,
+  type StartPanel,
+  startPanelShown,
+  startQuestionReducer,
+} from "./start-question-slice.js";
 import type { WizardStep } from "./wizard.js";
 
 class FakeNode {
@@ -81,8 +87,12 @@ function setup(
   const panels: (StartPanel | null)[] = [];
   const calls: string[] = [];
   const state = { hosted: options.hosted ?? false };
-  const question = wireStartQuestion({
+  const store = configureStore({
+    reducer: { startQuestion: startQuestionReducer },
+  });
+  wireStartQuestion({
     dom,
+    store,
     initial: options.initial ?? null,
     openStep: (step) => opened.push(step),
     hosted: () => state.hosted,
@@ -110,7 +120,9 @@ function setup(
   });
   const shown = (): StartBlock[] =>
     START_BLOCKS.filter((b) => !dom.blocks[b].hidden);
-  return { dom, opened, panels, calls, question, shown, state };
+  // The answer is read from the store, as the host tiles read it.
+  const question = { panel: () => selectStartPanel(store.getState()) };
+  return { dom, opened, panels, calls, question, shown, state, store };
 }
 
 describe("panelView", () => {
@@ -181,6 +193,17 @@ describe("wireStartQuestion", () => {
         expect(calls).toEqual([]);
       }),
     );
+  });
+
+  // Why: the answer is store state read by more than one view; step 2
+  // draws whatever the store holds, however it got there.
+  it("draws the panel the store holds, also one dispatched from elsewhere", () => {
+    const { store, shown, dom, panels, opened } = setup();
+    store.dispatch(startPanelShown("later"));
+    expect(shown()).toEqual(["later"]);
+    expect(dom.heading.textContent).toBe(panelView("later").heading);
+    expect(panels).toEqual(["later"]);
+    expect(opened).toEqual([]);
   });
 
   it("every back link returns to the question, keeping the answer", () => {
