@@ -100,8 +100,8 @@ error, console error, missing file or network request. The measurements
 (every `*.smoke.spec.mjs`: looks, costs, sweeps, hours on a CPU rasteriser)
 run on demand: `DS_E2E_TIER=full pnpm run test:e2e` for all, or name one
 (`pnpm run test:e2e labs/globe/globe-relief.smoke.spec.mjs`). Only the globe
-labs (`labs/globe/` and `labs/globe-terrain/`) still have measurements: run
-theirs when a change targets a globe lab's look or cost, and before a look
+lab (`labs/globe/`) still has measurements: run
+them when a change targets the globe lab's look or cost, and before a look
 decision. The look-dev page, `labs/terrain/` and the AR shadows lab have only
 the fast tier now;
 before a look change there, restore their specs from git history, as

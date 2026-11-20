@@ -198,5 +198,5 @@
   globe's hook on three's real shader; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data
-  budget, the seam scan) is the design system's
-  `labs/globe-terrain/globe-terrain.smoke.spec.mjs`.
+  budget, the seam scan) has no browser test of its own: the globe lab's
+  smokes (`labs/globe/globe-relief.smoke.spec.mjs` and others) draw it.
