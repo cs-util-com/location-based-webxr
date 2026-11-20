@@ -523,7 +523,10 @@ register = true)` (a red sphere ahead, which the near plane follows
     camera that high over the place (never below the clearance), at the
     flight's pitch law, with what a landing there sets (the place located,
     its detail and city data asked for, the world frame moved), held as
-    landed by the approach (the smokes' held views); `holdDiveAt(ms)` holds the camera at a
+    landed by the approach (the smokes' held views). It does nothing unless
+    the pin is idle, and it does not reset the speed dust as a flight's
+    placement does, so with the jump reads as speed for a frame;
+    `holdDiveAt(ms)` holds the camera at a
     dive time (null runs on) and `diveAltitudeAt(ms)` reads the dive's
     altitude without moving it (the moving-camera band smoke);
     `plantDetail(eastFactor)` plants a detail grid east of the target (the

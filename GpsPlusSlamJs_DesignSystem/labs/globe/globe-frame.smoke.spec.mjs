@@ -81,7 +81,8 @@ test("the world frame switches without moving the view, and a landing is in the 
     { timeout: 300_000 },
   );
   const landed = await page.evaluate(() => window.__globeLab.state());
-  // The landing moved the world into the target's frame.
+  // The park moved the world into the target's frame. This checks the park
+  // hook; the city smoke's link flight checks the real landing path.
   expect(landed.worldFrame).toEqual({
     lat: TARGET.latitude,
     lng: TARGET.longitude,

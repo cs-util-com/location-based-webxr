@@ -604,13 +604,8 @@ async function skyFromInside(page, altKm, thickness) {
     ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
     [UNDER_THE_SUN.latitude, UNDER_THE_SUN.longitude, altKm * 1000],
   );
-  // pitchView turns the drawn camera: two frames put the parked pose on it.
-  await page.evaluate(
-    () =>
-      new Promise((done) =>
-        requestAnimationFrame(() => requestAnimationFrame(done)),
-      ),
-  );
+  // pitchView turns the drawn camera: a frame puts the parked pose on it.
+  await page.evaluate(() => window.__globeLab.timeFrames(1));
   await page.evaluate(() => window.__globeLab.pitchView(110));
   const fovY = await page.evaluate(() => window.__globeLab.state().fovY);
   // Screen rows at elevations 5-35 degrees above the level (the centre

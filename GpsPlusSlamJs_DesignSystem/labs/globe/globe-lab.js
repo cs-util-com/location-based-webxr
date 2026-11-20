@@ -1194,7 +1194,7 @@ function bindPin({
         !(altitudeM > 0 && Number.isFinite(altitudeM))
       ) {
         throw new RangeError(
-          `parking needs a finite place and altitude, got ${place}, ${altitudeM}`,
+          `parking needs a finite place and altitude, got ${JSON.stringify(place)}, ${altitudeM}`,
         );
       }
       if (phase !== "idle") return;
@@ -3162,7 +3162,7 @@ void main() {
      * Parks the camera `altitudeM` above `place`, as a landing there
      * would leave it (`bindPin`'s `parkAt`): the smokes' held views.
      */
-    parkAt: (place, altitudeM) => pin.parkAt(place, altitudeM),
+    parkAt: (place, altitudeM) => pin?.parkAt(place, altitudeM),
     /** The dive's altitude at a dive time (m), the camera unmoved. */
     diveAltitudeAt: (ms) => flight.diveAltitudeAt(ms),
     /** Holds the camera at a dive time (ms; null runs on); its altitude. */

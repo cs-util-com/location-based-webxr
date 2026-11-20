@@ -419,6 +419,46 @@ describe("createGlobeApproach: parking", () => {
     approach.restart(at(90_000), params({ turnMs: 0 }));
     expect(isOrbit(approach.pose(at(90_000)))).toBe(true);
   });
+
+  // Why: the lab parks only with its pin idle, and a landed pin flight
+  // leaves the pin idle, so a park can follow a landing. The landed flight
+  // must not keep driving the camera: `pose()` asks the pin flight first,
+  // so a park that kept it would be ignored without a word.
+  it("parks after a landed pin flight, dropping the flight", () => {
+    const { approach, at } = setup();
+    approach.restart(at(0), params({ turnMs: 0 }));
+    approach.pose(at(0));
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      10,
+      {
+        pose: orbitPose(WGS84_ELLIPSOID, BERN),
+        distanceM: FIT_M,
+        quaternion: new THREE.Quaternion(),
+      },
+      {
+        target: orbitPose(WGS84_ELLIPSOID, ZURICH),
+        landingM: 150,
+        progress: 1,
+      },
+    );
+    approach.flyPin(at(10), pin, ZURICH);
+    let ms = 10;
+    while (approach.state().phase !== "landed" && ms < 200_000) {
+      ms += 500;
+      approach.pose(at(ms));
+    }
+    expect(approach.state().phase).toBe("landed");
+    expect(approach.pinFlight?.phase).toBe("landed");
+    const position = new THREE.Vector3(3, 2, 1).multiplyScalar(2_000_000);
+    const quaternion = new THREE.Quaternion(0.3, 0.1, 0.2, 0.9).normalize();
+    approach.park(at(ms + 100), BERN, { position, quaternion });
+    expect(approach.pinFlight).toBeNull();
+    expect(approach.state().target).toEqual(BERN);
+    const step = placed(approach.pose(at(ms + 200)));
+    expect(step.position.toArray()).toEqual(position.toArray());
+    expect(step.quaternion.toArray()).toEqual(quaternion.toArray());
+  });
 });
 
 describe("approachRestartKey", () => {
