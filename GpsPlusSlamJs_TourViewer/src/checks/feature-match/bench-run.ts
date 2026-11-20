@@ -51,7 +51,23 @@ export interface BenchInput {
   readonly warp: Warp | null;
 }
 
-interface SizeResult {
+/** Keypoint positions of one frame, in the pixels of the size computed. */
+export interface Points {
+  readonly x: Float32Array;
+  readonly y: Float32Array;
+}
+
+/**
+ * One timed round's output at a size: both frames' keypoints and the
+ * matched pairs (flat `[ia, ib, ...]`), for drawing and saving.
+ */
+export interface SizeSample {
+  readonly a: Points;
+  readonly b: Points;
+  readonly pairs: Int32Array;
+}
+
+export interface SizeResult {
   readonly longEdge: number;
   readonly width: number;
   readonly height: number;
@@ -61,6 +77,8 @@ interface SizeResult {
   readonly descriptorBytes: number;
   readonly matches: number;
   readonly correct: number | null;
+  /** The last timed round's keypoints and matches; null when the size failed. */
+  readonly sample: SizeSample | null;
   readonly error: string | null;
 }
 
@@ -80,6 +98,11 @@ export interface BenchHooks {
   /** Lets the page paint between runs. */
   readonly yieldToUi: () => Promise<void>;
   readonly log: (line: string) => void;
+  /** Called as each method's size finishes (also a failed one). */
+  readonly onSize?: (
+    method: { readonly id: string; readonly label: string },
+    size: SizeResult,
+  ) => void;
 }
 
 /**
@@ -114,9 +137,16 @@ export async function runBenchmark(
     const sizes: SizeResult[] = [];
     try {
       for (const longEdge of options.sizes) {
-        sizes.push(
-          await runSize(runner, method.label, input, longEdge, runs, hooks),
+        const size = await runSize(
+          runner,
+          method.label,
+          input,
+          longEdge,
+          runs,
+          hooks,
         );
+        sizes.push(size);
+        hooks.onSize?.(method, size);
       }
     } finally {
       runner.dispose();
@@ -164,6 +194,7 @@ async function runSize(
   const bytes: number[] = [];
   const matches: number[] = [];
   const correct: number[] = [];
+  let sample: SizeSample | null = null;
   let error: string | null = null;
   try {
     ({ width, height } = sizeForLongEdge(
@@ -188,6 +219,7 @@ async function runSize(
       keypoints.push(ea.count, eb.count);
       bytes.push(ea.descriptorBytes, eb.descriptorBytes);
       matches.push(pairs.length / 2);
+      sample = { a: pointsOf(ea), b: pointsOf(eb), pairs };
       if (input.warp) {
         correct.push(
           countCorrect(
@@ -206,6 +238,7 @@ async function runSize(
     hooks.log(`${label} @${String(longEdge)}: done`);
   } catch (e) {
     error = errorText(e);
+    sample = null;
     hooks.log(`ERROR ${label} @${String(longEdge)}: ${error}`);
   }
   return {
@@ -218,6 +251,13 @@ async function runSize(
     descriptorBytes: lowerMedian(bytes),
     matches: lowerMedian(matches),
     correct: input.warp ? lowerMedian(correct) : null,
+    sample,
     error,
   };
 }
+
+/** Positions copied out of a method's features (its arrays may be reused). */
+const pointsOf = (f: Features): Points => ({
+  x: f.x.slice(0, f.count),
+  y: f.y.slice(0, f.count),
+});

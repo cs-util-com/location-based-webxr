@@ -5,7 +5,12 @@
  *
  * @see method-xfeat.ts.md
  */
-import { toGray } from "./bench-image";
+import {
+  fromQuarterTurn,
+  quarterTurnFits,
+  toGray,
+  turnQuarter,
+} from "./bench-image";
 import { mutualNearestFloat } from "./bench-mnn";
 import {
   fetchBytes,
@@ -261,15 +266,24 @@ export function xfeatMethod(
         downloads,
         initMs: compileMs,
         notes: [
-          `fixed model input ${String(size.width)}x${String(size.height)}: a smaller frame is padded, a larger or portrait one is shrunk to fit, so model time hardly changes with size`,
+          `fixed model input ${String(size.width)}x${String(size.height)}: a frame of the other orientation is turned a quarter turn clockwise first (keypoints mapped back), a smaller frame is padded, a larger one shrunk to fit, so model time hardly changes with size`,
           `runtime load ${String(Math.round(runtime.ms))} ms (once per page); init = model compile`,
           `top ${String(XFEAT_TOP_K)} keypoints; float32 64-d descriptors, cosine mutual nearest neighbour >= ${String(XFEAT_MIN_SIMILARITY)}`,
         ],
         async extract(frame): Promise<Features> {
-          const inp = xfeatInput(
-            toGray(frame),
+          // A portrait frame in a landscape input would use under half of
+          // it (a 549x1280 frame shrinks to 206x480 in 640x480).
+          const turned = quarterTurnFits(
             frame.width,
             frame.height,
+            size.width,
+            size.height,
+          );
+          const fed = turned ? turnQuarter(frame) : frame;
+          const inp = xfeatInput(
+            toGray(fed),
+            fed.width,
+            fed.height,
             size.width,
             size.height,
           );
@@ -287,11 +301,20 @@ export function xfeatMethod(
             validWidth: inp.validWidth,
             validHeight: inp.validHeight,
           });
+          const x = p.x.map((v) => (v + 0.5) / inp.scale - 0.5);
+          const y = p.y.map((v) => (v + 0.5) / inp.scale - 0.5);
+          if (turned) {
+            for (let i = 0; i < p.count; i++) {
+              const q = fromQuarterTurn(x[i]!, y[i]!, frame.height);
+              x[i] = q.x;
+              y[i] = q.y;
+            }
+          }
           return {
             count: p.count,
             descriptorBytes: p.count * p.dim * 4,
-            x: p.x.map((v) => (v + 0.5) / inp.scale - 0.5),
-            y: p.y.map((v) => (v + 0.5) / inp.scale - 0.5),
+            x,
+            y,
             payload: p.desc,
           };
         },

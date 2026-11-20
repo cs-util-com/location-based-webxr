@@ -55,6 +55,7 @@ const ok: MethodResult = {
       descriptorBytes: 131072,
       matches: 210,
       correct: 190,
+      sample: null,
       error: null,
     },
     {
@@ -67,6 +68,7 @@ const ok: MethodResult = {
       descriptorBytes: Number.NaN,
       matches: Number.NaN,
       correct: Number.NaN,
+      sample: null,
       error: "RangeError: out of memory",
     },
   ],

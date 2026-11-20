@@ -38,23 +38,26 @@ class FakeTensor implements LrtTensor {
   }
 }
 
-/** Dense outputs for a 16 x 16 input: one sure keypoint at pixel (9, 9). */
-function outputs(where: string): FakeTensor[] {
-  const cells = 2 * 2;
+/**
+ * Dense outputs for an input of cw x ch cells of 8 px (16 x 16 by
+ * default): one sure keypoint at input pixel (9, 9).
+ */
+function outputs(where: string, cw = 2, ch = 2): FakeTensor[] {
+  const cells = cw * ch;
   const logits = new Float32Array(cells * 65);
   // Cell (1, 1), sub-position dy = 1, dx = 1 -> channel 9, pixel (9, 9).
-  logits[3 * 65 + 9] = 12;
+  logits[(cw + 1) * 65 + 9] = 12;
   const feats = new Float32Array(cells * 64).fill(1);
   const rel = new Float32Array(cells).fill(1);
   // Out of order on purpose: the adapter must find them by channel count.
   return [
-    new FakeTensor(rel, [1, 2, 2, 1], where),
-    new FakeTensor(feats, [1, 2, 2, 64], where),
-    new FakeTensor(logits, [1, 2, 2, 65], where),
+    new FakeTensor(rel, [1, ch, cw, 1], where),
+    new FakeTensor(feats, [1, ch, cw, 64], where),
+    new FakeTensor(logits, [1, ch, cw, 65], where),
   ];
 }
 
-function fakeDeps(): LoadDeps & { compiled: string[] } {
+function fakeDeps(inShape = IN_SHAPE): LoadDeps & { compiled: string[] } {
   const compiled: string[] = [];
   let t = 0;
   const api = {
@@ -64,10 +67,16 @@ function fakeDeps(): LoadDeps & { compiled: string[] } {
       t += 40;
       return Promise.resolve({
         getInputDetails: () => [
-          { name: "image", dtype: "float32", shape: IN_SHAPE },
+          { name: "image", dtype: "float32", shape: inShape },
         ],
         run: (inp: LrtTensor[]) =>
-          Promise.resolve(outputs((inp[0] as FakeTensor).where)),
+          Promise.resolve(
+            outputs(
+              (inp[0] as FakeTensor).where,
+              inShape[2]! / 8,
+              inShape[1]! / 8,
+            ),
+          ),
         delete: () => FakeTensor.log.push("model delete"),
       });
     },
@@ -179,6 +188,25 @@ describe("xfeatMethod", () => {
     expect(Array.from(await runner.match(f, f))).toEqual([0, 0]);
     runner.dispose();
     expect(FakeTensor.log).toContain("model delete");
+  });
+
+  // Why this test matters: a portrait frame in a landscape model input
+  // used less than half of it; the frame is turned first, and the keypoint
+  // must come back in the frame's own orientation (input pixel (9, 9) of
+  // the turned 32 x 16 frame is pixel (9, 22) of the 16 x 32 frame).
+  it("turns a portrait frame to fill a landscape input and maps keypoints back", async () => {
+    FakeTensor.log = [];
+    const runner = await xfeatMethod(
+      "wasm",
+      "fp16",
+      fakeDeps([1, 16, 32, 1]),
+    ).init();
+    expect(runner.notes.join(" ")).toContain("quarter turn clockwise");
+    const f = await runner.extract(
+      makeFrame(16, 32, new Uint8ClampedArray(16 * 32 * 4).fill(90)),
+    );
+    expect(f.count).toBe(1);
+    expect([f.x[0], f.y[0]]).toEqual([9, 22]);
   });
 
   it("stays on the host for wasm", async () => {

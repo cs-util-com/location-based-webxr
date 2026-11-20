@@ -1,14 +1,17 @@
 /**
- * The feature matching benchmark page: wires the form, the camera, the
- * run button, the results table and the copyable log. All measuring is in
- * `bench-run.ts`; this file only touches the DOM and browser APIs.
+ * The feature matching benchmark page: the guided steps (photo A, photo
+ * B, run, save), the camera, the options, the results table, the result
+ * pictures and the copyable log. All measuring is in `bench-run.ts`; this
+ * file only touches the DOM and browser APIs.
  *
  * @see feature-match-check.ts.md
  */
+import { drawMatches, sideBySide } from "./bench-draw";
 import {
   assertPlainPng,
   FRAME_FILES,
   framesInfo,
+  matchesInfo,
   type SavedFrame,
 } from "./bench-export";
 import {
@@ -19,10 +22,10 @@ import {
   type Frame,
 } from "./bench-image";
 import {
-  backendsFor,
+  backendsFrom,
   buildMethods,
   parseRuns,
-  precisionsFor,
+  precisionsFrom,
 } from "./bench-methods";
 import { errorText, formatBytes, type LoadDeps } from "./bench-net";
 import {
@@ -32,12 +35,24 @@ import {
   UNKNOWN_DEVICE,
   type DeviceInfo,
 } from "./bench-report";
-import { runBenchmark, type BenchInput } from "./bench-run";
+import {
+  runBenchmark,
+  type BenchInput,
+  type MethodResult,
+  type SizeResult,
+} from "./bench-run";
+import { formatMs } from "./bench-stats";
+import { stepStates, type FlowState } from "./bench-steps";
 import { syntheticPair } from "./bench-synthetic";
 
 /** The longest side a captured camera frame is kept at. */
 const CAPTURE_MAX = 1280;
 const SYNTHETIC_SEED = 1;
+/** Canvas width of a result picture at most, in device pixels. */
+const PICTURE_MAX_WIDTH = 640;
+/** Match lines drawn per picture at most (spread evenly over all). */
+const PICTURE_LINE_CAP = 200;
+const PICTURE_GAP = 8;
 
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -49,40 +64,50 @@ const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
 
 /** The page's elements, found once. */
 interface Ui {
-  readonly run: HTMLButtonElement;
-  readonly runState: HTMLElement;
-  readonly log: HTMLElement;
-  readonly table: HTMLTableSectionElement;
-  readonly report: HTMLTextAreaElement;
-  readonly copy: HTMLButtonElement;
-  readonly copyState: HTMLElement;
+  readonly steps: readonly HTMLElement[];
+  readonly cameraBox: HTMLElement;
   readonly video: HTMLVideoElement;
   readonly captureA: HTMLButtonElement;
   readonly captureB: HTMLButtonElement;
-  readonly captureState: HTMLElement;
-  readonly cameraBox: HTMLElement;
+  readonly stateA: HTMLElement;
+  readonly stateB: HTMLElement;
+  readonly run: HTMLButtonElement;
+  readonly runState: HTMLElement;
   readonly saveFrames: HTMLButtonElement;
   readonly saveState: HTMLElement;
   readonly saveLinks: HTMLElement;
+  readonly runSynthetic: HTMLButtonElement;
+  readonly syntheticState: HTMLElement;
+  readonly table: HTMLTableSectionElement;
+  readonly pictures: HTMLElement;
+  readonly report: HTMLTextAreaElement;
+  readonly copy: HTMLButtonElement;
+  readonly copyState: HTMLElement;
+  readonly log: HTMLElement;
 }
 
 function findUi(root: ParentNode): Ui {
   return {
-    run: $(root, "#run"),
-    runState: $(root, "#run-state"),
-    log: $(root, "#log"),
-    table: $(root, "#results tbody"),
-    report: $(root, "#report"),
-    copy: $(root, "#copy"),
-    copyState: $(root, "#copy-state"),
+    steps: [1, 2, 3, 4].map((n) => $(root, `#step-${String(n)}`)),
+    cameraBox: $(root, "#camera-box"),
     video: $(root, "#video"),
     captureA: $(root, "#capture-a"),
     captureB: $(root, "#capture-b"),
-    captureState: $(root, "#capture-state"),
-    cameraBox: $(root, "#camera-box"),
+    stateA: $(root, "#state-a"),
+    stateB: $(root, "#state-b"),
+    run: $(root, "#run"),
+    runState: $(root, "#run-state"),
     saveFrames: $(root, "#save-frames"),
     saveState: $(root, "#save-state"),
     saveLinks: $(root, "#save-links"),
+    runSynthetic: $(root, "#run-synthetic"),
+    syntheticState: $(root, "#synthetic-state"),
+    table: $(root, "#results tbody"),
+    pictures: $(root, "#pictures"),
+    report: $(root, "#report"),
+    copy: $(root, "#copy"),
+    copyState: $(root, "#copy-state"),
+    log: $(root, "#log"),
   };
 }
 
@@ -180,23 +205,29 @@ function captureFrame(video: HTMLVideoElement): Frame {
 const frameText = (name: string, f: Frame): string =>
   `${name} ${String(f.width)}x${String(f.height)}, ${describeGrey(greyStats(f))}`;
 
-/**
- * A frame as PNG bytes: the canvas encoder writes pixels only (no EXIF,
- * text or time), and assertPlainPng refuses the file if that ever changes.
- */
-async function framePng(f: Frame, label: string): Promise<Blob> {
+/** A canvas holding the frame's pixels. */
+function frameCanvas(f: Frame): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = f.width;
   canvas.height = f.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) {
-    throw new Error("save: no 2D canvas");
+    throw new Error("no 2D canvas");
   }
   ctx.putImageData(
     new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height),
     0,
     0,
   );
+  return canvas;
+}
+
+/**
+ * A frame as PNG bytes: the canvas encoder writes pixels only (no EXIF,
+ * text or time), and assertPlainPng refuses the file if that ever changes.
+ */
+async function framePng(f: Frame, label: string): Promise<Blob> {
+  const canvas = frameCanvas(f);
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob(resolve, "image/png");
   });
@@ -211,14 +242,28 @@ const checked = (root: ParentNode, sel: string): boolean =>
   root.querySelector<HTMLInputElement>(sel)?.checked === true;
 
 const valueOf = (root: ParentNode, sel: string): string =>
-  root.querySelector<HTMLInputElement | HTMLSelectElement>(sel)?.value ?? "";
+  root.querySelector<HTMLInputElement>(sel)?.value ?? "";
+
+/** The values of the ticked boxes named `name`. */
+const tickedValues = (root: ParentNode, name: string): string[] =>
+  Array.from(
+    root.querySelectorAll<HTMLInputElement>(`input[name="${name}"]:checked`),
+    (i) => i.value,
+  );
 
 function chosenSizes(root: ParentNode): number[] {
-  return Array.from(
-    root.querySelectorAll<HTMLInputElement>('input[name="size"]:checked'),
-  )
-    .map((i) => Number(i.value))
+  return tickedValues(root, "size")
+    .map(Number)
     .filter((v) => Number.isFinite(v) && v > 0);
+}
+
+/** What a camera start came to: running, refused, or stopped meanwhile. */
+type CameraStart = "on" | "failed" | "stopped";
+
+/** The pair a run measures, with its text for the report. */
+interface RunPair {
+  readonly input: BenchInput;
+  readonly text: string;
 }
 
 /** Starts the page on `root` (the document in the HTML entry). */
@@ -229,11 +274,19 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     a: null,
     b: null,
   };
-  /** Blob URLs of the offered files; revoked when the captures change. */
+  /** The run on the current camera pair, its results, and the save. */
+  let cameraRun: FlowState["run"] = "none";
+  let cameraResults: readonly MethodResult[] = [];
+  let saved = false;
+  /** One action at a time: a run or a save; captures wait for both. */
+  let busy: "idle" | "running" | "saving" = "idle";
+  /** Blob URLs of the offered files; revoked when they are withdrawn. */
   let savedUrls: string[] = [];
   let stream: MediaStream | null = null;
   /** The camera start in flight, so a second tap does not open a second stream. */
-  let starting: Promise<boolean> | null = null;
+  let starting: Promise<CameraStart> | null = null;
+  /** Raised by every stop, so a start still pending learns it was stopped. */
+  let cameraGeneration = 0;
 
   const log = (line: string): void => {
     const t = (performance.now() / 1000).toFixed(1);
@@ -265,11 +318,43 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       return UNKNOWN_DEVICE;
     });
 
+  /** Buttons, labels and step marks from the current state. */
+  const refresh = (): void => {
+    const idle = busy === "idle";
+    const pair = captures.a !== null && captures.b !== null;
+    ui.captureA.disabled = !idle;
+    ui.captureB.disabled = !idle || captures.a === null;
+    ui.captureA.textContent = stream ? "Take photo A" : "Start camera";
+    ui.captureB.textContent =
+      stream || captures.a === null ? "Take photo B" : "Start camera";
+    ui.run.disabled = !idle || !pair;
+    ui.runSynthetic.disabled = !idle;
+    ui.saveFrames.disabled =
+      !idle || !pair || (cameraRun !== "done" && cameraRun !== "failed");
+    ui.cameraBox.hidden = stream === null;
+    const states = stepStates({
+      a: captures.a !== null,
+      b: captures.b !== null,
+      run: cameraRun,
+      saved,
+    });
+    for (const [i, li] of ui.steps.entries()) {
+      li.dataset.state = states[i];
+      if (states[i] === "current") {
+        li.setAttribute("aria-current", "step");
+      } else {
+        li.removeAttribute("aria-current");
+      }
+    }
+  };
+
   /**
    * Stops the camera: it must not run beside the timed runs (it costs the
-   * same CPU and GPU being measured). The next capture starts it again.
+   * same CPU and GPU being measured). A start still pending sees the
+   * raised generation and stops its own stream.
    */
   const stopCamera = (): void => {
+    cameraGeneration++;
     if (!stream) {
       return;
     }
@@ -279,14 +364,17 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     stream = null;
     ui.video.srcObject = null;
     log("camera off");
+    refresh();
   };
 
-  /** Starts the camera once; true when it is running. */
-  const startCamera = (): Promise<boolean> => {
+  /** Starts the camera once; "on" when it is running. */
+  const startCamera = (): Promise<CameraStart> => {
     if (stream) {
-      return Promise.resolve(true);
+      return Promise.resolve("on");
     }
-    starting ??= (async () => {
+    starting ??= (async (): Promise<CameraStart> => {
+      const generation = cameraGeneration;
+      const stoppedMeanwhile = () => generation !== cameraGeneration;
       try {
         const s = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -295,39 +383,74 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
           },
           audio: false,
         });
+        if (stoppedMeanwhile()) {
+          for (const t of s.getTracks()) {
+            t.stop();
+          }
+          return "stopped";
+        }
         stream = s;
         ui.video.srcObject = s;
+        refresh();
         await ui.video.play();
+        if (stoppedMeanwhile()) {
+          return "stopped";
+        }
         log("camera on");
-        return true;
+        return "on";
       } catch (e) {
+        if (stoppedMeanwhile()) {
+          return "stopped";
+        }
         fail("camera", e);
         stopCamera();
-        return false;
+        return "failed";
       } finally {
         starting = null;
+        refresh();
       }
     })();
     return starting;
   };
 
-  const captureText = (): string =>
-    `A: ${captures.a ? "ready" : "-"}, B: ${captures.b ? "ready" : "-"}`;
-
-  const capture = (which: "a" | "b") => async (): Promise<void> => {
-    if (!stream) {
-      ui.captureState.textContent = "starting camera...";
+  /** Withdraws the offered files (their URLs revoked). */
+  const clearSaved = (state: string): void => {
+    for (const u of savedUrls) {
+      URL.revokeObjectURL(u);
     }
-    if (!(await startCamera())) {
-      ui.captureState.textContent = "camera unavailable (see log)";
+    savedUrls = [];
+    ui.saveLinks.replaceChildren();
+    ui.saveState.textContent = state;
+    saved = false;
+  };
+
+  /**
+   * A capture tap: with the camera off it only starts the camera (so the
+   * photo is aimed, and not the camera's first frame); with it on it takes
+   * the photo. Photo A starts a new pair; photo B starts the run.
+   */
+  const capture = (which: "a" | "b") => async (): Promise<void> => {
+    const state = which === "a" ? ui.stateA : ui.stateB;
+    const name = which === "a" ? "A" : "B";
+    if (!stream) {
+      state.textContent = "starting camera...";
+      const started = await startCamera();
+      state.textContent =
+        started === "on"
+          ? `camera on: aim, then tap Take photo ${name}`
+          : started === "failed"
+            ? "camera unavailable (see log)"
+            : "camera stopped: tap again";
+      return;
+    }
+    if (busy !== "idle") {
       return;
     }
     if (ui.video.videoWidth === 0) {
-      ui.captureState.textContent = "camera not ready yet: tap again";
+      state.textContent = "camera not ready yet: tap again";
       log("capture: the camera has no picture yet");
       return;
     }
-    const name = which === "a" ? "A" : "B";
     const f = captureFrame(ui.video);
     captures[which] = {
       name,
@@ -337,32 +460,35 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     log(
       `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(ui.video.videoWidth)}x${String(ui.video.videoHeight)}), ${describeGrey(greyStats(f))}`,
     );
-    ui.captureState.textContent = captureText();
-    clearSaved(captures.a && captures.b ? "" : "capture A and B first");
-  };
-  const clearSaved = (state: string): void => {
-    for (const u of savedUrls) {
-      URL.revokeObjectURL(u);
+    state.textContent = `taken, ${String(f.width)}x${String(f.height)}`;
+    cameraRun = "none";
+    cameraResults = [];
+    clearSaved("after the run");
+    if (which === "a") {
+      captures.b = null;
+      ui.stateB.textContent = "not taken";
+      ui.runState.textContent = "waiting for photo B";
+      refresh();
+      return;
     }
-    savedUrls = [];
-    ui.saveLinks.replaceChildren();
-    ui.saveState.textContent = state;
-    ui.saveFrames.disabled = !(captures.a && captures.b);
+    refresh();
+    startRun("camera");
   };
-  const saveFrames = async (): Promise<void> => {
+
+  const saveFiles = async (): Promise<void> => {
     const { a, b } = captures;
     if (!a || !b) {
       return;
     }
     const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX);
+    const matches = matchesInfo(cameraResults, { a: a.frame, b: b.frame });
+    const json = (text: string) =>
+      new Blob([text], { type: "application/json" });
     const files: [string, string, Blob][] = [
       [FRAME_FILES.A, "frame A (PNG)", await framePng(a.frame, "frame A")],
       [FRAME_FILES.B, "frame B (PNG)", await framePng(b.frame, "frame B")],
-      [
-        FRAME_FILES.info,
-        "sizes (JSON)",
-        new Blob([info], { type: "application/json" }),
-      ],
+      [FRAME_FILES.info, "sizes and device (JSON)", json(info)],
+      [FRAME_FILES.matches, "keypoints and matches (JSON)", json(matches)],
     ];
     ui.saveLinks.replaceChildren(
       ...files.map(([file, text, blob]) => {
@@ -377,40 +503,32 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     );
   };
   ui.saveFrames.addEventListener("click", () => {
+    if (busy !== "idle") {
+      return;
+    }
     clearSaved("preparing...");
-    ui.saveFrames.disabled = true;
-    saveFrames()
+    busy = "saving";
+    refresh();
+    saveFiles()
       .then(() => {
-        ui.saveState.textContent = "3 files ready: tap each to save";
-        log("frames ready to save");
+        saved = true;
+        ui.saveState.textContent = `${String(savedUrls.length)} files ready: tap each to save`;
+        log("files ready to save");
       })
       .catch((e: unknown) => {
         fail("save", e);
         clearSaved("failed (see log)");
       })
       .finally(() => {
-        ui.saveFrames.disabled = !(captures.a && captures.b);
+        busy = "idle";
+        refresh();
       });
   });
   ui.captureA.addEventListener("click", () => void capture("a")());
   ui.captureB.addEventListener("click", () => void capture("b")());
 
-  for (const radio of root.querySelectorAll<HTMLInputElement>(
-    'input[name="input"]',
-  )) {
-    radio.addEventListener("change", () => {
-      const camera = valueOf(root, 'input[name="input"]:checked') === "camera";
-      ui.cameraBox.hidden = !camera;
-      if (camera) {
-        void startCamera();
-      } else {
-        stopCamera();
-      }
-    });
-  }
-
-  const benchInput = (): { input: BenchInput; text: string } | null => {
-    if (valueOf(root, 'input[name="input"]:checked') !== "camera") {
+  const pairOf = (kind: "camera" | "synthetic"): RunPair | null => {
+    if (kind === "synthetic") {
       const p = syntheticPair(640, 480, SYNTHETIC_SEED);
       return {
         input: { a: p.a, b: p.b, warp: p.warp },
@@ -419,7 +537,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     }
     const { a, b } = captures;
     if (!a || !b) {
-      fail("input", new Error("capture A and B first"));
+      fail("input", new Error("take photo A and B first"));
       return null;
     }
     return {
@@ -456,49 +574,140 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     );
   };
 
-  const runOnce = async (): Promise<string> => {
+  /** A result card below the earlier ones: its caption, and later a picture. */
+  const addCard = (caption: string, error: boolean): HTMLElement => {
+    const fig = document.createElement("figure");
+    fig.className = error ? "picture picture-error" : "picture";
+    const cap = document.createElement("figcaption");
+    cap.textContent = caption;
+    fig.append(cap);
+    ui.pictures.append(fig);
+    return fig;
+  };
+
+  /** Draws one finished size: both frames, keypoints and match lines. */
+  const addPicture = (
+    pair: RunPair,
+    images: { a: HTMLCanvasElement; b: HTMLCanvasElement },
+    label: string,
+    s: SizeResult,
+  ): void => {
+    const head = `${label} @${String(s.longEdge)} (${String(s.width)}x${String(s.height)})`;
+    if (s.error !== null || s.sample === null) {
+      addCard(`${head}: ERROR ${s.error ?? "no result"}`, true);
+      return;
+    }
+    const sample = s.sample;
+    const matches = sample.pairs.length / 2;
+    const fig = addCard(head, false);
+    const box = Math.max(160, ui.pictures.clientWidth);
+    const layout = sideBySide(
+      pair.input.a,
+      pair.input.b,
+      Math.min(PICTURE_MAX_WIDTH, Math.round(box * devicePixelRatio)),
+      PICTURE_GAP,
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = layout.width;
+    canvas.height = layout.height;
+    canvas.style.width = `${String(Math.min(box, layout.width))}px`;
+    canvas.setAttribute(
+      "aria-label",
+      `${head}: frames A and B side by side with ${String(matches)} matches`,
+    );
+    const ctx = canvas.getContext("2d");
+    const shown = ctx
+      ? drawMatches(ctx, {
+          layout,
+          imageA: images.a,
+          imageB: images.b,
+          frameA: pair.input.a,
+          frameB: pair.input.b,
+          size: s,
+          sample,
+          lineCap: PICTURE_LINE_CAP,
+        })
+      : 0;
+    fig.firstElementChild!.textContent =
+      `${head}: keypoints A ${String(sample.a.x.length)}, B ${String(sample.b.x.length)}` +
+      ` | matches ${String(matches)}` +
+      (shown < matches ? ` (${String(shown)} drawn)` : "") +
+      (s.correct === null ? "" : ` | correct ${String(s.correct)}`) +
+      ` | extract ${formatMs(s.extract.median)} ms, match ${formatMs(s.match.median)} ms`;
+    fig.append(canvas);
+  };
+
+  const runOnce = async (
+    kind: "camera" | "synthetic",
+    state: HTMLElement,
+  ): Promise<{ text: string; results: MethodResult[] | null }> => {
     errors.length = 0;
-    const chosen = benchInput();
-    if (!chosen) {
-      return "not run: no input";
+    const pair = pairOf(kind);
+    if (!pair) {
+      return { text: "not run: no input", results: null };
     }
     const methods = buildMethods(
       {
         sift: checked(root, "#m-sift"),
         xfeat: checked(root, "#m-xfeat"),
         aliked: checked(root, "#m-aliked"),
-        backends: backendsFor(valueOf(root, "#backend")),
-        precisions: precisionsFor(valueOf(root, "#precision")),
+        backends: backendsFrom(tickedValues(root, "backend")),
+        precisions: precisionsFrom(tickedValues(root, "model")),
       },
       browserDeps,
     );
     const sizes = chosenSizes(root);
     if (methods.length === 0 || sizes.length === 0) {
-      fail("settings", new Error("choose at least one method and one size"));
-      return "not run: nothing chosen";
+      fail(
+        "options",
+        new Error("tick at least one method, backend, model file and size"),
+      );
+      return { text: "not run: nothing ticked", results: null };
     }
     const runs = parseRuns(valueOf(root, "#runs"));
     stopCamera();
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
+    ui.table.replaceChildren();
+    ui.pictures.replaceChildren();
+    ui.report.value = "";
+    const images = {
+      a: frameCanvas(pair.input.a),
+      b: frameCanvas(pair.input.b),
+    };
     log(
       `run: ${String(methods.length)} methods, sizes ${sizes.join("/")}, ${String(runs)} runs`,
     );
     const results = await runBenchmark(
       methods,
-      chosen.input,
+      pair.input,
       { sizes, runs },
       {
         now: () => performance.now(),
         yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
-        log,
+        log: (line) => {
+          log(line);
+          state.textContent = `running: ${line}`;
+        },
+        onSize: (m, s) => {
+          try {
+            addPicture(pair, images, m.label, s);
+          } catch (e) {
+            fail("picture", e);
+          }
+        },
       },
     );
+    for (const r of results) {
+      if (r.error !== null) {
+        addCard(`${r.label}: ERROR ${r.error}`, true);
+      }
+    }
     renderTable(tableRows(results));
     ui.report.value = formatReport({
       startedAt,
       device,
-      input: chosen.text,
+      input: pair.text,
       sizes,
       runs,
       results,
@@ -507,29 +716,58 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     const failed = results.filter(
       (r) => r.error !== null || r.sizes.some((s) => s.error !== null),
     ).length;
-    return failed === 0
-      ? `done: ${String(results.length)} methods`
-      : `done: ${String(results.length)} methods, ${String(failed)} with errors (see log)`;
+    const text =
+      failed === 0
+        ? `done: ${String(results.length)} methods`
+        : `done: ${String(results.length)} methods, ${String(failed)} with errors (see log)`;
+    return { text, results };
   };
 
-  ui.run.addEventListener("click", () => {
-    ui.run.disabled = true;
-    ui.run.textContent = "Running...";
-    ui.runState.textContent = "running";
-    runOnce()
-      .then((state) => {
-        ui.runState.textContent = state;
-        log(state);
+  /**
+   * Runs the benchmark on the camera pair or on the synthetic one. The
+   * camera pair's run is step 3; one run or save at a time.
+   */
+  function startRun(kind: "camera" | "synthetic"): void {
+    if (busy !== "idle") {
+      return;
+    }
+    const button = kind === "camera" ? ui.run : ui.runSynthetic;
+    const state = kind === "camera" ? ui.runState : ui.syntheticState;
+    const idleLabel = button.textContent;
+    busy = "running";
+    if (kind === "camera") {
+      cameraRun = "running";
+      cameraResults = [];
+      clearSaved("after the run");
+    }
+    button.textContent = "Running...";
+    state.textContent = "running";
+    refresh();
+    runOnce(kind, state)
+      .then(({ text, results }) => {
+        state.textContent = text;
+        log(text);
+        if (kind === "camera") {
+          cameraRun = results ? "done" : "failed";
+          cameraResults = results ?? [];
+          ui.saveState.textContent = "ready: tap to prepare the files";
+        }
       })
       .catch((e: unknown) => {
         fail("run", e);
-        ui.runState.textContent = "failed (see log)";
+        state.textContent = "failed (see log)";
+        if (kind === "camera") {
+          cameraRun = "failed";
+        }
       })
       .finally(() => {
-        ui.run.disabled = false;
-        ui.run.textContent = "Run benchmark";
+        busy = "idle";
+        button.textContent = idleLabel;
+        refresh();
       });
-  });
+  }
+  ui.run.addEventListener("click", () => startRun("camera"));
+  ui.runSynthetic.addEventListener("click", () => startRun("synthetic"));
 
   ui.copy.addEventListener("click", () => {
     const text = ui.report.value || ui.log.textContent || "";
@@ -547,5 +785,6 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   });
 
   window.addEventListener("pagehide", stopCamera);
+  refresh();
   log("ready");
 }

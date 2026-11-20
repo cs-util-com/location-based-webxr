@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 
 import {
   FRAME_FILES,
   assertPlainPng,
   framesInfo,
+  matchesInfo,
   pngChunkTypes,
 } from "./bench-export";
-import { makeFrame } from "./bench-image";
+import { makeFrame, toFramePoint } from "./bench-image";
 import type { DeviceInfo } from "./bench-report";
+import type { MethodResult, SizeResult } from "./bench-run";
+import { summarize } from "./bench-stats";
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 
@@ -172,5 +176,148 @@ describe("framesInfo", () => {
         ),
       ),
     ).toEqual([]);
+  });
+});
+
+const size = (over: Partial<SizeResult>): SizeResult => ({
+  longEdge: 4,
+  width: 4,
+  height: 2,
+  extract: summarize([1]),
+  match: summarize([1]),
+  keypoints: 2,
+  descriptorBytes: 0,
+  matches: 1,
+  correct: null,
+  sample: {
+    a: { x: new Float32Array([0, 3]), y: new Float32Array([0, 1]) },
+    b: { x: new Float32Array([1.5]), y: new Float32Array([0.5]) },
+    pairs: new Int32Array([1, 0]),
+  },
+  error: null,
+  ...over,
+});
+
+const method = (
+  sizes: SizeResult[],
+  error: string | null = null,
+): MethodResult => ({
+  id: "m",
+  label: "M",
+  backend: "webgpu",
+  downloads: [],
+  initMs: 1,
+  notes: [],
+  sizes,
+  error,
+});
+
+interface SavedSize {
+  readonly keypointsA: number[][];
+  readonly [k: string]: unknown;
+}
+interface SavedMatches {
+  readonly methods: {
+    readonly id: string;
+    readonly label: string;
+    readonly backend: string;
+    readonly error: string | null;
+    readonly sizes: SavedSize[];
+  }[];
+  readonly [k: string]: unknown;
+}
+
+// Why these tests matter: the keypoints and matches are saved so they can
+// be checked offline against the saved frames; a coordinate left in the
+// pixels of a smaller size makes that check measure nothing. The file also
+// must carry no device, time or place: it travels with the frames.
+describe("matchesInfo", () => {
+  const frames = { a: { width: 8, height: 4 }, b: { width: 8, height: 4 } };
+  const read = (results: MethodResult[], f = frames): SavedMatches =>
+    JSON.parse(matchesInfo(results, f)) as SavedMatches;
+
+  it("holds the fixed fields and no device, time or place", () => {
+    const info = read([method([size({})])]);
+    expect(Object.keys(info).sort()).toEqual(
+      ["coordinates", "format", "frames", "methods"].sort(),
+    );
+    expect(info.format).toBe("feature-match-matches/1");
+    expect(info.frames).toEqual({
+      A: { file: FRAME_FILES.A, width: 8, height: 4 },
+      B: { file: FRAME_FILES.B, width: 8, height: 4 },
+    });
+  });
+
+  it("maps keypoints from the size computed to the saved frame's pixels", () => {
+    const m = read([method([size({})])]).methods[0]!;
+    expect([m.id, m.label, m.backend, m.error]).toEqual([
+      "m",
+      "M",
+      "webgpu",
+      null,
+    ]);
+    expect(m.sizes[0]).toEqual({
+      longEdge: 4,
+      width: 4,
+      height: 2,
+      error: null,
+      // Size 4x2 to frame 8x4: (v + 0.5) * 2 - 0.5.
+      keypointsA: [
+        [0.5, 0.5],
+        [6.5, 2.5],
+      ],
+      keypointsB: [[3.5, 1.5]],
+      matches: [[1, 0]],
+    });
+  });
+
+  it("keeps a failed size and a failed method with their errors and no points", () => {
+    const info = read([
+      method([size({ error: "out of memory", sample: null })]),
+      method([], "init: HTTP 404"),
+    ]);
+    expect(info.methods[0]!.sizes[0]).toMatchObject({
+      error: "out of memory",
+      keypointsA: [],
+      keypointsB: [],
+      matches: [],
+    });
+    expect(info.methods[1]).toMatchObject({
+      error: "init: HTTP 404",
+      sizes: [],
+    });
+  });
+
+  it("maps any point like the resize does, to 0.005 px, inside the frame", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 64 }),
+        fc.integer({ min: 1, max: 64 }),
+        fc.integer({ min: 1, max: 200 }),
+        fc.integer({ min: 1, max: 200 }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        fc.double({ min: 0, max: 1, noNaN: true }),
+        (w, h, fw, fh, u, v) => {
+          const x = Math.fround(u * (w - 1));
+          const y = Math.fround(v * (h - 1));
+          const s = size({
+            width: w,
+            height: h,
+            sample: {
+              a: { x: new Float32Array([x]), y: new Float32Array([y]) },
+              b: { x: new Float32Array(0), y: new Float32Array(0) },
+              pairs: new Int32Array(0),
+            },
+          });
+          const fr = { width: fw, height: fh };
+          const [mx, my] = read([method([s])], { a: fr, b: fr }).methods[0]!
+            .sizes[0]!.keypointsA[0]!;
+          expect(Math.abs(mx! - toFramePoint(x, w, fw))).toBeLessThan(0.0051);
+          expect(Math.abs(my! - toFramePoint(y, h, fh))).toBeLessThan(0.0051);
+          expect(mx!).toBeGreaterThanOrEqual(-0.5);
+          expect(mx!).toBeLessThanOrEqual(fw - 0.5);
+        },
+      ),
+    );
   });
 });

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  backendsFor,
+  backendsFrom,
   buildMethods,
   parseRuns,
-  precisionsFor,
+  precisionsFrom,
 } from "./bench-methods";
 import type { LoadDeps } from "./bench-net";
 
@@ -61,12 +61,13 @@ describe("buildMethods", () => {
 // value must fail loudly, and a typo in the runs field must fall back to
 // the default rather than run zero or a thousand times.
 describe("form values", () => {
-  it("expands both and refuses unknown choices", () => {
-    expect(backendsFor("both")).toEqual(["webgpu", "wasm"]);
-    expect(backendsFor("wasm")).toEqual(["wasm"]);
-    expect(() => backendsFor("webnn")).toThrow(RangeError);
-    expect(precisionsFor("both")).toEqual(["fp16", "fp32"]);
-    expect(() => precisionsFor("int8")).toThrow(RangeError);
+  it("keeps the ticked boxes in a fixed order and refuses unknown values", () => {
+    expect(backendsFrom(["wasm", "webgpu"])).toEqual(["webgpu", "wasm"]);
+    expect(backendsFrom(["wasm"])).toEqual(["wasm"]);
+    expect(backendsFrom([])).toEqual([]);
+    expect(() => backendsFrom(["webnn"])).toThrow(RangeError);
+    expect(precisionsFrom(["fp32", "fp16"])).toEqual(["fp16", "fp32"]);
+    expect(() => precisionsFrom(["int8"])).toThrow(RangeError);
   });
 
   it("keeps runs between 1 and 50", () => {

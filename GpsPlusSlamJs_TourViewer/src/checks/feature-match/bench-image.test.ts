@@ -5,8 +5,11 @@ import {
   describeGrey,
   fitInside,
   greyStats,
+  fromQuarterTurn,
   makeFrame,
+  quarterTurnFits,
   resizeFrame,
+  turnQuarter,
   sizeForLongEdge,
   toGray,
   toFramePoint,
@@ -198,5 +201,66 @@ describe("greyStats", () => {
     expect(describeGrey({ mean: 107.26, sd: 46.04 })).toBe(
       "grey mean 107.3 sd 46.0 (0-255)",
     );
+  });
+});
+
+// Why these tests matter: a portrait camera frame fed to a model with a
+// fixed landscape input used less than half of it; the page now turns
+// such a frame a quarter turn first, and every keypoint must come back to
+// the same pixel of the frame as it was taken, or the saved coordinates
+// and the drawn match lines are wrong.
+describe("quarter turn", () => {
+  const ramp = (w: number, h: number) =>
+    makeFrame(
+      w,
+      h,
+      Uint8ClampedArray.from({ length: w * h * 4 }, (_, i) =>
+        i % 4 === 3 ? 255 : Math.floor(i / 4) % 251,
+      ),
+    );
+  const px = (f: ReturnType<typeof ramp>, x: number, y: number) =>
+    f.rgba[(y * f.width + x) * 4];
+
+  it("turns clockwise: the bottom-left pixel becomes the top-left", () => {
+    const f = ramp(2, 3);
+    const t = turnQuarter(f);
+    expect([t.width, t.height]).toEqual([3, 2]);
+    expect(px(t, 0, 0)).toBe(px(f, 0, 2));
+    expect(px(t, 2, 0)).toBe(px(f, 0, 0));
+    expect(px(t, 0, 1)).toBe(px(f, 1, 2));
+  });
+
+  it("maps every turned pixel back to its source pixel", () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 12 }),
+        (w, h) => {
+          const f = ramp(w, h);
+          const t = turnQuarter(f);
+          for (let yr = 0; yr < t.height; yr++) {
+            for (let xr = 0; xr < t.width; xr++) {
+              const p = fromQuarterTurn(xr, yr, h);
+              expect(px(t, xr, yr)).toBe(px(f, p.x, p.y));
+            }
+          }
+        },
+      ),
+    );
+  });
+
+  it("four turns give the frame back", () => {
+    const f = ramp(5, 3);
+    const back = turnQuarter(turnQuarter(turnQuarter(turnQuarter(f))));
+    expect([back.width, back.height]).toEqual([5, 3]);
+    expect(Array.from(back.rgba)).toEqual(Array.from(f.rgba));
+  });
+
+  it("turns only a frame whose orientation differs from the box", () => {
+    expect(quarterTurnFits(549, 1280, 640, 480)).toBe(true);
+    expect(quarterTurnFits(1280, 549, 640, 480)).toBe(false);
+    expect(quarterTurnFits(480, 640, 480, 640)).toBe(false);
+    expect(quarterTurnFits(500, 500, 640, 480)).toBe(false);
+    expect(quarterTurnFits(549, 1280, 480, 480)).toBe(false);
   });
 });

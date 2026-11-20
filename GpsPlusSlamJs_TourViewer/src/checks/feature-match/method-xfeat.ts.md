@@ -21,11 +21,11 @@ The XFeat method of the benchmark: the LiteRT export of XFeat run by LiteRT.js o
 ## Invariants
 
 - The runtime loads once per page (a second `loadLiteRt` fails); the promise is a resource cache keyed by the loader, and a failed load is forgotten so the next run retries. Threads are used only under cross-origin isolation.
-- The model input is fixed (640 x 480 for this export): a smaller frame is padded, a larger or portrait one is shrunk to fit, so the model's own time hardly changes with the size chosen. Keypoints are mapped back to frame pixels.
+- The model input is fixed (640 x 480 for this export). A frame whose orientation differs from the input's (a portrait camera frame in the landscape input) is first turned a quarter turn clockwise (`turnQuarter`), so a 549 x 1280 frame fills 640 x 275 of the input instead of 206 x 480; a square frame or input never turns. Then a smaller frame is padded and a larger one shrunk to fit, so the model's own time hardly changes with the size chosen. Keypoints are mapped back to the frame's own pixels and orientation (`fromQuarterTurn`); the turn is stated in the method's notes, so it is in the report. The turn is part of the timed extraction (it is a copy of a frame of at most 640 px on the long side).
 - Every tensor made per frame is deleted, also on failure; on WebGPU the input moves to the GPU and each output back to the host.
 - The backend shown is the requested accelerator; LiteRT.js does not report a partial fallback through its public API.
 - Init is the model compile; the runtime's own load time is in the notes.
 
 ## Tests
 
-`method-xfeat.test.ts` (a fake runtime with out-of-order outputs).
+`method-xfeat.test.ts` (a fake runtime with out-of-order outputs; a portrait frame in a landscape input, turned and mapped back).

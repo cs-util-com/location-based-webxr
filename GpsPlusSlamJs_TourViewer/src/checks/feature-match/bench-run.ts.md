@@ -9,7 +9,9 @@ The benchmark loop: loads each method, runs it per input size with a warm-up and
 - `CORRECT_TOL_PX = 3`.
 - `Features { count, descriptorBytes, x, y, payload }` (keypoints in frame pixels; `payload` is the method's own descriptor data).
 - `MethodRunner { backend, downloads, initMs, notes, extract(frame), match(a, b), dispose() }`; `BenchMethod { id, label, init() }`.
-- `BenchInput { a, b, warp | null }`; `MethodResult` (with one `SizeResult` per size); `BenchHooks { now, yieldToUi, log }`.
+- `BenchInput { a, b, warp | null }`; `MethodResult` (with one `SizeResult` per size); `BenchHooks { now, yieldToUi, log, onSize? }`.
+- `Points { x, y }` and `SizeSample { a, b, pairs }`: the keypoints of both frames and the match pairs (`pairs[2k]` an index into `a`, `pairs[2k+1]` into `b`) of the last timed round, in the pixels of the size computed (`SizeResult.width x height`). `SizeResult.sample` is that sample, or null when the size failed.
+- `onSize(method { id, label }, size)`: called as each size finishes (also a failed one), so the page can draw it while the next one runs.
 - `runBenchmark(methods, input, { sizes, runs }, hooks)`: per method `init()`, then per size both frames resized to that long edge, one warm-up (extract A, extract B, match), then `runs` timed rounds. Extraction is timed per frame, matching per pair. Keypoints, descriptor bytes, matches and correct matches are the lower median over all timed rounds (keypoints and bytes over both frames). A size that cannot be computed or resized is kept as that size's error, like a failed extraction.
 
 ## Invariants

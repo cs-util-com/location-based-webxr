@@ -8,8 +8,8 @@ Turns the page's choices into the list of methods to run, and reads the form's v
 
 - `MethodSelection { sift, xfeat, aliked, backends, precisions }`.
 - `buildMethods(selection, deps)`: SIFT once; XFeat per backend and precision; ALIKED + LightGlue per backend. Cheapest first.
-- `backendsFor(value)`: `webgpu`, `wasm` or `both`; throws `RangeError` otherwise.
-- `precisionsFor(value)`: `fp16`, `fp32` or `both`; throws `RangeError` otherwise.
+- `backendsFrom(values)`: the ticked backend boxes (`webgpu`, `wasm`) in that fixed order, whatever order they come in; an empty list stays empty (no XFeat or ALIKED then); throws `RangeError` on an unknown value.
+- `precisionsFrom(values)`: the ticked XFeat model file boxes (`fp16`, `fp32`), same rules.
 - `parseRuns(value)`: a whole number 1 to 50, else 5.
 
 ## Tests

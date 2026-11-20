@@ -5,14 +5,16 @@
  *
  * @see bench-export.ts.md
  */
-import { greyStats, type Frame } from "./bench-image";
+import { greyStats, toFramePoint, type Frame } from "./bench-image";
 import type { DeviceInfo } from "./bench-report";
+import type { MethodResult, Points } from "./bench-run";
 
 /** The names the saved files get. */
 export const FRAME_FILES = {
   A: "feature-match-frame-a.png",
   B: "feature-match-frame-b.png",
   info: "feature-match-frames.json",
+  matches: "feature-match-matches.json",
 } as const;
 
 /** A captured frame and the camera size it was taken from. */
@@ -88,6 +90,70 @@ export function assertPlainPng(bytes: Uint8Array, label: string): void {
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100;
+
+interface Size {
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Points computed at `size`, in the pixels of `frame`, to 0.01 px. */
+function inFrame(p: Points, size: Size, frame: Size): [number, number][] {
+  return Array.from(p.x, (x, i) => [
+    round2(toFramePoint(x, size.width, frame.width)),
+    round2(toFramePoint(p.y[i]!, size.height, frame.height)),
+  ]);
+}
+
+/**
+ * The JSON of every method's keypoints and matches on the camera pair,
+ * for checking offline against the saved frames. Positions are in the
+ * pixels of the saved PNGs (mapped from the size each was computed at,
+ * which is kept with them); `matches` pairs an index into `keypointsA`
+ * with one into `keypointsB`. Raw output: nothing is verified here. No
+ * device, time or place.
+ */
+export function matchesInfo(
+  results: readonly MethodResult[],
+  frames: { readonly a: Size; readonly b: Size },
+): string {
+  return `${JSON.stringify({
+    format: "feature-match-matches/1",
+    coordinates:
+      "pixels of the saved frames, pixel centres at integers, x right, y down",
+    frames: {
+      A: {
+        file: FRAME_FILES.A,
+        width: frames.a.width,
+        height: frames.a.height,
+      },
+      B: {
+        file: FRAME_FILES.B,
+        width: frames.b.width,
+        height: frames.b.height,
+      },
+    },
+    methods: results.map((r) => ({
+      id: r.id,
+      label: r.label,
+      backend: r.backend,
+      error: r.error,
+      sizes: r.sizes.map((s) => ({
+        longEdge: s.longEdge,
+        width: s.width,
+        height: s.height,
+        error: s.error,
+        keypointsA: s.sample ? inFrame(s.sample.a, s, frames.a) : [],
+        keypointsB: s.sample ? inFrame(s.sample.b, s, frames.b) : [],
+        matches: s.sample
+          ? Array.from({ length: s.sample.pairs.length / 2 }, (_, i) => [
+              s.sample!.pairs[2 * i]!,
+              s.sample!.pairs[2 * i + 1]!,
+            ])
+          : [],
+      })),
+    })),
+  })}\n`;
+}
 
 /**
  * The JSON saved with the frames: a fixed list of fields (sizes, grey
