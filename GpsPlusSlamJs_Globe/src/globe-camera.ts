@@ -21,8 +21,6 @@ export interface OrbitPose {
   readonly up: THREE.Vector3;
 }
 
-const DEG = Math.PI / 180;
-
 /**
  * The pose that centres `target`, north up.
  *
@@ -34,8 +32,8 @@ const DEG = Math.PI / 180;
  * perpendicular to the view.
  */
 export function orbitPose(ellipsoid: Ellipsoid, target: LatLng): OrbitPose {
-  const lat = target.lat * DEG;
-  const lng = target.lng * DEG;
+  const lat = target.lat * THREE.MathUtils.DEG2RAD;
+  const lng = target.lng * THREE.MathUtils.DEG2RAD;
   const direction = ellipsoid
     .getCartographicToPosition(lat, lng, 0, new THREE.Vector3())
     .normalize();
