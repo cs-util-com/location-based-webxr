@@ -37,7 +37,7 @@ import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
-import { smoothstep } from "./globe-ease.js";
+import { clampProgress, smoothstep } from "./globe-ease.js";
 import { surfaceRadiusAlong } from "./globe-dive.js";
 import { liftedEllipsoid, type FlightStart } from "./flight-path.js";
 import {
@@ -186,9 +186,6 @@ function requireGround(groundM: number): void {
     throw new RangeError(`groundM must be >= 0 and finite, got ${groundM}`);
   }
 }
-
-const clampProgress = (p: number) =>
-  p >= 1 ? 1 : p > 0 && Number.isFinite(p) ? p : 0;
 
 /**
  * Whether nothing holds a flight TO A TARGET at `nowMs` (every caller
