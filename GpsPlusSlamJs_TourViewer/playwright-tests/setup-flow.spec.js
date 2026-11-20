@@ -313,23 +313,38 @@ function measureCard() {
         };
       }),
     contentWidth: c.width - 2 * pad - 3,
+    contentBox: card.clientWidth - 2 * pad,
   };
 }
 
 // The chosen sticker size (size "l" of map-size.ts): 37 % of the
 // window's width, from 11.5rem up to 23.5rem, and never past 58 % of its
-// height. Its layout width, before the slight turn.
-/** @param {{ width: number, height: number }} vp */
-const stickerWidthAt = (vp) =>
-  Math.min(Math.min(Math.max(184, 0.37 * vp.width), 376), 0.58 * vp.height);
+// height. Its layout width, before the slight turn. On a narrow phone it
+// gives way to the step row's six dots beside it (142 px), past its left
+// margin (16) and less its poke over the card's edge (16 + 1.5 + 6),
+// within the card's content box as laid out (a 1.5 px border is drawn 1 px
+// wide at a device pixel ratio of 1).
+/**
+ * @param {{ width: number, height: number }} vp
+ * @param {number} content the card's content-box width
+ */
+const stickerWidthAt = (vp, content) =>
+  Math.min(
+    Math.min(Math.max(184, 0.37 * vp.width), 376),
+    0.58 * vp.height,
+    content - (142 + 16 - (16 + 1.5 + 6)),
+  );
 
 // Why: the chosen layout is the map as a
 // sticker on the card's corner, at a size picked from four, with a spacing
 // scale (8 under a heading, 16 between groups, 24 before the footer) and
 // start answers only as wide as their words. Positions and gaps, not
 // presence: a card that shows everything passes a presence test with the
-// map over a button or a corner cutting a link.
+// map over a button or a corner cutting a link. The two narrow phones are
+// where the sticker once lay over the last step dots.
 for (const viewport of [
+  { width: 320, height: 640 },
+  { width: 360, height: 640 },
   { width: 390, height: 844 },
   { width: 844, height: 390 },
   { width: 880, height: 1000 },
@@ -358,7 +373,7 @@ for (const viewport of [
         const m = await page.evaluate(measureCard);
         const at = `${answer ?? "question"}: `;
         expect(
-          Math.abs(m.stickerWidth - stickerWidthAt(viewport)),
+          Math.abs(m.stickerWidth - stickerWidthAt(viewport, m.contentBox)),
           at,
         ).toBeLessThanOrEqual(1);
         // Over the card's top and right edges, inside the window.
@@ -676,16 +691,38 @@ function measureBelowSticker() {
         `${el.tagName.toLowerCase()}#${el.id}.${el.className}: ${String(Math.round(contentRight - r.right))} px short`,
       );
   }
-  const nav = /** @type {HTMLElement} */ (
+  const navEl = /** @type {HTMLElement} */ (
     document.getElementById("setup-nav")
-  ).getBoundingClientRect();
+  );
+  const nav = navEl.getBoundingClientRect();
+  // The shown element just before Back and Next, and the room between
+  // them: the footer's 24 px, nothing in between.
+  let before = navEl.previousElementSibling;
+  while (before !== null && !shown(before.getBoundingClientRect()))
+    before = before.previousElementSibling;
   const disclosures = [...card.querySelectorAll("details:not(.step) > summary")]
     .filter((s) => shown(s.getBoundingClientRect()))
-    .map((s) => ({
-      text: s.textContent?.trim() ?? "",
-      aboveNav: !shown(nav) || s.getBoundingClientRect().bottom <= nav.top,
-    }));
-  return { narrow, checked, disclosures };
+    .map((s) => {
+      const box = /** @type {HTMLElement} */ (s.parentElement);
+      return {
+        text: s.textContent?.trim() ?? "",
+        justAboveNav: !shown(nav) || before === box,
+        gapToNav: shown(nav)
+          ? Math.round(nav.top - box.getBoundingClientRect().bottom)
+          : null,
+      };
+    });
+  // The gap between two fields that follow each other in the open step:
+  // the stack's item gap.
+  const fieldGaps = [];
+  for (const f of card.querySelectorAll(".step[open] .field")) {
+    const next = f.nextElementSibling;
+    if (next === null || !next.matches(".field")) continue;
+    const a = f.getBoundingClientRect();
+    const b = next.getBoundingClientRect();
+    if (shown(a) && shown(b)) fieldGaps.push(Math.round(b.top - a.bottom));
+  }
+  return { narrow, checked, disclosures, fieldGaps };
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -729,9 +766,13 @@ for (const viewport of [
       // check must not pass by checking nothing.
       if (viewport.height > 600)
         expect(print.checked, "print").toBeGreaterThan(5);
-      expect(print.disclosures, "print").toEqual([
-        { text: "Settings", aboveNav: true },
-      ]);
+      // Directly above Back and Next, the footer's 24 px between them.
+      const settings = { text: "Settings", justAboveNav: true, gapToNav: 24 };
+      expect(print.disclosures, "print").toEqual([settings]);
+      // The poster's fields keep the stack's item gap (12 px).
+      expect(print.fieldGaps.length, "print").toBeGreaterThan(1);
+      for (const gap of print.fieldGaps)
+        expect(Math.abs(gap - 12), "print").toBeLessThanOrEqual(1);
       for (const step of ["link", "hang", "measure", "done"]) {
         await page.getByTestId(`station-${step}`).click();
         await expect(page.getByTestId(`step-${step}`)).toHaveAttribute(
@@ -740,8 +781,14 @@ for (const viewport of [
         );
         const m = await page.evaluate(measureBelowSticker);
         expect(m.narrow, step).toEqual([]);
+        // Not by checking nothing: the link step reaches below the sticker
+        // everywhere, every step on a phone held upright (on a landscape
+        // or wide screen the shorter steps end beside the sticker).
+        if (step === "link" || viewport.width < 600)
+          expect(m.checked, step).toBeGreaterThan(0);
+        // The last step has no Back and Next; the disclosure ends the card.
         expect(m.disclosures, step).toEqual([
-          { text: "Settings", aboveNav: true },
+          step === "done" ? { ...settings, gapToNav: null } : settings,
         ]);
       }
     });
@@ -761,8 +808,49 @@ test.describe("the print step's fields (a foldable's inner screen)", () => {
     await page.goto("/?nocache=1");
     await expect(page.getByTestId("link-input")).toBeVisible();
     const fields = async () =>
-      page.evaluate(() =>
-        [...document.querySelectorAll("#setup-card .step[open] .field")]
+      page.evaluate(() => {
+        /** @param {string} css */
+        const rgba = (css) => {
+          const [r = 0, g = 0, b = 0, a = 1] = (css.match(/[\d.]+/g) ?? []).map(
+            Number,
+          );
+          return { r, g, b, a };
+        };
+        /** @param {{ r: number, g: number, b: number }} c */
+        const luminance = (c) => {
+          const lin = (/** @type {number} */ v) => {
+            const s = v / 255;
+            return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+          };
+          return 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+        };
+        // The WCAG contrast of the placeholder's ink, faded by its opacity,
+        // against the first opaque background behind the field.
+        /** @param {Element} input @param {CSSStyleDeclaration} ph */
+        const contrast = (input, ph) => {
+          let el = /** @type {Element | null} */ (input);
+          let bg = { r: 255, g: 255, b: 255, a: 1 };
+          while (el !== null) {
+            const c = rgba(getComputedStyle(el).backgroundColor);
+            if (c.a > 0.99) {
+              bg = c;
+              break;
+            }
+            el = el.parentElement;
+          }
+          const ink = rgba(ph.color);
+          const k = ink.a * Number(ph.opacity || 1);
+          const seen = {
+            r: ink.r * k + bg.r * (1 - k),
+            g: ink.g * k + bg.g * (1 - k),
+            b: ink.b * k + bg.b * (1 - k),
+          };
+          const [hi, lo] = [luminance(seen), luminance(bg)].sort(
+            (x, y) => y - x,
+          );
+          return (hi + 0.05) / (lo + 0.05);
+        };
+        return [...document.querySelectorAll("#setup-card .step[open] .field")]
           .filter((f) => f.getBoundingClientRect().height > 0)
           .map((f) => {
             const input = /** @type {HTMLInputElement} */ (
@@ -788,9 +876,10 @@ test.describe("the print step's fields (a foldable's inner screen)", () => {
               placeholderUnlikeValue:
                 placeholder.fontStyle !== value.fontStyle ||
                 placeholder.color !== value.color,
+              placeholderContrast: contrast(input, placeholder),
             };
-          }),
-      );
+          });
+      });
     const check = (/** @type {Awaited<ReturnType<typeof fields>>} */ list) => {
       for (const f of list) {
         expect(f.labelFor, f.id).toBe(f.id);
@@ -799,6 +888,8 @@ test.describe("the print step's fields (a foldable's inner screen)", () => {
         if (f.placeholder !== null) {
           expect(f.placeholder, f.id).toMatch(/^e\.g\. /);
           expect(f.placeholderUnlikeValue, f.id).toBe(true);
+          // An example is still read: dimmed, never below 4.5:1.
+          expect(f.placeholderContrast, f.id).toBeGreaterThanOrEqual(4.5);
         }
       }
     };
@@ -821,7 +912,9 @@ test.describe("the print step's fields (a foldable's inner screen)", () => {
   });
 
   // Why: "On the poster" looked like one more field label, so its three
-  // fields did not read as a group.
+  // fields did not read as a group. Its rule (what is printed, an emptied
+  // line left off) is the group's description, so a screen reader entering
+  // the first field hears it too.
   test("heads the poster's three fields with a group heading that reads as one", async ({
     page,
   }) => {
@@ -829,6 +922,9 @@ test.describe("the print step's fields (a foldable's inner screen)", () => {
     await openPrintStep(page);
     const group = page.getByRole("group", { name: "On the poster" });
     await expect(group.getByRole("textbox")).toHaveCount(3);
+    await expect(group).toHaveAccessibleDescription(
+      /^Printed around every code.*An emptied line is left off\.$/,
+    );
     const look = await group.evaluate((g) => {
       const heading = /** @type {HTMLElement} */ (
         g.querySelector("h3, [role=heading]")
@@ -870,15 +966,27 @@ test.describe("the print step's main action", () => {
       await installTourViewerArFakes(page, { saveOutcome: saved });
       await page.goto("/?nocache=1");
       await openPrintStep(page);
-      // Read at rest: a hovered pill wears its hover shade.
+      // Read at rest: a hovered pill wears its hover shade, and a pill
+      // still easing between its shades is read once it has arrived. The
+      // two pills' eases end at different moments (the download may not
+      // move at all while Next crosses from ink to white), so a read as
+      // soon as one has its shade could catch the other at 254.
       const looks = async () => {
         await page.mouse.move(0, 0);
-        return page.evaluate(() => {
-          const bg = (/** @type {string} */ id) =>
-            getComputedStyle(
-              /** @type {HTMLElement} */ (document.getElementById(id)),
-            ).backgroundColor;
-          return { pdf: bg("print-pdf"), next: bg("setup-next") };
+        return page.evaluate(async () => {
+          const pills = ["print-pdf", "setup-next"].map(
+            (id) => /** @type {HTMLElement} */ (document.getElementById(id)),
+          );
+          for (;;) {
+            const easing = pills.flatMap((p) => p.getAnimations());
+            if (easing.length === 0) break;
+            // A cancelled ease rejects; the next turn reads what replaced it.
+            await Promise.all(easing.map((a) => a.finished.catch(() => null)));
+          }
+          const [pdf, next] = pills.map(
+            (p) => getComputedStyle(p).backgroundColor,
+          );
+          return { pdf, next };
         });
       };
       const ink = await page.evaluate(() => {

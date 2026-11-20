@@ -562,6 +562,33 @@ describe("the next PDF continues the numbering (F4, D-R5)", () => {
     expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
   });
 
+  // Why: the save sheet can stay open while another tour opens. The PDF
+  // saved then is the first tour's, so the tour now shown has printed
+  // nothing: the download stays its main action and its numbering starts
+  // at 1.
+  it("neither marks nor moves on a tour opened while the first tour's save was pending", async () => {
+    const env = wire();
+    env.panel.presentTour("https://h.example/t.zip");
+    let save: (saved: boolean) => void = () => undefined;
+    env.downloadPdf.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          save = resolve;
+        }),
+    );
+    env.dom.pdfButton.fire("click");
+    await vi.waitFor(() => {
+      expect(env.downloadPdf).toHaveBeenCalled();
+    });
+    env.panel.presentTour("https://h.example/other.zip");
+    save(true);
+    // A wait past the few microtasks the outcome takes to land: without
+    // the tour check the mark was set by then.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(env.dom.panel.dataset.pdfSaved).not.toBe("true");
+    expect(env.dom.codeInput.value).toBe("1");
+  });
+
   it("stays put when nothing was saved", async () => {
     const env = wire();
     env.downloadPdf.mockResolvedValueOnce(false);

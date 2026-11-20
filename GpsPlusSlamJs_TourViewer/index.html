@@ -571,11 +571,12 @@
         margin: 0;
       }
       /* A placeholder is an example, never a value: dimmed and slanted,
-         so a prefilled default (plain ink) reads apart from it. */
+         so a prefilled default (plain ink) reads apart from it. Not faded
+         further: an example is still read, so it keeps 4.5:1. */
       #setup-card .input::placeholder {
         color: var(--ink-dim);
         font-style: italic;
-        opacity: 0.8;
+        opacity: 1;
       }
       /* A group of fields: a heading in the headings' face, and the
          fields set in behind a rule that marks them as its. */
@@ -1723,13 +1724,21 @@
       body[data-mode="creator"] .setup-map {
         --poke-up: 14px;
         --poke-out: 6px;
+        /* The room the step row needs beside it: its six dots in one line
+           (six 22 px buttons, 2 px apart), past the sticker's left margin,
+           less its poke over the card's edge. On a narrow phone the
+           sticker gives way to that room, or it would lie over the dots. */
+        --row-room: calc(
+          6 * 22px + 5 * 2px + var(--space-4) - var(--card-pad) - 1.5px -
+            var(--poke-out)
+        );
 
         position: relative;
         z-index: 1;
         float: right;
         display: flex;
         flex-direction: column-reverse;
-        width: var(--sticker);
+        width: min(var(--sticker), 100% - var(--row-room));
         /* The card's padding and border, then the poke past its edge; the
            step's lines keep a group's distance from it. */
         margin: calc(-1 * (var(--card-pad) + 1.5px + var(--poke-up)))
@@ -1794,6 +1803,7 @@
       body[data-mode="creator"] .setup-map[data-zoomed="true"] {
         --sticker: min(24rem, 100%);
 
+        width: var(--sticker);
         float: none;
         margin-inline: auto;
         margin-bottom: var(--space-3);
@@ -6193,13 +6203,14 @@
                     class="poster-text field-group"
                     role="group"
                     aria-labelledby="poster-text-heading"
+                    aria-describedby="poster-text-hint"
                     data-testid="poster-text"
                   >
                     <h3 id="poster-text-heading" class="field-group-heading">
                       On the poster
                     </h3>
                     <div class="field-group-body">
-                      <p class="field-hint hint--dim">
+                      <p id="poster-text-hint" class="field-hint hint--dim">
                         Printed around every code, so a sheet can hang as it
                         comes out of the printer. An emptied line is left off.
                       </p>

@@ -35,7 +35,12 @@ result or a shared link shows).
 cap), share of svh)`); the page uses `l`,
   `min(clamp(11.5rem, 37vw, 23.5rem), 58svh)`: about half of a phone held
   upright, a third of a wide card, held down by a short landscape screen
-  (chosen from four; `s` is the earlier size).
+  (chosen from four; `s` is the earlier size). Whatever the size, the
+  sticker gives way to `--row-room`, the room the station row's six dots
+  need in one line beside it: below about 375 px of window width (320 and
+  360 px phones) it is narrower than `l`, or it lay over the last dots and
+  took their taps (`setup-flow.spec.js` "the setup card at 320x640" and
+  "360x640").
   `?mapSize=s|m|l|xl` picks another and shows a size select
   (`src/map-size.ts`). Below 11rem (a container query on the sticker
   itself) it shows only the route and the numbered stations, drawn larger,

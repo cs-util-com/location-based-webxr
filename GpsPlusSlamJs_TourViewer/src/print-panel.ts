@@ -478,6 +478,9 @@ export function wirePrintPanel(deps: {
     // replaces the field, and the PDF is the one the creator tapped for
     // (PR #585 review).
     const request = printRequest(dom, printLink(), posterFields());
+    // The tour the PDF is for: one opened while the save sheet was up has
+    // printed nothing, so its mark and numbering stay as they are.
+    const tappedFor = presentedUrl;
     dom.pdfButton.disabled = true;
     dom.pdfButton.textContent = PDF_LABELS.busy;
     recheckUnverified()
@@ -491,8 +494,9 @@ export function wirePrintPanel(deps: {
           const typedMeanwhile =
             codeIndexFromInput(dom.codeInput.value).codeIndex !==
             request.startIndex;
-          if (printed) markPdfSaved(true);
-          if (!printed || typedMeanwhile) {
+          const sameTour = presentedUrl === tappedFor;
+          if (printed && sameTour) markPdfSaved(true);
+          if (!printed || typedMeanwhile || !sameTour) {
             writeInfo(outcome);
             return;
           }
