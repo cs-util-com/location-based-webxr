@@ -102,11 +102,20 @@ function setup(over: { readPhotos?: () => Promise<Blob[]> } = {}) {
     timer,
     cancelGraceMs: 1000,
   });
+  const previews: unknown[] = [];
   const events = {
     onProgress: (p: TrainProgress) => progress.push(p),
-    onPreview: () => {},
+    onPreview: (p: CanvasImageSource) => previews.push(p),
   };
-  return { worker, timer, progress, trainer, events, reads: () => reads };
+  return {
+    worker,
+    timer,
+    progress,
+    previews,
+    trainer,
+    events,
+    reads: () => reads,
+  };
 }
 
 /** Lets the adapter reach the point where it has posted the job. */
@@ -151,12 +160,23 @@ describe("createGpuTrainer", () => {
     expect(msg.photos).toHaveLength(msg.job.photos.length);
     s.worker.reply({
       type: "progress",
-      progress: { fraction: 0.5, secondsLeft: 30 },
+      progress: {
+        stage: "training",
+        fraction: 0.5,
+        secondsLeft: 30,
+        nextPreviewInS: 12,
+      },
     });
     s.worker.reply(finished());
     const r = await run;
     expect(s.progress).toEqual([
-      { fraction: 0.5, secondsLeft: 30, nextPreviewInS: null },
+      {
+        stage: "loading",
+        fraction: 0,
+        secondsLeft: null,
+        nextPreviewInS: null,
+      },
+      { stage: "training", fraction: 0.5, secondsLeft: 30, nextPreviewInS: 12 },
     ]);
     expect(r.outcome).toBe("finished");
     expect(r.metrics?.heldOutDb).toBe(22);
@@ -303,5 +323,48 @@ describe("judgeGpuRun", () => {
     expect(
       judgeGpuRun({ ...run("failed", null), metrics: null }, t).verdict,
     ).toBe("poor");
+  });
+});
+
+describe("createGpuTrainer: stages and looks", () => {
+  // Why: reading a stretch's photos from the zip comes before the worker;
+  // the page hears "loading" at once, not after the photos are read.
+  it("says it is loading before it reads the photos", async () => {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const s = setup({
+      readPhotos: () => held.then(() => [] as Blob[]),
+    });
+    const run = s.trainer.trainWindow(
+      await request(),
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    expect(s.progress.map((p) => p.stage)).toEqual(["loading"]);
+    release();
+    await settle();
+    s.worker.reply(finished());
+    await run;
+  });
+
+  // Why: the worker's looks reach the page as they are; a look that comes
+  // after the page stopped the stretch is closed, not shown, so its
+  // pixels are freed.
+  it("hands the worker's looks to the page, and closes a late one", async () => {
+    const s = setup();
+    const ctrl = new AbortController();
+    const run = s.trainer.trainWindow(await request(), s.events, ctrl.signal);
+    await settle();
+    const look = { close: () => (look.closed = true), closed: false };
+    s.worker.reply({ type: "preview", picture: look as never });
+    expect(s.previews).toEqual([look]);
+    ctrl.abort();
+    const late = { close: () => (late.closed = true), closed: false };
+    s.worker.reply({ type: "preview", picture: late as never });
+    expect(s.previews).toEqual([look]);
+    expect(late.closed).toBe(true);
+    s.worker.reply(finished());
+    await run;
   });
 });

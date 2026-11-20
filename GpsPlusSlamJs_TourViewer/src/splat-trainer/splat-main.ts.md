@@ -9,14 +9,13 @@ graphics card.
 
 ## Behaviour
 
-- `?trainer=gpu` - the GPU trainer (`gpu-trainer.ts`): the real probe,
+- By default - the GPU trainer (`gpu-trainer.ts`): the real probe,
   photos read with `readRecordingPhotos`, one worker per stretch started
   by `spawnTrainerWorker` (no Referer reaches the CDN).
 - `?trainer=practice` - the practice trainer on the window's timers, with
   `pace`, `gpu` and `lost` from the address and painted practice pictures.
-- Otherwise - the unavailable trainer with the browser's real WebGPU
-  probe: no WebGPU refuses the page; with WebGPU the page reads
-  recordings and says the splat maker is not ready yet.
+- The reader's progress (`readSplatInputs`'s `onProgress`) reaches the
+  store, which shows it as the read bar.
 - A screen at most 700 px wide is a phone: the page refuses and nothing
   is probed.
 - Saving writes through the framework's `writeFileOrAbort`, or downloads
@@ -31,4 +30,5 @@ graphics card.
 
 No unit test of its own: it only wires tested modules. The e2e
 `playwright-tests/splat-trainer.spec.js` loads the page through it in
-every mode.
+every mode; `playwright-tests/splat-trainer-gpu.spec.js` runs the
+default GPU trainer with a stand-in Splat.js.

@@ -1,7 +1,8 @@
 /**
  * The trainer worker's work for one window, apart from the worker's own
- * message plumbing: load Splat.js, decode the photos that seed, build and
- * thin the seeds, and run the window. What touches the browser (the
+ * message plumbing: say it is loading, load Splat.js, decode the photos
+ * that seed, build and thin the seeds, and run the window, with the
+ * worker's look-taker when it has one. What touches the browser (the
  * import, the photo decoder, the clock) comes in, so the whole path is
  * testable without a worker or a graphics card.
  *
@@ -19,6 +20,7 @@ import {
 import {
   runWindow,
   type RunClock,
+  type RunPreview,
   type RunProgress,
   type RunResult,
 } from "./window-run.js";
@@ -42,12 +44,15 @@ export type ToWorker = TrainMessage | { readonly type: "cancel" };
 
 export type FromWorker =
   | { readonly type: "progress"; readonly progress: RunProgress }
+  | { readonly type: "preview"; readonly picture: ImageBitmap }
   | { readonly type: "result"; readonly result: RunResult };
 
-export interface WorkerTrainDeps {
+export interface WorkerTrainDeps<P = unknown> {
   readonly load: () => Promise<SplatJsModule>;
   readonly decode: (photo: Blob) => Promise<DecodedPhoto>;
   readonly clock: RunClock;
+  /** Draws and hands on looks at the model while it trains; none without. */
+  readonly preview?: RunPreview<P>;
 }
 
 /**
@@ -82,11 +87,11 @@ export function colourSampler(
  * or a photo that will not decode ends as `failed` with the reason in
  * `detail`; an abort before training ends as `cancelled`.
  */
-export async function trainInWorker(
+export async function trainInWorker<P = unknown>(
   msg: TrainMessage,
   onProgress: (p: RunProgress) => void,
   signal: AbortSignal,
-  deps: WorkerTrainDeps,
+  deps: WorkerTrainDeps<P>,
 ): Promise<RunResult> {
   const t0 = deps.clock.now();
   const early = (
@@ -103,6 +108,12 @@ export async function trainInWorker(
   if (photos.length !== job.photos.length) {
     return early("failed", "The photos do not match the window's list.");
   }
+  onProgress({
+    stage: "loading",
+    fraction: 0,
+    secondsLeft: null,
+    nextPreviewInS: null,
+  });
   let mod: SplatJsModule;
   try {
     mod = await deps.load();
@@ -167,5 +178,6 @@ export async function trainInWorker(
     onProgress,
     signal,
     deps.clock,
+    deps.preview,
   );
 }

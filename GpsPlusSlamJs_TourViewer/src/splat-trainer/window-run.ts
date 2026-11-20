@@ -3,7 +3,10 @@
  * seeds, trained until it finishes, the deadline passes, the graphics
  * device is lost or the caller aborts; then scored at its training photos
  * and its held-out photos, exported, and cropped to what lies within the
- * window's reach of its training cameras. Runs wherever Splat.js runs (the
+ * window's reach of its training cameras. Says which stage it is in
+ * (preparing, training, checking) and, given a preview, draws a look at
+ * the model from one camera at the first report, every interval after it
+ * and once more when it is scored. Runs wherever Splat.js runs (the
  * trainer's worker); Splat.js and the clock come in, so every ending is
  * testable with a scripted session.
  *
@@ -18,9 +21,14 @@ import type {
   SplatCameraEntry,
   SplatJsModule,
   SplatSessionLike,
+  SplatTrainerLike,
 } from "./splat-js.js";
 import { shellCrop } from "./splat-ownership.js";
-import type { TrainOutcome, WindowMetrics } from "./trainer-adapter.js";
+import type {
+  TrainOutcome,
+  TrainStage,
+  WindowMetrics,
+} from "./trainer-adapter.js";
 import { liveEta } from "./training-budget.js";
 
 /** One window's training input, photos decoded by Splat.js itself. */
@@ -41,10 +49,29 @@ export interface RunInput {
 }
 
 export interface RunProgress {
+  /** What the run does now; the run itself never says `loading`, its
+   *  caller does while the library arrives. */
+  readonly stage: TrainStage;
   /** 0 to 1. */
   readonly fraction: number;
   /** Seconds left at the measured rate, or null while not yet measured. */
   readonly secondsLeft: number | null;
+  /** Seconds to the next look while training with a preview, else null. */
+  readonly nextPreviewInS: number | null;
+}
+
+/**
+ * How the run shows the model while it trains. `take` draws it as seen
+ * from training camera `ci` and returns the picture, or null when it
+ * cannot; `post` hands a picture on. Both are called inside Splat.js's
+ * own report, between training steps. A throw from either is ignored: a
+ * look never stops a run.
+ */
+export interface RunPreview<P> {
+  /** Time between looks (ms). */
+  readonly everyMs: number;
+  take(trainer: SplatTrainerLike, ci: number): P | null;
+  post(picture: P): void;
 }
 
 export interface RunResult {
@@ -85,12 +112,13 @@ const evalEvery = (maxIters: number): number =>
  * run that reaches its deadline is paused and scored and exported like a
  * finished one. The session is disposed on every path.
  */
-export async function runWindow(
+export async function runWindow<P = unknown>(
   mod: SplatJsModule,
   input: RunInput,
   onProgress: (p: RunProgress) => void,
   signal: AbortSignal,
   clock: RunClock,
+  preview?: RunPreview<P>,
 ): Promise<RunResult> {
   const t0 = clock.now();
   const end = (
@@ -120,7 +148,14 @@ export async function runWindow(
     if ("e" in r) throw new Stop(r.e);
     return r.v;
   };
+  let fraction = 0;
   try {
+    onProgress({
+      stage: "preparing",
+      fraction,
+      secondsLeft: null,
+      nextPreviewInS: null,
+    });
     const s = mod.createSession({
       maxIters: input.maxIters,
       holdout: -1,
@@ -139,6 +174,8 @@ export async function runWindow(
     // The rate is measured from the first report on, so shader
     // compilation and the first upload do not count against it.
     let mark: { iter: number; at: number } | null = null;
+    // The first look comes with the first report.
+    let nextLookAt: number | null = null;
     s.on("metrics", (m) => {
       if (!Number.isFinite(m.iter)) return;
       const at = clock.now();
@@ -151,9 +188,17 @@ export async function runWindow(
         },
         input,
       );
+      if (preview !== undefined && (nextLookAt === null || at >= nextLookAt)) {
+        look(s, preview);
+        nextLookAt = at + preview.everyMs;
+      }
+      fraction = Math.min(1, Math.max(0, m.iter / input.maxIters));
       onProgress({
-        fraction: Math.min(1, Math.max(0, m.iter / input.maxIters)),
+        stage: "training",
+        fraction,
         secondsLeft: ms === null ? null : ms / 1000,
+        nextPreviewInS:
+          nextLookAt === null ? null : Math.max(0, (nextLookAt - at) / 1000),
       });
     });
 
@@ -173,8 +218,15 @@ export async function runWindow(
     s.pause();
     clock.clearTimeout(timer);
     timer = null;
+    onProgress({
+      stage: "checking",
+      fraction,
+      secondsLeft: null,
+      nextPreviewInS: null,
+    });
 
     const metrics = await guard(scoreOf(s));
+    if (preview !== undefined) look(s, preview);
     const raw = await guard(s.exportPlyBlob());
     const bytes = await guard(raw.arrayBuffer());
     const keep = shellCrop(
@@ -202,6 +254,34 @@ export async function runWindow(
         // A session on a lost device may throw on teardown; it is gone.
       }
     }
+  }
+}
+
+/** The camera a look is drawn from: the middle test camera, else the
+ *  middle camera the run trains on; null without either. */
+function lookCamera(s: SplatSessionLike): number | null {
+  const test = s.testCams ?? [];
+  if (test.length > 0) return test[test.length >> 1] ?? null;
+  const trainer = s.trainer;
+  if (trainer === null) return null;
+  const excluded = trainer.excluded ?? new Set<number>();
+  const candidates: number[] = [];
+  for (let ci = 0; ci < trainer.camMeta.length; ci++) {
+    if (!excluded.has(ci)) candidates.push(ci);
+  }
+  return candidates[candidates.length >> 1] ?? null;
+}
+
+/** Draws and posts one look; a failure is ignored. */
+function look<P>(s: SplatSessionLike, preview: RunPreview<P>): void {
+  try {
+    const trainer = s.trainer;
+    const ci = lookCamera(s);
+    if (trainer === null || ci === null) return;
+    const picture = preview.take(trainer, ci);
+    if (picture !== null) preview.post(picture);
+  } catch {
+    // A look that cannot be drawn or handed on is skipped.
   }
 }
 

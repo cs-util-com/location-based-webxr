@@ -7,7 +7,12 @@ import type {
   SplatMetrics,
   SplatSessionLike,
 } from "./splat-js.js";
-import { runWindow, type RunClock, type RunInput } from "./window-run.js";
+import {
+  runWindow,
+  type RunClock,
+  type RunInput,
+  type RunProgress,
+} from "./window-run.js";
 
 /** A splat file with one vertex per position (x, y, z, opacity). */
 function ply(points: readonly [number, number, number][]): Blob {
@@ -49,6 +54,8 @@ function scripted(opts: {
   onStart?: (emit: (e: SplatEvent) => void) => void;
   loadError?: Error;
   splat?: [number, number, number][];
+  /** The session's test cameras (held out of training). */
+  testCams?: number[];
 }) {
   const calls: string[] = [];
   const events: ((e: SplatEvent) => void)[] = [];
@@ -90,6 +97,7 @@ function scripted(opts: {
     },
     dispose: () => calls.push("dispose"),
     trainer: { iter: 0, camMeta: [{}, {}, {}], excluded: new Set([1]) },
+    ...(opts.testCams === undefined ? {} : { testCams: opts.testCams }),
   };
   const mod: SplatJsModule = {
     createSession: (o) => {
@@ -99,7 +107,7 @@ function scripted(opts: {
     parseCameras: (json) => json.cameras,
     TRAIN_MAX_DIM: 1600,
   };
-  return { mod, calls, emit, report };
+  return { mod, calls, emit, report, session };
 }
 
 /** A clock whose timers fire only when the test says. */
@@ -336,11 +344,18 @@ describe("runWindow", () => {
     s.report({ iter: Number.NaN });
     clock.fire();
     await run;
+    const at = (
+      stage: RunProgress["stage"],
+      fraction: number,
+      secondsLeft: number | null,
+    ): RunProgress => ({ stage, fraction, secondsLeft, nextPreviewInS: null });
     expect(seen).toEqual([
-      { fraction: 0.025, secondsLeft: null },
-      { fraction: 0.05, secondsLeft: null },
+      at("preparing", 0, null),
+      at("training", 0.025, null),
+      at("training", 0.05, null),
       // 200 steps in 2 s since the first report: 3700 left take 37 s.
-      { fraction: 0.075, secondsLeft: 37 },
+      at("training", 0.075, 37),
+      at("checking", 0.075, null),
     ]);
   });
 
@@ -354,5 +369,133 @@ describe("runWindow", () => {
     });
     await runWindow(s.mod, input, () => {}, ctrl.signal, manualClock());
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  // Why: the page shows what the run is doing before its first step
+  // (uploading photos and seeds to the card can take a while) and while
+  // it scores and exports, never a stuck "0 %".
+  it("says it prepares before training and checks after it", async () => {
+    const stages: RunProgress["stage"][] = [];
+    const hold = gate();
+    const s = scripted({ hold: { load: hold.promise } });
+    const clock = manualClock();
+    const run = runWindow(
+      s.mod,
+      input,
+      (p) => stages.push(p.stage),
+      new AbortController().signal,
+      clock,
+    );
+    await tick();
+    expect(stages).toEqual(["preparing"]);
+    hold.open();
+    await tick();
+    s.report({ iter: 100 });
+    clock.fire();
+    await run;
+    expect(stages).toEqual(["preparing", "training", "checking"]);
+  });
+
+  // Why: the person watches the splat develop. The first look comes with
+  // the first report, then one per interval, drawn from a held-out camera
+  // (a view the run did not train on), and a last one once it is scored,
+  // so a finished print shows the finished splat. The looks are taken in
+  // the library's own report, between training steps.
+  it("shows a look at the first report, then every interval, then the last", async () => {
+    const s = scripted({ testCams: [1] });
+    const clock = manualClock();
+    const seen: RunProgress[] = [];
+    const taken: number[] = [];
+    const posted: unknown[] = [];
+    const run = runWindow(
+      s.mod,
+      input,
+      (p) => seen.push(p),
+      new AbortController().signal,
+      clock,
+      {
+        everyMs: 15_000,
+        take: (trainer, ci) => {
+          expect(trainer).toBe(s.session.trainer);
+          taken.push(ci);
+          return { look: taken.length };
+        },
+        post: (p) => posted.push(p),
+      },
+    );
+    await tick();
+    clock.t = 1000;
+    s.report({ iter: 100 });
+    clock.t = 5000;
+    s.report({ iter: 200 });
+    clock.t = 16_000;
+    s.report({ iter: 300 });
+    clock.fire();
+    const r = await run;
+    expect(r.outcome).toBe("deadline");
+    expect(posted).toEqual([{ look: 1 }, { look: 2 }, { look: 3 }]);
+    expect(taken).toEqual([1, 1, 1]);
+    expect(
+      seen.filter((p) => p.stage === "training").map((p) => p.nextPreviewInS),
+    ).toEqual([15, 11, 15]);
+  });
+
+  // Why: without a test set the look comes from the middle training
+  // camera, never from one the run left out of its photos.
+  it("looks through the middle training camera without a test set", async () => {
+    const s = scripted({});
+    const clock = manualClock();
+    const taken: number[] = [];
+    const run = runWindow(
+      s.mod,
+      input,
+      () => {},
+      new AbortController().signal,
+      clock,
+      {
+        everyMs: 15_000,
+        take: (_t, ci) => {
+          taken.push(ci);
+          return null;
+        },
+        post: () => {
+          throw new Error("nothing to post");
+        },
+      },
+    );
+    await tick();
+    s.report({ iter: 100 });
+    clock.fire();
+    await run;
+    // Camera 1 is excluded; of 0 and 2, the middle is 2.
+    expect(taken).toEqual([2, 2]);
+  });
+
+  // Why: a look is a courtesy; one that cannot be drawn must never stop
+  // an hour of training.
+  it("trains on when a look cannot be drawn", async () => {
+    const s = scripted({
+      onStart: (emit) =>
+        queueMicrotask(() => {
+          s.report({ iter: 100 });
+          emit({ kind: "train-complete" });
+        }),
+    });
+    const r = await runWindow(
+      s.mod,
+      input,
+      () => {},
+      new AbortController().signal,
+      manualClock(),
+      {
+        everyMs: 15_000,
+        take: () => {
+          throw new Error("no canvas");
+        },
+        post: () => {},
+      },
+    );
+    expect(r.outcome).toBe("finished");
+    expect(r.ply).not.toBeNull();
   });
 });

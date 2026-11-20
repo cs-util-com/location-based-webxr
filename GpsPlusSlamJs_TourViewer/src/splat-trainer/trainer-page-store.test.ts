@@ -340,3 +340,32 @@ describe("saving", () => {
     expect(h.c.store.getState().save.status).toBe("saved");
   });
 });
+
+describe("reading progress", () => {
+  // Why: the reader reports every entry it reads, and a recording has
+  // thousands; the state moves only when the shown whole percent does, so
+  // the page re-renders a hundred times at most while the read runs.
+  it("passes the reader's progress on, a step per whole percent", async () => {
+    let report!: (done: number, total: number) => void;
+    const h = setup({
+      read: (_file, onProgress) => {
+        report = onProgress;
+        return new Promise(() => {});
+      },
+    });
+    h.c.chooseRecording(new File(["x"], "a.zip"));
+    await h.settled();
+    expect(h.c.store.getState().read).toEqual({ done: 0, total: 0 });
+    const seen: unknown[] = [];
+    h.c.store.subscribe(() => seen.push(h.c.store.getState().read));
+    report(1, 1000);
+    report(5, 1000);
+    report(10, 1000);
+    report(1000, 1000);
+    expect(seen).toEqual([
+      { done: 1, total: 1000 },
+      { done: 10, total: 1000 },
+      { done: 1000, total: 1000 },
+    ]);
+  });
+});

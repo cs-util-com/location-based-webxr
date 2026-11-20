@@ -5,16 +5,26 @@
  * keyboard focus after a decision (a rebuilt button list once dropped it to
  * the page body), the stop dialog's live text and its target (Stop must
  * stop the stretch the dialog was opened for, never the next one), the
- * closer look never opening a stretch that has not started, and the
- * production page saying plainly that the trainer is not available yet.
+ * closer look never opening a stretch that has not started, and what the
+ * page shows while a slow step runs: the read of a large recording, the
+ * trainer loading and the graphics card being prepared.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { configureStore } from "@reduxjs/toolkit";
+
 import {
+  CENSUS,
   finishCurrent,
+  plan,
   storeAt,
 } from "../test-support/splat-trainer-fixtures.js";
-import { trainerPageActions as A } from "./trainer-page-slice.js";
+import type { TrainProgress } from "./trainer-adapter.js";
+import {
+  initialTrainerPageState,
+  trainerPageActions as A,
+  trainerPageReducer,
+} from "./trainer-page-slice.js";
 import {
   barText,
   loupeWord,
@@ -56,27 +66,18 @@ function mount(store = storeAt(4), isPhone = false) {
 const printOf = (root: HTMLElement, n: number) =>
   root.querySelector<HTMLElement>(`.print[data-id="w${n - 1}"]`);
 
-describe("census and the trainer that is not there yet", () => {
+describe("census and the trainer", () => {
   it("offers the practice run only with the practice trainer", () => {
     const { q } = mount(storeAt(4, "practice"));
     expect(q('[data-ref="startBtn"]').hidden).toBe(false);
-    expect(q('[data-ref="unavailable"]').hidden).toBe(true);
     expect(q('[data-ref="modeChip"]').hidden).toBe(false);
   });
 
   // Why: the GPU trainer trains for real, so the page offers the start
-  // and shows neither the practice chip nor the not-ready note.
+  // and shows no practice chip.
   it("offers a real run, not a practice one, with the GPU trainer", () => {
     const { q } = mount(storeAt(4, "gpu"));
     expect(q('[data-ref="startBtn"]').hidden).toBe(false);
-    expect(q('[data-ref="unavailable"]').hidden).toBe(true);
-    expect(q('[data-ref="modeChip"]').hidden).toBe(true);
-  });
-
-  it("says the trainer is not available yet in production, with no start button", () => {
-    const { q } = mount(storeAt(4, "unavailable"));
-    expect(q('[data-ref="startBtn"]').hidden).toBe(true);
-    expect(q('[data-ref="unavailable"]').hidden).toBe(false);
     expect(q('[data-ref="modeChip"]').hidden).toBe(true);
     expect(q('[data-ref="censusLead"]').textContent).toContain("40 photos");
   });
@@ -126,6 +127,7 @@ describe("keyboard focus across re-renders", () => {
         fraction: 0.4,
         secondsLeft: 9,
         nextPreviewInS: 2,
+        stage: "training",
       }),
     );
     expect(document.activeElement).toBe(again);
@@ -143,6 +145,7 @@ describe("the stop dialog", () => {
         fraction: 0.2,
         secondsLeft: 30,
         nextPreviewInS: 3,
+        stage: "training",
       }),
     );
     q<HTMLButtonElement>('[data-ref="stopBtn"]').click();
@@ -156,6 +159,7 @@ describe("the stop dialog", () => {
         fraction: 0.6,
         secondsLeft: 10,
         nextPreviewInS: 1,
+        stage: "training",
       }),
     );
     expect(text()).toContain("Stretch 1 is 60 % done");
@@ -214,6 +218,16 @@ describe("bar texts", () => {
   it("measures before it estimates, and estimates in minutes or hours", () => {
     const store = storeAt(2);
     store.dispatch(A.trainingStarted());
+    store.dispatch(
+      A.progressed({
+        id: "w0",
+        attempt: 1,
+        fraction: 0.01,
+        secondsLeft: null,
+        nextPreviewInS: null,
+        stage: "training",
+      }),
+    );
     expect(barText(store.getState())?.[1]).toContain("Measuring how fast");
     expect(minutesText(10 * 60)).toBe("about 10 min");
     expect(minutesText(3 * 3600)).toBe("about 3 hours");
@@ -380,5 +394,159 @@ describe("the page root", () => {
     mounted?.dispose();
     mounted = null;
     expect(root.classList.contains("splat-page")).toBe(false);
+  });
+});
+
+describe("reading a recording, as the page shows it", () => {
+  function reading() {
+    const store = configureStore({
+      reducer: trainerPageReducer,
+      preloadedState: initialTrainerPageState("gpu"),
+    });
+    store.dispatch(A.probeFinished("ready"));
+    return store;
+  }
+
+  // Why: on a phone or a slow disk a large zip takes long to read, and a
+  // page that shows nothing looks broken. From the first frame after the
+  // pick the button is busy and a bar with a value shows how much is read.
+  it("shows a busy button and a determinate bar from the first frame of the read", () => {
+    const store = reading();
+    const { q } = mount(store);
+    const bar = q<HTMLProgressElement>('[data-ref="readBar"]');
+    const choose = q<HTMLButtonElement>('[data-ref="chooseBtn"]');
+    const line = q('[data-ref="readLine"]');
+    expect(bar.hidden).toBe(true);
+    store.dispatch(A.readingStarted({ id: "r1", name: "walk.zip" }));
+    expect(bar.hidden).toBe(false);
+    expect(bar.hasAttribute("value")).toBe(true);
+    expect(bar.value).toBe(0);
+    expect(choose.disabled).toBe(true);
+    expect(choose.dataset.busy).toBe("true");
+    expect(line.textContent).toBe("Reading the recording on this computer...");
+    store.dispatch(A.readProgressed({ id: "r1", done: 30, total: 120 }));
+    expect(bar.value).toBeCloseTo(0.25);
+    expect(line.textContent).toBe(
+      "Reading the recording on this computer: 25 %",
+    );
+    store.dispatch(
+      A.readFinished({ id: "r1", census: CENSUS, windows: plan(2) }),
+    );
+    expect(bar.hidden).toBe(true);
+    expect(q('[data-ref="census"]').hidden).toBe(false);
+  });
+
+  // Why: a refused read must not leave a bar standing or the button busy.
+  it("takes the bar down and frees the button when the read is refused", () => {
+    const store = reading();
+    const { q } = mount(store);
+    store.dispatch(A.readingStarted({ id: "r1", name: "walk.zip" }));
+    store.dispatch(A.readProgressed({ id: "r1", done: 3, total: 4 }));
+    store.dispatch(A.readRefused({ id: "r1", reason: "Not a recording." }));
+    expect(q('[data-ref="readBar"]').hidden).toBe(true);
+    expect(q('[data-ref="refusal"]').hidden).toBe(false);
+    store.dispatch(A.anotherRecordingChosen());
+    const choose = q<HTMLButtonElement>('[data-ref="chooseBtn"]');
+    expect(choose.disabled).toBe(false);
+    expect(choose.dataset.busy).toBeUndefined();
+  });
+});
+
+describe("what each print says while its stretch runs", () => {
+  const progress = (
+    store: ReturnType<typeof storeAt>,
+    p: Partial<TrainProgress> & Pick<TrainProgress, "stage">,
+  ) =>
+    store.dispatch(
+      A.progressed({
+        id: "w0",
+        attempt: 1,
+        fraction: 0,
+        secondsLeft: null,
+        nextPreviewInS: null,
+        ...p,
+      }),
+    );
+
+  // Why: after "Make the splat" the trainer loads and the graphics card is
+  // prepared before the first step; the print and the bar say so at once.
+  // Each print then carries its own stage, percent and time left, not
+  // only the bar at the bottom.
+  it("names the stage, the percent and the time left on its own print", () => {
+    const store = storeAt(3, "gpu");
+    const { root } = mount(store);
+    store.dispatch(A.trainingStarted());
+    const first = printOf(root, 1);
+    const live = () => first?.querySelector(".live-pct")?.textContent;
+    const next = () => first?.querySelector(".live-next")?.textContent;
+    expect(live()).toBe("Loading the trainer");
+    expect(first?.dataset.stage).toBe("loading");
+    expect(barText(store.getState())?.[1]).toContain("Loading the trainer...");
+    expect(printOf(root, 2)?.querySelector(".print-empty")?.textContent).toBe(
+      "Waiting",
+    );
+    progress(store, { stage: "preparing" });
+    expect(live()).toBe("Preparing the graphics card");
+    expect(barText(store.getState())?.[1]).toContain(
+      "Preparing the graphics card...",
+    );
+    progress(store, {
+      stage: "training",
+      fraction: 0.42,
+      secondsLeft: 150,
+      nextPreviewInS: 12,
+    });
+    expect(live()).toBe("Training 42 %");
+    expect(next()).toBe("about 3 min left, new look in 12 s");
+    progress(store, { stage: "checking", fraction: 0.9 });
+    expect(live()).toBe("Checking the result");
+    expect(next()).toBe("");
+    finishCurrent(store);
+    expect(first?.dataset.status).toBe("done");
+    expect(first?.dataset.stage).toBeUndefined();
+    expect(first?.querySelector(".print-mark")?.textContent).toBe("Good");
+    expect(printOf(root, 2)?.querySelector(".live-pct")?.textContent).toBe(
+      "Loading the trainer",
+    );
+  });
+
+  // Why: a trainer that fails while loading must end the print in words,
+  // never leave it saying "Loading the trainer".
+  it("ends a failed start in words on its print", () => {
+    const store = storeAt(2, "gpu");
+    const { root } = mount(store);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(
+      A.windowFinished({
+        id: "w0",
+        attempt: 1,
+        outcome: "failed",
+        metrics: null,
+        judgement: {
+          verdict: "poor",
+          reasons: ["the trainer stopped"],
+          say: "Training stopped with an error.",
+        },
+        trainingS: 0,
+      }),
+    );
+    const first = printOf(root, 1);
+    expect(first?.dataset.status).toBe("done");
+    expect(first?.querySelector(".print-say")?.textContent).toBe(
+      "Training stopped with an error.",
+    );
+  });
+
+  // Why: the practice trainer draws pictures; every print says so, so a
+  // practice run is never taken for a splat.
+  it("says on every print of a practice run that it shows a drawing", () => {
+    const { root } = mount(storeAt(3, "practice"));
+    const notes = [...root.querySelectorAll(".print")].map(
+      (p) => p.querySelector(".print-practice")?.textContent,
+    );
+    expect(notes).toEqual(Array(3).fill("Practice: a drawing, not a splat"));
+    mounted?.dispose();
+    const real = mount(storeAt(3, "gpu"));
+    expect(real.root.querySelectorAll(".print-practice")).toHaveLength(0);
   });
 });

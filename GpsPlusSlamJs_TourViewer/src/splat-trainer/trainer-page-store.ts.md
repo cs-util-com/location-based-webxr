@@ -10,7 +10,8 @@ aborting it the moment the state says otherwise), and saving.
 ## Public API
 
 - `TrainerPageDeps` - `{ adapter, read, plan, write, download }`: the
-  trainer, the recording reader (`readSplatInputs`), the window planner
+  trainer, the recording reader (`read(file, onProgress)`, the page's is
+  `readSplatInputs` with its `onProgress`), the window planner
   (`windowPlanner()`), a write into a picked file handle, and a download
   that resolves false when cancelled.
 - `TrainerSideTables` - `files`, `inputs` and `plans` keyed by recording
@@ -43,6 +44,10 @@ save, dispose }`.
 - A trainer that throws, or a judge that throws, ends the stretch as not
   good enough ("the trainer stopped"), so the run never hangs at
   "Training".
+- The reader's progress becomes `readProgressed` only when its whole
+  percent changes (the first report always), so a recording of thousands
+  of entries re-renders the page about a hundred times at most; a report
+  for a recording no longer read is dropped.
 - A read error refuses the recording with the reader's reason and
   refusal code; a throwing planner refuses it with the planner's message.
   Neither leaves a stuck "Reading" or keeps inputs or plans.
@@ -50,7 +55,8 @@ save, dispose }`.
 ## Tests
 
 `trainer-page-store.test.ts`: the real reader on synthetic recordings
-(census, planned windows, refusals), the practice trainer on a manual
+(census, planned windows, refusals), the read's progress in whole-percent
+steps, the practice trainer on a manual
 clock (a whole run, stop aborting the job with no timer left, continue,
 a throwing trainer, an unasked cancel, preview pictures closed), and
 saving (picked, cancelled, download, failed then retried, the picked file

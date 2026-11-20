@@ -1,8 +1,9 @@
 // @ts-check
 /**
  * The splat trainer page in a real browser: a synthetic recording through
- * the real reader and planner, the practice trainer from its address flag,
- * and the production page that says the splat maker is not ready yet.
+ * the real reader and planner, the practice trainer from its address flag
+ * (every print says it shows a drawing), and the page without the flag,
+ * which offers the real trainer.
  * Why it matters: the unit tests run the view in jsdom, which has no
  * layout, no file picker and no CSS; this pins that the page loads as its
  * own entry, that a whole run reaches a saved file, that each refusal
@@ -91,6 +92,9 @@ test("a practice run reads, trains, retries and saves a placeholder", async ({
   const prints = page.locator(".print");
   const count = await prints.count();
   expect(count).toBeGreaterThan(4);
+  await expect(page.getByText("Practice: a drawing, not a splat")).toHaveCount(
+    count,
+  );
 
   await page.getByRole("button", { name: "Make the splat" }).click();
   // The practice script makes the fifth stretch not good enough.
@@ -241,7 +245,7 @@ test.describe("refusals", () => {
   });
 });
 
-test("without the practice flag the page says the splat maker is not ready", async ({
+test("without the practice flag the page offers the real trainer", async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -254,11 +258,9 @@ test("without the practice flag the page says the splat maker is not ready", asy
   await expect(page.getByText("Practice run")).toBeHidden();
   await chooseRecording(page, { frames: 60, spacingM: 1.2 });
   await expect(
-    page.getByText("The splat maker is not ready yet."),
-  ).toBeVisible();
-  await expect(
     page.getByRole("button", { name: "Make the splat" }),
-  ).toBeHidden();
+  ).toBeEnabled();
+  await expect(page.locator(".print-practice")).toHaveCount(0);
 });
 
 for (const [width, height, columns] of [

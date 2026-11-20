@@ -10,7 +10,7 @@ creator can read. Nothing decodes a photo here.
 
 ## Public API
 
-- `readSplatInputs(file, { limits? }) -> Promise<SplatInputsRead>`
+- `readSplatInputs(file, { limits?, onProgress? }) -> Promise<SplatInputsRead>`
   - `{ kind: "read", inputs }` or `{ kind: "refused", reason, code? }`;
     `code` is `"no-depth"` for a recording with no depth sample at all
     (`ReadRefusalCode`), so the page words it without matching the
@@ -21,6 +21,11 @@ creator can read. Nothing decodes a photo here.
     resolved once by the framework's `resolveArchiveLimits` (defaults
     `DEFAULT_ARCHIVE_LIMITS`); the same resolved caps feed the budget and
     every cap check.
+  - `onProgress(done, total)` (`ReadProgress`) - text entries read of
+    the total to read (`session.json` and every action entry), known
+    before the first: `(0, total)` first, one step per entry, ending at
+    `(total, total)` once all are read (also when fewer were read than
+    counted). A throwing listener is ignored.
 - `readRecordingPhotos(recording, entries) -> Promise<Blob[]>` - the
   named photo entries in the order given, read through one pass over the
   zip's directory (`withZipBlobDirectory` of `../zip-blob.ts`, so the
@@ -162,7 +167,7 @@ else console.log(read.inputs.census.frames, read.inputs.intrinsics);
   captures (one with a broken pose among them), a re-captured file (its
   size judged by the kept capture) and a wrapping folder; clip-plane
   changes accepted; every refusal above with its words; each archive cap
-  (the directory cap included).
+  (the directory cap included); the read's progress from 0 to its total.
 - `recording-reader.property.test.ts` - over walk length, spacing,
   timing, folder and missing photos (poses, counts, path); over eras and
   segmenting actions (exactly eras 4 and 5 without one are read); over

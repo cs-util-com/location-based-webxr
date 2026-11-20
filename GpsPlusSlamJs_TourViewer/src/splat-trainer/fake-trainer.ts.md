@@ -4,8 +4,10 @@
 
 The practice trainer: a scripted stand-in behind the `TrainerAdapter`
 interface, so the splat trainer page can be built, tested and tried
-before the GPU trainer exists. It is selected only by `?trainer=practice`
-or in tests, and the page shows a "Practice run" chip whenever it runs.
+without a graphics card. It is selected only by `?trainer=practice` or in
+tests; the page shows a "Practice run" chip, and on every print that it
+shows a drawing, not a splat. Its progress is always the `training`
+stage.
 
 ## Public API
 

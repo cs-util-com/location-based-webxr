@@ -18,11 +18,13 @@ timer: { now, set, clear }, settings?, cancelGraceMs? }`.
 ## Behaviour
 
 - `probe` is `probeWebGpu(gpu)`.
-- `trainWindow`: `planWindowJob`, then `readPhotos` for the job's entries
+- `trainWindow`: says `loading` at once, then `planWindowJob`, then `readPhotos` for the job's entries
   (a failure ends as `failed`), then one fresh worker per stretch, sent
   `{ type: "train", job, photos }`. Worker progress reaches the page with
-  `nextPreviewInS: null` (no previews yet); its result is passed on. A
-  worker error ends as `failed`.
+  its stage and time to the next look; the worker's looks reach it as
+  `onPreview`, and a look that arrives after the abort is closed instead
+  (an `ImageBitmap` holds its pixels until closed). Its result is passed
+  on. A worker error ends as `failed`.
 - Cancel: the worker is sent `{ type: "cancel" }`; its answer, or after
   `cancelGraceMs` (default 5 s) none, ends the stretch as `cancelled`
   without a splat. An abort always reads as `cancelled`, whatever the
@@ -41,5 +43,6 @@ timer: { now, set, clear }, settings?, cancelGraceMs? }`.
 synthetic recording: a stretch trained with its photos in job order, a
 cancel answered, a cancel not answered within the grace time, a stop
 before the start, a lost device and a deadline passed on, a refused
-library and a crashed worker as failed, unreadable photos; and the
-judge's thresholds.
+library and a crashed worker as failed, unreadable photos, `loading`
+before the photos are read, looks passed on and a late one closed; and
+the judge's thresholds.

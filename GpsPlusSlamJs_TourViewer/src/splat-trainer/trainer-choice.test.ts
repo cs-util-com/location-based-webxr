@@ -8,21 +8,18 @@ import { describe, expect, it } from "vitest";
 import { trainerChoiceFrom } from "./trainer-choice.js";
 
 describe("trainerChoiceFrom", () => {
-  it("is the unavailable trainer without a query", () => {
+  // Why: the real trainer is the page's default; the practice one runs
+  // only on its exact flag, so it can never stand in silently.
+  it("is the GPU trainer without a query or with a value it does not know", () => {
     expect(trainerChoiceFrom("")).toEqual({
-      trainer: "unavailable",
+      trainer: "gpu",
       gpu: "ready",
       pace: 1,
       lost: null,
     });
-    expect(trainerChoiceFrom("?trainer=fake").trainer).toBe("unavailable");
-  });
-
-  // Why: the real trainer is opt-in while it is measured; only the exact
-  // value turns it on.
-  it("runs the GPU trainer only on request", () => {
+    expect(trainerChoiceFrom("?trainer=fake").trainer).toBe("gpu");
     expect(trainerChoiceFrom("?trainer=gpu").trainer).toBe("gpu");
-    expect(trainerChoiceFrom("?trainer=GPU").trainer).toBe("unavailable");
+    expect(trainerChoiceFrom("?trainer=PRACTICE").trainer).toBe("gpu");
   });
 
   it("reads the practice flags", () => {

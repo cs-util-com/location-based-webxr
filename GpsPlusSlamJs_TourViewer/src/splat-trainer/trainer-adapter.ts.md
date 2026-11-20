@@ -3,9 +3,8 @@
 ## Purpose
 
 The interface between the splat trainer page and whatever trains a
-stretch: the scripted practice trainer (`fake-trainer.ts`), the
-unavailable trainer below, and the GPU trainer (`gpu-trainer.ts`), which
-plugs in behind the same interface without the page changing.
+stretch: the GPU trainer (`gpu-trainer.ts`), the page's default, and the
+scripted practice trainer (`fake-trainer.ts`), behind the same interface.
 
 ## Public API
 
@@ -14,14 +13,18 @@ plugs in behind the same interface without the page changing.
 - `TrainRequest` - `{ window: PlannedWindow, attempt, timeScale, inputs,
 recording: Blob }` (the recording file, for its photos);
   `timeScale` is 2 to the power `attempt - 1` (a retry gets twice the time).
-- `TrainProgress` - `{ fraction, secondsLeft | null, nextPreviewInS | null }`.
+- `TrainStage` - `loading | preparing | training | checking`: loading the
+  trainer, preparing the graphics card (photos and seeds uploaded, before
+  the first step), training, and checking the result (scoring, export).
+- `TrainProgress` - `{ stage, fraction, secondsLeft | null, nextPreviewInS
+| null }`; the practice trainer only ever says `training`.
 - `TrainEvents` (internal, the type of `trainWindow`'s second argument) -
   `onProgress(progress)`, `onPreview(picture)`.
 - `TrainOutcome` - `finished | deadline | gpu-lost | failed | cancelled`.
 - `WindowMetrics` - `{ atCameraDb, heldOutDb | null, photosUsed }`.
 - `WindowTrainResult` - `{ outcome, metrics | null, trainingS, ply: Blob | null }`.
 - `WindowJudgement` - `{ verdict: good | weak | poor, reasons, say }`.
-- `TrainerAdapter` - `{ kind: "practice" | "unavailable" | "gpu", probe(),
+- `TrainerAdapter` - `{ kind: "practice" | "gpu", probe(),
 trainWindow(request, events, signal), judge(request, result) }`.
   `trainWindow` resolves `cancelled` once `signal` aborts.
 - `probeWebGpu(gpu) -> Promise<GpuProbe>` - asks for a high-performance
@@ -31,19 +34,14 @@ trainWindow(request, events, signal), judge(request, result) }`.
   architecture or description naming integrated, UHD or Iris graphics, is
   `integrated`. `adapter.info` may say too little to be sure, so the page
   words this as likely ("seems to use"). Never throws.
-- `createUnavailableTrainer(gpu)` - probes for real; `trainWindow`
-  rejects and `judge` throws "The splat trainer is not available yet."
 
 ## Invariants and decisions
 
 - `judge` lives on the adapter, so the page carries no verdict thresholds
   of its own; the GPU trainer's provisional rules are in `gpu-trainer.ts`.
-- The page never calls `trainWindow` on the unavailable trainer: the slice
-  allows starting with every trainer but that one.
 
 ## Tests
 
 `trainer-adapter.test.ts`: every probe branch (missing, null adapter,
 fallback, throwing, rejecting, built-in graphics, an Intel Arc card,
-graphics card) and the
-unavailable trainer's refusals.
+graphics card).

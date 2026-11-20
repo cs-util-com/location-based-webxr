@@ -76,6 +76,7 @@ function run(store: Store, c: Command): void {
           fraction: c.f,
           secondsLeft: c.f,
           nextPreviewInS: null,
+          stage: "training",
         }),
       );
       return;

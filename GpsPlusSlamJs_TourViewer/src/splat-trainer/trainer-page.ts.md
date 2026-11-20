@@ -18,15 +18,22 @@ thing it keeps itself is which dialog is open.
   - `env`: `{ win, isPhone }`; on a phone the page refuses at once.
 - Pure text helpers, exported for tests: `minutesText`, `barText`,
   `loupeWord`. The rest (`censusLeadHtml`, `sayFor`, `actionsFor`,
-  `saveContentsLine`, `stopDialogText`, `showable`) stay module-private
+  `saveContentsLine`, `stopDialogText`, `showable`, `liveText` and
+  `liveNextText`: a training print's stage line, "Loading the trainer",
+  "Preparing the graphics card", "Training N %" or "Checking the result",
+  and its "about 3 min left, new look in 12 s", each part when known) stay module-private
   and are tested through the mounted page.
 
 ## States it shows
 
-Start (drop or choose), reading, census (sentences, the built-in graphics
-warning, and in production the note that the splat maker is not ready
-yet in place of the start button), training (developing prints, strip,
-time left), the stop dialog, stopped (continue, save the finished ones),
+Start (drop or choose), reading (the choose button busy and a
+determinate bar of entries read, with the percent in words, from the
+first frame after the pick), census (sentences, the built-in graphics
+warning), training (developing prints, each with its own stage, percent,
+time left and newest look; the strip; the bar saying "Loading the
+trainer...", "Preparing the graphics card...", "Checking the result..."
+or the time left), a practice run (every print says "Practice: a drawing,
+not a splat"), the stop dialog, stopped (continue, save the finished ones),
 done (verdicts with reasons and actions, save), the save dialog (contents,
 the location privacy note, saving, failure), the closer look, and the
 refusals (phone, no WebGPU, a recording without depth by the reader's
@@ -75,8 +82,10 @@ refusals (phone, no WebGPU, a recording without depth by the reader's
 ## Tests
 
 `trainer-page.test.ts` (jsdom): the practice chip and start button, the
-GPU trainer's start button without the chip, versus
-the production note, the phone refusal, focus after a decision and across
+GPU trainer's start button without the chip, the read bar and busy
+button from the first frame to the census or the refusal, each print's
+stage, percent and time left, a failed start ended in words, the
+practice note on every print, the phone refusal, focus after a decision and across
 a progress tick, the stop dialog's live text and target, Keep training
 starting the held stretch, the closer look skipping waiting stretches, and
 the bar texts, refusals by code, the save lock and its failure text,

@@ -15,7 +15,10 @@ mirror, never bundled or vendored.
 - Types of what the trainer calls: `SplatCameraEntry` (one camera of
   `parseCameras`: OpenCV world-to-camera `R_w2c_rowmajor`, `t_w2c`, pixel
   intrinsics of a `width` x `height` photo), `SeedPoint` (`X`, `rgb` in
-  0..1), `SplatMetrics`, `SplatEvent`, `SplatSessionLike`,
+  0..1), `SplatMetrics`, `SplatEvent`, `SplatSessionLike` (with the
+  session's `testCams`), `SplatTrainerLike` (its model: `iter`,
+  `camMeta`, `excluded`, and for looks `device`, `canvasFormat` and
+  `renderTrainCam(ci, ctx)`),
   `SplatJsModule` (and, unexported, the `createSession` options it takes).
 - `checkSplatJs(mod) -> SplatJsModule` - throws "The splat trainer library
   is not the version this page expects (<what>)." for a non-object, a

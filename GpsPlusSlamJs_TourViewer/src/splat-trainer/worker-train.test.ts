@@ -245,4 +245,47 @@ describe("trainInWorker", () => {
     );
     expect(r.outcome).toBe("cancelled");
   });
+
+  // Why: loading the library is the first wait of a stretch; the page
+  // says so before the library has arrived, and says nothing more when
+  // it never does.
+  it("says it is loading the trainer before the library is there", async () => {
+    const stages: string[] = [];
+    let release!: () => void;
+    const loaded = new Promise<void>((r) => (release = r));
+    const fin = finishing();
+    const run = trainInWorker(
+      { type: "train", job: job([photo("a.jpg")]), photos: [new Blob()] },
+      (p) => stages.push(p.stage),
+      live(),
+      deps({ load: () => loaded.then(() => fin.mod) }),
+    );
+    await Promise.resolve();
+    expect(stages).toEqual(["loading"]);
+    release();
+    const r = await run;
+    expect(r.outcome).toBe("finished");
+    expect(stages.slice(0, 2)).toEqual(["loading", "preparing"]);
+  });
+
+  // Why: the worker hands its look-taker to the run; without it the run
+  // still trains (the unit-tested path), with it the looks reach the page.
+  it("passes its preview to the run", async () => {
+    const posted: unknown[] = [];
+    const r = await trainInWorker(
+      { type: "train", job: job([photo("a.jpg")]), photos: [new Blob()] },
+      () => {},
+      live(),
+      deps({
+        preview: {
+          everyMs: 15_000,
+          take: () => "a look",
+          post: (p) => posted.push(p),
+        },
+      }),
+    );
+    expect(r.outcome).toBe("finished");
+    // The last look, taken once the stretch is scored.
+    expect(posted).toEqual(["a look"]);
+  });
 });

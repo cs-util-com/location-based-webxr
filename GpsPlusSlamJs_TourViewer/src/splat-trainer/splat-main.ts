@@ -1,9 +1,8 @@
 /**
  * Entry of the splat trainer page (`splat/index.html`): picks the trainer
  * from the address, builds the page's store with the real recording reader,
- * and mounts the page. Without `?trainer=gpu` or `?trainer=practice` the
- * trainer is the one that is not available yet, so the page says so
- * instead of pretending.
+ * and mounts the page. The trainer is the real one on the graphics card,
+ * in a worker; `?trainer=practice` runs the scripted practice trainer.
  *
  * @see splat-main.ts.md
  */
@@ -17,7 +16,7 @@ import { writeFileOrAbort } from "gps-plus-slam-app-framework/storage/write-file
 import { createPracticeTrainer, practicePictures } from "./fake-trainer.js";
 import { createGpuTrainer } from "./gpu-trainer.js";
 import { readRecordingPhotos, readSplatInputs } from "./recording-reader.js";
-import { createUnavailableTrainer, type GpuLike } from "./trainer-adapter.js";
+import type { GpuLike } from "./trainer-adapter.js";
 import { trainerChoiceFrom } from "./trainer-choice.js";
 import { spawnTrainerWorker } from "./trainer-worker-spawn.js";
 import { mountSplatTrainerPage } from "./trainer-page.js";
@@ -45,17 +44,15 @@ if (root !== null) {
           lostStretch: choice.lost,
           picture: practicePictures(document, paper),
         })
-      : choice.trainer === "gpu"
-        ? createGpuTrainer({
-            gpu,
-            readPhotos: readRecordingPhotos,
-            spawn: spawnTrainerWorker,
-            timer,
-          })
-        : createUnavailableTrainer(gpu);
+      : createGpuTrainer({
+          gpu,
+          readPhotos: readRecordingPhotos,
+          spawn: spawnTrainerWorker,
+          timer,
+        });
   const controller = createTrainerPageStore({
     adapter,
-    read: (file) => readSplatInputs(file),
+    read: (file, onProgress) => readSplatInputs(file, { onProgress }),
     plan: windowPlanner(),
     write: (handle, blob) => writeFileOrAbort(handle, blob),
     download: (blob, name) => downloadBlob(blob, name, ZIP_FILE_TYPE),

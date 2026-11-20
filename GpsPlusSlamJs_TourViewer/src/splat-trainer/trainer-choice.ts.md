@@ -8,8 +8,9 @@ practice trainer is never a silent default.
 ## Public API
 
 - `trainerChoiceFrom(search) -> { trainer, gpu, pace, lost }`
-  - `trainer`: `practice` or `gpu` for exactly that value of `trainer`,
-    else `unavailable`.
+  - `trainer`: `practice` for exactly `trainer=practice`, else `gpu`
+    (the real trainer is the default; any other value, `gpu` included,
+    gives it).
   - `gpu`: `integrated` or `no-webgpu` when asked for, else `ready`; the
     practice trainer's probe reports it (the real probe ignores it).
   - `pace`: `parsePace` of `pace` - a speed-up, 1 for anything that is
@@ -20,9 +21,7 @@ practice trainer is never a silent default.
 
 ## Examples
 
-- `/tour/splat/` - the unavailable trainer: the page reads recordings and
-  says it cannot make the splat yet.
-- `/tour/splat/?trainer=gpu` - the real trainer on the graphics card.
+- `/tour/splat/` - the real trainer on the graphics card.
 - `/tour/splat/?trainer=practice&pace=20` - a practice run, twenty times
   faster than its normal pace.
 - `/tour/splat/?trainer=practice&gpu=integrated` - the built-in graphics
@@ -30,7 +29,7 @@ practice trainer is never a silent default.
 
 ## Tests
 
-`trainer-choice.test.ts`: the default, the GPU trainer only for the exact
-value, the flags, and unknown values
+`trainer-choice.test.ts`: the GPU trainer by default and for every value
+but the exact `practice`, the flags, and unknown values
 falling back (never NaN), and `lost` refusing anything but a positive
 whole number.

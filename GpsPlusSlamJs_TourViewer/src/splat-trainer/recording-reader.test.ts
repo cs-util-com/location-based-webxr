@@ -772,3 +772,23 @@ describe("readRecordingPhotos", () => {
     );
   });
 });
+
+describe("read progress", () => {
+  // Why: a recording holds one small file per action, thousands of them,
+  // and reading them is the slow part on a phone. The reader says how many
+  // of them it has read, of a total it knows before reading the first, so
+  // the page can show a bar that only moves forward and ends full.
+  it("reports each text entry it reads, of a total known up front", async () => {
+    const { file } = await buildSyntheticRecording({ frames: 10 });
+    const seen: [number, number][] = [];
+    const read = await readSplatInputs(file, {
+      onProgress: (done, total) => seen.push([done, total]),
+    });
+    expect(read.kind).toBe("read");
+    const total = seen[0]?.[1] ?? 0;
+    // session.json and at least one action file per photo.
+    expect(total).toBeGreaterThan(10);
+    expect(seen.map(([done]) => done)).toEqual([...Array(total + 1).keys()]);
+    expect(seen.every(([, t]) => t === total)).toBe(true);
+  });
+});

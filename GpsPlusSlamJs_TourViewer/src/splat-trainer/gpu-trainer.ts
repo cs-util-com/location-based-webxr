@@ -2,7 +2,10 @@
  * The GPU trainer as the page sees it: a {@link TrainerAdapter} that plans
  * a window's job (`splat-inputs.ts`), reads the window's photos from the
  * recording, and trains it in a worker running Splat.js
- * (`splat-trainer.worker.ts`), so the page stays responsive. A cancel asks
+ * (`splat-trainer.worker.ts`), so the page stays responsive. It says it is
+ * loading from the first moment, passes on the worker's stage, progress
+ * and looks at the model, and closes a look that arrives after the page
+ * stopped the stretch. A cancel asks
  * the worker to stop and ends the worker if it does not answer in time.
  * Its judge reads the held-out sharpness against provisional thresholds.
  *
@@ -69,6 +72,12 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
       ply: null,
     });
     if (signal.aborted) return ended("cancelled");
+    events.onProgress({
+      stage: "loading",
+      fraction: 0,
+      secondsLeft: null,
+      nextPreviewInS: null,
+    });
     let photos: readonly Blob[];
     const job = planWindowJob(
       request.inputs,
@@ -94,10 +103,14 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
           if (data.type === "progress") {
             if (signal.aborted) return;
             events.onProgress({
+              stage: data.progress.stage,
               fraction: data.progress.fraction,
               secondsLeft: data.progress.secondsLeft,
-              nextPreviewInS: null,
+              nextPreviewInS: data.progress.nextPreviewInS,
             });
+          } else if (data.type === "preview") {
+            if (signal.aborted) data.picture.close();
+            else events.onPreview(data.picture);
           } else {
             resolve({
               outcome: data.result.outcome,

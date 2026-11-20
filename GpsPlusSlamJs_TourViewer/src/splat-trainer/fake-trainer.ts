@@ -239,6 +239,7 @@ export function createPracticeTrainer(
           nextPreview += previewMs;
         }
         events.onProgress({
+          stage: "training",
           fraction,
           secondsLeft:
             elapsed >= measureMs

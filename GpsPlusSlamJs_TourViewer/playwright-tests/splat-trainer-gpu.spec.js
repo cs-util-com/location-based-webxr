@@ -6,7 +6,9 @@
  * a fake Splat.js. Only a browser shows that the worker starts from its
  * `blob:` shim, that the pinned Splat.js address is the only host the
  * trainer reaches, and that the request names no page (no Referer). The
- * first test does this with a stand-in for Splat.js and runs everywhere.
+ * first test does this with a stand-in for Splat.js and runs everywhere;
+ * it also holds the library back to see the first print say it is
+ * loading the trainer, since the page runs the GPU trainer by default.
  *
  * The second test is the local acceptance run (`SPLAT_GPU=1`, real Chrome
  * on a real graphics card, the real Splat.js from the CDN): it trains one
@@ -145,21 +147,25 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
   page,
 }) => {
   test.skip(process.env.SPLAT_GPU === "1", "the acceptance run replaces it");
-  const seen = await routeHosts(page, (route) =>
-    route.fulfill({
+  /** @type {() => void} */
+  let release = () => {};
+  const held = new Promise((resolve) => (release = () => resolve(undefined)));
+  const seen = await routeHosts(page, async (route) => {
+    await held;
+    await route.fulfill({
       status: 200,
       contentType: "text/javascript",
       headers: { "access-control-allow-origin": "*" },
       body: SPLAT_JS_STUB,
-    }),
-  );
+    });
+  });
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "gpu", {
       configurable: true,
       value: { requestAdapter: async () => ({ info: { vendor: "nvidia" } }) },
     });
   });
-  await page.goto("/splat/?trainer=gpu");
+  await page.goto("/splat/");
   await expect(page.getByText("Practice run")).toBeHidden();
   await buildRenderedWalk(page, { frames: 40, width: 320, height: 240 });
   await page.evaluate(() => {
@@ -172,6 +178,11 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
     input.dispatchEvent(new Event("change"));
   });
   await page.getByRole("button", { name: "Make the splat" }).click();
+  // While the library is on its way the print says so, from the start.
+  await expect(page.locator(".print").first().locator(".live-pct")).toHaveText(
+    "Loading the trainer",
+  );
+  release();
   await expect(page.locator(".print").first()).toHaveAttribute(
     "data-verdict",
     "good",
@@ -200,7 +211,7 @@ test.describe("local GPU acceptance", () => {
     });
     const page = await (await browser.newContext({ baseURL })).newPage();
     const seen = await routeHosts(page, (route) => route.continue());
-    await page.goto("/splat/?trainer=gpu");
+    await page.goto("/splat/");
     await buildRenderedWalk(page, { frames: 60, width: 640, height: 480 });
     const r = await page.evaluate(async () => {
       const reader = await import(

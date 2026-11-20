@@ -58,11 +58,23 @@ export interface SplatSessionLike {
   evalTestPsnr(): Promise<{ readonly psnr: number } | null>;
   exportPlyBlob(): Promise<Blob>;
   dispose(): void;
-  readonly trainer: {
-    readonly iter: number;
-    readonly camMeta: readonly unknown[];
-    readonly excluded?: ReadonlySet<number>;
-  } | null;
+  readonly trainer: SplatTrainerLike | null;
+  /** The test cameras (held out of training), once seeded. */
+  readonly testCams?: readonly number[];
+}
+
+/** What the trainer reads of a session's model. */
+export interface SplatTrainerLike {
+  readonly iter: number;
+  /** One entry per loaded photo, its camera at training resolution. */
+  readonly camMeta: readonly unknown[];
+  readonly excluded?: ReadonlySet<number>;
+  /** The graphics device and canvas format a look is drawn with. */
+  readonly device?: unknown;
+  readonly canvasFormat?: string;
+  /** Draws the model as seen from training camera `ci` into a configured
+   *  WebGPU canvas context. */
+  renderTrainCam?(ci: number, ctx: unknown): void;
 }
 
 /** The options of `createSession` the trainer sets. */

@@ -1,7 +1,9 @@
 /**
  * The splat trainer's module Worker: wires `worker-train.ts` to the real
  * Splat.js import, photo decoder and clock, and to `postMessage`, so the
- * graphics card's training never freezes the page. `gpu-trainer.ts` is its
+ * graphics card's training never freezes the page. It draws the looks at
+ * the model the page shows while a stretch trains, on its own canvas with
+ * the trainer's device, and hands each over as an ImageBitmap. `gpu-trainer.ts` is its
  * page side, and `trainer-worker-spawn.ts` starts it. The device seam: not
  * unit-tested (it needs a real Worker and a graphics card); the work it
  * runs is.
@@ -13,6 +15,7 @@ import {
   loadSplatJs,
   SHIM_IMPORT_KEY,
   type ModuleImporter,
+  type SplatTrainerLike,
 } from "./splat-js.js";
 import {
   trainInWorker,
@@ -23,7 +26,7 @@ import {
 
 // `self` is typed as `Window` under the app's DOM lib (no webworker lib).
 const ctx = self as unknown as {
-  postMessage: (message: FromWorker) => void;
+  postMessage: (message: FromWorker, transfer?: Transferable[]) => void;
   addEventListener: (
     type: "message",
     listener: (event: MessageEvent<ToWorker>) => void,
@@ -60,6 +63,57 @@ const shimImport: ModuleImporter = (url) => {
     : importer(url);
 };
 
+/** Time between looks at the model while it trains (ms). */
+const PREVIEW_EVERY_MS = 15_000;
+
+/** The look canvas, made again only when the camera's size changes. */
+let look: {
+  canvas: OffscreenCanvas;
+  gpu: { configure(c: unknown): void };
+  device: unknown;
+} | null = null;
+
+/**
+ * The model as seen from training camera `ci`, drawn with the trainer's
+ * own device into this worker's canvas; null when the trainer cannot draw
+ * one (no device, no camera size, no WebGPU canvas).
+ */
+function takeLook(trainer: SplatTrainerLike, ci: number): ImageBitmap | null {
+  const meta = trainer.camMeta[ci] as { w?: unknown; h?: unknown } | undefined;
+  const w = meta?.w;
+  const h = meta?.h;
+  if (
+    typeof w !== "number" ||
+    typeof h !== "number" ||
+    !(w > 0 && h > 0) ||
+    trainer.device === undefined ||
+    trainer.canvasFormat === undefined ||
+    trainer.renderTrainCam === undefined
+  ) {
+    return null;
+  }
+  if (
+    look === null ||
+    look.canvas.width !== w ||
+    look.canvas.height !== h ||
+    look.device !== trainer.device
+  ) {
+    const canvas = new OffscreenCanvas(w, h);
+    const gpu = canvas.getContext("webgpu" as "2d") as unknown as {
+      configure(c: unknown): void;
+    } | null;
+    if (gpu === null) return null;
+    gpu.configure({
+      device: trainer.device,
+      format: trainer.canvasFormat,
+      alphaMode: "opaque",
+    });
+    look = { canvas, gpu, device: trainer.device };
+  }
+  trainer.renderTrainCam(ci, look.gpu);
+  return look.canvas.transferToImageBitmap();
+}
+
 let running: AbortController | null = null;
 
 ctx.addEventListener("message", (event) => {
@@ -83,6 +137,12 @@ ctx.addEventListener("message", (event) => {
         now: () => performance.now(),
         setTimeout: (fn, ms) => setTimeout(fn, ms),
         clearTimeout: (id) => clearTimeout(id as number),
+      },
+      preview: {
+        everyMs: PREVIEW_EVERY_MS,
+        take: takeLook,
+        post: (picture) =>
+          ctx.postMessage({ type: "preview", picture }, [picture]),
       },
     },
   ).then((result) => ctx.postMessage({ type: "result", result }));

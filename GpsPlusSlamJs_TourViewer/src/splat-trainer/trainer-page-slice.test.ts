@@ -58,12 +58,6 @@ describe("reading a recording", () => {
 });
 
 describe("starting", () => {
-  it("never starts with the unavailable trainer", () => {
-    const store = storeAt(3, "unavailable");
-    store.dispatch(A.trainingStarted());
-    expect(store.getState().phase).toBe("census");
-  });
-
   // Why: the GPU trainer starts exactly as the practice one does.
   it("starts with the GPU trainer", () => {
     const store = storeAt(3, "gpu");
@@ -150,6 +144,7 @@ describe("events from the trainer", () => {
         fraction: 0.5,
         secondsLeft: 9,
         nextPreviewInS: 1,
+        stage: "training",
       }),
     );
     store.dispatch(
@@ -159,6 +154,7 @@ describe("events from the trainer", () => {
         fraction: 0.5,
         secondsLeft: 9,
         nextPreviewInS: 1,
+        stage: "training",
       }),
     );
     expect(store.getState().windows.map((w) => w.progress)).toEqual([0, 0, 0]);
@@ -175,6 +171,7 @@ describe("events from the trainer", () => {
           fraction,
           secondsLeft,
           nextPreviewInS: null,
+          stage: "training",
         }),
       );
     p(0.4, 30);
@@ -216,6 +213,7 @@ describe("stopping and continuing", () => {
         fraction: 0.5,
         secondsLeft: 9,
         nextPreviewInS: 1,
+        stage: "training",
       }),
     );
     store.dispatch(A.stopAsked());
@@ -381,6 +379,7 @@ describe("secondsLeftInRun", () => {
         fraction: 0.5,
         secondsLeft: 30,
         nextPreviewInS: 3,
+        stage: "training",
       }),
     );
     // 30 s of stretch 2, then stretch 3 at the 60 s stretch 1 took.
@@ -401,6 +400,7 @@ describe("secondsLeftInRun", () => {
         fraction: 0.5,
         secondsLeft: 30,
         nextPreviewInS: 3,
+        stage: "training",
       }),
     );
     const s = store.getState();
@@ -432,8 +432,86 @@ describe("secondsLeftInRun", () => {
         fraction: 1,
         secondsLeft: 5,
         nextPreviewInS: null,
+        stage: "training",
       }),
     );
     expect(secondsLeftInRun(store.getState())).toBeNull();
+  });
+});
+
+describe("reading progress", () => {
+  // Why: a phone or a slow disk takes a long time over a large zip; the
+  // page shows how far the read is from its first frame, and a late
+  // report of an earlier read never moves the bar of the current one.
+  it("counts the read from zero, only forward, only for the current read", () => {
+    const store = configureStore({ reducer: trainerPageReducer });
+    expect(store.getState().read).toBeNull();
+    store.dispatch(A.readingStarted({ id: "r1", name: "a.zip" }));
+    expect(store.getState().read).toEqual({ done: 0, total: 0 });
+    store.dispatch(A.readProgressed({ id: "r1", done: 3, total: 10 }));
+    expect(store.getState().read).toEqual({ done: 3, total: 10 });
+    store.dispatch(A.readProgressed({ id: "r1", done: 2, total: 10 }));
+    expect(store.getState().read).toEqual({ done: 3, total: 10 });
+    store.dispatch(A.readProgressed({ id: "r0", done: 9, total: 10 }));
+    expect(store.getState().read).toEqual({ done: 3, total: 10 });
+    store.dispatch(A.readProgressed({ id: "r1", done: 40, total: 10 }));
+    expect(store.getState().read).toEqual({ done: 10, total: 10 });
+    store.dispatch(A.readProgressed({ id: "r1", done: Number.NaN, total: 10 }));
+    expect(store.getState().read).toEqual({ done: 10, total: 10 });
+  });
+
+  it("ends with the read, finished or refused", () => {
+    const store = configureStore({ reducer: trainerPageReducer });
+    store.dispatch(A.readingStarted({ id: "r1", name: "a.zip" }));
+    store.dispatch(A.readProgressed({ id: "r1", done: 1, total: 2 }));
+    store.dispatch(
+      A.readFinished({ id: "r1", census: CENSUS, windows: plan(2) }),
+    );
+    expect(store.getState().read).toBeNull();
+    const refused = configureStore({ reducer: trainerPageReducer });
+    refused.dispatch(A.readingStarted({ id: "r1", name: "a.zip" }));
+    refused.dispatch(A.readRefused({ id: "r1", reason: "no" }));
+    expect(refused.getState().read).toBeNull();
+    refused.dispatch(A.readProgressed({ id: "r1", done: 1, total: 2 }));
+    expect(refused.getState().read).toBeNull();
+  });
+});
+
+describe("what a stretch is doing", () => {
+  // Why: loading the trainer and preparing the graphics card take a while
+  // before the first step; the stretch says so from the moment it starts,
+  // never an empty "0 %".
+  it("starts as loading and follows the trainer's stage", () => {
+    const store = storeAt(2);
+    store.dispatch(A.trainingStarted());
+    const first = () => store.getState().windows[0];
+    expect(first()?.stage).toBe("loading");
+    expect(store.getState().windows[1]?.stage).toBeNull();
+    for (const stage of ["preparing", "training", "checking"] as const) {
+      store.dispatch(
+        A.progressed({
+          id: "w0",
+          attempt: 1,
+          fraction: 0.5,
+          secondsLeft: null,
+          nextPreviewInS: null,
+          stage,
+        }),
+      );
+      expect(first()?.stage).toBe(stage);
+    }
+    finishCurrent(store);
+    expect(first()?.stage).toBeNull();
+    expect(store.getState().windows[1]?.stage).toBe("loading");
+  });
+
+  it("forgets the stage of a stopped stretch and of one queued again", () => {
+    const store = storeAt(2);
+    store.dispatch(A.trainingStarted());
+    store.dispatch(A.stopAsked());
+    store.dispatch(A.stopConfirmed({ id: "w0" }));
+    expect(store.getState().windows[0]?.stage).toBeNull();
+    store.dispatch(A.continued());
+    expect(store.getState().windows[0]?.stage).toBe("loading");
   });
 });

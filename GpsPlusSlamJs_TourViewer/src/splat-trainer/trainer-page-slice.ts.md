@@ -3,7 +3,8 @@
 ## Purpose
 
 The one Redux slice of the splat trainer page: the phase of the page, the
-recording's census, every stretch's status and verdict, the person's
+recording's census, how far its read is, every stretch's status, stage
+and verdict, the person's
 decisions, the stop dialog's target and the save status. Reducers enforce
 the rules; the view (`trainer-page.ts`) only reads it, and the store's
 listeners (`trainer-page-store.ts`) carry out its side effects. Files,
@@ -19,11 +20,15 @@ pictures, splats and the running job live outside it, keyed by its ids.
 recheck }`; `recheck` is `idle | checking | unchanged`: "Check again" runs
   (`checking`) while the status stays what it was, and a probe that finds
   the same again says so (`unchanged`).
-- `trainer`: `practice | unavailable | gpu` (from the adapter).
+- `trainer`: `practice | gpu` (from the adapter).
+- `read`: `{ done, total }` text entries read while a recording is read
+  (`total` 0 until the reader knows it), else null.
 - `recording`: `{ id, name, census }` or null.
 - `windows`: one `WindowState` per stretch - the `StretchSummary` fields
   plus `status` (`waiting | training | stopped | queued | done`),
-  `attempt`, `progress`, `secondsLeft`, `nextPreviewInS`, `previews`,
+  `attempt`, `progress`, `secondsLeft`, `nextPreviewInS`, `stage`
+  (`loading | preparing | training | checking` while it trains, else
+  null), `previews`,
   `outcome`, `metrics`, `judgement`, `trainingS`, `decision`
   (`keep | discard | null`).
 - `current` (the training stretch), `queue` (the order of the rest).
@@ -39,14 +44,19 @@ savedCount, left }`; `left` is the sentence about a picked file a failed
 - Probe and page: `probeFinished(kind)` (no WebGPU refuses the page;
   ends a running recheck), `recheckRequested` (only marks the recheck
   running), `integratedAccepted`, `phoneRefused`.
-- Recording: `readingStarted({ id, name })` (from start or census),
+- Recording: `readingStarted({ id, name })` (from start or census; the
+  read starts at `{ 0, 0 }`), `readProgressed({ id, done, total })` (only
+  for the read that runs, only forward, clamped to `total`, non-finite
+  values ignored; the read ends null on `readFinished` and `readRefused`),
   `readFinished({ id, census, windows })` (ignored for a stale id; an
   empty plan refuses the recording), `readRefused({ id, reason, code? })`,
   `anotherRecordingChosen` (keeps the probe result).
-- Run: `trainingStarted` (needs a census, a trainer that is not the
-  unavailable one, and a ready
-  graphics card, or built-in graphics accepted), `progressed` (clamped to
-  0..1, never backwards, non-finite values ignored), `previewed`,
+- Run: `trainingStarted` (needs a census and a ready graphics card, or
+  built-in graphics accepted), `progressed` (with the trainer's stage;
+  the fraction clamped to 0..1, never backwards, non-finite values
+  ignored), `previewed`. A stretch that starts training is `loading`
+  until the trainer says otherwise; a finished, stopped or queued one
+  has no stage.
   `windowFinished` (ignored unless that stretch and attempt is the one
   training; a finished stretch makes a saved run unsaved, since the file
   no longer holds everything).

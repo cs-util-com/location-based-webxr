@@ -5,6 +5,10 @@
  * dialogs for stopping, saving and a closer look. It renders from the
  * page's store (`trainer-page-store.ts`) and dispatches what the person
  * does; it holds no state of the run itself, only which dialog is open.
+ * Every slow step shows itself from its first frame: the read of a
+ * recording with a bar of how much is read, and each stretch with its own
+ * stage (loading the trainer, preparing the graphics card, training,
+ * checking), percent, time left and newest look.
  *
  * @see trainer-page.ts.md
  */
@@ -23,7 +27,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 
 import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
-import type { Verdict } from "./trainer-adapter.js";
+import type { TrainStage, Verdict } from "./trainer-adapter.js";
 import { packageFileName } from "./save-package.js";
 import {
   canTrainAgain,
@@ -79,6 +83,7 @@ const PAGE_HTML = `
         <p class="prose">The zip file the recorder app saved on your phone. It is read here, on this computer, and never uploaded.</p>
         <button type="button" class="btn btn--accent" data-ref="chooseBtn">Choose recording</button>
         <input type="file" accept=".zip,application/zip" data-ref="fileInput" hidden />
+        <progress class="read-bar" data-ref="readBar" max="1" aria-label="Recording read" hidden></progress>
         <p class="hint hint--dim" data-ref="readLine" role="status" hidden></p>
       </div>
     </section>
@@ -100,7 +105,6 @@ const PAGE_HTML = `
       <article class="census-card">
         <div data-ref="censusLead"></div>
         <p class="census-local">${LOCK} The recording is read here, on this computer. Nothing is uploaded.</p>
-        <p class="census-note prose" data-ref="unavailable" hidden><strong>The splat maker is not ready yet.</strong> This page can already read a recording and show how it would be made, but it cannot make the splat itself yet.</p>
         <div class="census-actions">
           <button type="button" class="btn btn--accent" data-ref="startBtn">Make the splat</button>
           <button type="button" class="btn btn--quiet" data-ref="otherBtn">Choose another recording</button>
@@ -261,6 +265,44 @@ function actionsFor(w: WindowState): PrintAction[] {
   return canTrainAgain(w) ? [again] : [];
 }
 
+/** What a print says over its picture while its stretch trains. */
+const STAGE_WORDS: Readonly<Record<TrainStage, string>> = {
+  loading: "Loading the trainer",
+  preparing: "Preparing the graphics card",
+  training: "Training",
+  checking: "Checking the result",
+};
+
+/** The live line of a training print: its stage, with the percent while
+ *  it trains. */
+function liveText(w: WindowState): string {
+  const stage = w.stage ?? "training";
+  return stage === "training"
+    ? `Training ${Math.floor(w.progress * 100)} %`
+    : STAGE_WORDS[stage];
+}
+
+/** The second live line while it trains: time left and the next look,
+ *  each when known; empty in every other stage. */
+function liveNextText(w: WindowState): string {
+  if ((w.stage ?? "training") !== "training") return "";
+  const parts: string[] = [];
+  const left = w.secondsLeft === null ? "" : minutesText(w.secondsLeft);
+  if (left !== "") parts.push(`${left} left`);
+  if (w.nextPreviewInS !== null)
+    parts.push(`new look in ${Math.ceil(w.nextPreviewInS)} s`);
+  return parts.join(", ");
+}
+
+/** "Reading the recording on this computer", with the percent once the
+ *  reader knows its total. */
+function readText(s: TrainerPageState): string {
+  const r = s.read;
+  if (r === null || !(r.total > 0))
+    return "Reading the recording on this computer...";
+  return `Reading the recording on this computer: ${Math.floor((r.done / r.total) * 100)} %`;
+}
+
 /** Bar sentences for a phase; null hides the bar. */
 export function barText(s: TrainerPageState): [string, string] | null {
   const total = s.windows.length;
@@ -272,10 +314,13 @@ export function barText(s: TrainerPageState): [string, string] | null {
         : `Training stretch ${stretchNo(cur)}${cur.attempt > 1 ? " again" : ""} of ${total}`;
     const left = secondsLeftInRun(s);
     const leftText = left === null ? "" : minutesText(left);
+    const stage = cur?.stage ?? "training";
     const est =
-      leftText === ""
-        ? "Measuring how fast this computer is..."
-        : `${leftText} left.`;
+      stage !== "training"
+        ? `${STAGE_WORDS[stage]}...`
+        : leftText === ""
+          ? "Measuring how fast this computer is..."
+          : `${leftText} left.`;
     return [
       line,
       `${est} You can leave it running, or stop: finished stretches are kept.`,
@@ -439,6 +484,7 @@ export function mountSplatTrainerPage(
     drop: ref("drop"),
     chooseBtn: ref<HTMLButtonElement>("chooseBtn"),
     fileInput: ref<HTMLInputElement>("fileInput"),
+    readBar: ref<HTMLProgressElement>("readBar"),
     readLine: ref("readLine"),
     census: ref("census"),
     gpuWarn: ref("gpuWarn"),
@@ -446,7 +492,6 @@ export function mountSplatTrainerPage(
     gpuRecheckLine: ref("gpuRecheckLine"),
     gpuAnyway: ref<HTMLButtonElement>("gpuAnyway"),
     censusLead: ref("censusLead"),
-    unavailable: ref("unavailable"),
     startBtn: ref<HTMLButtonElement>("startBtn"),
     otherBtn: ref<HTMLButtonElement>("otherBtn"),
     banner: ref("banner"),
@@ -606,7 +651,11 @@ export function mountSplatTrainerPage(
         <span class="print-reasons"></span>
         <span class="print-progress"><span></span></span>
         <span class="print-live"><span><span class="print-live-dot"></span><span class="live-pct"></span></span><span class="live-next"></span></span>
-        <span class="print-empty">Waiting</span>
+        <span class="print-empty">Waiting</span>${
+          s.trainer === "practice"
+            ? '<span class="print-practice">Practice: a drawing, not a splat</span>'
+            : ""
+        }
         <span class="print-stamp"><span></span></span>
       </button>
       <div class="print-cap">
@@ -640,6 +689,7 @@ export function mountSplatTrainerPage(
       w.status === "done" ? (w.judgement?.verdict ?? null) : null,
     );
     setData(el, "decision", w.decision);
+    setData(el, "stage", w.status === "training" ? (w.stage ?? null) : null);
     const mark = el.querySelector<HTMLElement>(".print-mark");
     if (mark !== null) {
       setText(
@@ -664,17 +714,9 @@ export function mountSplatTrainerPage(
     if (fill !== null)
       fill.style.width = `${(w.status === "training" ? w.progress * 100 : 0).toFixed(1)}%`;
     const pct = el.querySelector<HTMLElement>(".live-pct");
-    if (pct !== null)
-      setText(pct, `Training ${Math.floor(w.progress * 100)} %`);
+    if (pct !== null) setText(pct, liveText(w));
     const next = el.querySelector<HTMLElement>(".live-next");
-    if (next !== null) {
-      setText(
-        next,
-        w.nextPreviewInS === null
-          ? ""
-          : `new look in ${Math.ceil(w.nextPreviewInS)} s`,
-      );
-    }
+    if (next !== null) setText(next, liveNextText(w));
     const picture = sides.previews.get(w.id) ?? null;
     if (drawn.get(w.id) !== picture) {
       drawn.set(w.id, picture);
@@ -1046,18 +1088,21 @@ export function mountSplatTrainerPage(
     els.chooseBtn.disabled = reading;
     setData(els.chooseBtn, "busy", reading ? "true" : null);
     els.readLine.hidden = !reading;
-    setText(
-      els.readLine,
-      reading ? "Reading the recording on this computer..." : "",
-    );
+    setText(els.readLine, reading ? readText(s) : "");
+    els.readBar.hidden = !reading;
+    const read = s.read;
+    const readValue =
+      reading && read !== null && read.total > 0 ? read.done / read.total : 0;
+    // Always with a value: a progress without one is indeterminate.
+    const valueText = String(readValue);
+    if (els.readBar.getAttribute("value") !== valueText)
+      els.readBar.setAttribute("value", valueText);
 
     if (phase === "census") {
       const lead = censusLeadHtml(s);
       if (els.censusLead.innerHTML !== lead) els.censusLead.innerHTML = lead;
       const warn = integrated && !s.gpu.accepted;
-      els.gpuWarn.hidden = !warn || s.trainer === "unavailable";
-      els.unavailable.hidden = s.trainer !== "unavailable";
-      els.startBtn.hidden = s.trainer === "unavailable";
+      els.gpuWarn.hidden = !warn;
       els.startBtn.disabled = warn || s.gpu.status === "probing";
       const checking = s.gpu.recheck === "checking";
       els.gpuRecheck.disabled = checking;

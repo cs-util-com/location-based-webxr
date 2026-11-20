@@ -17,7 +17,11 @@ import {
   type SaveFilePick,
 } from "gps-plus-slam-app-framework/storage/save-target";
 
-import type { SplatInputs, SplatInputsRead } from "./recording-reader.js";
+import type {
+  ReadProgress,
+  SplatInputs,
+  SplatInputsRead,
+} from "./recording-reader.js";
 import { buildPackage, packageFileName } from "./save-package.js";
 import type {
   TrainerAdapter,
@@ -42,7 +46,11 @@ import {
 
 export interface TrainerPageDeps {
   readonly adapter: TrainerAdapter;
-  readonly read: (file: Blob) => Promise<SplatInputsRead>;
+  /** Reads a recording, reporting entries read of the total. */
+  readonly read: (
+    file: Blob,
+    onProgress: ReadProgress,
+  ) => Promise<SplatInputsRead>;
   readonly plan: WindowPlanner;
   /** Writes the saved file into a picked handle. */
   readonly write: (handle: FileSystemFileHandle, blob: Blob) => Promise<void>;
@@ -144,9 +152,19 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     effect: async ({ payload: { id } }, api) => {
       const file = sides.files.get(id);
       if (file === undefined) return;
+      // One state change per whole percent: a recording has thousands of
+      // entries, and the page needs no more than a hundred steps.
+      let shown = -1;
+      const onProgress: ReadProgress = (done, total) => {
+        if (disposed || api.getState().recording?.id !== id) return;
+        const pct = total > 0 ? Math.floor((done / total) * 100) : 0;
+        if (pct === shown) return;
+        shown = pct;
+        api.dispatch(A.readProgressed({ id, done, total }));
+      };
       let read: SplatInputsRead;
       try {
-        read = await deps.read(file);
+        read = await deps.read(file, onProgress);
       } catch (err) {
         read = { kind: "refused", reason: errorText(err) };
       }

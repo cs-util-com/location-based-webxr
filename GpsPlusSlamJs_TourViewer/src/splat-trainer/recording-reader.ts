@@ -166,10 +166,16 @@ class Refusal extends Error {
  * why it cannot be trained. `limits` tightens the archive caps (tests;
  * the defaults are the framework's). The zip is read lazily: its
  * directory, `session.json` and the action stream, never a photo.
+ * `onProgress` hears how many text entries are read of a total known
+ * before the first: (0, total) first, then one step per entry, ending at
+ * (total, total) once all are read.
  */
 export async function readSplatInputs(
   file: Blob,
-  options: { readonly limits?: Partial<ArchiveLimits> } = {},
+  options: {
+    readonly limits?: Partial<ArchiveLimits>;
+    readonly onProgress?: ReadProgress;
+  } = {},
 ): Promise<SplatInputsRead> {
   // Outside the refusals on purpose: a cap of 0 or NaN is a configuration
   // mistake that throws, not a bad file. One budget serves every read of
@@ -177,7 +183,10 @@ export async function readSplatInputs(
   const limits = resolveArchiveLimits(options.limits);
   const budget = DecompressionBudget.forArchive(file.size, limits);
   try {
-    return { kind: "read", inputs: await readInputs(file, limits, budget) };
+    return {
+      kind: "read",
+      inputs: await readInputs(file, limits, budget, options.onProgress),
+    };
   } catch (err) {
     if (err instanceof Refusal && err.code !== undefined) {
       return { kind: "refused", reason: err.message, code: err.code };
@@ -193,10 +202,14 @@ export async function readSplatInputs(
   }
 }
 
+/** Text entries read so far, of the total to read. */
+export type ReadProgress = (done: number, total: number) => void;
+
 async function readInputs(
   file: Blob,
   limits: ArchiveLimits,
   budget: DecompressionBudget,
+  onProgress: ReadProgress | undefined,
 ): Promise<SplatInputs> {
   if (file.size > limits.maxArchiveBytes) {
     throw new ArchiveLimitError(
@@ -219,7 +232,7 @@ async function readInputs(
       if (err instanceof ArchiveLimitError) throw err;
       throw new Refusal("This file is not a zip recording.");
     }
-    return await readEntries(file, entries, limits, budget);
+    return await readEntries(file, entries, limits, budget, onProgress);
   } finally {
     await reader.close();
   }
@@ -230,6 +243,7 @@ async function readEntries(
   entries: readonly Entry[],
   limits: ArchiveLimits,
   budget: DecompressionBudget,
+  onProgress: ReadProgress | undefined,
 ): Promise<SplatInputs> {
   const files = entries.filter((e): e is FileEntry => !e.directory);
   const names = files.map((e) => e.filename);
@@ -243,17 +257,41 @@ async function readEntries(
     );
   }
   const folder = folders[0] ?? "";
-  const readText = (entry: FileEntry, maxBytes: number): Promise<string> =>
-    readZipEntryText(
+  // session.json and every action entry: what is read before a photo.
+  const total = 1 + names.filter(isActionEntryName).length;
+  let done = 0;
+  const report = (): void => {
+    try {
+      onProgress?.(done, total);
+    } catch {
+      // A listener that throws must not refuse the recording.
+    }
+  };
+  report();
+  const readText = async (
+    entry: FileEntry,
+    maxBytes: number,
+  ): Promise<string> => {
+    const text = await readZipEntryText(
       entry,
       budget,
       Math.min(maxBytes, limits.maxTextEntryBytes),
     );
+    if (done < total) {
+      done++;
+      report();
+    }
+    return text;
+  };
 
   const era = await readEra(files, `${folder}session.json`, readText);
   const actions = (await loadActionsFromEntries(entries, readText)).map(
     (e) => e.action,
   );
+  if (done < total) {
+    done = total;
+    report();
+  }
   const preflight = preflightCaptureJoin(
     { odomCoordVersion: era },
     actions.map((a) => a.type),
