@@ -37,6 +37,7 @@ const request = (index: number, attempt = 1, timeScale = 1): TrainRequest => ({
   attempt,
   timeScale,
   inputs: {} as TrainRequest["inputs"],
+  recording: new Blob(),
 });
 
 function harness(pace = 1) {
@@ -155,6 +156,26 @@ describe("createPracticeTrainer", () => {
     expect(
       h.trainer.judge(request(0), { ...result, outcome: "gpu-lost" }).verdict,
     ).toBe("poor");
+  });
+
+  it("loses the graphics card on the first try of the stretch it is told to", async () => {
+    // Why: the page's lost-device path (a stretch judged not good enough,
+    // the run going on, a retry that works) needs a trainer that loses
+    // the device on purpose.
+    const timer = manualTimer();
+    const trainer = createPracticeTrainer({ timer, lostStretch: 2 });
+    const events = { onProgress: () => {}, onPreview: () => {} };
+    const signal = new AbortController().signal;
+    const lost = trainer.trainWindow(request(1), events, signal);
+    timer.advance(PRACTICE_STRETCH_MS);
+    expect((await lost).outcome).toBe("gpu-lost");
+    expect(timer.pending()).toBe(0);
+    const retry = trainer.trainWindow(request(1, 2, 2), events, signal);
+    timer.advance(2 * PRACTICE_STRETCH_MS);
+    expect((await retry).outcome).toBe("finished");
+    const other = trainer.trainWindow(request(0), events, signal);
+    timer.advance(PRACTICE_STRETCH_MS);
+    expect((await other).outcome).toBe("finished");
   });
 
   it("probes as told", async () => {

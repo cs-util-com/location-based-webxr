@@ -8,6 +8,7 @@ import { tourOf } from "./test-support/tour-of.js";
 
 import {
   entriesForVisitor,
+  isActionEntryName,
   recordingEntryNames,
   recordingFolderOf,
   recordingFoldersOf,
@@ -217,6 +218,27 @@ describe("scanEntryNames", () => {
 });
 
 describe("recordingEntryNames", () => {
+  it("finds no walk in macOS metadata alone, and keeps only real action entries of one", () => {
+    // Why: the walk is found by the same rule the framework parser replays
+    // actions by. A __MACOSX/ copy of an actions/ folder is no walk, and a
+    // non-JSON file under actions/ is no action the recorder writes.
+    expect(
+      recordingEntryNames([
+        "session.json",
+        "__MACOSX/actions/._000001.json",
+        "content/a.jpg",
+      ]),
+    ).toEqual([]);
+    expect(
+      recordingEntryNames([
+        "rec/session.json",
+        "rec/actions/000001.json",
+        "rec/actions/._000001.json",
+        "rec/actions/notes.txt",
+      ]),
+    ).toEqual(["rec/session.json", "rec/actions/000001.json"]);
+  });
+
   // Why (the M4b milestone review #8): the debug bundle (the editor's
   // "Move the debug data out") puts the walk into a file of its own, and that file must be the whole
   // recording, every frame included (frames a tour kept for its visitors
@@ -370,5 +392,22 @@ describe("recordingFoldersOf", () => {
   it("agrees with recordingFolderOf on the first folder", () => {
     const names = ["z/actions/1.json", "y/actions/1.json"];
     expect(recordingFoldersOf(names)[0]).toBe(recordingFolderOf(names));
+  });
+
+  it("ignores the metadata entries a macOS re-zip adds", () => {
+    // Why: compressing an extracted recording in the macOS Finder adds a
+    // `__MACOSX/` copy of the tree holding `._` metadata files. They are
+    // not actions; counted as a second recording they refused a good zip.
+    const names = [
+      "rec/session.json",
+      "rec/actions/000001.json",
+      "__MACOSX/rec/actions/._000001.json",
+      "rec/actions/._000002.json",
+    ];
+    expect(recordingFoldersOf(names)).toEqual(["rec/"]);
+    expect(isActionEntryName("__MACOSX/rec/actions/._000001.json")).toBe(false);
+    expect(isActionEntryName("__MACOSX/actions/000001.json")).toBe(false);
+    expect(isActionEntryName("rec/actions/._000002.json")).toBe(false);
+    expect(isActionEntryName("rec/actions/000001.json")).toBe(true);
   });
 });

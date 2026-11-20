@@ -13,7 +13,8 @@ cold-review G3: "open a file" needs its own cache and draft key).
 - `tourFileKey(entries): Promise<string>` - `local-file:` plus the first
   32 hex digits (128 bits) of the SHA-256 of the entry list: one line per
   file entry, `name NUL unpacked size NUL CRC-32`, sorted. Directory
-  entries are skipped; names are relative to a folder EVERY entry shares;
+  entries and macOS metadata (`__MACOSX/`, `._` files) are skipped; names
+  are relative to a folder EVERY entry shares;
   a name listed twice counts once (its last occurrence); the tour kit's
   own files (`tour.json`, `qr/<id>.json`, `content/*`) are left out
   whenever anything else remains. Rejects where WebCrypto is missing (an insecure
@@ -30,6 +31,8 @@ cold-review G3: "open a file" needs its own cache and draft key).
 - `isTourContentKey(key)` - true for the bare content key only (neither
   `series:` nor `tour:`). It names the recording, not the tour, so a
   refusal never deletes a draft by it (B2a review 4).
+- `isMacOsMetadataName(name)` - true for an entry a macOS re-zip adds
+  (`__MACOSX/` or a `._` resource-fork file); `tour-read-set.ts` reads it.
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).
@@ -124,7 +127,8 @@ Consequences:
 entries not mattering, any changed CRC, size, name or file count changing
 the key, and a property that two lists differing only in size never share
 a key; stable across a Finish (a new `tour.json`, a level and photos) and
-a re-zip into a folder, two recordings still apart, and the fallback for a
+a re-zip into a folder, a Finder re-zip (wrapping folder plus `__MACOSX/`
+and `._` files) keeping the key, two recordings still apart, and the fallback for a
 tour of only the tour kit's files (K0 milestone review R7); the id key's
 shape apart from the other two, and a property that minted ids are
 distinct and follow the manifest's id rule. The id key read from a file:

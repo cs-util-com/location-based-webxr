@@ -9,14 +9,15 @@ page's developing prints be seen and tested before a real trainer exists.
 
 ## Public API
 
-- `seededRandom(seed) -> () => number` - a small deterministic generator in
-  0..1; the view also uses it for the hand-drawn ring around a print.
 - `clampSharpness(x) -> number` - 0..1, with anything non-finite as 0.
 - `drawPracticePrint(canvas, seed, sharpness, ghost, paper)` - paints one
   picture onto `canvas`; `ghost` doubles the scene for a stretch that
   trains badly. Does nothing when the canvas has no 2D context.
 
 ## Invariants
+
+- Seeded through the framework's one generator, `mulberry32`
+  (`gps-plus-slam-app-framework/utils/mulberry32`).
 
 - Deterministic for a seed: the same stretch looks the same on every run.
 - Each seed's scene is drawn once and cached; a missing 2D context gives
