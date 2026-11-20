@@ -98,6 +98,16 @@ export interface NarrationBoxViewState {
   readonly pressing: boolean;
   /** The travel mode's head row hint, empty in the natural mode. */
   readonly hint: string;
+  /** The voice's line as a float (the finger's while it scrubs). */
+  readonly line: number;
+}
+
+/** The box at rest on the page (CSS px). */
+interface NarrationBoxRect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 /**
@@ -129,6 +139,9 @@ export interface NarrationBox {
   setPointer(on: boolean): void;
   /** What the plate paints, or null when hidden or not in travel mode. */
   paintModel(): WordsPaintModel | null;
+  /** Where the box rests while shown, from its layout (it ignores the
+   *  fade-in shift); null while hidden or not laid out. */
+  restingRect(): NarrationBoxRect | null;
   /** Starts a forwarded press; false when one is already down. */
   beginPress(press: NarrationBoxPress): boolean;
   movePress(x: number, y: number): void;
@@ -298,6 +311,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   let content: NarrationBoxContent | null = null;
   let shown = false;
   let spans: HTMLSpanElement[] = [];
+  /** The same spans, for the punctuation measure's per-node test. */
+  let spanSet = new Set<Node>();
   let starts: number[] = [];
   let lineOf: number[] = [];
   let ls: number[] = [0, 0];
@@ -322,6 +337,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   let mode: NarrationBoxMeasure = "natural";
   let hint = "";
   let paintLayout: WordsPaintLayout | null = null;
+  let rest: NarrationBoxRect | null = null;
   const signs = new Set<HTMLElement>();
 
   function totalMs(): number {
@@ -362,6 +378,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
       at = w.to;
     }
     parts.push(c.plain.slice(at));
+    spanSet = new Set(spans);
     col.replaceChildren(...parts);
     // The bold name and the disclosure too, so the width rule measures
     // what is drawn.
@@ -429,6 +446,18 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     scroll = target(content?.player.nowMs() ?? 0);
     paintLayout =
       travel && content !== null ? measurePaint(content, textW) : null;
+    // Centred by translateX(-50%) (narration-box.css); offsets ignore
+    // transforms, so this is the box at rest, its fade-in shift aside.
+    const w = root.offsetWidth;
+    rest =
+      w > 0
+        ? {
+            x: root.offsetLeft - w / 2,
+            y: root.offsetTop,
+            w,
+            h: root.offsetHeight,
+          }
+        : null;
   }
 
   function fontOf(el: Element, fallback: string): string {
@@ -472,7 +501,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     for (const node of col.childNodes) {
       if (node.nodeType === 3) {
         out.push(...chunkRuns(node, seen, range, colRect));
-      } else if (spans.includes(node as HTMLSpanElement)) {
+      } else if (spanSet.has(node)) {
         seen += 1;
       }
     }
@@ -488,7 +517,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     colRect: DOMRect,
   ): WordsPaintRun[] {
     const text = node.textContent ?? "";
-    const beforeWord = spans.includes(node.nextSibling as HTMLSpanElement);
+    const next = node.nextSibling;
+    const beforeWord = next !== null && spanSet.has(next);
     const out: WordsPaintRun[] = [];
     for (const m of text.matchAll(/\S+/g)) {
       range.setStart(node, m.index);
@@ -507,8 +537,12 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     return out;
   }
 
-  /** The words as the browser laid them out, in the box's CSS px (offsets
-   *  ignore transforms, so a box that moves or scales measures the same). */
+  /** The words as the browser laid them out, in the box's CSS px. The
+   *  word spans are read by offsets, which ignore transforms; the gap runs
+   *  by client rectangles, which do not, taken relative to the text
+   *  column's own rectangle so a moved box (the ghost's centring) measures
+   *  the same. A scaled box would scale the gap runs alone: the box is
+   *  never scaled. */
   function measurePaint(
     c: NarrationBoxContent,
     textW: number,
@@ -818,12 +852,15 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
   root.addEventListener("lostpointercapture", onUp);
   root.addEventListener("keydown", onKey);
   win?.addEventListener("resize", onResize);
-  // The box's own size changes when its styles or fonts arrive after the
-  // first layout (a stylesheet a module injects, a late web font): lay it
-  // out again, or the plate keeps painting the words where they were.
+  // The box's size changes when its styles arrive after the first layout
+  // (a stylesheet a module injects); the text column's alone when a font
+  // arrives late (the travel width stays, the line breaks move). Either
+  // way it is laid out again, or the plate keeps painting the words where
+  // they were.
   const sizeWatch =
     typeof ResizeObserver === "function" ? new ResizeObserver(onResize) : null;
   sizeWatch?.observe(root);
+  sizeWatch?.observe(col);
 
   /** A drag cut off (the box hides, another text comes): the voice keeps
    *  the dragged place but does not play on, and a voice the drag held is
@@ -850,6 +887,8 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         if (mode !== "travel") {
           hint = "";
           headEl.textContent = "";
+          // A natural box is the one the visitor sees and touches.
+          root.classList.remove("nb-ghost", "nb-nopointer");
         }
         dirty = true;
       }
@@ -889,6 +928,11 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     setPointer(on) {
       root.classList.toggle("nb-nopointer", !on);
     },
+    restingRect() {
+      if (!shown) return null;
+      if (dirty) layout();
+      return rest;
+    },
     paintModel() {
       const c = content;
       if (!shown || c === null) return null;
@@ -920,6 +964,10 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
         scrubbing: dragging,
         pressing: press !== null,
         hint,
+        line:
+          !shown || content === null
+            ? 0
+            : lineFloatAt(ls, dragging ? dragMs : content.player.nowMs()),
       };
     },
     dispose() {

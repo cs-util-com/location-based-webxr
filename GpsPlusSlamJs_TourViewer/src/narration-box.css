@@ -136,6 +136,12 @@
 .narration-box[data-speaking="yes"] .nb-col .nb-who {
   animation: nb-breathe 2.4s ease-in-out infinite;
 }
+/* Nothing animates unseen: the plate paints the name still, as the
+   prototype does, so the ghost's name does not breathe either (after the
+   rule above, which it must override at the same weight). */
+.narration-box.nb-ghost .nb-col .nb-who {
+  animation: none;
+}
 @keyframes nb-breathe {
   50% {
     opacity: 0.55;

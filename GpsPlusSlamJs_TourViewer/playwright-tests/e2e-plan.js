@@ -159,6 +159,8 @@ export const SPECS = {
   "open-file.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "sample-tour.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "setup-flow.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "splat-scene-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
+  "splat-trainer-gpu.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "splat-trainer.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "start-later.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "stations.spec.js": { project: "dom", area: "viewer", lane: 2 },

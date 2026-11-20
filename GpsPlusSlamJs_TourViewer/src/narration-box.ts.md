@@ -34,12 +34,18 @@ and what.
     its layout, its gestures and its screen reader text: the travel
     mode's, whose visible box is the painted plate.
   - `setPointer(on)` - whether the box takes pointers itself
-    (`nb-nopointer` when off).
+    (`nb-nopointer` when off). Showing a text in the natural mode
+    clears both the ghost and the pointer lock.
   - `paintModel()` - what the plate paints
     (`narration-words-paint.ts` `WordsPaintModel`): the layout measured
     at the last `layout()` (the same object until the box is laid out
     anew) and this frame's voice time, lit word, scroll, scrub and hint;
     null when hidden or in the natural mode.
+  - `restingRect()` - where the box rests on the page, `{ x, y, w, h }`
+    in CSS px from its layout (`offsetLeft` less half its width, as the
+    box is centred with a translate; `offsetTop`), not from
+    `getBoundingClientRect`, so a fade or a transform never moves it; the
+    travelling box docks its words there. Null while not shown.
   - `beginPress({ id, x, y, linePx })`, `movePress(x, y)`,
     `endPress("up" | "cancel", x, y)` - a finger forwarded from
     elsewhere (the plate), in screen px, with one line of the words as
@@ -50,7 +56,9 @@ and what.
   - `tick()` - follows the voice; `show` calls it, and so does every
     frame.
   - `state()` - what a test or the check page reads: shown, key, lit word
-    and its text, lines, rows, scroll (in lines), scrubbing.
+    and its text, lines, rows, scroll (in lines), scrubbing. `line` is the
+    voice's line as a float (`lineFloatAt` at the scrub time while
+    dragging, else at the voice time).
   - `dispose()` - removes the box and its signs and tells the store it is
     hidden.
 - `NarrationBoxContent` - `key`, `title`, `speaker { name, color }`,
@@ -134,7 +142,9 @@ and what.
   "Paused" when the play state changes (not on the first showing).
 - Play state on screen: `data-speaking="yes"` while the voice plays and
   no finger holds it (and "no" once hidden); the name in the words
-  breathes then (2.4 s), the hidden measuring copy never. With reduced motion
+  breathes then (2.4 s), the hidden measuring copy never, nor the ghost
+  of the travel mode (its painted plate shows the name still, as the
+  prototype paints it: nothing animates unseen). With reduced motion
   nothing breathes, and a paused voice's name is dimmed instead. Reduced
   motion also drops the word fades, the box's fade and the swap; reduced
   transparency or more contrast raise the tint and the grey.
@@ -147,16 +157,21 @@ and what.
   while playing or dragging (the natural mode has no hint). The
   measured paint layout takes the words', the name's and the
   disclosure's runs from the ghost's spans, the window and head
-  rectangles from the box's own offsets (transform-proof), and the
+  rectangles from the box's own offsets (offsets ignore transforms), and the
   fonts, grey and tint from the computed style (`--nb-grey`,
   `--nb-tint`), with fallbacks (16 px, 0.55, 0.72).
   The punctuation between the spans (a colon, a full stop, an opening
   quote) is measured with a Range and painted as runs too, fading with
-  the word it is glued to (else the word before).
-- The box lays itself out again when its own size changes
-  (`ResizeObserver`, where there is one): a stylesheet or a web font that
-  arrives after the first layout would otherwise leave the plate painting
-  the words at the old places.
+  the word it is glued to (else the word before). A Range's rectangle does
+  include transforms, so these runs are taken relative to the text
+  column's rectangle: a moved box (the ghost's centring) measures the
+  same; the box is never scaled.
+- The box lays itself out again when its own size or its text column's
+  changes (`ResizeObserver`, where there is one): a stylesheet that
+  arrives after the first layout changes the box's size, a late font
+  only the column's (the travel width is fixed, the line breaks move);
+  either would leave the plate painting the words at the old places.
+  `dispose()` disconnects the observer.
 - Intended differences from the prototype:
   - the speaker's name is not a line of its own and has no coloured
     mark: it starts the words, bold, in the speaker's colour, once per

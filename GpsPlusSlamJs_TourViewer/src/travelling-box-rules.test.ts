@@ -19,6 +19,7 @@ import {
   facingAngleDeg,
   flightClip,
   inQuad,
+  letterGate,
   plateMetrics,
   plateSizeM,
   quadOfClip,
@@ -49,15 +50,19 @@ function seen(letterPx: number, ndc = 0): PlateMetrics {
   };
 }
 
+/** A want input whose letter gate reads its metrics (the default knobs'
+ *  metric), unless the gates are given. */
 function want(over: Partial<WantInput> = {}): WantInput {
+  const metrics = over.metrics ?? seen(20);
   return {
     travelling: true,
-    voice: true,
-    inStation: true,
-    sheetOpen: false,
-    metrics: seen(20),
+    hideWhy: null,
+    gates: [letterGate(metrics, K)],
+    metrics,
     angleDeg: 0,
     onPlate: false,
+    slotFree: true,
+    canFold: false,
     ...over,
   };
 }
@@ -66,22 +71,18 @@ describe("wantPlace", () => {
   it("names each reason, in the prototype's order", () => {
     // Each case breaks every later rule too, so a reordering shows.
     const invalid: PlateMetrics = { ...seen(5), valid: false };
-    expect(wantPlace(want({ travelling: false, sheetOpen: true }), K)).toEqual({
-      place: "hidden",
-      why: "not travelling",
-    });
-    expect(wantPlace(want({ voice: false, inStation: false }), K)).toEqual({
-      place: "hidden",
-      why: "no voice",
-    });
-    expect(wantPlace(want({ inStation: false, sheetOpen: true }), K)).toEqual({
-      place: "hidden",
-      why: "outside the station",
-    });
-    expect(wantPlace(want({ sheetOpen: true, metrics: invalid }), K)).toEqual({
-      place: "hidden",
-      why: "sheet open",
-    });
+    expect(
+      wantPlace(want({ travelling: false, hideWhy: "sheet open" }), K),
+    ).toEqual({ place: "hidden", why: "not travelling" });
+    for (const hideWhy of [
+      "no voice",
+      "outside the station",
+      "sheet open",
+    ] as const) {
+      expect(
+        wantPlace(want({ hideWhy, metrics: invalid, slotFree: false }), K),
+      ).toEqual({ place: "hidden", why: hideWhy });
+    }
     expect(wantPlace(want({ metrics: invalid, angleDeg: 89 }), K)).toEqual({
       place: "dock",
       why: "out of view",
@@ -151,9 +152,46 @@ describe("wantPlace", () => {
       letterPx: 8,
     };
     expect(wantPlace(want({ metrics: squashed }), K).place).toBe("dock");
+    const h = { ...K, metric: "h" } as const;
     expect(
-      wantPlace(want({ metrics: squashed }), { ...K, metric: "h" }).place,
+      wantPlace(
+        want({ metrics: squashed, gates: [letterGate(squashed, h)] }),
+        h,
+      ).place,
     ).toBe("plate");
+  });
+
+  // Why: other surfaces bring other sizes to reach (a picture, a control
+  // to touch); any one below its own threshold docks, and the keep factor
+  // applies to each.
+  it("docks when any gate is under its threshold, each kept to 0.95", () => {
+    const gates = [
+      { kind: "letter", px: 20, thr: 12 },
+      { kind: "touch", px: 43, thr: 44 },
+    ] as const;
+    expect(wantPlace(want({ gates }), K)).toEqual({
+      place: "dock",
+      why: "too small",
+    });
+    expect(wantPlace(want({ gates, onPlate: true }), K).place).toBe("plate");
+    expect(wantPlace(want({ gates: [] }), K).place).toBe("plate");
+  });
+
+  // Why: a surface that would dock while another owns the slot must not
+  // queue there; it folds into its mark, or stays on its plate when it
+  // has none. A readable plate is never sent to fold.
+  it("folds, or stays on the plate, when it would dock without its slot", () => {
+    const small = seen(5);
+    expect(
+      wantPlace(want({ metrics: small, slotFree: false, canFold: true }), K),
+    ).toEqual({ place: "fold", why: "slot taken" });
+    expect(
+      wantPlace(want({ metrics: small, slotFree: false, canFold: false }), K),
+    ).toEqual({ place: "plate", why: "slot taken" });
+    expect(wantPlace(want({ slotFree: false, canFold: true }), K)).toEqual({
+      place: "plate",
+      why: "readable",
+    });
   });
 });
 
@@ -187,6 +225,23 @@ describe("settlePlace", () => {
     s = settlePlace(s, "dock", 0.2, free, K);
     s = settlePlace(s, "dock", 0.2, free, K);
     expect(s.place).toBe("plate");
+  });
+
+  // Why: a fold is a dock claim that did not win, so it waits the dock's
+  // hold, not the plate's.
+  it("waits the dock's hold to fold", () => {
+    const k = { ...K, holdDock: 0.2, holdPlate: 1 };
+    let s = settlePlace(
+      { place: "plate", pending: null, pendingS: 0 },
+      "fold",
+      0.1,
+      free,
+      k,
+    );
+    s = settlePlace(s, "fold", 0.1, free, k);
+    expect(s.place).toBe("plate");
+    s = settlePlace(s, "fold", 0.1, free, k);
+    expect(s.place).toBe("fold");
   });
 
   it("hides at once, and appears from hidden at once", () => {
@@ -244,8 +299,10 @@ describe("the flight", () => {
   const dock = [-0.7, -0.6, 0.7, -0.6, -0.7, -0.9, 0.7, -0.9] as const;
 
   it("starts at the plate's clip corners and ends at the dock's NDC", () => {
-    expect(Array.from(flightClip(src, dock, 0))).toEqual(Array.from(src));
-    const end = flightClip(src, dock, 1);
+    expect(Array.from(flightClip(src, dock, 0, new Array<number>(16)))).toEqual(
+      Array.from(src),
+    );
+    const end = flightClip(src, dock, 1, new Array<number>(16));
     for (let i = 0; i < 4; i++) {
       const w = end[i * 4 + 3]!;
       expect(w).toBeCloseTo(4, 9);
@@ -298,7 +355,7 @@ describe("the quad on screen", () => {
     const clip = [
       -0.5, 0.5, 0, 1, 0.5, 0.5, 0, 1, -0.5, -0.5, 0, 1, 0.5, -0.5, 0, 1,
     ];
-    const quad = quadOfClip(clip, 400, 800);
+    const quad = quadOfClip(clip, 400, 800) ?? [];
     expect(quad).toEqual([
       [100, 200],
       [300, 200],
@@ -318,6 +375,8 @@ describe("plateSizeM", () => {
     expect(size.widthM).toBeCloseTo(2.312, 9);
     expect(size.heightM).toBeCloseTo(0.918, 9);
     expect(() => plateSizeM(272, 108, 0)).toThrow(RangeError);
+    expect(plateSizeM(272, 108, 16, 0.17).widthM).toBeCloseTo(2.89, 9);
+    expect(() => plateSizeM(272, 108, 16, 0)).toThrow(RangeError);
   });
 });
 
@@ -419,8 +478,8 @@ describe("plateMetrics, against the build's geometry", () => {
     },
   );
 
-  it("is about 23 px at 3 m, as the plan's table says", () => {
-    // The plan's rounded figure: 0.136 x 508 / 2.96 m = 23.3 px.
+  it("is about 23 px at 3 m, the rounded figure worked by hand", () => {
+    // 0.136 m x a 508 px lens / 2.96 m = 23.3 px.
     expect(measured(3).letterPx).toBeGreaterThan(22.8);
     expect(measured(3).letterPx).toBeLessThan(23.8);
   });
@@ -431,5 +490,88 @@ describe("plateMetrics, against the build's geometry", () => {
     expect(m.valid).toBe(false);
     expect(m.onScreen).toBe(false);
     expect(m.letterPx).toBe(0);
+  });
+});
+
+// Why: a quad that collapsed to a line or a point (a plate seen exactly
+// edge-on, a flight corner pinned to its partner) has no inside; a press
+// there must not be taken as a press on the words.
+describe("inQuad on a degenerate quad", () => {
+  it("finds nothing inside a point or a line", () => {
+    const point: [number, number][] = [
+      [5, 5],
+      [5, 5],
+      [5, 5],
+      [5, 5],
+    ];
+    expect(inQuad(5, 5, point)).toBe(false);
+    const line: [number, number][] = [
+      [0, 0],
+      [10, 0],
+      [20, 0],
+      [30, 0],
+    ];
+    expect(inQuad(5, 0, line)).toBe(false);
+  });
+});
+
+// Why: the view and box sizes come from the page (a hidden iframe has a
+// zero-size view, a box before its first layout a zero-size rectangle);
+// a size of 0 or NaN made every letter Infinity or NaN, and a NaN letter
+// read as "readable" because NaN < 12 is false. Bad sizes give invalid
+// metrics, and a NaN letter docks.
+describe("plateMetrics and wantPlace on bad sizes", () => {
+  const corners = [
+    -0.5, 0.5, 0, 1, 0.5, 0.5, 0, 1, -0.5, -0.5, 0, 1, 0.5, -0.5, 0, 1,
+  ];
+  const centre = [0, 0, 0, 1];
+  const good = [390, 844, 272, 108, 16, 22] as const;
+
+  it("is invalid for a size that is not a positive finite number", () => {
+    for (let at = 0; at < good.length; at++) {
+      for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const sizes = [...good] as number[];
+        sizes[at] = bad;
+        const m = plateMetrics(
+          corners,
+          centre,
+          sizes[0]!,
+          sizes[1]!,
+          sizes[2]!,
+          sizes[3]!,
+          sizes[4]!,
+          sizes[5]!,
+        );
+        expect(m.valid, `size ${String(at)} = ${String(bad)}`).toBe(false);
+        expect(m.letterPx).toBe(0);
+      }
+    }
+    expect(plateMetrics(corners, centre, ...good).valid).toBe(true);
+  });
+
+  it("docks a letter size that is NaN, as too small", () => {
+    expect(wantPlace(want({ metrics: seen(Number.NaN) }), K)).toEqual({
+      place: "dock",
+      why: "too small",
+    });
+  });
+});
+
+// Why: the quad's corners come from the flight's clip corners, whose w is
+// interpolated and can reach the eye's plane on a plate seen up close; a
+// division by such a w threw the corners to infinity, where every press
+// would land "inside". A corner too near or behind the eye has no screen
+// place: no quad.
+describe("quadOfClip with a corner at or behind the eye", () => {
+  it("gives no quad", () => {
+    const ok = [
+      -0.5, 0.5, 0, 1, 0.5, 0.5, 0, 1, -0.5, -0.5, 0, 1, 0.5, -0.5, 0, 1,
+    ];
+    for (const w of [0, 0.05, -1, Number.NaN]) {
+      const clip = [...ok];
+      clip[7] = w;
+      expect(quadOfClip(clip, 400, 800), `w = ${String(w)}`).toBeNull();
+    }
+    expect(quadOfClip(ok, 400, 800)).not.toBeNull();
   });
 });

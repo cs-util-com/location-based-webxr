@@ -69,9 +69,11 @@ the reading sign (`reading-sign.ts`) are world parts too.
   the part, takes it out of the station and its count, and names the
   block in `skipped`),
   `dispose()` (frees every geometry, material and texture it made).
-- `canvasTexture(canvas, { anisotropy? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
+- `canvasTexture(canvas, { anisotropy?, mipmaps? } = {})` - a canvas as a texture (painted words, a figure, a shadow blob):
   sRGB, and the anisotropy only when given (a page seen at a slant; three
-  clamps it to the renderer's largest).
+  clamps it to the renderer's largest). `mipmaps: false` skips the
+  mipmap chain and samples linearly: for a texture repainted many times a
+  second and drawn near its painted size (the travelling words).
 - `worldEnv(mode, assets, load, options = {})` - a page's `WorldEnv`: an
   asset id is read through `load` by the path the tour's `assets` name for
   it; a model through `options.parseModel` after that; a sound is made by
@@ -151,7 +153,7 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 
 ## Tests
 
-`world-part.test.ts`: `canvasTexture`'s colour space and anisotropy (swept over
+`world-part.test.ts`: `canvasTexture`'s colour space, anisotropy and mipmap switch (swept over
 1, 4 and 16, and none), the mounted set as a property, the shown-only tap
 (hidden, outside any station, no tap, no scene, a miss), the nearer of two
 parts on the ray through the real `pickObject`, an empty `Object3D` as a

@@ -4,7 +4,7 @@
  * way into the whole text. The prototype's sign (a 2.5 m plate on a stem,
  * its centre 2.05 m up, an amber ring on the ground; the over-line
  * "READ · N MIN", a serif title of at most two lines, "Tap to open the
- * text") is what the owner chose, so these pin its numbers and words
+ * text") is the chosen look, so these pin its numbers and words
  * without a browser - a recording 2D context stands in for the canvas -
  * and that a tap reaches only a shown sign, and opens the sheet with the
  * station's line above the title.
@@ -386,6 +386,26 @@ describe("the words plate", () => {
       expect(sign.grow.scale.toArray()).toEqual(Array(3).fill(signGrowth(d)));
     }
     sign.detachWords();
+    expect(sign.grow.scale.x).toBe(1);
+    sign.dispose();
+  });
+
+  // Why: the growth is a knob (off for a field test of the plain sign);
+  // a growth the caller passes is the one the sign takes, and a bad one
+  // grows nothing.
+  it("takes the growth its caller passes while the words are attached", () => {
+    const sign = buildReadingSign(null);
+    sign.attachWords(new Texture(), SIZE);
+    sign.update({ viewer: [0, 1.6, 9], growth: 1 });
+    expect(sign.grow.scale.x).toBe(1);
+    sign.update({ viewer: [0, 1.6, 9], growth: 1.25 });
+    expect(sign.grow.scale.x).toBe(1.25);
+    for (const bad of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      sign.update({ viewer: [0, 1.6, 9], growth: bad });
+      expect(sign.grow.scale.x).toBe(1);
+    }
+    sign.detachWords();
+    sign.update({ viewer: [0, 1.6, 9], growth: 1.25 });
     expect(sign.grow.scale.x).toBe(1);
     sign.dispose();
   });

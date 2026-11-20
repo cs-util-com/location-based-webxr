@@ -16,7 +16,15 @@ const ROOMY = {
 
 describe("memoryBudgetBytes", () => {
   it("is the target when the adapter allows more", () => {
-    expect(memoryBudgetBytes(ROOMY, TRAINER_DEFAULTS)).toBe(700 * MB);
+    expect(memoryBudgetBytes(ROOMY, TRAINER_DEFAULTS)).toBe(700e6);
+  });
+
+  it("targets what the trainer itself targets by default", () => {
+    // Why: the trainer shrinks its photos at its own budget, 700e6 bytes
+    // at 12 bytes a pixel (three float32 channels); a plan made with
+    // 700 MiB said "native size" for windows the trainer shrinks.
+    expect(TRAINER_DEFAULTS.targetMemoryBytes).toBe(700_000_000);
+    expect(TRAINER_DEFAULTS.bytesPerPixel).toBe(12);
   });
 
   it("is half the binding limit when that is smaller", () => {
@@ -51,7 +59,7 @@ describe("memoryBudgetBytes", () => {
 
 describe("photoScale", () => {
   it("keeps the photos' own size when they fit", () => {
-    expect(photoScale(50, 640, 480, 700 * MB, TRAINER_DEFAULTS)).toEqual({
+    expect(photoScale(50, 640, 480, 700e6, TRAINER_DEFAULTS)).toEqual({
       kind: "fits",
       width: 640,
       height: 480,
@@ -78,6 +86,16 @@ describe("photoScale", () => {
     });
   });
 
+  it("rejects a cost per pixel that is not positive", () => {
+    // Why: at 0 bytes a pixel every window "fits" at full size in 0
+    // bytes, and the trainer then runs out of memory on the device.
+    for (const bytesPerPixel of [0, -1, Number.NaN]) {
+      expect(() =>
+        photoScale(10, 640, 480, MB, { ...TRAINER_DEFAULTS, bytesPerPixel }),
+      ).toThrow(RangeError);
+    }
+  });
+
   it("rejects a size that is not a positive integer", () => {
     expect(() => photoScale(0, 640, 480, MB, TRAINER_DEFAULTS)).toThrow(
       RangeError,
@@ -93,6 +111,18 @@ describe("iterationBudget", () => {
     expect(iterationBudget(100, TRAINER_DEFAULTS)).toBe(15000);
     expect(iterationBudget(1, TRAINER_DEFAULTS)).toBe(4000);
     expect(iterationBudget(1000, TRAINER_DEFAULTS)).toBe(30000);
+  });
+
+  it("rejects step limits that cannot both hold", () => {
+    // Why: with the maximum under the minimum, the clamp returns the
+    // maximum, under the minimum the settings promise.
+    expect(() =>
+      iterationBudget(10, {
+        ...TRAINER_DEFAULTS,
+        minIterations: 5000,
+        maxIterations: 4000,
+      }),
+    ).toThrow(RangeError);
   });
 
   it("rejects a negative or fractional frame count", () => {
@@ -131,6 +161,16 @@ describe("liveEta", () => {
     ).toBeNull();
     expect(
       liveEta({ done: 1200, total: 1000, elapsedMs: 10 }, TRAINER_DEFAULTS),
+    ).toBeNull();
+  });
+
+  it("shows nothing before any step, even when no minimum is asked for", () => {
+    // Why: no step measured is no rate; dividing by it gave NaN or
+    // Infinity as the time left.
+    const settings = { ...TRAINER_DEFAULTS, etaMinIterations: 0 };
+    expect(liveEta({ done: 0, total: 0, elapsedMs: 0 }, settings)).toBeNull();
+    expect(
+      liveEta({ done: 0, total: 100, elapsedMs: 50 }, settings),
     ).toBeNull();
   });
 });
