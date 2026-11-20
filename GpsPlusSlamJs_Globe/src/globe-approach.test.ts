@@ -265,7 +265,10 @@ describe("createGlobeApproach: the distance intro keeps the field of view", () =
   it("returns fovY on every orbit frame of a whole run", () => {
     for (const fovY of [30, 50, 75]) {
       const { approach, at } = setup();
-      approach.restart(at(0), params({ url: undefined, intro: "distance", fovY }));
+      approach.restart(
+        at(0),
+        params({ url: undefined, intro: "distance", fovY }),
+      );
       const fovs = new Set<number>();
       for (let t = 0; t <= 3000 + 5000 + 1000; t += 100) {
         fovs.add(orbit(approach.pose(at(t))).fovDeg);
