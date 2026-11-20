@@ -181,6 +181,9 @@ describe("tags that overlap step aside, nearest first", () => {
     );
     expect(ys[1]).toBeGreaterThanOrEqual(EDGE_HINT.insetTop);
     expect(ys[1]).toBeLessThanOrEqual(tiny - EDGE_HINT.insetBottom - 30);
+    // A tag in view steps up first, so with no room either way it keeps
+    // its own side's clamped place: the top inset.
+    expect(ys[1]).toBe(EDGE_HINT.insetTop);
   });
 
   it("with room on the screen, no two tags overlap and the nearest never moves", () => {

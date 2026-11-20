@@ -386,19 +386,25 @@ for (const viewport of [
     expect(close.top).toBeGreaterThanOrEqual(card.top);
     // The size offer shows above the readout and pushes it below the
     // card's offset, so the card steps aside while it shows. Read in one
-    // synchronous step: the next render may hide the offer again.
-    expect(
-      await page.evaluate(() => {
-        const offer = document.querySelector('[data-testid="size-offer"]');
-        const card = document.querySelector('[data-testid="scan-card"]');
-        if (!(offer instanceof HTMLElement) || card === null) return "missing";
-        const was = offer.hidden;
-        offer.hidden = false;
-        const display = getComputedStyle(card).display;
-        offer.hidden = was;
-        return display;
-      }),
-    ).toBe("none");
+    // synchronous step: the next render may hide the offer again. The
+    // card is read shown first, so a card hidden for another reason
+    // cannot pass for one the offer hid.
+    const [before, after] = await page.evaluate(() => {
+      const offer = document.querySelector('[data-testid="size-offer"]');
+      const card = document.querySelector('[data-testid="scan-card"]');
+      if (!(offer instanceof HTMLElement) || card === null) {
+        return ["missing", "missing"];
+      }
+      const was = offer.hidden;
+      const shown = getComputedStyle(card).display;
+      offer.hidden = false;
+      const offered = getComputedStyle(card).display;
+      offer.hidden = was;
+      return [shown, offered];
+    });
+    expect(before, "the card shows before the offer").not.toBe("none");
+    expect(before).not.toBe("missing");
+    expect(after, "the card steps aside while the offer shows").toBe("none");
   });
 }
 
