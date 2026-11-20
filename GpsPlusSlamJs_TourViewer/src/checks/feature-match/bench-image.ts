@@ -88,9 +88,10 @@ export function toFramePoint(
 }
 
 /**
- * Resizes a frame: halves with a 2x2 box while the target is less than
- * half the size (so a large shrink averages instead of aliasing), then
- * samples bilinearly.
+ * Resizes a frame: halves (box average) while the target is less than half
+ * the size, so a large shrink averages instead of aliasing, then samples
+ * bilinearly. Every step keeps the frame's edges in place, so a point maps
+ * between the sizes with `toFramePoint`, odd sizes included.
  */
 export function resizeFrame(
   frame: Frame,
@@ -107,23 +108,67 @@ export function resizeFrame(
   return bilinear(src, width, height);
 }
 
+/**
+ * Half the size, rounded down; each output pixel averages the source area
+ * it covers. On an even side that is exactly a 2 x 2 block; on an odd one
+ * the footprint is a little over 2 pixels, so the last column or row is
+ * spread over the others instead of dropped.
+ */
 function halve(frame: Frame): Frame {
-  const w = frame.width >> 1;
-  const h = frame.height >> 1;
+  const { width: sw, height: sh, rgba: s } = frame;
+  const w = sw >> 1;
+  const h = sh >> 1;
+  const cols = footprints(sw, w);
+  const rows = footprints(sh, h);
   const out = new Uint8ClampedArray(w * h * 4);
-  const s = frame.rgba;
-  const sw = frame.width;
+  const acc = [0, 0, 0, 0];
   for (let y = 0; y < h; y++) {
+    const row = rows[y]!;
     for (let x = 0; x < w; x++) {
-      const i0 = (2 * y * sw + 2 * x) * 4;
-      const i1 = i0 + sw * 4;
+      const col = cols[x]!;
+      acc.fill(0);
+      for (let j = 0; j < row.length; j += 2) {
+        const sy = row[j]!;
+        const wy = row[j + 1]!;
+        for (let i = 0; i < col.length; i += 2) {
+          const k = (sy * sw + col[i]!) * 4;
+          const wk = wy * col[i + 1]!;
+          for (let c = 0; c < 4; c++) {
+            acc[c]! += s[k + c]! * wk;
+          }
+        }
+      }
       for (let c = 0; c < 4; c++) {
-        out[(y * w + x) * 4 + c] =
-          (s[i0 + c]! + s[i0 + 4 + c]! + s[i1 + c]! + s[i1 + 4 + c]! + 2) >> 2;
+        // The footprint's area is (sw / w) x (sh / h); rounded half up
+        // (with a margin for float error), as the 2 x 2 average always was.
+        out[(y * w + x) * 4 + c] = Math.floor(
+          (acc[c]! * w * h) / (sw * sh) + 0.5 + 1e-9,
+        );
       }
     }
   }
   return { width: w, height: h, rgba: out };
+}
+
+/**
+ * For each of `n` output pixels along a side of `size` source pixels, the
+ * source pixels it covers and how much of each, flat `[index, weight, ...]`
+ * (weights in source pixels, summing to size / n).
+ */
+function footprints(size: number, n: number): number[][] {
+  const step = size / n;
+  return Array.from({ length: n }, (_, o) => {
+    const lo = o * step;
+    const hi = lo + step;
+    const out: number[] = [];
+    for (let i = Math.floor(lo); i < hi && i < size; i++) {
+      const cover = Math.min(hi, i + 1) - Math.max(lo, i);
+      if (cover > 1e-12) {
+        out.push(i, cover);
+      }
+    }
+    return out;
+  });
 }
 
 function bilinear(frame: Frame, width: number, height: number): Frame {

@@ -1,5 +1,6 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
+import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
 /** The pinned sift.js URL the page imports (kept in step with method-sift.ts). */
 const SIFT_URL =
@@ -194,7 +195,7 @@ test("the feature matching benchmark runs a stubbed SIFT on the synthetic pair",
   const picture = page.locator("#pictures .picture");
   await expect(picture).toHaveCount(1);
   await expect(picture).toContainText(
-    "SIFT (plain JS) @320 (320x240): keypoints A 40, B 40 | matches 40 | correct",
+    "SIFT (plain JS) @320 (320x240), last round: keypoints A 40, B 40 | matches 40 | correct",
   );
   await expect(picture.locator("canvas")).toHaveCount(1);
   // The synthetic run is not the camera pair: the steps do not move.
@@ -293,6 +294,9 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   await expect(page.locator("#save-frames")).toBeDisabled();
   await expect(page.locator("#capture-b")).toBeDisabled();
   await chooseSiftOnly(page);
+  // A second size whose computed frame (480x360) differs from the captured
+  // one (320x240), so the saved coordinates show the mapping between them.
+  await page.locator('input[name="size"][value="480"]').check();
 
   await takePhotos(page);
   // The run starts by itself; while it lasts nothing else can start.
@@ -305,6 +309,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   releaseSift();
   await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
   await expect(page.locator("#run")).toHaveText("Run again");
+  await expect(page.locator("#run")).toBeEnabled();
   expect(await stepStates(page)).toEqual(["done", "done", "done", "current"]);
   await expect(page.locator("#save-state")).toHaveText(
     "ready: tap to prepare the files",
@@ -331,17 +336,54 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   expect(await page.locator("#report").inputValue()).toMatch(
     /input: camera A 320x240, grey mean [\d.]+ sd [\d.]+ \(0-255\); B 320x240, grey mean/,
   );
-  await expect(page.locator("#pictures .picture canvas")).toHaveCount(1);
-  await expect(page.locator("#pictures .picture")).toContainText(
-    "keypoints A 40, B 40 | matches 40",
+  await expect(page.locator("#pictures .picture canvas")).toHaveCount(2);
+  // The caption counts the round the picture shows.
+  await expect(page.locator("#pictures .picture").first()).toContainText(
+    "last round: keypoints A 40, B 40 | matches 40",
   );
 
   await page.locator("#save-frames").click();
   await expect(page.locator("#save-state")).toHaveText(
-    "4 files ready: tap each to save",
+    "ready: tap Download all (zip), or each file",
   );
-  await expect(page.locator("#save-links a")).toHaveCount(4);
+  await expect(page.locator("#save-links a")).toHaveCount(5);
   expect(await stepStates(page)).toEqual(["done", "done", "done", "done"]);
+
+  // One tap saves everything: the zip holds each offered file and the
+  // page log, so nothing has to be copied out by hand.
+  const zipLink = page.locator("#save-links a").first();
+  await expect(zipLink).toHaveAttribute("download", "feature-match-all.zip");
+  await expect(zipLink).toContainText("Download all (zip)");
+  const [zipFile] = await Promise.all([
+    page.waitForEvent("download"),
+    zipLink.click(),
+  ]);
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
+  );
+  const entries = await reader.getEntries();
+  expect(entries.map((e) => e.filename).sort()).toEqual([
+    "feature-match-frame-a.png",
+    "feature-match-frame-b.png",
+    "feature-match-frames.json",
+    "feature-match-log.txt",
+    "feature-match-matches.json",
+    "feature-match-report.txt",
+  ]);
+  const zipText = async (/** @type {string} */ name) => {
+    const entry = entries.find((e) => e.filename === name);
+    if (!entry || entry.directory) {
+      throw new Error(`no ${name} in the zip`);
+    }
+    return entry.getData(new TextWriter());
+  };
+  expect(await zipText("feature-match-log.txt")).toContain(
+    "captured A 320x240",
+  );
+  expect(await zipText("feature-match-report.txt")).toContain(
+    "SIFT (plain JS)",
+  );
+  await reader.close();
 
   for (const name of [
     "feature-match-frame-a.png",
@@ -405,9 +447,26 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     240,
   ]);
   expect(size.keypointsA).toHaveLength(40);
-  // The stub's first keypoint, in the 320x240 frame's own pixels.
+  // The stub's first keypoint, in the 320x240 frame's own pixels: at 320
+  // the two sizes agree; at 480 it was found at (30, 36) of 480x360 and
+  // maps to (30.5 x 2/3 - 0.5, 36.5 x 2/3 - 0.5).
   expect(size.keypointsA[0]).toEqual([20, 24]);
   expect(size.matches).toHaveLength(40);
+  const size480 = matches.methods[0].sizes[1];
+  expect([size480.width, size480.height]).toEqual([480, 360]);
+  expect(size480.keypointsA[0]).toEqual([19.83, 23.83]);
+
+  // A synthetic run replaces the camera run's results on screen, so the
+  // camera run and its offered files are withdrawn with them: Save must
+  // never offer files for results no longer shown.
+  await page.locator("#run-synthetic").click();
+  await expect(page.locator("#synthetic-state")).toHaveText("done: 1 methods");
+  await expect(page.locator("#save-links a")).toHaveCount(0);
+  await expect(page.locator("#save-frames")).toBeDisabled();
+  await expect(page.locator("#run-state")).toHaveText(
+    "replaced by the synthetic run: tap Run again",
+  );
+  expect(await stepStates(page)).toEqual(["done", "done", "current", "todo"]);
   expect(errors).toEqual([]);
 });
 
@@ -460,6 +519,84 @@ test("the feature matching benchmark shows a failed save and a refused camera", 
     "data-state",
     "current",
   );
+});
+
+/**
+ * Why this test matters: a camera run that measured nothing (a ticked
+ * method left without a backend, or a run that threw) must say so on the
+ * run step and in the log, and Save must not read "ready" as if there
+ * were results: it offers the photos only, and says that.
+ */
+test("the feature matching benchmark names a run that measured nothing", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await chooseSiftOnly(page);
+  // XFeat ticked, but no backend: it would drop out without a word.
+  await page.locator("#m-xfeat").check();
+  for (const b of ["webgpu", "wasm"]) {
+    await page.locator(`input[name="backend"][value="${b}"]`).uncheck();
+  }
+  await takePhotos(page);
+  await expect(page.locator("#run-state")).toHaveText(
+    "not run: a ticked method has nothing to run on (see log)",
+  );
+  await expect(page.locator("#log")).toContainText(
+    "ERROR options: Error: XFeat is ticked but no backend is",
+  );
+  await expect(page.locator("#save-state")).toHaveText(
+    "nothing measured: tap to save the photos anyway",
+  );
+  await expect(page.locator("#save-frames")).toBeEnabled();
+
+  // A run that throws: an unknown backend value is refused.
+  await page.locator('input[name="backend"][value="wasm"]').evaluate((el) => {
+    const box = /** @type {HTMLInputElement} */ (el);
+    box.value = "unknown";
+    box.checked = true;
+  });
+  await page.locator("#run").click();
+  await expect(page.locator("#run-state")).toHaveText("failed (see log)");
+  await expect(page.locator("#log")).toContainText("ERROR run: RangeError");
+  await expect(page.locator("#save-state")).toHaveText(
+    "nothing measured: tap to save the photos anyway",
+  );
+  await expect(page.locator("#save-frames")).toBeEnabled();
+});
+
+/**
+ * Why this test matters: where the browser offers no camera API at all
+ * (plain http, some in-app browsers) the start fails before it awaits
+ * anything; every later tap must try again and log it, not answer from a
+ * failed start kept forever.
+ */
+test("the feature matching benchmark retries a camera start that failed at once", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await page.locator("#capture-a").click();
+  await expect(page.locator("#state-a")).toHaveText(
+    "camera unavailable (see log)",
+  );
+  await page.locator("#capture-a").click();
+  await expect
+    .poll(async () =>
+      ((await page.locator("#log").textContent()) ?? "")
+        .split("\n")
+        .filter((l) => l.includes("ERROR camera:")),
+    )
+    .toHaveLength(2);
 });
 
 test("the feature matching benchmark says when the camera is refused", async ({
