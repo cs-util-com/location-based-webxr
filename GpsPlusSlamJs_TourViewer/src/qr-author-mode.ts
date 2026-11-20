@@ -302,21 +302,30 @@ export function codeTourLine(status: CodeTourStatus): string {
   }
 }
 
+/** What the AR panel says while placing is locked for want of an open
+ *  tour (`entryHint`). */
+const NO_TOUR_PLACING_LOCKED =
+  "Point at your hung code: it opens your tour. You can place once it is open, so nothing is lost.";
+
 /**
  * The first thing the panel says in an AR visit (authoring plan
  * 2026-09-28-0953 §3.2a, decision D5): look at the tour's code first, until
  * this visit has seen it. A later visit's notes are corrected through the
  * code only when the code was seen in that visit (D10b); the owner chose a
- * hint over a rule, so nothing is blocked while it shows. Empty with no
- * tour open - there is no "code of this tour" yet. It names the PRINTED
- * code, not "the code you scanned to open this tour": a tour opened from a
- * file or a link was opened by no scan (plan 2026-10-15-0348 M0, T8).
+ * hint over a rule, so nothing is blocked while it shows. It names the
+ * PRINTED code, not "the code you scanned to open this tour": a tour opened
+ * from a file or a link was opened by no scan (plan 2026-10-15-0348 M0, T8).
+ *
+ * With no tour open, placing IS locked (`creator-placement.ts`: only an
+ * open tour keeps a draft on this phone), and the line says why and what
+ * unlocks it: the camera opens the tour from its hung code.
  */
 export function entryHint(state: {
   tourOpen: boolean;
   codeSeen: boolean;
 }): string {
-  if (!state.tourOpen || state.codeSeen) return "";
+  if (!state.tourOpen) return NO_TOUR_PLACING_LOCKED;
+  if (state.codeSeen) return "";
   return "First, point the camera at this tour's printed code: pins and photos placed before it is seen are less exact.";
 }
 
