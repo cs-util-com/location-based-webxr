@@ -191,7 +191,7 @@ export interface CreatorDocument {
   /** A photo's picture from the side table. */
   pictureOf(id: string): Blob | undefined;
   /** The AR anchors of the document's stations that an object with an AR
-   *  placement started (a placement, a move or carried work): by station
+   *  placement started (a placement or a move): by station
    *  id, only stations the document has now. A station started without an
    *  AR placement (a draft's, a hosted one) has none. Gone with the tour,
    *  and for a station a write carried (as its items' placements are). */
@@ -200,8 +200,7 @@ export interface CreatorDocument {
    *  write took it out). */
   keepPicture(id: string, blob: Blob): void;
   /** A tour's manifest settled (null: the tour has no `tour.json`): the
-   *  document opens it. Work made while no tour was open comes along as
-   *  one restored step; anything of another tour is gone. */
+   *  document opens it; anything of another tour is gone. */
   open(manifest: TourManifest | null): void;
   /** The tour closed: back to no tour, its work and side tables gone. */
   close(): void;
@@ -300,10 +299,9 @@ export interface CreatorDocument {
 export function createCreatorDocument(
   store: CreatorDocumentStore,
 ): CreatorDocument {
-  /** The document with no tour open: the slice takes edits only into an
-   *  open document, and the creator may place before any tour opens (the
-   *  scan-to-open plan §9 #5) - so "no tour" is this empty one, told apart
-   *  by identity. */
+  /** The document with no tour open, told apart by identity: an empty
+   *  one, so readers need no null case. Placing waits for an open tour
+   *  (`creator-placement.ts`), so nothing is ever placed into it. */
   const noTour = createEmptyTourManifest();
   /** Photos' pictures and AR placements, by object id: never state. */
   const pictures = new Map<string, Blob>();
@@ -477,39 +475,9 @@ export function createCreatorDocument(
     },
     keepPicture: setPicture,
     open(opened) {
-      const before = state();
-      // Only work made with no tour open comes along: another tour's was
-      // that tour's (it is gone at its close).
-      const carried =
-        before.written === noTour ? before.placed.map((p) => p.object) : [];
-      const kept = new Map(
-        carried.map((o) => [
-          o.id,
-          { picture: pictures.get(o.id), placement: placements.get(o.id) },
-        ]),
-      );
+      // Nothing comes along: placing needs an open tour
+      // (`creator-placement.ts`), so no work is made with none.
       reopen(opened ?? noTour);
-      for (const [id, side] of kept) {
-        if (side.picture !== undefined) pictures.set(id, side.picture);
-        if (side.placement !== undefined) placements.set(id, side.placement);
-      }
-      if (carried.length > 0) {
-        const opening = state();
-        change(
-          tourDocumentActions.restored({
-            objects: carried,
-            deleted: [],
-            // Seated again by the rule against the opened tour: the
-            // stations they stood in were the empty document's.
-            rerun: true,
-            what: "the work made before the tour opened",
-          }),
-        );
-        anchorStarted(
-          opening,
-          carried.map((o) => o.id),
-        );
-      }
     },
     close() {
       reopen(noTour);

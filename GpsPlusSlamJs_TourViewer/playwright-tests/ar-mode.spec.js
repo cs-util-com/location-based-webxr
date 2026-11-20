@@ -3326,6 +3326,10 @@ test("on a device that can share files, the starter button says share and report
   // Downloads - and it needs no AR session to reach.
   await installTourViewerArFakes(page, { shareRoute: true });
   await page.goto("/?nocache=1");
+  // The starter zip is the share-now path's storage step; the suite's
+  // creator answered "I have its link".
+  await page.getByTestId("setup-change").click();
+  await page.getByTestId("answer-share-now").click();
   await page.getByTestId("station-host").click();
   const starter = page.getByTestId("starter-zip");
   await expect(starter).toHaveText(/share the empty starter tour/i);
@@ -3354,6 +3358,10 @@ test("a share that hands nothing over says so, without blaming the creator", asy
   await page.evaluate(() => {
     /** @type {any} */ (window).__tourViewerTest.saveOutcome = false;
   });
+  // The starter zip is the share-now path's storage step; the suite's
+  // creator answered "I have its link".
+  await page.getByTestId("setup-change").click();
+  await page.getByTestId("answer-share-now").click();
   await page.getByTestId("station-host").click();
   const starter = page.getByTestId("starter-zip");
   await starter.click();

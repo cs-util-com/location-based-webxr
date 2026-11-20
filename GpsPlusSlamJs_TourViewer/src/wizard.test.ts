@@ -49,6 +49,8 @@ function fakeDom() {
   const dom: WizardDom = {
     steps: {
       host: step("host"),
+      file: step("file"),
+      starter: step("starter"),
       link: step("link"),
       print: step("print"),
       hang: step("hang"),
@@ -77,9 +79,11 @@ function fakeDom() {
 describe("the six steps (polish round M2)", () => {
   // Why: the owner asked for the host first, the link in its own step and a
   // completion page that is not step 4 (A7, A13, B9).
-  it("are where the tour lives, its link, print, hang, create and done", () => {
+  it("are where the tour lives, a file or starter on this phone, its link, print, hang, create and done", () => {
     expect(WIZARD_STEPS).toEqual([
       "host",
+      "file",
+      "starter",
       "link",
       "print",
       "hang",
@@ -88,21 +92,28 @@ describe("the six steps (polish round M2)", () => {
     ]);
   });
 
-  it("start a creator who already chose a host at the link step", () => {
-    const { dom } = fakeDom();
+  it("open the step they are given, and none while the question shows", () => {
+    // Why: step 1 is a question now (`setup-path.ts`); which step opens
+    // first is the chosen path's, and with no answer nothing may open, or
+    // a step would show under the question.
+    const given = fakeDom();
     wireWizard({
       mode: "creator",
-      dom,
+      dom: given.dom,
       packStarter: () => Promise.resolve(new Blob()),
       download: savedDownload,
-      stepStore: {
-        getItem: (key) =>
-          key === "tour-viewer.wizard.host" ? "dropbox" : null,
-        setItem: () => undefined,
-      },
+      initialStep: "starter",
     });
-    expect(dom.steps.link?.open).toBe(true);
-    expect(dom.steps.host?.open).toBe(false);
+    expect(given.dom.steps.starter?.open).toBe(true);
+    const none = fakeDom();
+    wireWizard({
+      mode: "creator",
+      dom: none.dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+      initialStep: null,
+    });
+    expect(Object.values(none.dom.steps).some((st) => st.open)).toBe(false);
   });
 
   // Why: the rebuilt zip lives only in the page that made it, so a reload
@@ -128,13 +139,14 @@ describe("the six steps (polish round M2)", () => {
 });
 
 describe("wireWizard", () => {
-  it("opens the host step for a creator, nothing for a visitor, and hides the launch link until a tour opens", () => {
+  it("opens the given step for a creator, nothing for a visitor, and hides the launch link until a tour opens", () => {
     const creator = fakeDom();
     wireWizard({
       mode: "creator",
       dom: creator.dom,
       packStarter: () => Promise.resolve(new Blob()),
       download: savedDownload,
+      initialStep: "host",
     });
     expect(creator.dom.steps.host?.open).toBe(true);
     expect(creator.dom.visitorLink.hidden).toBe(true);

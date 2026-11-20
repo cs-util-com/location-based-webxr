@@ -8,7 +8,11 @@
  * plan review #13).
  *
  * SIX steps since polish round M2: where the tour lives (host), its link,
- * print, hang, create (measure) and done. The flow rework (second testing
+ * print, hang, create (measure) and done; two more since the setup became
+ * a question and a path per answer (`setup-path.ts`): a tour file on this
+ * phone (file) and a starter tour saved on this phone (starter). Which of
+ * them a creator walks, and in what order, is the path's; this module only
+ * opens one at a time. The flow rework (second testing
  * session, F10) had folded the download and the replace instructions into
  * the AR step; the owner asked for a completion step of its own (B9), so
  * they are step 6 now, opened by the Finish. The AR step is a real
@@ -29,12 +33,13 @@
  * real page.
  */
 
-import { readTourHost } from "./tour-host.js";
 import type { ViewerMode } from "./mode.js";
 
 /**
- * The steps, in order: six since polish round M2 (host, link, print, hang,
- * measure - "Create the tour" on the page - and done).
+ * The steps: six since polish round M2 (host, link, print, hang, measure -
+ * "Create the tour" on the page - and done), plus the file and starter
+ * steps that open a tour from this phone. The order each answer walks
+ * them in is `SETUP_PATHS` (`setup-path.ts`).
  *
  * `measure` IS collapsible now (F4), but it wraps `#ar-root`, the
  * DOM-overlay root, so collapsing it mid-session would `display: none` the
@@ -42,6 +47,8 @@ import type { ViewerMode } from "./mode.js";
  */
 export const WIZARD_STEPS = [
   "host",
+  "file",
+  "starter",
   "link",
   "print",
   "hang",
@@ -239,6 +246,9 @@ export function wireWizard(deps: {
   arSessionActive?: () => boolean;
   /** The page's `?debug=1`: the visitor link carries it on (plan §67 #2). */
   debug?: boolean;
+  /** The step a creator's page opens with: the first of the chosen path
+   *  (`firstStepOf`), or none while step 1's question shows. */
+  initialStep?: WizardStep | null;
 }): Wizard {
   const { mode, dom, packStarter, download, stepStore } = deps;
   const arSessionActive = deps.arSessionActive ?? (() => false);
@@ -328,10 +338,9 @@ export function wireWizard(deps: {
     }
   }
 
-  // A creator who already chose where the tour lives starts at the link
-  // (polish round M2); a first visit starts at the host tiles.
-  if (mode === "creator") {
-    openStep(readTourHost(stepStore) === null ? "host" : "link");
+  // The chosen path's first step; none while the question shows.
+  if (mode === "creator" && deps.initialStep != null) {
+    openStep(deps.initialStep);
   }
   dom.visitorLink.hidden = true;
   // The idle label lives in the constant, not only in the markup: it used

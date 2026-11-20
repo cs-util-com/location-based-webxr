@@ -17,8 +17,18 @@ listed in `index.html.md`. The concerns and their modules:
 - `mode.ts` - the mode from the launch URL (`viewerModeFromSearch`).
 - `wizard.ts` - the creator's guided setup: the six steps, the starter zip,
   the "open as a visitor" link (`wireWizard`).
-- `setup-stage.ts` - the L5 station row and map (`wireSetupStage`, creator
-  only, wired after the visitor screen so its hidden states are final).
+- `setup-stage.ts` - the setup question, checklist and map
+  (`wireSetupStage`, creator only, wired after the visitor screen so its
+  hidden states are final). The answer is the store's `setupPath` slice
+  (`setup-path.ts`, a page reducer of `createTourViewerStore`), read from
+  the device at boot and written with every choice; it gives the wizard's
+  `initialStep`, and an opened tour with no answer infers one
+  (`answerForOpenedTour`) and lands on `stepAfterTourOpens`. "Make your
+  code now" switches to share-now; "Start creating and point at it" opens
+  the create step.
+- `starter-open.ts` - "Start on this phone now, share later": the starter
+  zip saved through `seams.downloadZip`, then opened through
+  `archive.openFile` (`wireStarterOpen`, creator only).
 - `host-picker.ts` - step 1's host tiles (`wireHostPicker`, creator only;
   Continue opens the link step and focuses the field).
 - `link-check.ts` - the PDF's re-check of an unverified link, bound here
@@ -175,7 +185,8 @@ listed in `index.html.md`. The concerns and their modules:
   (whether a creator may start AR without location; false until wired),
   `presentTourForPrint`, and `presentLocalTour` - a FILE-opened tour, tour
   kit plan K0: the print step keeps asking for a link and a creator's
-  wizard opens step 3, or stays in step 5, without remembering a link;
+  wizard opens the path's next step (`stepAfterTourOpens`: create on the
+  file paths), or stays in create, without remembering a link;
   and `presentUnverifiedLink` - step 2's link printed unverified;
   and `presentTourCodes` - the print step re-reads the codes, when the
   tour's arrive and whenever the creator setup's set of codes changes

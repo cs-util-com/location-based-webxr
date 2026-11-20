@@ -115,23 +115,18 @@ generation, written, appliedDeletions, stationsAtStart })`,
   follow-up, in `creator-finish.ts.md` (the r880 milestone review
   MEDIUM-1).
 
-- **No tour is an open, empty document.** The slice takes edits only into
-  an open document, and the creator may place before any tour is open
-  (scan-to-open plan §9 #5). So "no tour" is an empty manifest the handle
-  opened itself, told apart by identity: `manifest()` reads null there,
-  as the session field it replaces did, until a write lands. A creator's
-  file without `tour.json` is NOT "no tour": the page opens it as an
-  empty manifest of its own (a real, unnamed tour), whose stations the
-  HUD, the settle and the write read from the first placement.
-- **`open` carries only that work.** Objects placed with no tour open come
-  into the opened tour as one restored step (their pictures and placements
-  with them), each seated again by the station rule against the opened
-  tour's stations (`rerun`): the stations they stood in were the empty
-  document's, and none of them comes along; anything of another tour was dropped at its `close`, side
-  tables included (M4 review #1: carried into another tour it would be
-  written into ITS zip).
+- **No tour is an open, empty document**, told apart by identity:
+  `manifest()` reads null there until a tour opens. Placing waits for an
+  open tour (`creator-placement.ts`: only an open tour keeps a draft on
+  this phone), so nothing is placed into it, and `open` brings nothing
+  along; anything of another tour was dropped at its `close`, side tables
+  included (carried into another tour it would be written into ITS zip).
+  A creator's file without `tour.json` is NOT "no tour": the page opens
+  it as an empty manifest of its own (a real, unnamed tour), whose
+  stations the HUD, the settle and the write read from the first
+  placement.
 - **A station's AR anchor is a side table too** (`stationPlacements()`,
-  `StationPlacement`): a station a placement, a move or carried work
+  `StationPlacement`): a station a placement or a move
   started for an object with an AR placement is anchored at that
   placement, with the object's id (`item`), whose moment the anchor
   settles at - the station rule anchors the frame where its first item
@@ -171,8 +166,7 @@ else void placed.backedUp.then((ok) => ok || draft.warnNoBackup());
 
 ## Tests
 
-- `creator-document.test.ts` - no tour and a tour opening (work carried,
-  carried work seated by the rule against the opened tour's stations,
+- `creator-document.test.ts` - no tour and a tour opening (nothing carried,
   a file without `tour.json`, a close dropping everything), the identities
   readers memoize on (a new manifest when only the tombstones change,
   driven through a store that serves that state, since no reducer makes

@@ -55,6 +55,26 @@ const gap = (
 const MOUNTED = { timeout: 15_000 };
 
 /**
+ * How far the setup stage's top is from the top of the view, or 0 when the
+ * page is scrolled to its end with the whole stage in view: a stage near
+ * the page's end cannot scroll up to the top, and showing all of it is what
+ * bringing it into view means then.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+function stageOffset(page) {
+  return page.getByTestId("setup-stage").evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    const end =
+      window.scrollY >=
+      document.documentElement.scrollHeight - window.innerHeight - 1;
+    if (end && box.top >= 0 && box.bottom <= window.innerHeight + 1) return 0;
+    // "+ 0": a top just above the line rounds to -0
+    return Math.round(box.top) + 0;
+  });
+}
+
+/**
  * A first visit, its moving parts mounted.
  *
  * @param {import("@playwright/test").Page} page
@@ -1051,7 +1071,7 @@ test.describe("a returning device", () => {
     // under it at this width, index.html.md): without it the page landed
     // about 1 700 px past the stage.
     await expect
-      .poll(() => stageTop(page).then(Math.abs))
+      .poll(() => stageOffset(page).then(Math.abs))
       .toBeLessThanOrEqual(24);
     // and the film too has mounted by then (its box the last to settle)
     await expect(page.getByTestId("landing-film")).toHaveAttribute(
@@ -1059,7 +1079,7 @@ test.describe("a returning device", () => {
       "ready",
       MOUNTED,
     );
-    expect(Math.abs(await stageTop(page))).toBeLessThanOrEqual(24);
+    expect(Math.abs(await stageOffset(page))).toBeLessThanOrEqual(24);
   }
 
   // A first visit keeps the stage at its own height; only a page that
@@ -1154,23 +1174,15 @@ test.describe("a first visit", () => {
     await expect(page.getByTestId("landing-way")).toBeInViewport();
   });
 
-  test("Make your tour brings the setup into view and the keyboard to the open step", async ({
+  test("Make your tour brings the setup into view and the keyboard to the question", async ({
     page,
   }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await openLanding(page);
     await page.getByTestId("landing-begin-top").click();
-    await expect
-      .poll(() =>
-        page
-          .getByTestId("setup-stage")
-          // "+ 0": a top just above the line rounds to -0 (see stageTop)
-          .evaluate((el) => Math.round(el.getBoundingClientRect().top) + 0),
-      )
-      .toBe(0);
-    await expect(
-      page.getByTestId("step-host").locator("summary"),
-    ).toBeFocused();
+    await expect.poll(() => stageOffset(page)).toBe(0);
+    // A first visit is asked the setup question: its first answer.
+    await expect(page.getByTestId("answer-share-now")).toBeFocused();
   });
 });
 

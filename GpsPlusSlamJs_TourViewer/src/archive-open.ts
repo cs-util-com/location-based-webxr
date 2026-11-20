@@ -160,9 +160,10 @@ export function wireArchiveOpen(deps: {
     // Everything below belongs to a CLOSING tour, and without one there is
     // none of it: every writer of tour state runs after `ctx.session =
     // opened` and is guarded by it. What exists with no tour open is the
-    // creator's own work - a measurement, placements, the print-size check -
-    // made before any tour opened; the open about to run takes it, and a
-    // retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
+    // creator's own setup - the code in hand, the print-size check - made
+    // while the hung code opens its tour; the open about to run takes it,
+    // and a retried open must not wipe it (scan-to-open plan §5 #1, §9 #1).
+    // Placements are not among it: placing waits for an open tour.
     const closing = ctx.session;
     if (closing === null) return;
     // Let go first: a hook below that throws (a disposal) must not leave
@@ -536,8 +537,8 @@ export function wireArchiveOpen(deps: {
         manifest: TourManifest | null,
         document: TourManifest | null,
       ) => {
-        // The creator's work made before the manifest settled (or before
-        // any tour opened) comes along (scan-to-open plan §9 #5).
+        // The creator's work made before the manifest settled comes
+        // along (scan-to-open plan §9 #5).
         ctx.tourDocument.open(document);
         ctx.tourManifestStatus = "settled";
         hooks.presentTourInfo({

@@ -17,12 +17,17 @@ file and the replace steps, opened by the Finish - the owner's B9). The flow
 rework (second testing session, F10) had folded the download and the replace
 instructions into the AR step; step 6 gives them a page of their own again.
 
-A creator's first step depends on the stored host (`tour-host.ts`): none
-chosen opens `host`, a stored choice opens `link`.
+Since the setup question (`setup-path.ts`) a creator's first step is the
+caller's: `initialStep` opens it, and none is open while the question
+shows. Two more steps belong to the question's file paths: `file` (open
+the tour zip on this phone) and `starter` (save a new tour zip and open
+it, `starter-open.ts`).
 
 ## Public API
 
-- `wireWizard({ mode, dom, packStarter, download, setTimeout?, clearTimeout?, stepStore?, arSessionActive? }): Wizard`
+- `wireWizard({ mode, dom, packStarter, download, setTimeout?, clearTimeout?, stepStore?, arSessionActive?, initialStep? }): Wizard`
+  - `initialStep` - the creator's first open step (`firstStepOf` of the
+    stored answer); null or absent opens none (the question shows).
   - `Wizard.openStep(step)` opens one step and collapses the others -
     EXCEPT while `arSessionActive()` is true, when it forces `measure` open
     and changes nothing else (see the invariants).
@@ -43,7 +48,8 @@ chosen opens `host`, a stored choice opens `link`.
     `measureSection` (the same element as `steps.measure`, reached through
     a second field because scrolling and disclosing are different
     capabilities and each unit test fakes its own).
-- `WIZARD_STEPS` (`host`, `link`, `print`, `hang`, `measure`, `done`),
+- `WIZARD_STEPS` (`host`, `file`, `starter`, `link`, `print`, `hang`,
+  `measure`, `done`),
   `type WizardStep`.
 - `remapLegacyStep(raw)` - maps the retired `finish` / `replace` step names
   onto `measure`. Applied to the RAW stored string, BEFORE
@@ -143,7 +149,7 @@ never writing and never registering a toggle listener, and the store probe
 surviving a throwing getter. The e2e "the setup remembers the step" covers
 the reload with the prefilled link, and "step 4 asks for the tour link"
 covers the preference through the composed page.
-The "six steps (polish round M2)" block covers the first step by stored host
-(`host` without, `link` with) and a remembered
+The "six steps (polish round M2)" block covers the step it is given (none
+while the question shows) and a remembered
 `done` resuming at `measure`; `playwright-tests/setup-flow.spec.js` covers
 the first visit end to end.

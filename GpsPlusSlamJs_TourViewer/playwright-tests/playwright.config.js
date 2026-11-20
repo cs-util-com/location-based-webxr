@@ -69,7 +69,12 @@ export default defineConfig({
       origins: [
         {
           origin: "http://127.0.0.1:5187",
-          localStorage: [{ name: "tour-viewer.wizard.host", value: "drive" }],
+          localStorage: [
+            { name: "tour-viewer.wizard.host", value: "drive" },
+            // The setup question answered "I have its link", so a spec
+            // starts at the link step as before the question existed.
+            { name: "tour-viewer.setup.path", value: "have-link" },
+          ],
         },
       ],
     },

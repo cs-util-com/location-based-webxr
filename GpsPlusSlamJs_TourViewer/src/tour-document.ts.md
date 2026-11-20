@@ -228,7 +228,7 @@ afterHome?, joinStation? })`
   it leaves for the way back carries the codes it set.
 - `restored({ objects, deleted, needsNoGps?, details?, stations?,
 createdStations?, handMadeStations?, frames?, order?, deletedStations?,
-rerun?, what, newStationIds? })` - a draft's work,
+what, newStationIds? })` - a draft's work,
   already filtered by the page's rules, as one step to undo; not live work
   (`touched` unchanged). In order: the station poses (each named
   station's frame takes its pose, `stationsRecorded` set); the CREATED
@@ -236,9 +236,7 @@ rerun?, what, newStationIds? })` - a draft's work,
   reload brings a pin's station back with it); then each object - in its
   own station when the document carries it and it fits there, else seated
   by the station rule under its minted id (`newStationIds[i]`, one per
-  object, minted by `prepare`). `rerun` (work carried into a tour just
-  opened) seats every object afresh by the rule: the stations they named
-  were another document's. The stations left emptied go as for a move.
+  object, minted by `prepare`). The stations left emptied go as for a move.
   Then the stations edited, added, deleted or reordered there (`frames`,
   `order`, `deletedStations`, a draft that recorded a station's edit):
   each recorded frame replaces the document's frame of its id AT THE

@@ -64,7 +64,19 @@ import type { ScanOpen } from "./scan-open.js";
 import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
+import {
+  answerForOpenedTour,
+  firstStepOf,
+  readSetupAnswer,
+  selectSetupAnswer,
+  setupAnswered,
+  setupPathReducer,
+  stepAfterTourOpens,
+  writeSetupAnswer,
+  type SetupAnswer,
+} from "./setup-path.js";
 import { wireSetupStage } from "./setup-stage.js";
+import { wireStarterOpen } from "./starter-open.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
 import { holdLandingSkip } from "./landing/landing-skip.js";
 import { readTourHost } from "./tour-host.js";
@@ -236,7 +248,11 @@ const recording = createAuthoringRecording({
   // page's offer and cleanup skip it.
   holdFolder: (name) => holdRecordingFolder(navigator.locks, name),
 });
-const arStore = createTourViewerStore(recording);
+// The setup question's answer is page state (`setup-path.ts`): the
+// question, the checklist and the card all read it.
+const arStore = createTourViewerStore(recording, {
+  setupPath: setupPathReducer,
+});
 // The test switch ?allstations=1 (visitor plan 2026-10-18-2349 §3): every
 // station's content shows, not only the present one's.
 if (showAllStationsFromSearch(location.search)) {
@@ -354,12 +370,32 @@ function measuredCodeIds(): string[] {
 }
 
 const stepStore = stepStoreOrUndefined();
+if (mode === "creator") {
+  arStore.dispatch(setupAnswered(readSetupAnswer(stepStore)));
+}
+const setupAnswer = (): SetupAnswer | null =>
+  selectSetupAnswer(arStore.getState());
+/** Keep an answer: in the page's store and on the device. */
+function chooseSetupAnswer(answer: SetupAnswer | null): void {
+  arStore.dispatch(setupAnswered(answer));
+  writeSetupAnswer(stepStore, answer);
+}
+/** A tour opened: the answer it implies when none was chosen, and the
+ *  step it goes on to. */
+function answerOpenedTour(how: "link" | "file"): SetupAnswer {
+  const answer = answerForOpenedTour(setupAnswer(), how);
+  if (answer !== setupAnswer()) chooseSetupAnswer(answer);
+  return answer;
+}
+const initialAnswer = setupAnswer();
 const wizard = wireWizard({
   mode,
   debug: ctx.debug,
   dom: {
     steps: {
       host: element<HTMLDetailsElement>("step-host"),
+      file: element<HTMLDetailsElement>("step-file"),
+      starter: element<HTMLDetailsElement>("step-starter"),
       link: element<HTMLDetailsElement>("step-link"),
       print: printPanel,
       hang: element<HTMLDetailsElement>("step-hang"),
@@ -386,6 +422,11 @@ const wizard = wireWizard({
   // The reached step per hosted url (M6); absent where reaching for the
   // store throws (blocked site data), so the page still boots.
   ...(stepStore === undefined ? {} : { stepStore }),
+  // Step 1 is the question: nothing opens until it is answered.
+  initialStep:
+    initialAnswer === null
+      ? null
+      : firstStepOf(initialAnswer, readTourHost(stepStore) !== null),
 });
 // The link a creator last opened, prefilled so a reload is one tap from
 // the remembered step (M6 review #2); never over a link already typed.
@@ -425,10 +466,10 @@ hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
   // An open started from step 4 keeps the creator there (M3 review #1):
   // the default would collapse step 4, whose content is the AR overlay.
-  wizard.presentTour(
-    url,
-    origin === "measure-step" ? { prefer: "measure" } : {},
-  );
+  const answer = mode === "creator" ? answerOpenedTour("link") : null;
+  wizard.presentTour(url, {
+    prefer: origin === "measure-step" ? "measure" : stepAfterTourOpens(answer),
+  });
 };
 
 // A tour opened from a file (tour kit plan K0) has no link: the print step
@@ -438,7 +479,8 @@ hooks.presentTourForPrint = (url, origin) => {
 // M2, A16): printed as given, marked unverified, so it is entered once.
 hooks.presentUnverifiedLink = (url) => {
   print.presentTour(url, { verified: false });
-  wizard.presentTour(url);
+  const answer = mode === "creator" ? answerOpenedTour("link") : null;
+  wizard.presentTour(url, { prefer: stepAfterTourOpens(answer) });
 };
 
 // The open tour's codes arrived: the first poster continues their
@@ -450,7 +492,10 @@ hooks.presentTourCodes = () => {
 hooks.presentLocalTour = (origin) => {
   print.presentNoTour();
   if (mode !== "creator") return;
-  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+  const answer = answerOpenedTour("file");
+  wizard.openStep(
+    origin === "measure-step" ? "measure" : stepAfterTourOpens(answer),
+  );
 };
 
 const visitor = wireVisitorScreen({
@@ -531,12 +576,15 @@ if (mode === "visitor") {
   };
 }
 
-// The setup page's station row and map (polish round M2b, the L5 look):
-// wired after the visitor screen, which reveals the creator-only parts,
-// so the row's own hidden states are the last word.
+// The setup page's question, checklist and map (polish round M2b, the L5
+// look; the question and its paths, `setup-path.ts`): wired after the
+// visitor screen, which reveals the creator-only parts, so the stage's own
+// hidden states are the last word.
 if (mode === "creator") {
   const stepNodes = {
     host: element<HTMLDetailsElement>("step-host"),
+    file: element<HTMLDetailsElement>("step-file"),
+    starter: element<HTMLDetailsElement>("step-starter"),
     link: element<HTMLDetailsElement>("step-link"),
     print: printPanel,
     hang: element<HTMLDetailsElement>("step-hang"),
@@ -552,7 +600,7 @@ if (mode === "creator") {
   const stations = svgById<SVGGElement>("map-stations");
   const start = svgById<SVGGElement>("map-start");
   const endFlag = svgById<SVGGElement>("map-end-flag");
-  wireSetupStage<HTMLButtonElement>({
+  const stage = wireSetupStage<HTMLButtonElement>({
     dom: {
       steps: stepNodes,
       summaries: Object.fromEntries(
@@ -561,6 +609,14 @@ if (mode === "creator") {
           summaryOf(node),
         ]),
       ),
+      question: element("setup-question"),
+      answers: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          "#setup-question [data-answer]",
+        ),
+      ),
+      change: element<HTMLButtonElement>("setup-change"),
+      card: element("setup-card"),
       badge: element("setup-badge"),
       of: element("setup-of"),
       dots: element("setup-dots"),
@@ -576,6 +632,15 @@ if (mode === "creator") {
     openStep: (step) => {
       wizard.openStep(step);
     },
+    answer: setupAnswer,
+    // An answer only routes: it is kept, and its path's first step opens.
+    onAnswer: (answer) => {
+      chooseSetupAnswer(answer);
+      if (answer !== null) {
+        wizard.openStep(firstStepOf(answer, readTourHost(stepStore) !== null));
+      }
+      stage.render();
+    },
     createElement: (tag) => document.createElement(tag),
     ...(route === undefined || reveal === undefined || stations === undefined
       ? {}
@@ -588,6 +653,24 @@ if (mode === "creator") {
             ...(endFlag === undefined ? {} : { endFlag }),
           },
         }),
+  });
+  // An answer inferred from an open re-draws the checklist.
+  let shownAnswer = setupAnswer();
+  arStore.subscribe(() => {
+    if (setupAnswer() === shownAnswer) return;
+    shownAnswer = setupAnswer();
+    stage.render();
+  });
+  // "Make your code now", after Done on the start-here path: the same
+  // tour goes on to the storage, link and print steps.
+  element("make-code").addEventListener("click", () => {
+    chooseSetupAnswer("share-now");
+    wizard.openStep(firstStepOf("share-now", readTourHost(stepStore) !== null));
+  });
+  // A code that already hangs opens its tour when AR sees it: the link
+  // step's way straight to "Start creating".
+  element("scan-instead").addEventListener("click", () => {
+    wizard.openStep("measure");
   });
 }
 
@@ -1372,6 +1455,20 @@ const archive = wireArchiveOpen({
   hooks,
 });
 scanOpen = archive.scanOpen;
+
+// "Start on this phone now, share later": the starter zip is saved, then
+// opened as the tour, before AR (`starter-open.ts`).
+if (mode === "creator") {
+  wireStarterOpen({
+    button: element<HTMLButtonElement>("starter-open"),
+    pack: () => packNewTour(),
+    save: (blob, filename) => seams.downloadZip(blob, filename),
+    open: archive.openFile,
+    onError: (message) => {
+      errorBox.textContent = message;
+    },
+  });
+}
 
 // "You already have a tour?" below the steps (tour editor plan
 // 2026-10-17-1816, W1): a phone opens a tour through the page's one open

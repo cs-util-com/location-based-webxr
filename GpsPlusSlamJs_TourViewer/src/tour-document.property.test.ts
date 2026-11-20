@@ -953,7 +953,6 @@ type StationOp =
   | { kind: "delete"; id: string }
   | { kind: "frame"; id: string; north: number }
   | { kind: "restore"; north: number; east: number; dangling: boolean }
-  | { kind: "carry" }
   | { kind: "save" }
   | { kind: "undo" }
   | { kind: "redo" };
@@ -985,7 +984,6 @@ const stationOpArb: fc.Arbitrary<StationOp> = fc.oneof(
     east: metres,
     dangling: fc.boolean(),
   }),
-  fc.constant({ kind: "carry" as const }),
   fc.constant({ kind: "save" as const }),
   fc.constant({ kind: "undo" as const }),
   fc.constant({ kind: "redo" as const }),
@@ -1071,25 +1069,6 @@ function stationRun(
           }),
         );
         break;
-      case "carry": {
-        // The page's own objects carried into the tour opened anew.
-        const carried = documentObjects(state)
-          .filter((o) => !o.hosted)
-          .map((o) => o.object);
-        state = reduce(state, act.opened({ manifest: start.opened! }));
-        states.push(state);
-        state = reduce(
-          state,
-          act.restored({
-            objects: carried,
-            deleted: [],
-            rerun: true,
-            newStationIds: carried.map(() => mint()),
-            what: "carried",
-          }),
-        );
-        break;
-      }
       case "save":
         state = reduce(
           state,

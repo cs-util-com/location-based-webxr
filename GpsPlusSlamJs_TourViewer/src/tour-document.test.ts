@@ -963,26 +963,6 @@ describe("tour document: every object belongs to a station", () => {
     expect(restored.stations.map((s) => s.id)).toEqual(["s", "made", "m3"]);
   });
 
-  it("work carried into a newly opened tour re-runs the rule against its stations", () => {
-    const state = tourWith(stationAt("s", 0));
-    const restored = reduce(
-      state,
-      act.restored({
-        objects: [
-          { ...pinAt("a1", spot(3)), station: "pre-open" },
-          { ...pinAt("a2", spot(500)), station: "pre-open" },
-        ],
-        deleted: [],
-        rerun: true,
-        newStationIds: ["n1", "n2"],
-        what: "carried",
-      }),
-    );
-    expect(stationOf(restored, "a1")).toBe("s");
-    expect(stationOf(restored, "a2")).toBe("n2");
-    expect(restored.stations.map((s) => s.id)).toEqual(["s", "n2"]);
-  });
-
   // Why: the rule reads the stations of the tour as the next write starts
   // from it, and that includes a station the file carries which the
   // document dropped since (emptied after the save that wrote it). An

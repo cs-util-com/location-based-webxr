@@ -1518,6 +1518,11 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
+    // Placing needs an open tour, so work with none is only ever the
+    // moment a tour closes (its session let go before its work is
+    // cleared): that state is what the guard and the line must cover.
+    ctx.session = null;
+    setup.renderAuthorReadout();
     expect(setup.leaveNeedsConfirm()).toBe(true);
     expect(setup.leaveQuestion()).toContain("holds no backup copy");
     // The live readout LEADS with a short form of why Done cannot save it:
@@ -1526,7 +1531,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     // hides everything else. The placement's note follows it, and the full
     // sentence - where to open the tour - ends the line.
     expect(dom.status.textContent).toMatch(
-      /^No tour open - nothing placed here is kept. · Pin "Gate" placed/,
+      /^No tour open - nothing placed here is kept. · Point at your hung code[^·]* · Pin "Gate" placed/,
     );
     expect(
       dom.status.textContent.endsWith(
@@ -1684,6 +1689,8 @@ describe("work made before the tour's draft opened reaches it", () => {
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
+    // As above: the tour's session let go with its work still there.
+    ctx.session = null;
     arStatus.value = "idle";
     ctx.placementNote = null;
     setup.renderAuthorReadout();

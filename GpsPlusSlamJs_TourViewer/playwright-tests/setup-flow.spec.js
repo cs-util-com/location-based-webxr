@@ -4,7 +4,8 @@ import { expect, test } from "@playwright/test";
 import { installTourViewerArFakes } from "./ar-fakes.js";
 
 /**
- * The six-step setup flow (polish round M2): where the tour lives, the
+ * The setup flow (polish round M2; the question and its paths since,
+ * setup-path.spec.js): where the tour lives, the
  * link given once and checked by itself, and a page that uses the screen.
  *
  * Why these tests matter: the owner found step 1 confusing (a test link
@@ -26,6 +27,9 @@ test.describe("a first visit", () => {
     page,
   }) => {
     await page.goto("/?nocache=1");
+    // The setup question first (setup-path.spec.js); the host tiles are
+    // the share-now path's first step.
+    await page.getByTestId("answer-share-now").click();
     await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
     const tiles = page.getByTestId("host-tiles").getByRole("button");
     await expect(tiles).toHaveText([
@@ -178,17 +182,20 @@ test.describe("the L5 look (polish round M2b)", () => {
   // Why: the owner chose a page that shows one step at a time as a station
   // on a route. The card must hold exactly one step, the dots and the
   // map's stations must move between them, and the row must follow the
-  // verdict: no Back on step 1, no Next on step 5, no row on step 6.
+  // verdict: no Back on the first item, no Next on create, no row on done.
   test("shows one step at a time and moves between them by station", async ({
     page,
   }) => {
     await page.goto("/?nocache=1");
     // The landing sits above the stage, on the same page.
     await expect(page.getByTestId("landing")).toBeVisible();
-    await expect(page.getByTestId("map-station-host")).toBeVisible();
+    // The suite's creator answered "I have its link": that path's
+    // stations, no storage step.
+    await expect(page.getByTestId("map-station-link")).toBeVisible();
+    await expect(page.getByTestId("map-station-host")).toHaveCount(0);
     const openSteps = page.locator("#setup-card .step[open]");
     await expect(openSteps).toHaveCount(1);
-    await expect(page.getByTestId("setup-of")).toHaveText("Step 2 of 6");
+    await expect(page.getByTestId("setup-of")).toHaveText("Step 2 of 2");
 
     await page.getByTestId("map-station-hang").locator("circle").click();
     await expect(page.getByTestId("step-hang")).toHaveAttribute("open", "");
@@ -196,18 +203,22 @@ test.describe("the L5 look (polish round M2b)", () => {
     await expect(openSteps).toHaveCount(1);
 
     await page.getByTestId("setup-next").click();
-    await expect(page.getByTestId("setup-of")).toHaveText("Step 5 of 6");
+    await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+    await expect(page.getByTestId("station-measure")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
     await expect(page.getByTestId("setup-next")).toBeHidden();
     await expect(page.getByTestId("setup-back")).toBeVisible();
 
     await page.getByTestId("station-done").click();
     await expect(page.getByTestId("setup-nav")).toBeHidden();
 
-    await page.getByTestId("station-host").click();
+    await page.getByTestId("station-link").click();
     await expect(page.getByTestId("setup-back")).toBeHidden();
     // A tap on the open step's heading must not collapse it.
-    await page.getByTestId("step-host").locator("summary").click();
-    await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+    await page.getByTestId("step-link").locator("summary").click();
+    await expect(page.getByTestId("step-link")).toHaveAttribute("open", "");
   });
 
   // Why (D-P1): the paper palette is the setup page's; over the camera the

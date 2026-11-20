@@ -95,55 +95,27 @@ function recordingDraft(answer: (call: string) => boolean = () => true) {
 }
 
 describe("the creator's document: no tour, and a tour opening", () => {
-  it("has no manifest before a tour opens, and takes placements anyway", () => {
-    // The scan-to-open plan §9 #5: the creator may place before any tour
-    // is open; the slice takes edits only into an open document.
+  it("has no manifest before a tour opens", () => {
     const doc = fresh();
     expect(doc.manifest()).toBeNull();
-    expect(doc.place(pin("p"), {}, "a pin")).not.toBeNull();
-    expect(doc.entries().map((e) => e.object.id)).toEqual(["p"]);
-    expect(doc.manifest()).toBeNull();
+    expect(doc.entries()).toEqual([]);
   });
 
-  it("carries work made with no tour open into the tour that opens", () => {
+  // Why this matters: placing waits for an open tour (only an open tour
+  // keeps a draft on this phone), so the open brings nothing along: work
+  // in the empty document could only be a bug, and carrying it would
+  // write it into the opened tour's zip.
+  it("brings nothing of the empty document into the tour that opens", () => {
     const doc = fresh();
-    doc.place(
-      photo("q"),
-      { blob: new Blob(["q"]), placement: PLACEMENT },
-      "a photo",
-    );
+    doc.place(pin("p"), {}, "a pin");
     doc.open(tourOf([pin("a")]));
-    expect(doc.objects().map((o) => o.object.id)).toEqual(["a", "q"]);
-    const carried = doc.entries().find((e) => e.object.id === "q");
-    expect(carried?.blob).toBeInstanceOf(Blob);
-    expect(carried?.placement).toEqual(PLACEMENT);
-  });
-
-  // Why this matters: work made before a tour opens stood in stations of
-  // the empty "no tour" document. The tour that opens has its own: the
-  // rule runs again against them, so a pin made next to one of its
-  // stations joins it instead of keeping a station of its own there.
-  it("seats carried work by the rule against the opened tour's stations", () => {
-    const doc = fresh();
-    const near = doc.place(pin("p"), {}, "a pin")?.object.station;
-    const far = doc.place(pin("q", 48.53), {}, "a pin")?.object.station;
-    doc.open(tourOf([pin("a")]));
-    const stationOf = (id: string) =>
-      doc.objects().find((o) => o.object.id === id)?.object.station;
-    const hosted = stationOf("a");
-    expect(stationOf("p")).toBe(hosted);
-    expect(stationOf("q")).not.toBe(hosted);
-    const ids = doc.manifest()?.stations.map((st) => st.id) ?? [];
-    expect(ids).toEqual([hosted, stationOf("q")]);
-    // None of the stations made before the tour opened comes along.
-    expect(ids).not.toContain(near);
-    expect(ids).not.toContain(far);
+    expect(doc.objects().map((o) => o.object.id)).toEqual(["a"]);
   });
 
   it("keeps a tour without tour.json as no manifest until a write lands", () => {
     const doc = fresh();
-    doc.place(pin("p"), {}, "a pin");
     doc.open(null);
+    doc.place(pin("p"), {}, "a pin");
     expect(doc.manifest()).toBeNull();
     expect(doc.entries()).toHaveLength(1);
   });
@@ -371,18 +343,6 @@ describe("the creator's document: the AR anchors of the stations it starts", () 
     expect(stationOf(doc, "p")).toBe(first);
     expect([...doc.stationPlacements()]).toEqual([
       [first, { ...PLACEMENT, item: "p" }],
-    ]);
-  });
-
-  it("anchors the stations the rule starts for work carried into the tour that opens", () => {
-    const doc = fresh();
-    doc.place(pin("q", 48.53), { placement: PLACEMENT }, "a pin");
-    doc.place(pin("r", 48.5301), { placement: ELSEWHERE }, "a pin");
-    doc.open(tourOf([pin("a")]));
-    const station = stationOf(doc, "q");
-    expect(stationOf(doc, "r")).toBe(station);
-    expect([...doc.stationPlacements()]).toEqual([
-      [station, { ...PLACEMENT, item: "q" }],
     ]);
   });
 

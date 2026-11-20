@@ -22,12 +22,21 @@ result or a shared link shows).
   D-P1): on the creator page the landing (`#landing`, see "The landing"
   below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
   (`#setup-stage`): the illustrated map (`#setup-map`, an example route
-  with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
-  beside the step card (`#setup-card`) on a wide or landscape screen, above
-  it on a phone. The card shows ONE step - the open `<details>`; closed
-  steps are hidden by CSS - under its station row (`#setup-badge`,
-  `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
-  step 6, no Next on step 5). The paper palette is set on the design
+  with the chosen path's stations drawn by `setup-stage.ts`; ids prefixed
+  `map-`) half and half beside the step card (`#setup-card`) on a wide or
+  landscape screen, and on a portrait phone a small square inset beside the
+  card's title row (`--setup-inset`, well under a quarter of the screen).
+  The card asks ONE question first (`#setup-question`, four
+  `data-answer` buttons, `setup-path.ts`; an answer only routes), then
+  shows the chosen path as a checklist (`#setup-dots`, `.setup-item`
+  chips) with ONE step - the open `<details>`; closed steps are hidden by
+  CSS, and every step while the question shows
+  (`#setup-card[data-path="none"]`) - under `#setup-badge`, `#setup-of`
+  ("Step 1 of 2" / "Step 2 of 2") and "Change the answer"
+  (`#setup-change`, hidden during AR), and over `#setup-nav` (Back/Next;
+  none on done, no Next where the step's own action moves on).
+  `#setup-card[data-path]` also shows what belongs to one path only:
+  `.make-code` (start-here) and `.scan-instead` (hidden on share-now). The paper palette is set on the design
   system's own tokens on `:root`, only for the creator page and only while
   no AR session runs (`body[data-ar-active]`), so `#ar-root` over the
   camera keeps the sheet's tokens; L5's own tokens are `--map-*`. The
@@ -36,9 +45,16 @@ result or a shared link shows).
      (`#host-tiles`, a radiogroup filled by `host-picker.ts`), the chosen
      host's steps (`#host-steps`), the starter zip (`#starter-zip`, only
      for a host that needs a file before it gives a link), Continue
-     (`#host-continue`), and a small link to open a tour zip from the
-     device (`#open-file`, "Open it from this device", tour kit plan K0;
-     a file has no link, so its code is printed once the zip is hosted).
+     (`#host-continue`); once a tour is open here (`data-tour-open`
+     settled) the starter zip gives way to `.host-saved-note` ("upload the
+     tour zip you saved").
+  - **The file paths' steps:** `#step-file` ("The tour file is on this
+    phone": `#open-file`, "Open it from this device", tour kit plan K0;
+    a file has no link, so the path goes on to placing) and
+    `#step-starter` ("Start on this phone now, share later":
+    `#starter-open`, `starter-open.ts`, the honest copy that the zip is
+    still empty and Done saves the work into a tour zip, and the indoor
+    limit - GPS alone without a hung code).
   2. **The link** (`#step-link`): `#open-form` with the button "Check
      link" - the check also runs by itself on paste and when the field is
      left - and `#link-status`, the line saying what the check found
@@ -507,8 +523,11 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
 `setup-stage`, `setup-map` (owns `setup-map-svg` and the
 drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
+`setup-change`, `setup-question` with `answer-<answer>`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
-`setup-next`), `step-link` (owns
+`setup-next`), `step-file`, `step-starter` (owns `starter-open`,
+`starter-done-note`, `starter-indoor`), `host-saved-note`, `scan-instead`,
+`make-code-box` with `make-code`, `step-link` (owns
 `link-status` and `print-url-out`, the launch link in `#link-launch`),
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,

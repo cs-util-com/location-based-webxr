@@ -1618,13 +1618,52 @@
         display: block;
         width: 100%;
         height: auto;
-        max-height: 42svh;
+      }
+      :root {
+        --setup-inset: min(7.5rem, 22svh);
       }
 
+      /* Portrait: the map is a small square inset beside the card's title,
+         well under a quarter of the screen, so the step itself leads. */
+      @media not ((orientation: landscape) and (width >= 640px)) {
+        @media (width < 1024px) {
+          /* flow-root: with the map out of the flow the card's top margin
+             would otherwise collapse through the stage and move it down. */
+          body[data-mode="creator"] .setup-stage {
+            position: relative;
+            display: flow-root;
+          }
+          body[data-mode="creator"] .setup-map {
+            position: absolute;
+            z-index: 1;
+            top: calc(var(--space-3) * 2 - 4px);
+            right: calc(var(--space-3) * 2 - 4px);
+            width: var(--setup-inset);
+            padding: 0;
+            border-bottom: 0;
+          }
+          .setup-map-head {
+            display: none;
+          }
+          .setup-map-frame {
+            margin: 0;
+            aspect-ratio: 1;
+          }
+          .setup-map-frame svg {
+            height: 100%;
+          }
+          body[data-mode="creator"] .setup-card-top {
+            padding-right: calc(var(--setup-inset) + var(--space-2));
+            min-height: calc(var(--setup-inset) - var(--space-2));
+          }
+        }
+      }
+
+      /* Landscape and wide: the map and the card half and half. */
       @media (orientation: landscape) and (width >= 640px), (width >= 1024px) {
         body[data-mode="creator"] .setup-stage {
           display: grid;
-          grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr);
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
           align-items: start;
           gap: var(--space-3);
         }
@@ -1790,9 +1829,80 @@
       }
       .setup-card-top {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
+        align-content: flex-start;
         gap: var(--space-2);
         margin-bottom: var(--space-2);
+      }
+      .setup-change {
+        font-size: 0.85rem;
+      }
+      body[data-ar-active="true"] .setup-change {
+        display: none;
+      }
+      /* Step 1: the question's four answers, a compact list. */
+      .setup-question h2 {
+        font-family: var(--map-serif);
+        font-weight: 600;
+        font-size: 1.5rem;
+        line-height: 1.12;
+        margin-bottom: var(--space-2);
+      }
+      .setup-answers {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: var(--space-1);
+      }
+      .setup-answer {
+        display: grid;
+        gap: 2px;
+        width: 100%;
+        text-align: left;
+        padding: 10px 12px;
+        border: 1.5px solid var(--ink);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        cursor: pointer;
+      }
+      .setup-answer span {
+        font-size: 0.85rem;
+        color: var(--ink-dim);
+      }
+      .setup-answer:hover,
+      .setup-answer:focus-visible {
+        border-color: var(--map-route);
+        box-shadow: 0 0 0 2.5px var(--map-route-soft);
+      }
+      /* While the question shows, no step does (an open one stays open in
+         the wizard for when an answer comes back). */
+      body[data-mode="creator"] #setup-card[data-path="none"] #wizard,
+      body[data-mode="creator"] #setup-card[data-path="none"] #step-done {
+        display: none;
+      }
+      /* What belongs to one path only. */
+      .make-code {
+        display: none;
+        margin-top: var(--space-3);
+      }
+      #setup-card[data-path="start-here"] .make-code {
+        display: block;
+      }
+      #setup-card[data-path="share-now"] .scan-instead {
+        display: none;
+      }
+      .host-saved-note {
+        display: none;
+      }
+      body[data-tour-open="settled"] .host-saved-note {
+        display: block;
+      }
+      body[data-tour-open="settled"] #starter-zip {
+        display: none;
       }
       /* The map and the card's step line are static markup: shown by CSS
          for a creator from the first paint, so a page that opens at the
@@ -1820,33 +1930,54 @@
         text-transform: uppercase;
         color: var(--ink-dim);
       }
+      /* Step 2's checklist: the path's items, the current one active. */
       .setup-dots {
-        margin-left: auto;
+        flex-basis: 100%;
         display: flex;
-        gap: 2px;
+        flex-wrap: wrap;
+        gap: 4px;
+        counter-reset: setup-item;
       }
-      .setup-dots button {
-        width: 22px;
-        height: 26px;
-        padding: 0;
-        border: 0;
-        background: none;
+      .setup-dots:empty {
+        display: none;
+      }
+      .setup-item {
+        counter-increment: setup-item;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 28px;
+        padding: 2px 9px 2px 4px;
+        border: 1.5px solid var(--map-ink-3);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--ink-dim);
+        font:
+          600 0.8rem/1 system-ui,
+          sans-serif;
         cursor: pointer;
+      }
+      .setup-item::before {
+        content: counter(setup-item);
         display: grid;
         place-items: center;
-      }
-      .setup-dots button::after {
-        content: "";
-        width: 8px;
-        height: 8px;
+        width: 18px;
+        height: 18px;
         border-radius: 50%;
-        border: 1.5px solid var(--map-ink-3);
+        border: 1.5px solid currentColor;
+        font-size: 0.7rem;
       }
-      .setup-dots button[data-state="done"]::after {
+      .setup-item[data-state="done"] {
+        color: var(--ink);
+      }
+      .setup-item[data-state="done"]::before {
+        content: "\2713";
         background: var(--map-route);
         border-color: var(--map-route);
+        color: #fff;
       }
-      .setup-dots button[aria-current="step"]::after {
+      .setup-item[aria-current="step"] {
+        color: var(--ink);
         border-color: var(--map-route);
         box-shadow: 0 0 0 2.5px var(--map-route-soft);
       }
@@ -4912,10 +5043,10 @@
             <svg
               id="map-map"
               viewBox="0 0 400 300"
-              preserveAspectRatio="xMidYMid meet"
+              preserveAspectRatio="xMidYMid slice"
               role="img"
               data-testid="setup-map-svg"
-              aria-label="Illustrated map of a park with a tour route and six stations"
+              aria-label="Illustrated map of a park with a tour route and the stations of your setup"
             >
               <defs>
                 <pattern
@@ -5453,14 +5584,87 @@
               >1</span
             >
             <span class="setup-of" id="setup-of" data-testid="setup-of"
-              >Step 1 of 6</span
+              >Step 1 of 2</span
             >
+            <button
+              type="button"
+              id="setup-change"
+              class="link-button setup-change"
+              data-testid="setup-change"
+              hidden
+            >
+              Change the answer
+            </button>
+            <!-- Step 2: the chosen path as a checklist (setup-stage.ts). -->
             <nav
               class="setup-dots"
               id="setup-dots"
               data-testid="setup-dots"
-              aria-label="Steps"
+              aria-label="Your checklist"
             ></nav>
+          </div>
+          <!-- Step 1: one question; an answer only routes (setup-path.ts). -->
+          <div
+            id="setup-question"
+            class="creator-only setup-question"
+            data-testid="setup-question"
+            hidden
+          >
+            <h2>How do you want to start?</h2>
+            <ul class="setup-answers">
+              <li>
+                <button
+                  type="button"
+                  class="setup-answer"
+                  data-answer="share-now"
+                  data-testid="answer-share-now"
+                >
+                  <b>New tour, I want to share it now</b>
+                  <span
+                    >Put it online, print its code, hang it, then create.</span
+                  >
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  class="setup-answer"
+                  data-answer="have-link"
+                  data-testid="answer-have-link"
+                >
+                  <b>I have its link</b>
+                  <span
+                    >The tour is online already: print its code, then
+                    create.</span
+                  >
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  class="setup-answer"
+                  data-answer="file-here"
+                  data-testid="answer-file-here"
+                >
+                  <b>The tour file is on this phone</b>
+                  <span>Open the zip here and create; share it later.</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  class="setup-answer"
+                  data-answer="start-here"
+                  data-testid="answer-start-here"
+                >
+                  <b>Start on this phone now, share later</b>
+                  <span
+                    >Save a new tour zip, create now, make its code
+                    afterwards.</span
+                  >
+                </button>
+              </li>
+            </ul>
           </div>
           <p class="setup-loading" data-testid="setup-loading">
             Loading the setup...
@@ -5513,6 +5717,15 @@
                   >
                     Download the empty starter tour
                   </button>
+                  <!-- A tour already open here (saved from this phone): its
+                   zip is what goes up, not a starter. -->
+                  <p
+                    class="step-copy hint--dim host-saved-note"
+                    data-testid="host-saved-note"
+                  >
+                    Upload the tour zip you saved on this phone; its link comes
+                    next.
+                  </p>
                   <button
                     type="button"
                     id="host-continue"
@@ -5523,21 +5736,67 @@
                     Continue
                   </button>
                 </div>
-                <!-- "Open a file" (tour kit plan K0): a zip on this device,
-                 for a host that does not let browsers read its files.
-                 The picker is #file-input, outside the wizard, which
-                 the visitor's advice button uses too. A small link since
-                 polish round M2 (A5): the hosts above are the main way. -->
+              </details>
+            </li>
+            <li>
+              <!-- "The tour file is on this phone": a zip opened here (tour
+               kit plan K0). The picker is #file-input, outside the wizard,
+               which the visitor's advice button uses too. -->
+              <details id="step-file" class="step" data-testid="step-file">
+                <summary>
+                  <h2>Open the tour file on this phone</h2>
+                </summary>
                 <p class="step-copy hint--dim">
-                  Already have a tour zip on this device?
+                  Choose the tour zip. It opens here, and nothing is uploaded;
+                  then you place your stations.
+                </p>
+                <div class="step-body">
                   <button
                     type="button"
                     id="open-file"
-                    class="link-button"
+                    class="btn"
                     data-testid="open-file-button"
                   >
                     Open it from this device
                   </button>
+                </div>
+              </details>
+            </li>
+            <li>
+              <!-- "Start on this phone now, share later" (starter-open.ts):
+               a new tour zip saved, then opened as the tour, before AR. -->
+              <details
+                id="step-starter"
+                class="step"
+                data-testid="step-starter"
+              >
+                <summary>
+                  <h2>Save a new tour on this phone</h2>
+                </summary>
+                <p class="step-copy">
+                  One tap saves a new, empty tour zip on this phone and opens it
+                  here. Then you place your stations.
+                </p>
+                <div class="step-body">
+                  <button
+                    type="button"
+                    id="starter-open"
+                    class="btn"
+                    data-testid="starter-open"
+                  >
+                    Save a new tour zip and open it
+                  </button>
+                </div>
+                <p class="step-copy hint--dim" data-testid="starter-done-note">
+                  The zip you save now is still empty. While you place, this
+                  phone keeps a backup of your work; Done saves your work as the
+                  tour zip, and that file is the one you keep.
+                </p>
+                <p class="step-copy hint--dim" data-testid="starter-indoor">
+                  Without a hung code your stations are placed by GPS alone,
+                  which indoors is often many metres off. Indoors, choose "New
+                  tour, I want to share it now" and hang its code first; here,
+                  measure the code at your next visit (after Done).
                 </p>
               </details>
             </li>
@@ -5591,6 +5850,21 @@
                   aria-live="polite"
                   hidden
                 ></p>
+                <!-- The one other way in: a code that already hangs opens its
+                 tour when AR sees it (scan-open.ts). Not on the share-now
+                 path, whose code is printed after this step. -->
+                <p class="step-copy hint--dim scan-instead">
+                  Your code already hangs?
+                  <button
+                    type="button"
+                    id="scan-instead"
+                    class="link-button"
+                    data-testid="scan-instead"
+                  >
+                    Start creating and point at it
+                  </button>
+                  - it opens its tour.
+                </p>
                 <!-- What the codes carry (r820 feedback R6): the pasted link
                  wrapped into the launch link a scan opens. Written by
                  print-panel.ts once the first poster's code is planned;
@@ -7247,6 +7521,23 @@
               This step opens by itself when you finish in step 5: your saved
               tour file, and how to put it in place of the one at your link.
             </p>
+            <!-- "Start on this phone now, share later": after Done the tour
+             is a file on this phone with no code yet. -->
+            <div class="make-code" data-testid="make-code-box">
+              <p class="step-copy">
+                Your tour is a file on this phone. To share it, put it online,
+                print its code and hang it; at your next visit, measure the code
+                in "Start creating" so the tour lines up with it.
+              </p>
+              <button
+                type="button"
+                id="make-code"
+                class="btn"
+                data-testid="make-code"
+              >
+                Make your code now
+              </button>
+            </div>
           </details>
           <div
             id="setup-nav"

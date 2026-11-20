@@ -1943,11 +1943,6 @@ interface TourRestore {
   /** Stations the draft's page added by hand (`handMade`): they keep
    *  themselves here too, before the frames and objects come back. */
   readonly handMadeStations?: readonly string[];
-  /** The objects were made in ANOTHER document (work carried into a tour
-   *  just opened): the station each named is not this tour's, so each is
-   *  seated afresh by the station rule against the opened tour's
-   *  stations. */
-  readonly rerun?: boolean;
   /** The files a draft kept (`addedAssets` there): listed again before
    *  the frames and objects naming them come back. */
   readonly assets?: readonly TourAsset[];
@@ -5606,8 +5601,7 @@ const tourDocumentSlice = createSlice({
      *  poses, then the created stations the document lacks), then each
      *  object: in its own station when the document carries it and it
      *  fits there, else seated by the station rule under its minted id (a
-     *  station a draft no longer has, or work carried into another tour,
-     *  `rerun`); then the deletions. A station this leaves an empty
+     *  station a draft no longer has); then the deletions. A station this leaves an empty
      *  automatic one goes (`withoutEmptied`). */
     restored: {
       reducer(state, action: PayloadAction<TourRestorePayload>) {
@@ -5676,8 +5670,7 @@ const tourDocumentSlice = createSlice({
           if (next.deleted.includes(given.id) || !objectHeld(given)) continue;
           const home = homeOf(next, given.id);
           left.push(home);
-          const named = work.rerun === true ? undefined : given.station;
-          const own = named ?? (work.rerun === true ? undefined : home);
+          const own = given.station ?? home;
           const object =
             own === undefined ? unseated(given) : { ...given, station: own };
           const newStationId = work.newStationIds[i];

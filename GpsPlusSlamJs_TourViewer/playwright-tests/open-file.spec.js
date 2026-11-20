@@ -28,12 +28,13 @@ async function tourFile(request) {
   };
 }
 
-/** Step 1 holds the device open (polish round M2, A5); the suite's
- *  creator has a stored host, so the page starts at step 2.
+/** The setup question's "The tour file is on this phone" answer leads
+ *  to the device open; the suite's creator answered "I have its link".
  *  @param {import("@playwright/test").Page} page */
-async function openHostStep(page) {
-  await page.getByTestId("station-host").click();
-  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+async function openFileStep(page) {
+  await page.getByTestId("setup-change").click();
+  await page.getByTestId("answer-file-here").click();
+  await expect(page.getByTestId("step-file")).toHaveAttribute("open", "");
 }
 
 test("opens a tour zip from the device through the file chooser @pr", async ({
@@ -43,7 +44,7 @@ test("opens a tour zip from the device through the file chooser @pr", async ({
   const file = await tourFile(request);
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
-  await openHostStep(page);
+  await openFileStep(page);
   await page.getByTestId("open-file-button").click();
   await (await chooser).setFiles(file);
 
@@ -55,8 +56,9 @@ test("opens a tour zip from the device through the file chooser @pr", async ({
     },
   );
   await expect(page.getByTestId("file-status")).toContainText("tour (1).zip");
-  // A file has no link: the print step asks for one instead of showing a
-  // made-up address.
+  // A file has no link, so no code is printed first: the path goes on to
+  // placing, and the print step shows no made-up address.
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
   await expect(page.getByTestId("print-url-shown")).toBeHidden();
   await expect(page.getByTestId("open-file-button")).toHaveText(
     "Open it from this device",
@@ -69,7 +71,7 @@ test("a file that is not a zip reports a plain error and restores the button", a
 }) => {
   await page.goto("/?nocache=1");
   const chooser = page.waitForEvent("filechooser");
-  await openHostStep(page);
+  await openFileStep(page);
   await page.getByTestId("open-file-button").click();
   await (
     await chooser
