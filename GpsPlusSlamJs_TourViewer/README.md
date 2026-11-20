@@ -42,6 +42,19 @@ downloading the whole file first.
 The mode is the launch parameter's presence and nothing else; there is no
 author flag.
 
+## The desktop editor (`/tour/edit`)
+
+It opens with a start card: where you start from (a tour you made, as a
+file or from its link; a new, empty tour; the example), then, for the
+first two, an optional scan of the place - a Recorder recording or debug
+data - shown beside the tour while you edit and never saved into it.
+"Open the editor" opens the tour, then adds the scan. Where the browser
+has the file picker (Chromium), a scan chosen there is remembered in this
+browser by the tour's id: only where the file is, never its contents, and
+nothing of it goes into the tour file. Opening that tour again offers
+"Show the scan again", which asks the browser to let the page read the
+file once more; a file moved or deleted since is said, and forgotten.
+
 ## The creator's setup, step by step
 
 1. **Where your tour file is stored** - choose Google Drive, Dropbox,

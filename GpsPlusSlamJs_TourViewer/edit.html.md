@@ -126,7 +126,9 @@ AR (tour editor plan 2026-10-17-1816, W1).
   `#start-scan-step` (shown for the first two), question 2 "Add a scan of
   the place? (optional)", its line saying the scan is shown while editing
   and never saved into the tour, `#start-scan-held`, `#start-scan-remove`
-  and `#start-scan-btn` with `#start-scan-input`; then `#open-status` (the
+  and `#start-scan-btn` (the browser's file picker where it exists, so the
+  scan can be remembered by the tour's id, else `#start-scan-input`); then
+  `#open-status` (the
   async state), `#open-error`, `#start-summary` (what the button will do)
   and `#start-open` "Open the editor", disabled until the answers name
   something to open.
