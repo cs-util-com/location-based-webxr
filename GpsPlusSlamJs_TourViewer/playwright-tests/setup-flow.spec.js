@@ -391,7 +391,10 @@ for (const viewport of [
               Math.abs(a.width - m.answers[0].width),
               at,
             ).toBeLessThanOrEqual(1);
-            expect(a.width - widest, at).toBeLessThanOrEqual(48);
+            // Only padding beyond the words, while no answer wraps; a
+            // wrapped one fills the room beside the sticker instead.
+            if (m.answers.every((b) => b.lines === 1))
+              expect(a.width - widest, at).toBeLessThanOrEqual(48);
           }
         } else {
           await page.getByTestId("start-back").click();
