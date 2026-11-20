@@ -190,15 +190,39 @@ test.describe("a landscape phone", () => {
   test.use({ viewport: { width: 915, height: 412 } });
 
   test("uses the width, without scrolling sideways", async ({ page }) => {
-    // A14, then M2b: on a landscape phone the map and the step card share
-    // the screen side by side, rather than one narrow column.
+    // A14, then the header row: on a landscape phone the step card takes
+    // the whole width and the map is a tile in its top-right corner,
+    // ending where the step's heading and why end, so no empty band
+    // opens under them and the four ways in stay on the one screen.
     await page.goto("/?nocache=1");
-    const map = await page.getByTestId("setup-map").boundingBox();
-    const card = await page.getByTestId("setup-card").boundingBox();
-    if (map === null || card === null)
-      throw new Error("map or card not laid out");
-    expect(card.x).toBeGreaterThanOrEqual(map.x + map.width - 1);
-    expect(map.width + card.width).toBeGreaterThan(800);
+    await expect(page.getByTestId("wizard")).toBeVisible();
+    // The suite's creator opens at step 2; the question is step 1.
+    await page.getByTestId("station-host").click();
+    await expect(page.getByTestId("start-answers")).toBeVisible();
+    await page
+      .getByTestId("setup-stage")
+      .evaluate((el) =>
+        el.scrollIntoView({ block: "start", behavior: "instant" }),
+      );
+    const at = async (/** @type {import("@playwright/test").Locator} */ l) => {
+      const found = await l.boundingBox();
+      if (found === null) throw new Error(`no box for ${String(l)}`);
+      return found;
+    };
+    const card = await at(page.getByTestId("setup-card"));
+    const map = await at(page.getByTestId("setup-map"));
+    const why = await at(page.locator("#step-host > summary + .step-copy"));
+    const answers = await at(page.getByTestId("start-answers"));
+    expect(card.width).toBeGreaterThan(915 - 40);
+    expect(map.x + map.width).toBeLessThanOrEqual(card.x + card.width);
+    expect(map.x + map.width).toBeGreaterThan(card.x + card.width - 30);
+    expect(map.y - card.y).toBeLessThan(30);
+    expect(map.width).toBeLessThan(card.width / 4);
+    expect(Math.abs(map.y + map.height - (why.y + why.height))).toBeLessThan(
+      1.5,
+    );
+    expect(answers.y).toBeGreaterThanOrEqual(map.y + map.height);
+    expect(answers.y + answers.height).toBeLessThanOrEqual(412);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,
     );

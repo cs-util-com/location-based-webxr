@@ -388,7 +388,7 @@ for (const { viewport, wide } of [
   test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
     test.use({ viewport, storageState: FIRST_VISIT });
 
-    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its card beside the map", async ({
+    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column with the map in its card's corner", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -495,54 +495,23 @@ for (const { viewport, wide } of [
         shownEnd = Math.max(cardText.y + cardText.height, fig.y + fig.height);
       }
 
-      // The setup stage on the same column: the map's title and the
-      // outer line of its frame on the column's left edge, the card's
-      // right edge on its right edge.
-      const title = await at(".setup-map-title");
-      const frame = await at(".setup-map-frame");
+      // The setup stage on the same column: the card's edges on the
+      // column's edges, the map a tile in the card's top-right corner (its
+      // 1.5 px edge and 20 px padding), much narrower than the card, its
+      // foot on the foot of the header beside it (the step's why), and
+      // the answers below both, at the card's full width.
       const card = await at("#setup-card");
-      near(title.x, column.left);
-      // the frame's outline sits 4 px outside it (1 px line, 3 px offset)
-      near(frame.x - 4, column.left);
+      const map = await at("#setup-map");
+      const head = await at("#step-host > summary + .step-copy");
+      const answers = await at("#step-host .start-answers");
+      near(card.x, column.left);
       near(card.x + card.width, column.right);
-
-      // Scrolled into the stage, the step card stays in view beside the
-      // map while the map is. On this short first-visit page the page
-      // ends about where the stage does, so room is added below it first
-      // (a longer step, or a page that opened at the stage, has it).
-      // The card can travel as far as the map runs on below it (the
-      // stage ends with the map); half of that is scrolled, or, where the
-      // travel is short (a wide face makes the card taller), just enough
-      // to take the map's top out of view, and never past the travel. The
-      // card, left alone, would sit that far above the view's top + 16.
-      const { travel, scrolled } = await page
-        .getByTestId("setup-stage")
-        .evaluate((el) => {
-          const room = document.createElement("div");
-          room.style.height = "2000px";
-          document.body.append(room);
-          el.scrollIntoView({ block: "start", behavior: "instant" });
-          const cardEl = /** @type {HTMLElement} */ (
-            document.getElementById("setup-card")
-          );
-          const mapEl = /** @type {HTMLElement} */ (
-            document.querySelector(".setup-map-frame")
-          );
-          const below =
-            mapEl.getBoundingClientRect().bottom -
-            cardEl.getBoundingClientRect().bottom;
-          const by = Math.max(below / 2, mapEl.getBoundingClientRect().top + 4);
-          window.scrollBy({ top: by, behavior: "instant" });
-          return { travel: below, scrolled: by };
-        });
-      // No floor of its own on the travel: the scroll is at least 4 px
-      // past the map's top, so scrolled < travel already says it is room.
-      expect(scrolled).toBeLessThan(travel);
-      const mapNow = await at(".setup-map-frame");
-      const cardNow = await at("#setup-card");
-      expect(mapNow.y).toBeLessThan(0);
-      expect(mapNow.y + mapNow.height).toBeGreaterThan(cardNow.y);
-      near(cardNow.y, 16);
+      near(map.x + map.width, card.x + card.width - 21.5);
+      near(map.y, card.y + 21.5);
+      expect(map.width).toBeLessThan(card.width / 4);
+      near(map.y + map.height, head.y + head.height);
+      expect(answers.y).toBeGreaterThanOrEqual(map.y + map.height);
+      near(answers.x + answers.width, card.x + card.width - 21.5);
     });
   });
 }

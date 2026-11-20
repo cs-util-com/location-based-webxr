@@ -21,10 +21,10 @@ result or a shared link shows).
   **The L5 look since polish round M2b** (the owner's prototype verdict,
   D-P1): on the creator page the landing (`#landing`, see "The landing"
   below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
-  (`#setup-stage`): the illustrated map (`#setup-map`, an example route
-  with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
-  beside the step card (`#setup-card`) on a wide or landscape screen, above
-  it on a phone. The card shows ONE step - the open `<details>`; closed
+  (`#setup-stage`): the step card (`#setup-card`) at the full width, with
+  the illustrated map (`#setup-map`, an example route with six stations
+  drawn by `setup-stage.ts`; ids prefixed `map-`) as a tile in the card's
+  top-right corner (see "The map tile" below). The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -471,14 +471,64 @@ its chunk fails, the hero shows its last moment as a drawing).
     cards read as running together.
   - From 900 px wide and taller than 560 px the setup stage stands on the
     landing's column (`--landing-wide`, 1128 px, set on `body` so both the
-    landing and the stage read it, and its 16 px gutters): the map's title and
-    its frame's outer line on the column's left edge, the step card's right
-    edge on its right. The card is sticky (16 px from the top) beside the
-    map while the map is in view, except during AR, whose panel lives in
-    the card. Its travel is only as long as the map runs on below it
-    (about 100 px at 1280x720), and on a first visit the page ends about
-    where the stage does. "You already have a tour?" below it keeps its own
-    narrower centred column.
+    landing and the stage read it, and its 16 px gutters): the step card's
+    edges on the column's edges (its padding, `--setup-pad`, 20 px there).
+    "You already have a tour?" below it keeps its own narrower centred
+    column.
+  - **The map tile** (layout round on top of the "conversation" setup, the
+    "header row" direction): `#setup-map` is the card's first child. The
+    card's header - the step's line (`.setup-card-top`), the open step's
+    `<summary>` and, where the card is wide (landscape from 640 px, or from
+    720 px wide), its why (`summary + .step-copy`) - keeps
+    `--setup-tile` free on its right; everything after it runs at the
+    card's full width. On a phone held upright the why runs at the full
+    width below the header, and the dots wrap under "Step n of 6".
+    - With CSS anchor positioning the tile is absolutely placed in the
+      card's top-right corner and ends at `anchor(--setup-head bottom)`:
+      the header's last element carries `anchor-name: --setup-head` (the
+      last rendered one wins), so the tile is exactly as tall as the header
+      and a short heading leaves no empty band. On a wide card its width
+      follows that height (`aspect-ratio: 8 / 7`, about the map's 4:3 over
+      the caption, `min-height: 0` so its content never stretches it), up
+      to `--setup-tile`; on a phone it is `--setup-tile` wide. A heading
+      with no why directly under it (step 6) has a 3.5 rem floor, and so
+      has the loading line, which stands in for the heading until
+      `main.ts` reveals the steps.
+    - The tile has `z-index: 1`: the open step's `<details>` is
+      positioned (the design system's `.step`) and later in the tree, so
+      without it the header's text would paint over the map and take its
+      taps.
+    - The tile has `overflow-anchor: none`: as the card's first fully
+      visible child it would be the browser's scroll anchor, and a reload
+      restored against it (with the use cases arriving late, in a wide
+      font) left the stage 195 px off the top. The step's line and
+      heading anchor instead.
+    - The stage is `display: flow-root` (the card's margins stay inside
+      it, so it starts 40 px under the use cases) and an anchor,
+      `--setup-stage`: an invisible `body::after` spacer, absolutely
+      placed from the stage's top and a view tall, makes the page run on
+      at least a view past it. The compact card alone left a phone's page
+      113 px too short for "Make your tour" or a reload to bring the stage
+      to the top; the spacer's extra paper shows only after the foot,
+      never as a band under the card. (The skipped page's own
+      `min-height: 100vh` on the stage predates it and stays.)
+    - Without anchor positioning the tile is a float: the header's parts
+      start their own formatting context (`display: flow-root`) and so
+      narrow beside it, and the step's other children clear it.
+    - The open step's `<details>` has `overflow: clip` in the card (the
+      design system's `.step` sets `hidden` for its chrome, which the card
+      strips; `hidden` would start a formatting context and push the whole
+      step under the float). The map's paper is drawn past its viewBox, so
+      a tile of another shape shows more paper, never an edge (`meet`).
+    - The tile is a size container: under 11 rem its stations are drawn
+      larger and only their numbers show (the map's small labels would be
+      specks); from 9.25 rem the caption "Mill Park an example route" takes
+      one line.
+    - Sizes measured at 390x844, 844x390, 768x1024, 880x1000, 1000x880,
+      1024x768 and 1280x800: about 125 px on a phone, 110 to 136 px on a
+      landscape phone, 132 to 190 px on a foldable or desktop, depending
+      on the open step's header. Step 1's four answers go two to a row on
+      a wide card, so a landscape phone keeps them on one screen.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
   (`landing-cards.ts`, which play by `card-play.ts`), the use cases
