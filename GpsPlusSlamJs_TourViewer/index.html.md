@@ -23,8 +23,20 @@ result or a shared link shows).
   below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
   (`#setup-stage`): the illustrated map (`#setup-map`, an example route
   with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
-  beside the step card (`#setup-card`) on a wide or landscape screen, above
-  it on a phone. The card shows ONE step - the open `<details>`; closed
+  inside the step card (`#setup-card`), a tile floated into its top-right
+  corner with the step flowing around it: beside it while there is room,
+  on the full width below it, so no empty column stands under the map.
+  The card takes the full width; the tile is about a third of a phone
+  card and at most 40 % of a wide one (`min(40%, max(8.5rem, 30%), 20rem,
+60svh)`, the last term keeping it under about half a short landscape
+  screen). Its steps are `overflow: clip` rather than the atom's
+  `hidden`, which would make each step a box of its own beside the float;
+  each start answer is a block of its own (`width: stretch`, at least
+  15rem), so it narrows beside the map or, too narrow, moves below it.
+  Under 600 px wide the tile shows only the route and enlarged numbered
+  stations (its names would be specks); wider tiles enlarge the names. A
+  corner button (`#setup-map-zoom`, a checkbox, CSS only via `:has`)
+  lifts the map out of the corner to the card's width and back. The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -471,13 +483,8 @@ its chunk fails, the hero shows its last moment as a drawing).
     cards read as running together.
   - From 900 px wide and taller than 560 px the setup stage stands on the
     landing's column (`--landing-wide`, 1128 px, set on `body` so both the
-    landing and the stage read it, and its 16 px gutters): the map's title and
-    its frame's outer line on the column's left edge, the step card's right
-    edge on its right. The card is sticky (16 px from the top) beside the
-    map while the map is in view, except during AR, whose panel lives in
-    the card. Its travel is only as long as the map runs on below it
-    (about 100 px at 1280x720), and on a first visit the page ends about
-    where the stage does. "You already have a tour?" below it keeps its own
+    landing and the stage read it, and its 16 px gutters): the step card
+    spans the column, the map in its top-right corner. "You already have a tour?" below it keeps its own
     narrower centred column.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
@@ -518,8 +525,8 @@ The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
 `landing-way`, `landing-needs`, `landing-begin-top`, `landing-film` with
 `landing-still`, `landing-story`, `landing-cards` with five
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
-`setup-stage`, `setup-map` (owns `setup-map-svg` and the
-drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
+`setup-stage`, `setup-card` (owns `setup-map`, which owns `setup-map-svg`,
+`setup-map-zoom` and the drawn `map-station-<step>`; `setup-loading`, `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
 `setup-next`), `step-link` (owns `link-heading`, `link-why`,
 `start-host` with `host-tiles` and `host-steps`, `link-field`,

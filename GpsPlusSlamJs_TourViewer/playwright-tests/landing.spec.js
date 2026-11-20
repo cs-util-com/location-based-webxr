@@ -388,7 +388,7 @@ for (const { viewport, wide } of [
   test.describe(`the landing on a wide screen, ${String(viewport.width)}x${String(viewport.height)}${wide ? ", in a wide face" : ""}`, () => {
     test.use({ viewport, storageState: FIRST_VISIT });
 
-    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its card beside the map", async ({
+    test("sets the hero side by side, the text larger, the reasons in three columns, the stage on the column and its map in the card's corner", async ({
       page,
     }) => {
       await page.emulateMedia({ reducedMotion: "reduce" });
@@ -495,54 +495,32 @@ for (const { viewport, wide } of [
         shownEnd = Math.max(cardText.y + cardText.height, fig.y + fig.height);
       }
 
-      // The setup stage on the same column: the map's title and the
-      // outer line of its frame on the column's left edge, the card's
-      // right edge on its right edge.
-      const title = await at(".setup-map-title");
-      const frame = await at(".setup-map-frame");
-      const card = await at("#setup-card");
-      near(title.x, column.left);
-      // the frame's outline sits 4 px outside it (1 px line, 3 px offset)
-      near(frame.x - 4, column.left);
-      near(card.x + card.width, column.right);
-
-      // Scrolled into the stage, the step card stays in view beside the
-      // map while the map is. On this short first-visit page the page
-      // ends about where the stage does, so room is added below it first
-      // (a longer step, or a page that opened at the stage, has it).
-      // The card can travel as far as the map runs on below it (the
-      // stage ends with the map); half of that is scrolled, or, where the
-      // travel is short (a wide face makes the card taller), just enough
-      // to take the map's top out of view, and never past the travel. The
-      // card, left alone, would sit that far above the view's top + 16.
-      const { travel, scrolled } = await page
-        .getByTestId("setup-stage")
-        .evaluate((el) => {
-          const room = document.createElement("div");
-          room.style.height = "2000px";
-          document.body.append(room);
-          el.scrollIntoView({ block: "start", behavior: "instant" });
-          const cardEl = /** @type {HTMLElement} */ (
-            document.getElementById("setup-card")
-          );
-          const mapEl = /** @type {HTMLElement} */ (
-            document.querySelector(".setup-map-frame")
-          );
-          const below =
-            mapEl.getBoundingClientRect().bottom -
-            cardEl.getBoundingClientRect().bottom;
-          const by = Math.max(below / 2, mapEl.getBoundingClientRect().top + 4);
-          window.scrollBy({ top: by, behavior: "instant" });
-          return { travel: below, scrolled: by };
-        });
-      // No floor of its own on the travel: the scroll is at least 4 px
-      // past the map's top, so scrolled < travel already says it is room.
-      expect(scrolled).toBeLessThan(travel);
-      const mapNow = await at(".setup-map-frame");
-      const cardNow = await at("#setup-card");
-      expect(mapNow.y).toBeLessThan(0);
-      expect(mapNow.y + mapNow.height).toBeGreaterThan(cardNow.y);
-      near(cardNow.y, 16);
+      // The setup stage on the same column: the step card spans it, and
+      // the map is a tile in the card's top-right corner (the step flows
+      // around it), 30 % to 40 % of the card wide, or 20rem.
+      const card = await page.locator("#setup-card").evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const s = getComputedStyle(el);
+        const inset = (/** @type {string} */ side) =>
+          parseFloat(s.getPropertyValue(`padding-${side}`)) +
+          parseFloat(s.getPropertyValue(`border-${side}-width`));
+        return {
+          left: r.left,
+          right: r.right,
+          contentRight: r.right - inset("right"),
+          contentTop: r.top + inset("top"),
+          contentWidth: r.width - inset("left") - inset("right"),
+        };
+      });
+      near(card.left, column.left);
+      near(card.right, column.right);
+      const tile = await at(".setup-map");
+      near(tile.x + tile.width, card.contentRight);
+      near(tile.y, card.contentTop);
+      expect(tile.width).toBeLessThanOrEqual(card.contentWidth * 0.4 + 1);
+      expect(tile.width).toBeGreaterThanOrEqual(
+        Math.min(card.contentWidth * 0.3, 320) - 1,
+      );
     });
   });
 }
@@ -1160,14 +1138,29 @@ test.describe("a first visit", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await openLanding(page);
     await page.getByTestId("landing-begin-top").click();
+    // The stage goes to the top of the view - or, where the page ends
+    // less than a view below it (a short first step with the map in the
+    // card's corner), the page is at its end with the stage's top and the
+    // whole card in view.
     await expect
       .poll(() =>
-        page
-          .getByTestId("setup-stage")
+        page.getByTestId("setup-stage").evaluate((el) => {
           // "+ 0": a top just above the line rounds to -0 (see stageTop)
-          .evaluate((el) => Math.round(el.getBoundingClientRect().top) + 0),
+          const top = Math.round(el.getBoundingClientRect().top) + 0;
+          const card = /** @type {HTMLElement} */ (
+            document.getElementById("setup-card")
+          ).getBoundingClientRect();
+          const atEnd =
+            Math.abs(
+              scrollY + innerHeight - document.documentElement.scrollHeight,
+            ) <= 1;
+          return (
+            top === 0 ||
+            (atEnd && top > 0 && card.bottom <= innerHeight && top < 200)
+          );
+        }),
       )
-      .toBe(0);
+      .toBe(true);
     await expect(
       page.getByTestId("step-host").locator("summary"),
     ).toBeFocused();

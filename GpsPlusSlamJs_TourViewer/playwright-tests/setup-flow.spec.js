@@ -190,15 +190,21 @@ test.describe("a landscape phone", () => {
   test.use({ viewport: { width: 915, height: 412 } });
 
   test("uses the width, without scrolling sideways", async ({ page }) => {
-    // A14, then M2b: on a landscape phone the map and the step card share
-    // the screen side by side, rather than one narrow column.
+    // A14, then the map-in-the-corner round: on a landscape phone the step
+    // card takes the whole width and the map is a tile in its top-right
+    // corner, never the half of the screen that left an empty block
+    // under it.
     await page.goto("/?nocache=1");
     const map = await page.getByTestId("setup-map").boundingBox();
     const card = await page.getByTestId("setup-card").boundingBox();
     if (map === null || card === null)
       throw new Error("map or card not laid out");
-    expect(card.x).toBeGreaterThanOrEqual(map.x + map.width - 1);
-    expect(map.width + card.width).toBeGreaterThan(800);
+    expect(card.width).toBeGreaterThan(860);
+    expect(map.x).toBeGreaterThan(card.x + card.width / 2);
+    expect(map.x + map.width).toBeLessThanOrEqual(card.x + card.width);
+    expect(map.y).toBeGreaterThanOrEqual(card.y);
+    expect(map.y).toBeLessThan(card.y + 40);
+    expect(map.width).toBeLessThanOrEqual(card.width * 0.4);
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - window.innerWidth,
     );
