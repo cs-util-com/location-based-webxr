@@ -57,7 +57,7 @@ const MACOS_METADATA = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
 
 /** True for an entry a macOS re-zip adds, which is never part of a tour
  *  or a recording. */
-export function isMacOsMetadataName(name: string): boolean {
+function isMacOsMetadataName(name: string): boolean {
   return MACOS_METADATA.test(name);
 }
 
