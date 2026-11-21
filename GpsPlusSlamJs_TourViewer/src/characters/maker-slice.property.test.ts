@@ -42,11 +42,18 @@ const action: fc.Arbitrary<Action> = fc.oneof(
   fc.constant(A.startedAnother()),
 );
 
+/** Every state on the way, the first one included. */
 const runAll = (actions: readonly Action[]): MakerState[] => {
-  const states = [makerStateFrom(null)];
-  for (const a of actions) states.push(makerReducer(states.at(-1)!, a));
+  let s = makerStateFrom(null);
+  const states = [s];
+  for (const a of actions) {
+    s = makerReducer(s, a);
+    states.push(s);
+  }
   return states;
 };
+const finalOf = (actions: readonly Action[]): MakerState =>
+  actions.reduce((s, a) => makerReducer(s, a), makerStateFrom(null));
 
 describe("maker-slice properties", () => {
   // Why: whatever the page dispatches, the step stays one of the six and the
@@ -62,16 +69,14 @@ describe("maker-slice properties", () => {
           expect(s.draft.maxStep).toBeLessThanOrEqual(3);
         }
         const states = runAll(actions);
-        actions.forEach((a, i) => {
-          const before = states[i]!;
-          const after = states[i + 1]!;
-          if (
-            (A.went.match(a) || A.reached.match(a)) &&
-            after.draft.step >= 4
-          ) {
-            expect(before.cut).toBe("ready");
-          }
-        });
+        // The cut status before every step change that entered step 5 or 6.
+        const entered = actions.flatMap((a, i) =>
+          (A.went.match(a) || A.reached.match(a)) &&
+          (states[i + 1]?.draft.step ?? 0) >= 4
+            ? [states[i]?.cut]
+            : [],
+        );
+        expect(entered).toEqual(entered.map(() => "ready"));
       }),
     );
   });
@@ -82,7 +87,7 @@ describe("maker-slice properties", () => {
   it("keeps every draft it makes through storage", () => {
     fc.assert(
       fc.property(fc.array(action, { maxLength: 40 }), (actions) => {
-        const { draft } = runAll(actions).at(-1)!;
+        const { draft } = finalOf(actions);
         expect(draftOf(JSON.parse(JSON.stringify(draft)))).toEqual(draft);
       }),
     );
@@ -99,10 +104,11 @@ describe("maker-slice properties", () => {
         fc.boolean(),
         (actions, pick, hadCut) => {
           const states = runAll(actions);
-          const earlier = states[pick % states.length]!.draft;
+          const earlier = states[pick % states.length]?.draft;
+          expect(earlier).toBeDefined();
           const back = makerReducer(
-            states.at(-1)!,
-            A.restored({ draft: earlier, hadCut }),
+            finalOf(actions),
+            A.restored({ draft: earlier!, hadCut }),
           );
           expect(back.draft).toEqual(earlier);
         },
