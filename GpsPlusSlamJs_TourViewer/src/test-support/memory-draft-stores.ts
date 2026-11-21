@@ -21,11 +21,15 @@
  * - `crashAfter` closes the tab after that many more changes have landed:
  *   every later write refuses and every later removal or clear changes
  *   nothing, until it is set back to null (the next page load). What
- *   landed before stays, as a crash leaves it.
+ *   landed before stays, as a crash leaves it. While it is set, a `clear`
+ *   removes one file at a time, in the order they were written, each a
+ *   change of its own: a crash midway leaves the later files, as a
+ *   directory emptied entry by entry does.
  *
  * `log` lists every change that landed, in order (`put <key>`,
  * `remove <key>`, `clear`), so a test can see which file a page wrote
- * first.
+ * first. `refused` lists every write a fault above refused (not the
+ * ones a crash refused), so a test can tell a step that lost a write.
  *
  * `memoryDraftOps()` counts every open, write, removal and clear of every
  * memory store of the test file, so a `settle` can wait until they stop.
@@ -73,6 +77,9 @@ export interface MemoryDraftStores {
   /** Every change that landed, in order: `put <key>`, `remove <key>`,
    *  `clear`. */
   readonly log: string[];
+  /** Every write a fault refused (`failPutsOf`, `failIn`,
+   *  `failMetaPuts`), by key, in order. */
+  readonly refused: string[];
 }
 
 /** Every open, write, removal and clear so far, of every memory store. */
@@ -148,10 +155,12 @@ function storeOver(
   };
   const write = (k: string, data: Blob | string): Promise<boolean> => {
     if (browser.failPutsOf?.test(k) === true || browser.failIn.has(key)) {
+      browser.refused.push(k);
       return Promise.resolve(false);
     }
     if (k === META_KEY && browser.failMetaPuts > 0) {
       browser.failMetaPuts -= 1;
+      browser.refused.push(k);
       return Promise.resolve(false);
     }
     if (browser.holdPuts || browser.holdPutsOf?.test(k) === true) {
@@ -195,7 +204,13 @@ function storeOver(
     keys: () => Promise.resolve([...files.keys()]),
     clear: () => {
       opsSoFar += 1;
-      if (changes("clear")) files.clear();
+      if (browser.crashAfter === null) {
+        if (changes("clear")) files.clear();
+        return Promise.resolve();
+      }
+      for (const k of [...files.keys()]) {
+        if (changes(`remove ${k}`)) files.delete(k);
+      }
       return Promise.resolve();
     },
   };
@@ -230,6 +245,7 @@ export function memoryDraftStores(): MemoryDraftStores {
     snapshotBlobs: false,
     crashAfter: null,
     log: [],
+    refused: [],
     open: (key) => {
       opsSoFar += 1;
       browser.opened.push(key);

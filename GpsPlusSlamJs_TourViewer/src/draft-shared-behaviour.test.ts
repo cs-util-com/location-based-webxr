@@ -25,12 +25,12 @@
  * landed changes.
  */
 import fc from "fast-check";
-import { isDeepStrictEqual } from "node:util";
+import { Group, Matrix4, type Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import {
   serializeTourManifest,
   type TourAsset,
-  type TourObject,
   type TourPicture,
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -80,6 +80,11 @@ const OPENED = [pin("a"), pin("b", "pin b", 48.5202)];
 
 /** About 33 m north of pin a: beyond every station's radius. */
 const NORTH = 48.5205;
+
+/** A new pin's spot `at`: 100 m apart, north of everything else. */
+const SPOT_NORTH_M = (at: number): number => 100 * (at + 1);
+/** The same spot's latitude (one degree of latitude is about 111 km). */
+const spotLat = (at: number): number => NORTH + SPOT_NORTH_M(at) / 111_000;
 
 /** Where a station is moved to (a code's re-measure on the phone, a drag
  *  on the desktop). */
@@ -140,11 +145,14 @@ function shapeOf(store: ReturnType<typeof editorStore>): DocumentShape {
 interface DraftPage {
   edit(id: string, text: string): Promise<void>;
   remove(id: string): Promise<void>;
-  /** The document's last step taken back (the delete toast's Undo on the
-   *  phone, the editor's undo). */
-  undo(): Promise<void>;
-  /** A new pin (the phone: as its AR placement places it). */
-  place(object: TourObject): Promise<void>;
+  /** The document's last step taken back, as this page's creator takes
+   *  it back: the editor's undo; on the phone the delete's Undo beside its
+   *  note, or a settle's Undo. False: no creator of this page can take
+   *  that step back (an edit or a placement on the phone), nothing done. */
+  undo(): Promise<boolean>;
+  /** A new pin at spot `at` (0, 1 or 2), each spot beyond every other
+   *  station's radius (the phone: its AR placement's Save); its id. */
+  place(at: number): Promise<string>;
   /** A new photo `id` with its picture (the phone: a captured photo; the
    *  desktop: a picture file brought in, then placed). */
   placePhoto(id: string): Promise<void>;
@@ -167,6 +175,13 @@ interface DraftPage {
   /** The key of a picture's bytes for photo `id`, as this page's draft
    *  names it (the phone keeps them by object id, the desktop by asset). */
   pictureKey(id: string): string;
+  /** The tab closes: the page lets go of its draft. */
+  close(): void;
+}
+
+/** The ids of the objects a document holds. */
+function idsOf(shape: DocumentShape): string[] {
+  return shape.objects.map((o) => (JSON.parse(o) as { id: string }).id);
 }
 
 type PageName = "phone" | "desktop";
@@ -202,6 +217,7 @@ const openDesktop: OpenPage = async (browser) => {
   });
   let offer = opened.offer;
   const pictures = new Map<string, string>();
+  let placed = 0;
   const idle = async () => {
     await draft.idle();
     await flush(store);
@@ -218,13 +234,17 @@ const openDesktop: OpenPage = async (browser) => {
       editor.remove(id);
       return idle();
     },
-    undo: () => {
+    undo: async () => {
       editor.undo();
-      return idle();
+      await idle();
+      return true;
     },
-    place: (object) => {
-      editor.place(object);
-      return idle();
+    place: async (at) => {
+      placed += 1;
+      const id = `n${String(at)}-${String(placed)}`;
+      editor.place(pin(id, `new ${String(at)}`, spotLat(at)));
+      await idle();
+      return id;
     },
     placePhoto: async (id) => {
       // As the page's file drop brings a picture in and places it: the
@@ -268,6 +288,9 @@ const openDesktop: OpenPage = async (browser) => {
       return browser.spaces.get(key) ?? new Map();
     },
     pictureKey: (id) => `asset:${pictures.get(id) ?? id}`,
+    close: () => {
+      draft.close();
+    },
   };
 };
 
@@ -333,10 +356,13 @@ function phoneElement() {
     bind(bound: ObjectListHandlers) {
       this.listHandlers = bound;
     },
-    /** The object list's last note: a row's outcome. */
+    /** The object list's last note (a row's outcome) and whether it
+     *  offers the delete's Undo beside it. */
     note: "",
+    undo: false,
     render(model: ObjectListModel) {
       this.note = model.note;
+      this.undo = model.undo;
     },
   };
 }
@@ -364,15 +390,42 @@ const openPhone: OpenPage = async (browser) => {
   ctx.currentLevels = await session.loadQrLevels();
   ctx.currentLevelTexts = session.levelTexts();
   let key: string | null = null;
+  // What a placement reads, as in a running AR visit lined up on GPS: a
+  // ring with a surface under it, a world group, the GPS zero and enough
+  // fixes. The session runs only while a Save is tapped: outside it the
+  // object list offers the delete's Undo, as on the page.
+  let arStatus = "idle";
+  let spot = 0;
+  ctx.reticle = {
+    isVisible: () => true,
+    getWorldPosition: (v: Vector3) => v.set(SPOT_NORTH_M(spot), 0, 0),
+  } as never;
+  const worldGroup = new Group();
+  worldGroup.updateMatrixWorld();
+  const gpsData = {
+    zero: { lat: NORTH, lon: 9.05 },
+    gpsEvents: {
+      alignmentMatrix: new Matrix4(),
+      gpsPositions: Array.from({ length: MIN_ALIGNMENT_SAMPLES }, () => ({
+        latitude: NORTH,
+        longitude: 9.05,
+      })),
+    },
+  };
+  const arStore = {
+    ...store,
+    getState: () => ({ ...store.getState(), gpsData }),
+  };
   const setup = wireCreatorSetup({
     ctx,
     mode: "creator",
-    arStore: store,
+    arStore: arStore as never,
     arController: {
-      getState: () => ({ status: "idle" }),
+      getState: () => ({ status: arStatus }),
       disable: () => Promise.resolve(),
     } as never,
     seams: {
+      getArWorldGroup: () => worldGroup,
       canShareZip: () => false,
       downloadZip: () => Promise.resolve(true),
       getScene: () => null,
@@ -404,10 +457,10 @@ const openPhone: OpenPage = async (browser) => {
       warned = true;
     }
   };
-  /** A change this adapter takes on the document itself, said as the
-   *  phone's caller of it says it: the undo (`creator-undo.ts`), the
-   *  placement (`creator-placement.ts`) and the settle
-   *  (`creator-settle.ts`) each warn on a `backedUp` false. */
+  /** A change this adapter takes on the document itself, read at its
+   *  `backedUp` as the phone's caller of it reads it: a settle and its
+   *  Undo (`creator-settle.ts`, `creator-undo.ts`) and a captured
+   *  photo's placement (`creator-placement.ts`) each say a false. */
   const sayUnlanded = (change: { backedUp: Promise<boolean> } | null) => {
     void change?.backedUp.then((ok) => {
       if (!ok) warned = true;
@@ -420,6 +473,8 @@ const openPhone: OpenPage = async (browser) => {
     if (bound === null) throw new Error("the object list was not bound");
     return bound;
   };
+  /** The step an Undo would take back, by the way the creator made it. */
+  let last: "remove" | "settle" | "other" = "other";
   const answer = async (button: ReturnType<typeof phoneElement>) => {
     if (dom.draftOfferText.textContent === "") {
       throw new Error("the phone offered nothing");
@@ -429,24 +484,49 @@ const openPhone: OpenPage = async (browser) => {
   };
   return {
     edit: async (id, text) => {
+      last = "other";
       list().editText(id, text);
       await idle();
     },
     remove: async (id) => {
+      last = "remove";
       list().remove(id);
       await idle();
     },
     undo: async () => {
+      const step = last;
+      last = "other";
+      if (step === "remove" && dom.objectList.undo) {
+        // The Undo beside the delete's note.
+        list().undo();
+        await idle();
+        return true;
+      }
+      if (step !== "settle") return false;
+      // As the settle's Undo runs `undoSettle`: the document's undo.
       const undone = ctx.tourDocument.undo();
       sayUnlanded(undone.kind === "undone" ? undone : null);
       await idle();
+      return undone.kind === "undone";
     },
-    place: async (object) => {
-      // As `creator-placement.ts` places after a tap in AR.
-      sayUnlanded(ctx.tourDocument.place(object, {}, "a pin"));
+    place: async (at) => {
+      // The pin's text typed, then Save, as `creator-setup.test.ts` taps it.
+      last = "other";
+      const before = new Set(idsOf(shapeOf(store)));
+      spot = at;
+      arStatus = "running";
+      dom.pinLabel.value = `new ${String(at)}`;
+      dom.pinSave.click();
+      arStatus = "idle";
       await idle();
+      const id = idsOf(shapeOf(store)).find((i) => !before.has(i));
+      if (id === undefined) {
+        throw new Error(`the phone placed nothing: ${ctx.placementNote ?? ""}`);
+      }
+      return id;
     },
     placePhoto: async (id) => {
+      last = "other";
       // As a captured photo is placed: its picture rides with it.
       const asset: TourAsset = {
         id,
@@ -465,6 +545,7 @@ const openPhone: OpenPage = async (browser) => {
       await idle();
     },
     moveStation: async (stationId, geo) => {
+      last = "settle";
       // As `creator-settle.ts`'s settle moves it once its code was
       // re-measured: the move and the code's new text as one step.
       const batch = ctx.tourDocument.settleBatch();
@@ -489,6 +570,10 @@ const openPhone: OpenPage = async (browser) => {
       return browser.spaces.get(key) ?? new Map();
     },
     pictureKey: (id) => `photo:${id}`,
+    close: () => {
+      // As a tour closes on the page: its draft namespace goes with it.
+      setup.resetFinishStep();
+    },
   };
 };
 
@@ -528,7 +613,9 @@ async function freshPage(open: OpenPage): Promise<{
 async function reopen(
   open: OpenPage,
   browser: MemoryDraftStores,
+  closing?: DraftPage,
 ): Promise<DraftPage> {
+  closing?.close();
   browser.crashAfter = null;
   return open(browser);
 }
@@ -565,10 +652,11 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
   // Why: a placement only this device knows is the work a crash would
   // cost most; the next open must offer it and Restore bring it back.
   it("create: a new pin is offered at the next open and restored", async () => {
-    const next = await restoresWhatWasLeft(open, (p) =>
-      p.place(pin("new", "A new pin", NORTH)),
-    );
-    expect(holds(next, "new")).toBe(true);
+    let id = "";
+    const next = await restoresWhatWasLeft(open, async (p) => {
+      id = await p.place(0);
+    });
+    expect(holds(next, id)).toBe(true);
   }, 60_000);
 
   it("edit: a pin's new text is offered at the next open and restored", async () => {
@@ -593,17 +681,20 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     const next = await restoresWhatWasLeft(open, async (p) => {
       await p.edit("a", "The gate");
       await p.remove("b");
-      await p.undo();
+      expect(await p.undo()).toBe(true);
     });
     expect(holds(next, "b")).toBe(true);
   }, 60_000);
 
   // Why: an edit undone back to the opened text leaves nothing to
-  // offer; an offer of it would ask the creator about no change.
+  // offer; an offer of it would ask the creator about no change. The
+  // phone offers no Undo of an edit (its list says the outcome only), so
+  // the row is the desktop's; its phone half pins that.
   it("undo: an edit undone back to the opened text leaves nothing to offer", async () => {
     const { browser, page, opened } = await freshPage(open);
     await page.edit("a", "The gate");
-    await page.undo();
+    expect(await page.undo()).toBe(name === "desktop");
+    if (name === "phone") return;
     expect(page.shape()).toEqual(opened);
     const next = await reopen(open, browser);
     expect(next.offer()).toBe("");
@@ -704,7 +795,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     const { browser, page, opened } = await freshPage(open);
     await page.moveStation("st-a", MOVED);
     expect(page.space().has(SETTINGS_KEY)).toBe(true);
-    await page.undo();
+    expect(await page.undo()).toBe(true);
     expect(page.shape()).toEqual(opened);
     expect(page.space().has(SETTINGS_KEY)).toBe(name === "phone");
     const next = await reopen(open, browser);
@@ -779,19 +870,28 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
 
 // --- the property -----------------------------------------------------------
 
+type Answer = "restore" | "decline" | "discard";
+
 type Op =
   | { readonly kind: "edit"; readonly id: "a" | "b"; readonly text: string }
   | { readonly kind: "remove"; readonly id: "a" | "b" }
   | { readonly kind: "undo" }
-  | { readonly kind: "place"; readonly n: number }
-  | { readonly kind: "moveStation"; readonly id: "st-a" | "st-b" };
+  | { readonly kind: "place"; readonly at: number }
+  | { readonly kind: "moveStation"; readonly id: "st-a" | "st-b" }
+  /** The tab closed and the tour opened again, its offer answered. */
+  | { readonly kind: "reopen"; readonly answer: Answer };
 
-/** A fault set before one operation: a refused write of one record
- *  family, a refused meta write, or a whole namespace refusing. */
+/** A fault set for one step: a refused write of one record family, the
+ *  next meta write refused (a Restore and a "Delete it" write the meta),
+ *  or the tab closing after that many more changes landed - then the tour
+ *  is opened again at once. */
 type Fault =
   | { readonly kind: "none" }
   | { readonly kind: "refuse"; readonly keys: RegExp }
-  | { readonly kind: "meta" };
+  | { readonly kind: "meta" }
+  | { readonly kind: "crash"; readonly after: number };
+
+type Step = readonly [Op, Fault];
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   fc.record({
@@ -804,36 +904,144 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
     id: fc.constantFrom("a" as const, "b" as const),
   }),
   fc.constant({ kind: "undo" as const }),
-  fc.record({ kind: fc.constant("place" as const), n: fc.nat(2) }),
+  fc.record({ kind: fc.constant("place" as const), at: fc.nat(2) }),
   fc.record({
     kind: fc.constant("moveStation" as const),
     id: fc.constantFrom("st-a" as const, "st-b" as const),
   }),
+  fc.record({
+    kind: fc.constant("reopen" as const),
+    answer: fc.constantFrom<Answer>("restore", "decline", "discard"),
+  }),
 );
 
+const OBJECT_KEYS = /^object:/;
+
 const faultArb: fc.Arbitrary<Fault> = fc.oneof(
-  { weight: 3, arbitrary: fc.constant({ kind: "none" as const }) },
+  { weight: 4, arbitrary: fc.constant({ kind: "none" as const }) },
   fc.constantFrom(
-    { kind: "refuse" as const, keys: /^object:/ },
+    { kind: "refuse" as const, keys: OBJECT_KEYS },
     { kind: "refuse" as const, keys: /^deleted:/ },
     { kind: "refuse" as const, keys: new RegExp(`^${SETTINGS_KEY}$`) },
   ),
   fc.constant({ kind: "meta" as const }),
+  fc.record({ kind: fc.constant("crash" as const), after: fc.nat(4) }),
 );
 
-async function apply(page: DraftPage, op: Op): Promise<void> {
+/** An edit and a station move write object records: a refusal of those
+ *  is drawn more often for them. */
+const stepArb: fc.Arbitrary<Step> = opArb.chain((op) =>
+  fc.tuple(
+    fc.constant(op),
+    op.kind === "edit" || op.kind === "moveStation"
+      ? fc.oneof(
+          {
+            weight: 1,
+            arbitrary: fc.constant({
+              kind: "refuse" as const,
+              keys: OBJECT_KEYS,
+            }),
+          },
+          { weight: 3, arbitrary: faultArb },
+        )
+      : faultArb,
+  ),
+);
+
+/** The sequences every run tries first: each turns red on a draft that
+ *  stops writing an id after one of its writes was refused, that removes a
+ *  deleted object's record before its tombstone, or that loses a meta
+ *  written by a Restore or a "Delete it"; and the sequences that once
+ *  found a gap: a declined station move (or a placement's new station)
+ *  lost by a later write, a refused tombstone of a station's last object,
+ *  an edit at a declined station, a crash inside a station move. */
+const SEEDED: Step[][] = [
+  [
+    [
+      { kind: "edit", id: "a", text: "The gate" },
+      { kind: "refuse", keys: OBJECT_KEYS },
+    ],
+    [{ kind: "edit", id: "a", text: "The well" }, { kind: "none" }],
+  ],
+  [
+    [{ kind: "edit", id: "b", text: "The gate" }, { kind: "none" }],
+    [
+      { kind: "remove", id: "b" },
+      { kind: "crash", after: 1 },
+    ],
+  ],
+  [
+    [{ kind: "edit", id: "a", text: "The gate" }, { kind: "none" }],
+    [{ kind: "reopen", answer: "discard" }, { kind: "meta" }],
+    [{ kind: "reopen", answer: "restore" }, { kind: "meta" }],
+  ],
+  [
+    [{ kind: "moveStation", id: "st-b" }, { kind: "none" }],
+    [{ kind: "reopen", answer: "decline" }, { kind: "none" }],
+    [{ kind: "moveStation", id: "st-a" }, { kind: "none" }],
+  ],
+  [
+    [{ kind: "place", at: 0 }, { kind: "none" }],
+    [{ kind: "reopen", answer: "decline" }, { kind: "none" }],
+    [
+      { kind: "moveStation", id: "st-a" },
+      { kind: "refuse", keys: OBJECT_KEYS },
+    ],
+    [{ kind: "edit", id: "a", text: "The gate" }, { kind: "none" }],
+  ],
+  [
+    [
+      { kind: "moveStation", id: "st-a" },
+      { kind: "refuse", keys: /^deleted:/ },
+    ],
+    [
+      { kind: "remove", id: "a" },
+      { kind: "refuse", keys: /^deleted:/ },
+    ],
+  ],
+  [
+    [{ kind: "moveStation", id: "st-a" }, { kind: "meta" }],
+    [{ kind: "reopen", answer: "decline" }, { kind: "none" }],
+    [{ kind: "edit", id: "a", text: "The gate" }, { kind: "meta" }],
+  ],
+  [
+    [
+      { kind: "moveStation", id: "st-a" },
+      { kind: "crash", after: 1 },
+    ],
+  ],
+  [
+    [{ kind: "moveStation", id: "st-b" }, { kind: "none" }],
+    [{ kind: "reopen", answer: "decline" }, { kind: "meta" }],
+    [{ kind: "remove", id: "b" }, { kind: "none" }],
+    [{ kind: "undo" }, { kind: "none" }],
+  ],
+  [
+    [
+      { kind: "remove", id: "b" },
+      { kind: "crash", after: 1 },
+    ],
+    [{ kind: "reopen", answer: "decline" }, { kind: "none" }],
+    [{ kind: "edit", id: "b", text: "The gate" }, { kind: "none" }],
+    [{ kind: "moveStation", id: "st-a" }, { kind: "none" }],
+  ],
+];
+
+async function apply(
+  page: DraftPage,
+  op: Exclude<Op, { kind: "reopen" }>,
+): Promise<void> {
   switch (op.kind) {
     case "edit":
       return page.edit(op.id, op.text);
     case "remove":
       return page.remove(op.id);
     case "undo":
-      return page.undo();
+      await page.undo();
+      return;
     case "place":
-      // Each beyond every radius, so each starts a station of its own.
-      return page.place(
-        pin(`n${String(op.n)}`, `new ${String(op.n)}`, NORTH + op.n * 0.001),
-      );
+      await page.place(op.at);
+      return;
     case "moveStation":
       return page.moveStation(op.id, {
         ...MOVED,
@@ -842,62 +1050,518 @@ async function apply(page: DraftPage, op: Op): Promise<void> {
   }
 }
 
-/** An object's content apart from where it stands: without its station
- *  id and its place, which follow its station. */
-function seenOf(content: string): string {
-  const {
-    station: _station,
-    geo: _geo,
-    ...shown
-  } = JSON.parse(content) as Record<string, unknown>;
-  return JSON.stringify(shown);
+const round = (x: number): number => Math.round(x * 1e9) / 1e9;
+
+/**
+ * Each object of a document as compared, by id: its station id left out (a
+ * station minted again keeps its place, not its id), and its place as its
+ * offset from its own station's pose in the same document, so an object
+ * that followed its station compares equal to where it stood in it. With
+ * `absolute`, its place as it stands, whatever its station.
+ */
+function objectsById(
+  shape: DocumentShape,
+  absolute = false,
+): Map<string, string> {
+  const poses = new Map(
+    shape.stations.map((s) => {
+      const { id, geo } = JSON.parse(s) as { id: string; geo: QrGeoPose };
+      return [id, geo] as const;
+    }),
+  );
+  const out = new Map<string, string>();
+  for (const content of shape.objects) {
+    const { station, geo, ...rest } = JSON.parse(content) as {
+      id: string;
+      station?: string;
+      geo?: { lat: number; lon: number; alt?: number };
+    };
+    const at = station === undefined ? undefined : poses.get(station);
+    const place =
+      absolute || geo === undefined || at === undefined
+        ? { geo }
+        : {
+            offset: {
+              ...geo,
+              lat: round(geo.lat - at.lat),
+              lon: round(geo.lon - at.lon),
+              alt: round((geo.alt ?? 0) - at.alt),
+            },
+          };
+    out.set(rest.id, JSON.stringify({ ...rest, ...place }));
+  }
+  return out;
 }
 
-/** Sequences and their faults per page; raised for a sweep. */
-const RUNS = 25;
+/** The opened tour's stations (`OPENED`, one per pin). */
+const FILE_STATIONS = new Set(["st-a", "st-b"]);
+
+/** Each station by key: a station of the opened tour by its id, one a
+ *  placement made by its pose (a restore mints such a station again: the
+ *  same place, a new id). */
+function stationsByKey(shape: DocumentShape): Map<string, string> {
+  return new Map(
+    shape.stations.map((s) => {
+      const { id, geo } = JSON.parse(s) as { id: string; geo: QrGeoPose };
+      return FILE_STATIONS.has(id)
+        ? ([`station:${id}`, s] as const)
+        : ([`station@${JSON.stringify(geo)}`, JSON.stringify(geo)] as const);
+    }),
+  );
+}
+
+/**
+ * Everything the draft must bring back, by key: `object:<id>` for each
+ * object (as `objectsById` compares it) and each station's pose (as
+ * `stationsByKey` keys it).
+ */
+function entriesOf(
+  shape: DocumentShape,
+  absolute = false,
+): Map<string, string> {
+  return new Map([
+    ...[...objectsById(shape, absolute)].map(
+      ([id, c]) => [`object:${id}`, c] as const,
+    ),
+    ...stationsByKey(shape),
+  ]);
+}
+
+/** A station shows only while an object stands at it, so its key coming
+ *  or going is not a change of its own: only its pose is. */
+const isStation = (key: string): boolean => key.startsWith("station");
+
+/**
+ * What the draft must bring back, as the run goes, by `entriesOf` key. A
+ * key is TAINTED while its last change came in a step that lost a write (a
+ * refused one): what comes back for it is then not pinned, but the page
+ * must have said a write did not land. A later change of it in a step that
+ * lost none writes it whole again and untaints it.
+ *
+ * `undecided`: the stations "Not now" left at a pose the draft holds but
+ * the page does not show. `offStation`: the objects changed at such a
+ * station, whose place the draft does not pin (the known gap "after Not
+ * now, an edit of a moved station's object keeps it at its station"):
+ * everything else about them is compared. Both go when that row turns
+ * green.
+ */
+interface Expected {
+  entries: Map<string, string>;
+  tainted: Set<string>;
+  undecided: Set<string>;
+  offStation: Set<string>;
+}
+
+const expectedOf = (shape: DocumentShape): Expected => ({
+  entries: entriesOf(shape),
+  tainted: new Set(),
+  undecided: new Set(),
+  offStation: new Set(),
+});
+
+/** The key of the station `key`'s object stands at in `shape`, if any. */
+function stationKeyOf(shape: DocumentShape, key: string): string | undefined {
+  const object = shape.objects
+    .map((o) => JSON.parse(o) as { id: string; station?: string })
+    .find((o) => `object:${o.id}` === key);
+  const station = shape.stations.find(
+    (st) => (JSON.parse(st) as { id: string }).id === object?.station,
+  );
+  if (station === undefined) return undefined;
+  const [stationKey] = stationsByKey({ ...shape, stations: [station] }).keys();
+  return stationKey;
+}
+
+/** A step on the live page: what changed is now what the draft must hold,
+ *  tainted when the step lost a write. An object changed when its record
+ *  did: an object that followed its moved station was written again, so
+ *  it counts as changed although its offset is not. A station that
+ *  stopped showing keeps the pose the draft holds for it - unless the
+ *  step lost a write: a refused tombstone of its last object brings the
+ *  object back with its station, at a pose the record no longer holds (the
+ *  removal took it off the record). The page said the write was refused,
+ *  so that is a said loss, not a draft defect: the station is tainted. */
+function follow(
+  expected: Expected,
+  before: DocumentShape,
+  after: DocumentShape,
+  lostWrite: boolean,
+): void {
+  const was = entriesOf(before, true);
+  const stands = entriesOf(after, true);
+  const now = entriesOf(after);
+  // The stations first: a station moved in this step is decided before
+  // its objects are read against it.
+  const keys = [...new Set([...was.keys(), ...stands.keys()])].sort(
+    (x, y) => Number(isStation(y)) - Number(isStation(x)),
+  );
+  for (const key of keys) {
+    if (stands.get(key) === was.get(key)) continue;
+    const content = now.get(key);
+    if (content === undefined && isStation(key)) {
+      if (lostWrite) expected.tainted.add(key);
+      continue;
+    }
+    // A station showing again (an object back at it) is no change of its
+    // own either: it keeps the pose the draft holds for it.
+    if (isStation(key) && !was.has(key) && expected.entries.has(key)) continue;
+    if (isStation(key)) expected.undecided.delete(key);
+    else {
+      const station = stationKeyOf(after, key);
+      if (station !== undefined && expected.undecided.has(station)) {
+        expected.offStation.add(key);
+      } else expected.offStation.delete(key);
+    }
+    if (content === undefined) expected.entries.delete(key);
+    else expected.entries.set(key, content);
+    if (lostWrite) expected.tainted.add(key);
+    else expected.tainted.delete(key);
+  }
+  // A station the draft holds no pose for that shows now (its object
+  // written again after the draft lost it) is held where it shows.
+  for (const [key, content] of now) {
+    if (isStation(key) && !expected.entries.has(key)) {
+      expected.entries.set(key, content);
+    }
+  }
+}
+
+/** The keys to compare in a reopened document: every key either side
+ *  holds, but a station only while it shows. */
+function comparedKeys(
+  sides: readonly Map<string, string>[],
+  got: Map<string, string>,
+): string[] {
+  const keys = new Set(sides.flatMap((side) => [...side.keys()]));
+  return [...keys, ...got.keys()].filter(
+    (key, i, all) =>
+      all.indexOf(key) === i && (!isStation(key) || got.has(key)),
+  );
+}
+
+/** Whether `key` is not pinned in `shape`: tainted, or an object whose
+ *  place is read from a tainted station (a refused settings write leaves
+ *  the station's pose behind, so the object's offset from it is not
+ *  pinned either; where it stands still is). */
+function unpinned(
+  expected: Expected,
+  shape: DocumentShape,
+  key: string,
+): boolean {
+  if (expected.tainted.has(key)) return true;
+  if (isStation(key)) return false;
+  const stationKey = stationKeyOf(shape, key);
+  return stationKey !== undefined && expected.tainted.has(stationKey);
+}
+
+/** A reopened page holds exactly what the draft must hold, for every key
+ *  not tainted; a taint the page must have said. */
+function holdsExpected(
+  expected: Expected,
+  shape: DocumentShape,
+  said: boolean,
+  where: string,
+): void {
+  const got = entriesOf(shape);
+  for (const key of comparedKeys([expected.entries], got)) {
+    if (unpinned(expected, shape, key)) continue;
+    if (expected.offStation.has(key)) {
+      expect(withoutPlace(key, got.get(key)), `${where}: ${key}`).toBe(
+        withoutPlace(key, expected.entries.get(key)),
+      );
+      continue;
+    }
+    expect(got.get(key), `${where}: ${key}`).toBe(expected.entries.get(key));
+  }
+  expect(
+    said || expected.tainted.size === 0,
+    `${where}: a write did not land and the page did not say so`,
+  ).toBe(true);
+}
+
+/** An entry without the object's place: what a crash check compares. */
+function withoutPlace(
+  key: string,
+  content: string | undefined,
+): string | undefined {
+  if (content === undefined || isStation(key)) return content;
+  const {
+    offset: _o,
+    geo: _g,
+    ...rest
+  } = JSON.parse(content) as Record<string, unknown>;
+  return JSON.stringify(rest);
+}
+
+/** After a crash in a step, each key comes back as it was before the step
+ *  or as the step left it, never as anything else: a change cut short is
+ *  never half applied, and an older version never outranks a newer one (a
+ *  deleted object's file text after its edit). An object's place is not
+ *  compared here: a crash between a station move's records can leave an
+ *  object where it stood while its station moved (the known gap pinned
+ *  below by "known gap: a crash inside a station move keeps each object
+ *  at its station"); the never-held check still holds its place to one it
+ *  had. This narrowing applies to crash runs only, and is removed when
+ *  that row turns green. */
+function beforeOrAfter(
+  expected: Expected,
+  stepAfter: DocumentShape,
+  shape: DocumentShape,
+): void {
+  const got = entriesOf(shape);
+  const after = entriesOf(stepAfter);
+  for (const key of comparedKeys([expected.entries, after], got)) {
+    if (expected.tainted.has(key)) continue;
+    expect(
+      [
+        withoutPlace(key, expected.entries.get(key)),
+        withoutPlace(key, after.get(key)),
+      ],
+      `after a crash: ${key}`,
+    ).toContain(withoutPlace(key, got.get(key)));
+  }
+}
+
+/** Sequences and their faults per page; `DRAFT_PROPERTY_RUNS` raises it
+ *  for a sweep. */
+const RUNS = Number(process.env["DRAFT_PROPERTY_RUNS"] ?? 25);
+
+/** One run of the property on one page. */
+async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
+  const { browser, page: first, opened } = await freshPage(open);
+  let page = first;
+  let said = false;
+  let expected = expectedOf(opened);
+  // A crash in a station move can leave a mix the creator never saw (the
+  // known gap "a crash inside a station move keeps each object at its
+  // station"): in a run with a crash, the last open is held to places as
+  // they stood only. Removed when that row turns green.
+  let crashed = false;
+  // Every version of an object the creator saw: relative to its station,
+  // and as it stood (what a crash is held to, see `beforeOrAfter`).
+  const held = new Set<string>();
+  const heldAsItStood = new Set<string>();
+  const saw = (shape: DocumentShape) => {
+    for (const content of objectsById(shape).values()) held.add(content);
+    for (const content of objectsById(shape, true).values())
+      heldAsItStood.add(content);
+  };
+  // Every object not tainted was seen as it stands, and relative to its
+  // station too (a crash is held to the first only, see `beforeOrAfter`).
+  // A tainted one is not: a refused write may leave its record behind its
+  // moved station, or its old text at the new place, and the page said so.
+  const neverUnseen = (
+    shape: DocumentShape,
+    where: string,
+    relative: boolean,
+  ) => {
+    for (const [id, content] of objectsById(shape, true)) {
+      if (expected.tainted.has(`object:${id}`)) continue;
+      expect(heldAsItStood, `${where}: a place never held`).toContain(content);
+    }
+    for (const [id, content] of objectsById(shape)) {
+      if (!relative || unpinned(expected, shape, `object:${id}`)) continue;
+      if (expected.offStation.has(`object:${id}`)) continue;
+      expect(held, `${where}: a version never held`).toContain(content);
+    }
+  };
+  saw(opened);
+  /** The tab closed: the next load over the same browser. */
+  const next = async (): Promise<DraftPage> => {
+    said ||= page.saidNotKept();
+    page = await reopen(open, browser, page);
+    return page;
+  };
+  for (const [op, fault] of steps) {
+    // A reopen's own load comes first; the fault is set for its answer.
+    if (op.kind === "reopen") {
+      const loaded = await next();
+      if (loaded.offer() === "") {
+        holdsExpected(
+          expected,
+          loaded.shape(),
+          said,
+          "an open that offered nothing",
+        );
+        continue;
+      }
+    }
+    const before = page.shape();
+    const refusedBefore = browser.refused.length;
+    browser.failPutsOf = fault.kind === "refuse" ? fault.keys : null;
+    browser.failMetaPuts = fault.kind === "meta" ? 1 : 0;
+    browser.crashAfter = fault.kind === "crash" ? fault.after : null;
+    if (op.kind === "reopen") {
+      await page[op.answer]();
+    } else {
+      await apply(page, op);
+    }
+    browser.failPutsOf = null;
+    browser.failMetaPuts = 0;
+    const lostWrite = browser.refused.length > refusedBefore;
+    const after = page.shape();
+    saw(after);
+    if (fault.kind === "crash") {
+      // The tab closed midway: whatever landed is what the next load
+      // finds, and its Restore brings it back.
+      const loaded = await next();
+      if (loaded.offer() !== "") await loaded.restore();
+      const restored = loaded.shape();
+      beforeOrAfter(expected, after, restored);
+      neverUnseen(restored, "after a crash", false);
+      crashed = true;
+      // What came back is what the draft now holds; a record a refused
+      // write left behind stays as it is until it is written again.
+      expected = { ...expected, entries: entriesOf(restored) };
+      continue;
+    }
+    if (op.kind !== "reopen") {
+      follow(expected, before, after, lostWrite);
+      continue;
+    }
+    said ||= page.saidNotKept();
+    if (op.answer === "restore") {
+      holdsExpected(expected, after, said, "a Restore");
+      // A refused meta leaves the work as it was to be offered again.
+      expected = {
+        entries: entriesOf(after),
+        tainted: lostWrite ? expected.tainted : new Set(),
+        undecided: lostWrite ? expected.undecided : new Set(),
+        offStation: lostWrite ? expected.offStation : new Set(),
+      };
+    }
+    // "Not now": the stations the draft holds at a pose the page does not
+    // show stay undecided until a Restore or a landed "Delete it".
+    if (op.answer === "decline") {
+      const shown = entriesOf(after);
+      for (const [key, pose] of expected.entries) {
+        if (isStation(key) && shown.has(key) && shown.get(key) !== pose) {
+          expected.undecided.add(key);
+        }
+      }
+    }
+    // A "Delete it" that landed leaves the file; one that did not is
+    // said, and the work stays to be offered again. "Not now" keeps it.
+    if (op.answer === "discard" && !page.saidNotKept()) {
+      expected = expectedOf(after);
+    }
+  }
+  const last = await next();
+  if (last.offer() !== "") await last.restore();
+  const restored = last.shape();
+  holdsExpected(expected, restored, said, "the last open");
+  neverUnseen(restored, "the last open", !crashed);
+}
 
 describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
-  it("for random edits with faults, a reopen restores the document the page held, or the page said a write did not land; it never restores a text the page never held", async () => {
+  it("for random steps with faults and crashes, every reopen brings back what the draft must hold", async () => {
     // Why this test matters: the rows pin each behaviour alone; the
-    // composed sequences (an undo after a refused write, a delete over a
-    // moved station, a place after a refused meta) are where two drafts'
-    // rules drift. What must hold on both pages after ANY sequence: a
-    // closed tab and a Restore bring back exactly what the page held -
-    // unless a write did not land, which the page must then have said -
-    // and never a text or kind of an object the creator never saw
-    // (`seenOf`). Where an object stands is left out of that: after a
-    // refused write an object may stand where its moved station put it
-    // with the text the file had (the row "a refused edit beside a
-    // landed station move"), and after a refused settings write the phone
-    // seats a new pin in a station minted again under another id; both
-    // are said to the creator as no backup.
+    // composed sequences (an edit after a refused write of the same
+    // object, a delete cut short by a crash, a Restore or "Delete it"
+    // whose meta write is refused, a reopen in the middle) are where two
+    // drafts' rules drift. What must hold on both pages: every reopen
+    // brings back, per object and for the stations, exactly what the last
+    // change of it left - unless a write of that change was refused, which
+    // the page must then have said; a crash leaves each as it was before
+    // the step or after it; and nothing comes back the creator never saw.
+    expect.hasAssertions();
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.tuple(opArb, faultArb), { minLength: 1, maxLength: 6 }),
-        async (steps) => {
-          const { browser, page, opened } = await freshPage(open);
-          const held = new Set(opened.objects.map(seenOf));
-          for (const [op, fault] of steps) {
-            browser.failPutsOf = fault.kind === "refuse" ? fault.keys : null;
-            browser.failMetaPuts = fault.kind === "meta" ? 1 : 0;
-            await apply(page, op);
-            browser.failPutsOf = null;
-            browser.failMetaPuts = 0;
-            for (const o of page.shape().objects) held.add(seenOf(o));
-          }
-          const left = page.shape();
-          const next = await reopen(open, browser);
-          if (next.offer() !== "") await next.restore();
-          const restored = next.shape();
-          for (const o of restored.objects) expect(held).toContain(seenOf(o));
-          // Exactly what the page held, unless the page said otherwise.
-          expect(
-            page.saidNotKept() || isDeepStrictEqual(restored, left),
-            "restored another document without saying a write did not land",
-          ).toBe(true);
-        },
+        fc.array(stepArb, { minLength: 1, maxLength: 6 }),
+        (steps) => runSteps(open, steps),
       ),
-      { numRuns: RUNS },
+      { numRuns: RUNS, examples: SEEDED.map((steps) => [steps]) },
     );
   }, 600_000);
+
+  // Why: "Not now" keeps the work for the next open, a moved station
+  // among it. The next station move writes the settings record, and the
+  // stations this page did not move keep the declined poses there: were
+  // they written as the page shows them (the file's), the declined move
+  // would be lost while its object's moved record stays, and Restore
+  // would bring that object back off its station.
+  it("after Not now, another station's move keeps the declined move", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.moveStation("st-b", { ...MOVED, lat: NORTH + 0.004 });
+    const moved = page.shape();
+    const offered = await reopen(open, browser, page);
+    await offered.decline();
+    await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    const next = await reopen(open, browser, offered);
+    await next.restore();
+    expect(objectsById(next.shape()).get("b")).toBe(
+      objectsById(moved).get("b"),
+    );
+  }, 60_000);
+
+  // Why: a placement may start a station of its own, which the settings
+  // record holds whole while its object's record names it. "Not now"
+  // keeps both for the next open; a record this page writes meanwhile (a
+  // station moved) must still hold that station, or the next open finds
+  // an object in a station nobody knows and drops it.
+  it("after Not now, a station move keeps the station a placement started", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.place(0);
+    const placed = page.shape();
+    const offered = await reopen(open, browser, page);
+    await offered.decline();
+    await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    const next = await reopen(open, browser, offered);
+    await next.restore();
+    const added = [...objectsById(placed).keys()].filter(
+      (id) => id !== "a" && id !== "b",
+    );
+    expect(added).toHaveLength(1);
+    expect(objectsById(next.shape()).get(added[0]!)).toBe(
+      objectsById(placed).get(added[0]!),
+    );
+  }, 60_000);
+
+  // Why: "Not now" keeps a moved station undecided, and an object of that
+  // station edited meanwhile is written where the page shows it, at the
+  // file's pose of its station; Restore then brings the moved station
+  // back, and the object away from it (both pages, no fault needed). A
+  // known gap, pinned so it is not forgotten: this turns red once such an
+  // object keeps its offset from its station, and then the property's
+  // `offStation` narrowing goes.
+  it.fails(
+    "known gap: after Not now, an edit of a moved station's object keeps it at its station",
+    async () => {
+      const { browser, page } = await freshPage(open);
+      await page.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+      const offered = await reopen(open, browser, page);
+      await offered.decline();
+      await offered.edit("a", "The gate");
+      const next = await reopen(open, browser, offered);
+      await next.restore();
+      const shape = next.shape();
+      expect(entriesOf(shape).get("object:a")).toBe(
+        entriesOf(offered.shape()).get("object:a"),
+      );
+    },
+    60_000,
+  );
+
+  // Why: a station move writes its objects' records and the settings
+  // record one by one, so a tab closed between them brings an object back
+  // where it stood while its station moved: a mix the creator never saw
+  // (both pages, a crash after the first landed change). A known gap,
+  // pinned so it is not forgotten: this turns red (an unexpected pass)
+  // once a move's records land together, and then the crash check above
+  // can compare places too.
+  it.fails(
+    "known gap: a crash inside a station move keeps each object at its station",
+    async () => {
+      const { browser, page, opened } = await freshPage(open);
+      browser.crashAfter = 1;
+      await page.moveStation("st-b", { ...MOVED, lat: NORTH + 0.004 });
+      const after = page.shape();
+      const next = await reopen(open, browser, page);
+      if (next.offer() !== "") await next.restore();
+      const places = (shape: DocumentShape) =>
+        JSON.stringify([...objectsById(shape)]);
+      expect([places(opened), places(after)]).toContain(places(next.shape()));
+    },
+    60_000,
+  );
 });
