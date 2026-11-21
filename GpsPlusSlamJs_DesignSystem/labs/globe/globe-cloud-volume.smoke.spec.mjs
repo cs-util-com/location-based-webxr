@@ -9,7 +9,7 @@
  * jump. Measured with the bounds stated in the plan before building (each
  * swept x0.5/x1/x2):
  *
- * - **Continuity:** the camera held at dive times through 45 to 15 km; the
+ * - **Continuity:** the camera parked at heights through 45 to 15 km; the
  *   frame-to-frame step with the volume (variant 2, the default) may
  *   exceed the worse of the shell alone (`cloudVolume=0`) and the volume
  *   alone (the shell hidden) by at most a mean 1 level: the plan's bound.
@@ -31,7 +31,6 @@ import {
   meanOf,
 } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 // A partly cloudy part of the map (56.5 N 9 E, Jutland: the map's mean
 // 0.45 over a 0.3 degree box, a cover of 0.36 at gain 1), where a jump
 // between the shell and the volume would show. Until 2026-10-06 these tests
@@ -45,7 +44,7 @@ const HOLD_KM = 12;
 // near plane, so that test could not fail (r790 milestone review F1).
 // `cloudNoise=tile`: these were measured on the baked tile; the live noise
 // (the lab's default since round-4 DEC-R4-6) has its own smoke.
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&reliefNear=3&cloudNoise=tile`;
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&detail=0&reliefNear=3&cloudNoise=tile`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 // The wait for the landing and the relief to settle (frame-bound; the
 // helpers' RELIEF_SETTLE_MS says why). Here measured 2026-10-09 at about
@@ -57,6 +56,39 @@ const STEP = 1;
 
 const verdict = (value, bound) =>
   `${value.toFixed(2)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${value <= bound * k ? "ok" : "NO"}`).join(" ")})`;
+
+/**
+ * Parks the camera `km` above `place` (the lab's park, as a landing there
+ * leaves it; parked again over the same place, only the camera moves), then
+ * draws a frame so the parked pose is on the camera before a read.
+ */
+async function parkAt(page, km, place = TARGET) {
+  await page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [place.latitude, place.longitude, km * 1000],
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(1));
+}
+
+/**
+ * Boots at `hash`, parks `km` above `place` and waits for the relief to
+ * settle; returns the page's console errors.
+ */
+async function parkAndSettle(page, hash, km, place = TARGET) {
+  const errors = await bootGlobe(page, hash);
+  await parkAt(page, km, place);
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      return (
+        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
+      );
+    },
+    null,
+    { timeout: SETTLE_MS },
+  );
+  return errors;
+}
 
 function grid() {
   const g = [];
@@ -79,41 +111,14 @@ const meanDiff = (a, b) =>
 
 test("the cloud volume fades in on the descent without a jump, ending at the relief, its cost stated", async ({
   page,
-  context,
 }) => {
-  // Three rows of 21 held frames (about 5 min each) plus the landing:
+  // Three rows of 21 held frames (about 5 min each) plus the hold:
   // 22.4 min on r807, over 25 with the B-spline's frame cost (round-3 plan
   // M1), so 40.
   test.setTimeout(2_400_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
-  );
-  const times = await page.evaluate(() => {
-    const at = (km) => {
-      let lo = 0;
-      let hi = 60_000;
-      for (let i = 0; i < 40; i++) {
-        const m = (lo + hi) / 2;
-        if (window.__globeLab.diveAltitudeAt(m) > km * 1000) lo = m;
-        else hi = m;
-      }
-      return lo;
-    };
-    const out = [];
-    for (let i = 0; i <= 20; i++) out.push(at(45 * (15 / 45) ** (i / 20)));
-    return out;
-  });
+  const errors = await parkAndSettle(page, BASE, HOLD_KM);
+  const heightsKm = [];
+  for (let i = 0; i <= 20; i++) heightsKm.push(45 * (15 / 45) ** (i / 20));
   const g = grid();
   const rows = {};
   const cost = {};
@@ -130,8 +135,8 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
       shellHidden,
     );
     const frames = [];
-    for (const ms of times) {
-      await page.evaluate((t) => window.__globeLab.holdDiveAt(t), ms);
+    for (const km of heightsKm) {
+      await parkAt(page, km);
       await page.waitForFunction(
         () => window.__globeLab.state().groundSky?.rebuildPending === false,
         null,
@@ -146,7 +151,7 @@ test("the cloud volume fades in on the descent without a jump, ending at the rel
       );
     }
     rows[label] = frames;
-    // The cost at the hold: the last time (the lowest), 20 frames.
+    // The cost at the hold: the last height (the lowest), 20 frames.
     cost[label] = await page.evaluate(
       () => window.__globeLab.timeFrames(20) / 20,
     );
@@ -199,25 +204,13 @@ const LOWER_SHARE = 0.5;
 
 test("the cloud volume is seen looking down from just above the deck, over an overcast part of the map", async ({
   page,
-  context,
 }) => {
   test.setTimeout(780_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(OVERCAST);
-  const errors = await bootGlobe(
+  const errors = await parkAndSettle(
     page,
-    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`)}&cloudVolumeCover=2`,
-  );
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
+    `${BASE}&cloudVolumeCover=2`,
+    NEAR_DECK_KM,
+    OVERCAST,
   );
   await page.evaluate(() => window.__globeLab.timeFrames(3));
   const { coverage, volume, near } = await page.evaluate(() => {
@@ -248,22 +241,13 @@ const UPPER_SHARE = 0.1;
 
 test("the cloud volume reaches toward the horizon, not only around the camera", async ({
   page,
-  context,
 }) => {
   test.setTimeout(780_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(OVERCAST);
-  const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
+  const errors = await parkAndSettle(
+    page,
+    `${BASE}&cloudVolumeCover=1`,
+    HOLD_KM,
+    OVERCAST,
   );
   await page.evaluate(() => window.__globeLab.pitchView(35));
   await page.evaluate(() => window.__globeLab.timeFrames(4));
@@ -302,22 +286,13 @@ const OWNER_POSE = {
 
 test("the world frame follows a camera flown far from the target, so the cloud deck stays below it", async ({
   page,
-  context,
 }) => {
   test.setTimeout(780_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation({ latitude: 46.948, longitude: 7.4474 });
-  const errors = await bootGlobe(page, `${BASE}&cloudVolumeCover=1`);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
+  const errors = await parkAndSettle(
+    page,
+    `${BASE}&cloudVolumeCover=1`,
+    HOLD_KM,
+    { latitude: 46.948, longitude: 7.4474 },
   );
   await page.evaluate((p) => window.__globeLab.placeView(p), OWNER_POSE);
   await page.evaluate(() => window.__globeLab.timeFrames(4));
@@ -348,23 +323,9 @@ test("the world frame follows a camera flown far from the target, so the cloud d
 // that neither brightens the ground and that the volume's shadow darkens.
 test("the volume's shadow on the relief against the shell's soft shadow", async ({
   page,
-  context,
 }) => {
   test.setTimeout(900_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, BASE);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
-  );
+  const errors = await parkAndSettle(page, BASE, HOLD_KM);
   const g = [];
   for (let i = 0; i < 16; i++) {
     for (let j = 0; j < 10; j++) g.push([0.04 + i * 0.06, 0.3 + j * 0.065]);
@@ -418,27 +379,15 @@ test("the volume's shadow on the relief against the shell's soft shadow", async 
 // the framework's unit tests.
 test("the cloud volume compiles and draws its hex-tiled clouds with cloudHex=1", async ({
   page,
-  context,
 }) => {
   test.setTimeout(780_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(OVERCAST);
   // BASE pins `cloudNoise=tile`, and the text key wins over `cloudHex`:
   // dropped here, so `cloudHex=1` decides, as an old link would.
-  const errors = await bootGlobe(
+  const errors = await parkAndSettle(
     page,
-    `${BASE.replace(`landKm=${HOLD_KM}`, `landKm=${NEAR_DECK_KM}`).replace("&cloudNoise=tile", "")}&cloudVolumeCover=2&cloudHex=1`,
-  );
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return (
-        s.phase === "landed" && s.pin.phase === "idle" && s.relief?.settled
-      );
-    },
-    null,
-    { timeout: SETTLE_MS },
+    `${BASE.replace("&cloudNoise=tile", "")}&cloudVolumeCover=2&cloudHex=1`,
+    NEAR_DECK_KM,
+    OVERCAST,
   );
   await page.evaluate(() => window.__globeLab.timeFrames(3));
   const { coverage, volume } = await page.evaluate(() => {

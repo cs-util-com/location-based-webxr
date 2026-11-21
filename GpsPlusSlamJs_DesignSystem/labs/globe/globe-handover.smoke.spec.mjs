@@ -6,7 +6,7 @@
  * Why this file matters: the owner saw the whole Earth turn blue at the
  * switch between the globe and the relief. The relief took pixels by
  * altitude before it had a tile there, and the background showed through.
- * Here the dive and a zoom out run while every frame is read, with the
+ * Here the pin's descent and a zoom out run while every frame is read, with the
  * frame cleared magenta (`holeColor=1`), so a pixel no carrier drew is
  * unambiguous. The gate and the stencil fill (`bandGate=1&bandFill=1`, the
  * defaults) must leave no hole. The old rule (both 0) is the positive
@@ -19,7 +19,7 @@ import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&detail=0&holeColor=1";
 
 /**
  * A pixel no carrier drew shows the clear colour, magenta with
@@ -38,15 +38,25 @@ const HOLE_MIN = 240;
 const FILLS_FRAME_KM = 2_100;
 
 /**
- * The zoom out and the return land at 150 km, the hold these checks were
- * written at, not at the dive's default 2 km (r790 city plan K4). Both
- * cross the band at 2,000 km within a wheel budget, and a wheel step scales
- * the altitude by a fixed factor, so from 2 km the budget ended at 15 km
- * (measured): the band was never reached. The dive itself keeps the default.
+ * The zoom out and the return start parked at 150 km, the hold these checks
+ * were written at, not at a landing's 2 km (city plan K4). Both cross the
+ * band at 2,000 km within a wheel budget, and a wheel step scales the
+ * altitude by a fixed factor, so from 2 km the budget ended at 15 km
+ * (measured): the band was never reached.
  */
-const HOLD_150 = "&landKm=150";
+const HOLD_KM = 150;
 
-/** Points over the lower half of the frame, where the ground is in the dive. */
+/**
+ * Parks the camera `km` above the target (the lab's park, as a landing
+ * there leaves it).
+ */
+const parkAt = (page, km) =>
+  page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [TARGET.latitude, TARGET.longitude, km * 1000],
+  );
+
+/** Points over the lower half of the frame, where the ground is in the descent. */
 function lowerGrid() {
   const grid = [];
   for (let i = 0; i < 9; i++) {
@@ -76,13 +86,16 @@ function readFrame({ grid, holeMin }) {
   };
 }
 
-/** Dives with `gate` and reads every frame until the relief has taken over. */
-async function diveAndCount(page, context, gate) {
+/**
+ * Flies the pin's continuous flight (`flight=2`) down to the target with
+ * `gate` and reads every frame until the relief has taken over.
+ */
+async function descendAndCount(page, context, gate) {
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
   const errors = await bootGlobe(
     page,
-    `${BASE}&bandGate=${gate}&bandFill=${gate}`,
+    `${BASE}&flight=2&bandGate=${gate}&bandFill=${gate}`,
   );
   await page.locator("#globe-pin").click();
   const frames = [];
@@ -108,21 +121,19 @@ async function diveAndCount(page, context, gate) {
 }
 
 /**
- * Zooms out (wheel steps at the canvas centre) from a landed dive whose
+ * Zooms out (wheel steps at the canvas centre) from a parked hold whose
  * globe tiles were released, reading a frame after each step until the
  * camera is above the band.
  */
-async function zoomOutAndCount(page, context, gate) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
+async function zoomOutAndCount(page, gate) {
   const errors = await bootGlobe(
     page,
     // The old rule also released every tile at once, the coarsest
     // included (`bandDrainTiles=0`); the new drain keeps them.
-    `${BASE}${HOLD_150}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
+    `${BASE}&bandGate=${gate}&bandFill=${gate}&bandReleaseMs=1000${gate === 1 ? "" : "&bandDrainTiles=0"}`,
   );
-  await page.locator("#globe-pin").click();
-  // Landed, the relief has every pixel, and the globe's cache is drained.
+  await parkAt(page, HOLD_KM);
+  // Parked, the relief has every pixel, and the globe's cache is drained.
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
@@ -170,13 +181,13 @@ for (const gate of [1, 0]) {
       ? "shows no hole with the gate and the fill"
       : "shows holes without them (the positive control)";
 
-  test(`the dive through the band ${label}`, async ({ page, context }) => {
+  test(`the descent through the band ${label}`, async ({ page, context }) => {
     test.setTimeout(900_000);
-    const { frames, errors } = await diveAndCount(page, context, gate);
+    const { frames, errors } = await descendAndCount(page, context, gate);
     const { inBand, holeFrames, detail } = summarise(frames);
     const reliefFrames = frames.filter((f) => (f.share ?? 0) > 0).length;
     console.log(
-      `dive, gate and fill ${gate}: ${frames.length} frames (${inBand.length} below ${FILLS_FRAME_KM} km), ${holeFrames.length} with a hole, ${reliefFrames} with relief pixels, last share ${frames.at(-1)?.share}; ${detail}`,
+      `descent, gate and fill ${gate}: ${frames.length} frames (${inBand.length} below ${FILLS_FRAME_KM} km), ${holeFrames.length} with a hole, ${reliefFrames} with relief pixels, last share ${frames.at(-1)?.share}; ${detail}`,
     );
     expect(errors).toEqual([]);
     // The relief did take over: the check ran through the band.
@@ -186,16 +197,16 @@ for (const gate of [1, 0]) {
     // the relief's coarse first tiles).
     const first = frames.find((f) => (f.share ?? 0) > 0);
     console.log(
-      `dive, gate and fill ${gate}: the relief's first pixels at ${Math.round(first?.altKm ?? -1)} km, ${first?.sinceLandMs == null ? "before landing" : `${(first.sinceLandMs / 1000).toFixed(1)} s after landing`}, settled ${first?.settled}`,
+      `descent, gate and fill ${gate}: the relief's first pixels at ${Math.round(first?.altKm ?? -1)} km, ${first?.sinceLandMs == null ? "before landing" : `${(first.sinceLandMs / 1000).toFixed(1)} s after landing`}, settled ${first?.settled}`,
     );
     if (gate === 1) expect(first?.settled).toBe(true);
     if (gate === 1) expect(holeFrames.length).toBe(0);
     else expect(holeFrames.length).toBeGreaterThan(0);
   });
 
-  test(`zooming out of the band ${label}`, async ({ page, context }) => {
+  test(`zooming out of the band ${label}`, async ({ page }) => {
     test.setTimeout(420_000);
-    const { frames, errors } = await zoomOutAndCount(page, context, gate);
+    const { frames, errors } = await zoomOutAndCount(page, gate);
     const { inBand, holeFrames, detail } = summarise(frames);
     const top = Math.max(...frames.map((f) => f.altKm));
     console.log(
@@ -212,23 +223,22 @@ for (const gate of [1, 0]) {
 // Why (owner decision 2026-10-04: the fill "with a cost measurement"): the
 // globe now draws while the relief has the pixels (only where the relief
 // left one, the stencil rejecting the rest) and keeps its top tiles. Its
-// cost is measured at the hold against the fill off, in the same session,
+// cost is measured parked at 2 km, where a landing holds, against the fill
+// off, in the same session,
 // alternating three times; logged, not asserted (relative under SwiftShader;
 // the owner's phone reads it with the Debug panel's recording).
 test("the stencil fill's cost at the hold, on against off (logged)", async ({
   context,
 }) => {
-  // Six landed pages, each waiting for the relief (frame-bound).
+  // Six parked pages, each waiting for the relief (frame-bound).
   test.setTimeout(3_600_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
   const perFrame = {};
   for (const round of [1, 2, 3]) {
     for (const fill of [1, 0]) {
       // A fresh page each time: the fill is read at start.
       const page = await context.newPage();
       const errors = await bootGlobe(page, `${BASE}&bandFill=${fill}`);
-      await page.locator("#globe-pin").click();
+      await parkAt(page, 2);
       await page.waitForFunction(
         () => {
           const s = window.__globeLab.state();
@@ -253,18 +263,16 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
 });
 
 /**
- * Lands, zooms out until the relief has been drained, zooms back in to
- * where it landed, and returns the height tiles requested on the way back
- * (owner decision 2026-10-04, DEC-N1).
+ * Parks, zooms out until the relief has been drained, zooms back in to
+ * where it was parked, and returns the height tiles requested on the way
+ * back (owner decision 2026-10-04, DEC-N1).
  */
-async function returnIntoBand(page, context, keepMiB) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
+async function returnIntoBand(page, keepMiB) {
   const errors = await bootGlobe(
     page,
-    `${BASE}${HOLD_150}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
+    `${BASE}&bandReleaseMs=1000&keepHeightsMiB=${keepMiB}`,
   );
-  await page.locator("#globe-pin").click();
+  await parkAt(page, HOLD_KM);
   const state = () => page.evaluate(() => window.__globeLab.state());
   await page.waitForFunction(
     () => {
@@ -333,14 +341,14 @@ test("a return into the band reuses the kept heights, without the keeper it fetc
   const rows = {};
   for (const keepMiB of [16, 0]) {
     const page = await context.newPage();
-    rows[keepMiB] = await returnIntoBand(page, context, keepMiB);
+    rows[keepMiB] = await returnIntoBand(page, keepMiB);
     await page.close();
   }
   console.log(
     `return into the band: ${[16, 0]
       .map((k) => {
         const r = rows[k];
-        return `keep ${k} MiB: landed ${Math.round(r.landedKm)} km, back at ${Math.round(r.backKm)} km, first descent ${r.first} height tiles, the return ${r.returned}, kept ${r.kept.kept} (${(r.kept.keptBytes / 2 ** 20).toFixed(1)} MiB, ${r.kept.evicted} given back)`;
+        return `keep ${k} MiB: parked ${Math.round(r.landedKm)} km, back at ${Math.round(r.backKm)} km, first descent ${r.first} height tiles, the return ${r.returned}, kept ${r.kept.kept} (${(r.kept.keptBytes / 2 ** 20).toFixed(1)} MiB, ${r.kept.evicted} given back)`;
       })
       .join("; ")}`,
   );

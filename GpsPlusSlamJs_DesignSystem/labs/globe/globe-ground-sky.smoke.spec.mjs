@@ -8,15 +8,16 @@
  * either is a visible pop on the way down. Measured, with the bounds
  * stated in the plan before building (each swept x0.5/x1/x2):
  *
- * - **Continuity:** the camera held at dive times through 100 to 45 km;
+ * - **Continuity:** the camera parked at heights through 100 to 45 km;
  *   the frame-to-frame step with the ground sky may exceed the step
  *   without it (`groundSky=0`, the space pass alone) by at most a mean 1
  *   level. Only against the space pass: the ground sky alone at every
  *   height is not a state the lab has.
  * - **The exposure:** the same frames' mean luminance may change by at most
  *   2 levels per 0.1 of the weight beyond what the space pass alone does.
- * - **The rebuilds:** at most one pass per quantised observer step over the
- *   dive (plus the first), and the sky done rebuilding at the hold.
+ * - **The rebuilds:** at most one pass per quantised observer step from
+ *   the ceiling to the hold (plus the first), counted over the parked
+ *   descent, and the sky done rebuilding at every held height.
  * - **The dark, physical sky above the edge's band** (the owner's choice,
  *   2026-10-05, from screenshots at 45 km): looking up at the hold, the
  *   ground sky's pixels are darker than the space pass's by at least 20
@@ -34,13 +35,12 @@ import {
   meanOf,
 } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 const HOLD_KM = 40;
 // `cloudNoise=tile`: the sky hand-over is this file's subject, and its
 // frame budget was measured on the baked tile; the live noise's own cost is
 // measured in globe-cloud-noise (round-4 plan §6 item 10).
-const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&landKm=${HOLD_KM}&cloudNoise=tile`;
+const BASE = `spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&relief=1&reliefHeights=synthetic&detail=0&cloudNoise=tile`;
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 const STEP = 1;
@@ -72,11 +72,22 @@ const meanDiff = (a, b) =>
     ),
   );
 
-async function land(page, context) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
+/**
+ * Parks the camera `km` above the target (the lab's park, as a landing
+ * there leaves it; parked again, only the camera moves), then draws a frame
+ * so the sky's observer has seen the new height before a wait reads it.
+ */
+async function parkAt(page, km) {
+  await page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [TARGET.latitude, TARGET.longitude, km * 1000],
+  );
+  await page.evaluate(() => window.__globeLab.timeFrames(1));
+}
+
+async function land(page) {
   const errors = await bootGlobe(page, BASE);
-  await page.locator("#globe-pin").click();
+  await parkAt(page, HOLD_KM);
   const pressedAt = Date.now();
   await page.waitForFunction(
     () => {
@@ -95,40 +106,27 @@ async function land(page, context) {
     { timeout: RELIEF_SETTLE_MS },
   );
   console.log(
-    `landed and settled ${((Date.now() - pressedAt) / 1000).toFixed(0)} s after the press (budget ${RELIEF_SETTLE_MS / 1000} s)`,
+    `parked and settled ${((Date.now() - pressedAt) / 1000).toFixed(0)} s after the park (budget ${RELIEF_SETTLE_MS / 1000} s)`,
   );
   return errors;
 }
 
 test("the ground sky takes over the sky without a jump, its exposure eased, its rebuilds stepped", async ({
   page,
-  context,
 }) => {
   test.setTimeout(900_000);
-  const errors = await land(page, context);
+  const errors = await land(page);
   const landed = await page.evaluate(() => window.__globeLab.state());
   expect(landed.groundSky.supported).toBe(true);
   expect(landed.groundSky.weight).toBe(1);
-  // The rebuilds over the dive: one pass per observer step at most (from
-  // the ceiling to the hold, 5 % steps), plus the first.
+  // The rebuilds: one pass per observer step at most (from the ceiling to
+  // the hold, 5 % steps), plus the first; counted after the parked descent
+  // below (the park at the hold, then 100 down to 45 km).
   const steps = Math.ceil(Math.log(99.9 / HOLD_KM) / Math.log(1.05)) + 1;
-  const passes = landed.groundSky.rebuilds.luts;
-  // Dive times through 100 to 45 km, the tiles frozen.
-  const times = await page.evaluate(() => {
-    const at = (km) => {
-      let lo = 0;
-      let hi = 60_000;
-      for (let i = 0; i < 40; i++) {
-        const m = (lo + hi) / 2;
-        if (window.__globeLab.diveAltitudeAt(m) > km * 1000) lo = m;
-        else hi = m;
-      }
-      return lo;
-    };
-    const out = [];
-    for (let i = 0; i <= 24; i++) out.push(at(100 * (45 / 100) ** (i / 24)));
-    return out;
-  });
+  let passes = 0;
+  // Heights through 100 to 45 km, the tiles frozen.
+  const heightsKm = [];
+  for (let i = 0; i <= 24; i++) heightsKm.push(100 * (45 / 100) ** (i / 24));
   const g = grid(0.1, 0.9);
   const rows = {};
   for (const [label, extra] of [
@@ -139,8 +137,8 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
       location.hash = h;
     }, `${BASE}${extra}&bandFreeze=1`);
     const frames = [];
-    for (const ms of times) {
-      await page.evaluate((t) => window.__globeLab.holdDiveAt(t), ms);
+    for (const km of heightsKm) {
+      await parkAt(page, km);
       // The staged sky settles at each held height before the read.
       await page.waitForFunction(
         () => window.__globeLab.state().groundSky?.rebuildPending === false,
@@ -162,6 +160,10 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
       );
     }
     rows[label] = frames;
+    if (label === "ground sky") {
+      passes = (await page.evaluate(() => window.__globeLab.state())).groundSky
+        .rebuilds.luts;
+    }
   }
   const on = rows["ground sky"];
   const off = rows["space only"];
@@ -186,7 +188,7 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
     await page.evaluate((h) => {
       location.hash = h;
     }, `${BASE}${extra}&bandFreeze=1`);
-    await page.evaluate((t) => window.__globeLab.holdDiveAt(t), times.at(-1));
+    await parkAt(page, heightsKm.at(-1));
     await page.evaluate(() => window.__globeLab.pitchView(40));
     await page.waitForFunction(
       () => window.__globeLab.state().groundSky?.rebuildPending === false,
@@ -203,7 +205,7 @@ test("the ground sky takes over the sky without a jump, its exposure eased, its 
   const skyDarker =
     meanOf(sky[1].map(luminance)) - meanOf(sky[0].map(luminance));
   console.log(
-    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the dive ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the ground sky darker than the space pass by ${skyDarker.toFixed(2)} (at least ${SKY_DARKER}: ${SWEEP.map((k) => `x${k} ${skyDarker >= SKY_DARKER * k ? "ok" : "NO"}`).join(" ")}); programs ${on[0].programs} at weight 0 and ${on.at(-1).programs} at weight 1; haze at weight 1 ${JSON.stringify(on.at(-1).haze)}`,
+    `ground sky over 100-45 km: frame-to-frame step beyond the space pass's, worst ${verdict(worstStep, STEP)}; exposure, mean luminance per 0.1 of the weight beyond the space pass's, worst ${verdict(worstExposure, EXPOSURE_PER_TENTH)}; rebuild passes over the parked descent ${passes} (bound ${steps}); weights ${on.map((f) => f.weight.toFixed(2)).join(" ")}; looking up at ${HOLD_KM} km, the ground sky darker than the space pass by ${skyDarker.toFixed(2)} (at least ${SKY_DARKER}: ${SWEEP.map((k) => `x${k} ${skyDarker >= SKY_DARKER * k ? "ok" : "NO"}`).join(" ")}); programs ${on[0].programs} at weight 0 and ${on.at(-1).programs} at weight 1; haze at weight 1 ${JSON.stringify(on.at(-1).haze)}`,
   );
   expect(errors).toEqual([]);
   expect(passes).toBeLessThanOrEqual(steps);
