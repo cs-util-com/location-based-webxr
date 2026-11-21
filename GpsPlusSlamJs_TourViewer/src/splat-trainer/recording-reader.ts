@@ -8,7 +8,7 @@
  * @see recording-reader.ts.md
  */
 
-import { ZipReader, type Entry, type FileEntry } from "@zip.js/zip.js";
+import type { Entry, FileEntry } from "@zip.js/zip.js";
 import type {
   Matrix4,
   Quaternion,
@@ -17,16 +17,17 @@ import type {
 import type { DepthSample } from "gps-plus-slam-app-framework/state";
 import {
   ArchiveLimitError,
-  ByteSourceReader,
   DecompressionBudget,
-  listZipEntriesCapped,
   loadActionsFromEntries,
-  LocalCacheByteSource,
   readZipEntryText,
   type ArchiveLimits,
 } from "gps-plus-slam-app-framework/storage";
 import { resolveArchiveLimits } from "gps-plus-slam-app-framework/storage/archive-limits";
 import { DEPTH_SAMPLE_ACTION_TYPE } from "gps-plus-slam-app-framework/storage/depth-sample-codec";
+import {
+  isActionEntryName,
+  withCappedZipEntries,
+} from "gps-plus-slam-app-framework/storage/zip-reader";
 import { interpolatingMedian } from "gps-plus-slam-app-framework/utils/median";
 import {
   pinholeFromProjection,
@@ -39,7 +40,7 @@ import {
   preflightCaptureJoin,
 } from "../capture-geo-join.js";
 import { tourFileKey } from "../tour-file-key.js";
-import { isActionEntryName, recordingFoldersOf } from "../tour-read-set.js";
+import { recordingFoldersOf } from "../tour-read-set.js";
 import { withZipBlobDirectory } from "../zip-blob.js";
 
 /**
@@ -218,23 +219,21 @@ async function readInputs(
       file.size,
     );
   }
-  const reader = new ZipReader(
-    new ByteSourceReader(
-      new LocalCacheByteSource(file),
-      limits.maxDirectoryBytes,
-    ),
-  );
+  // Only a failure to LIST the entries means the file is no zip; one
+  // while reading them keeps its own words.
+  let listed = false;
   try {
-    let entries: Entry[];
-    try {
-      entries = await listZipEntriesCapped(reader, limits.maxEntries);
-    } catch (err) {
-      if (err instanceof ArchiveLimitError) throw err;
-      throw new Refusal("This file is not a zip recording.");
-    }
-    return await readEntries(file, entries, limits, budget, onProgress);
-  } finally {
-    await reader.close();
+    return await withCappedZipEntries(
+      file,
+      (entries) => {
+        listed = true;
+        return readEntries(file, entries, limits, budget, onProgress);
+      },
+      limits,
+    );
+  } catch (err) {
+    if (listed || err instanceof ArchiveLimitError) throw err;
+    throw new Refusal("This file is not a zip recording.");
   }
 }
 

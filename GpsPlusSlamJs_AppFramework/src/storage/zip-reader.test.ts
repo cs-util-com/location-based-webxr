@@ -18,6 +18,8 @@ import {
   loadSessionMetadataFromBlob,
   loadEntriesFromSubdir,
   toZipReader,
+  isActionEntryName,
+  withCappedZipEntries,
   MAX_ACTION_FILE_SIZE,
   type ZipActionEntry,
 } from './zip-reader';
@@ -27,6 +29,7 @@ import {
   packDepthAction,
 } from './depth-sample-codec';
 import { DecompressionBudget } from './capped-zip-entries';
+import { packFilesAsZip } from './pack-files-as-zip';
 import {
   produceTestZip,
   type TestZipResult,
@@ -1283,5 +1286,74 @@ describe('a folder name that only ENDS in a framework folder name', () => {
       { name: 'mysession.json', content: '{"which":"backup"}' },
     ]);
     expect(await loadSessionMetadata(lookAlikeOnly)).toBeNull();
+  });
+});
+
+describe('isActionEntryName: the one rule for which entries are actions', () => {
+  // Why: the Tour Viewer decides whether a zip holds a walk, and which
+  // folder it sits in, by this rule; a rule of its own that drifted from
+  // the parser's would let a check pass a zip the parser then replays
+  // differently.
+  it('takes an actions/ segment at the start or after a slash, ending .json', () => {
+    expect(isActionEntryName('actions/000001.json')).toBe(true);
+    expect(isActionEntryName('rec/actions/000001.json')).toBe(true);
+    expect(isActionEntryName('myactions/000001.json')).toBe(false);
+    expect(isActionEntryName('rec/old-actions/000001.json')).toBe(false);
+    expect(isActionEntryName('actions/000001.txt')).toBe(false);
+    expect(isActionEntryName('actions.json')).toBe(false);
+  });
+
+  it('leaves out the metadata a macOS re-zip adds', () => {
+    expect(isActionEntryName('__MACOSX/rec/actions/._000001.json')).toBe(false);
+    expect(isActionEntryName('__MACOSX/actions/000001.json')).toBe(false);
+    expect(isActionEntryName('rec/actions/._000002.json')).toBe(false);
+  });
+});
+
+describe('withCappedZipEntries: one capped open of a zip Blob', () => {
+  // Why: every reader of an untrusted zip Blob must read its directory
+  // under the directory and entry caps; this is the one place that open
+  // is written, so a caller cannot forget either cap.
+  const zip = (): Promise<Blob> =>
+    packFilesAsZip([
+      { path: 'a.txt', data: 'a' },
+      { path: 'dir/b.txt', data: 'bb' },
+      { path: 'c.txt', data: 'ccc' },
+    ]);
+
+  it('hands the entries to use, and returns what use returns', async () => {
+    const names = await withCappedZipEntries(await zip(), (entries) =>
+      Promise.resolve(entries.map((e) => e.filename))
+    );
+    expect(names).toEqual(['a.txt', 'dir/b.txt', 'c.txt']);
+  });
+
+  it('holds the entry cap and the directory cap', async () => {
+    const blob = await zip();
+    const entryErr = await withCappedZipEntries(
+      blob,
+      () => Promise.resolve(null),
+      { maxEntries: 2, maxDirectoryBytes: 1 << 20 }
+    ).catch((e: unknown) => e);
+    expect((entryErr as ArchiveLimitError).kind).toBe('entry-count');
+    const dirErr = await withCappedZipEntries(
+      blob,
+      () => Promise.resolve(null),
+      { maxEntries: 100, maxDirectoryBytes: 16 }
+    ).catch((e: unknown) => e);
+    expect((dirErr as ArchiveLimitError).kind).toBe('directory-bytes');
+  });
+
+  it('rejects bytes that are no zip without calling use, and passes its rejection on', async () => {
+    const use = vi.fn(() => Promise.resolve(1));
+    await expect(
+      withCappedZipEntries(new Blob(['hello']), use)
+    ).rejects.toThrow();
+    expect(use).not.toHaveBeenCalled();
+    await expect(
+      withCappedZipEntries(await zip(), () =>
+        Promise.reject(new Error('from use'))
+      )
+    ).rejects.toThrow('from use');
   });
 });

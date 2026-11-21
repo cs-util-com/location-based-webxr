@@ -28,8 +28,9 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
+import { imageInfo } from "gps-plus-slam-app-framework/utils/image-header";
+
 import { columnJump, typicalColumnJump } from "./cloud-seam.js";
-import { imageInfo } from "./image-header.js";
 import {
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_SOURCES,

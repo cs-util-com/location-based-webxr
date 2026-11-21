@@ -26,9 +26,15 @@ import {
 import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from 'gps-plus-slam-js';
 import { recordedGpsEventPayloads } from '../utils/gps-event-actions';
 import { createLogger } from '../utils/logger';
-import { DEFAULT_ARCHIVE_LIMITS } from './archive-limits';
-import { DecompressionBudget, readZipEntryText } from './capped-zip-entries';
+import { DEFAULT_ARCHIVE_LIMITS, type ArchiveLimits } from './archive-limits';
+import {
+  DecompressionBudget,
+  listZipEntriesCapped,
+  readZipEntryText,
+} from './capped-zip-entries';
 import { unpackDepthAction } from './depth-sample-codec';
+import { LocalCacheByteSource } from './local-cache-byte-source';
+import { ByteSourceReader } from './zip-byte-source-reader';
 
 const log = createLogger('ZipReader');
 
@@ -96,6 +102,38 @@ export interface ZipActionEntry {
 }
 
 /**
+ * Open a zip Blob (a File, or one a page built) as untrusted input and
+ * hand its entries to `use`: the directory is read in one piece, so no
+ * single read may pass `limits.maxDirectoryBytes`, and the walk stops past
+ * `limits.maxEntries`. The reader is closed once `use` settles, so the
+ * entries are read inside `use` only (under the caller's own
+ * `DecompressionBudget`).
+ *
+ * @throws ArchiveLimitError at either cap; zip.js's error for bytes that
+ *   are no zip (`use` is then never called); and `use`'s own rejection.
+ */
+export async function withCappedZipEntries<T>(
+  blob: Blob,
+  use: (entries: Entry[]) => Promise<T>,
+  limits: Pick<
+    ArchiveLimits,
+    'maxDirectoryBytes' | 'maxEntries'
+  > = DEFAULT_ARCHIVE_LIMITS
+): Promise<T> {
+  const reader = new ZipReader(
+    new ByteSourceReader(
+      new LocalCacheByteSource(blob),
+      limits.maxDirectoryBytes
+    )
+  );
+  try {
+    return await use(await listZipEntriesCapped(reader, limits.maxEntries));
+  } finally {
+    await reader.close();
+  }
+}
+
+/**
  * Read all entries from a zip file.
  *
  * @param data - The zip content as a Uint8Array, or a zip.js Reader for lazy access
@@ -125,9 +163,14 @@ const ACTIONS_SEGMENT = /(?:^|\/)actions\//;
  */
 const MACOS_METADATA = /(?:^|\/)(?:__MACOSX\/|\._[^/]*$)/;
 
-/** An action JSON entry name: under an `actions/` segment, ending `.json`,
- *  and not macOS metadata. */
-function isActionEntryName(filename: string): boolean {
+/**
+ * Is `filename` an action JSON entry: under an `actions/` segment, ending
+ * `.json`, and not macOS metadata? The ONE rule for which entries the
+ * parser replays, so a caller that checks a zip's action stream before
+ * parsing it (the Tour Viewer's walk and folder checks) never disagrees
+ * with the parser.
+ */
+export function isActionEntryName(filename: string): boolean {
   return (
     ACTIONS_SEGMENT.test(filename) &&
     filename.endsWith('.json') &&

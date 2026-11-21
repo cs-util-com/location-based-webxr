@@ -33,13 +33,15 @@ carry.
 
 ## Invariants & assumptions
 
-- Every read goes through the framework's caps: the central directory under
-  `DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes` and `maxEntries`, the entry
+- Every read goes through the framework's caps: the central directory
+  opened by the framework's one capped open (`withCappedZipEntries` of
+  `storage/zip-reader`) under `DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes`
+  and `maxEntries`, the entry
   inflated under a `DecompressionBudget` sized from the blob. The blob is
   this page's own output, but the same caps keep one rule for all archives.
 - Errors: bytes that are not a zip, or past a cap, reject; a name the zip
   lacks rejects with an error naming it (never an empty Blob).
-- The reader is closed on every path.
+- The reader is closed on every path (by `withCappedZipEntries`).
 
 ## Examples
 

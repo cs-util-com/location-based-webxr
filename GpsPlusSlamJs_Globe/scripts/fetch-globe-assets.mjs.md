@@ -49,6 +49,8 @@
   preview 104,220). `globe-sources.test.ts` holds the total under 13 MB
   (DEC-R3-13; 10 MB from round-4 DEC-GL4-9, 4.5 MB before). GIBS's WMS reports no
   `layer-time-actual`, so the Blue Marble month is recorded as not reported.
-- Tests: the pieces it imports are unit-tested (`image-header.ts`,
+- Tests: the pieces it imports are unit-tested (the framework's
+  `utils/image-header.ts`, the one image-header reader, imported by its
+  source path because this script runs under plain node,
   `tile-pyramid.ts`, `provenance-date.ts`, `cloud-seam.ts`, the
   registry's `globeMapPieces`); `globe-sources.test.ts` checks what it committed.

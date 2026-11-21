@@ -31,6 +31,7 @@
     "../GpsPlusSlamJs_AppFramework/src/visualization/atmosphere/sky-atmosphere.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/clamp01.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/glsl-float.ts",
+    "../GpsPlusSlamJs_AppFramework/src/utils/image-header.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/mulberry32.ts",
     "../GpsPlusSlamJs_AppFramework/src/utils/smoothstep.ts"
   ],

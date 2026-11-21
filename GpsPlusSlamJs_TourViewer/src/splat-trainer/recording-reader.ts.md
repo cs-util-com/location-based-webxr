@@ -109,6 +109,13 @@ frameHeight)` from the framework, unchanged: it already is the
 
 ## Invariants & assumptions
 
+- **One capped open.** The zip is opened by the framework's
+  `withCappedZipEntries` (`storage/zip-reader`) under the resolved
+  limits, and its action entries are found by the framework parser's own
+  `isActionEntryName`. Only a failure to LIST the entries reads as "not a
+  zip recording"; one while reading them keeps its own words ("could not
+  be read (...)"), and a cap keeps the framework's sentence.
+
 - **The recording's folder.** Photo entries are looked up under
   `recordingFolderOf` (`tour-read-set.ts`): `""` for a flat zip, the
   wrapping folder for a recording re-zipped from its folder. A photo of

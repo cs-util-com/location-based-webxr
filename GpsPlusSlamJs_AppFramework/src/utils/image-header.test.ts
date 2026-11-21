@@ -52,27 +52,48 @@ function png(width: number, height: number): Uint8Array<ArrayBuffer> {
   return b;
 }
 
-/** A WebP whose first chunk is VP8X (the extended format). */
-function webpVp8x(width: number, height: number): Uint8Array {
+/**
+ * A minimal WebP: the RIFF header, then one chunk of the given kind with
+ * the header fields its size and alpha live in.
+ */
+function webp(
+  kind: 'VP8 ' | 'VP8L' | 'VP8X',
+  width: number,
+  height: number,
+  alpha = false
+): Uint8Array {
   const b = new Uint8Array(30);
-  b.set(
-    [...'RIFF'].map((c) => c.charCodeAt(0)),
-    0
-  );
-  b.set(
-    [...'WEBP'].map((c) => c.charCodeAt(0)),
-    8
-  );
-  b.set(
-    [...'VP8X'].map((c) => c.charCodeAt(0)),
-    12
-  );
-  const w = width - 1;
-  const h = height - 1;
-  b.set([w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff], 24);
-  b.set([h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff], 27);
+  const view = new DataView(b.buffer);
+  b.set(new TextEncoder().encode('RIFF'), 0);
+  view.setUint32(4, 22, true);
+  b.set(new TextEncoder().encode('WEBP'), 8);
+  b.set(new TextEncoder().encode(kind), 12);
+  view.setUint32(16, 10, true);
+  if (kind === 'VP8X') {
+    b[20] = alpha ? 0x10 : 0;
+    const w = width - 1;
+    const h = height - 1;
+    b.set([w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff], 24);
+    b.set([h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff], 27);
+  } else if (kind === 'VP8L') {
+    b[20] = 0x2f;
+    // 14 bits width-1, 14 bits height-1, 1 bit alpha, little-endian.
+    const bits =
+      ((width - 1) & 0x3fff) |
+      (((height - 1) & 0x3fff) << 14) |
+      ((alpha ? 1 : 0) << 28);
+    view.setUint32(21, bits >>> 0, true);
+  } else {
+    b.set([0x9d, 0x01, 0x2a], 23);
+    view.setUint16(26, width & 0x3fff, true);
+    view.setUint16(28, height & 0x3fff, true);
+  }
   return b;
 }
+
+/** A WebP whose first chunk is VP8X (the extended format). */
+const webpVp8x = (width: number, height: number): Uint8Array =>
+  webp('VP8X', width, height);
 
 /** A GIF header with its logical screen size. */
 function gif(width: number, height: number): Uint8Array<ArrayBuffer> {
@@ -153,6 +174,7 @@ describe('imageInfo', () => {
       type: 'webp',
       width: 8192,
       height: 6144,
+      alpha: false,
     });
     expect(imageInfo(gif(640, 480))).toEqual({
       type: 'gif',
@@ -187,6 +209,53 @@ describe('imageInfo', () => {
     expect(imageInfo(avif([]))).toBeNull();
     expect(imageInfo(new TextEncoder().encode('<svg xmlns="x"/>'))).toBeNull();
     expect(imageInfo(new Uint8Array())).toBeNull();
+  });
+});
+
+// Why: the Globe's fetch script refuses an imagery tile whose header
+// says it has no alpha, because the tiles carry their water mask in it;
+// a tile without it would read as all land on the globe.
+describe('imageInfo for WebP', () => {
+  it('reads the size and alpha of an extended (VP8X) WebP', () => {
+    expect(imageInfo(webp('VP8X', 256, 256, true))).toEqual({
+      type: 'webp',
+      width: 256,
+      height: 256,
+      alpha: true,
+    });
+    expect(imageInfo(webp('VP8X', 2048, 1024))).toEqual({
+      type: 'webp',
+      width: 2048,
+      height: 1024,
+      alpha: false,
+    });
+  });
+
+  it('reads a lossless (VP8L) and a simple lossy (VP8) WebP', () => {
+    expect(imageInfo(webp('VP8L', 300, 17, true))).toEqual({
+      type: 'webp',
+      width: 300,
+      height: 17,
+      alpha: true,
+    });
+    expect(imageInfo(webp('VP8L', 300, 17))).toMatchObject({ alpha: false });
+    expect(imageInfo(webp('VP8 ', 256, 256))).toEqual({
+      type: 'webp',
+      width: 256,
+      height: 256,
+      alpha: false,
+    });
+  });
+
+  it('refuses a RIFF that is not WebP, a truncated one, an unknown chunk and a zero size', () => {
+    const wave = webp('VP8X', 256, 256, true);
+    wave.set(new TextEncoder().encode('WAVE'), 8);
+    expect(imageInfo(wave)).toBeNull();
+    expect(imageInfo(webp('VP8X', 256, 256, true).slice(0, 24))).toBeNull();
+    const odd = webp('VP8X', 256, 256, true);
+    odd.set(new TextEncoder().encode('ABCD'), 12);
+    expect(imageInfo(odd)).toBeNull();
+    expect(imageInfo(webp('VP8 ', 0, 256))).toBeNull();
   });
 });
 
