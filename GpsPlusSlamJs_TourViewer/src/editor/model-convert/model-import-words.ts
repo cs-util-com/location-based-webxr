@@ -53,6 +53,8 @@ export const refusal = {
     `"${model}" is not a glTF 2.0 model. Export it again as glTF 2.0, or as .glb.`,
   partTooShort: (model: string, part: string): string =>
     `"${model}" says "${part}" is longer than that file is. Is the file complete?`,
+  embeddedPartTooShort: (model: string): string =>
+    `"${model}" carries data inside its text that is shorter than the model says. Is the file complete?`,
   brokenPart: (model: string): string =>
     `"${model}" carries data inside its text that could not be decoded. Is the file complete?`,
   tooLarge: (model: string, bytes: number, cap: number): string =>
@@ -75,6 +77,10 @@ export const note = {
     `Made without its picture "${picture}": a tour shows ${shown} pictures here. Save it as PNG or JPEG and drop the model again with it.`,
   brokenPicture: (picture: string): string =>
     `Made without its picture "${picture}": it could not be decoded. Save it again as PNG or JPEG and drop the model again with it.`,
+  unreadablePicture: (picture: string): string =>
+    `Made without its picture "${picture}": it is broken, or of a kind this cannot read. Save it again as PNG or JPEG and drop the model again with it.`,
+  outsidePicture: (picture: string): string =>
+    `Made without its picture "${picture}": the model takes it from outside the files it came with. Drop the folder that holds both, or a zip of it.`,
   otherComputerPicture: (picture: string): string =>
     `Made without its picture "${picture}": the model points to a file on another computer. To have it, drop the model again with that picture.`,
   otherPictureShown: (picture: string): string =>

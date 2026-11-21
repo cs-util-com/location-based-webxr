@@ -205,8 +205,12 @@ describe("repackGltf", () => {
     expect(fetched).toEqual([]);
   });
 
-  it("leaves out a picture that is missing, remote or of a kind a tour does not show, with a note, and the material stops naming it", async () => {
+  it("leaves out a picture that is missing, remote, outside the folder, unreadable or of a kind a tour does not show, with a note, and the material stops naming it", async () => {
+    // Each case has its own words: a note must say what the creator can
+    // fix (a picture outside the folder is not "missing", and bytes that
+    // are no known picture may be broken, so no format is claimed).
     const tiff = Uint8Array.of(0x49, 0x49, 0x2a, 0, 8, 0, 0, 0);
+    const pngSignatureOnly = pngHeader(4, 4).subarray(0, 8);
     const cases: [string, Uint8Array | null, string][] = [
       ["textures/gone.jpg", null, note.missingPicture("gone.jpg")],
       ["https://example.invalid/x.png", null, note.remotePicture("x.png")],
@@ -216,6 +220,15 @@ describe("repackGltf", () => {
         note.unsupportedPicture("wood.tif", "PNG, JPEG, WebP and AVIF"),
       ],
       ["data:image/png;base64,iVBO*", null, note.brokenPicture("picture 1")],
+      // The scheme is case-insensitive: still embedded data, never a name.
+      ["DATA:image/png;base64,iVBO*", null, note.brokenPicture("picture 1")],
+      ["../../outside.png", null, note.outsidePicture("outside.png")],
+      [
+        "textures/noise.png",
+        Uint8Array.of(1, 2, 3, 4, 5, 6, 7, 8),
+        note.unreadablePicture("noise.png"),
+      ],
+      ["textures/cut.png", pngSignatureOnly, note.unreadablePicture("cut.png")],
     ];
     for (const [uri, bytes, words] of cases) {
       const original = await textured();
@@ -329,6 +342,12 @@ describe("repackGltf", () => {
     expect(one({ byteLength: 8, uri: "a.bin" })).toEqual({
       ok: false,
       reason: refusal.partTooShort("a.gltf", "a.bin"),
+    });
+    // A short buffer inside the text has no file name to quote: the words
+    // must not show a piece of its base64 as one.
+    expect(one({ byteLength: 8, uri: "data:;base64,AAAAAA==" })).toEqual({
+      ok: false,
+      reason: refusal.embeddedPartTooShort("a.gltf"),
     });
     expect(one({ byteLength: 2, uri: "data:;base64,AA*=" })).toEqual({
       ok: false,

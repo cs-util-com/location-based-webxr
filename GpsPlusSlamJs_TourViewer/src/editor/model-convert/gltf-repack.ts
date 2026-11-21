@@ -13,7 +13,8 @@
  * - A picture named by URI is put into the chunk as a new view after the
  *   original ones, typed by its bytes (`image-sniff.ts`), and measured
  *   against the tour's pixel cap before anything could decode it.
- * - A picture that is missing, remote, undecodable or of a kind a `.glb`
+ * - A picture that is missing, remote, outside the given files,
+ *   undecodable, unreadable or of a kind a `.glb`
  *   cannot carry is left out with a note: the textures that show only
  *   left-out pictures are unlinked from the materials, and the image
  *   itself becomes a 1 x 1 placeholder, so no index anywhere changes.
@@ -101,6 +102,10 @@ function uriName(uri: string): string {
   }
   return name;
 }
+
+/** Whether `uri` is embedded data (the scheme in any letter case, as
+ *  `resolveReference` reads it): it has no file name to quote. */
+const isDataUri = (uri: string) => /^data:/i.test(uri);
 
 /** Thrown inside the repack and turned into `{ ok: false, reason }`. */
 class Refusal extends Error {
@@ -199,7 +204,11 @@ function readBuffers(ctx: Context, json: GltfObject): Uint8Array[] {
       throw new Refusal(bufferRefusal(ctx.model, fetched.why, uriName(uri)));
     }
     if (fetched.bytes.length < length) {
-      throw new Refusal(refusal.partTooShort(ctx.model, uriName(uri)));
+      throw new Refusal(
+        isDataUri(uri)
+          ? refusal.embeddedPartTooShort(ctx.model)
+          : refusal.partTooShort(ctx.model, uriName(uri)),
+      );
     }
     take(ctx, length);
     return fetched.bytes.subarray(0, length);
@@ -280,6 +289,7 @@ function pictureNote(why: string, name: string): string {
   if (why === "scheme") return note.remotePicture(name);
   if (why === "broken") return note.brokenPicture(name);
   if (why === "elsewhere") return note.otherComputerPicture(name);
+  if (why === "outside") return note.outsidePicture(name);
   return note.missingPicture(name);
 }
 
@@ -301,7 +311,7 @@ function readImages(
     const uri = image["uri"];
     if (typeof uri !== "string")
       throw new Refusal(refusal.unreadable(ctx.model));
-    const label = uri.startsWith("data:")
+    const label = isDataUri(uri)
       ? typeof image["name"] === "string" && image["name"] !== ""
         ? image["name"]
         : `picture ${String(i + 1)}`
@@ -313,8 +323,12 @@ function readImages(
     };
     const fetched = fetchUri(ctx, uri, true);
     if (!fetched.ok) return leaveOut(pictureNote(fetched.why, label));
+    // Null is bytes no known picture starts with, or a known one whose
+    // header is cut: broken and unknown cannot be told apart, so the note
+    // claims neither. A known kind a .glb cannot carry is named as such.
     const sniffed = sniffImage(fetched.bytes);
-    if (sniffed === null || !sniffed.embeddable) {
+    if (sniffed === null) return leaveOut(note.unreadablePicture(label));
+    if (!sniffed.embeddable) {
       return leaveOut(note.unsupportedPicture(label, SHOWN));
     }
     const cap = checkImageWithinCap(fetched.bytes, ctx.limits.maxImagePixels);
