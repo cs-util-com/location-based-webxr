@@ -272,6 +272,27 @@ editor's own namespace, one tab at a time. Design:
   frames; "differs" compares each named station's pose with the file's
   (`changedStations`, ids the file does not carry ignored); a pose that does
   not read (`parseGeoPose`) makes the record unreadable, and it goes.
+  **Undecided poses ride along**, as on the phone: while an offered
+  record's station poses are neither restored nor rejected (offered, or
+  "Not now"), `undecidedPoses` holds them (set by the open that offers a
+  record whose poses differ from the file's, `undecidedOf` as on the
+  phone), and every record this page
+  writes carries them by `withUndecidedPoses`: the live pose of each
+  station moved here since the open (`saveSettings`'s `movedStations`,
+  kept as `settingsMoved`), the undecided pose of every other. So the keep
+  is decided for that record: one holding undecided poses differs from
+  the file and is kept, even when the value set here equals it. Restore
+  clears them (`restored`) and writes the record again as the page set it;
+  "Delete it" clears them once its rejection landed whole (the meta, and
+  the offered record's removal when it removes one), and, when the
+  settings were changed here, writes the live record again without them;
+  a "Delete it" that did not land, the removal included, keeps them with
+  the offer it arms again.
+  The offered record's created stations the opened file lacks ride along
+  the same way (`undecidedCreated`, added by `withCreated`, the page's own
+  frame of an id winning): a live record names only this page's own, so
+  without them a station move after "Not now" took a placement's new
+  station off disk, and the next open dropped the object that names it.
   **No base, and what that costs** (milestone review #3; the first build of
   this bullet claimed the other value was always one "this browser saw or
   wrote", which does not hold): a file that differs from the record holds

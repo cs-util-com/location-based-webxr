@@ -339,13 +339,15 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   (`settingsLive`), so neither "Delete it" nor a spent draft removes the
   record their live objects need.
 
-- **Offered**: the poses that differ from the opened tour's
-  (`changedStations`) are work like any object - the draft is not spent
-  while one waits, and each moved station counts as one change in the
-  offer.
+- **Offered**: the poses that differ from the opened tour's, but those of
+  the stations moved here since the open (`posesToRestore`), are work like
+  any object - the draft is not spent while one waits, and each moved
+  station counts as one change in the offer. Station by station: a move of
+  one station here never makes the others' poses read as spent.
 - **Restored** frames first (the slice's `restored` moves them before the
   objects), so the moved items' records land inside their moved stations -
-  unless a station was moved here meanwhile: live work wins.
+  each but a station moved here meanwhile (`posesToRestore` again, at the
+  tap): live work wins for that station only.
 - **Read first, in the record's own queue**, before this page writes it:
   settings changed here before the draft opened (`touched`) are written
   after the read. Only a station moved HERE outranks the stored poses; a
@@ -353,9 +355,14 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   another setting does not.
 - **Undecided poses ride along** (the r880 milestone review HIGH-2): while
   the stored poses are neither restored nor discarded (offered, or "Not
-  now"), every record this page writes WITHOUT poses carries them
-  (`undecided`, applied when the write runs), so a rename never costs a
-  moved station. The poses sit in a holder made PER OPEN by `present` and
+  now"), every record this page writes carries them (`undecided`,
+  applied when the write runs, `withUndecidedPoses`): a record WITHOUT
+  poses carries them whole, so a rename never costs a moved station, and
+  a record WITH poses (another station moved) keeps the live pose of each
+  station moved here since the open (`touched.movedStations`, named by
+  the caller as the record was taken) and the undecided pose of every
+  other, so a later move never costs a declined one. The holder is read
+  by `undecidedOf`, shared with the desktop. The poses sit in a holder made PER OPEN by `present` and
   dropped by `reset`; every `writeSettings` call names the holder of the
   open it writes FOR (`present` and the spent sweep their own open's,
   `saveSettings` the open tour's at its call, "Delete it" the one captured

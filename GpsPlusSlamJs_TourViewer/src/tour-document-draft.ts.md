@@ -35,7 +35,9 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   is in none of them, so a restore over a file changed on another device
   keeps that file's version of it, and its pose.
 - `TourDocumentDraft` - `DraftObjectWrites` (`draft-actions.ts`) plus
-  `saveSettings(record)`, and `saveCodes(codes)` for a page that keeps a
+  `saveSettings(record, movedStations)` (the stations whose pose moved here
+  since the open, `touched.movedStations`: their poses in the record are
+  live work), and `saveCodes(codes)` for a page that keeps a
   codes record (the phone's; the desktop measures no code and has none).
 - `TourCodesRecord` `{ level, levels }` (plan M3b) - the codes a draft
   keeps: the code in hand (the page's, not the document's, so the caller
@@ -84,6 +86,33 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   in the document's order) only once `stationsRecorded`, the frames, the
   order and the stations gone only once `framesRecorded`
   (`recordedFrames`, `recordedOrder`, `stationsGoneSinceOpen`).
+- `withUndecidedPoses(record, undecided, moved)` - the one rule both
+  drafts write a settings record by while a draft's station poses are
+  undecided (offered, or declined with "Not now"): a station in `moved`
+  keeps the record's (live) pose, every other station takes its undecided
+  pose, an undecided pose of a station the record does not name is added
+  (unless that station was moved here: it is gone here), and a record
+  without poses carries the undecided ones whole. No undecided poses: the
+  record itself. Without it, a later move of another station wrote the
+  file's pose over a declined move while that station's objects kept
+  their moved records, and Restore brought them back off their station.
+  Tests: `tour-document-draft.test.ts`, `tour-document-draft.property.test.ts`,
+  and the "after Not now" row of `draft-shared-behaviour.test.ts`.
+- `undecidedOf(record, opened)` - what a stored record holds that nobody
+  decided on yet against the opened tour's stations: its station poses
+  while one differs (`poses`, the whole list) and its created stations the
+  opened tour lacks (`created`), null for none. Both drafts fill their
+  holders with it at the open.
+- `posesToRestore(offered, against, moved)` - the offered poses a Restore
+  puts back, and the phone's open counts as waiting: each that differs
+  from `against`, but a station in `moved` (moved here since the open,
+  live work). Station by station: a move of one station once dropped
+  every offered pose on both pages, so Restore put the others' objects
+  back off their stations.
+- `withCreated(record, stored)` - `record` with the undecided created
+  stations `stored` whose ids it lacks, the record's own frame of an id
+  winning; both drafts add them to every record written before the
+  decision, or the next open drops the objects that name them.
 - `followDocument(draft, before, after, pictureOf, hands?)` - issues, in
   order, each id's writes for its change of standing against the written
   file (an entry, a tombstone, or nothing), then the settings record when

@@ -19,6 +19,7 @@ import {
   parseSettingsRecord,
   settingsRecord,
   settingsRecordText,
+  withUndecidedPoses,
   type TourDocumentDraft,
 } from "./tour-document-draft.js";
 import {
@@ -342,6 +343,70 @@ describe("followDocument, the station poses (review #1)", () => {
     });
     expect(settingsRecord(after).stations?.[0]?.geo).toEqual(geo);
     expect(calls.filter((c) => c.startsWith("saveSettings"))).toHaveLength(1);
+  });
+});
+
+/**
+ * Why: a draft declined with "Not now" keeps its moved stations for the
+ * next open, and the record this page writes meanwhile must not lose them:
+ * a station moved here carries its live pose, every other station the
+ * pose nobody decided on yet. The page names the stations it moved, and
+ * an undo of a move still counts as one (its pose is live work too).
+ */
+describe("the stations moved here, against the undecided poses", () => {
+  const pose = (id: string, lat: number) => ({
+    id,
+    geo: { lat, lon: 9.05, alt: 400, rotation: [0, 0, 0, 1] as const },
+  });
+
+  it("a moved station keeps its live pose, every other one its undecided pose, and one the record lacks is added", () => {
+    const record = {
+      needsNoGps: false,
+      stations: [pose("a", 1), pose("b", 2)],
+    };
+    const undecided = [pose("a", 10), pose("b", 20), pose("c", 30)];
+    expect(withUndecidedPoses(record, undecided, ["a"]).stations).toEqual([
+      pose("a", 1),
+      pose("b", 20),
+      pose("c", 30),
+    ]);
+  });
+
+  it("no undecided poses leave the record as it is; a record without poses carries them whole", () => {
+    const record = { needsNoGps: true, stations: [pose("a", 1)] };
+    expect(withUndecidedPoses(record, null, [])).toBe(record);
+    expect(
+      withUndecidedPoses({ needsNoGps: true }, [pose("a", 5)], []),
+    ).toEqual({ needsNoGps: true, stations: [pose("a", 5)] });
+  });
+
+  it("a station move names its station to the draft, and its undo still does", () => {
+    const moved: (readonly string[])[] = [];
+    const draft: TourDocumentDraft = {
+      ...recordingDraft().draft,
+      saveSettings: (_settings, ids) => {
+        moved.push(ids);
+        return Promise.resolve(true);
+      },
+    };
+    const station = opened.stations[0]!;
+    const geo = { ...station.geo, lat: station.geo.lat + 0.0001 };
+    let state = opened;
+    for (const action of [
+      act.stationMoved({ stationId: station.id, geo, what: "s" }),
+      act.undone(),
+    ]) {
+      const next = reduce(state, action);
+      followDocument(draft, state, next, () => undefined);
+      state = next;
+    }
+    expect(moved).toEqual([[station.id], [station.id]]);
+    // Another open starts from none, whatever the last one moved.
+    expect(state.touched.movedStations).toEqual([station.id]);
+    expect(
+      reduce(state, act.opened({ manifest: tourOf([pin("a")]) })).touched
+        .movedStations,
+    ).toEqual([]);
   });
 });
 

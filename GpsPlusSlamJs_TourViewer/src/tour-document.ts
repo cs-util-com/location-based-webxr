@@ -380,6 +380,10 @@ export interface TourDocumentState {
     readonly details: boolean;
     /** A station's frame moved here since the open. */
     readonly stations: boolean;
+    /** The stations a station move moved here since the open (an undo
+     *  keeps the name; a restore never adds one): their live poses outrank
+     *  a draft's poses not yet decided on, station by station. */
+    readonly movedStations: readonly string[];
   };
   /** The draft's settings record carries the details (once they were set
    *  or restored here: an untouched record has no opinion about them). */
@@ -689,7 +693,12 @@ export const initialTourDocumentState: TourDocumentState = {
   deleted: [],
   needsNoGps: false,
   details: {},
-  touched: { needsNoGps: false, details: false, stations: false },
+  touched: {
+    needsNoGps: false,
+    details: false,
+    stations: false,
+    movedStations: [],
+  },
   detailsRecorded: false,
   stationsRecorded: false,
   framesRecorded: false,
@@ -1821,6 +1830,7 @@ function goTo(
       needsNoGps: state.touched.needsNoGps || settingMoved,
       details: state.touched.details || detailsMoved,
       stations: state.touched.stations || stationsMoved || framesChanged,
+      movedStations: state.touched.movedStations,
     },
     detailsRecorded: state.detailsRecorded || detailsMoved,
     stationsRecorded: state.stationsRecorded || stationsMoved,
@@ -2525,7 +2535,13 @@ function stationMove(
       stations: before.stations.map((s) =>
         s.id === stationId ? { ...s, geo } : s,
       ),
-      touched: { ...before.touched, stations: true },
+      touched: {
+        ...before.touched,
+        stations: true,
+        movedStations: before.touched.movedStations.includes(stationId)
+          ? before.touched.movedStations
+          : [...before.touched.movedStations, stationId],
+      },
       stationsRecorded: true,
     },
     what,

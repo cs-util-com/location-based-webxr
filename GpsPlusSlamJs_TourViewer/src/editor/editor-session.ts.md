@@ -327,8 +327,9 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
     record's details likewise unless they were (each changed field counted;
     a cover naming no image of the tour - a photo deleted since - is
     dropped and the rest restored, M4a review #1; other details the format
-    would drop leave them as they are); the record's station poses unless a
-    station was moved here (each station whose pose differs counted; applied
+    would drop leave them as they are); the record's station poses but those of the
+    stations moved here (`posesToRestore`, station by station: a move of
+    one never drops the others'; each station whose pose differs counted; applied
     before the objects, so an item restores under the frame it was placed
     under, and its reach is checked there - review #1 of the tour document
     milestone); the stations edited there (the record's `frames`, at the

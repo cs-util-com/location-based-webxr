@@ -3060,6 +3060,43 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(stationGeo(page)).toEqual(MOVED);
   });
 
+  it("offers the other stations' poses beside a station this page moved, and restores them", async () => {
+    // Why: a station moved here outranks the draft's pose for THAT station
+    // only. The open counted no stored pose as work once any station had
+    // moved, so the draft read as spent: no offer, and the undecided poses
+    // of the other stations held on with nothing to decide them.
+    const OTHER = stationIdOf("other");
+    const OTHER_MOVED = { ...MOVED, lat: 47.5005 };
+    const TWO = tourOf([HOSTED, pin("other")]);
+    const { store, files } = memoryStore({
+      ...metaOnly(),
+      [SETTINGS_KEY]: record([
+        { id: STATION, geo: { ...MOVED, lat: 47.5002 } },
+        { id: OTHER, geo: OTHER_MOVED },
+      ]),
+    });
+    const page = wire(store);
+    page.ctx.tourDocument.open(TWO);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    page.setup.presentDraftForTour(TOUR);
+    await settle();
+
+    expect(page.dom.draftOffer.hidden, "the other pose is work").toBe(false);
+    expect(page.dom.draftOfferText.textContent).toContain("1 change");
+    page.dom.draftRestore.click();
+    await settle();
+    const geoOf = (id: string) =>
+      page.ctx.tourDocument.state().stations.find((s) => s.id === id)?.geo;
+    expect(geoOf(STATION), "the live move wins").toEqual(MOVED);
+    expect(geoOf(OTHER), "the offered pose is back").toEqual(OTHER_MOVED);
+    const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
+      stations?: { id: string; geo: unknown }[];
+    };
+    expect(stored.stations?.find((s) => s.id === OTHER)?.geo).toEqual(
+      OTHER_MOVED,
+    );
+  });
+
   // Why the next two matter (the r880 milestone review, HIGH-2): a name
   // is a settings change too. The kept name re-applied at every open, or
   // any rename while the pose is still offered, wrote the whole record
