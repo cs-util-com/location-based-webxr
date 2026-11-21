@@ -4,6 +4,13 @@
 
 ### Added
 
+- **One `.glb` chunk reader, shared**: the tour's `checkGlbInert` now
+  reads through it (same verdicts and reasons), and the Tour Viewer's
+  model optimizer and asset optimizer check page use it instead of their
+  own copies, so every reader refuses the same malformed files.
+  - **`utils/glb-chunks`** (deep import): `readGlbChunks`, `GLB_MAGIC`,
+    `GLB_CHUNK_JSON`, `GLB_CHUNK_BIN`.
+
 - **`storage/zip-reader`** (deep import): one capped open of a zip Blob,
   and the shared entry-name rules. `withCappedZipEntries` opens an
   untrusted zip Blob under the directory and entry caps,

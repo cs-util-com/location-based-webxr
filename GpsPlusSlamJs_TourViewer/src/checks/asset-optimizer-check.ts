@@ -9,6 +9,7 @@
  * @see asset-optimizer-check.ts.md
  */
 
+import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
 import { clamp01 } from "../landing/clamp01.js";
@@ -482,14 +483,12 @@ export function glbByteShares(bytes: Uint8Array): {
   readonly textures: number;
   readonly geometry: number;
 } {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  if (bytes.length < 20 || view.getUint32(0, true) !== 0x46546c67) {
-    throw new Error("the file is no GLB");
-  }
-  const jsonLength = view.getUint32(12, true);
-  const json = JSON.parse(
-    new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength)),
-  ) as { bufferViews?: { byteLength?: number }[]; images?: unknown[] };
+  const chunks = readGlbChunks(bytes);
+  if (!chunks.ok) throw new Error(`the file is no GLB: ${chunks.reason}`);
+  const json = chunks.json as {
+    bufferViews?: { byteLength?: number }[];
+    images?: unknown[];
+  };
   const views = json.bufferViews ?? [];
   const named = new Set<number>();
   for (const image of json.images ?? []) {
