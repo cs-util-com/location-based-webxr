@@ -193,6 +193,9 @@ loadImage }` once the open tour's manifest settled, `manifest` null for
 
 ## Invariants & assumptions
 
+- **The draft gate runs first** (`draftGate`, `draft-edit-gate.ts`): its
+  middleware sits before the document's listener, so an edit it holds
+  while a draft is undecided reaches neither the reducer nor the draft.
 - **One writer per group, readers anywhere.** The owner module named above
   is the only one that writes a group's fields; `teardownSession`
   (`archive-open.ts`) and the AR session end (`ar-entry.ts`) are the two

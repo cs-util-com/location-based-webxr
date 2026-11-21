@@ -306,10 +306,10 @@ were here. What stays is the Finish's side:
   - **Draft**: an edit is a record under the same id; a delete of a
     hosted object is `writeDraftDeletion`; the offer names changes and
     deletions (`restoreOfferText`); a restore replaces by id and brings
-    deletions back as tombstones, with live work on the same id winning.
-    The spent sweep and the discard skip ids changed live since the read
-    (`notLive`, `creator-draft.ts`): an edit keeps its id, so unlike a new placement its file
-    can be in the read's list.
+    deletions back as tombstones, the whole draft: every edit waits
+    while it is undecided (`draft-edit-gate.ts`), and lands after the
+    answer. The spent sweep and the discard skip only this page's visit
+    ids (`notLive`, `creator-draft.ts`).
   - **Overlay taps are not scene taps**: `beforexrselect` is cancelled on
     the panel (the PhysicsDemo pattern), so a tap on Delete does not also
     select what stands behind the button. The framework's reticle driver

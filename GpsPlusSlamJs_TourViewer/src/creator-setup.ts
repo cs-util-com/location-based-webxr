@@ -396,7 +396,7 @@ export function wireCreatorSetup(deps: {
   // makes for the same changes (`draft-actions.ts`).
   ctx.tourDocument.follow({
     ...draftObjectWrites(draft),
-    saveSettings: (settings, moved) => draft.saveSettings(settings, moved),
+    saveSettings: (settings) => draft.saveSettings(settings),
     saveCodes: (record) => draft.saveCodes(record),
   });
   /** The placed objects' previews and the earlier visits' frame

@@ -512,11 +512,20 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   file on disk already carries at its path with its bytes is let go, and bytes an open's
   tidy removed for such a file are not said lost). What an earlier visit left is
   offered in a toast that stays until answered (`.draft-offer`): Restore
-  (`session.restore`, live edits winning; `editor-draft.ts` `restoredLine`:
+  (`session.restore`, the whole draft; `editor-draft.ts` `restoredLine`:
   "N earlier changes are back - not saved yet", or why nothing came back in
   the offer's own terms - notes, the setting, or both, M1b-2 milestone
   review #6), Not now (offered again next time), Delete it
-  (`draft.discard`; a failure is said). Records an edit elsewhere replaced
+  (`draft.discard`; its answers disabled while it runs, and a failure
+  re-enables them and is said, the question kept). **"Not now" is for
+  looking only** (`offerDraft`): from the offer on, every edit of the tour
+  waits in the store's draft gate (`draft-edit-gate.ts`); the first one
+  shows the offer again, its words saying the edit waits
+  (`DRAFT_EDIT_WAITS`). Restore applies the draft, then the edits that
+  waited (`release`, counted with the restore for the undo step and the
+  save); a landed Delete it applies them after the discard; Not now again
+  drops them. Leaving the tour ends the question (the document's
+  `closed`). Records an edit elsewhere replaced
   are said once. Every edit goes to the draft through the session, whose
   writes are bound to its tour (`draft.writes()`: a closed tour's late
   write is dropped); a build

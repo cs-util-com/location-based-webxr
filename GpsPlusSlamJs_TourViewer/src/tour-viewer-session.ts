@@ -52,6 +52,7 @@ import { visitorWalkReducer } from "./visitor-walk-slice.js";
 import { visitorPrefsReducer } from "./visitor-prefs-slice.js";
 import { narrationBoxReducer } from "./narration-box-slice.js";
 import { startQuestionReducer } from "./start-question-slice.js";
+import { createDraftEditGate, type DraftEditGate } from "./draft-edit-gate.js";
 
 import type {
   HitTestReticleHandle,
@@ -113,6 +114,11 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * not an `addListener` dispatch: that would land in whichever of the
  * framework's listener middlewares comes first.
  *
+ * `draftGate` is the draft question's edit gate (`draft-edit-gate.ts`):
+ * its middleware runs before that listener, so while a draft of the open
+ * tour is undecided an edit waits for the creator's answer instead of
+ * reaching the reducer or the draft.
+ *
  * `creatorCodes` is the creator's code in hand and its visit's sightings
  * (`creator-codes-slice.ts`, debug-captures plan M3a), not written into
  * the recording either.
@@ -135,6 +141,7 @@ export function createTourViewerStore<
   },
   pageReducers?: Page,
 ) {
+  const draftGate = createDraftEditGate();
   const documentListener = createListenerMiddleware<{
     tourDocument: TourDocumentState;
     creatorCodes: CreatorCodesState;
@@ -161,7 +168,9 @@ export function createTourViewerStore<
       ? {}
       : { persistWhile: recording.persistWhile, continuousActionIndex: true }),
     extraReducers: { ...own, ...pageReducers } as typeof own & Page,
-    extraMiddleware: [documentListener.middleware],
+    // The draft's edit gate first: an edit it holds reaches neither the
+    // reducer nor the draft's listener.
+    extraMiddleware: [draftGate.middleware, documentListener.middleware],
     // Beyond the framework's built-ins (GPS with its paired poses, the
     // recording lifecycle, diagnostics): the QR detections the votes and
     // the mint were computed from, the creator's own log actions, and a
@@ -175,6 +184,7 @@ export function createTourViewerStore<
   });
   return Object.assign(store, {
     listenToDocument: documentListener.startListening,
+    draftGate,
   });
 }
 export type TourViewerStore = ReturnType<
@@ -188,6 +198,8 @@ export interface TourViewerPageStore extends CreatorDocumentStore {
     readonly tourDocument: TourDocumentState;
     readonly creatorCodes: CreatorCodesState;
   };
+  /** The draft question's edit gate (`draft-edit-gate.ts`). */
+  readonly draftGate: DraftEditGate;
 }
 export type ArController = ReturnType<typeof createEnableGpsArController>;
 

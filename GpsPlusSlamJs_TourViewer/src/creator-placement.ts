@@ -258,6 +258,9 @@ export function wireCreatorPlacement(deps: {
     void change.backedUp.then((ok) => {
       if (!ok) deps.draft.warnNoBackup();
     });
+    // Waiting for the draft question (`draft-edit-gate.ts`): not placed
+    // yet, and the question on screen says why - no refusal note.
+    if (change.held === true) return null;
     return { object: change.object, ownStation: change.ownStation };
   }
 

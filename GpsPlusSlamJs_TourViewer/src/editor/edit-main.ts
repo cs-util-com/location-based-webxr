@@ -43,6 +43,7 @@ import {
   selectEditorView,
   type EditorViewState,
 } from "./editor-view.js";
+import { DRAFT_EDIT_WAITS } from "../draft-edit-gate.js";
 import {
   childMoveChange,
   manifestToWrite,
@@ -3453,45 +3454,86 @@ async function openFile(
  * it away. It stays until answered.
  */
 function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
-  const t = toast(
-    offer.text,
-    [
-      {
-        label: "Restore",
-        run: () => {
-          t.remove();
+  // Every edit of the tour waits from here until the draft is decided
+  // (`draft-edit-gate.ts`): "Not now" is for looking only, and the first
+  // edit asks again, its words saying that the edit waits.
+  const gate = store.draftGate;
+  let shown: HTMLElement | null = null;
+  const show = (waits: boolean): void => {
+    shown?.remove();
+    const t = toast(
+      waits ? `${offer.text} ${DRAFT_EDIT_WAITS}` : offer.text,
+      actions,
+      null,
+      false,
+    );
+    t.classList.add("draft-offer");
+    fileToasts.push(t);
+    shown = t;
+  };
+  const hide = (): void => {
+    shown?.remove();
+    shown = null;
+  };
+  const actions: ToastAction[] = [
+    {
+      label: "Restore",
+      run: () => {
+        hide();
+        if (editor !== mine) return;
+        const applied = mine.restore(offer);
+        draft.restored();
+        // The edits that waited land on the restored draft.
+        const landed = gate.release();
+        if (applied.changed + applied.deleted + landed > 0) endUndo();
+        refresh();
+        toast(restoredLine(applied.changed + applied.deleted, offer));
+        // Restored work is pending work: saved by itself like any edit.
+        if (applied.changed + applied.deleted + landed > 0) tourChanged();
+      },
+    },
+    {
+      label: "Not now",
+      run: () => {
+        hide();
+        // An edit that waited is dropped; the next one asks again.
+        gate.drop();
+      },
+    },
+    {
+      label: "Delete it",
+      run: () => {
+        const t = shown;
+        if (editor !== mine || t === null) {
+          hide();
+          return;
+        }
+        // In progress: the question stays, its answers off, until the
+        // rejection landed or did not (async-ui-feedback).
+        const buttons = [...t.querySelectorAll("button")];
+        for (const b of buttons) b.disabled = true;
+        void draft.discard().then((ok) => {
           if (editor !== mine) return;
-          const applied = mine.restore(offer);
-          draft.restored();
-          if (applied.changed + applied.deleted > 0) endUndo();
-          refresh();
-          toast(restoredLine(applied.changed + applied.deleted, offer));
-          // Restored work is pending work: saved by itself like any edit.
-          if (applied.changed + applied.deleted > 0) tourChanged();
-        },
+          if (!ok) {
+            // The draft is still there, and still undecided: the edits
+            // that waited keep waiting for another answer.
+            for (const b of buttons) b.disabled = false;
+            toast(DISCARD_FAILED, undefined, null);
+            return;
+          }
+          hide();
+          if (gate.release() > 0) {
+            refresh();
+            tourChanged();
+          }
+        });
       },
-      {
-        label: "Not now",
-        run: () => {
-          t.remove();
-        },
-      },
-      {
-        label: "Delete it",
-        run: () => {
-          t.remove();
-          if (editor !== mine) return;
-          void draft.discard().then((ok) => {
-            if (!ok && editor === mine) toast(DISCARD_FAILED, undefined, null);
-          });
-        },
-      },
-    ],
-    null,
-    false,
-  );
-  t.classList.add("draft-offer");
-  fileToasts.push(t);
+    },
+  ];
+  gate.hold(() => {
+    show(true);
+  });
+  show(false);
 }
 
 /** "Choose…" and the drop box: the browser's file picker where it exists,

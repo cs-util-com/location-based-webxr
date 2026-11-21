@@ -4275,6 +4275,12 @@ describe(
         const b = await load(store, [a1]);
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
         await flush();
+        // The visits are offered: the edit waits for the answer.
+        await vi.waitFor(() => {
+          expect(b.dom.draftOfferText.textContent).not.toBe("");
+        });
+        b.dom.draftRestore.click();
+        await flush();
         // The tab dies before a Finish: the reload, still hosted at A1.
         const c = await load(store, [a1]);
         await vi.waitFor(() => {
@@ -4319,8 +4325,9 @@ describe(
       });
 
       // Why (re-review #2): an edit made while the draft is still opening
-      // is written when it opens; its base must still name the version the
-      // creator edited (the desktop's), or the next load drops it.
+      // waits for the answer and is written after it; its base must still
+      // name the version the creator edited (the desktop's), or the next
+      // load drops it.
       it("keeps an edit made while the draft opens, over a desktop edit (re-review #2)", async () => {
         const store = memoryDraftStore();
         const a0 = hosted("h1", "Gate");
@@ -4345,6 +4352,12 @@ describe(
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
         open();
+        await flush();
+        // The edit waited for the answer, and lands after it.
+        await vi.waitFor(() => {
+          expect(b.dom.draftOfferText.textContent).not.toBe("");
+        });
+        b.dom.draftRestore.click();
         await flush();
         const c = await load(store, [desk]);
         await vi.waitFor(() => {
