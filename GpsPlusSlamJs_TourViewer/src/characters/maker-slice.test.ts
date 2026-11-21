@@ -22,7 +22,12 @@ describe("maker-slice", () => {
   // (it is not stored), and a draft that was saved already starts a new
   // character with the backdrop kept. These are the page's boot rules.
   it("reads the stored draft back as the page starts", () => {
-    expect(fresh()).toEqual({ draft: freshDraft(), cut: "none", version: 0 });
+    expect(fresh()).toEqual({
+      draft: freshDraft(),
+      cut: "none",
+      version: 0,
+      generation: 0,
+    });
     const back = makerStateFrom({ step: 5, maxStep: 3, desc: "a fox" });
     expect(back.draft).toMatchObject({ step: 3, maxStep: 3, desc: "a fox" });
     expect(back.cut).toBe("none");
@@ -94,7 +99,7 @@ describe("maker-slice", () => {
     const s0 = run(
       fresh(),
       A.talkChosen("steady"),
-      A.saved({ id: "c1", name: "Pip" }),
+      A.saved({ id: "c1", name: "Pip", generation: 0 }),
       A.cutFailed("Only three poses"),
     );
     const s = run(s0, A.cutStarted());
@@ -177,7 +182,7 @@ describe("maker-slice", () => {
     const s = run(
       fresh(),
       A.named("Pip"),
-      A.saved({ id: "c1", name: "Pip" }),
+      A.saved({ id: "c1", name: "Pip", generation: 0 }),
       A.left(42),
     );
     expect(s.draft).toMatchObject({
@@ -186,6 +191,49 @@ describe("maker-slice", () => {
       savedName: "Pip",
       leftAt: 42,
     });
+  });
+
+  // Why: the pictures are written and the library saves before the save
+  // reports back; a new start, a Discard, its Undo or a new picture in that
+  // time puts another draft in place, and the save must not mark that one
+  // as saved (its draft row would vanish and the old one could be saved
+  // twice). The page takes the generation when it starts the save.
+  it("lands a save only on the draft it was started from", () => {
+    const s = run(fresh(), A.named("Pip"));
+    const g = s.generation;
+    for (const replace of [
+      A.startedAnother(),
+      A.cutStarted(),
+      A.restored({ draft: s.draft, hadCut: false }),
+    ]) {
+      const other = run(s, replace);
+      expect(other.generation).not.toBe(g);
+      expect(
+        run(other, A.saved({ id: "c1", name: "Pip", generation: g })),
+      ).toBe(other);
+    }
+    // A picture that is not taken (a cut already runs) changes nothing.
+    const cutting = run(s, A.cutStarted());
+    expect(run(cutting, A.cutStarted()).generation).toBe(cutting.generation);
+    // Edits of the same draft keep its generation.
+    const edited = run(s, A.descChanged("a fox"), A.named("Pippa"), A.went(1));
+    expect(edited.generation).toBe(g);
+  });
+
+  // Why: a stored name or saved name over 200 characters is dropped when
+  // the page loads again (draftOf), so the reducers keep no more than that;
+  // the name box has a maxlength, but a script or an extension can get
+  // past it.
+  it("keeps at most 200 characters of a name", () => {
+    const long = "n".repeat(250);
+    const s = run(
+      fresh(),
+      A.named(long),
+      A.saved({ id: long, name: long, generation: 0 }),
+    );
+    expect(s.draft.name).toBe("n".repeat(200));
+    expect(s.draft.savedName).toBe("n".repeat(200));
+    expect(s.draft.savedId).toBe("n".repeat(200));
   });
 
   // Why: the draft is kept in local storage by a listener, so every change

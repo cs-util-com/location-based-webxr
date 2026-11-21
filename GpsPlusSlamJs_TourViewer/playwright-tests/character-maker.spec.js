@@ -393,6 +393,118 @@ test.describe("character maker", () => {
     );
   });
 
+  // Why: the save reads the name late (above), so a Discard while the
+  // pictures are written would save the fresh draft's empty name and
+  // description, and mark that fresh draft as saved. The save goes only
+  // to the draft it was started from; a character put away meanwhile is
+  // not saved, and the page says so.
+  test("a character discarded while it is saved is not saved", async ({
+    page,
+  }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#nextBtn").click();
+    await page.locator("#charName").fill("Ranger Rita");
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__pngDelay = 800;
+    });
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#nextBtn")).toHaveText("Saving...");
+    await page.locator("#toHome").click();
+    await page.locator("#draftRow [data-discard]").click();
+    await expect(page.locator("#toasts")).toContainText(
+      "The character was not saved",
+    );
+    await page.reload();
+    await expect(page.locator("#libCount")).toHaveText("0 characters");
+  });
+
+  // Why: Start over sits in the header next to the save; while the
+  // character is written it waits, so a tap cannot replace the draft being
+  // saved, and it comes back when the save has ended.
+  test("Start over waits while the character is saved", async ({ page }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#nextBtn").click();
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__pngDelay = 800;
+    });
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#nextBtn")).toHaveText("Saving...");
+    await expect(page.locator("#restart")).toBeDisabled();
+    await expect(page.locator("#savedBox")).toBeVisible();
+    await expect(page.locator("#restart")).toBeEnabled();
+  });
+
+  // Why: a re-cut from the sliders shows "Cutting again" over a dimmed
+  // stage. A new picture brought in while one re-cut runs and the next
+  // waits ends the waiting one as aborted; the line and the dimming of a
+  // cut that is gone must not stay behind over the new picture's check.
+  // The aborted re-cut leaves them alone (a newer slider change may own
+  // them); the running one clears them when it lands without a cut, and
+  // the new picture's cut waits for it, so they are gone before its check.
+  test("a new picture during a re-cut leaves no re-cut line behind", async ({
+    page,
+  }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    const sheet = await page.evaluate(drawSheet);
+    await page.locator("#picFile").setInputFiles({
+      name: "sheet.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(sheet, "base64"),
+    });
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    const posts = await counter(page, "__cutPosts");
+    const answers = await counter(page, "__cutAnswers");
+    const nudge = (by) =>
+      page.evaluate((d) => {
+        const r = /** @type {HTMLInputElement} */ (
+          document.querySelector("#rEdge")
+        );
+        r.value = String(Number(r.value) + d);
+        r.dispatchEvent(new Event("input"));
+      }, by);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__cutDelay = 1500;
+    });
+    await nudge(1);
+    await expect.poll(() => counter(page, "__cutPosts")).toBe(posts + 1);
+    // A second change while the first re-cut runs: its re-cut waits. The
+    // new picture comes in after that re-cut was asked for (the sliders
+    // wait 220 ms) and replaces it.
+    await nudge(-1);
+    await page.evaluate(
+      (b64) =>
+        new Promise((done) =>
+          setTimeout(() => {
+            const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+            const dt = new DataTransfer();
+            dt.items.add(
+              new File([bytes], "second.png", { type: "image/png" }),
+            );
+            const input = /** @type {HTMLInputElement} */ (
+              document.querySelector("#picFile")
+            );
+            input.files = dt.files;
+            input.dispatchEvent(new Event("change"));
+            done(null);
+          }, 500),
+        ),
+      sheet,
+    );
+    await expect
+      .poll(() => counter(page, "__cutAnswers"), { timeout: 15000 })
+      .toBe(answers + 2);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await expect(page.locator("#cutStatus")).toHaveText("");
+    await expect(page.locator("#stage")).not.toHaveClass(/recutting/);
+  });
+
   for (const vp of VIEWPORTS) {
     test(`keeps the prototype's arrangement on a ${vp.name}`, async ({
       page,

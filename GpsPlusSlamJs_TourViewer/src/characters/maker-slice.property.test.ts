@@ -44,7 +44,22 @@ const action: fc.Arbitrary<Action> = fc.oneof(
     })
     .map((c) => A.cutChanged(c)),
   fc.constant(A.cutReset()),
-  fc.string({ maxLength: 40 }).map((n) => A.named(n)),
+  // Names short and around the name cap (200), as for the description.
+  fc
+    .oneof(
+      fc.string({ maxLength: 40 }),
+      fc.string({ minLength: 190, maxLength: 260 }),
+    )
+    .map((n) => A.named(n)),
+  // A save that lands on the first draft (generation 0) or on a later one,
+  // or that comes back after its draft was replaced.
+  fc
+    .record({
+      id: fc.string({ maxLength: 260 }),
+      name: fc.string({ maxLength: 260 }),
+      generation: fc.nat({ max: 3 }),
+    })
+    .map((p) => A.saved(p)),
   fc.nat().map((t) => A.left(t)),
   fc.constant(A.startedAnother()),
 );
