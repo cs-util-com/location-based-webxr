@@ -74,7 +74,7 @@ describe("the rebuild progress gate", () => {
   // Why: every dispatch wakes every store subscriber, and a tour can hold
   // thousands of entries; the gate bounds the Finish to about one report
   // per whole percent, and the panel must still end on the last count.
-  it("lets 1,000 entries through as at most 101 reports, the last at 100 %", () => {
+  it("lets 1,000 entries through as exactly 101 reports, the last at 100 %", () => {
     const gate = createProgressGate();
     const passed: [number, number][] = [];
     // The rebuild reports each entry, then the end once more.
@@ -82,7 +82,7 @@ describe("the rebuild progress gate", () => {
       if (gate(done, 1000)) passed.push([done, 1000]);
     }
     if (gate(1000, 1000)) passed.push([1000, 1000]);
-    expect(passed.length).toBeLessThanOrEqual(101);
+    expect(passed).toHaveLength(101);
     expect(passed.at(-1)).toEqual([1000, 1000]);
     expect(passed.filter(([done]) => done === 1000)).toHaveLength(1);
   });
