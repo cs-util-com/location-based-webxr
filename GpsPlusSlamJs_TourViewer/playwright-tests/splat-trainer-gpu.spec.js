@@ -111,9 +111,17 @@ async function buildRenderedWalk(page, opts) {
 
 /**
  * A stand-in for Splat.js: every stretch finishes at once, sharp enough
- * to be good, with an empty splat file.
+ * to be good, with an empty splat file. It runs in the trainer worker, so
+ * it also reports every policy refusal there through the worker's
+ * console: the browser's own "Refused to ..." message in a worker reaches
+ * no Playwright listener, but a console call does.
  */
 const SPLAT_JS_STUB = `
+self.addEventListener("securitypolicyviolation", (e) =>
+  console.error(
+    "Content Security Policy refused " + e.effectiveDirective + " " + e.blockedURI,
+  ),
+);
 export const TRAIN_MAX_DIM = 1600;
 export function parseCameras(j) { return j.cameras; }
 export function createSession(opts) {
@@ -164,9 +172,11 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
       body: SPLAT_JS_STUB,
     });
   });
-  // The browser reports a refusal in the console of whichever context made
-  // the request, and a worker's console is its own: both are listened to,
-  // since the document's event below cannot see the workers.
+  // A refusal in the page reaches the document's event below; one in the
+  // trainer worker reaches neither that event nor Playwright (which hears
+  // only a worker's console calls), so the stand-in turns the worker's own
+  // event into a console call, heard here. Refusals from the time before
+  // the stand-in runs show as a failed stretch instead.
   /** @type {string[]} */
   const cspConsole = [];
   /** @param {import("@playwright/test").ConsoleMessage} m */

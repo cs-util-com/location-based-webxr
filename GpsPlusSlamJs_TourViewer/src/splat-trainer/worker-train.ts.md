@@ -37,6 +37,12 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
   decode carry `retryHelps: false` (a second try meets the same library
   and the same photo); a library that could not be downloaded leaves a
   retry on offer, since the network may be back.
+- Known and accepted: some load failures that are just as permanent still
+  offer a retry, because they arrive as the same plain error as a failed
+  download: an import the page's content security policy refuses, and a
+  module that throws while it is evaluated. "Train again" then fails the
+  same way each time; harmless, and telling them apart from a network
+  error would need the browser's own error text, which is not a contract.
 - The load is capped by the job's `prepareCapMs`: a library that has not
   arrived by then ends as `failed`, "The splat trainer library did not
   arrive within <duration>.", with a retry on offer; the cap's timer is

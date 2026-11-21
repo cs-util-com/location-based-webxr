@@ -40,6 +40,9 @@ afterEach(() => {
   mounted?.dispose();
   mounted = null;
   document.body.textContent = "";
+  // A canvas spy restored here, not at the end of its test, cannot leak
+  // into the next test when an assertion fails first.
+  vi.restoreAllMocks();
 });
 
 function mount(
@@ -301,6 +304,17 @@ describe("the closer look", () => {
     expect(h.sharp.close).toHaveBeenCalledTimes(1);
     expect(h.painted).not.toContain(h.sharp);
     vi.restoreAllMocks();
+  });
+
+  // Why: Next moves the loupe to another stretch; the copy decoded for
+  // the first one is no longer shown and must not hold its pixels.
+  it("lets the sharp copy go when Next moves to another stretch", async () => {
+    const h = finishedWithSharpCopy();
+    await h.land();
+    expect(h.sharp.close).not.toHaveBeenCalled();
+    h.q<HTMLButtonElement>('[data-act="next"]').click();
+    expect(h.q(".loupe-word").textContent).toBe("Still training");
+    expect(h.sharp.close).toHaveBeenCalledTimes(1);
   });
 
   it("names a stretch queued to train again Waiting, never Still training", () => {

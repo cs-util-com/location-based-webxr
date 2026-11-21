@@ -132,8 +132,9 @@ their maps) fails the build; see `scripts/source-maps-deploy.mjs.md`.
 security policy as built: equal to the source page's, before every script
 and link, no inline or foreign script, and every Splat.js address the
 trainer worker names allowed by `script-src`; see
-`scripts/splat-csp-deploy.mjs.md`. It runs right after the Tour Viewer
-build.
+`scripts/splat-csp-deploy.mjs.md`. The check itself
+(`assertSplatPolicyShipped`) runs right after the Tour Viewer build; the
+test file runs with the root's unit tests.
 
 `scripts/globe-assets-deploy.test.mjs` - the copy (the `.md` notes left
 out, a missing or empty source refused) and the guard (red for a chunk naming
