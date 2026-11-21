@@ -878,10 +878,10 @@ describe(
       );
       expect(a.codes.inHand()!.json).not.toBe(tapLevel);
       const onDisk = JSON.parse(
-        String(files.get(objectKey(pin.id))),
+        files.get(objectKey(pin.id)) as string,
       ) as TourObject;
       expect(onDisk.geo).toEqual(pin.geo);
-      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
+      const codes = JSON.parse(files.get(CODES_KEY) as string) as {
         level: { json: string };
       };
       expect(codes.level.json).toBe(a.codes.inHand()!.json);
@@ -1987,7 +1987,7 @@ describe(
       await flush();
       const savedA = () =>
         (
-          JSON.parse(String(files.get(CODES_KEY))) as {
+          JSON.parse(files.get(CODES_KEY) as string) as {
             levels: { id: string; json: string }[];
           }
         ).levels[0]!;
@@ -2755,7 +2755,7 @@ describe(
       expect(a.ctx.tourDocument.entries().map((p) => p.object)).toMatchObject([
         { id: "h1", caption: "Mill" },
       ]);
-      expect(JSON.parse(String(files.get(objectKey("h1"))))).toMatchObject({
+      expect(JSON.parse(files.get(objectKey("h1")) as string)).toMatchObject({
         block: {
           caption: "Mill",
         },
@@ -3856,7 +3856,7 @@ describe(
       a.endVisit();
       await flush();
       const codes = () =>
-        JSON.parse(String(files.get(CODES_KEY))) as {
+        JSON.parse(files.get(CODES_KEY) as string) as {
           level: { id: string; json: string } | null;
           levels: { id: string; json: string }[];
         };
@@ -4957,7 +4957,7 @@ describe(
       expect(second.id).not.toBe(first.id);
       a.endVisit();
       await flush();
-      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
+      const codes = JSON.parse(files.get(CODES_KEY) as string) as {
         levels: { id: string }[];
       };
       expect(codes.levels.map((l) => l.id)).toEqual([first.id, second.id]);
@@ -5063,7 +5063,7 @@ describe(
       );
       a.endVisit();
       await flush();
-      const codes = JSON.parse(String(files.get(CODES_KEY))) as {
+      const codes = JSON.parse(files.get(CODES_KEY) as string) as {
         levels: { id: string; json: string }[];
       };
       const settledA = codes.levels.find((l) => l.id === first.id)!;

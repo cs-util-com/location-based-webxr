@@ -136,7 +136,7 @@ describe("a draft of an older format when its file opens", () => {
   // would restore half a tour.
   it("is gone before anything is offered, and the open starts a new one", async () => {
     const b = memoryDraftStores();
-    const store = (await b.open(editorDraftKey(K1)))!;
+    const store = await b.open(editorDraftKey(K1));
     await store.put(META_KEY, JSON.stringify({ format: 4, tourUrl: K1 }));
     await store.put(objectKey("old"), JSON.stringify({ id: "old" }));
     await store.put(SETTINGS_KEY, JSON.stringify({ stations: [] }));
@@ -155,7 +155,7 @@ describe("a refused older file's draft", () => {
   const T1 = "local-file:tour:OlderTour1";
   const T2 = "local-file:tour:OlderTour2";
   async function seed(b: MemoryDraftStores, fileKey: string) {
-    const store = (await b.open(editorDraftKey(fileKey)))!;
+    const store = await b.open(editorDraftKey(fileKey));
     await store.put(META_KEY, "{}");
     await store.put(objectKey("a"), "{}");
   }
@@ -179,7 +179,7 @@ describe("a refused older file's draft", () => {
   // copy's unsaved work, and a draft that says nothing either way stays.
   it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
     const b = memoryDraftStores();
-    const store = (await b.open(editorDraftKey(T1)))!;
+    const store = await b.open(editorDraftKey(T1));
     await store.put(META_KEY, "{}");
     await store.put(objectKey("a"), JSON.stringify(tourObjectRecord(pin("a"))));
     await expect(draftIn(b).forget(T1)).resolves.toBe(false);
@@ -188,7 +188,7 @@ describe("a refused older file's draft", () => {
 
   it("is kept when nothing in it says which version wrote it", async () => {
     const b = memoryDraftStores();
-    const store = (await b.open(editorDraftKey(T1)))!;
+    const store = await b.open(editorDraftKey(T1));
     await store.put(META_KEY, "{}");
     await expect(draftIn(b).forget(T1)).resolves.toBe(false);
     expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(1);
@@ -237,7 +237,7 @@ describe("createEditorDraft", () => {
     expect(await draft.saveObject(pin("a", "edited"))).toBe(true);
     await draft.idle();
     expect(b.spaces.has(K1)).toBe(false);
-    const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
+    const stored = await readDraft(await b.open(editorDraftKey(K1)));
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toEqual({
       // The opened version as the file holds it (in its station).
@@ -267,7 +267,7 @@ describe("createEditorDraft", () => {
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveDeletion("a");
-    const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
+    const stored = await readDraft(await b.open(editorDraftKey(K1)));
     expect(stored?.draft.deleted).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toBeUndefined();
   });

@@ -15,7 +15,6 @@ import type {
   TourObject,
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { draftKeyForTour } from "./authoring-draft.js";
@@ -250,14 +249,15 @@ describe("the phone draft follows the saved file's key", () => {
     expect(await (copied.get(photoKey("p")) as Blob).text()).toBe("JPEG");
     expect(copied.get(objectKey("a"))).toBe(before.get(objectKey("a")));
     expect(
-      (JSON.parse(String(copied.get(META_KEY))) as { tourUrl: string }).tourUrl,
+      (JSON.parse(copied.get(META_KEY) as string) as { tourUrl: string })
+        .tourUrl,
     ).toBe(NEW);
     // The opened file's namespace keeps what it held.
     expect([...ns.files(OLD).keys()].sort()).toEqual([...before.keys()].sort());
 
     expect(await draft.writeObject(pin("a", "after"))).toBe(true);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("after");
-    expect(String(ns.files(OLD).get(objectKey("a")))).not.toContain("after");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("after");
+    expect(ns.files(OLD).get(objectKey("a")) as string).not.toContain("after");
   });
 
   it("never overwrites a write made while the copy ran with the old copy", async () => {
@@ -277,7 +277,7 @@ describe("the phone draft follows the saved file's key", () => {
     };
     expect(await draft.follow(NEW)).toBe(true);
     expect(await Promise.all(during)).toEqual([true]);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("during");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("during");
   });
 
   it("says a copy that could not read a file did not land", async () => {
@@ -313,7 +313,7 @@ describe("the phone draft follows the saved file's key", () => {
     ]);
     expect([first, second]).toEqual([true, true]);
     expect(await draft.writeObject(pin("a", "after"))).toBe(true);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("after");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("after");
   });
 
   it("still reports failure when the draft moved meanwhile to ANOTHER key", async () => {
