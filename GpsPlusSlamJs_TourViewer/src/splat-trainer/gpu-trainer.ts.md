@@ -14,10 +14,15 @@ trains it in a worker running Splat.js, so the page stays responsive.
 - `GpuTrainerDeps` - `{ gpu, readPhotos(recording, entries), spawn(),
 timer: { now }, settings? }`.
 - `createGpuTrainer(deps) -> TrainerAdapter`.
-- Internal, not exported: `tooLargeFor(photos, width, height, limits,
-settings) -> string | null` - why a stretch cannot train on a card with
-  `limits` (`memoryBudgetBytes` then `photoScale` of `training-budget.ts`),
-  in words; null when it fits or the sizes cannot be judged.
+- Internal, not exported: `cardFit(photos, width, height, limits,
+settings) -> { budgetBytes, tooLarge } | null` - the card's memory
+  budget for the stretch's photos (`memoryBudgetBytes` of
+  `training-budget.ts`) and, in words, why the stretch cannot train on a
+  card with `limits` (`photoScale`), or null in `tooLarge` when it fits;
+  null when the sizes cannot be judged. The smallest photo it accepts is
+  the larger of the settings' `minShortSidePx` and Splat.js's own floor
+  (`SPLAT_JS_MIN_TRAIN_DIM` on the longer side), since the library never
+  shrinks a photo below that.
 - `judgeGpuRun(result, { goodHeldOutDb, weakHeldOutDb }) -> WindowJudgement`.
 
 ## Behaviour
@@ -25,17 +30,20 @@ settings) -> string | null` - why a stretch cannot train on a card with
 - `probe` is `probeWebGpu(gpu)`; the trainer keeps the newest result,
   and `trainWindow` probes itself when the page has not.
 - `trainWindow`: says `loading` at once, then `planWindowJob`, then the
-  card check: with the adapter's limits known, a stretch that
-  `tooLargeFor` refuses ends as `failed` with that sentence and
-  `retryHelps: false`, before any photo is read or worker started (the
-  photo size Splat.js picks itself is not passed on). Then `readPhotos`
+  card check: with the adapter's limits known, a stretch that `cardFit`
+  refuses ends as `failed` with that sentence and `retryHelps: false`,
+  before any photo is read or worker started; a stretch that fits is sent
+  with the budget as the job's `photoBudgetBytes`, which Splat.js shrinks
+  its photos to (without limits, none is sent and Splat.js uses its own
+  default). Then `readPhotos`
   for the job's entries (a failure ends as `failed`, "The stretch's
   photos could not be read from the recording (...)", `retryHelps:
 false`), then one fresh worker per stretch, sent
   `{ type: "train", job, photos }`. Worker progress reaches the page with
   its stage and time to the next look; the worker's looks reach it as
-  `onPreview`, and a look that arrives after the abort is closed instead
-  (an `ImageBitmap` holds its pixels until closed). Its result is passed
+  `onPreview`, and a look that arrives after the abort, or after the
+  stretch ended, is closed instead (an `ImageBitmap` holds its pixels
+  until closed). Its result is passed
   on with its `detail` and `retryHelps`. A worker error ends as
   `failed`, "The trainer stopped unexpectedly (...)", with a retry still
   offered.
@@ -53,7 +61,7 @@ false`), then one fresh worker per stretch, sent
   (or "Training stopped with an error." without one), passing
   `retryHelps: false` on, so the page offers no "Train again" for it.
 - The thresholds (20 dB good, 16 dB weak) are provisional and laxer than
-  the plan's gate bars (good at 21 dB held out and 27 dB at the camera with
+  the stricter bars the trainer aims for (good at 21 dB held out and 27 dB at the camera with
   SSIM 0.70; not good under 19 dB held out or 25 dB at the camera): this
   judge reads held-out sharpness only. 16-21 dB for "weak" and 19-22 dB for
   "good" are plausible; a measured judge against people's ratings decides.
@@ -66,6 +74,9 @@ stop ending the worker at once, a stop before the start, a lost device
 and a deadline passed on, a refused library (its detail and
 `retryHelps` passed on) and a crashed worker as failed in words,
 unreadable photos, a stretch too large for the card refused before any
-worker (probed first or not) and one that fits the default limits
-trained, `loading` before the photos are read, looks passed on and a
-late one closed; and the judge's thresholds and failure words.
+worker (probed first or not), one that fits only below the trainer's
+smallest photo size refused, one that fits the default limits trained
+with the card's budget and one on a card of unknown limits sent none,
+`loading` before the photos are read, looks passed on and a late one
+closed, after the stop and after the end; and the judge's thresholds and
+failure words.

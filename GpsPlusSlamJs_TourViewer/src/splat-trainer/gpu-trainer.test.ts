@@ -7,6 +7,7 @@ import {
   type WorkerLike,
 } from "./gpu-trainer.js";
 import { readSplatInputs } from "./recording-reader.js";
+import { planWindowJob } from "./splat-inputs.js";
 import type {
   GpuLike,
   TrainProgress,
@@ -342,6 +343,62 @@ describe("createGpuTrainer", () => {
     s.worker.reply(finished());
     expect((await run).outcome).toBe("finished");
     expect(s.spawned()).toBe(1);
+    // The trainer shrinks its photos to the same budget the check used
+    // (half the binding limit), not to its own fixed one: Splat.js's
+    // 700e6 bytes are about 5.5 times what such a card binds.
+    expect(s.worker.sent[0]?.job.photoBudgetBytes).toBe(64 * 2 ** 20);
+  });
+
+  // Why: without the card's limits there is no budget to pass on; the
+  // trainer then shrinks to its own.
+  it("passes no photo budget when the card's limits are unknown", async () => {
+    const s = setup();
+    const run = s.trainer.trainWindow(
+      await request(),
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    s.worker.reply(finished());
+    await run;
+    expect(s.worker.sent[0]?.job).not.toHaveProperty("photoBudgetBytes");
+  });
+
+  // Why: Splat.js never shrinks a photo below 320 px on its longer side,
+  // so a stretch that fits the budget only at a smaller size would still
+  // overflow the card; it is refused like any other too large for it.
+  it("refuses a stretch that fits only below the trainer's smallest photo size", async () => {
+    const base = await request();
+    const req: TrainRequest = {
+      ...base,
+      inputs: {
+        ...base.inputs,
+        census: { ...base.inputs.census, frameWidth: 1600, frameHeight: 1200 },
+      },
+    };
+    const n = planWindowJob(req.inputs, req.window, 1, TRAINER_DEFAULTS).photos
+      .length;
+    // Room for every photo at 1600 x 1200 shrunk to about 190 px high
+    // (above the 128 px the budget allows), not at the 320 x 240 floor.
+    const budget = n * 600_000;
+    const limits = {
+      maxStorageBufferBindingSize: 2 * budget,
+      maxBufferSize: 4 * budget,
+    };
+    const s = setup({
+      gpu: {
+        requestAdapter: () =>
+          Promise.resolve({ info: { vendor: "nvidia" }, limits }),
+      },
+    });
+    const r = await s.trainer.trainWindow(
+      req,
+      s.events,
+      new AbortController().signal,
+    );
+    expect(r).toMatchObject({ outcome: "failed", retryHelps: false });
+    expect(r.detail).toMatch(/graphics memory/);
+    expect(s.spawned()).toBe(0);
   });
 });
 
@@ -451,5 +508,11 @@ describe("createGpuTrainer: stages and looks", () => {
     expect(late.closed).toBe(true);
     s.worker.reply(finished());
     await run;
+    // A look already queued when the worker was ended arrives after the
+    // stretch is over; it is closed too.
+    const after = { close: () => (after.closed = true), closed: false };
+    s.worker.reply({ type: "preview", picture: after as never });
+    expect(after.closed).toBe(true);
+    expect(s.previews).toEqual([look]);
   });
 });

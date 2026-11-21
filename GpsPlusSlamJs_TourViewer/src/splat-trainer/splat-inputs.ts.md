@@ -16,8 +16,10 @@ colours come in through a sampler built by the worker.
 - `WindowPhoto` - `{ name, entry, train, camera, pose, depth, shell }`.
 - `WindowJob` - everything the worker needs apart from the photo bytes,
   structured-clonable: `photos`, `evalFrames`, `maxIters`, `deadlineMs`,
-  `keepM`, `trainPositions`, `seedVoxelM`, `shellVoxelM`,
-  `shellDistanceM`, `shellGridPx`, `etaMinIterations`.
+  `prepareCapMs`, `keepM`, `trainPositions`, `seedVoxelM`, `shellVoxelM`,
+  `shellDistanceM`, `shellGridPx`, `etaMinIterations`, and
+  `photoBudgetBytes` when the card's limits are known (set by the GPU
+  trainer, not by `planWindowJob`).
 - `splatCamera(image, pose, K, width, height) -> SplatCameraEntry` -
   `R = diag(1, -1, -1) * R_c2w^T`, `t = -R * position`.
 - `depthSeeds(samples, width, height, colourAt) -> SeedPoint[]` - each

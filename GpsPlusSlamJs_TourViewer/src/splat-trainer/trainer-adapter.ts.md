@@ -25,7 +25,7 @@ recording: Blob }` (the recording file, for its photos);
 - `WindowTrainResult` - `{ outcome, metrics | null, trainingS, ply: Blob
 | null, detail?, retryHelps? }`: `detail` says why a `failed` run
   failed; `retryHelps: false` that a second try cannot fix it (a library
-  that will not download, a photo that will not read, a stretch too large
+  of the wrong version, a photo that will not read, a stretch too large
   for the card).
 - `WindowJudgement` - `{ verdict: good | weak | poor, reasons, say,
 retryHelps? }`; `retryHelps: false` keeps "Train again" off the print.

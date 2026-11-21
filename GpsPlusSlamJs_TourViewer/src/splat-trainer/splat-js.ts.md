@@ -20,8 +20,15 @@ mirror, never bundled or vendored.
   `camMeta`, `excluded`, and for looks `device`, `canvasFormat` and
   `renderTrainCam(ci, ctx)`),
   `SplatJsModule` (and, unexported, the `createSession` options it takes).
-- `checkSplatJs(mod) -> SplatJsModule` - throws "The splat trainer library
-  is not the version this page expects (<what>)." for a non-object, a
+- `SPLAT_JS_MIN_TRAIN_DIM` - 320, the longer side (px) below which
+  Splat.js at the pinned commit never shrinks a photo, whatever its
+  budget; the card check counts with it.
+- `SplatJsMismatchError` - what `checkSplatJs` throws, so a caller can
+  tell a wrong library (a retry cannot help) from one that did not
+  download (a retry may).
+- `checkSplatJs(mod) -> SplatJsModule` - throws a `SplatJsMismatchError`,
+  "The splat trainer library
+  is not the version this page expects (<what>).", for a non-object, a
   missing `createSession` or `parseCameras`, or a `TRAIN_MAX_DIM` that is
   not a positive number.
 - `ModuleImporter` - `(url) => Promise<unknown>`.
@@ -48,5 +55,9 @@ mirror, never bundled or vendored.
 ## Tests
 
 `splat-js.test.ts`: the pinned address, the check's acceptance and each
-refusal, and the loader with an injected importer (the address asked
-for, a network failure and a wrong module, both in words).
+refusal, the loader with an injected importer (the address asked for, a
+network failure and a wrong module, both in words), and the page's
+content security policy: `SPLAT_JS_COMMIT` is mirrored in
+`splat/index.html`'s `script-src`, so a pin changed here and not there
+fails, and the other directives are pinned too. The built page's policy
+is checked at the site build (`scripts/splat-csp-deploy.mjs`).

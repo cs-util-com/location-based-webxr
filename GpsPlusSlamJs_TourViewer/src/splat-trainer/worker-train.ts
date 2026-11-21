@@ -9,7 +9,7 @@
  * @see worker-train.ts.md
  */
 
-import type { SplatJsModule } from "./splat-js.js";
+import { SplatJsMismatchError, type SplatJsModule } from "./splat-js.js";
 import {
   depthSeeds,
   shellSeeds,
@@ -18,6 +18,7 @@ import {
   type WindowJob,
 } from "./splat-inputs.js";
 import {
+  durationWords,
   runWindow,
   type RunClock,
   type RunPreview,
@@ -86,10 +87,14 @@ export function colourSampler(
   };
 }
 
+/** Thrown when the library's download outlasts its cap. */
+class LoadTimeout extends Error {}
+
 /**
  * Trains the window of `msg`. Never rejects: a library that will not load
- * or a photo that will not decode ends as `failed` with the reason in
- * `detail`; an abort before training ends as `cancelled`.
+ * (or does not arrive within the job's `prepareCapMs`) or a photo that
+ * will not decode ends as `failed` with the reason in `detail`; an abort
+ * before training ends as `cancelled`.
  */
 export async function trainInWorker<P = unknown>(
   msg: TrainMessage,
@@ -121,12 +126,33 @@ export async function trainInWorker<P = unknown>(
     previewEveryS: null,
   });
   let mod: SplatJsModule;
+  let cap: unknown = null;
   try {
-    mod = await deps.load();
+    mod = await Promise.race([
+      deps.load(),
+      new Promise<never>((_, reject) => {
+        cap = deps.clock.setTimeout(
+          () => reject(new LoadTimeout()),
+          job.prepareCapMs,
+        );
+      }),
+    ]);
   } catch (err) {
-    // A library that will not download or is not the pinned one will not
-    // on a second try either.
-    return early("failed", errorText(err), false);
+    if (err instanceof LoadTimeout) {
+      return early(
+        "failed",
+        `The splat trainer library did not arrive within ${durationWords(job.prepareCapMs)}.`,
+      );
+    }
+    // A library that is not the pinned one is refused on a second try
+    // too; a download that failed may well succeed then.
+    return early(
+      "failed",
+      errorText(err),
+      err instanceof SplatJsMismatchError ? false : undefined,
+    );
+  } finally {
+    if (cap !== null) deps.clock.clearTimeout(cap);
   }
   const depthPts = [];
   const shellPts = [];
@@ -184,6 +210,9 @@ export async function trainInWorker<P = unknown>(
       trainPositions: job.trainPositions,
       etaMinIterations: job.etaMinIterations,
       prepareCapMs: job.prepareCapMs,
+      ...(job.photoBudgetBytes === undefined
+        ? {}
+        : { photoBudgetBytes: job.photoBudgetBytes }),
     },
     onProgress,
     signal,
