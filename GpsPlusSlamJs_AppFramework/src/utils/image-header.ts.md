@@ -12,19 +12,24 @@ it against one pixel cap (`ar/tour-media.ts` `TOUR_MAX_IMAGE_PIXELS`).
 
 - `imageInfo(bytes)` -> `{ type, width, height }` with `type` one of
   `jpeg`, `png`, `webp`, `gif`, `avif`, or `null` when the bytes are
-  not a complete header of one of them.
+  not a complete header of one of them. A WebP's result also carries
+  `alpha`: whether its header says the image has alpha.
 - `imageInfoOfBlob(blob, probeBytes = 1 MiB)` - the same from a Blob's
   first bytes (the module-private `IMAGE_HEADER_PROBE_BYTES`), never reading
   a large image whole;
   `null` when the probe holds no complete header or the Blob cannot be read.
-- Type `ImageHeaderInfo` (`type` is the union of the five).
+- Type `ImageHeaderInfo`: a union on `type`; only the `webp` member has
+  `alpha`.
 
 ## Invariants & assumptions
 
 - JPEG: walks the segments from SOI (standalone markers carry no length);
   the first frame marker (SOF0-SOF15 except DHT, JPG, DAC) gives the size.
 - PNG: the 8-byte signature, then IHDR's big-endian width and height.
-- WebP: `RIFF`, `WEBP`, then the first chunk: VP8X, VP8L or VP8.
+- WebP: `RIFF`, `WEBP`, then the first chunk: VP8X (the alpha flag 0x10
+  of its flags byte, then 24-bit width - 1 and height - 1), VP8L (the 0x2f
+  signature, then 14-bit width - 1, height - 1 and an alpha bit) or VP8
+  (simple lossy, never alpha).
 - GIF: `GIF87a`/`GIF89a`, then the logical screen (little-endian). A
   frame larger than the screen is clipped by the browsers' decoders.
 - AVIF: an ISO-BMFF `ftyp` naming `avif` or `avis`, then
@@ -33,11 +38,11 @@ it against one pixel cap (`ar/tour-media.ts` `TOUR_MAX_IMAGE_PIXELS`).
   the probe is cut there (a header read from a file's first bytes).
 - Never throws, never reads past the buffer; a zero or unsafe size is
   `null`.
-- **Unify note:** the JPEG, PNG and WebP readers follow the
-  Globe's fetch-script reader (`GpsPlusSlamJs_Globe/src/image-header.ts`,
-  which also reads a WebP's alpha). The Globe does not depend on the
-  framework, so it keeps its copy for now; moving it onto this one is filed
-  as a follow-up in the K4 review fixes' report.
+- **The one image-header reader of the workspace.** The Globe's fetch
+  script (`GpsPlusSlamJs_Globe/scripts/fetch-globe-assets.mjs`) imports it
+  by its source path and refuses an imagery tile whose WebP header states
+  no alpha (the tiles carry their water mask in it); the Globe's own copy
+  was removed.
 
 ## Examples
 
@@ -51,10 +56,12 @@ if (info === null || info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {
 ## Tests
 
 - `image-header.test.ts` - crafted JPEG (baseline, progressive), PNG,
-  WebP (VP8X), GIF and AVIF headers; an AVIF grid's largest item; an HEIF
+  WebP (VP8X, VP8L and VP8, with and without alpha; a RIFF that is not
+  WebP, a truncated one, an unknown chunk), GIF and AVIF headers; an AVIF grid's largest item; an HEIF
   that is not AVIF; truncated headers, zero sizes, SVG text, empty bytes;
   `imageInfoOfBlob` from a large Blob's first bytes, and a JPEG frame past
   a small probe read as unknown.
-- `image-header.property.test.ts` - every 16-bit JPEG and GIF size and
-  every PNG size read back; random bytes never throw and never yield a
+- `image-header.property.test.ts` - every 16-bit JPEG and GIF size,
+  every PNG size, and every extended (24-bit) and lossless (14-bit) WebP
+  size with its alpha read back; only a WebP result carries alpha; random bytes never throw and never yield a
   size unless they start like an image.

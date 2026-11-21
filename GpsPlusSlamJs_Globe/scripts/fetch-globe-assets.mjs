@@ -36,7 +36,9 @@ import {
   typicalColumnJump,
 } from "../src/cloud-seam.ts";
 import { globeMapPieces, globeSource } from "../src/globe-sources.ts";
-import { imageInfo } from "../src/image-header.ts";
+// The framework's reader by its source: this script runs under plain node
+// and the framework's package entry points at a dist it may not have built.
+import { imageInfo } from "../../GpsPlusSlamJs_AppFramework/src/utils/image-header.ts";
 import { provenanceFetchedOn } from "../src/provenance-date.ts";
 import { pyramidTiles, tileBBox4326, wmsBBox } from "../src/tile-pyramid.ts";
 import { WATER_MAX_BRIGHTNESS, waterAlpha } from "../src/water-alpha.ts";

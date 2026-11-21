@@ -7,19 +7,27 @@
  * before a picture, a figure or a model's texture is ever decoded (tour kit
  * K4 review R2).
  *
- * The JPEG, PNG and WebP readers follow the Globe's fetch-script reader
- * (`GpsPlusSlamJs_Globe/src/image-header.ts`, which also reads a WebP's
- * alpha); GIF and AVIF are added here. Pure: no I/O, never throws, never
- * reads past the buffer.
+ * For a WebP it also reads whether the header says the image carries
+ * alpha: the Globe's fetch script checks its imagery tiles by it, whose
+ * water mask lives in their alpha. The one image-header reader of the
+ * workspace. Pure: no I/O, never throws, never reads past the buffer.
  *
  * @see image-header.ts.md
  */
 
-export interface ImageHeaderInfo {
-  readonly type: 'jpeg' | 'png' | 'webp' | 'gif' | 'avif';
-  readonly width: number;
-  readonly height: number;
-}
+export type ImageHeaderInfo =
+  | {
+      readonly type: 'jpeg' | 'png' | 'gif' | 'avif';
+      readonly width: number;
+      readonly height: number;
+    }
+  | {
+      readonly type: 'webp';
+      readonly width: number;
+      readonly height: number;
+      /** Whether the header says the image carries alpha. */
+      readonly alpha: boolean;
+    };
 
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
@@ -46,17 +54,19 @@ const u24le = (bytes: Uint8Array, i: number): number =>
 const ascii = (bytes: Uint8Array, i: number, n: number): string =>
   String.fromCharCode(...bytes.subarray(i, i + n));
 
-const sized = (
-  type: ImageHeaderInfo['type'],
-  width: number,
-  height: number
-): ImageHeaderInfo | null =>
+/** Whether both are a usable size: positive safe integers. */
+const isSize = (width: number, height: number): boolean =>
   Number.isSafeInteger(width) &&
   Number.isSafeInteger(height) &&
   width > 0 &&
-  height > 0
-    ? { type, width, height }
-    : null;
+  height > 0;
+
+const sized = (
+  type: Exclude<ImageHeaderInfo['type'], 'webp'>,
+  width: number,
+  height: number
+): ImageHeaderInfo | null =>
+  isSize(width, height) ? { type, width, height } : null;
 
 /** SOF0-SOF15 frame markers, minus DHT (C4), JPG (C8) and DAC (CC). */
 function isFrameMarker(marker: number): boolean {
@@ -110,32 +120,55 @@ const u32le = (bytes: Uint8Array, i: number): number =>
     ((bytes[i + 3] ?? 0) << 24)) >>>
   0;
 
-/** A WebP's first chunk's reader, by its four-character code: VP8X
- *  (24-bit width - 1, height - 1), VP8L (14-bit width - 1, height - 1 after
- *  the 0x2f signature) or VP8 (the frame's start code, then 14-bit width
- *  and height). */
+/** A WebP's size and alpha, as its first chunk states them. */
+interface WebpHeader {
+  readonly width: number;
+  readonly height: number;
+  readonly alpha: boolean;
+}
+
+/** A WebP's first chunk's reader, by its four-character code: VP8X (the
+ *  extended format, which a lossy image with alpha uses: flags with the
+ *  alpha bit 0x10, then 24-bit width - 1 and height - 1), VP8L (lossless:
+ *  the 0x2f signature, then 14-bit width - 1, height - 1 and an alpha bit)
+ *  or VP8 (simple lossy, never alpha: the frame's start code, then 14-bit
+ *  width and height). */
 const WEBP_CHUNKS: Readonly<
-  Record<string, (b: Uint8Array) => readonly [number, number] | null>
+  Record<string, (b: Uint8Array) => WebpHeader | null>
 > = {
-  VP8X: (b) => [u24le(b, 24) + 1, u24le(b, 27) + 1],
+  VP8X: (b) => ({
+    width: u24le(b, 24) + 1,
+    height: u24le(b, 27) + 1,
+    alpha: ((b[20] ?? 0) & 0x10) !== 0,
+  }),
   VP8L: (b) => {
     if (b[20] !== 0x2f) return null;
     const bits = u32le(b, 21);
-    return [(bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1];
+    return {
+      width: (bits & 0x3fff) + 1,
+      height: ((bits >>> 14) & 0x3fff) + 1,
+      alpha: ((bits >>> 28) & 1) === 1,
+    };
   },
   'VP8 ': (b) =>
     b[23] === 0x9d && b[24] === 0x01 && b[25] === 0x2a
-      ? [u16le(b, 26) & 0x3fff, u16le(b, 28) & 0x3fff]
+      ? {
+          width: u16le(b, 26) & 0x3fff,
+          height: u16le(b, 28) & 0x3fff,
+          alpha: false,
+        }
       : null,
 };
 
 function webpInfo(bytes: Uint8Array): ImageHeaderInfo | null {
   if (bytes.length < 30 || ascii(bytes, 8, 4) !== 'WEBP') return null;
   const chunk = ascii(bytes, 12, 4);
-  const size = Object.hasOwn(WEBP_CHUNKS, chunk)
+  const header = Object.hasOwn(WEBP_CHUNKS, chunk)
     ? WEBP_CHUNKS[chunk]!(bytes)
     : null;
-  return size === null ? null : sized('webp', size[0], size[1]);
+  return header !== null && isSize(header.width, header.height)
+    ? { type: 'webp', ...header }
+    : null;
 }
 
 /** The logical screen. A frame larger than it is clipped by the browsers'
