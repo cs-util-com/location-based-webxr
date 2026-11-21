@@ -46,28 +46,20 @@
     and strength from `GLOBE_ATMOSPHERE`, its samples by the pointer
     (`defaultAtmosphereSteps`), the haze's scale 1, the shell's ramp on,
     the space view's exposure the globe sun's intensity at the mount.
-  - The ground's veil follows the near clouds, read each frame
-    (`clouds.nearLive()`). The air's frame also takes `nearAir` from `clouds.nearAir()`, the share of the air the composite draws. With them, `atmoGround` 1 and `sceneDepth`
-    their `sceneDepth()`, so the veil's rays end at the drawn relief as in
-    the lab, with one depth pass per frame, drawn even while the cloud
-    volumes are switched off. Without clouds there is no depth, the rays
-    would end at the ellipsoid, under the relief, and the veil over high
-    ground would be far too thick; so `atmoGround` 0 and the space pass
-    fades out entirely below the edge. The old clouds take that path too
-    (the editor's default, and a failed bake of the experimental near
-    clouds falls back to them), as they always did, and so does the
-    clouds switch off: below the edge the veil is a full-canvas march
-    (about 0.65 s of a 1 s frame in a software renderer), and off is the
-    cheap view. The price: the switch changes the ground's colour below
-    80 km, by a mean of 7 to 37 of 255 depending on the height.
-  - **Why the veil stays:** the haze's strength follows the observer's
-    height, so at 40 km it is nearly nothing and cannot replace the veil.
-    With the veil fading out, a descent turned blue to olive and lost
-    almost half its brightness between 80 and 40 km (mean colour of the
-    picture's lower part 44,62,84 hue 213 at 71 km; 33,36,27 hue 86 at
-    43 km), then went blue again near 15 km as the haze returned. With the
-    veil kept: 47,66,91 and 50,71,97, hue 213-216 from 217 km down to
-    7 km (measured 2026-11-06, editor, noon, tilt 55).
+  - The ground's veil fades with the sky below the edge (`atmoGround` 0):
+    the space pass fades out entirely there and the haze carries the
+    ground. The lab's `atmoGround=1` keeps it, its rays ending at the
+    drawn relief's depth; the view does not, since a veil kept below the
+    edge is a full-canvas march (about 0.65 s of a 1 s frame in a software
+    renderer).
+  - **Known price of the fade:** the haze's strength follows the
+    observer's height, so at 40 km it is nearly nothing and cannot replace
+    the veil. A descent turns blue to olive and loses almost half its
+    brightness between 80 and 40 km (mean colour of the picture's lower
+    part 44,62,84 hue 213 at 71 km; 33,36,27 hue 86 at 43 km), then goes
+    blue again near 15 km as the haze returns. With the veil kept it read
+    47,66,91 and 50,71,97, hue 213-216 from 217 km down to 7 km (measured
+    2026-11-06, editor, noon, tilt 55).
   - Nothing is drawn before the first `step` (there is no hand-over yet;
     `globe-air.ts` refuses `finish` before it) and nothing after
     `dispose`.

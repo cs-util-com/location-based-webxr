@@ -107,7 +107,6 @@ interface Fakes {
   /** The options the clouds were made with (their `extra` depth). */
   cloudsOptions: null | {
     extra?: () => readonly THREE.Object3D[];
-    near?: { createWorker: () => unknown; autoQuality?: boolean };
   };
   /** The options each city was made with, and the loads it was asked. */
   cityOptions: {
@@ -1350,38 +1349,20 @@ describe("openGlobeEditor's wiring", () => {
     },
   );
 
+  // Why this test matters: a tier named by hand is a choice, and the canvas
+  // follows the tier's own pixel ratio.
+  it("takes the named quality", async () => {
+    const opened = await openGlobeEditor(
+      deps(),
+      readGlobeSwitch("?quality=low"),
+    );
+    expect(fakes.viewOptions?.quality).toBe("low");
+    opened.dispose();
+  });
+
   // Why: the editor draws the lab's heavy 3D clouds, on by default with
   // a switch; the air carries them, and the View menu's
   // switch reaches them through the view.
-  // Why this test matters: the old clouds are the default and the near
-  // (new) clouds an experiment behind `clouds=new`; without a worker
-  // factory the experiment would never start, and an old `clouds=old`
-  // link must still open the default.
-  it("opens with the old clouds, or the near ones on clouds=new", async () => {
-    const opened = await openGlobeEditor(deps(), readGlobeSwitch(""));
-    expect(fakes.cloudsOptions?.near).toBeUndefined();
-    opened.dispose();
-    const near = await openGlobeEditor(deps(), readGlobeSwitch("?clouds=new"));
-    expect(typeof fakes.cloudsOptions?.near?.createWorker).toBe("function");
-    expect(fakes.cloudsOptions?.near?.autoQuality).toBe(true);
-    near.dispose();
-    const old = await openGlobeEditor(deps(), readGlobeSwitch("?clouds=old"));
-    expect(fakes.cloudsOptions?.near).toBeUndefined();
-    old.dispose();
-  });
-
-  // Why this test matters: a tier named by hand is a choice: the step-down
-  // stays out of it, and the canvas follows the tier's own pixel ratio.
-  it("takes the named quality and leaves it alone", async () => {
-    const opened = await openGlobeEditor(
-      deps(),
-      readGlobeSwitch("?quality=low&clouds=new"),
-    );
-    expect(fakes.viewOptions?.quality).toBe("low");
-    expect(fakes.cloudsOptions?.near?.autoQuality).toBe(false);
-    opened.dispose();
-  });
-
   it("mounts the heavy clouds with the air and switches them", async () => {
     const view = await openAt(0);
     expect(typeof fakes.airOptions?.clouds).toBe("function");

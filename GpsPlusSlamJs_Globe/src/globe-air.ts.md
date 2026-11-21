@@ -84,7 +84,3 @@ hazeScale)`. RangeError for a camera that is not finite.
   thickness by the ramp, only on change, the ground's below the ellipsoid;
   the live look leaving the thickness to the ramp; the space pass's
   shares; the state; a non-finite camera refused).
-
-## The air handed to the near clouds
-
-The frame's `nearAir` (0 to 1) is the share the cloud composite draws. The haze's weight, the space pass's sky share and its ground share all scale by `1 - nearAir`, so the same air is never drawn twice, and at a whole share `render` skips the space pass. Without near clouds `nearAir` is 0 and nothing changes.
