@@ -1154,9 +1154,9 @@ export function wireCreatorDraft(deps: {
             },
           );
           // Into this open's own holder: only its writes read it.
-          const offered = undecidedOf(read, opened?.stations ?? []);
-          held.poses = offered.poses;
-          held.created = offered.created;
+          const recordUndecided = undecidedOf(read, opened?.stations ?? []);
+          held.poses = recordUndecided.poses;
+          held.created = recordUndecided.created;
           return read;
         },
       );
