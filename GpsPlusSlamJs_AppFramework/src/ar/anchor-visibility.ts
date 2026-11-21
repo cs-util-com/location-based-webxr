@@ -790,12 +790,13 @@ function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
   }
   if (r.isSkinnedMesh) {
     const mesh = object as THREE.SkinnedMesh;
+    if (skinsFromGenericValues(mesh)) {
+      return [nodeEntry(object, ORIGIN, Infinity, false)];
+    }
     const bound = skinBound(mesh, bind);
     if (bound) return [{ kind: 'skinned', mesh, bound }];
     // No skeleton, or no positive weight: still drawn (zero weights collapse
     // it onto its origin), so bounded like a plain mesh rather than dropped.
-    // A bound mesh missing skinIndex or skinWeight is not supported: three
-    // then skins with generic attribute values (sidecar, Known limits).
   }
   const morphed = morphBound(r, bind);
   if (morphed) {
@@ -827,11 +828,12 @@ const ORIGIN = new THREE.Vector3();
  */
 interface BindRecord {
   /**
-   * The morph flag and, per attribute the walk reads, its id (for
-   * interleaved data the shared buffer's uuid, offset and item size) and
-   * version; a swapped geometry brings other attributes, so the geometry
-   * itself is not part of it. Primitives only, so a replaced geometry is
-   * not kept alive.
+   * The geometry's id (three keys its morph texture on the geometry and
+   * ignores `needsUpdate` on morph attributes, so a geometry swapped in
+   * around the same, edited attributes draws what they hold now), the
+   * morph flag and, per attribute the walk reads, its id (for interleaved
+   * data the shared buffer's uuid, offset and item size) and version.
+   * Primitives only, so a replaced geometry is not kept alive.
    */
   readonly key: readonly (number | string | boolean | null)[];
   /** Skinned: the per-bone `boneInverse * bindMatrix` it used. */
@@ -858,9 +860,9 @@ const BIND_ATTRIBUTES = ['position', 'skinIndex', 'skinWeight'] as const;
  * else `compute()`. An edit with `needsUpdate` bumps an attribute's version,
  * a replaced attribute or geometry brings other ids, and a rebind changes
  * `toBone`; each of these recomputes. An edit in place without
- * `needsUpdate` is not seen, even where three uploads it anyway (before the
- * first render, morph targets rebuilt after `geometry.dispose()`,
- * `normalizeSkinWeights`): such a caller sets `needsUpdate` or calls
+ * `needsUpdate` is not seen, even where three uploads it anyway (an edit
+ * before the part's first render, `normalizeSkinWeights()` included, and
+ * morph targets rebuilt after `geometry.dispose()`): such a caller sets `needsUpdate` or calls
  * `markAnchorBoundsChanged` (sidecar, Known limits). Without a lookup
  * (merge roots, built once until the bounds change) it always computes.
  */
@@ -873,7 +875,10 @@ function keptBind<T extends SkinBound | MorphBound>(
   compute: () => T | null
 ): T | null {
   if (!bind) return compute();
-  const key: BindRecord['key'][number][] = [geometry.morphTargetsRelative];
+  const key: BindRecord['key'][number][] = [
+    geometry.id,
+    geometry.morphTargetsRelative,
+  ];
   for (const name of BIND_ATTRIBUTES) {
     pushAttribute(key, geometry.getAttribute(name));
   }
@@ -1047,6 +1052,9 @@ function sphereInRoot(
   }
   if (r.isSkinnedMesh) {
     const mesh = r as unknown as THREE.SkinnedMesh;
+    if (skinsFromGenericValues(mesh)) {
+      return new THREE.Sphere(new THREE.Vector3(), Infinity);
+    }
     const bound = skinBound(mesh, null);
     if (bound) {
       const centre = new THREE.Vector3();
@@ -1074,8 +1082,14 @@ function sphereInRoot(
   );
 }
 
-/** A sphere around all of `spheres`: the centre of their box, the farthest reach from it. */
+/**
+ * A sphere around all of `spheres`: the centre of their box, the farthest
+ * reach from it. An endless one among them makes the result endless.
+ */
 function enclosingSphere(spheres: readonly THREE.Sphere[]): THREE.Sphere {
+  if (spheres.some((s) => s.radius === Infinity)) {
+    return new THREE.Sphere(new THREE.Vector3(), Infinity);
+  }
   const box = new THREE.Box3();
   for (const s of spheres) {
     box.expandByPoint(scratchVec.copy(s.center).addScalar(s.radius));
@@ -1113,10 +1127,10 @@ interface Cluster {
 /**
  * Merge down to ANCHOR_SPHERE_CAP entries: repeatedly merge the two clusters
  * whose centres are nearest (O(n^2), run on a cache build only). Skinned and
- * morphed entries and constant-screen-size sprites follow live inputs and are
- * never merged; they still count toward the cap, so with more of them than
- * the cap allows the result holds them all plus one merged sphere. Unmerged
- * node entries stay live.
+ * morphed entries, constant-screen-size sprites and unbounded parts follow
+ * live inputs and are never merged; they still count toward the cap, so
+ * with more of them than the cap allows the result holds them all plus one
+ * merged sphere. Unmerged node entries stay live.
  */
 function capEntries(
   entries: BoundEntry[],
@@ -1129,11 +1143,7 @@ function capEntries(
   const invStretch = maxStretch(invAnchor);
   scratchInvAnchor.copy(invAnchor);
   for (const entry of entries) {
-    if (
-      entry.kind !== 'node' ||
-      entry.morphReach !== null ||
-      (entry.sprite && isNonAttenuatedSprite(entry.object as THREE.Sprite))
-    ) {
+    if (!isMergeable(entry)) {
       fixed.push(entry);
       continue;
     }
@@ -1161,13 +1171,26 @@ function capEntries(
   return out;
 }
 
+/** A node entry whose bound is finite and does not follow live inputs. */
+function isMergeable(entry: BoundEntry): entry is NodeEntry {
+  return (
+    entry.kind === 'node' &&
+    entry.morphReach === null &&
+    entry.radius !== Infinity &&
+    !(entry.sprite && isNonAttenuatedSprite(entry.object as THREE.Sprite))
+  );
+}
+
 /**
  * Merge the two alive clusters whose centres are nearest until `target`
  * remain. Each cluster keeps its nearest alive neighbour. A cluster whose
  * neighbour was merged is only marked stale (its recorded distance is then
- * a lower bound) and rescanned when it is picked, so a merge costs O(n)
- * even when many clusters share one neighbour, as coincident centres do:
- * the whole run is O(n^2) time and O(n) memory.
+ * a lower bound) and rescanned when it is picked, so a merge costs
+ * amortized O(n) even when many clusters share one neighbour: in 3-D a
+ * point is the nearest neighbour of a bounded number of points, so a merge
+ * leaves O(1) stale clusters behind, and coincident centres keep the
+ * recorded distance exact (zero), so a stale pick is rescanned once and
+ * taken. The whole run is O(n^2) time and O(n) memory.
  */
 function mergeNearestPairs(clusters: Cluster[], target: number): void {
   let alive = clusters.length;
@@ -1345,6 +1368,23 @@ function skinBoundOf(
 }
 
 type Attribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+
+/**
+ * A bound skinned mesh with a position but no `skinIndex` or `skinWeight`.
+ * three still skins it, reading the missing attribute from the generic
+ * vertex attribute value at its location, which another program may have
+ * set: its weights and bone indices are unknown, so it has no finite bound
+ * and counts as in view wherever it is.
+ */
+function skinsFromGenericValues(mesh: THREE.SkinnedMesh): boolean {
+  const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
+  if (!geometry || !mesh.skeleton || !geometry.getAttribute('position')) {
+    return false;
+  }
+  return (
+    !geometry.getAttribute('skinIndex') || !geometry.getAttribute('skinWeight')
+  );
+}
 
 /** The geometry, skeleton and skinning attributes, or null when one is missing. */
 function skinAttributes(mesh: THREE.SkinnedMesh): {

@@ -798,18 +798,12 @@ describe('anchor-visibility: what is in view', () => {
     // An unbound skeleton or all-zero weights give no skinned bound, yet the
     // mesh is still drawn (zero weights collapse it onto its origin).
     // Dropping it would be a false "out"; its plain geometry sphere about
-    // its origin is the safe side. A bound mesh missing a skin attribute is
-    // a known limit (three skins it with generic attribute values); the
-    // case here pins only that it is not dropped.
+    // its origin is the safe side.
     const unbound = skinnedBox(1).mesh;
-    const noWeights = skinnedBox(1);
-    noWeights.geometry.deleteAttribute('skinWeight');
-    noWeights.mesh.add(noWeights.bone);
-    noWeights.mesh.bind(new THREE.Skeleton([noWeights.bone]));
     const zeroWeights = skinnedBox(0);
     zeroWeights.mesh.add(zeroWeights.bone);
     zeroWeights.mesh.bind(new THREE.Skeleton([zeroWeights.bone]));
-    for (const mesh of [unbound, noWeights.mesh, zeroWeights.mesh]) {
+    for (const mesh of [unbound, zeroWeights.mesh]) {
       const rig = makeRig();
       mesh.position.set(0, 0, -10);
       rig.anchor.add(mesh);
@@ -820,6 +814,115 @@ describe('anchor-visibility: what is in view', () => {
       rig.anchor.add(root);
       expect(inView(rig, { fresh: true })).toBe(true);
     }
+  });
+
+  it('a bound skinned mesh missing a skin attribute counts as in view wherever it is', () => {
+    // three still skins it, reading the missing attribute from the generic
+    // vertex attribute value at its location, which another program may
+    // have set (a default colour of 1, say): its weights and bone indices
+    // are unknown, so no finite bound holds. A plain geometry bound would be
+    // a false "out" (here: the mesh origin behind the camera). While hidden
+    // it does not count, also over the sphere cap, where merging it would
+    // leave an endless sphere behind that its hiding cannot remove.
+    for (const missing of ['skinWeight', 'skinIndex'] as const) {
+      const { mesh, bone, geometry } = skinnedBox(1);
+      geometry.deleteAttribute(missing);
+      mesh.add(bone);
+      mesh.bind(new THREE.Skeleton([bone]));
+      const rig = makeRig();
+      mesh.position.set(0, 0, 10);
+      rig.anchor.add(mesh);
+      expect(inView(rig), missing).toBe(true);
+      for (let i = 0; i < 40; i += 1)
+        rig.anchor.add(tinyMesh(new THREE.Vector3(i * 0.1, 0, 10)));
+      expect(inView(rig, { fresh: true }), missing).toBe(true);
+      expect(rig.cache.entries.length).toBeLessThanOrEqual(ANCHOR_SPHERE_CAP);
+      mesh.visible = false;
+      expect(inView(rig), missing).toBe(false);
+      mesh.visible = true;
+      const root = new THREE.Group();
+      mergeForAnchorBounds(root);
+      root.add(mesh);
+      rig.anchor.add(root);
+      expect(inView(rig, { fresh: true }), missing).toBe(true);
+    }
+  });
+
+  it('a geometry swapped in with the same attributes after an in-place morph edit is walked again', () => {
+    // three keys its morph texture on the geometry and ignores needsUpdate
+    // on morph attributes, so a target edited in place is drawn by a
+    // geometry three has not drawn yet. A new geometry around the same,
+    // edited attribute objects draws the larger shape; a key made of the
+    // attributes alone would keep the old, small reach and say "out".
+    const rig = makeRig();
+    const mesh = morphedBoxBeyondPlane();
+    mesh.morphTargetInfluences![0] = 1; // 6 m toward the view: still out
+    rig.anchor.add(mesh);
+    expect(inView(rig, { fresh: true })).toBe(false);
+    const old = mesh.geometry;
+    const target = old.morphAttributes.position![0]!;
+    // 18 m at influence 1, set without needsUpdate.
+    for (let i = 0; i < target.count; i += 1) {
+      target.setXYZ(i, target.getX(i) * 3, 0, target.getZ(i) * 3);
+    }
+    const swapped = new THREE.BufferGeometry();
+    swapped.setAttribute('position', old.getAttribute('position'));
+    swapped.morphAttributes.position = old.morphAttributes.position!;
+    swapped.morphTargetsRelative = true;
+    mesh.geometry = swapped; // 0.5 m inside the side plane
+    expect(inView(rig, { fresh: true })).toBe(true);
+  });
+
+  it('an interleaved attribute moved to another offset or item size of the same buffer is read again', () => {
+    // Another view of the same interleaved buffer keeps its uuid and its
+    // version: only the offset or the item size tells the two apart, so
+    // the key must carry both.
+    const rig = makeRig();
+    const { mesh, bone, geometry } = skinnedBox(1);
+    const plain = geometry.getAttribute('position') as THREE.BufferAttribute;
+    const data = new Float32Array(plain.count * 6);
+    for (let i = 0; i < plain.count; i += 1) {
+      for (let c = 0; c < 3; c += 1) {
+        data[i * 6 + c] = plain.array[i * 3 + c]!;
+        data[i * 6 + 3 + c] = plain.array[i * 3 + c]! + (c === 2 ? 200 : 0);
+      }
+    }
+    const positions = new THREE.InterleavedBuffer(data, 6);
+    geometry.setAttribute(
+      'position',
+      new THREE.InterleavedBufferAttribute(positions, 3, 0)
+    );
+    mesh.add(bone);
+    mesh.bind(new THREE.Skeleton([bone]));
+    bone.position.set(0, 0, -300); // beyond the far plane
+    rig.anchor.add(mesh);
+    expect(inView(rig, { fresh: true })).toBe(false);
+    // The second copy is 200 m nearer: drawn 100 m ahead.
+    geometry.setAttribute(
+      'position',
+      new THREE.InterleavedBufferAttribute(positions, 3, 3)
+    );
+    expect(inView(rig, { fresh: true })).toBe(true);
+
+    // The weights as an interleaved view, then the same view with fewer
+    // components: the walk reads `itemSize` components, so it must run again.
+    const weights = geometry.getAttribute(
+      'skinWeight'
+    ) as THREE.BufferAttribute;
+    const weightData = new THREE.InterleavedBuffer(
+      new Float32Array(weights.array),
+      4
+    );
+    geometry.setAttribute(
+      'skinWeight',
+      new THREE.InterleavedBufferAttribute(weightData, 4, 0)
+    );
+    expect(inView(rig, { fresh: true })).toBe(true);
+    const narrower = new THREE.InterleavedBufferAttribute(weightData, 2, 0);
+    const reads = vi.spyOn(narrower, 'getComponent');
+    geometry.setAttribute('skinWeight', narrower);
+    expect(inView(rig, { fresh: true })).toBe(true);
+    expect(reads).toHaveBeenCalled();
   });
 
   it('a wider margin never narrows a view whose sides are past the angle clamp', () => {

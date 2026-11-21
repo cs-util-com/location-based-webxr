@@ -35,6 +35,9 @@
  * 101-107 ms and at four 28-29 ms, against 3.3-3.9 ms on the grid (and
  * 1000 parts at one origin about 2 s); after it, 3.1-4.8 ms and 2.9-3.3 ms
  * against 3.2-3.6 ms on the grid. The ratio ceiling of 4 sits between.
+ * At 3 traversals per run (the same day, three runs): lazy 0.84-0.98x of the
+ * grid case; the eager rescan restored as a mutant still measured 30x and
+ * 8.1x, so the ratio tests stay sharp at a fraction of their former cost.
  */
 
 import * as THREE from 'three';
@@ -61,6 +64,8 @@ const FRESH_CEILING_MS = 150;
 const SKINNED_CEILING_MS = 2;
 /** Most a fresh traversal of parts with coincident centres may cost, as a multiple of the grid case. */
 const TIES_RATIO_CEILING = 4;
+/** Fresh traversals per timing run in the ratio tests (each test times two cases). */
+const FRESH_CALLS_PER_RUN = 3;
 
 function bestOf(runs: number, calls: number, fn: () => void): number {
   let best = Infinity;
@@ -166,12 +171,14 @@ describe('anchor-visibility cost', () => {
    * pointed at the merged pair). That blow-up measured 30x the grid case
    * locally (about 100 ms against 3.3 ms), still under the absolute ceiling,
    * so the guard is the ratio to the grid case timed in the same test.
+   * FRESH_CALLS_PER_RUN keeps both cases within the test timeout on CI; the
+   * eager rescan still fails the ratio at that count.
    */
   function freshMs(place: (i: number) => THREE.Vector3): number {
     const { anchor, view } = buildScene(place);
     const cache = createAnchorBoundsCache();
     const options = { marginDeg: 5, cache, nowMs: 0, fresh: true };
-    const ms = bestOf(TIMING_RUNS, 10, () => {
+    const ms = bestOf(TIMING_RUNS, FRESH_CALLS_PER_RUN, () => {
       isAnchorInView(view, anchor, options);
     });
     expect(cache.entries.length).toBeLessThanOrEqual(ANCHOR_SPHERE_CAP);
