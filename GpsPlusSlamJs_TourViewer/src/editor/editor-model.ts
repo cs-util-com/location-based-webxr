@@ -124,8 +124,9 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  // Pins and photos only: this 2D editor lists no other free block rather
-  // than a mislabelled note; the tour keeps them untouched.
+  // Pins and photos only: this model lists no other free block rather
+  // than a mislabelled note; the tour keeps them untouched (the tree
+  // lists every block).
   const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
     if (object.kind !== "shortText" && object.kind !== "picture") return [];
     const mark = drawable.get(object.id);

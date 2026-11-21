@@ -87,7 +87,7 @@ chrome reads, one copy for every view of the page.
     `folderFolded({ id, folded })` (each
     ignoring a key it does not know); each of
     them ignores a flag that is not a boolean (`open`, `folded`,
-    `shown`), as the drag guard ignores a spot nobody can draw;
+    `shown`);
   - the 3D view's (`editor3d-input.ts` dispatches them):
     `gestureStarted({ id, handle })` (ignored for an empty id or a handle
     it does not know), `gestureEnded()`.
@@ -97,7 +97,6 @@ chrome reads, one copy for every view of the page.
   dragged (a gesture whose handle is not `key`): the shell's camera keys
   wait for its end.
 - `View3dFailure` - the reasons the 3D view did not show.
-- `EditorMessage` - the card line's shape (`MapSpot` and `EditorMoving`, the drag's, are module-private).
 - `modelFocus` - the selected model's note or section in focus
   (`ModelFocus { part: "note" | "section", index }`), or null; set by
   `modelFocused({ focus })`.
@@ -128,9 +127,7 @@ chrome reads, one copy for every view of the page.
   action touches `selected` or the tour: a load or a close keeps both. A
   late answer (`view3dShown` when no load runs) changes nothing.
 - **Kept out on purpose:** the drag preview and the camera target are
-  scene resources, and the set of items moved since the last save
-  (`moved`, a `Set` the card reads) stays the page's; nothing is
-  dispatched per frame. A 3D gesture dispatches its start and its end
+  scene resources; nothing is dispatched per frame. A 3D gesture dispatches its start and its end
   only (`gesture`); its one edit is the tour's.
 - The station pose lock (`unlockedStations`, `stationLocked`, `isStationLocked`, `STATION_LOCKED`): every station is locked until the inspector's lock unlocks it; the list holds the unlocked ids, so a station a copy or an add made is locked too. View state only - never saved - and `opened`/`closed` lock every station again. A malformed `stationLocked` payload changes nothing.
 

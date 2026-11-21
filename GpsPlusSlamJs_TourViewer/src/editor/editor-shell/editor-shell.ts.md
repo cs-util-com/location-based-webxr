@@ -14,11 +14,10 @@ a line naming the selection's handles (`inspectorHint`); for a selected
 folder a line over the 3D view (`#shell-scene-hint`, `sceneHint`) names
 it and says its items move, turn and scale together. The panel takes
 its keys from the shell's key handler (Ctrl+J, Ctrl+Shift+M, Escape inside
-it), its Escape going no further. The page's own controls (the File menu, the
-view switch, Show debug data, the save status and the unsaved mark) stay
-the page's and keep their logic; the shell's stylesheet
-(`editor-shell.css`) dresses the menus in both views and the rest while
-the 3D view shows.
+it), its Escape going no further. The page's own controls (the File menu, Show
+debug data, the save status and the unsaved mark) stay the page's and
+keep their logic; the shell's stylesheet (`editor-shell.css`) dresses
+the menus always and the rest while the 3D view shows.
 
 The tree's head holds a search field (`#tree-search`, the page's, never
 redrawn: each letter typed draws the tree again for it, Escape empties it
@@ -570,7 +569,7 @@ const shell = createEditorShell({
   },
   say: (text) => toast(text),
 });
-// the view switch's onShown:
+// the 3D view opener's onShown (view3d-opener.ts):
 if (on && shown3d !== null) shell.show(shown3d);
 else shell.hide();
 ```

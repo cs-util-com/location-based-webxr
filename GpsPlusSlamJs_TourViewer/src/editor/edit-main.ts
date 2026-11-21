@@ -1,15 +1,14 @@
 /**
- * The desktop editor's page (`/tour/edit.html`, M6 E1, E2a): the
- * composition root. Opens a tour (a file chosen or dropped, or the
- * sample), shows it in the 3D view on the globe - the editor itself
- * (`view3d-opener.ts`; the 3D view's code, `src/editor3d/`, is a dynamic
- * import made only then) - and edits it: undo and redo of every edit
- * (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y; W2), and a Save that downloads the tour
- * to put in place of the old file - or, where the browser allows it
- * (Chromium's file picker, M6 E2b-1), writes the opened file in place - by
- * itself too, a few seconds after a change (M6 E2b-2, `autosave.ts`). The
- * tour's name in the top bar opens its details (W2 of the tour editor
- * plan, `details-dialog.ts`). The top bar's File menu opens, saves, saves
+ * The desktop editor's page (`/tour/edit.html`): the composition root.
+ * Opens a tour (a file chosen or dropped, or the sample), shows it in the
+ * 3D view on the globe - the editor itself (`view3d-opener.ts`; the 3D
+ * view's code, `src/editor3d/`, is a dynamic import made only then) - and
+ * edits it: undo and redo of every edit (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y),
+ * and a Save that downloads the tour to put in place of the old file - or,
+ * where the browser allows it (Chromium's file picker), writes the opened
+ * file in place - by itself too, a few seconds after a change
+ * (`autosave.ts`). The tour's name in the top bar opens its details
+ * (`details-dialog.ts`). The top bar's File menu opens, saves, saves
  * a copy, adds debug data and "Share and publish…" (it says where the
  * changes are and what is left to do, and moves the walk out,
  * `done-dialog.ts`); its View menu holds the 3D view's commands
@@ -609,10 +608,10 @@ createMenuButton({
   button: element<HTMLButtonElement>("view-menu-btn"),
   menu: element("view-menu"),
 });
-/** The tour's "needs no GPS" setting in Tour details (QR-first M1b-2),
- *  and its warnings' live region: never hidden (an empty one is
- *  zero-height), and its lines replaced only when their words change, so
- *  a refresh does not announce the same warning again. */
+/** The tour's "needs no GPS" setting in Tour details, and its warnings'
+ *  live region: never hidden (an empty one is zero-height), and its lines
+ *  replaced only when their words change, so a refresh does not announce
+ *  the same warning again. */
 const detailsNoGpsInput = element<HTMLInputElement>("details-no-gps");
 const detailsNoGpsLines = createStatusLines(
   element("details-no-gps-warnings"),
@@ -2800,7 +2799,7 @@ function debugSource(): {
   return {
     source: walk,
     // From the copy the page reads now: the opened file stops reading
-    // once a save rewrote it (as the tour's photos, E2b plan review #2).
+    // once a save rewrote it, as the tour's photos do.
     loadPicture: (image) => (photos.current() ?? walk).loadEntry(image),
     line: null,
   };

@@ -149,8 +149,9 @@ once):
     without a file (4729-4959), link, sample and hosted saves
     (5165-5688). They edit through the map's rail and card (`editTownHall`,
     `editPin`); on the globe a pin's text is the inspector's title field.
-  - `editor-entry.spec.js` (4) and `blocks-tour.spec.js` (2): on the map
-    (`startOnMap`) only to keep the 3D view's tiles out.
+  - `editor-entry.spec.js` (4) and `blocks-tour.spec.js` (2): once on the
+    map (`startOnMap`, gone with it) only to keep the 3D view's tiles out;
+    they now open without WebGL.
   - Pinned to `?globe=0` when the globe became the default:
     `editor3d-character` (1), `editor3d-long-text` (3),
     `editor3d-narration` (2), `editor3d-inspector` (6), `editor3d-tree`
@@ -174,8 +175,8 @@ once):
   half of 279, 321 and 371.
 - **(d) a gap in the globe editor, listed, not built:** the rail's search
   (`#filter`, `editor.spec.js` 1963: a group's count follows a delete while
-  the search hides it; the tree has no filter; that test was deleted with
-  class (c)); the rail's list of every
+  the search hides it; the tree has its own search, `#tree-search`; that
+  test was deleted with class (c)); the rail's list of every
   code and note by kind, labels as text (245; the tree lists stations and
   their items).
 
