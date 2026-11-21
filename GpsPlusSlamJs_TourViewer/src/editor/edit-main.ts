@@ -835,7 +835,8 @@ document.body.dataset["autosave"] = autosave.state();
  * session's outcome kind. `edited()` only follows edits the e2e already
  * made (an async one, or several at once): the refresh and the autosave
  * told, with no Undo offer ended, so it is for setup with no delete toast
- * up, where the two paths do the same. Inert in
+ * up, where the two paths do the same: with one up it throws rather than
+ * diverge from the page. Inert in
  * a production build: `import.meta.env.DEV` is statically false there, so
  * the hook is stripped (`seams.ts`'s guarantee).
  */
@@ -895,6 +896,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
       return kind;
     },
     edited: () => {
+      if (undoOffer !== null) {
+        throw new Error(
+          "edited() skips the Undo offer's end: use edit() while a delete toast is up",
+        );
+      }
       refresh();
       tourChanged();
     },

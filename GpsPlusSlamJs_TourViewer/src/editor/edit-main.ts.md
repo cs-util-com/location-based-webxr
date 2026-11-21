@@ -889,7 +889,8 @@ view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(rea
   refresh, a refusal toasted, the autosave told) and answers the session's
   outcome kind; `edited()` only follows edits the e2e made itself (async
   ones, or several at once) with the refresh and the autosave told, and
-  ends no Undo offer, so it is for setup with no delete toast up;
+  ends no Undo offer, so it is for setup with no delete toast up (with
+  one up it throws rather than diverge from the page);
   `view3d()` is the shown 3D view's
   `stats()` (null while it does not show), `view3dTilt(deg)` tilts its camera,
   `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it

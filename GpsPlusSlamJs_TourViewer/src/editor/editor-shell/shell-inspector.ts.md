@@ -171,6 +171,9 @@ wide`) and "Preview the story" (`preview-story`, `act pri`, once it
     (up from the anchor) and, only where its placement row `turns`, Heading
     to type, in its station's frame (its folders composed in). A thing
     that faces the visitor (a pin, a reading sign, a sound) has no Heading.
+    Its Position also says how precise a place from GPS alignment is
+    (`PRECISION_LINE`: about 0.1-0.7 m near a code, 1-3 m further away),
+    for every item, as the old card did.
   - Typed fields carry `data-field` (`title`, `description`,
     `radius`, `east`, `north`, `height`, `heading`, `size`) and the
     tour's value as `defaultValue`: the shell commits a field whose text

@@ -165,6 +165,9 @@ test("opening a tour seventeen times keeps the browser's WebGL contexts free", a
   // not show a leak.
   await openExample(page);
   for (let i = 0; i < 17; i++) {
+    // Each open's time in the run's log: the budget above moves only on
+    // these numbers, never on a guess.
+    const started = Date.now();
     if (i > 0) {
       await openAnother(page);
       await expect(page.locator("#open-modal")).toBeVisible();
@@ -179,6 +182,9 @@ test("opening a tour seventeen times keeps the browser's WebGL contexts free", a
       timeout: 60_000,
     });
     await expect(page.locator("#view3d canvas")).toHaveCount(1);
+    console.log(
+      `open ${String(i + 1)} of 17: ${String(Date.now() - started)} ms`,
+    );
   }
   expect(warnings).toEqual([]);
 });

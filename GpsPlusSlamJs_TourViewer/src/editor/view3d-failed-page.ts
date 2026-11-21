@@ -1,9 +1,10 @@
 /**
  * The page the editor shows where its 3D view cannot open: no WebGL, its
  * code not loaded, its graphics lost, or an error that stopped it. The 3D
- * view is the editor and nothing stands in for it, so this says plainly what happened (`view3dFailureText`) and keeps the tour's
- * File actions within reach - try again, open another tour, save, save a
- * copy, the tour's details - so no work is stranded.
+ * view is the editor and nothing stands in for it, so this says plainly
+ * what happened (`view3dFailureText`) and keeps the tour's File actions
+ * within reach - try again, open another tour, save, save a copy, the
+ * tour's details - so no work is stranded.
  *
  * It follows the store (`editorView`): shown while the 3D load has failed
  * with a reason, gone once it is tried again, shown, or left.
