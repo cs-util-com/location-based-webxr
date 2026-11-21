@@ -82,7 +82,7 @@ synthetic scene's acceptance run and await field recordings.
   over 300 s on a real card would raise it.
 - `goodHeldOutDb` 20, `weakHeldOutDb` 16: the judge's held-out sharpness
   for good and weak; below weak is poor. Provisional, and laxer than the
-  plan's gate bars (good at 21 dB held out and 27 dB at the camera with
+  stricter bars the trainer aims for (good at 21 dB held out and 27 dB at the camera with
   SSIM 0.70; not good under 19 dB held out or 25 dB at the camera): this
   judge reads held-out sharpness only. A judge measured against people's
   ratings replaces both.

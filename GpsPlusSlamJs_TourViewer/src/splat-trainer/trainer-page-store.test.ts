@@ -278,18 +278,21 @@ describe("what a finished stretch keeps", () => {
 
   // Why: a finished stretch kept its full-size look (about 7.7 MB at the
   // trainer's photo size) for the whole session, half a gigabyte for a
-  // long walk. It keeps a small copy and lets go of the big one.
+  // long walk. It keeps a small picture for its tile and an encoded
+  // sharp copy for the loupe, and lets go of the big one.
   it("keeps a small copy of a finished stretch's look", async () => {
     const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
     const small = { close: vi.fn() };
-    const thumbnail = vi.fn(() =>
-      Promise.resolve(small as unknown as CanvasImageSource),
+    const sharp = new Blob(["jpeg"]);
+    const keepLook = vi.fn(() =>
+      Promise.resolve({ small: small as unknown as CanvasImageSource, sharp }),
     );
-    const h = await run(onePicture({}, pictures), { thumbnail });
+    const h = await run(onePicture({}, pictures), { keepLook });
     expect(h.c.store.getState().phase).toBe("done");
-    expect(thumbnail).toHaveBeenCalledWith(pictures[0]);
+    expect(keepLook).toHaveBeenCalledWith(pictures[0]);
     for (const p of pictures) expect(p.close).toHaveBeenCalledTimes(1);
     expect(h.c.sides.previews.get("w0")).toBe(small);
+    expect(h.c.sides.sharpLooks.get("w0")).toBe(sharp);
     expect(small.close).not.toHaveBeenCalled();
   });
 
@@ -297,10 +300,11 @@ describe("what a finished stretch keeps", () => {
   it("lets go of the look when no small copy can be made", async () => {
     const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
     const h = await run(onePicture({}, pictures), {
-      thumbnail: () => Promise.reject(new Error("no canvas")),
+      keepLook: () => Promise.reject(new Error("no canvas")),
     });
     for (const p of pictures) expect(p.close).toHaveBeenCalledTimes(1);
     expect(h.c.sides.previews.has("w0")).toBe(false);
+    expect(h.c.sides.sharpLooks.has("w0")).toBe(false);
   });
 
   // Why: a failed stretch said only "Training stopped with an error";

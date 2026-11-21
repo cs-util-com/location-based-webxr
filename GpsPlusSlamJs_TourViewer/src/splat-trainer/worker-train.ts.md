@@ -32,10 +32,16 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
 
 - Never rejects. A photo list that does not match the job, a library that
   will not load, or a photo that will not decode ("A photo could not be
-  read (...)") ends as `failed` with the sentence in `detail`; the last
-  two also carry `retryHelps: false` (a second try meets the same
-  library and the same photo). An abort before training ends as
-  `cancelled`. The job's `prepareCapMs` reaches the run.
+  read (...)") ends as `failed` with the sentence in `detail`. A library
+  of the wrong version (`SplatJsMismatchError`) and a photo that will not
+  decode carry `retryHelps: false` (a second try meets the same library
+  and the same photo); a library that could not be downloaded leaves a
+  retry on offer, since the network may be back.
+- The load is capped by the job's `prepareCapMs`: a library that has not
+  arrived by then ends as `failed`, "The splat trainer library did not
+  arrive within <duration>.", with a retry on offer; the cap's timer is
+  cleared on every path. An abort before training ends as `cancelled`.
+  The job's `prepareCapMs` and `photoBudgetBytes` reach the run.
 - The first progress, before the library is asked for, is `loading`.
 - Only photos with depth samples or a shell flag are decoded; depth seeds
   are thinned by `seedVoxelM`, shell seeds by `shellVoxelM`.
@@ -43,7 +49,9 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
 ## Tests
 
 `worker-train.test.ts`: the sampler's scaling and edges, a refused
-library before any decode, only seeding photos decoded and their seeds
+library before any decode (no retry), a library that could not be
+downloaded (retry offered), a library that does not arrive within the
+cap, only seeding photos decoded and their seeds
 thinned, a decode failure in words, a mismatched photo list, a cancel
 while seeding, `loading` said before the library arrives, and the
 preview passed on to the run; `serveTrainer` posting a failed result for

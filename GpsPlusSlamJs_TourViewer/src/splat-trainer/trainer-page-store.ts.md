@@ -10,15 +10,17 @@ aborting it the moment the state says otherwise), and saving.
 ## Public API
 
 - `TrainerPageDeps` - `{ adapter, read, plan, write, download,
-thumbnail? }`: the
+keepLook? }`: the
   trainer, the recording reader (`read(file, onProgress)`, the page's is
   `readSplatInputs` with its `onProgress`), the window planner
   (`windowPlanner()`), a write into a picked file handle, a download
-  that resolves false when cancelled, and `thumbnail(picture)`, a small
-  copy of a finished stretch's look (the page's shrinks to 480 px on the
-  longest side; absent, the picture is kept as it is).
+  that resolves false when cancelled, and `keepLook(picture)`, what a
+  finished stretch keeps of its look: `{ small, sharp }` (`kept-look.ts`;
+  the page's keeps a 480 px picture and a 1200 px JPEG; absent, the
+  picture is kept as it is).
 - `TrainerSideTables` - `files`, `inputs` and `plans` keyed by recording
-  id; `previews` and `splats` keyed by stretch id. The recording's file
+  id; `previews`, `sharpLooks` (a finished stretch's encoded copy for the
+  loupe) and `splats` keyed by stretch id. The recording's file
   stays in `files` while it trains: every stretch's `TrainRequest`
   carries it, for the GPU trainer's photos.
 - `createTrainerPageStore(deps) -> { store, sides, probe, chooseRecording,
@@ -41,9 +43,12 @@ save, dispose }`.
   its preview. Every preview picture that is replaced or dropped is
   closed (`ImageBitmap.close()` where it has one), and a picture that
   arrives after its job was aborted is closed at once. When a stretch
-  finishes, its full-size look is swapped for `thumbnail`'s copy and
-  closed; a copy that cannot be made drops the look; a look replaced
-  meanwhile is left alone and the copy closed.
+  finishes, its full-size look is swapped for `keepLook`'s small picture
+  and closed, and its sharp copy goes into `sharpLooks`; a look that
+  cannot be kept is dropped; a look replaced meanwhile is left alone and
+  the small picture closed. A new look or a dropped one also lets go of
+  the stretch's sharp copy, so a second attempt never shows the first
+  one's in the loupe.
 - A trainer that reports `cancelled` without the page asking for it is
   judged as `failed`: only the page's own stop is never judged.
 - Each attempt's `timeScale` is the slice's `attemptTimeScale`.
@@ -67,7 +72,7 @@ false` when a second try cannot help.
 steps, the practice trainer on a manual
 clock (a whole run, stop aborting the job with no timer left, continue,
 a throwing trainer, an unasked cancel, preview pictures closed, the
-small copy kept or the look dropped, a failure's words and no second
+small picture and sharp copy kept or the look dropped, a failure's words and no second
 try), and
 saving (picked, cancelled, download, failed then retried, the picked file
 released), with the saved zip read back.

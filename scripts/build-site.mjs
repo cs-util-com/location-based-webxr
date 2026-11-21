@@ -66,6 +66,7 @@ import {
   copyGlobeAssets,
 } from './globe-assets-deploy.mjs';
 import { assertNoSourceMapsDeployed } from './source-maps-deploy.mjs';
+import { assertSplatPolicyShipped } from './splat-csp-deploy.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distSite = join(repoRoot, 'dist-site');
@@ -313,6 +314,13 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'tour'), '/tour/');
+assertSplatPolicyShipped({
+  siteDir: distSite,
+  sourceHtml: readFileSync(
+    join(repoRoot, 'GpsPlusSlamJs_TourViewer', 'splat', 'index.html'),
+    'utf8'
+  ),
+});
 
 console.log('• Building MinimalExample (base=/minimal/)');
 run('pnpm', ['--filter', 'gps-plus-slam-minimal-example', 'run', 'typecheck']);

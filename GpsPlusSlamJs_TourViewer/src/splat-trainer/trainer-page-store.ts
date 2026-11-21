@@ -22,6 +22,7 @@ import type {
   SplatInputs,
   SplatInputsRead,
 } from "./recording-reader.js";
+import { closePicture, type KeptLook } from "./kept-look.js";
 import { buildPackage, packageFileName } from "./save-package.js";
 import {
   failedJudgement,
@@ -58,13 +59,12 @@ export interface TrainerPageDeps {
   /** Saves without a picked handle; false when the person cancelled. */
   readonly download: (blob: Blob, name: string) => Promise<boolean>;
   /**
-   * A small copy of a finished stretch's last look, kept in place of the
-   * full-size picture for the rest of the session. Absent, the picture is
-   * kept as it is (for pictures that are small already).
+   * What a finished stretch keeps of its last look in place of the
+   * full-size picture for the rest of the session: a small picture and,
+   * for the loupe, an encoded sharper copy (`kept-look.ts`). Absent, the
+   * picture is kept as it is (for pictures that are small already).
    */
-  readonly thumbnail?: (
-    picture: CanvasImageSource,
-  ) => Promise<CanvasImageSource>;
+  readonly keepLook?: (picture: CanvasImageSource) => Promise<KeptLook>;
 }
 
 /** What lives beside the store, keyed by recording or stretch id. */
@@ -75,6 +75,9 @@ export interface TrainerSideTables {
   readonly plans: Map<string, readonly PlannedWindow[]>;
   /** The newest picture of each stretch's current attempt. */
   readonly previews: Map<string, CanvasImageSource>;
+  /** A finished stretch's look encoded at the loupe's size, decoded only
+   *  while the loupe shows it. */
+  readonly sharpLooks: Map<string, Blob>;
   readonly splats: Map<string, Blob>;
 }
 
@@ -86,19 +89,6 @@ const unwrittenPick = (name: string): string =>
 
 const errorText = (err: unknown): string =>
   err instanceof Error ? err.message : String(err);
-
-/** Lets go of a preview picture: an ImageBitmap holds its pixels until
- *  it is closed. */
-function closePicture(picture: CanvasImageSource | undefined): void {
-  const close = (picture as { close?: unknown } | undefined)?.close;
-  if (typeof close === "function") {
-    try {
-      (close as () => void).call(picture);
-    } catch {
-      // A picture that cannot be closed is left to the garbage collector.
-    }
-  }
-}
 
 const runKeyOf = (s: TrainerPageState): string | null => {
   const w = currentWindow(s);
@@ -117,19 +107,24 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     inputs: new Map(),
     plans: new Map(),
     previews: new Map(),
+    sharpLooks: new Map(),
     splats: new Map(),
   };
   let job: { key: string; ctrl: AbortController } | null = null;
 
+  /** A new look for a stretch; the look it replaces is closed, and a
+   *  sharp copy kept of an earlier attempt is let go. */
   function setPreview(id: string, picture: CanvasImageSource): void {
     const old = sides.previews.get(id);
     if (old !== picture) closePicture(old);
     sides.previews.set(id, picture);
+    sides.sharpLooks.delete(id);
   }
 
   function dropPreview(id: string): void {
     closePicture(sides.previews.get(id));
     sides.previews.delete(id);
+    sides.sharpLooks.delete(id);
   }
 
   function dropAllPreviews(): void {
@@ -137,25 +132,30 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
   }
 
   /**
-   * Swaps a finished stretch's full-size look for a small copy; a copy
-   * that cannot be made lets go of the look. A look replaced or dropped
-   * meanwhile is left alone, and the copy made of it closed.
+   * Swaps a finished stretch's full-size look for what `keepLook` keeps
+   * of it (a small picture, and a sharp copy for the loupe); a look that
+   * cannot be kept is let go. A look replaced or dropped meanwhile is
+   * left alone, and the copy made of it closed.
    */
   async function keepSmallPreview(id: string): Promise<void> {
     const big = sides.previews.get(id);
-    if (big === undefined || deps.thumbnail === undefined) return;
-    let small: CanvasImageSource | null;
+    if (big === undefined || deps.keepLook === undefined) return;
+    let kept: KeptLook | null;
     try {
-      small = await deps.thumbnail(big);
+      kept = await deps.keepLook(big);
     } catch {
-      small = null;
+      kept = null;
     }
     if (sides.previews.get(id) !== big) {
-      if (small !== null && small !== big) closePicture(small);
+      if (kept !== null && kept.small !== big) closePicture(kept.small);
       return;
     }
-    if (small === null) dropPreview(id);
-    else setPreview(id, small);
+    if (kept === null) {
+      dropPreview(id);
+      return;
+    }
+    setPreview(id, kept.small);
+    if (kept.sharp !== null) sides.sharpLooks.set(id, kept.sharp);
   }
   let nextRecording = 1;
   let disposed = false;

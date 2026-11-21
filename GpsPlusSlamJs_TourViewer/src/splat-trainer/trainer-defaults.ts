@@ -90,7 +90,7 @@ export interface TrainerSettings {
   /** Held-out sharpness (dB) from which a stretch is good, and from which
    *  it is at least weak. Picked, not swept: they stand until the stretch
    *  judge is measured against people's ratings. Provisional and laxer
-   *  than the plan's gate bars (good at 21 dB held out and 27 dB at the
+   *  than the stricter bars the trainer aims for (good at 21 dB held out and 27 dB at the
    *  camera with SSIM 0.70; not good under 19 dB held out or 25 dB at the
    *  camera): this judge reads held-out sharpness only, with no SSIM and
    *  no camera bar, until a measured judge replaces both. */

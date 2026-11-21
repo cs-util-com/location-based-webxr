@@ -110,23 +110,44 @@ function scripted(opts: {
   return { mod, calls, emit, report, session };
 }
 
-/** A clock whose timers fire only when the test says. */
-function manualClock(): RunClock & { t: number; fire(): void } {
-  let pending: (() => void) | null = null;
+/**
+ * A clock whose timers fire only when the test says: `fire` runs the
+ * newest timer still set, `fireDue` every timer due at `t`. Timers are
+ * kept by id, so a timer the run forgot to clear stays live, as in a
+ * browser.
+ */
+function manualClock(): RunClock & {
+  t: number;
+  fire(): void;
+  fireDue(): void;
+} {
+  const timers = new Map<number, { fn: () => void; at: number }>();
+  let next = 1;
   return {
     t: 0,
     now() {
       return this.t;
     },
-    setTimeout(fn) {
-      pending = fn;
-      return 1;
+    setTimeout(fn, ms) {
+      timers.set(next, { fn, at: this.t + ms });
+      return next++;
     },
-    clearTimeout() {
-      pending = null;
+    clearTimeout(id) {
+      timers.delete(id as number);
     },
     fire() {
-      pending?.();
+      const newest = [...timers.keys()].at(-1);
+      if (newest === undefined) return;
+      const timer = timers.get(newest);
+      timers.delete(newest);
+      timer?.fn();
+    },
+    fireDue() {
+      for (const [id, timer] of [...timers]) {
+        if (timer.at > this.t) continue;
+        timers.delete(id);
+        timer.fn();
+      }
     },
   };
 }
@@ -431,6 +452,62 @@ describe("runWindow", () => {
     });
     await runWindow(s.mod, input, () => {}, ctrl.signal, manualClock());
     expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  // Why: the preparation's cap must end once the session is seeded; left
+  // set, it fires minutes into a healthy training on a slow card and ends
+  // it as failed ("Preparing the graphics card took more than 5 min").
+  it("lets a training run on past the preparation's cap", async () => {
+    const seeded = gate();
+    const s = scripted({ hold: { seed: seeded.promise } });
+    const clock = manualClock();
+    const run = runWindow(
+      s.mod,
+      { ...input, prepareCapMs: 300_000, deadlineMs: 1_200_000 },
+      () => {},
+      new AbortController().signal,
+      clock,
+    );
+    await tick();
+    clock.t = 10_000;
+    seeded.open();
+    await tick();
+    expect(s.calls).toContain("start");
+    clock.t = 301_000;
+    s.report({ iter: 300 });
+    clock.fireDue();
+    await tick();
+    s.emit({ kind: "train-complete" });
+    const r = await run;
+    expect(r.outcome).toBe("finished");
+  });
+
+  // Why: the card budget the page checked the stretch against reaches the
+  // library, which shrinks its photos to it; without one it keeps its own.
+  it("hands the photo budget to the library when there is one", async () => {
+    const seen: unknown[] = [];
+    for (const over of [{ photoBudgetBytes: 64e6 }, {}]) {
+      const s = scripted({
+        onStart: (emit) =>
+          queueMicrotask(() => emit({ kind: "train-complete" })),
+      });
+      const create = s.mod.createSession;
+      const mod: SplatJsModule = {
+        ...s.mod,
+        createSession: (o) => {
+          seen.push(o.frames);
+          return create(o);
+        },
+      };
+      await runWindow(
+        mod,
+        { ...input, ...over },
+        () => {},
+        new AbortController().signal,
+        manualClock(),
+      );
+    }
+    expect(seen).toEqual([{ targetBudgetBytes: 64e6 }, undefined]);
   });
 
   // Why: the page shows what the run is doing before its first step

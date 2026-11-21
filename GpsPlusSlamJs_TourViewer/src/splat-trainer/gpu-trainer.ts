@@ -13,6 +13,7 @@
  * @see gpu-trainer.ts.md
  */
 
+import { SPLAT_JS_MIN_TRAIN_DIM } from "./splat-js.js";
 import { planWindowJob } from "./splat-inputs.js";
 import {
   failedJudgement,
@@ -60,32 +61,44 @@ const errorText = (err: unknown): string =>
 const megabytes = (bytes: number): string => String(Math.ceil(bytes / 1e6));
 
 /**
- * Why a window of `photos` photos of `width` x `height` cannot train on a
- * card with `limits`, in words; null when it fits, or when the sizes are
- * not ones the budget can judge (the trainer then meets them itself).
+ * The photo memory budget of a card with `limits` for a window of
+ * `photos` photos of `width` x `height`, and why the window cannot train
+ * on it, in words (null when it fits). The smallest size counted is the
+ * larger of `minShortSidePx` and the one Splat.js stops shrinking at.
+ * Null when the sizes are not ones the budget can judge (the trainer then
+ * meets them itself).
  */
-function tooLargeFor(
+function cardFit(
   photos: number,
   width: number,
   height: number,
   limits: AdapterLimits,
   settings: TrainerSettings,
-): string | null {
+): { readonly budgetBytes: number; readonly tooLarge: string | null } | null {
+  const long = Math.max(width, height);
+  const short = Math.min(width, height);
+  const libraryFloor =
+    long > SPLAT_JS_MIN_TRAIN_DIM
+      ? Math.round((short * SPLAT_JS_MIN_TRAIN_DIM) / long)
+      : short;
+  let budgetBytes: number;
   let fit: PhotoScale;
   try {
-    fit = photoScale(
-      photos,
-      width,
-      height,
-      memoryBudgetBytes(limits, settings),
-      settings,
-    );
+    budgetBytes = memoryBudgetBytes(limits, settings);
+    fit = photoScale(photos, width, height, budgetBytes, {
+      ...settings,
+      minShortSidePx: Math.max(settings.minShortSidePx, libraryFloor),
+    });
   } catch {
     return null;
   }
-  return fit.kind === "fits"
-    ? null
-    : `The stretch's ${String(photos)} photos need ${megabytes(fit.neededBytes)} MB of graphics memory even at their smallest, and this graphics card allows ${megabytes(fit.budgetBytes)} MB, so it cannot be trained on this computer.`;
+  return {
+    budgetBytes,
+    tooLarge:
+      fit.kind === "fits"
+        ? null
+        : `The stretch's ${String(photos)} photos need ${megabytes(fit.neededBytes)} MB of graphics memory even at their smallest, and this graphics card allows ${megabytes(fit.budgetBytes)} MB, so it cannot be trained on this computer.`,
+  };
 }
 
 export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
@@ -122,7 +135,7 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
       secondsLeft: null,
       previewEveryS: null,
     });
-    const job = planWindowJob(
+    const planned = planWindowJob(
       request.inputs,
       request.window,
       request.timeScale,
@@ -130,19 +143,26 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
     );
     const found = probed ?? (await probe());
     if (signal.aborted) return ended("cancelled");
-    if (found.kind !== "no-webgpu" && found.limits !== undefined) {
-      const { frameWidth, frameHeight } = request.inputs.census;
-      const tooLarge = tooLargeFor(
-        job.photos.length,
-        frameWidth,
-        frameHeight,
-        found.limits,
-        settings,
-      );
-      if (tooLarge !== null) {
-        return ended("failed", { detail: tooLarge, retryHelps: false });
-      }
+    const { frameWidth, frameHeight } = request.inputs.census;
+    const fit =
+      found.kind !== "no-webgpu" && found.limits !== undefined
+        ? cardFit(
+            planned.photos.length,
+            frameWidth,
+            frameHeight,
+            found.limits,
+            settings,
+          )
+        : null;
+    if (fit !== null && fit.tooLarge !== null) {
+      return ended("failed", { detail: fit.tooLarge, retryHelps: false });
     }
+    // Splat.js shrinks its photos to its own fixed budget unless told
+    // the card's, which on a card with small limits is several times less.
+    const job =
+      fit === null
+        ? planned
+        : { ...planned, photoBudgetBytes: fit.budgetBytes };
     let photos: readonly Blob[];
     try {
       photos = await deps.readPhotos(
@@ -215,7 +235,11 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
         : result;
     } finally {
       signal.removeEventListener("abort", onAbort);
-      worker.onmessage = null;
+      // A look already on its way when the worker ended still arrives:
+      // it is closed, not left holding its pixels until collected.
+      worker.onmessage = ({ data }) => {
+        if (data.type === "preview") data.picture.close();
+      };
       worker.onerror = null;
       worker.terminate();
     }
