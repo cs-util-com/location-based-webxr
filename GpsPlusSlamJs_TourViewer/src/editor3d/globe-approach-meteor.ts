@@ -32,7 +32,6 @@ import {
   GLOBE_INTRO,
   METEOR_PACE,
   createApproachDrive,
-  createFovReturn,
   createGlobeApproach,
   createGlobeLandingFlight,
   globeViewFitM,
@@ -190,7 +189,6 @@ export function createMeteorApproach(deps: {
   /** The flight's clock: 0 until the first frame. */
   const clock = () =>
     startedAt === null ? 0 : (pageNow() - startedAt) * scale;
-  const fovY = view.camera.fov;
   const placeCameraEcef = (p: THREE.Vector3, q: THREE.Quaternion) => {
     view.placeCameraEcef(p, q);
   };
@@ -207,16 +205,12 @@ export function createMeteorApproach(deps: {
     url: tour,
     spinMs: 0,
     turnMs: 0,
-    intro: "distance",
     maxKm: startM / 1000,
     turnCap: 0,
-    fovY,
     pitchLow: 0,
   });
   const drive = createApproachDrive({
     approach,
-    camera: view.camera,
-    fovReturn: createFovReturn(view.camera, () => fovY),
     placeCameraEcef,
     fitDistance: () => view.fitDistance(),
   });

@@ -15,7 +15,7 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
 import { orbitPose } from "./globe-camera.js";
-import { surfaceRadiusAlong } from "./globe-dive.js";
+import { surfaceRadiusAlong } from "./oblique-camera.js";
 import { createGlobeLandingFlight } from "./globe-landing-flight.js";
 import {
   meteorLinkStart,

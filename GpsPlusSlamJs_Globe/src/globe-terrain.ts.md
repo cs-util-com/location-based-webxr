@@ -198,5 +198,10 @@
   globe's hook on three's real shader; the factory on a simulated tile load and dispose, its
   detail on and off; refusals; the library guard). The GPU side (heights read back with the extension
   hidden, the look against the globe at noon, dusk and night, the data
-  budget, the seam scan) is the design system's
-  `labs/globe-terrain/globe-terrain.smoke.spec.mjs`.
+  budget, the seam scan, the sea at height scale 3 on a coast) has no
+  browser test now: those checks were the globe-terrain carrier lab's
+  smokes, removed with that lab and kept in git history. Restore them
+  before an upgrade of the carrier, three.js or 3d-tiles-renderer: a
+  changed displacement upload would draw the relief flat on a phone
+  without float-linear filtering, and no remaining test would see it. The
+  globe lab's smokes draw the relief but read its heights on the CPU.

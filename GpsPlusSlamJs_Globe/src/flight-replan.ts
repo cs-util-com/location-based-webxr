@@ -31,7 +31,7 @@ import * as THREE from "three";
 import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { OrbitPose } from "./globe-camera.js";
-import { obliqueCamera } from "./globe-dive.js";
+import { obliqueCamera } from "./oblique-camera.js";
 import { GLOBE_FLIGHT } from "./globe-flight.js";
 import {
   FLIGHT_PATH,

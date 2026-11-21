@@ -638,7 +638,6 @@ test("every control on the plate writes the hash and applies", async ({
       "space",
       "starGlow",
       "landKm",
-      "intro",
       "maxKm",
       "milkyWay",
       "nightGain",
@@ -703,8 +702,8 @@ test("every control on the plate writes the hash and applies", async ({
   // A wider field of view refits the camera closer.
   expect(state.distance).toBeLessThan(before.distance);
   // Only the intro's own keys restarted it, once each: the two timings,
-  // and since round 5 the variant, maxKm and turnCap.
-  expect(state.runs).toBe(runsBefore + 5);
+  // maxKm and turnCap.
+  expect(state.runs).toBe(runsBefore + 4);
   // Controls replace the history entry: ten changes, no back-button steps.
   expect(await page.evaluate(() => history.length)).toBe(before.historyLength);
   // The panel follows an edited hash (a pasted link): the slider and its

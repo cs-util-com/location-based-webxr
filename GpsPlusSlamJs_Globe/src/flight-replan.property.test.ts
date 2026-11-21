@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
-import { obliqueCamera } from "./globe-dive.js";
+import { obliqueCamera } from "./oblique-camera.js";
 import { unitShare } from "./test-utils/arbitraries.js";
 import {
   flightCameraAt,

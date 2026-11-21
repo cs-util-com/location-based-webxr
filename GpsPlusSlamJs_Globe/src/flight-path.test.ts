@@ -25,7 +25,8 @@ import * as THREE from "three";
 import { WGS84_ELLIPSOID } from "3d-tiles-renderer";
 
 import { orbitPose } from "./globe-camera.js";
-import { diveAt, obliqueCamera } from "./globe-dive.js";
+import { diveAt } from "./globe-dive.js";
+import { obliqueCamera } from "./oblique-camera.js";
 import { FLIGHT_PACE_DEFAULTS, startPace, stepPace } from "./flight-pace.js";
 import {
   FLIGHT_PATH,

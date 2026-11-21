@@ -43,10 +43,8 @@ const params = (
   url: BERN,
   spinMs: 3000,
   turnMs: 5000,
-  intro: "narrow",
   maxKm: 50_000,
   turnCap: 90,
-  fovY: 50,
   pitchLow: 50,
   ...over,
 });
@@ -97,7 +95,7 @@ describe("createGlobeApproach: the spin", () => {
     expect(approach.drives).toBe(true);
   });
 
-  it("spins over the sun at the zoom-out distance, at the variant's start field of view", () => {
+  it("spins over the sun at the zoom-out distance", () => {
     const { approach, at } = setup();
     approach.restart(at(0), params({ url: undefined }));
     const step = orbit(approach.pose(at(1000)));
@@ -107,8 +105,6 @@ describe("createGlobeApproach: the spin", () => {
     expect(step.pose.direction.toArray()).toEqual(expected.direction.toArray());
     expect(step.pose.up.toArray()).toEqual(expected.up.toArray());
     expect(step.distanceM).toBe(ZOOM_OUT_M);
-    // `narrow` starts wide (GLOBE_INTRO.wideFovDeg).
-    expect(step.fovDeg).toBe(GLOBE_INTRO.wideFovDeg);
     expect(approach.state().phase).toBe("spin");
   });
 
@@ -162,15 +158,12 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     const start = approach.state().flyInStart;
     expect(start).not.toBeNull();
     const expected = introCameraPose(0, {
-      variant: "narrow",
       start: start as [number, number, number],
       target: orbitPose(WGS84_ELLIPSOID, BERN).direction.toArray(),
       startKm: ZOOM_OUT_M / 1000,
       endKm: FIT_M / 1000,
-      endFovDeg: 50,
     });
     expect(first.distanceM).toBeCloseTo(expected.distanceKm * 1000, 3);
-    expect(first.fovDeg).toBeCloseTo(expected.fovDeg, 9);
     expect(approach.state().firstTurn).toEqual([...expected.direction]);
     // The frame loop reports where it placed that first frame, once.
     approach.cameraPlaced(123);
@@ -192,7 +185,6 @@ describe("createGlobeApproach: the fly-in and the hold", () => {
     expect(held.pose.direction.toArray()).toEqual(to.direction.toArray());
     expect(held.pose.up.toArray()).toEqual(to.up.toArray());
     expect(held.distanceM).toBeNull();
-    expect(held.fovDeg).toBe(50);
     expect(approach.state().history.map((h) => h.phase)).toEqual([
       "spin",
       "turning",
@@ -385,6 +377,90 @@ describe("createGlobeApproach: the user, the dive and the pin flight", () => {
   });
 });
 
+describe("createGlobeApproach: parking", () => {
+  // Why: the lab's smokes measure looks at a held altitude over a place.
+  // They park the camera there instead of flying to it: the approach keeps
+  // driving the camera (so the frame loop, its clip planes and the world
+  // frame behave as after a landing), the pose holds exactly where it was
+  // parked, a later frame cannot move it, and a restart or a touch ends it.
+  it("holds the parked camera as landed until a touch or a restart", () => {
+    const { approach, at } = setup();
+    approach.restart(at(0), params({ turnMs: 0 }));
+    approach.pose(at(0));
+    const position = new THREE.Vector3(1, 2, 3).multiplyScalar(2_000_000);
+    const quaternion = new THREE.Quaternion(0.1, 0.2, 0.3, 0.9).normalize();
+    approach.park(at(100), ZURICH, { position, quaternion });
+    expect(approach.state().phase).toBe("landed");
+    expect(approach.state().target).toEqual(ZURICH);
+    expect(approach.state().source).toBe("pin");
+    expect(approach.drives).toBe(true);
+    for (const ms of [100, 5_000, 60_000]) {
+      const step = placed(approach.pose(at(ms)));
+      expect(step.position.toArray()).toEqual(position.toArray());
+      expect(step.quaternion.toArray()).toEqual(quaternion.toArray());
+      // A caller that moves the returned pose cannot move the next one.
+      step.position.set(0, 0, 0);
+    }
+    // The parked pose is a copy: moving the caller's own vectors later
+    // does not move the camera either.
+    const before = position.toArray();
+    position.set(9, 9, 9);
+    expect(placed(approach.pose(at(70_000))).position.toArray()).toEqual(
+      before,
+    );
+    expect(approach.state().history.map((h) => h.phase)).toEqual([
+      "spin",
+      "turning",
+      "arrived",
+      "landed",
+    ]);
+    approach.yieldToUser(at(80_000));
+    expect(approach.state().phase).toBe("user");
+    approach.restart(at(90_000), params({ turnMs: 0 }));
+    expect(isOrbit(approach.pose(at(90_000)))).toBe(true);
+  });
+
+  // Why: the lab parks only with its pin idle, and a landed pin flight
+  // leaves the pin idle, so a park can follow a landing. The landed flight
+  // must not keep driving the camera: `pose()` asks the pin flight first,
+  // so a park that kept it would be ignored without a word.
+  it("parks after a landed pin flight, dropping the flight", () => {
+    const { approach, at } = setup();
+    approach.restart(at(0), params({ turnMs: 0 }));
+    approach.pose(at(0));
+    const pin = pressPin(
+      WGS84_ELLIPSOID,
+      10,
+      {
+        pose: orbitPose(WGS84_ELLIPSOID, BERN),
+        distanceM: FIT_M,
+        quaternion: new THREE.Quaternion(),
+      },
+      {
+        target: orbitPose(WGS84_ELLIPSOID, ZURICH),
+        landingM: 150,
+        progress: 1,
+      },
+    );
+    approach.flyPin(at(10), pin, ZURICH);
+    let ms = 10;
+    while (approach.state().phase !== "landed" && ms < 200_000) {
+      ms += 500;
+      approach.pose(at(ms));
+    }
+    expect(approach.state().phase).toBe("landed");
+    expect(approach.pinFlight?.phase).toBe("landed");
+    const position = new THREE.Vector3(3, 2, 1).multiplyScalar(2_000_000);
+    const quaternion = new THREE.Quaternion(0.3, 0.1, 0.2, 0.9).normalize();
+    approach.park(at(ms + 100), BERN, { position, quaternion });
+    expect(approach.pinFlight).toBeNull();
+    expect(approach.state().target).toEqual(BERN);
+    const step = placed(approach.pose(at(ms + 200)));
+    expect(step.position.toArray()).toEqual(position.toArray());
+    expect(step.quaternion.toArray()).toEqual(quaternion.toArray());
+  });
+});
+
 describe("approachRestartKey", () => {
   it("changes with the target and the intro's timing, not with anything else", () => {
     const base = params();
@@ -393,13 +469,12 @@ describe("approachRestartKey", () => {
       { url: ZURICH },
       { spinMs: 1 },
       { turnMs: 1 },
-      { intro: "fov" as const },
       { maxKm: 60_000 },
       { turnCap: 10 },
     ]) {
       expect(approachRestartKey({ ...base, ...over })).not.toBe(key);
     }
-    expect(approachRestartKey({ ...base, fovY: 70, pitchLow: 80 })).toBe(key);
+    expect(approachRestartKey({ ...base, pitchLow: 80 })).toBe(key);
   });
 });
 
