@@ -22,6 +22,8 @@ package).
 - `interface RebuildZipOptions { onProgress?(done, total); remove?: readonly string[]; budget?: DecompressionBudget; maxEntries?: number }`
   - `budget` / `maxEntries` (K0 milestone review R1): the input is
     untrusted (the Tour Viewer's is a tour from any link or a file), so
+    the archive is opened through the shared capped open
+    (`withCappedZipEntries` of `zip-reader.ts`, which also closes it):
     the directory is read through the single-read cap
     (`DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes`), listed under
     `maxEntries` (default `DEFAULT_ARCHIVE_LIMITS.maxEntries`), and every

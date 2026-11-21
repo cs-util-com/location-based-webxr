@@ -8,12 +8,21 @@
  * @see splat-js.ts.md
  */
 
-/** The Splat.js commit the trainer was measured with. */
+/**
+ * The Splat.js commit the trainer was measured with. Moving the pin means
+ * re-reading, at the new commit, the numbers copied from its source by
+ * hand, since no unit test sees the library (it is loaded at run time
+ * from the CDN, not installed): {@link SPLAT_JS_MIN_TRAIN_DIM} (`adaptiveTrainCap` in
+ * `src/io/frames.js`), and in `trainer-defaults.ts` `targetMemoryBytes`,
+ * `bytesPerPixel` (the same file) and `gpuBytesPerPixel` (the packed
+ * targets in `src/gs/trainer.js`).
+ */
 export const SPLAT_JS_COMMIT = "a84620c05f210a304b2d8de1d5c9f19d3657126f";
 
 /** The smallest longer side (px) Splat.js shrinks a training photo to
  *  when the photos outgrow its memory budget (`adaptiveTrainCap` at the
- *  pinned commit); it never enlarges a smaller photo. */
+ *  pinned commit); it never enlarges a smaller photo. Copied by hand: see
+ *  {@link SPLAT_JS_COMMIT}. */
 export const SPLAT_JS_MIN_TRAIN_DIM = 320;
 
 /** The one address the trainer loads Splat.js from. */

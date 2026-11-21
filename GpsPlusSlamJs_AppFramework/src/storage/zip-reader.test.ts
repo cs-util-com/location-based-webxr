@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { Reader } from '@zip.js/zip.js';
+import { Reader, ZipReader } from '@zip.js/zip.js';
+import fc from 'fast-check';
 import {
   readZipEntries,
   loadActionsFromZip,
@@ -19,6 +20,7 @@ import {
   loadEntriesFromSubdir,
   toZipReader,
   isActionEntryName,
+  isMacOsMetadataName,
   withCappedZipEntries,
   MAX_ACTION_FILE_SIZE,
   type ZipActionEntry,
@@ -1310,6 +1312,51 @@ describe('isActionEntryName: the one rule for which entries are actions', () => 
   });
 });
 
+describe('isMacOsMetadataName: the one macOS re-zip rule', () => {
+  // Why: the parser's action rule and the Tour Viewer's file key both skip
+  // what a Finder re-zip adds. Were they two rules, a widened one would
+  // let the key count an entry the parser skips, and the same recording
+  // re-zipped would get another key (and lose its draft).
+  it('names the __MACOSX/ tree and ._ resource forks, nothing else', () => {
+    expect(isMacOsMetadataName('__MACOSX/')).toBe(true);
+    expect(isMacOsMetadataName('__MACOSX/walk/session.json')).toBe(true);
+    expect(isMacOsMetadataName('walk/__MACOSX/a.json')).toBe(true);
+    expect(isMacOsMetadataName('._session.json')).toBe(true);
+    expect(isMacOsMetadataName('walk/actions/._000001.json')).toBe(true);
+    expect(isMacOsMetadataName('session.json')).toBe(false);
+    expect(isMacOsMetadataName('walk/a._b.json')).toBe(false);
+    expect(isMacOsMetadataName('walk/._dir/a.json')).toBe(false);
+    expect(isMacOsMetadataName('x__MACOSX/a.json')).toBe(false);
+  });
+
+  it('agrees with the rule the Tour Viewer file key held, for any name', () => {
+    // The Tour Viewer's former private copy, kept as the oracle the shared
+    // rule replaced without a change of behaviour.
+    const tourViewerRule = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
+    const part = fc.constantFrom('__MACOSX', '._', '.', '_', 'a', 'x__MACOSX');
+    const name = fc
+      .array(fc.array(part, { minLength: 1, maxLength: 3 }), {
+        minLength: 1,
+        maxLength: 4,
+      })
+      .chain((segments) =>
+        fc
+          .boolean()
+          .map(
+            (trailingSlash) =>
+              segments.map((s) => s.join('')).join('/') +
+              (trailingSlash ? '/' : '')
+          )
+      );
+    fc.assert(
+      fc.property(fc.oneof(name, fc.string()), (n) => {
+        expect(isMacOsMetadataName(n)).toBe(tourViewerRule.test(n));
+      }),
+      { numRuns: 2000 }
+    );
+  });
+});
+
 describe('withCappedZipEntries: one capped open of a zip Blob', () => {
   // Why: every reader of an untrusted zip Blob must read its directory
   // under the directory and entry caps; this is the one place that open
@@ -1355,5 +1402,28 @@ describe('withCappedZipEntries: one capped open of a zip Blob', () => {
         Promise.reject(new Error('from use'))
       )
     ).rejects.toThrow('from use');
+  });
+
+  it('closes the reader once, whether use resolves or rejects, and on a non-zip', async () => {
+    // Why: the caller never sees the reader, so this is the only place
+    // that can close it; each path must close it exactly once.
+    const blob = await zip();
+    const close = vi.spyOn(ZipReader.prototype, 'close');
+    try {
+      await withCappedZipEntries(blob, () => Promise.resolve(1));
+      expect(close).toHaveBeenCalledTimes(1);
+      close.mockClear();
+      await withCappedZipEntries(blob, () =>
+        Promise.reject(new Error('from use'))
+      ).catch(() => undefined);
+      expect(close).toHaveBeenCalledTimes(1);
+      close.mockClear();
+      await withCappedZipEntries(new Blob(['hello']), () =>
+        Promise.resolve(1)
+      ).catch(() => undefined);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      close.mockRestore();
+    }
   });
 });

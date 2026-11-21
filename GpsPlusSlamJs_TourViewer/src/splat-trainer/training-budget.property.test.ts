@@ -23,6 +23,7 @@ const settingsArb = fc
   .record({
     targetMemoryBytes: fc.integer({ min: 16 * MB, max: 2048 * MB }),
     bytesPerPixel: fc.integer({ min: 4, max: 32 }),
+    gpuBytesPerPixel: fc.integer({ min: 1, max: 16 }),
     minShortSidePx: fc.constantFrom(64, 128, 256),
     itersPerFrame: fc.constantFrom(90, 150, 300),
     minIterations: fc.integer({ min: 0, max: 8000 }),
@@ -36,7 +37,7 @@ const settingsArb = fc
   }));
 
 describe("training budget (property)", () => {
-  it("never budgets more memory than the target, half the binding or the largest buffer", () => {
+  it("budgets the most the target allows whose photos the card holds in half the binding and the largest buffer", () => {
     fc.assert(
       fc.property(
         settingsArb,
@@ -48,8 +49,20 @@ describe("training budget (property)", () => {
             settings,
           );
           expect(budget).toBeLessThanOrEqual(settings.targetMemoryBytes);
-          expect(budget).toBeLessThanOrEqual(binding / 2);
-          expect(budget).toBeLessThanOrEqual(buffer);
+          // The card's own bytes of photos that fill the budget: budget /
+          // bytesPerPixel pixels at gpuBytesPerPixel each, multiplied out
+          // so the comparison is exact in integers.
+          const card = (b: number) => b * settings.gpuBytesPerPixel;
+          const halfBinding = (binding / 2) * settings.bytesPerPixel;
+          const wholeBuffer = buffer * settings.bytesPerPixel;
+          expect(card(budget)).toBeLessThanOrEqual(halfBinding);
+          expect(card(budget)).toBeLessThanOrEqual(wholeBuffer);
+          // And it is the largest such budget: one byte more breaks a cap.
+          expect(
+            budget + 1 > settings.targetMemoryBytes ||
+              card(budget + 1) > halfBinding ||
+              card(budget + 1) > wholeBuffer,
+          ).toBe(true);
         },
       ),
       RUNS,

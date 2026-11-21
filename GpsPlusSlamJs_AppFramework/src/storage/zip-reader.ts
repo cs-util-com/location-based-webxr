@@ -164,6 +164,16 @@ const ACTIONS_SEGMENT = /(?:^|\/)actions\//;
 const MACOS_METADATA = /(?:^|\/)(?:__MACOSX\/|\._[^/]*$)/;
 
 /**
+ * Is `filename` an entry a macOS re-zip adds (under `__MACOSX/`, or a
+ * `._<name>` resource fork)? Never part of a recording or a tour. The ONE
+ * rule: the parser's action rule below and the Tour Viewer's file key both
+ * read it, so the key never counts an entry the parser skips.
+ */
+export function isMacOsMetadataName(filename: string): boolean {
+  return MACOS_METADATA.test(filename);
+}
+
+/**
  * Is `filename` an action JSON entry: under an `actions/` segment, ending
  * `.json`, and not macOS metadata? The ONE rule for which entries the
  * parser replays, so a caller that checks a zip's action stream before
@@ -174,7 +184,7 @@ export function isActionEntryName(filename: string): boolean {
   return (
     ACTIONS_SEGMENT.test(filename) &&
     filename.endsWith('.json') &&
-    !MACOS_METADATA.test(filename)
+    !isMacOsMetadataName(filename)
   );
 }
 
