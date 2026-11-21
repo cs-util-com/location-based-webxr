@@ -10,6 +10,7 @@
  * @see creator-finish.ts.md
  */
 
+import { createProgressGate, finishRunning } from "./finish-status.js";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { CreatorCodes } from "./creator-codes.js";
 import type { CreatorDebugSave } from "./creator-debug-save.js";
@@ -182,7 +183,9 @@ export function wireCreatorFinish(deps: {
 
   function canStart(): boolean {
     return (
-      readiness() === "ready" && !deps.measuring.inFlight() && !ctx.finishing
+      readiness() === "ready" &&
+      !deps.measuring.inFlight() &&
+      !finishRunning(ctx.tourDocument.state())
     );
   }
 
@@ -209,30 +212,37 @@ export function wireCreatorFinish(deps: {
     // result must not land in a session or a tour it was not made for
     // (M3 review #2).
     const sessionGeneration = ctx.arSessionGeneration;
-    ctx.finishing = true;
+    /** The document's write: undo waits until it ends (`canStep`), and
+     *  what it lands names the open it began on. The Finish holds the
+     *  page's save slot while it runs (`finish-status.ts`): the claim
+     *  puts the last Finish's failure away. */
+    const tour = ctx.tourDocument;
+    tour.finishClaimed();
     // A tap now would save the previous Finish's zip just before this one
     // saves the new one under the same name (F4 milestone review #5).
     dom.downloadButton.disabled = true;
     // A question about the previous Finish's file is put away: its yes must
     // not be read as this Finish's (F19 review #2).
     deps.handoff.finishStarted();
-    ctx.finishError = null;
     // The AR button reads the finish ("Saving…"): a finish started from the
     // panel's retry left it saying "Close AR" (M3 review #3).
     deps.renderArEntry?.();
     ctx.placementNote = null;
-    ctx.finishProgress = FINISH_LABELS.reading(current.archive.size);
+    tour.finishProgressed({ kind: "reading", bytes: current.archive.size });
     deps.render();
     let wroteZip = false;
     /** The zip THIS Finish made, and its result sentences: a failure after
      *  it still hands the zip over (F4 milestone review #1). */
     let madeZip: typeof ctx.rebuiltZip = null;
     let notes = "";
-    /** The document's write: undo waits until it ends (`canStep`), and
-     *  what it lands names the open it began on. */
-    const tour = ctx.tourDocument;
     const generation = tour.saveStarted();
-    let failure: string | undefined;
+    /** The failure the panel says: only for the tour this Finish began
+     *  on, so it never outlives its tour. The save ends and the slot is
+     *  released with it, never reset by the zip's own hand-over (the phone
+     *  dispatches no `saveDelivered`). */
+    let said: string | undefined;
+    /** Lets a rebuild step through only when its whole percent changes. */
+    const progressShown = createProgressGate();
     /** Save the zip off AR; with a session running, leave it to the button
      *  (a download must not start inside an AR session, review #6). */
     const handOver = (): void => {
@@ -243,7 +253,7 @@ export function wireCreatorFinish(deps: {
       try {
         // Assembled INSIDE the try (M4 review #1): a manifest the reader
         // rejects (a duplicate id) must fail the finish visibly, not throw
-        // past `finishing = true` and freeze the panel.
+        // past the claimed save slot and freeze the panel.
         const manifest = finishBase();
         const stationsAtStart = tour.state().stations;
         const deleted = [...tour.deleted()];
@@ -266,7 +276,8 @@ export function wireCreatorFinish(deps: {
           previous,
           shouldContinue: () => ctx.session === current,
           onProgress: (done, total) => {
-            ctx.finishProgress = FINISH_LABELS.rebuilding(done, total);
+            if (!progressShown(done, total)) return;
+            tour.finishProgressed({ kind: "rebuilding", done, total });
             deps.render();
           },
         });
@@ -395,9 +406,8 @@ export function wireCreatorFinish(deps: {
         // step 4 (UI round 1, U2).
         dom.finishStatus.scrollIntoView?.({ block: "center" });
       } catch (err) {
-        failure = err instanceof Error ? err.message : String(err);
         if (ctx.session === current) {
-          ctx.finishError = FINISH_LABELS.failed(failure);
+          said = err instanceof Error ? err.message : String(err);
           // A file this Finish already made stays reachable with the
           // retry (U2 milestone review #4) - and is handed over: saved off
           // AR, else offered on the button (F4 milestone review #1). An
@@ -414,9 +424,8 @@ export function wireCreatorFinish(deps: {
         // settle with the rest of the visit at its end, through one
         // alignment - the tap's settle is redone then.
         if (!wroteZip) deps.settle.unsettle(settledAtTap);
-        tour.saveEnded(generation, failure);
-        ctx.finishing = false;
-        ctx.finishProgress = "";
+        tour.saveEnded(generation, said);
+        tour.finishReleased(said);
         deps.render();
         // The AR button reads the finish (Saving…, Close AR after a
         // failure), and nothing else re-renders it when a finish ends.

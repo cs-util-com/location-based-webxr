@@ -160,7 +160,7 @@ Filed as follow-ups:
 const undo = wireCreatorUndo({
   tour: ctx.tourDocument,
   dom: { button: element("setup-undo"), label: element("setup-undo-label") },
-  locked: () => ctx.finishing,
+  locked: () => finishRunning(ctx.tourDocument.state()),
   hidden: () => editing.selected() !== null,
 });
 undo.offer({ target: 'delete "Gate"', run: () => undoDelete(deleted) });

@@ -44,6 +44,7 @@ import {
   type StationFrame,
   type StationPose,
   type TourDocumentState,
+  type TourSaveProgress,
 } from "./tour-document.js";
 import {
   followDocument,
@@ -291,6 +292,17 @@ export interface CreatorDocument {
   }): void;
   /** The write ended, landed or not. */
   saveEnded(generation: number, error?: string): void;
+  /** The Finish takes the page's save slot: it runs, and the last
+   *  Finish's failure is put away (`finish-status.ts` reads it). */
+  finishClaimed(): void;
+  /** How far the running Finish has come; a repeat of the value held is
+   *  dropped by the reducer. */
+  finishProgressed(progress: TourSaveProgress): void;
+  /** The Finish lets the slot go; `error` is its failure, said until the
+   *  next Finish starts or the tour closes. */
+  finishReleased(error?: string): void;
+  /** Done waits for the code being measured (or no longer). */
+  finishWaits(waits: boolean): void;
   /** The draft follows the document from now on: each edit's writes,
    *  issued by a listener after the reducer. One draft per page. */
   follow(draft: TourDocumentDraft): void;
@@ -669,6 +681,20 @@ export function createCreatorDocument(
           ...(error === undefined ? {} : { error }),
         }),
       );
+    },
+    finishClaimed() {
+      store.dispatch(tourDocumentActions.saveClaimed({ by: "explicit" }));
+    },
+    finishProgressed(progress) {
+      store.dispatch(tourDocumentActions.saveProgressed({ progress }));
+    },
+    finishReleased(error) {
+      store.dispatch(
+        tourDocumentActions.saveReleased(error === undefined ? {} : { error }),
+      );
+    },
+    finishWaits(waits) {
+      store.dispatch(tourDocumentActions.finishWaitsChanged({ waits }));
     },
     follow(draft) {
       if (followed) throw new Error("the document already has a draft");
