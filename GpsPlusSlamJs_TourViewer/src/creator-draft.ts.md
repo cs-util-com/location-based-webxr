@@ -37,7 +37,11 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
   - `writeObject(object, blob?)` - the awaited record write, with its
     seen version: the tour document's listener writes every change through
     it (`creator-setup.ts` hands `draftObjectWrites(draft)` to
-    `ctx.tourDocument.follow`).
+    `ctx.tourDocument.follow`). The listener does not wait for it, so
+    this write, and `write` below it, say a write that did not land
+    themselves: the "not saving a backup copy" line, once, as the
+    desktop's draft says it (`draft-shared-behaviour.test.ts`, "a refused
+    object write").
   - `saveSettings(record)` - writes the document's settings record (the
     tour's setting, details and moved stations; `SETTINGS_KEY`, the
     desktop's file name and shape, `tour-document-draft.ts`) whole, in its

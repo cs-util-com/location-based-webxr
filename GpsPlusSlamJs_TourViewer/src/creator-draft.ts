@@ -721,6 +721,13 @@ export function wireCreatorDraft(deps: {
     return writeForObject(store, tourUrl, id, write).catch(() => false);
   }
 
+  /** A document write's result, the creator told once when it did not
+   *  land. */
+  function saidWhenRefused(ok: boolean): boolean {
+    if (!ok) noteNoPersistence();
+    return ok;
+  }
+
   /**
    * Record the tour, the printed size and the rejections (the codes have a
    * record of their own, `writeCodes`).
@@ -1494,15 +1501,19 @@ export function wireCreatorDraft(deps: {
     recordPlacement,
     recordVisit,
     // The document's writes (`draftObjectWrites`): each id they name is
-    // live work from here on (`touchedIds`).
+    // live work from here on (`touchedIds`). The document issues them
+    // without waiting (`followDocument`), so one that did not land is
+    // said here, as the desktop's draft says it.
     write: (id, task) => {
       touchedIds.add(id);
-      return draftWrite(id, task);
+      return draftWrite(id, task).then(saidWhenRefused);
     },
     writeObject: (object, blob) => {
       touchedIds.add(object.id);
       const seen = seenKey(object.id);
-      return draftWrite(object.id, (s) => liveWrite(s, object, blob, seen));
+      return draftWrite(object.id, (s) =>
+        liveWrite(s, object, blob, seen),
+      ).then(saidWhenRefused);
     },
     finished: (ids, written) => {
       for (const id of ids) finishedIds.add(id);
