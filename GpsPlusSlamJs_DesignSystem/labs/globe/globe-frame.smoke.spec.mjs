@@ -153,6 +153,9 @@ test("the frame never moves under a drag in progress, and follows once the contr
     null,
     { timeout: 300_000 },
   );
+  // The park sets the phase at once; a frame puts the parked pose on the
+  // camera before the press reads it.
+  await page.evaluate(() => window.__globeLab.timeFrames(1));
   const frameOf = () =>
     page.evaluate(() => window.__globeLab.state().worldFrame);
   const before = await frameOf();
