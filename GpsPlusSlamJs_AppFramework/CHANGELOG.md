@@ -4,6 +4,12 @@
 
 ### Added
 
+- **One `.glb` chunk reader, shared**: the tour's `checkGlbInert` now
+  reads through it (same verdicts and reasons), and the Tour Viewer's
+  model optimizer and asset optimizer check page use it instead of their
+  own copies, so every reader refuses the same malformed files.
+  - **`utils/glb-chunks`** (deep import): `readGlbChunks`, `GLB_MAGIC`,
+    `GLB_CHUNK_JSON`, `GLB_CHUNK_BIN`.
 - **PINHOLE intrinsics from a projection matrix, shared**: moved here from
   the Recorder's COLMAP export, so the export and the Tour Viewer's splat
   trainer reader read a recording's lens through one implementation (the

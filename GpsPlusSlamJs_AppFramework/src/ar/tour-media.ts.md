@@ -49,7 +49,9 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   the header's length equal to the data's. three.js's loader walks EVERY
   chunk and takes a later JSON chunk over the first, so a check of the
   first chunk alone passed a model whose second JSON chunk points at an
-  http URL.
+  http URL. The chunks are read by the shared `utils/glb-chunks.ts`
+  (`readGlbChunks`), the reader the Tour Viewer's model optimizer and its
+  check page use too; its reasons are the ones this check returns.
 - **The pixel cap (K4 review R2):** an image is decoded at the size its
   file states, so a few kilobytes of crafted header can make a phone
   allocate gigabytes. `TOUR_MAX_IMAGE_PIXELS` is 4096 x 4096 (16.8 MP, 64

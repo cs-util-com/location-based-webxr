@@ -349,6 +349,11 @@ const entryFiles = [
   // exports wildcard advertises this subpath, so it must be built per-file.
   'src/utils/compass-influence-mapping.ts',
   'src/utils/format-distance.ts',
+  // The one `.glb` chunk reader, behind the tour's inertness check and
+  // deep-imported by the Tour Viewer's model optimizer and its check page
+  // (NOT via the `/utils` barrel). Built per-file for the `./utils/*`
+  // wildcard.
+  'src/utils/glb-chunks.ts',
   // Bearing normalizer — deep-imported by the OSM demo (NOT via the `/utils`
   // barrel, which would pull in the logger and friends). The `./utils/*`
   // exports wildcard advertises this subpath, so it must be built per-file.
