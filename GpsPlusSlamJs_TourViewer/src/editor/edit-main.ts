@@ -2987,14 +2987,24 @@ const SCAN_NOT_STARTED = "another scan was being added at the same time.";
  * One add of a scan as every caller starts it: refused in words while
  * another add runs, a throw said as a refusal (`addScanSafely`). Null -
  * no tour, or another tour opened meanwhile - says nothing: the scan was
- * never that tour's.
+ * never that tour's. The debug panel's status line stands in the 3D view,
+ * hidden while the view loads or cannot open: an add that lands then is
+ * said in a toast instead.
  */
-function addScan(file: File): Promise<AddScanOutcome | null> {
+async function addScan(file: File): Promise<AddScanOutcome | null> {
   if (debugAdd.busy()) {
-    return Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED });
+    return { kind: "refused", reason: SCAN_NOT_STARTED };
   }
-  return addScanSafely(() => addDebugData(file));
+  const outcome = await addScanSafely(() => addDebugData(file));
+  if (outcome?.kind === "added" && !ui().view3dShown) {
+    fileToasts.push(toast(addedOffViewLine(file.name)));
+  }
+  return outcome;
 }
+
+/** What an add says when the 3D view, which draws it, does not show. */
+const addedOffViewLine = (name: string): string =>
+  `Added ${name} as debug data: it shows once the 3D view opens.`;
 
 /** {@link addScan} from its own button or panel: a refusal said in a
  *  toast. */

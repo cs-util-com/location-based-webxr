@@ -271,6 +271,15 @@ test("adds the debug data back beside a tour from its own button, and forgets it
   await expect(page.locator("#debug-status")).toHaveText(
     "Scan editor-fixture-debug.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. Debug data: 2 camera captures shown.",
   );
+  // That status line stands in the 3D view, hidden on the page that says
+  // the view cannot open: the add's end is said in a toast there, or the
+  // creator would get no answer at all.
+  await expect(
+    page.locator(".toast", {
+      hasText:
+        "Added editor-fixture-debug.zip as debug data: it shows once the 3D view opens.",
+    }),
+  ).toBeVisible();
   await expect(viewItem(page, "debug")).toHaveJSProperty("hidden", false);
   await expect(page.locator("#debug-add")).toHaveText("Add debug data…");
   await expect(page.locator("#debug-add")).toBeEnabled();

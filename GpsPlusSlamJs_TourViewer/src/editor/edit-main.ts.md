@@ -294,7 +294,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   start card's scan path says it its own way), the layer kept. Every add
   goes through `addScan`: refused in words while another add runs (a file
   dropped on the panel then is said, never dropped silently), and a throw
-  said as a refusal (`addScanSafely`), never an unhandled rejection.
+  said as a refusal (`addScanSafely`), never an unhandled rejection. An
+  add that lands while the 3D view does not show (it loads, or cannot
+  open: the panel and its status line stand in the view and are hidden)
+  is said in a toast, "Added <file> as debug data: it shows once the 3D
+  view opens.", so the creator gets an answer on the cannot-open page too.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
