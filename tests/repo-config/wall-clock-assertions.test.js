@@ -70,6 +70,10 @@ const ALLOWLIST = new Map([
     'A 50 ms ceiling against a measured best-of-15 of 0.44 ms (>100x). Minimum-of-N is load-robust: preemption can only inflate a sample.',
   ],
   [
+    'GpsPlusSlamJs_AppFramework/src/ar/anchor-visibility.perf.test.ts',
+    'Best-of-15 ceilings, measured under about 75 % CPU load: cached test 1 ms vs 0.006-0.008 ms and a 64-bone skinned part 2 ms vs 0.013-0.016 ms (>100x); a fresh 400-part traversal 150 ms vs 28.7 and 42.1 ms on two CI runs (~3.6x over the slower, the thinnest; 4.1-4.4 ms on the desktop). Minimum-of-N is load-robust, and the operation counts are asserted without a clock.',
+  ],
+  [
     'GpsPlusSlamJs_AppFramework/src/ar/occupancy-grid.perf.test.ts',
     'Ratio WITH an absolute floor — max(4 * smallMs, 5) — so it degrades to a plain 5 ms ceiling exactly when the ratio would misfire. The model for option 3.',
   ],

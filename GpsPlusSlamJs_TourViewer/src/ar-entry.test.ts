@@ -1157,7 +1157,8 @@ describe("a creator's one way out of AR (polish round M3, Q-Done)", () => {
     const h = harness({ arStatus: "running", mode: "creator" });
     const finish = vi.fn(() => true);
     h.hooks.finishFromAr = finish;
-    h.ctx.finishError = "Finishing failed: offline";
+    h.ctx.tourDocument.finishClaimed();
+    h.ctx.tourDocument.finishReleased("offline");
     h.entry.renderArEntry();
     expect(h.dom.enterArButton.textContent).toBe("Close AR");
     await h.enter();
@@ -1169,7 +1170,7 @@ describe("a creator's one way out of AR (polish round M3, Q-Done)", () => {
     const h = harness({ arStatus: "running", mode: "creator" });
     const finish = vi.fn(() => true);
     h.hooks.finishFromAr = finish;
-    h.ctx.finishing = true;
+    h.ctx.tourDocument.finishClaimed();
     h.entry.renderArEntry();
     expect(h.dom.enterArButton.textContent).toBe("Saving…");
     expect(h.dom.enterArButton.disabled).toBe(false);

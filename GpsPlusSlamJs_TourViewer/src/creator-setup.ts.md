@@ -137,8 +137,9 @@ were here. What stays is the Finish's side:
     Done in AR starts a Finish through `CreatorFinish.start`, or, while a
     code is being measured, keeps the session, LEADS the status with "the
     tour saves as soon as it is measured" (first, so AR's two-line clamp
-    shows it; a flag every render reads, so the re-render after Done keeps
-    it), and starts the Finish itself when that measurement lands
+    shows it; the document's `save.finishWaits`, which every render
+    reads, so the re-render after Done keeps it, cleared when the
+    measurement lands, at the visit's end and at the tour's close), and starts the Finish itself when that measurement lands
     (`measuringSettled`, the measuring's render) - PR #598 review, #599
     review / F17, r837 review #1, #2, #6; in a session
     the panel's Finish is hidden, and comes back as the retry after a
@@ -323,7 +324,7 @@ were here. What stays is the Finish's side:
   - The readout's "N objects placed" counts only objects the zip does not
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
-  `authorErrorText`, `mintGeneration`, `finishing`,
+  `authorErrorText`, `mintGeneration`,
   `rebuiltZip`, `placedPreviews`, `placementNote`; changes the tour
   document (`tourDocument`) and makes the draft follow it (`follow`, once
   per page); reads `gpsSamplesAtSessionStart`, `reticle`, `latestFrame`

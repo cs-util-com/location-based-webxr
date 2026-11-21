@@ -45,15 +45,15 @@
       "name": "placements not counted",
       "region": "finish guard",
       "file": "src/creator-setup.ts",
-      "from": "placedCount: ctx.placedObjects.length,",
+      "from": "placedCount: ctx.tourDocument.entries().length,",
       "to": "placedCount: 0,"
     },
     {
       "name": "Finish not held for a measurement",
       "region": "finish",
       "file": "src/creator-finish.ts",
-      "from": "readiness() === \"ready\" && !deps.measuring.inFlight() && !ctx.finishing",
-      "to": "readiness() === \"ready\" && !ctx.finishing"
+      "from": "      readiness() === \"ready\" &&\n      !deps.measuring.inFlight() &&\n      !finishRunning(ctx.tourDocument.state())",
+      "to": "      readiness() === \"ready\" &&\n      !finishRunning(ctx.tourDocument.state())"
     },
     {
       "name": "empty visits logged",

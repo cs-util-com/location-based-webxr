@@ -29,6 +29,7 @@
  * the result its AR path leaves in the page's lists (named per row), and
  * the row compares what the document makes of it from there on.
  */
+import { finishErrorLine, finishRunning } from "./finish-status.js";
 import { editorStore } from "./test-support/editor-store.js";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { isDeepStrictEqual } from "node:util";
@@ -603,11 +604,12 @@ async function phonePage(
       if (!started) throw new Error(PHONE_FINISH_REFUSED);
       await vi.waitFor(
         () => {
-          expect(ctx.finishing).toBe(false);
+          expect(finishRunning(ctx.tourDocument.state())).toBe(false);
         },
         { timeout: 20_000 },
       );
-      if (ctx.finishError !== null) throw new Error(ctx.finishError);
+      const failed = finishErrorLine(ctx.tourDocument.state());
+      if (failed !== null) throw new Error(failed);
       return ctx.rebuiltZip!.written;
     },
     records: async () => {
