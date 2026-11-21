@@ -43,6 +43,16 @@ allow, fails instead of going out.
   update the pattern.
 - The page is parsed with regular expressions, which is enough for
   Vite's own output; it is not a general HTML parser.
+- Not checked: that the meta sits inside `<head>` (a meta policy in the
+  body is ignored). Vite keeps the source page's head, where the policy
+  is written; a transform that moved it into the body would pass here.
+- The Splat.js address is read from the built chunk as one string. The
+  source builds it from a template literal over the pinned commit; a
+  local `pnpm run build:site` with Vite 8.2.2 folds it into one literal
+  (the chunk names `.../splat.js@<commit>/src/index.js` whole), and the
+  check passed on that build. A bundler that left it split would fail
+  this check ("name no Splat.js address" or a refused address), closed
+  rather than open.
 
 ## Example
 
