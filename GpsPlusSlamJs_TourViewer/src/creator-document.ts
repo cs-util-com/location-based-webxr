@@ -694,7 +694,9 @@ export function createCreatorDocument(
           collecting?.push(forgotten);
           return forgotten.then(() => undefined);
         },
-        saveSettings: collected((record) => draft.saveSettings(record)),
+        saveSettings: collected((record, moved) =>
+          draft.saveSettings(record, moved),
+        ),
         ...(draft.saveCodes === undefined
           ? {}
           : { saveCodes: collected(draft.saveCodes.bind(draft)) }),

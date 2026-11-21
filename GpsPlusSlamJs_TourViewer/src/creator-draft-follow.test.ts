@@ -364,7 +364,7 @@ describe("the phone draft's settings record", () => {
       ]),
     };
     expect(
-      await draft.saveSettings({ needsNoGps: false, frames: [frame] }),
+      await draft.saveSettings({ needsNoGps: false, frames: [frame] }, []),
     ).toBe(true);
     await flush();
     const stored = ns.files(OLD).get(SETTINGS_KEY);
@@ -423,7 +423,7 @@ describe("the phone draft's settings record", () => {
         ],
       }),
     );
-    expect(await draft.saveSettings({ needsNoGps: true })).toBe(true);
+    expect(await draft.saveSettings({ needsNoGps: true }, [])).toBe(true);
     await flush();
     const stored = JSON.parse(ns.files(OLD).get(SETTINGS_KEY) as string) as {
       createdStations?: { id: string }[];

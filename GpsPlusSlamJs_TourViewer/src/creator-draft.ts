@@ -61,6 +61,8 @@ import {
   parseSettingsRecord,
   settingsRecord,
   settingsRecordText,
+  withCreated,
+  withUndecidedPoses,
   SETTINGS_KEY,
   type TourCodesRecord,
   type TourSettingsRecord,
@@ -125,8 +127,12 @@ export interface CreatorDraft {
   forgetObject(id: string): Promise<void>;
   /** Write the tour document's settings record (`tour-document-draft.ts`:
    *  the moved stations' poses, the details once set), in its own queue.
-   *  True with no tour's draft open yet (`present` writes it then). */
-  saveSettings(settings: TourSettingsRecord): Promise<boolean>;
+   *  True with no tour's draft open yet (`present` writes it then).
+   *  `movedStations`: the stations whose pose moved here since the open. */
+  saveSettings(
+    settings: TourSettingsRecord,
+    movedStations: readonly string[],
+  ): Promise<boolean>;
   /**
    * The draft follows `tourUrl` (debug-captures plan, Q-I): the file a
    * Finish saved of a tour opened from a file opens under another key once
@@ -222,20 +228,6 @@ function withStoredCodes(
     level: record.level ?? stored.level,
     levels: [...record.levels, ...stored.levels.filter((l) => !ids.has(l.id))],
   };
-}
-
-/** `record` with the stored created stations whose ids it lacks: the
- *  record's own frame of an id wins (this page's, newer). */
-function withCreated(
-  record: TourSettingsRecord,
-  stored: readonly StationFrame[] | null,
-): TourSettingsRecord {
-  const own = record.createdStations ?? [];
-  const have = new Set(own.map((f) => f.id));
-  const extra = (stored ?? []).filter((f) => !have.has(f.id));
-  return extra.length === 0
-    ? record
-    : { ...record, createdStations: [...own, ...extra] };
 }
 
 export function wireCreatorDraft(deps: {
@@ -524,11 +516,14 @@ export function wireCreatorDraft(deps: {
   /** The settings record's write in its queue: the whole record, or its
    *  removal (`null`). `held` is the holder of the open the write is FOR
    *  (L2): the caller names it, because a write issued after an await may
-   *  run once another tour is open, whose holder `undecided` is then. */
+   *  run once another tour is open, whose holder `undecided` is then.
+   *  `moved`: the stations whose pose moved here since the open, as the
+   *  record was taken (their poses in it are live work). */
   function writeSettings(
     store: DraftFileStore,
     tourUrl: string,
     record: TourSettingsRecord | null,
+    moved: readonly string[],
     held: SettingsHolder | null,
   ): Promise<boolean> {
     if (record !== null) {
@@ -541,12 +536,9 @@ export function wireCreatorDraft(deps: {
         }
         // Its undecided poses and created stations as they stand when the
         // write RUNS: the open's read of the record sets them in this same
-        // queue.
-        const poses = held?.poses ?? null;
-        const posed =
-          record.stations === undefined && poses !== null
-            ? { ...record, stations: poses }
-            : record;
+        // queue. A station moved here keeps its live pose; every other
+        // one its undecided pose.
+        const posed = withUndecidedPoses(record, held?.poses ?? null, moved);
         return store.put(
           SETTINGS_KEY,
           settingsRecordText(withCreated(posed, held?.created ?? null)),
@@ -1070,6 +1062,7 @@ export function wireCreatorDraft(deps: {
           store,
           tourUrl,
           settingsLive() ? settingsRecord(ctx.tourDocument.state()) : null,
+          ctx.tourDocument.state().touched.movedStations,
           held,
         );
         return;
@@ -1088,7 +1081,7 @@ export function wireCreatorDraft(deps: {
         return;
       }
       if (liveAtTap || settingsPutsFor(tourUrl) !== putsAtTap) return;
-      void writeSettings(store, tourUrl, null, held);
+      void writeSettings(store, tourUrl, null, [], held);
     })();
   });
 
@@ -1245,6 +1238,7 @@ export function wireCreatorDraft(deps: {
           store,
           tourUrl,
           settingsRecord(ctx.tourDocument.state()),
+          ctx.tourDocument.state().touched.movedStations,
           held,
         ).then((ok) => {
           if (!ok) noteNoPersistence();
@@ -1362,7 +1356,7 @@ export function wireCreatorDraft(deps: {
         // station in it did not read: it may read again against a corrected
         // file, and removing the record would take it for good.
         if (!live && !settingsLive() && !frameLost) {
-          void writeSettings(store, tourUrl, null, held);
+          void writeSettings(store, tourUrl, null, [], held);
         }
         return;
       }
@@ -1554,7 +1548,7 @@ export function wireCreatorDraft(deps: {
     follow,
     warnNoBackup: noteNoPersistence,
     persists: () => caughtUp && !warnedAboutPersistence,
-    saveSettings: (settings) => {
+    saveSettings: (settings, movedStations) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;
       // No draft namespace yet: `present` writes the record when it
@@ -1565,7 +1559,13 @@ export function wireCreatorDraft(deps: {
         return Promise.resolve(false);
       }
       // Issued now, for the open tour: its holder is this open's.
-      return writeSettings(store, tourUrl, settings, undecided).then((ok) => {
+      return writeSettings(
+        store,
+        tourUrl,
+        settings,
+        movedStations,
+        undecided,
+      ).then((ok) => {
         if (!ok) noteNoPersistence();
         return ok;
       });

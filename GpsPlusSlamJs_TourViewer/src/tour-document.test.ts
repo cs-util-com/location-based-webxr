@@ -540,6 +540,7 @@ describe("tour document: settings and details", () => {
       needsNoGps: true,
       details: true,
       stations: false,
+      movedStations: [],
     });
     expect(state.detailsRecorded).toBe(true);
     const written = manifestToWrite(state)!;
@@ -582,6 +583,7 @@ describe("tour document: a restore", () => {
       needsNoGps: false,
       details: false,
       stations: false,
+      movedStations: [],
     });
     state = reduce(state, act.undone());
     expect(changeCount(state)).toBe(0);

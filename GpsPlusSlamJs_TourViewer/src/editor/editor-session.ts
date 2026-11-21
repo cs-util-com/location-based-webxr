@@ -765,7 +765,11 @@ function stationName(frame: { readonly title?: string }): string {
  *  shares (`draft-actions.ts`), and the tour's settings (QR-first M1b-2)
  *  with its details (W2). */
 export interface EditorSessionDraft extends DraftObjectWrites {
-  saveSettings(settings: EditorTourSettings): Promise<boolean>;
+  /** `movedStations`: the stations whose pose moved here since the open. */
+  saveSettings(
+    settings: EditorTourSettings,
+    movedStations: readonly string[],
+  ): Promise<boolean>;
   /** A file brought in, with its bytes: written before the record that
    *  names it; whether it landed. */
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;

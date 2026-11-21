@@ -353,9 +353,13 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   another setting does not.
 - **Undecided poses ride along** (the r880 milestone review HIGH-2): while
   the stored poses are neither restored nor discarded (offered, or "Not
-  now"), every record this page writes WITHOUT poses carries them
-  (`undecided`, applied when the write runs), so a rename never costs a
-  moved station. The poses sit in a holder made PER OPEN by `present` and
+  now"), every record this page writes carries them (`undecided`,
+  applied when the write runs, `withUndecidedPoses`): a record WITHOUT
+  poses carries them whole, so a rename never costs a moved station, and
+  a record WITH poses (another station moved) keeps the live pose of each
+  station moved here since the open (`touched.movedStations`, named by
+  the caller as the record was taken) and the undecided pose of every
+  other, so a later move never costs a declined one. The poses sit in a holder made PER OPEN by `present` and
   dropped by `reset`; every `writeSettings` call names the holder of the
   open it writes FOR (`present` and the spent sweep their own open's,
   `saveSettings` the open tour's at its call, "Delete it" the one captured
