@@ -317,23 +317,20 @@ function measureCard() {
   };
 }
 
-// The chosen sticker size (size "l" of map-size.ts): 37 % of the
-// window's width, from 11.5rem up to 23.5rem, and never past 58 % of its
-// height. Its layout width, before the slight turn. On a narrow phone it
-// gives way to the step row's six dots beside it (142 px), past its left
-// margin (16) and less its poke over the card's edge (16 + 1.5 + 6),
-// within the card's content box as laid out (a 1.5 px border is drawn 1 px
-// wide at a device pixel ratio of 1).
+// The chosen sticker size (size "l" of map-size.ts), as bounds rather
+// than a copy of its CSS: its layout width (before the slight turn) is at
+// most 23.5rem (376 px) and 58 % of the window's height, and at least
+// 11.5rem (184 px) unless the height or the step row's six dots beside it
+// (142 px of the card's content box) leave less room. That it clears the
+// dots and stays inside is asserted on its own below.
 /**
  * @param {{ width: number, height: number }} vp
  * @param {number} content the card's content-box width
  */
-const stickerWidthAt = (vp, content) =>
-  Math.min(
-    Math.min(Math.max(184, 0.37 * vp.width), 376),
-    0.58 * vp.height,
-    content - (142 + 16 - (16 + 1.5 + 6)),
-  );
+const stickerBoundsAt = (vp, content) => ({
+  min: Math.min(184, 0.58 * vp.height, content - 142),
+  max: Math.min(376, 0.58 * vp.height),
+});
 
 // Why: the chosen layout is the map as a
 // sticker on the card's corner, at a size picked from four, with a spacing
@@ -372,10 +369,9 @@ for (const viewport of [
         }
         const m = await page.evaluate(measureCard);
         const at = `${answer ?? "question"}: `;
-        expect(
-          Math.abs(m.stickerWidth - stickerWidthAt(viewport, m.contentBox)),
-          at,
-        ).toBeLessThanOrEqual(1);
+        const bounds = stickerBoundsAt(viewport, m.contentBox);
+        expect(m.stickerWidth, at).toBeGreaterThanOrEqual(bounds.min - 1);
+        expect(m.stickerWidth, at).toBeLessThanOrEqual(bounds.max + 1);
         // Over the card's top and right edges, inside the window.
         expect(m.stickerTop, at).toBeLessThan(m.cardTop);
         expect(m.stickerLeft, at).toBeGreaterThan(0);
@@ -466,6 +462,9 @@ test.describe("the map sticker on a phone held upright", () => {
       (await page.getByTestId("setup-map").boundingBox())?.width ?? 0;
     await expect(zoom).toBeVisible();
     await expect(zoom).toHaveAttribute("aria-expanded", "false");
+    // The button is an empty overlay: its name is all a screen reader has,
+    // so it names what a tap does.
+    await expect(zoom).toHaveAccessibleName("Show the example map larger");
     const small = await width();
     const content = await page
       .getByTestId("setup-card")
