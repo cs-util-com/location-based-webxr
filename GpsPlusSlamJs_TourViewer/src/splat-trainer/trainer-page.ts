@@ -27,6 +27,7 @@ import type { UnknownAction } from "@reduxjs/toolkit";
 
 import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
+import { closePicture } from "./kept-look.js";
 import type { TrainStage, Verdict } from "./trainer-adapter.js";
 import { packageFileName } from "./save-package.js";
 import {
@@ -441,6 +442,9 @@ export interface PageEnvironment {
   readonly win: Window & SavePickerWindow;
   /** True on a phone-sized screen: the page refuses. */
   readonly isPhone: boolean;
+  /** Turns a finished stretch's sharp copy back into a picture for the
+   *  loupe. Absent, the loupe shows the tile's small picture. */
+  readonly decode?: (blob: Blob) => Promise<CanvasImageSource>;
 }
 
 /** What the page needs of its store (`createTrainerPageStore` provides it). */
@@ -450,7 +454,7 @@ export interface PageController {
     dispatch(action: UnknownAction): unknown;
     subscribe(listener: () => void): () => void;
   };
-  readonly sides: Pick<TrainerSideTables, "previews">;
+  readonly sides: Pick<TrainerSideTables, "previews" | "sharpLooks">;
   chooseRecording(file: File): void;
   save(pick: Promise<SaveFilePick>): Promise<void>;
 }
@@ -523,6 +527,14 @@ export function mountSplatTrainerPage(
   let sheetBuiltFor: string | null = null;
   let refusalBuiltFor: string | null = null;
   const drawn = new Map<string, CanvasImageSource | null>();
+  /** The sharp copy the open loupe shows, decoded from `blob`; its picture
+   *  is null while the decode runs. Only the loupe holds it, and it is
+   *  closed when the loupe closes or moves on. */
+  let loupeSharp: {
+    readonly id: string;
+    readonly blob: Blob;
+    picture: CanvasImageSource | null;
+  } | null = null;
   const flashTimers = new Set<number>();
   const disposers: (() => void)[] = [];
 
@@ -817,7 +829,13 @@ export function mountSplatTrainerPage(
   const saveLocked = (): boolean =>
     modal?.kind === "save" && store.getState().save.status === "saving";
 
+  function releaseSharp(): void {
+    closePicture(loupeSharp?.picture ?? undefined);
+    loupeSharp = null;
+  }
+
   function openModal(next: Modal): void {
+    releaseSharp();
     if (modal === null) {
       const active = doc.activeElement;
       returnFocus = active instanceof HTMLElement ? active : null;
@@ -831,6 +849,7 @@ export function mountSplatTrainerPage(
   /** Takes the dialog down without rendering; the next render gives the
    *  focus back to where it was before the dialog opened. */
   function hideModal(): void {
+    releaseSharp();
     modal = null;
     modalBuiltFor = null;
     els.veil.hidden = true;
@@ -1049,12 +1068,48 @@ export function mountSplatTrainerPage(
       els.modal.querySelector<HTMLButtonElement>('[data-act="next"]');
     if (prev !== null) prev.disabled = loupeNeighbour(s, id, -1) === undefined;
     if (next !== null) next.disabled = loupeNeighbour(s, id, 1) === undefined;
-    const picture = sides.previews.get(id) ?? null;
+    const picture = loupePicture(id);
     if (drawn.get(`loupe:${id}`) !== picture) {
       drawn.set(`loupe:${id}`, picture);
       const canvas = els.modal.querySelector("canvas");
       if (canvas !== null) paint(canvas, picture ?? undefined);
     }
+  }
+
+  /**
+   * The picture the loupe shows for stretch `id`: its sharp copy once
+   * decoded, the tile's small picture until then or when there is none.
+   * Starts the decode, and lets go of a copy that no longer belongs to
+   * the stretch (a new attempt replaced it). A decode that lands after
+   * the loupe moved on is closed at once; one that fails leaves the
+   * small picture.
+   */
+  function loupePicture(id: string): CanvasImageSource | null {
+    const blob =
+      env.decode === undefined ? undefined : sides.sharpLooks.get(id);
+    if (
+      loupeSharp !== null &&
+      (loupeSharp.id !== id || loupeSharp.blob !== blob)
+    )
+      releaseSharp();
+    if (blob !== undefined && loupeSharp === null && env.decode !== undefined) {
+      const held = { id, blob, picture: null as CanvasImageSource | null };
+      loupeSharp = held;
+      env.decode(blob).then(
+        (decoded) => {
+          if (loupeSharp !== held) {
+            closePicture(decoded);
+            return;
+          }
+          held.picture = decoded;
+          render();
+        },
+        () => {
+          // The small picture stays on show.
+        },
+      );
+    }
+    return loupeSharp?.picture ?? sides.previews.get(id) ?? null;
   }
 
   /* ----- the whole page ----- */
@@ -1307,6 +1362,7 @@ export function mountSplatTrainerPage(
 
   return {
     dispose() {
+      releaseSharp();
       unsubscribe();
       for (const off of disposers) off();
       for (const t of flashTimers) env.win.clearTimeout(t);

@@ -1129,4 +1129,4 @@ on a desktop.
 
 ## Escape and "Pick in 3D"
 
-Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog, before deselecting.
+Escape disarms an armed "Pick in 3D" (`editorView.pointPickAsked({ on: false })`) and keeps the selection; it comes after closing a dialog, before deselecting. The order of what Escape closes is `escapeAction` (`editor-modals.ts`), which also holds the backdrop dialogs' hold on the page (`holdOutside`); the inspector's typed edits run through `writeTypedEdit` and `inspectorWriteCommands` (`after-edit.ts`).

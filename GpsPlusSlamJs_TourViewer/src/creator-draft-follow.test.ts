@@ -15,7 +15,6 @@ import type {
   TourObject,
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 
 import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { draftKeyForTour } from "./authoring-draft.js";
@@ -26,6 +25,10 @@ import {
   parseSettingsRecord,
   SETTINGS_KEY,
 } from "./tour-document-draft.js";
+import {
+  memoryDraftOps,
+  memoryDraftStores,
+} from "./test-support/memory-draft-stores.js";
 import { settle } from "./test-support/settle.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
@@ -49,59 +52,14 @@ function pin(id: string, label = id): TourPin {
   };
 }
 
-/** Every open, write and removal of any namespace: what `flush` watches. */
-let ops = 0;
-
-/** One browser's namespaces: strings and blobs, as the real store holds. */
+/** One browser's namespaces; `unreadable` reads back as missing. */
 function namespaces(options: { unreadable?: string } = {}) {
-  const spaces = new Map<string, Map<string, Blob | string>>();
-  const opened: string[] = [];
-  /** Called once per put, before it lands: a test may write meanwhile. */
-  let beforePut: ((key: string) => Promise<void>) | null = null;
-  const open = (key: string): Promise<DraftFileStore> => {
-    ops += 1;
-    opened.push(key);
-    const files = spaces.get(key) ?? new Map<string, Blob | string>();
-    spaces.set(key, files);
-    return Promise.resolve({
-      put: async (k, data) => {
-        if (beforePut !== null) await beforePut(k);
-        files.set(k, data as Blob | string);
-        ops += 1;
-        return true;
-      },
-      remove: (k) => {
-        ops += 1;
-        files.delete(k);
-        return Promise.resolve();
-      },
-      getText: (k) => {
-        const v = files.get(k);
-        if (k === options.unreadable) return Promise.resolve(undefined);
-        return Promise.resolve(typeof v === "string" ? v : undefined);
-      },
-      getBlob: (k) => {
-        const v = files.get(k);
-        if (k === options.unreadable) return Promise.resolve(undefined);
-        return Promise.resolve(v instanceof Blob ? v : undefined);
-      },
-      keys: () => Promise.resolve([...files.keys()]),
-      clear: () => {
-        ops += 1;
-        files.clear();
-        return Promise.resolve();
-      },
-    });
-  };
-  return {
-    spaces,
-    opened,
-    open,
-    setBeforePut: (fn: ((key: string) => Promise<void>) | null) => {
-      beforePut = fn;
-    },
-    files: (url: string) => spaces.get(draftKeyForTour(url)) ?? new Map(),
-  };
+  const ns = memoryDraftStores();
+  if (options.unreadable !== undefined) ns.unreadable.add(options.unreadable);
+  return Object.assign(ns, {
+    files: (url: string) =>
+      ns.spaces.get(draftKeyForTour(url)) ?? new Map<string, Blob | string>(),
+  });
 }
 
 function element() {
@@ -116,7 +74,7 @@ function element() {
 
 /** Until the draft's writes have stopped. */
 function flush(): Promise<void> {
-  return settle(() => [ops]);
+  return settle(() => [memoryDraftOps()]);
 }
 
 async function wired(
@@ -291,14 +249,15 @@ describe("the phone draft follows the saved file's key", () => {
     expect(await (copied.get(photoKey("p")) as Blob).text()).toBe("JPEG");
     expect(copied.get(objectKey("a"))).toBe(before.get(objectKey("a")));
     expect(
-      (JSON.parse(String(copied.get(META_KEY))) as { tourUrl: string }).tourUrl,
+      (JSON.parse(copied.get(META_KEY) as string) as { tourUrl: string })
+        .tourUrl,
     ).toBe(NEW);
     // The opened file's namespace keeps what it held.
     expect([...ns.files(OLD).keys()].sort()).toEqual([...before.keys()].sort());
 
     expect(await draft.writeObject(pin("a", "after"))).toBe(true);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("after");
-    expect(String(ns.files(OLD).get(objectKey("a")))).not.toContain("after");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("after");
+    expect(ns.files(OLD).get(objectKey("a")) as string).not.toContain("after");
   });
 
   it("never overwrites a write made while the copy ran with the old copy", async () => {
@@ -307,18 +266,18 @@ describe("the phone draft follows the saved file's key", () => {
     expect(await draft.writeObject(pin("a", "before"))).toBe(true);
     await flush();
     const during: Promise<boolean>[] = [];
-    ns.setBeforePut((key) => {
+    ns.beforePut = (key) => {
       if (during.length === 0 && key === objectKey("a")) {
         // The copy's put of the old record is under way: a live edit is
         // issued now, and must land after it.
-        ns.setBeforePut(null);
+        ns.beforePut = null;
         during.push(draft.writeObject(pin("a", "during")));
       }
       return new Promise((resolve) => setTimeout(resolve, 0));
-    });
+    };
     expect(await draft.follow(NEW)).toBe(true);
     expect(await Promise.all(during)).toEqual([true]);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("during");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("during");
   });
 
   it("says a copy that could not read a file did not land", async () => {
@@ -354,7 +313,7 @@ describe("the phone draft follows the saved file's key", () => {
     ]);
     expect([first, second]).toEqual([true, true]);
     expect(await draft.writeObject(pin("a", "after"))).toBe(true);
-    expect(String(ns.files(NEW).get(objectKey("a")))).toContain("after");
+    expect(ns.files(NEW).get(objectKey("a")) as string).toContain("after");
   });
 
   it("still reports failure when the draft moved meanwhile to ANOTHER key", async () => {

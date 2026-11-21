@@ -110,7 +110,6 @@ import {
   showOpenedNotices,
 } from "./editor-open.js";
 import {
-  holdPageInert,
   createStatusLines,
   createMenuButton,
   menuItemControl,
@@ -244,6 +243,12 @@ import {
   createEditorShell,
   type TypedEditOutcome,
 } from "./editor-shell/editor-shell.js";
+import {
+  inspectorWriteCommands,
+  writeTypedEdit,
+  type SessionWrite,
+} from "./after-edit.js";
+import { escapeAction, holdOutside } from "./editor-modals.js";
 import { addNewCharacter, addNewItem } from "./new-pin.js";
 import {
   createCharacterLibrary,
@@ -1598,23 +1603,19 @@ function commitSceneEdit(edit: PlaceEdit): boolean {
  *  one step; a refusal is said, a change counted. Its outcome tells the
  *  inspector whether to keep the typed text (`refused`, no tour open
  *  included: nothing was written). */
-function writeInspectorEdit(
-  write: (
-    session: EditorSession,
-  ) =>
-    | { readonly kind: string }
-    | { readonly kind: "refused"; readonly reason: string },
-): TypedEditOutcome {
-  if (editor === null) return "refused";
-  endUndo();
-  const outcome = write(editor);
-  refresh();
-  if ("reason" in outcome) {
-    toast(outcome.reason);
-    return "refused";
-  }
-  if (outcome.kind !== "unchanged") tourChanged();
-  return "written";
+function writeInspectorEdit(write: SessionWrite): TypedEditOutcome {
+  return writeTypedEdit(
+    {
+      session: () => editor,
+      endUndo,
+      refresh,
+      say: (text) => {
+        toast(text);
+      },
+      changed: tourChanged,
+    },
+    write,
+  );
 }
 
 /** A narration change from the Narration section, as an inspector edit:
@@ -2482,17 +2483,6 @@ function showCovers(chosen: string | null): void {
   }
 }
 
-/** The page's other parts while a dialog shows (`page-inert.ts`): its
- *  focus stays in the dialog (M4a review #12). */
-function holdOutside(backdrop: HTMLElement): () => void {
-  return holdPageInert(
-    [...document.body.children].filter(
-      (el): el is HTMLElement =>
-        el instanceof HTMLElement && el !== backdrop && el.tagName !== "SCRIPT",
-    ),
-  );
-}
-
 /** The open dialog's hold on the rest of the page, until it closes. */
 let releaseOutside: (() => void) | null = null;
 
@@ -2638,23 +2628,36 @@ document.addEventListener("keydown", (event) => {
   }
   if (undoKeys(event)) return;
   if (event.key !== "Escape") return;
-  // The dialog's own Escape closes it (a native modal dialog).
-  if (characters.dialogOpen()) return;
-  if (details.isOpen()) {
-    details.close();
-    return;
+  switch (
+    escapeAction({
+      charactersOpen: characters.dialogOpen(),
+      detailsOpen: details.isOpen(),
+      doneOpen: done.isOpen(),
+      pointPick: ui().pointPick,
+      startShown: !modal.hidden,
+      tourOpen: session !== null,
+      busy: ui().busy,
+    })
+  ) {
+    // The dialog's own Escape closes it (a native modal dialog).
+    case "native":
+      return;
+    case "details":
+      details.close();
+      return;
+    case "done":
+      done.close();
+      return;
+    // "Pick in 3D" armed: Escape disarms it and keeps the selection.
+    case "pointPick":
+      store.dispatch(editorViewActions.pointPickAsked({ on: false }));
+      return;
+    case "closeStart":
+      showModal(false);
+      return;
+    case "deselect":
+      select(null);
   }
-  if (done.isOpen()) {
-    done.close();
-    return;
-  }
-  // "Pick in 3D" armed: Escape disarms it and keeps the selection.
-  if (ui().pointPick) {
-    store.dispatch(editorViewActions.pointPickAsked({ on: false }));
-    return;
-  }
-  if (!modal.hidden && session !== null && !ui().busy) showModal(false);
-  else select(null);
 });
 
 function setBusy(on: boolean, text: string): void {
@@ -5227,21 +5230,8 @@ const shell = createEditorShell({
     remove: deleteSelection,
   },
   edits: {
-    station: (stationId, edit) =>
-      writeInspectorEdit((e) => e.editStation(stationId, edit)),
-    text: (id, text) => writeInspectorEdit((e) => e.editText(id, text)),
-    block: (id, field, value) =>
-      writeInspectorEdit((e) => e.editBlockField(id, field, value)),
-    view: (id, view) => writeInspectorEdit((e) => e.editBlockView(id, view)),
-    pictureTag: (id, shown) =>
-      writeInspectorEdit((e) => e.editPictureTag(id, shown)),
-    pictureViewpoint: (id, viewpoint) =>
-      writeInspectorEdit((e) => e.editPictureViewpoint(id, viewpoint)),
-    model: (id, edit) => writeInspectorEdit((e) => e.editModel(id, edit)),
+    ...inspectorWriteCommands(writeInspectorEdit),
     scene: commitSceneEdit,
-    groundItems: (items) => {
-      writeInspectorEdit((e) => e.groundItems(items));
-    },
     addItem: addItemTo,
     addStory: addStoryTo,
     addToStory: addToStoryEntry,
@@ -5249,11 +5239,6 @@ const shell = createEditorShell({
     addCharacter: (to) => {
       void addCharacterTo(to);
     },
-    storyTitle: (id, title) =>
-      writeInspectorEdit((e) => e.renameStory(id, title)),
-    storyAdvance: (id, advance) =>
-      writeInspectorEdit((e) => e.setStoryAdvance(id, advance)),
-    storyStep: (step) => writeInspectorEdit((e) => e.setStoryStep(step)),
     narration: (id) =>
       editor === null
         ? Promise.resolve({

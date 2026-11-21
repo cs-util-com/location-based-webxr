@@ -20,10 +20,7 @@ import {
   type TourPicture,
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  packFilesAsZip,
-  type DraftFileStore,
-} from "gps-plus-slam-app-framework/storage";
+import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { manifestToWrite, tourDocumentActions } from "../tour-document.js";
@@ -31,10 +28,13 @@ import { folderRefusalLine } from "../tour-folder-edit.js";
 import { placeableOf } from "../placement/placeables.js";
 import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
+import {
+  freeLocks,
+  memoryDraftStores,
+} from "../test-support/memory-draft-stores.js";
 import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { createEditorSession } from "./editor-session.js";
-import type { EditorLock } from "./save-target.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
   editedBlocks,
@@ -153,59 +153,6 @@ async function savedTour(blob: Blob): Promise<TourManifest> {
   const text = await entryText(blob, "tour.json");
   if (text === undefined) throw new Error("no tour.json");
   return parseTourManifest(JSON.parse(text));
-}
-
-function memoryDraftStores(): {
-  open: (key: string) => Promise<DraftFileStore | undefined>;
-} {
-  const spaces = new Map<string, Map<string, Blob | string>>();
-  return {
-    open: (key) => {
-      const files = spaces.get(key) ?? new Map<string, Blob | string>();
-      spaces.set(key, files);
-      return Promise.resolve({
-        put: (k, data) => {
-          files.set(k, data as Blob | string);
-          return Promise.resolve(true);
-        },
-        remove: (k) => {
-          files.delete(k);
-          return Promise.resolve();
-        },
-        getText: async (k) => {
-          const v = files.get(k);
-          return v === undefined
-            ? undefined
-            : typeof v === "string"
-              ? v
-              : v.text();
-        },
-        getBlob: (k) => {
-          const v = files.get(k);
-          return Promise.resolve(
-            v === undefined
-              ? undefined
-              : typeof v === "string"
-                ? new Blob([v])
-                : v,
-          );
-        },
-        keys: () => Promise.resolve([...files.keys()]),
-        clear: () => {
-          files.clear();
-          return Promise.resolve();
-        },
-      });
-    },
-  };
-}
-
-function freeLocks(): Promise<EditorLock> {
-  return Promise.resolve({
-    granted: true,
-    release: () => undefined,
-    released: Promise.resolve(),
-  });
 }
 
 const K = "local-file:00000000000000000000000000000002";

@@ -47,7 +47,7 @@ import { describe, expect, it } from "vitest";
 
 import { editorStore } from "../test-support/editor-store.js";
 import {
-  freeDraftLocks,
+  freeLocks,
   memoryDraftStores,
   type MemoryDraftStores,
 } from "../test-support/memory-draft-stores.js";
@@ -202,7 +202,7 @@ interface World {
 function draftOf(stores: MemoryDraftStores): EditorDraft {
   return createEditorDraft({
     openStore: stores.open,
-    holdLock: freeDraftLocks,
+    holdLock: freeLocks,
     noBackup: () => undefined,
   });
 }

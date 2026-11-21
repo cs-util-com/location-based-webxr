@@ -23,9 +23,7 @@ The workspace's one seeded generator for production code: mulberry32, a small
   it as `gps-plus-slam-app-framework/utils/mulberry32` (a `tsdown` entry);
   their private copies drew the same sequence bit for bit, and each package
   pins its outputs in its `seeded-draws.test.ts`. In the design system the import
-  maps of the globe lab and the globe-terrain lab
-  (`labs/globe/index.html`, `labs/globe-terrain/index.html`) map the
-  specifier, and `WORKER_IMPORTS` in `serve-routes.mjs` maps it for the
+  map of the globe lab (`labs/globe/index.html`) maps the specifier, and `WORKER_IMPORTS` in `serve-routes.mjs` maps it for the
   cloud bake's module worker.
   `tests/repo-config/duplicate-helpers.test.js` holds the name to this one
   definition.

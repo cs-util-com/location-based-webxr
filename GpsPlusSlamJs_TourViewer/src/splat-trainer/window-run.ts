@@ -45,6 +45,9 @@ export interface RunInput {
   /** Time allowed to prepare the graphics card (upload the photos and
    *  seed the session) before the run ends as failed (ms). */
   readonly prepareCapMs: number;
+  /** The photo memory budget (bytes) the library shrinks the photos to;
+   *  absent, it keeps its own. */
+  readonly photoBudgetBytes?: number;
   /** The shell crop keeps splats within this distance of a training
    *  camera (m). */
   readonly keepM: number;
@@ -180,6 +183,9 @@ export async function runWindow<P = unknown>(
       holdout: -1,
       evalHoldEvery: evalEvery(input.maxIters),
       trainer: { camOpt: false, expComp: false },
+      ...(input.photoBudgetBytes === undefined
+        ? {}
+        : { frames: { targetBudgetBytes: input.photoBudgetBytes } }),
     });
     session = s;
     let complete: () => void = () => {};
@@ -290,7 +296,7 @@ export async function runWindow<P = unknown>(
 }
 
 /** A duration in words: whole minutes from a minute on, else seconds. */
-function durationWords(ms: number): string {
+export function durationWords(ms: number): string {
   return ms >= 60_000
     ? `${String(Math.round(ms / 60_000))} min`
     : `${String(Math.round(ms / 1000))} s`;

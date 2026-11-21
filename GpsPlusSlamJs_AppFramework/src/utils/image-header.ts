@@ -12,6 +12,10 @@
  * water mask lives in their alpha. The one image-header reader of the
  * workspace. Pure: no I/O, never throws, never reads past the buffer.
  *
+ * Imports nothing: the Globe's fetch script loads this file under plain
+ * node, which does not resolve the framework's `./x.js` import spellings
+ * to their `.ts` sources (a test holds it).
+ *
  * @see image-header.ts.md
  */
 

@@ -6,8 +6,9 @@
  * is a lower bound measured in one face; a wider face (another platform's
  * fallback) sets the section taller. The height this browser measured
  * itself, at the same width, is exact in any face. A classic inline script
- * in `index.html` (`#landing-uses-height`) reads it before the first paint;
- * `uses-height.test.ts` holds that copy to `keptUsesHeight`.
+ * in `index.html` (`#landing-uses-height`) reads it before the first paint
+ * (a module would run too late), so the reading rule lives only there;
+ * `uses-height.test.ts` runs that script and holds it to the rule.
  *
  * @see uses-height.ts.md
  */
@@ -15,34 +16,9 @@
 /** Where the height is kept (session storage: this tab, across reloads). */
 export const USES_HEIGHT_KEY = "tour-viewer.landing.uses-height";
 
-/** A kept height above this is not a section's height. */
-const MAX_HEIGHT_PX = 20000;
-
 /** The stored form of a measured height at a window width. */
 export function encodeUsesHeight(width: number, height: number): string {
   return JSON.stringify({ width, height });
-}
-
-/**
- * The height to reserve at window width `width` from the stored value,
- * or null: nothing stored, another width, or a value that is not a
- * positive height below 20 000 px.
- */
-export function keptUsesHeight(
-  stored: string | null,
-  width: number,
-): number | null {
-  if (stored === null) return null;
-  let kept: unknown;
-  try {
-    kept = JSON.parse(stored);
-  } catch {
-    return null;
-  }
-  if (typeof kept !== "object" || kept === null) return null;
-  const { width: w, height: h } = kept as { width?: unknown; height?: unknown };
-  if (w !== width || typeof h !== "number") return null;
-  return h > 0 && h < MAX_HEIGHT_PX ? h : null;
 }
 
 /** The parts of the window `keepUsesHeight` uses. */

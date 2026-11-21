@@ -56,7 +56,7 @@ import {
   freeLocks,
   memoryDraftStores,
   writtenJson,
-} from "../test-support/memory-draft.js";
+} from "../test-support/memory-draft-stores.js";
 import type { DetailsForm } from "../tour-details-form.js";
 import { TOUR_TITLE_MAX_CHARS } from "gps-plus-slam-app-framework/ar/tour-details";
 import { createEditorDraft, type EditorTourSettings } from "./editor-draft.js";

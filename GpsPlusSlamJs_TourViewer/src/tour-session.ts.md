@@ -77,7 +77,8 @@ not-checked`): a link's complete copies are checked through
     a caller parses itself (the hosted level file, K0 milestone review R10).
     — `hasRecording` is the synchronous `actions/` pre-check
     `loadRecordingActions()` applies: the framework parser's rule
-    (`tour-read-set.ts` `isActionEntryName`: an `actions/` path segment,
+    (`isActionEntryName` of the framework's `storage/zip-reader`, which
+    `tour-read-set.ts` imports: an `actions/` path segment,
     a wrapping folder tolerated, a sibling such as `myactions/` not, ending
     `.json`), exposed for the page's flow copy (`tour-flow.ts`, flows plan
     M1). `loadSessionMeta()` reads the entry the framework's

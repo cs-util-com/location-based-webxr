@@ -6,10 +6,10 @@
  * constant tau. Plus the compass comparison's one geometric kernel: which
  * bearing an alignment gives the AR frame's north axis.
  *
- * The fit is MEASUREMENT ONLY: the opt-in recording sweep
- * (`code-displacement.recordings.test.ts`) reads it. The bearing kernel is
- * also the viewer's: the moved-code turn check (`moved-code-rule.ts`
- * `compassTurnDeg`, D20 M5c) reads it.
+ * Both kernels are MEASUREMENT ONLY, so the module lives with the test
+ * support: the opt-in recording sweep
+ * (`code-displacement.recordings.test.ts`) reads them. The viewer reads
+ * neither (its moved-code rule no longer reads a compass).
  *
  * THE FIT. Residuals are demeaned per series (the model is zero-mean; a
  * constant per-session bias is a separate quantity), then:

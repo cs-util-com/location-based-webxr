@@ -7,6 +7,7 @@ import {
   type WorkerLike,
 } from "./gpu-trainer.js";
 import { readSplatInputs } from "./recording-reader.js";
+import { planWindowJob } from "./splat-inputs.js";
 import type {
   GpuLike,
   TrainProgress,
@@ -301,7 +302,9 @@ describe("createGpuTrainer", () => {
   // (more time, same size) is not offered. The card's limits are read
   // whether or not the page probed first.
   it("refuses a stretch whose photos the card cannot hold", async () => {
-    const limits = { maxStorageBufferBindingSize: 2e5, maxBufferSize: 4e5 };
+    // A 90 kB photo budget: 30 kB of the card's own bytes in half the
+    // binding, at 4 bytes a pixel against the budget's 12.
+    const limits = { maxStorageBufferBindingSize: 6e4, maxBufferSize: 1.2e5 };
     const gpu: GpuLike = {
       requestAdapter: () =>
         Promise.resolve({ info: { vendor: "nvidia" }, limits }),
@@ -335,6 +338,93 @@ describe("createGpuTrainer", () => {
     });
     const run = s.trainer.trainWindow(
       await request(),
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    s.worker.reply(finished());
+    expect((await run).outcome).toBe("finished");
+    expect(s.spawned()).toBe(1);
+    // The trainer shrinks its photos to the same budget the check used,
+    // not to its own fixed one: at Splat.js's 700e6 bytes its photos would
+    // take more than such a card binds. The budget counts 12 bytes a
+    // pixel and the card holds 4, so half the binding is 3 / 2 of it.
+    expect(s.worker.sent[0]?.job.photoBudgetBytes).toBe(192 * 2 ** 20);
+  });
+
+  // Why: without the card's limits there is no budget to pass on; the
+  // trainer then shrinks to its own.
+  it("passes no photo budget when the card's limits are unknown", async () => {
+    const s = setup();
+    const run = s.trainer.trainWindow(
+      await request(),
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    s.worker.reply(finished());
+    await run;
+    expect(s.worker.sent[0]?.job).not.toHaveProperty("photoBudgetBytes");
+  });
+
+  // Why: Splat.js never shrinks a photo below 320 px on its longer side,
+  // so a stretch that fits the budget only at a smaller size would still
+  // overflow the card; it is refused like any other too large for it.
+  /** A 1600 x 1200 stretch and a card whose photo budget is about
+   *  `bytesPerPhoto` for each of its photos. */
+  async function bigPhotosOnCard(bytesPerPhoto: number) {
+    const base = await request();
+    const req: TrainRequest = {
+      ...base,
+      inputs: {
+        ...base.inputs,
+        census: { ...base.inputs.census, frameWidth: 1600, frameHeight: 1200 },
+      },
+    };
+    const n = planWindowJob(req.inputs, req.window, 1, TRAINER_DEFAULTS).photos
+      .length;
+    // The binding whose half holds that budget in the card's own bytes
+    // (4 a pixel against the budget's 12), rounded up so the budget is
+    // not a byte short; the buffer is never the limit.
+    const t = TRAINER_DEFAULTS;
+    const binding = Math.ceil(
+      (2 * n * bytesPerPhoto * t.gpuBytesPerPixel) / t.bytesPerPixel,
+    );
+    const limits = {
+      maxStorageBufferBindingSize: binding,
+      maxBufferSize: 4 * binding,
+    };
+    const s = setup({
+      gpu: {
+        requestAdapter: () =>
+          Promise.resolve({ info: { vendor: "nvidia" }, limits }),
+      },
+    });
+    return { req, s };
+  }
+
+  it("refuses a stretch that fits only below the trainer's smallest photo size", async () => {
+    // Room for every photo at 1600 x 1200 shrunk to about 190 px high
+    // (above the 128 px the budget allows), not at the 320 x 240 floor.
+    const { req, s } = await bigPhotosOnCard(600_000);
+    const r = await s.trainer.trainWindow(
+      req,
+      s.events,
+      new AbortController().signal,
+    );
+    expect(r).toMatchObject({ outcome: "failed", retryHelps: false });
+    expect(r.detail).toMatch(/graphics memory/);
+    expect(s.spawned()).toBe(0);
+  });
+
+  // Why: the library's floor is 320 px on the LONGER side, so 1600 x 1200
+  // photos may shrink to 320 x 240. A check that put the 320 on the
+  // shorter side would refuse this stretch, which fits at about 280 px
+  // high, and the refusal above could not tell the two apart.
+  it("trains a stretch that fits between the trainer's smallest photo size and a short-side 320", async () => {
+    const { req, s } = await bigPhotosOnCard(1_260_000);
+    const run = s.trainer.trainWindow(
+      req,
       s.events,
       new AbortController().signal,
     );
@@ -451,5 +541,11 @@ describe("createGpuTrainer: stages and looks", () => {
     expect(late.closed).toBe(true);
     s.worker.reply(finished());
     await run;
+    // A look already queued when the worker was ended arrives after the
+    // stretch is over; it is closed too.
+    const after = { close: () => (after.closed = true), closed: false };
+    s.worker.reply({ type: "preview", picture: after as never });
+    expect(after.closed).toBe(true);
+    expect(s.previews).toEqual([look]);
   });
 });

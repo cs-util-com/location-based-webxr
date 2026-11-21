@@ -14,7 +14,9 @@ testable with a fake library.
 
 - `RunInput` - `{ photos: { name, blob }[], cameras, seeds, evalFrames,
 maxIters, deadlineMs, prepareCapMs, keepM, trainPositions,
-etaMinIterations }`.
+etaMinIterations, photoBudgetBytes? }`.
+- `durationWords(ms)` - a duration in words ("5 min", "40 s"), also
+  used by the worker's load cap.
 - `RunProgress` - `{ stage, fraction, secondsLeft | null, previewEveryS |
 null }` (`stage` a `TrainStage`; the run itself says `preparing`,
   `training` and `checking`, its caller `loading`).
@@ -31,7 +33,9 @@ Promise<RunResult>`.
 - Session options: `maxIters`, `holdout: -1` (the named `evalFrames` are
   the test set), `evalHoldEvery` `max(1000, maxIters / 4)`, and
   `trainer: { camOpt: false, expComp: false }`. Splat.js shrinks the
-  photos by its own memory budget.
+  photos to a memory budget: `photoBudgetBytes` when given (as
+  `frames: { targetBudgetBytes }`, the card's own budget), else its
+  default.
 - The run ends on Splat.js's `train-complete` event (`finished`), on the
   deadline timer (`deadline`), on its `device-lost` event (`gpu-lost`) or
   on the abort (`cancelled`), whichever comes first; a load or a seed

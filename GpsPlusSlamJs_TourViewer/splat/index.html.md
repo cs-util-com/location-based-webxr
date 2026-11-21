@@ -24,12 +24,16 @@ The page logic lives in `src/splat-trainer/` (`splat-main.ts`,
     module statically imports the built worker script; without `'self'`
     the worker fails to start, measured in the browser);
   - `connect-src 'self'` (which also covers the dev server's live-reload
-    socket): nothing the page or its workers run can send data to another
-    host;
+    socket): what the page or its workers run can send requests only to
+    this site, whose one relay is the Drive download proxy;
   - `default-src 'self'`, `img-src 'self' data: blob:`, `style-src 'self'
-'unsafe-inline'` (the dev server injects styles), `font-src 'self'
-data:`, `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`.
-  - A pin changed in the code but not here fails `splat-js.test.ts`.
+'unsafe-inline'` (the page's own `<style>` block needs it in production,
+    and the dev server injects styles), `font-src 'self' data:`,
+    `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`.
+  - A pin changed in the code but not here fails `splat-js.test.ts`; the
+    built page's policy, its place before every script and its script
+    addresses are checked at the site build
+    (`scripts/splat-csp-deploy.mjs`).
 - `referrer: no-referrer`, load-bearing: the policy limits where requests
   go, not what they carry; this keeps the page's address out of the CDN's
   request for Splat.js.
@@ -40,6 +44,8 @@ data:`, `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`.
 
 `playwright-tests/splat-trainer.spec.js` and
 `playwright-tests/splat-trainer-gpu.spec.js` (the trainer loading under
-the policy with no violation, and a worker's fetch to another host refused
-as `connect-src` before it reaches the network); the policy's directives
-in `src/splat-trainer/splat-js.test.ts`.
+the policy with a stand-in library and no refusal in the page or a
+worker, and a worker's fetch to another host refused as `connect-src`
+before it reaches the network); the policy's directives in
+`src/splat-trainer/splat-js.test.ts`; the built page in
+`scripts/splat-csp-deploy.test.mjs`.

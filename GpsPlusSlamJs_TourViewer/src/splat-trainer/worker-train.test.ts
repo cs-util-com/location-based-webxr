@@ -1,7 +1,11 @@
 import type { DepthSample } from "gps-plus-slam-app-framework/state";
 import { describe, expect, it } from "vitest";
 
-import type { SplatJsModule, SplatSessionLike } from "./splat-js.js";
+import {
+  loadSplatJs,
+  type SplatJsModule,
+  type SplatSessionLike,
+} from "./splat-js.js";
 import type { WindowJob, WindowPhoto } from "./splat-inputs.js";
 import type { RunResult } from "./window-run.js";
 import {
@@ -153,14 +157,34 @@ describe("colourSampler", () => {
 });
 
 describe("trainInWorker", () => {
-  // Why: a refused library (a network error, a changed version) must end
-  // the window as failed with its sentence, before any photo is decoded.
+  // Why: a library that is not the pinned one must end the window as
+  // failed with its sentence, before any photo is decoded; the same
+  // library would be refused on a second try, so none is offered.
   it("ends as failed when the library is refused", async () => {
     const d = deps({
+      load: () => loadSplatJs(() => Promise.resolve({ createSession() {} })),
+    });
+    const r = await trainInWorker(
+      { type: "train", job: job([photo("a.jpg")]), photos: [new Blob()] },
+      () => {},
+      live(),
+      d,
+    );
+    expect(r).toMatchObject({ outcome: "failed", ply: null });
+    expect(r.detail).toMatch(/not the version/);
+    expect(r.retryHelps).toBe(false);
+    expect(d.decoded).toBe(0);
+  });
+
+  // Why: a download that failed (a moment without network) was marked as
+  // one training again cannot fix, so the stretch lost its "Train again"
+  // although the next worker would load the library fine.
+  it("leaves a retry on offer when the library could not be downloaded", async () => {
+    const d = deps({
       load: () =>
-        Promise.reject(
-          new Error(
-            "The splat trainer library is not the version this page expects (no parseCameras).",
+        loadSplatJs(() =>
+          Promise.reject(
+            new TypeError("Failed to fetch dynamically imported module"),
           ),
         ),
     });
@@ -171,9 +195,45 @@ describe("trainInWorker", () => {
       d,
     );
     expect(r).toMatchObject({ outcome: "failed", ply: null });
-    expect(r.detail).toMatch(/not the version/);
-    // The same library would be refused on a second try.
-    expect(r.retryHelps).toBe(false);
+    expect(r.detail).toMatch(/could not be loaded .*Failed to fetch/);
+    expect(r.retryHelps).toBeUndefined();
+    expect(d.decoded).toBe(0);
+  });
+
+  // Why: nothing bounded the library's download: a request the network
+  // never answered left the print on "Loading the trainer" for ever. The
+  // download has the preparation's cap and ends in words, with a retry
+  // still on offer.
+  it("ends as failed in words when the library does not arrive in time", async () => {
+    let fire = (): void => {};
+    let wanted = 0;
+    let cleared: unknown = null;
+    const d = deps({
+      load: () => new Promise<never>(() => {}),
+      clock: {
+        now: () => 0,
+        setTimeout: (fn, ms) => {
+          fire = fn;
+          wanted = ms;
+          return 7;
+        },
+        clearTimeout: (id) => (cleared = id),
+      },
+    });
+    const run = trainInWorker(
+      { type: "train", job: job([photo("a.jpg")]), photos: [new Blob()] },
+      () => {},
+      live(),
+      d,
+    );
+    await Promise.resolve();
+    expect(wanted).toBe(300_000);
+    fire();
+    const r = await run;
+    expect(r).toMatchObject({ outcome: "failed", ply: null });
+    expect(r.detail).toMatch(/did not arrive within 5 min/);
+    expect(r.retryHelps).toBeUndefined();
+    expect(cleared).toBe(7);
     expect(d.decoded).toBe(0);
   });
 
