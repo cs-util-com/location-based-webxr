@@ -243,6 +243,32 @@ describe("the voice", () => {
     expect(said.at(-1)).toContain("voice.mp3 (2.0 KiB) added");
   });
 
+  // Why: a voice under 1 KiB is named in bytes, and 1 KiB itself already
+  // in KiB; the two sides of that line are what a slip in the size words
+  // (a "<=" for a "<", a broken bytes branch) would get wrong without any
+  // other test failing.
+  it("names a voice under 1 KiB in bytes, and 1 KiB in KiB", async () => {
+    await section.takeFiles([file("x".repeat(812), "voice.mp3")]);
+    await flush();
+    expect(said.at(-1)).toContain("voice.mp3 (812 B) added");
+    await section.takeFiles([file("x".repeat(1023), "small.mp3")]);
+    await flush();
+    expect(said.at(-1)).toContain("small.mp3 (1023 B) added");
+    await section.takeFiles([file("x".repeat(1024), "edge.mp3")]);
+    await flush();
+    expect(said.at(-1)).toContain("edge.mp3 (1.0 KiB) added");
+  });
+
+  // Why: a file whose size the browser does not report is still added,
+  // and its toast says so in words rather than printing "NaN B".
+  it("names an unknown size in words", async () => {
+    const odd = file("x", "voice.mp3");
+    Object.defineProperty(odd, "size", { value: Number.NaN });
+    await section.takeFiles([odd]);
+    await flush();
+    expect(said.at(-1)).toContain("voice.mp3 (an unknown size) added");
+  });
+
   // Why: a length the browser does not read in
   // time (a slow phone, 5 s) was dropped silently; the voice is still
   // added, and the author is told the tour shows no length for it.
