@@ -169,4 +169,14 @@ describe('readGlbChunks', () => {
       expect(reasonOf(value as Uint8Array)).toBe('it is not a .glb file');
     }
   });
+
+  // Why this test matters: a view over a buffer that was transferred away
+  // (to a worker, or by structuredClone) makes the DataView constructor
+  // throw, and the reader promises a refusal for any input, never a throw.
+  it('refuses a view over a detached buffer, without throwing', () => {
+    const bytes = new Uint8Array(32);
+    structuredClone(bytes.buffer, { transfer: [bytes.buffer] });
+    expect(bytes.byteLength).toBe(0); // the view now reads as detached
+    expect(reasonOf(bytes)).toBe('it is not a .glb file');
+  });
 });

@@ -75,14 +75,23 @@ function binStart(
       };
 }
 
+/** A view over `bytes`, or null when it is no Uint8Array or its buffer
+ *  is detached (transferred away), where the DataView constructor throws. */
+function viewOf(bytes: Uint8Array): DataView | null {
+  if (!(bytes instanceof Uint8Array)) return null;
+  try {
+    return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  } catch {
+    return null;
+  }
+}
+
 /** The chunks of `bytes`, or why they are not a well-formed `.glb`. A JSON
  *  chunk need not be padded to 4 bytes: three.js reads one that is not,
  *  and tours have always been allowed it. */
 export function readGlbChunks(bytes: Uint8Array): GlbChunksRead {
-  if (!(bytes instanceof Uint8Array)) {
-    return { ok: false, reason: 'it is not a .glb file' };
-  }
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const view = viewOf(bytes);
+  if (view === null) return { ok: false, reason: 'it is not a .glb file' };
   const header = headerProblem(view);
   if (header !== null) return { ok: false, reason: header };
   const jsonEnd = 20 + view.getUint32(12, true);

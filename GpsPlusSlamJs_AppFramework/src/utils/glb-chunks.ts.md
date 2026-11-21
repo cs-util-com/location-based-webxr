@@ -27,7 +27,8 @@ through the `/utils` barrel.
     view into `bytes`, or `null` when the file has none. A zero-length
     binary chunk is an empty view, not `null`.
   - `{ ok: false, reason }`, `reason` one of:
-    - `it is not a .glb file`: a wrong magic, or the input is no `Uint8Array`;
+    - `it is not a .glb file`: a wrong magic, the input is no `Uint8Array`,
+      or its buffer is detached (transferred away);
     - `it is too short to be a .glb`: under 20 bytes;
     - `only glTF 2.0 is supported`: a version other than 2;
     - `its JSON chunk is missing or truncated`: the first chunk is not JSON,
@@ -53,7 +54,8 @@ through the `/utils` barrel.
   allowed one, so refusing it would refuse tours that open today.
 - The JSON is decoded as UTF-8 without the fatal flag (a broken sequence
   becomes U+FFFD), as before the readers were merged.
-- Never throws, whatever the input. Pure: no I/O, no DOM, no imports.
+- Never throws, whatever the input, a view over a detached buffer included
+  (the `DataView` constructor throws there; the reader refuses). Pure: no I/O, no DOM, no imports.
 - Reads through `byteOffset`, so a view into a larger buffer reads right.
 
 ## Example
@@ -74,7 +76,7 @@ const bin = read.bin ?? new Uint8Array(0);
   word for word (too short, magic, version, first chunk not JSON or too
   long, header length, a second JSON chunk, a third chunk, a binary chunk
   past the end, a header stub, JSON that does not parse or is no object,
-  input that is no bytes).
+  input that is no bytes, a view over a detached buffer).
 - `glb-chunks.property.test.ts`: never throws on random bytes (bare and
   behind a valid header); a generated well-formed GLB (JSON padded to 1, 2
   or 4 bytes, with or without a binary chunk) reads back exactly its

@@ -85,7 +85,8 @@ script or markup is admitted, exact matching, entry names, a never-throws
 property; `.glb` inertness with built binaries (binary chunk and `data:`
 accepted; http, relative and protocol-relative URIs refused for buffers and
 images; a decoder extension refused; not-glTF, version 1, truncated and
-non-object JSON refused) and a never-throws property over random bytes;
+non-object JSON refused, the reader's refusal reason passed through
+unchanged) and a never-throws property over random bytes;
 the chunk structure (JSON plus one binary chunk accepted; a second JSON
 chunk with an http URI, a chunk after the binary one, a header length that
 is not the data length, trailing bytes and a binary chunk running past the
