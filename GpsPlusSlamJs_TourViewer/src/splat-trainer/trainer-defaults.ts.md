@@ -63,8 +63,15 @@ it has run.
   pinned library; a Splat.js that stored float targets (16 bytes) would
   change it, and with it which stretches a small card refuses.
 - `minShortSidePx` 128 (64 / 128 / 256): the smallest photo side a window
-  may be scaled to before it is refused as too large. Usable splats at
-  64 px would lower it; unusable ones at 128 would raise it.
+  may be scaled to before it is refused as too large. The GPU trainer
+  counts the larger of it and Splat.js's own floor (`SPLAT_JS_MIN_TRAIN_DIM`,
+  320 px on the longer side), which is 240 px short for 4:3 photos, 180 px
+  for 16:9 and 128 px at 2.5:1. So at 128 it is inert for camera photos
+  and binds only for photos wider than 2.5:1; 64 changes nothing either,
+  and of the range only 256 changes which stretches are refused (4:3 and
+  wider). Lowering it cannot make a stretch fit, since the library will
+  not shrink below its floor; unusable splats near the floor would raise
+  it, which is what the knob is for.
 - `etaMinIterations` 200: steps measured before a time estimate shows.
 
 The GPU trainer's values below are provisional: they are set from the
@@ -82,8 +89,10 @@ synthetic scene's acceptance run and await field recordings.
 - `deadlineS` 1200: the longest a first try may train (a retry gets
   `timeScale` times it); the run then ends as `deadline`.
 - `prepareCapS` 300 (considered 120 / 300 / 600, not measured): the
-  longest preparing the graphics card (photo upload, seeding) may take
-  before the stretch fails in words; a retry gets `timeScale` times it.
+  longest loading the trainer library and preparing the graphics card
+  (photo upload, seeding) may take together, one deadline from the
+  worker's start, before the stretch fails in words (two caps one after
+  the other would leave the print stuck for twice it); a retry gets `timeScale` times it.
   120 s would likely cut off a slow integrated card uploading 100 photos;
   600 s leaves a stuck print up for ten minutes. A measured upload time
   over 300 s on a real card would raise it.

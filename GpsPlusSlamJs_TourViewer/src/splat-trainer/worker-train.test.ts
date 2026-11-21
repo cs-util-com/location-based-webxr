@@ -237,6 +237,52 @@ describe("trainInWorker", () => {
     expect(d.decoded).toBe(0);
   });
 
+  // Why: the library's download and preparing the graphics card are one
+  // wait for the creator; a library that took most of the cap must not
+  // win the preparation a fresh cap of its own. The run hears when the
+  // wait began, so the stretch fails at most prepareCapMs after it.
+  it("hands the run the moment its preparation began", async () => {
+    let t = 1_000;
+    const fin = finishing();
+    const seen: unknown[] = [];
+    const mod: SplatJsModule = {
+      ...fin.mod,
+      createSession: (o) => {
+        seen.push(t);
+        return fin.mod.createSession(o);
+      },
+    };
+    const timers: { ms: number; at: number }[] = [];
+    const d = deps({
+      // The download takes 200 s of the 300 s cap.
+      load: () =>
+        Promise.resolve().then(() => {
+          t = 201_000;
+          return mod;
+        }),
+      clock: {
+        now: () => t,
+        setTimeout: (_fn, ms) => {
+          timers.push({ ms, at: t });
+          return timers.length;
+        },
+        clearTimeout: () => {},
+      },
+    });
+    await trainInWorker(
+      { type: "train", job: job([photo("a.jpg")]), photos: [new Blob()] },
+      () => {},
+      live(),
+      d,
+    );
+    expect(seen).toEqual([201_000]);
+    // The library's cap, set at the start, then the preparation's: due
+    // at the same moment, 300 s after the start.
+    expect(timers.slice(0, 2).map((x) => x.at + x.ms)).toEqual([
+      301_000, 301_000,
+    ]);
+  });
+
   // Why: only photos that seed are decoded (decoding is the worker's
   // cost); depth readings in one 5 cm cube become one seed, and a shell
   // photo adds its grid of shell points.

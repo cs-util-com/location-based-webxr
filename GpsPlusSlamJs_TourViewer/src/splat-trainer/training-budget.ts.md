@@ -5,7 +5,9 @@
 How much a training window may hold and how long it trains: the photo
 memory the adapter allows, the photo size that fits it, the number of
 training steps, and the live time estimate. Pure: the caller passes the
-adapter's limits (`GPUSupportedLimits`) in.
+adapter's limits (`GPUSupportedLimits`) in; Splat.js requests the same
+two for its device (up to 4 GiB each), so they are the device's too
+(`gpu-trainer.ts.md`).
 
 ## Public API
 
@@ -50,7 +52,8 @@ maxBufferSize * k)` with `k = bytesPerPixel / gpuBytesPerPixel`,
   memory for the model; under about 1 / 4 a 128 MiB card would refuse a
   full stretch (100 training photos) of 1600 x 1200 photos even at the
   320 x 240 floor (at 1 / 2 it holds about 218 of them). At
-  or above a 1.4e9-byte binding the target (700e6) is the limit and the
+  or above a binding of about 467e6 bytes (half of it is 700e6 bytes in
+  the budget's 12-byte count) the target (700e6) is the limit and the
   fraction changes nothing.
 - Scaling keeps the photo's shape to within the pixel each side loses to
   rounding, and never upscales.

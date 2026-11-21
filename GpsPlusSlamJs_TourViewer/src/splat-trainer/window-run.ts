@@ -45,6 +45,11 @@ export interface RunInput {
   /** Time allowed to prepare the graphics card (upload the photos and
    *  seed the session) before the run ends as failed (ms). */
   readonly prepareCapMs: number;
+  /** The clock time the preparation began, when that was before the run
+   *  (the caller loaded the library first): the cap counts from it, so
+   *  the whole wait stays within one `prepareCapMs`. Absent, the cap
+   *  counts from the call. */
+  readonly prepareStartedAt?: number;
   /** The photo memory budget (bytes) the library shrinks the photos to;
    *  absent, it keeps its own. */
   readonly photoBudgetBytes?: number;
@@ -123,7 +128,8 @@ const evalEvery = (maxIters: number): number =>
  * Trains `input` with `mod`. Never rejects: a thrown error ends as
  * `failed` with its message in `detail`; an abort through `signal` ends
  * as `cancelled`; a lost device as `gpu-lost`, neither with a splat; a
- * preparation longer than `prepareCapMs` as `failed`, saying so. A
+ * preparation longer than `prepareCapMs` (counted from
+ * `prepareStartedAt` when given) as `failed`, saying so. A
  * run that reaches its deadline is paused and scored and exported like a
  * finished one. The session is disposed on every path.
  */
@@ -174,9 +180,12 @@ export async function runWindow<P = unknown>(
       previewEveryS: null,
     });
     // One timer slot: the preparation cap, then the training deadline.
+    // The cap is one deadline from the preparation's start, wherever it
+    // began; a wait already past it ends at the next turn.
+    const prepareEndsAt = (input.prepareStartedAt ?? t0) + input.prepareCapMs;
     timer = clock.setTimeout(
       () => stopNow("prepare-timeout"),
-      input.prepareCapMs,
+      Math.max(0, prepareEndsAt - clock.now()),
     );
     const s = mod.createSession({
       maxIters: input.maxIters,

@@ -15,7 +15,9 @@
  * from the CDN, not installed): {@link SPLAT_JS_MIN_TRAIN_DIM} (`adaptiveTrainCap` in
  * `src/io/frames.js`), and in `trainer-defaults.ts` `targetMemoryBytes`,
  * `bytesPerPixel` (the same file) and `gpuBytesPerPixel` (the packed
- * targets in `src/gs/trainer.js`).
+ * targets in `src/gs/trainer.js`); and that `src/gpu/context.js` still
+ * requests the adapter's storage binding and buffer limits for its device
+ * (up to 4 GiB), since the photo budget is computed from the adapter's.
  */
 export const SPLAT_JS_COMMIT = "a84620c05f210a304b2d8de1d5c9f19d3657126f";
 
