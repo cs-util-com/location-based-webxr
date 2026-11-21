@@ -27,24 +27,30 @@ describe("memoryBudgetBytes", () => {
     expect(TRAINER_DEFAULTS.bytesPerPixel).toBe(12);
   });
 
-  it("is half the binding limit when that is smaller", () => {
+  it("fills half the binding limit when that is smaller, counted in the card's own bytes", () => {
     // Why: a phone's adapter binds far less than a desktop's; the photos
-    // must fit one binding with room for the trainer's own buffers.
+    // must fit one binding with room for the trainer's own buffers. The
+    // budget counts 12 bytes a pixel and the card holds a photo pixel in
+    // 4, so half a 128 MiB binding is a 192 MiB budget; a 64 MiB budget
+    // filled a sixth of the binding and refused stretches that fit.
+    expect(TRAINER_DEFAULTS.gpuBytesPerPixel).toBe(4);
     expect(
       memoryBudgetBytes(
         { maxStorageBufferBindingSize: 128 * MB, maxBufferSize: 4096 * MB },
         TRAINER_DEFAULTS,
       ),
-    ).toBe(64 * MB);
+    ).toBe(192 * MB);
   });
 
-  it("is never more than the largest buffer", () => {
+  it("never fills more than the largest buffer, counted in the card's own bytes", () => {
+    // Why: the card's photos are one buffer; at 4 bytes a pixel against
+    // the budget's 12, a 100 MiB buffer holds a 300 MiB budget.
     expect(
       memoryBudgetBytes(
         { maxStorageBufferBindingSize: 4096 * MB, maxBufferSize: 100 * MB },
         TRAINER_DEFAULTS,
       ),
-    ).toBe(100 * MB);
+    ).toBe(300 * MB);
   });
 
   it("rejects limits that are not positive numbers", () => {

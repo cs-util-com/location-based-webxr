@@ -54,6 +54,10 @@ export interface TrainerSettings {
   /** Bytes per photo pixel the memory budget counts: Splat.js counts 12
    *  (three float32 channels) against its budget. */
   readonly bytesPerPixel: number;
+  /** Bytes per photo pixel the graphics card holds: Splat.js packs its
+   *  training photos as RGBA8, one 32-bit word a pixel, in one buffer the
+   *  card's binding and buffer limits apply to. */
+  readonly gpuBytesPerPixel: number;
   /** Shortest photo side the trainer may scale down to (px); below it a
    *  window is refused as too large instead. Swept 64 / 128 / 256. */
   readonly minShortSidePx: number;
@@ -114,6 +118,7 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   maxIterations: 30000,
   targetMemoryBytes: 700e6,
   bytesPerPixel: 12,
+  gpuBytesPerPixel: 4,
   minShortSidePx: 128,
   etaMinIterations: 200,
   depthMaxDtMs: 200,

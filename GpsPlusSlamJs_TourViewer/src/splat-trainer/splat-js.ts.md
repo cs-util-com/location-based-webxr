@@ -44,6 +44,12 @@ mirror, never bundled or vendored.
 
 - The module has no version export, so the check reads the exports the
   trainer calls; the commit pin is what fixes the version.
+- Numbers copied from the pinned source by hand (`SPLAT_JS_MIN_TRAIN_DIM`
+  320, and `targetMemoryBytes`, `bytesPerPixel`, `gpuBytesPerPixel` in
+  `trainer-defaults.ts`) are re-read whenever `SPLAT_JS_COMMIT` moves: no
+  unit test sees the library, which is loaded from the CDN at run time,
+  so a pin moved to a commit with another floor would pass every test.
+  The comment at the pin says so.
 - The session options name Splat.js's own switches: `camOpt` (camera
   refinement) and `expComp` (exposure compensation) are off, because the
   recording's poses and the at-camera scoring must stay comparable.

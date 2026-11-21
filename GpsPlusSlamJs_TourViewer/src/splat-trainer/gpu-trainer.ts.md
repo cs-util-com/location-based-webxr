@@ -75,8 +75,10 @@ and a deadline passed on, a refused library (its detail and
 `retryHelps` passed on) and a crashed worker as failed in words,
 unreadable photos, a stretch too large for the card refused before any
 worker (probed first or not), one that fits only below the trainer's
-smallest photo size refused, one that fits the default limits trained
-with the card's budget and one on a card of unknown limits sent none,
+smallest photo size refused and one that fits above it but under a
+320 px shorter side trained (so the floor is on the longer side), one
+that fits the default limits trained with the card's budget (192 MiB for
+a 128 MiB binding) and one on a card of unknown limits sent none,
 `loading` before the photos are read, looks passed on and a late one
 closed, after the stop and after the end; and the judge's thresholds and
 failure words.
