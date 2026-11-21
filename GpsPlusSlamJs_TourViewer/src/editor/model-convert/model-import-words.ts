@@ -41,6 +41,8 @@ export const refusal = {
     `"${model}" needs "${needed}", which was not among the files. Drop the model's folder or a zip of it, or choose all its files together.`,
   outsideFolder: (model: string, needed: string): string =>
     `"${model}" needs "${needed}" from outside the files it came with. Drop the folder that holds both, or a zip of it.`,
+  otherComputer: (model: string, needed: string): string =>
+    `"${model}" points to "${needed}" in a file on another computer. Drop that file with the model, in its folder or a zip of it.`,
   remotePart: (model: string): string =>
     `"${model}" loads a part from the internet. A tour never fetches anything: download that file and drop it with the model.`,
   compressed: (kind: string): string =>
@@ -73,4 +75,10 @@ export const note = {
     `Made without its picture "${picture}": a tour shows ${shown} pictures here. Save it as PNG or JPEG and drop the model again with it.`,
   brokenPicture: (picture: string): string =>
     `Made without its picture "${picture}": it could not be decoded. Save it again as PNG or JPEG and drop the model again with it.`,
+  otherComputerPicture: (picture: string): string =>
+    `Made without its picture "${picture}": the model points to a file on another computer. To have it, drop the model again with that picture.`,
+  otherPictureShown: (picture: string): string =>
+    `Without "${picture}", the model shows another picture it carries in its place.`,
+  stoodIn: (named: string, used: string): string =>
+    `The model names "${named}", which was not among the files as written; "${used}" was used for it.`,
 } as const;

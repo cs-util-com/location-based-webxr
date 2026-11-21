@@ -5,15 +5,17 @@
 ## Public API
 
 - `refusal.*`: the model is not added.
-  - `missingFile(model, needed)`, `outsideFolder(model, needed)`, `remotePart(model)`: a buffer that is not among the files, leaves them, or lives on the internet.
+  - `missingFile(model, needed)`, `outsideFolder(model, needed)`, `otherComputer(model, needed)`, `remotePart(model)`: a buffer that is not among the files (where the model says), leaves them, points to a file on another computer, or lives on the internet.
   - `compressed(kind)`: Draco, meshopt or KTX2 pictures (`compressionOf` gives the kind).
   - `unreadable(model)`, `notVersion2(model)`, `partTooShort(model, part)`, `brokenPart(model)`: a file that is not a readable glTF 2.0 model.
   - `tooLarge(model, bytes, cap)`: the file, or all its data together, above the size ceiling.
   - `textTooLarge(model, bytes, cap)`: the `.gltf`'s text without its `data:` URIs above the text cap.
   - `pictureTooLarge(model, picture, why)`: a picture above the pixel cap (`why` from `checkImageWithinCap`).
   - `notInert(model, why)`: the backstop when the result fails `checkGlbInert`.
-- `note.*`: the model is added, without something.
-  - `missingPicture`, `remotePicture`, `brokenPicture(picture)`, `unsupportedPicture(picture, shown)`: `shown` names the formats the converter in question carries (the glTF repack: PNG, JPEG, WebP and AVIF), so a note never promises a conversion that converter does not do.
+- `note.*`: the model is added, without something, or with a guess the creator should know about.
+  - `missingPicture`, `remotePicture`, `brokenPicture`, `otherComputerPicture(picture)`, `unsupportedPicture(picture, shown)`: `shown` names the formats the converter in question carries (the glTF repack: PNG, JPEG, WebP and AVIF), so a note never promises a conversion that converter does not do.
+  - `otherPictureShown(picture)`: a texture lost one of its pictures but still shows another one it names.
+  - `stoodIn(named, used)`: a name found only in another letter case or by its file name alone, and the file used for it.
 - `compressionOf(extension)`: the creator's name for a compression extension, or null.
 - `megabytes(bytes)` (module-private): MB for a sentence (one decimal below 10).
 

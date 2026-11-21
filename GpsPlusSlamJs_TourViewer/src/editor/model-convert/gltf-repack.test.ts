@@ -10,7 +10,7 @@
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import {
@@ -28,7 +28,11 @@ import {
 } from "../asset-shelf/test-support/glb-fixtures.js";
 import { repackGltf } from "./gltf-repack.js";
 import { note, refusal } from "./model-import-words.js";
-import { looseGlbParts, splitGlb } from "./test-support/gltf-split.js";
+import {
+  looseGlbParts,
+  misalignedAccessors,
+  splitGlb,
+} from "./test-support/gltf-split.js";
 
 const GLTF = "model/model.gltf";
 
@@ -87,6 +91,8 @@ function editGltf(
   files.set(GLTF, new TextEncoder().encode(JSON.stringify(json)));
   return files;
 }
+
+const encode = (text: string) => new TextEncoder().encode(text);
 
 const textured = () =>
   buildModel({
@@ -374,6 +380,189 @@ describe("repackGltf", () => {
     const extensions = out.json["extensions"] as Record<string, GltfObject>;
     expect(extensions["EXT_example_view_user"]).toEqual({ bufferView: 2 });
     expect(out.views[2]).toEqual(source.views[2]);
+  });
+
+  it("refuses a text above the text cap before decoding or parsing it", () => {
+    // A structure-heavy text could exhaust the memory of the parse before
+    // any check after it ran, so the cap must run on the bytes first.
+    const filler = new Array<string>(600).fill("0").join(",");
+    const text = `{"asset":{"version":"2.0"},"extras":[${filler}]}`;
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(
+        repackGltf("a.gltf", new Map([["a.gltf", encode(text)]]), {
+          maxTextBytes: 1000,
+        }),
+      ).toEqual({
+        ok: false,
+        reason: refusal.textTooLarge("a.gltf", text.length, 1000),
+      });
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
+  });
+
+  it("still counts only the buffers' and pictures' data: URIs as data once the text is parsed", () => {
+    // The check on the bytes counts every literal starting with data:, so
+    // it can only let more through; the exact count after the parse is
+    // what holds a data: string anywhere else to the text cap.
+    const text = JSON.stringify({
+      asset: { version: "2.0" },
+      extras: { note: `data:${"A".repeat(2000)}` },
+    });
+    expect(
+      repackGltf("a.gltf", new Map([["a.gltf", encode(text)]]), {
+        maxTextBytes: 1000,
+      }),
+    ).toEqual({
+      ok: false,
+      reason: refusal.textTooLarge("a.gltf", text.length, 1000),
+    });
+  });
+
+  it("names the real size when the data inside the text goes over the ceiling", () => {
+    // The sizes are large enough that a wrong number shows in the words
+    // (MB with one decimal). A text holds 4/3 of its data: URIs' bytes, so
+    // only a file buffer before them lets the data, not the file, go over.
+    const MiB = 1024 * 1024;
+    const data = Buffer.from(new Uint8Array(MiB / 2)).toString("base64");
+    const text = JSON.stringify({
+      asset: { version: "2.0" },
+      buffers: [
+        { byteLength: MiB, uri: "a.bin" },
+        { byteLength: MiB / 2, uri: `data:;base64,${data}` },
+      ],
+    });
+    const cap = Math.round(1.2 * MiB);
+    const files = new Map<string, Uint8Array>([
+      ["a.gltf", encode(text)],
+      ["a.bin", new Uint8Array(MiB)],
+    ]);
+    expect(repackGltf("a.gltf", files, { maxBytes: cap })).toEqual({
+      ok: false,
+      reason: refusal.tooLarge("a.gltf", 1.5 * MiB, cap),
+    });
+  });
+
+  it("keeps every accessor aligned when a buffer's length is no multiple of 4", async () => {
+    // glTF requires each accessor's data to start on a multiple of its
+    // component size; a buffer laid after an odd-length one must be padded.
+    const original = await textured();
+    const source = partsOf(original);
+    const files = splitGlb(source, {
+      viewBuffer: source.views.map((_, i) => i % 3),
+      bufferTails: [1, 3, 2],
+    });
+    const glb = repacked(files).glb;
+    const out = partsOf(glb);
+    expect(misalignedAccessors(out.json)).toEqual([]);
+    expect(contentOf(out)).toEqual(contentOf(source));
+    expect(await newErrors(original, glb)).toEqual([]);
+  });
+
+  it("says which file stood in for a name that matched only in another letter case or by its file name alone", async () => {
+    const source = partsOf(await textured());
+    let picture = "";
+    const files = editGltf(
+      splitGlb(source, { images: ["file", "view"] }),
+      (json) => {
+        json.buffers[0].uri = "PART0.BIN";
+        picture = decodeURI(json.images[0].uri!).split("/").pop()!;
+        json.images[0].uri = `C:\\Users\\artist\\maps\\${picture}`;
+      },
+    );
+    const result = repacked(files);
+    expect(result.notes).toEqual([
+      note.stoodIn("PART0.BIN", "model/part0.bin"),
+      note.stoodIn(
+        `C:\\Users\\artist\\maps\\${picture}`,
+        `model/textures/${picture}`,
+      ),
+    ]);
+    expect(contentOf(partsOf(result.glb))).toEqual(contentOf(source));
+  });
+
+  it("never finds a buffer by its file name alone, and says when it points to another computer", async () => {
+    // A wrong .bin found by name would make a broken-looking model with
+    // nothing to tell the creator why, so a buffer must be where it says.
+    const textureless = await buildModel({ meshes: [boxSpec("a")] });
+    const withBuffer = (uri: string) =>
+      repackGltf(
+        GLTF,
+        editGltf(splitGlb(partsOf(textureless)), (json) => {
+          json.buffers[0].uri = uri;
+        }),
+      );
+    expect(withBuffer("maps/part0.bin")).toEqual({
+      ok: false,
+      reason: refusal.missingFile("model.gltf", "part0.bin"),
+    });
+    for (const uri of ["C:\\data\\part0.bin", "file:///C:/data/part0.bin"]) {
+      expect(withBuffer(uri), uri).toEqual({
+        ok: false,
+        reason: refusal.otherComputer("model.gltf", "part0.bin"),
+      });
+    }
+  });
+
+  it("leaves out a picture on another computer that no given file stands in for, in words that say so", async () => {
+    const files = editGltf(
+      splitGlb(partsOf(await textured()), { images: ["file", "view"] }),
+      (json) => {
+        json.images[0].uri = "D:\\renders\\gone.png";
+      },
+    );
+    expect(repacked(files).notes).toEqual([
+      note.otherComputerPicture("gone.png"),
+    ]);
+  });
+
+  it("keeps a texture that still has another picture to show, and says so", async () => {
+    // A texture may name a fallback picture and an extension's picture;
+    // losing one of them must not take the texture off the material.
+    for (const lost of ["source", "extension"] as const) {
+      const source = partsOf(await textured());
+      const gone = `gone-${lost}.jpg`;
+      const files = editGltf(
+        splitGlb(source, { images: ["file", "file"] }),
+        (json) => {
+          const materials = json["materials"] as {
+            pbrMetallicRoughness: { baseColorTexture: { index: number } };
+          }[];
+          const textures = json["textures"] as {
+            source: number;
+            extensions?: Record<string, { source: number }>;
+          }[];
+          const index =
+            materials[0]!.pbrMetallicRoughness.baseColorTexture.index;
+          const texture = textures[index]!;
+          const other = texture.source === 0 ? 1 : 0;
+          texture.extensions = { EXT_texture_webp: { source: other } };
+          json["extensionsUsed"] = [
+            ...((json["extensionsUsed"] as string[] | undefined) ?? []),
+            "EXT_texture_webp",
+          ];
+          const image = lost === "source" ? texture.source : other;
+          (json.images as EditableUri[])[image]!.uri = `textures/${gone}`;
+        },
+      );
+      const result = repacked(files);
+      expect(result.notes, lost).toEqual([
+        note.missingPicture(gone),
+        note.otherPictureShown(gone),
+      ]);
+      const out = partsOf(result.glb);
+      expect(JSON.stringify(out.json["materials"]), lost).toContain(
+        "baseColorTexture",
+      );
+      // The extension stays only while the picture it names is kept.
+      expect(
+        JSON.stringify(out.json["textures"]).includes("EXT_texture_webp"),
+        lost,
+      ).toBe(lost === "source");
+      expect(checkGlbInert(result.glb), lost).toEqual({ ok: true });
+    }
   });
 
   it("writes the same bytes on a second run", async () => {

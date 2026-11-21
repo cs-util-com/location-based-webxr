@@ -21,7 +21,7 @@
  * @see bundle-paths.ts.md
  */
 
-export type Match =
+type Match =
   /** The path as written (after decoding and Unicode normalization). */
   | "exact"
   /** The path in another letter case: the only file that matches. */

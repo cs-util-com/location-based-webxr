@@ -14,11 +14,13 @@
  *   original ones, typed by its bytes (`image-sniff.ts`), and measured
  *   against the tour's pixel cap before anything could decode it.
  * - A picture that is missing, remote, undecodable or of a kind a `.glb`
- *   cannot carry is left out with a note: the textures that show it are
- *   unlinked from the materials, and the image itself becomes a 1 x 1
- *   placeholder, so no index anywhere changes.
+ *   cannot carry is left out with a note: the textures that show only
+ *   left-out pictures are unlinked from the materials, and the image
+ *   itself becomes a 1 x 1 placeholder, so no index anywhere changes.
  * - A buffer that is missing, remote, outside the given files or shorter
  *   than it says refuses the whole model, in words (`model-import-words`).
+ *   A buffer must be where the model says (in some letter case); a picture
+ *   may also be found by its file name alone. Every such guess is noted.
  *
  * The result passes `checkGlbInert` or is refused. Pure: no I/O, nothing
  * fetched; the same input gives the same bytes.
@@ -119,14 +121,26 @@ interface Context {
   readonly paths: readonly string[];
   readonly limits: RepackLimits;
   readonly used: Set<string>;
+  /** What was left out or guessed, in words. */
+  readonly notes: string[];
   /** Bytes of data taken so far, against `limits.maxBytes`. */
   budget: number;
 }
 
+/** `uri` percent-decoded where it can be, for the words. */
+function decodedUri(uri: string): string {
+  try {
+    return decodeURIComponent(uri);
+  } catch {
+    return uri;
+  }
+}
+
 /** The bytes `uri` names, or the kind of failure ("missing", "outside",
- *  "scheme", "broken"); an over-budget `data:` URI refuses at once. */
-function fetchUri(ctx: Context, uri: string): Fetched {
-  const ref = resolveReference(uri, ctx.path, ctx.paths);
+ *  "elsewhere", "scheme", "broken"); an over-budget `data:` URI refuses at
+ *  once. A file found other than by its exact path is noted. */
+function fetchUri(ctx: Context, uri: string, byBasename: boolean): Fetched {
+  const ref = resolveReference(uri, ctx.path, ctx.paths, { byBasename });
   if (ref.kind === "data") {
     const read = decodeDataUri(ref.uri, ctx.limits.maxBytes - ctx.budget);
     if (read.ok) return { ok: true, bytes: read.bytes };
@@ -134,7 +148,7 @@ function fetchUri(ctx: Context, uri: string): Fetched {
       throw new Refusal(
         refusal.tooLarge(
           ctx.model,
-          ctx.limits.maxBytes + 1,
+          ctx.budget + read.size,
           ctx.limits.maxBytes,
         ),
       );
@@ -142,6 +156,9 @@ function fetchUri(ctx: Context, uri: string): Fetched {
     return { ok: false, why: "broken" };
   }
   if (ref.kind !== "file") return { ok: false, why: ref.kind };
+  if (ref.match !== "exact") {
+    ctx.notes.push(note.stoodIn(decodedUri(uri), ref.path));
+  }
   ctx.used.add(ref.path);
   return { ok: true, bytes: ctx.files.get(ref.path)! };
 }
@@ -155,7 +172,18 @@ function take(ctx: Context, bytes: number): void {
   }
 }
 
-/** Each buffer's bytes, cut to its `byteLength`. */
+/** The refusal for a buffer that could not be fetched, by why. */
+function bufferRefusal(model: string, why: string, name: string): string {
+  if (why === "scheme") return refusal.remotePart(model);
+  if (why === "outside") return refusal.outsideFolder(model, name);
+  if (why === "elsewhere") return refusal.otherComputer(model, name);
+  if (why === "broken") return refusal.brokenPart(model);
+  return refusal.missingFile(model, name);
+}
+
+/** Each buffer's bytes, cut to its `byteLength`. A buffer is never found
+ *  by its file name alone: a wrong `.bin` would look like a broken model,
+ *  with nothing to tell the creator why. */
 function readBuffers(ctx: Context, json: GltfObject): Uint8Array[] {
   const list = listOf(json, "buffers");
   if (list === null) throw new Refusal(refusal.unreadable(ctx.model));
@@ -166,18 +194,9 @@ function readBuffers(ctx: Context, json: GltfObject): Uint8Array[] {
     if (length === null || typeof uri !== "string") {
       throw new Refusal(refusal.unreadable(ctx.model));
     }
-    const fetched = fetchUri(ctx, uri);
+    const fetched = fetchUri(ctx, uri, false);
     if (!fetched.ok) {
-      const name = uriName(uri);
-      throw new Refusal(
-        fetched.why === "scheme"
-          ? refusal.remotePart(ctx.model)
-          : fetched.why === "outside"
-            ? refusal.outsideFolder(ctx.model, name)
-            : fetched.why === "broken"
-              ? refusal.brokenPart(ctx.model)
-              : refusal.missingFile(ctx.model, name),
-      );
+      throw new Refusal(bufferRefusal(ctx.model, fetched.why, uriName(uri)));
     }
     if (fetched.bytes.length < length) {
       throw new Refusal(refusal.partTooShort(ctx.model, uriName(uri)));
@@ -187,21 +206,53 @@ function readBuffers(ctx: Context, json: GltfObject): Uint8Array[] {
   });
 }
 
-/** The textures that show image `index`, by `source` or by an
+/** The pictures a texture names, by `source` (extension null) or by an
  *  extension's `source` (`EXT_texture_webp` and the like). */
-function texturesShowing(json: GltfObject, index: number): Set<number> {
-  const out = new Set<number>();
+function sourcesOf(
+  texture: GltfObject,
+): { extension: string | null; image: number }[] {
+  const out: { extension: string | null; image: number }[] = [];
+  const own = indexOf(texture["source"]);
+  if (own !== null) out.push({ extension: null, image: own });
+  const extensions = objectOf(texture["extensions"]) ?? {};
+  for (const key of Object.keys(extensions)) {
+    const image = indexOf(objectOf(extensions[key])?.["source"]);
+    if (image !== null) out.push({ extension: key, image });
+  }
+  return out;
+}
+
+/** Unlinks from the materials every texture that names only left-out
+ *  pictures (`leftOut`: image index to its label). A texture that still
+ *  names another picture is kept: an extension naming a left-out one is
+ *  dropped from it (its `source` keeps the placeholder as the fallback),
+ *  and a note says another picture shows in its place. */
+function unlinkLeftOut(
+  json: GltfObject,
+  leftOut: ReadonlyMap<number, string>,
+  notes: string[],
+): void {
+  if (leftOut.size === 0) return;
+  const unlinked = new Set<number>();
   (listOf(json, "textures") ?? []).forEach((item, t) => {
     const texture = objectOf(item);
-    if (texture === null) return;
-    const sources = [texture["source"]];
-    const extensions = objectOf(texture["extensions"]);
-    for (const key of Object.keys(extensions ?? {})) {
-      sources.push(objectOf(extensions![key])?.["source"]);
+    const sources = texture === null ? [] : sourcesOf(texture);
+    const lost = sources.filter((s) => leftOut.has(s.image));
+    if (lost.length === 0) return;
+    if (lost.length === sources.length) {
+      unlinked.add(t);
+      return;
     }
-    if (sources.some((s) => s === index)) out.add(t);
+    const extensions = objectOf(texture!["extensions"]);
+    for (const { extension, image } of lost) {
+      if (extension !== null) delete extensions![extension];
+      const words = note.otherPictureShown(leftOut.get(image)!);
+      if (!notes.includes(words)) notes.push(words);
+    }
   });
-  return out;
+  for (const material of listOf(json, "materials") ?? []) {
+    unlinkTextures(material, unlinked);
+  }
 }
 
 /** Removes from `value` (a material, recursively, `extras` aside) every
@@ -228,19 +279,21 @@ function unlinkTextures(value: unknown, textures: ReadonlySet<number>): void {
 function pictureNote(why: string, name: string): string {
   if (why === "scheme") return note.remotePicture(name);
   if (why === "broken") return note.brokenPicture(name);
+  if (why === "elsewhere") return note.otherComputerPicture(name);
   return note.missingPicture(name);
 }
 
 /** The pictures named by URI, as `[image, bytes, mime]` to embed; the
- *  ones left out are unlinked, given the placeholder and noted. */
+ *  ones left out are given the placeholder, noted, and unlinked where no
+ *  other picture can stand in. */
 function readImages(
   ctx: Context,
   json: GltfObject,
-  notes: string[],
 ): [GltfObject, Uint8Array, string][] {
   const list = listOf(json, "images");
   if (list === null) throw new Refusal(refusal.unreadable(ctx.model));
   const out: [GltfObject, Uint8Array, string][] = [];
+  const leftOut = new Map<number, string>();
   list.forEach((item, i) => {
     const image = objectOf(item);
     if (image === null) throw new Refusal(refusal.unreadable(ctx.model));
@@ -254,14 +307,11 @@ function readImages(
         : `picture ${String(i + 1)}`
       : uriName(uri);
     const leaveOut = (words: string) => {
-      notes.push(words);
-      const textures = texturesShowing(json, i);
-      for (const material of listOf(json, "materials") ?? []) {
-        unlinkTextures(material, textures);
-      }
+      ctx.notes.push(words);
+      leftOut.set(i, label);
       out.push([image, PLACEHOLDER_PNG, "image/png"]);
     };
-    const fetched = fetchUri(ctx, uri);
+    const fetched = fetchUri(ctx, uri, true);
     if (!fetched.ok) return leaveOut(pictureNote(fetched.why, label));
     const sniffed = sniffImage(fetched.bytes);
     if (sniffed === null || !sniffed.embeddable) {
@@ -274,6 +324,7 @@ function readImages(
     take(ctx, fetched.bytes.length);
     out.push([image, fetched.bytes, sniffed.mime]);
   });
+  unlinkLeftOut(json, leftOut, ctx.notes);
   return out;
 }
 
@@ -338,6 +389,46 @@ function dataUriLength(json: GltfObject): number {
   return total;
 }
 
+const QUOTE = 0x22;
+const BACKSLASH = 0x5c;
+/** The bytes of `data:`. */
+const DATA_PREFIX = [0x64, 0x61, 0x74, 0x61, 0x3a];
+
+/** The bytes inside the raw text's string literals that start with
+ *  `data:`, found without decoding or parsing anything. Every data URI is
+ *  such a literal, so the text minus this is at most the text the exact
+ *  count after parsing finds: a cap on it refuses nothing that count
+ *  would pass, and runs before a parse that a structure-heavy text could
+ *  make exhaust memory. */
+function dataLiteralBytes(text: Uint8Array): number {
+  let total = 0;
+  let open = text.indexOf(QUOTE);
+  while (open >= 0) {
+    let close = text.indexOf(QUOTE, open + 1);
+    while (close >= 0) {
+      let slashes = 0;
+      while (text[close - 1 - slashes] === BACKSLASH) slashes++;
+      if (slashes % 2 === 0) break;
+      close = text.indexOf(QUOTE, close + 1);
+    }
+    const end = close < 0 ? text.length : close;
+    if (DATA_PREFIX.every((byte, k) => text[open + 1 + k] === byte)) {
+      total += end - open - 1;
+    }
+    open = close < 0 ? -1 : text.indexOf(QUOTE, close + 1);
+  }
+  return total;
+}
+
+/** Refuses when `textOnly` bytes of text are above the text cap. */
+function capText(ctx: Context, textOnly: number): void {
+  if (textOnly > ctx.limits.maxTextBytes) {
+    throw new Refusal(
+      refusal.textTooLarge(ctx.model, textOnly, ctx.limits.maxTextBytes),
+    );
+  }
+}
+
 function parse(text: Uint8Array): GltfObject | null {
   try {
     return objectOf(JSON.parse(new TextDecoder().decode(text)));
@@ -360,6 +451,7 @@ export function repackGltf(
     paths: [...files.keys()],
     limits: { ...DEFAULT_REPACK_LIMITS, ...limits },
     used: new Set(),
+    notes: [],
     budget: 0,
   };
   try {
@@ -378,17 +470,13 @@ function repack(ctx: Context): RepackResult {
       refusal.tooLarge(ctx.model, text.length, ctx.limits.maxBytes),
     );
   }
+  capText(ctx, text.length - dataLiteralBytes(text));
   const json = parse(text);
   const problem = modelProblem(ctx.model, json);
   if (problem !== null || json === null) {
     throw new Refusal(problem ?? refusal.unreadable(ctx.model));
   }
-  const textOnly = text.length - dataUriLength(json);
-  if (textOnly > ctx.limits.maxTextBytes) {
-    throw new Refusal(
-      refusal.textTooLarge(ctx.model, textOnly, ctx.limits.maxTextBytes),
-    );
-  }
+  capText(ctx, text.length - dataUriLength(json));
   const buffers = readBuffers(ctx, json);
   const starts: number[] = [];
   let length = 0;
@@ -397,8 +485,7 @@ function repack(ctx: Context): RepackResult {
     length = pad4(length + buffer.length);
   }
   rebaseViews(ctx, json, buffers, starts);
-  const notes: string[] = [];
-  const pictures = readImages(ctx, json, notes);
+  const pictures = readImages(ctx, json);
   const views = listOf(json, "bufferViews") ?? [];
   const pictureStarts = pictures.map(([image, bytes, mime]) => {
     const start = length;
@@ -426,5 +513,5 @@ function repack(ctx: Context): RepackResult {
     maxImagePixels: ctx.limits.maxImagePixels,
   });
   if (!inert.ok) throw new Refusal(refusal.notInert(ctx.model, inert.reason));
-  return { ok: true, glb, notes, used: [...ctx.used] };
+  return { ok: true, glb, notes: ctx.notes, used: [...ctx.used] };
 }

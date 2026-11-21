@@ -27,6 +27,9 @@ export interface SplitOptions {
   /** Each buffer's and image's URI as written, from its file path
    *  (`encodeURI` when left out). */
   readonly uriOf?: (path: string) => string;
+  /** Per buffer: bytes of padding after its last view, so its
+   *  `byteLength` need not be a multiple of 4 (none when left out). */
+  readonly bufferTails?: readonly number[];
 }
 
 const pad4 = (n: number) => (n + 3) & ~3;
@@ -54,7 +57,9 @@ export function splitGlb(
     views[i]!["byteOffset"] = lengths[b]!;
     lengths[b] = pad4(lengths[b]! + parts.views[i]!.length);
   });
-  const datas = lengths.map((n) => new Uint8Array(n));
+  const datas = lengths.map(
+    (n, b) => new Uint8Array(n + (options.bufferTails?.[b] ?? 0)),
+  );
   assign.forEach((b, i) =>
     datas[b]!.set(parts.views[i]!, views[i]!["byteOffset"] as number),
   );
@@ -86,6 +91,57 @@ export function splitGlb(
   });
   files.set(gltfPath, new TextEncoder().encode(JSON.stringify(json, null, 2)));
   return files;
+}
+
+const COMPONENT_BYTES: Readonly<Record<number, number>> = {
+  5120: 1,
+  5121: 1,
+  5122: 2,
+  5123: 2,
+  5125: 4,
+  5126: 4,
+};
+
+/** The accessors whose data does not start on a multiple of its component
+ *  size in the binary chunk (glTF's alignment rule), sparse indices and
+ *  values included; also a stride that is no multiple of it. */
+export function misalignedAccessors(json: GltfObject): number[] {
+  const views = (json["bufferViews"] ?? []) as GltfObject[];
+  const start = (view: unknown, offset: unknown): number | null => {
+    const v = views[view as number];
+    return v === undefined
+      ? null
+      : ((v["byteOffset"] as number | undefined) ?? 0) +
+          ((offset as number | undefined) ?? 0);
+  };
+  const bad = (at: number | null, component: unknown): boolean => {
+    const size = COMPONENT_BYTES[component as number] ?? 1;
+    return at !== null && at % size !== 0;
+  };
+  const out: number[] = [];
+  ((json["accessors"] ?? []) as GltfObject[]).forEach((accessor, i) => {
+    const type = accessor["componentType"];
+    const view = views[accessor["bufferView"] as number];
+    const stride = view?.["byteStride"] as number | undefined;
+    const sparse = accessor["sparse"] as
+      { indices: GltfObject; values: GltfObject } | undefined;
+    if (
+      bad(start(accessor["bufferView"], accessor["byteOffset"]), type) ||
+      (stride !== undefined && bad(stride, type)) ||
+      (sparse !== undefined &&
+        (bad(
+          start(sparse.indices["bufferView"], sparse.indices["byteOffset"]),
+          sparse.indices["componentType"],
+        ) ||
+          bad(
+            start(sparse.values["bufferView"], sparse.values["byteOffset"]),
+            type,
+          )))
+    ) {
+      out.push(i);
+    }
+  });
+  return out;
 }
 
 /** A `.glb`'s JSON and each buffer view's bytes, read without any of

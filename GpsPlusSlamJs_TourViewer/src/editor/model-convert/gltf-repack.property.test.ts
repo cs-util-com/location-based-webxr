@@ -4,11 +4,14 @@
  * documents spread their buffer views over 1-4 buffers (each a `.bin`
  * file or a `data:` URI), carry pictures as files, data URIs or buffer
  * views, and name a random view from an extension the repack does not
- * know. Whatever the layout, the result must have one buffer, keep every
+ * know; accessors start at an offset inside their view, some with a
+ * stride, one may be sparse, and a buffer's length need not be a multiple
+ * of 4. Whatever the layout, the result must have one buffer, keep every
  * view's bytes at its index (so the extension still names the same
  * bytes), read every accessor to the same values and every picture to the
- * same bytes, pass the tour's check, and be the same bytes on a second
- * run (the editor names files by their content hash).
+ * same bytes, keep every accessor on glTF's alignment, pass the tour's
+ * check, and be the same bytes on a second run (the editor names files by
+ * their content hash).
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
@@ -21,7 +24,11 @@ import {
 } from "../asset-shelf/glb-file.js";
 import { pngHeader } from "../asset-shelf/test-support/glb-fixtures.js";
 import { repackGltf } from "./gltf-repack.js";
-import { looseGlbParts, splitGlb } from "./test-support/gltf-split.js";
+import {
+  looseGlbParts,
+  misalignedAccessors,
+  splitGlb,
+} from "./test-support/gltf-split.js";
 
 const COMPONENT = [5121, 5123, 5126] as const;
 const SIZE: Record<number, number> = { 5121: 1, 5123: 2, 5126: 4 };
@@ -45,6 +52,19 @@ const documentArb = fc
       { maxLength: 3 },
     ),
     named: fc.nat(),
+    /** Per data view: its accessor's offset (in components) and stride. */
+    layout: fc.array(
+      fc.record({ offset: fc.nat(), stride: fc.constantFrom(0, 4, 8) }),
+      { minLength: 8, maxLength: 8 },
+    ),
+    sparse: fc.option(
+      fc.record({
+        indices: fc.nat(),
+        values: fc.nat(),
+        indexType: fc.constantFrom(5121, 5123, 5125),
+      }),
+      { nil: null },
+    ),
   })
   .chain((doc) => {
     const views = doc.data.length + doc.pictures.length;
@@ -58,6 +78,10 @@ const documentArb = fc
         minLength: 4,
         maxLength: 4,
       }),
+      bufferTails: fc.array(fc.integer({ min: 0, max: 3 }), {
+        minLength: 4,
+        maxLength: 4,
+      }),
     });
   });
 
@@ -66,6 +90,8 @@ function partsOf(doc: {
   components: number[];
   pictures: { width: number; height: number }[];
   named: number;
+  layout: { offset: number; stride: number }[];
+  sparse: { indices: number; values: number; indexType: number } | null;
 }): GlbParts {
   const views = [
     ...doc.data,
@@ -73,14 +99,27 @@ function partsOf(doc: {
   ];
   const json: GltfObject = {
     asset: { version: "2.0" },
-    bufferViews: views.map((v) => ({ buffer: 0, byteLength: v.length })),
+    bufferViews: views.map((v, i) => {
+      const stride = doc.layout[i]?.stride ?? 0;
+      return i < doc.data.length && stride > 0
+        ? { buffer: 0, byteLength: v.length, byteStride: stride }
+        : { buffer: 0, byteLength: v.length };
+    }),
     accessors: doc.data.map((v, i) => {
       const componentType = doc.components[i]!;
+      const size = SIZE[componentType]!;
+      const { offset, stride } = doc.layout[i]!;
+      const byteOffset = size * (offset % Math.floor(v.length / size));
+      const room = v.length - byteOffset;
       return {
         bufferView: i,
+        ...(byteOffset > 0 ? { byteOffset } : {}),
         componentType,
         type: "SCALAR",
-        count: Math.floor(v.length / SIZE[componentType]!),
+        count:
+          stride === 0
+            ? Math.floor(room / size)
+            : Math.floor((room - size) / stride) + 1,
       };
     }),
     extensionsUsed: ["EXT_example_view_user"],
@@ -88,6 +127,23 @@ function partsOf(doc: {
       EXT_example_view_user: { bufferView: doc.named % views.length },
     },
   };
+  if (doc.sparse !== null) {
+    const accessors = json["accessors"] as GltfObject[];
+    const values = doc.sparse.values % doc.data.length;
+    accessors.push({
+      componentType: doc.components[values]!,
+      type: "SCALAR",
+      count: 1,
+      sparse: {
+        count: 1,
+        indices: {
+          bufferView: doc.sparse.indices % doc.data.length,
+          componentType: doc.sparse.indexType,
+        },
+        values: { bufferView: values },
+      },
+    });
+  }
   if (doc.pictures.length > 0) {
     json["images"] = doc.pictures.map((_, k) => ({
       bufferView: doc.data.length + k,
@@ -100,11 +156,12 @@ function partsOf(doc: {
 describe("repackGltf, properties", () => {
   it("keeps every view, accessor, picture and extension reference for any buffer layout", () => {
     fc.assert(
-      fc.property(documentArb, ({ doc, viewBuffer, buffers }) => {
+      fc.property(documentArb, ({ doc, viewBuffer, buffers, bufferTails }) => {
         const source = partsOf(doc);
         const files = splitGlb(source, {
           viewBuffer,
           buffers,
+          bufferTails,
           images: doc.pictures.map((p) => p.placement),
         });
         const first = repackGltf("model/model.gltf", files);
@@ -112,9 +169,10 @@ describe("repackGltf, properties", () => {
         const out = looseGlbParts(first.glb);
         expect(out.json["buffers"]).toHaveLength(1);
         expect(out.views.slice(0, source.views.length)).toEqual(source.views);
-        doc.data.forEach((_, i) =>
+        (source.json["accessors"] as unknown[]).forEach((_, i) =>
           expect(readAccessor(out, i)).toEqual(readAccessor(source, i)),
         );
+        expect(misalignedAccessors(out.json)).toEqual([]);
         ((out.json["images"] ?? []) as { bufferView: number }[]).forEach(
           (image, k) =>
             expect(out.views[image.bufferView]).toEqual(
