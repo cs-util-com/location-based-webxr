@@ -4,6 +4,16 @@
 
 ### Added
 
+- **Is any part of an anchor's subtree in view?** A conservative test that
+  never says "out" while a drawn part is in view, so content can re-place
+  only while none of it is visible: per-renderable spheres (instanced,
+  sprite, skinned and morphed meshes included) capped at 32 per anchor,
+  every XR sub-camera with its layers, a side margin, the target pose, and a
+  1 s refresh for changes it cannot follow live.
+  - **`ar/anchor-visibility`** (deep import): `isAnchorInView`,
+    `createAnchorView`, `updateAnchorView`, `createAnchorBoundsCache`,
+    `markAnchorBoundsChanged`, `anchorBoundsNeedRefresh`,
+    `ignoreForAnchorVisibility`, `mergeForAnchorBounds`.
 - **PINHOLE intrinsics from a projection matrix, shared**: moved here from
   the Recorder's COLMAP export, so the export and the Tour Viewer's splat
   trainer reader read a recording's lens through one implementation (the

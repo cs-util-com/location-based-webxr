@@ -1,0 +1,221 @@
+# `anchor-visibility.ts`
+
+## Purpose
+
+Answers one question for a content anchor: **is any part of its subtree in
+view?** Content that has to move to a corrected pose re-places only while none
+of it is in view, so it never visibly jumps. The predicate is conservative by
+design: a false "out" makes content jump on screen (the one failure it exists
+to prevent); a false "in" only delays a re-placement.
+
+It is a pure geometry module: no store, no dispatch, no timers. The caller owns
+when to ask and what to do with the answer.
+
+## Public API
+
+Deep import only (`gps-plus-slam-app-framework/ar/anchor-visibility`), not
+through the `ar` barrel.
+
+- **Constants**
+  - `ANCHOR_VIEW_MARGIN_DEG = 5`: the recommended side margin in degrees.
+  - `ANCHOR_SPHERE_CAP = 32`: the most spheres a cache keeps per anchor.
+  - `ANCHOR_BOUNDS_REFRESH_MS = 1000`: the age after which a cache that keeps
+    answering "in" asks for a fresh traversal.
+- **Hints on the subtree** (read live, from the object or any ancestor up to
+  the anchor; `TypeError` on a non-`Object3D`)
+  - `ignoreForAnchorVisibility(object)`: the object and its subtree never count
+    (an edge hint the camera draws, a helper).
+  - `mergeForAnchorBounds(root)`: the subtree is bounded by one sphere in the
+    root's frame, built once and kept across fresh traversals until
+    `markAnchorBoundsChanged`. For a loaded model with many parts and no inner
+    motion. Constant-screen-size sprites under it stay their own entries.
+- **Views, filled once per frame**
+  - `createAnchorView(): AnchorView`: an empty, reusable view.
+  - `updateAnchorView(view, camera, xr?): AnchorView`: while `xr.isPresenting`,
+    one slot per XR sub-camera (its world pose from
+    `camera.parent.matrixWorld * sub.matrix`, its projection and its own layer
+    mask); otherwise the user camera alone. Three sets the sub-cameras' matrix
+    and projection before the frame callback runs, so calling this inside the
+    animation loop reads the current frame (pinned by a test that drives a real
+    `WebXRManager`).
+  - `XrCameraSource`: the minimal shape it reads (`isPresenting`,
+    `getCamera().cameras`); a `WebXRManager` satisfies it.
+- **Bounds cache, one per anchor**
+  - `createAnchorBoundsCache(): AnchorBoundsCache`.
+  - `markAnchorBoundsChanged(cache)`: the subtree's structure changed (added,
+    removed or swapped parts, a merge root's inner layout); the next test
+    rebuilds.
+  - `anchorBoundsNeedRefresh(cache, nowMs): boolean`: true when the cache is
+    invalid or older than `ANCHOR_BOUNDS_REFRESH_MS`. A caller whose anchor
+    keeps answering "in" while it waits runs its next test with
+    `fresh: true` when this is true, so a stale "in" (a moved instance, an
+    unannounced change) cannot hold a re-placement back for more than about a
+    second. `RangeError` on a non-finite `nowMs`.
+- **The test**
+  - `isAnchorInView(view, anchor, options): boolean`
+    - `options.marginDeg` in [0, 90), else `RangeError`. The frustum's side
+      planes widen by this angle; near and far stay.
+    - `options.cache`: from `createAnchorBoundsCache`, else `TypeError`.
+    - `options.atLocal?: Matrix4`: test the subtree as if the anchor's local
+      matrix were this one (the target pose), else `TypeError`. Default: the
+      anchor's current local matrix.
+    - `options.fresh?: boolean`: traverse now and replace the cache before
+      testing (a confirmation before acting, or a refresh).
+    - `options.nowMs?: number`: stamped on a cache build (default
+      `performance.now()`).
+    - `options.counters?: AnchorVisibilityCounters`: incremented
+      `sphereTests` (sphere-frustum tests) and `traversals` (cache builds).
+    - Returns `false` for a view with no slots and for an anchor with nothing
+      drawable.
+
+## Invariants and assumptions
+
+- **Parent frame.** The test runs in the anchor's parent frame: each view's
+  frustum is built from `inv(parent.matrixWorld) * worldFromView`, and the
+  subtree's spheres are placed by the anchor's local matrix (or `atLocal`). A
+  rigid move of everything above the parent, camera included, cannot change the
+  answer (a property test).
+- **World matrices are read as they are.** Three refreshes them when it
+  renders; a cache build refreshes the subtree's own (`updateWorldMatrix`).
+- **What is read live on every test:** `visible` and the ignore hint (by
+  climbing to the anchor; a node detached from the anchor no longer counts),
+  each renderable's world matrix relative to the anchor (so a part that moves
+  or turns about itself needs no rebuild), sprite scale and center, the
+  bones of skinned meshes, and the morph influences of every morphed
+  renderable.
+- **What needs a rebuild:** added or removed parts, swapped geometry, moved
+  instances of an instanced or batched mesh, and any inner change under a
+  merge root. `markAnchorBoundsChanged` or the 1 s refresh covers them.
+- **Sphere per renderable.**
+  - Mesh, Points, Line: rotation-invariant about the renderable's origin,
+    radius `|c| + r` of the geometry's bounding sphere, scaled by the largest
+    stretch of its matrix.
+  - Morphed Mesh, Points, Line (position morph targets): three's geometry
+    bounding sphere covers each target alone at influence 1, not several
+    targets at once nor an influence outside [0, 1]. These are bounded by the
+    largest base vertex distance plus `sum_k |influence_k| * reach_k` (reach_k
+    the largest displacement of target k; for absolute targets, the largest
+    distance from the base vertex), with the influences read live on every
+    test. They are never merged, so a merged sphere cannot freeze them.
+  - InstancedMesh, BatchedMesh: the exact object bounding sphere, recomputed on
+    every build (the instance spread can sit anywhere relative to the origin).
+    Per-instance morph influences are not followed (see Known limits).
+  - Sprite: centred on its world position, radius
+    `hypot(sx * (0.5 + |cx - 0.5|), sy * (0.5 + |cy - 0.5|))` from the world
+    scale, so a non-default `center` is covered. A `sizeAttenuation: false`
+    sprite adds its angular size times the eye distance per perspective view
+    (and the plain scale per orthographic view).
+  - CSS3D object: a point.
+  - SkinnedMesh: never cached. One sphere around the balls
+    `B(bonePos_i, stretch(boneWorld_i) * D_i)` of the bones that carry weight,
+    where `D_i` is the largest bone-local distance of a vertex weighted to bone
+    i plus `morphScale_i * sum_k |influence_k| * morphReach_ik`; weight sums in
+    `[min, max]` scale it about the origin of `matrixWorld * bindMatrixInverse`,
+    which is then applied. Assumes non-negative weights (as glTF requires); a
+    negative weight is clamped to 0.
+- **Stretch.** The largest scale of a matrix is bounded by the square root of
+  the Gershgorin bound of its Gram matrix, an upper bound on the spectral norm
+  that stays safe under shear (`getMaxScaleOnAxis` underestimates it there).
+- **Margin.** Only the x/y rows of the projection change, via the side
+  tangents, so near, far and the depth convention stay. A side angle is
+  clamped at 89.5 deg. Orthographic and skewed projections are not widened.
+- **Layers.** A sphere counts for a view only when its layer mask meets the
+  view's; a merged sphere carries the OR of its members that are counted.
+- **Cost.** A cached test does at most `ANCHOR_SPHERE_CAP` sphere tests per
+  view, plus the bone pass of each skinned part. A cache build is linear in
+  the subtree, plus the merge, which is O(n^2) time and O(n) memory in the
+  number of renderables above the cap (each cluster keeps its nearest
+  neighbour). A large flat subtree should use `mergeForAnchorBounds`.
+
+## Parameters
+
+Each value below was chosen, not swept; the tests pin behaviour at the
+stated value and the property tests hold for any value (they test safety,
+not tightness).
+
+- **Side margin, 5 deg** (`ANCHOR_VIEW_MARGIN_DEG`). Covers what a sphere
+  bound does not see: pose prediction between the test and the frame, a
+  `Points` sprite's pixel size, and the edge of the camera image beyond the
+  projection. Not swept: the right value depends on device motion during a
+  frame and needs a phone measurement. A larger margin only delays
+  re-placement.
+- **Sphere cap, 32** (`ANCHOR_SPHERE_CAP`). Bounds the per-frame cost of a
+  cached test at 64 sphere tests for two views. Not swept: tightness against
+  the cap trades only delay, never safety.
+- **Merge rule, nearest centres first.** Greedy: the two clusters whose
+  centres are nearest merge into the smallest sphere around both; each cluster
+  keeps its nearest alive neighbour, rescanned only when that neighbour
+  merged. Skinned parts, morphed parts and constant-screen-size sprites are
+  never merged but count toward the cap. Not compared against other rules.
+- **Refresh age, 1000 ms** (`ANCHOR_BOUNDS_REFRESH_MS`). How long a stale "in"
+  can hold a re-placement back. Not swept.
+- **Side angle clamp, 89.5 deg.** Keeps a widened tangent finite.
+
+## Known limits
+
+- Inner motion under a merge root is not followed until
+  `markAnchorBoundsChanged` (documented on `mergeForAnchorBounds`).
+- `Points` pixel size is not bounded; the margin covers small points.
+- Per-instance morph influences of an `InstancedMesh` (`setMorphAt`) are not
+  followed; the instanced sphere uses the base geometry.
+- A vertex shader that displaces vertices beyond the geometry's bounds (wind,
+  billboards in a shader) is not seen; mark such content with a merge root
+  whose bounds include the displacement, or opt it out.
+- The out-of-view dwell before acting (two consecutive "out" answers, a
+  confirmation with `fresh: true`) is the caller's, not this module's.
+
+## Examples
+
+```ts
+import {
+  ANCHOR_VIEW_MARGIN_DEG,
+  anchorBoundsNeedRefresh,
+  createAnchorBoundsCache,
+  createAnchorView,
+  isAnchorInView,
+  updateAnchorView,
+} from 'gps-plus-slam-app-framework/ar/anchor-visibility';
+
+const view = createAnchorView();
+const cache = createAnchorBoundsCache();
+
+renderer.setAnimationLoop((time) => {
+  updateAnchorView(view, camera, renderer.xr);
+  const inView = isAnchorInView(view, anchor, {
+    marginDeg: ANCHOR_VIEW_MARGIN_DEG,
+    cache,
+    atLocal: targetMatrix,
+    fresh: anchorBoundsNeedRefresh(cache, time),
+    nowMs: time,
+  });
+  // ...
+});
+```
+
+## Tests
+
+- `anchor-visibility.test.ts`: one case per way a subtree can be drawn
+  although a test of its root says otherwise (a tall child, a wide sprite, a
+  non-default sprite center, a constant-size sprite, a sheared subtree, a
+  scaled bone, a raised morph influence on a skinned and on a plain mesh,
+  skin weights below one), the live hints, the margin, near and far, layers,
+  the target pose, the sphere cap (merging the nearest pair, never a morphed
+  part), the refresh, the merge root, the parent frame, the counters, input validation,
+  and a premise test that drives a real `WebXRManager` frame loop.
+- `anchor-visibility.property.test.ts`: never a false "out" against an
+  exact oracle (every drawn triangle and sprite quad clipped against each exact
+  view frustum), on a fresh traversal after live and structural changes and
+  from the cache after live changes, over random subtrees (sheared groups,
+  sprites, instanced meshes, morphed boxes, posed, scaled and morphed skinned
+  meshes, merge roots) and random XR views; and parent-frame invariance. A
+  non-vacuity floor checks that at least 10 % of the scenes draw something
+  (measured 17-33 % over 24 seeds). Random views rarely graze a part's edge,
+  so these properties are a safety net; the edge cases are pinned by the unit
+  tests.
+- `anchor-visibility.perf.test.ts`: operation counts (no traversal on a
+  cached call, at most the cap per view) and generous wall-clock ceilings for
+  the cached test, a fresh traversal of 400 parts, and a 64-bone skinned part.
+  Measured on a desktop under about 75 % CPU load (best of 15): cached
+  0.006-0.008 ms, fresh 400 parts in two views 4.1-4.4 ms, cached with a
+  64-bone skinned part 0.013-0.016 ms. A phone is several times slower, so a
+  fresh traversal of a large subtree belongs at the 1 s refresh, not per frame.
