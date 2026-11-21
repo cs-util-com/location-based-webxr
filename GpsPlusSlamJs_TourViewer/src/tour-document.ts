@@ -361,9 +361,9 @@ export interface TourDocumentState {
     readonly details: boolean;
     /** A station's frame moved here since the open. */
     readonly stations: boolean;
-    /** The stations whose pose moved here since the open (a move, or an
-     *  undo or redo of one): their live poses outrank a draft's poses not
-     *  yet decided on, station by station. */
+    /** The stations a station move moved here since the open (an undo
+     *  keeps the name; a restore never adds one): their live poses outrank
+     *  a draft's poses not yet decided on, station by station. */
     readonly movedStations: readonly string[];
   };
   /** The draft's settings record carries the details (once they were set
@@ -1783,29 +1783,6 @@ function framesMoved(
   });
 }
 
-/** The ids of the stations both lists carry at another pose. */
-function posesMovedIds(
-  a: readonly StationFrame[],
-  b: readonly StationFrame[],
-): string[] {
-  const byId = new Map(b.map((f) => [f.id, f]));
-  return a.flatMap((f) => {
-    const other = byId.get(f.id);
-    return other !== undefined && !sameJson(f.geo, other.geo) ? [f.id] : [];
-  });
-}
-
-/** `ids` with `more` added, each once; `ids` itself when none is new. */
-function withIds(
-  ids: readonly string[],
-  more: readonly string[],
-): readonly string[] {
-  const added = more.filter(
-    (id, i) => !ids.includes(id) && more.indexOf(id) === i,
-  );
-  return added.length === 0 ? ids : [...ids, ...added];
-}
-
 /** The document moved to `view` (an undo or a redo step). */
 function goTo(
   state: TourDocumentState,
@@ -1817,7 +1794,6 @@ function goTo(
     (f) => view.details[f] !== state.details[f],
   );
   const stationsMoved = framesMoved(view.stations, state.stations);
-  const posesMoved = posesMovedIds(view.stations, state.stations);
   const framesChanged = framesEdited(view.stations, state.stations);
   const characters = view.characters ?? [];
   const charactersMoved = !sameJson(characters, state.characters);
@@ -1833,7 +1809,7 @@ function goTo(
       needsNoGps: state.touched.needsNoGps || settingMoved,
       details: state.touched.details || detailsMoved,
       stations: state.touched.stations || stationsMoved || framesChanged,
-      movedStations: withIds(state.touched.movedStations, posesMoved),
+      movedStations: state.touched.movedStations,
     },
     detailsRecorded: state.detailsRecorded || detailsMoved,
     stationsRecorded: state.stationsRecorded || stationsMoved,
@@ -2526,7 +2502,9 @@ function stationMove(
       touched: {
         ...before.touched,
         stations: true,
-        movedStations: withIds(before.touched.movedStations, [stationId]),
+        movedStations: before.touched.movedStations.includes(stationId)
+          ? before.touched.movedStations
+          : [...before.touched.movedStations, stationId],
       },
       stationsRecorded: true,
     },

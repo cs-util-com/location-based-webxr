@@ -401,8 +401,10 @@ describe("the stations moved here, against the undecided poses", () => {
       state = next;
     }
     expect(moved).toEqual([[station.id], [station.id]]);
+    // Another open starts from none, whatever the last one moved.
+    expect(state.touched.movedStations).toEqual([station.id]);
     expect(
-      reduce(opened, act.opened({ manifest: tourOf([pin("a")]) })).touched
+      reduce(state, act.opened({ manifest: tourOf([pin("a")]) })).touched
         .movedStations,
     ).toEqual([]);
   });

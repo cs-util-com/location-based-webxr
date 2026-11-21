@@ -36,8 +36,8 @@ reducers' building blocks, so a page cannot apply them differently.
 - `needsNoGps`, `details` (`TourDetailFields`) - the setting and the details
   as set; `touched` says which were changed here since the open (live work,
   which a draft's offer never overrides - `touched.stations` for a station
-  moved here, and `touched.movedStations` naming each station whose pose
-  moved here, by a move or by an undo or redo of one, never by a restore:
+  moved here, and `touched.movedStations` naming each station a station
+  move moved here (an undo keeps the name; a restore never adds one):
   their poses outrank a draft's undecided poses station by station,
   `withUndecidedPoses` in `tour-document-draft.ts`); `detailsRecorded` and `stationsRecorded` say the draft's
   settings record carries the details, and the station poses (`StationPose`,
