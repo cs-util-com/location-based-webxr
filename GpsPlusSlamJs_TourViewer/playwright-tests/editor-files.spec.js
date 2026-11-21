@@ -30,6 +30,7 @@ import {
   TOWN_HALL,
   WRAPPED_PIN,
   captionOf,
+  deleteOfferedDraft,
   editText,
   expectCaption,
   GONE,
@@ -338,6 +339,9 @@ test("a download of a tour that carries a walk leaves it out by default, and kee
   await page.close();
   const next = await newEditorPage(context);
   await openFile(next, tour, "wrapped.zip");
+  // The lean download left the edit unsaved, so the second open offers it
+  // back, and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(next);
   await expect(fileItem(next, "keepWalk")).toHaveJSProperty("hidden", false);
   await fileCommand(next, "keepWalk");
   await expect(fileItem(next, "keepWalk")).toHaveAttribute(

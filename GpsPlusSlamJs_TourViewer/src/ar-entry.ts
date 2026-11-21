@@ -808,6 +808,10 @@ export function wireArEntry(deps: {
     hadLocationStep = false;
     locationRefusal = null;
     ctx.cameraFrameCount = 0;
+    // The open tour's undecided draft is answered before AR, where its
+    // offer is out of sight: an edit made in AR would wait for it, and a
+    // Restore would drop that edit. A draft still being read is waited for.
+    if (authorMode && !(await hooks.creatorDraftDecided())) return;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
     // looking. The viewer pipeline is best-effort: without a detector the

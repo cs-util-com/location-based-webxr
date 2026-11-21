@@ -162,6 +162,9 @@ were here. What stays is the Finish's side:
     visit has seen. A held code's sightings dispatch about once per stable
     QR frame; a new pose of the same code, or a stored code's sighting, is
     shown at the next dispatch (as before the codes lived in the store).
+  - `CreatorSetup.creatorDraftDecided(): Promise<boolean>` - the creator
+    draft's `readyForAr` (true at once on a visitor's page): false keeps
+    AR unstarted and asks about the draft first.
   - `CreatorSetup.startAuthorPipeline(): boolean` - validates the printed
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.
@@ -344,6 +347,7 @@ const setup = wireCreatorSetup({
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
+hooks.creatorDraftDecided = setup.creatorDraftDecided;
 ```
 
 ## Tests

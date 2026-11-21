@@ -15,6 +15,7 @@
  * is stood in.
  */
 import type { TourDocumentState } from "./tour-document.js";
+import { DRAFT_EDIT_MAKE_AGAIN } from "./draft-edit-gate.js";
 import {
   finishErrorLine,
   finishFailed,
@@ -4273,13 +4274,14 @@ describe(
         // The creator uploaded that edit: the next load opens it hosted.
         const a1 = { ...a0, caption: "Gate, phone 1" } as TourObject;
         const b = await load(store, [a1]);
-        b.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
-        await flush();
-        // The visits are offered: the edit waits for the answer.
+        // The visits are offered: answered first, since an edit made over
+        // the undecided draft would wait and Restore would drop it.
         await vi.waitFor(() => {
           expect(b.dom.draftOfferText.textContent).not.toBe("");
         });
         b.dom.draftRestore.click();
+        await flush();
+        b.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
         await flush();
         // The tab dies before a Finish: the reload, still hosted at A1.
         const c = await load(store, [a1]);
@@ -4325,9 +4327,9 @@ describe(
       });
 
       // Why (re-review #2): an edit made while the draft is still opening
-      // waits for the answer and is written after it; its base must still
-      // name the version the creator edited (the desktop's), or the next
-      // load drops it.
+      // waits for the answer; Restore drops it and says to make it again,
+      // and the edit made again must still name the version the creator
+      // edited (the desktop's) as its base, or the next load drops it.
       it("keeps an edit made while the draft opens, over a desktop edit (re-review #2)", async () => {
         const store = memoryDraftStore();
         const a0 = hosted("h1", "Gate");
@@ -4353,11 +4355,14 @@ describe(
         await flush();
         open();
         await flush();
-        // The edit waited for the answer, and lands after it.
+        // The edit waited for the answer; Restore dropped it.
         await vi.waitFor(() => {
           expect(b.dom.draftOfferText.textContent).not.toBe("");
         });
         b.dom.draftRestore.click();
+        await flush();
+        expect(b.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+        b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
         const c = await load(store, [desk]);
         await vi.waitFor(() => {

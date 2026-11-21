@@ -176,3 +176,17 @@ export async function setNoGps(page, on) {
   await page.locator("#details-apply").click();
   await expect(page.locator("#details-modal")).toBeHidden();
 }
+
+/**
+ * Answer the draft offer of the tour just opened with "Delete it": a tour
+ * opened again after an edit nobody saved offers that edit back, and an
+ * edit made before the answer waits for it (and "Not now" or Restore
+ * would drop it), so a walk that edits the tour opened again answers
+ * first.
+ * @param {import("@playwright/test").Page} page
+ */
+export async function deleteOfferedDraft(page) {
+  const offer = page.locator(".toast.draft-offer");
+  await offer.locator("button", { hasText: "Delete it" }).click();
+  await expect(offer).toBeHidden();
+}

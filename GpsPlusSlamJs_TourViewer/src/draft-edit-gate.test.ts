@@ -14,7 +14,11 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { isHeldEdit } from "./draft-edit-gate.js";
+import {
+  DRAFT_GATE_PASSES,
+  isHeldEdit,
+  waitsForTheDraft,
+} from "./draft-edit-gate.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
   documentObjects,
@@ -145,7 +149,7 @@ describe("draft edit gate", () => {
       asked += 1;
     });
     const held = store.dispatch(editA("The gate"));
-    store.draftGate.drop();
+    expect(store.draftGate.drop()).toBe(1);
     if (!isHeldEdit(held)) throw new Error("not held");
     expect(await held.landed).toBeNull();
     expect(captionOf(store, "a")).toBe("pin a");
@@ -201,5 +205,118 @@ describe("draft edit gate", () => {
         expect(captionOf(store, "a")).toBe(batch.at(-1) ?? "pin a");
       }),
     );
+  });
+  // Why: the gate classifies by a DENYLIST, so an action added to the
+  // document later waits by default. This row walks every action the
+  // document has and fails on one nobody classified: a new action must be
+  // named here as held, or in `DRAFT_GATE_PASSES` with a reason. Three
+  // edits once slipped past an allowlist (a file use deleted, a file
+  // replaced, an asset optimized) and landed on an undecided draft.
+  it("classifies every action of the document: each is held, or named as passing", () => {
+    const HELD = [
+      "placed",
+      "edited",
+      "moved",
+      "deleted",
+      "stationMoved",
+      "stationEdited",
+      "storyAdded",
+      "storyRenamed",
+      "storyDuplicated",
+      "storyDeleted",
+      "storyChildAdded",
+      "storyChildDeleted",
+      "fileUsesDeleted",
+      "fileReplaced",
+      "childMoved",
+      "stationAdded",
+      "stationDeleted",
+      "stationsReordered",
+      "stationDuplicated",
+      "objectDuplicated",
+      "itemsGrounded",
+      "blockNumberSet",
+      "settleApplied",
+      "settingsChanged",
+      "detailsChanged",
+      "narrationEdited",
+      "assetOptimized",
+      "folderMoved",
+      "folderScaled",
+      "folderPivotCentred",
+      "folderGrouped",
+      "folderUngrouped",
+      "objectsFoldered",
+      "folderRenamed",
+      "folderDeleted",
+      "folderDuplicated",
+      "folderReordered",
+      "characterDeclared",
+      "characterRemoved",
+    ].map((name) => `tourDocument/${name}`);
+    const all = Object.values(tourDocumentActions).map((a) => a.type);
+    const passes = [...DRAFT_GATE_PASSES];
+    expect(
+      HELD.filter((t) => passes.includes(t)),
+      "both held and passing",
+    ).toEqual([]);
+    expect(
+      all.filter((t) => !HELD.includes(t) && !passes.includes(t)),
+      "an action nobody classified",
+    ).toEqual([]);
+    expect(
+      [...HELD, ...passes].filter((t) => !all.includes(t)),
+      "a name the document does not have",
+    ).toEqual([]);
+    for (const type of all) {
+      expect(waitsForTheDraft({ type }), type).toBe(HELD.includes(type));
+    }
+  });
+
+  // Why: the edits an allowlist let through must wait too: dispatched on
+  // a holding store, each is held, and the first asks.
+  it("holds a file use deleted, a file replaced and an asset optimized", () => {
+    const store = openStore();
+    let asked = 0;
+    store.draftGate.hold(() => {
+      asked += 1;
+    });
+    for (const type of [
+      tourDocumentActions.fileUsesDeleted.type,
+      tourDocumentActions.fileReplaced.type,
+      tourDocumentActions.assetOptimized.type,
+    ]) {
+      expect(isHeldEdit(store.dispatch({ type, payload: {} })), type).toBe(
+        true,
+      );
+    }
+    expect(asked).toBe(1);
+    expect(store.draftGate.drop()).toBe(3);
+  });
+
+  // Why: an undo or a redo passes the gate. That is safe only because
+  // nothing of this open is in the history while the draft is undecided:
+  // the open clears it, every edit waits, and no passing action takes a
+  // step. Pinned: an undo and a redo then change nothing, so the
+  // document's listener writes nothing over the undecided record.
+  it("an undo or a redo while undecided changes nothing", () => {
+    const store = openStore();
+    store.draftGate.hold(() => undefined);
+    store.dispatch(editA("The gate"));
+    store.dispatch({
+      type: tourDocumentActions.fileReplaced.type,
+      payload: {},
+    });
+    store.dispatch(tourDocumentActions.newStationArmed({ armed: true }));
+    store.dispatch(tourDocumentActions.newStationArmed({ armed: false }));
+    const before = selectTourDocument(store.getState());
+    expect(isHeldEdit(store.dispatch(tourDocumentActions.undone()))).toBe(
+      false,
+    );
+    expect(isHeldEdit(store.dispatch(tourDocumentActions.redone()))).toBe(
+      false,
+    );
+    expect(selectTourDocument(store.getState())).toEqual(before);
+    expect(store.draftGate.drop()).toBe(2);
   });
 });

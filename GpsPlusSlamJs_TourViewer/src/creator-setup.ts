@@ -259,6 +259,9 @@ export interface CreatorSetup {
   /** The open tour stores a code that can line a visit up without a GPS
    *  fix: a refused location may start on it (`ar-entry.ts`). */
   creatorCanStartOnCodes: () => boolean;
+  /** The AR entry's question about the open tour's draft
+   *  (`TourViewerHooks.creatorDraftDecided`). */
+  creatorDraftDecided: () => Promise<boolean>;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
   /** A creator's AR visit runs: show the earlier visits' objects. */
@@ -1115,6 +1118,8 @@ export function wireCreatorSetup(deps: {
     leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline: () => measuring.start(),
     creatorCanStartOnCodes: () => creator && measuring.canStartOnCodes(),
+    creatorDraftDecided: () =>
+      creator ? draft.readyForAr() : Promise.resolve(true),
     beginAuthorVisit: () => {
       if (!creator) return;
       // The visit's wait for a first GPS fix (whether a stored code lines

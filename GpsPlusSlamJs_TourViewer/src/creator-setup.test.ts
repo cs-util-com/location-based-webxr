@@ -63,7 +63,13 @@ import {
   withCaption,
 } from "./test-support/tour-of.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
-import { DRAFT_EDIT_WAITS } from "./draft-edit-gate.js";
+import {
+  DRAFT_BEING_READ,
+  DRAFT_EDIT_MAKE_AGAIN,
+  DRAFT_EDIT_NOT_APPLIED,
+  DRAFT_EDIT_WAITS,
+} from "./draft-edit-gate.js";
+import { DRAFT_DECIDE_BEFORE_AR } from "./creator-draft.js";
 import { manifestToWrite } from "./tour-document.js";
 
 /** One fake element: the properties this module writes, and a click it can
@@ -1538,6 +1544,63 @@ describe("a draft offered while the AR session runs", () => {
   });
 });
 
+describe("a creator's AR entry asks about the draft first", () => {
+  function drafted() {
+    return memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
+    });
+  }
+
+  // Why this test matters: in AR the offer is out of sight, so an edit
+  // made there would wait for an answer nobody can give, and Restore
+  // would drop it. The start of AR asks first: while the draft is
+  // undecided (here put off with "Not now") AR stays unstarted, the offer
+  // shows again with a line saying why, and once Restore decided it AR
+  // may start.
+  it("keeps AR unstarted while the draft is undecided, and says why", async () => {
+    const { ctx, dom, setup } = wire(drafted().store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDismiss.click();
+    expect(dom.draftOffer.hidden).toBe(true);
+    expect(await setup.creatorDraftDecided()).toBe(false);
+    expect(dom.draftOffer.hidden).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_DECIDE_BEFORE_AR);
+    dom.draftRestore.click();
+    expect(await setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: a draft still being read at the tap may turn out to hold work;
+  // the start waits for the read instead of letting AR begin over it.
+  it("waits for a draft still being read", async () => {
+    let open: () => void = () => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { dom, setup } = wire(drafted().store, { openGate });
+    setup.presentDraftForTour(TOUR);
+    let answer: boolean | null = null;
+    void setup.creatorDraftDecided().then((a) => {
+      answer = a;
+    });
+    await settle();
+    expect(answer, "still reading").toBeNull();
+    open();
+    await settle();
+    expect(answer).toBe(false);
+    expect(dom.draftOffer.hidden).toBe(false);
+  });
+
+  // Why: with no draft to decide the start goes on at once.
+  it("lets AR start with no draft", async () => {
+    const { setup } = wire(memoryStore().store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(await setup.creatorDraftDecided()).toBe(true);
+  });
+});
+
 describe("work made before the tour's draft opened reaches it", () => {
   // Why these tests matter (TourViewer scan-to-open plan §9 #5): a creator
   // can measure and place before any tour is open - scan-to-open makes
@@ -2141,28 +2204,45 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     doc.saveEnded(generation);
   }
 
-  it("Restore after a Finish leaves a note deleted here deleted", async () => {
+  // Why: a delete made over the undecided draft waits, and Restore drops
+  // the delete, made before the draft came back, and says so; made again
+  // and written by a Finish, it stays deleted.
+  it("Restore drops a delete that waited; made again and finished, it stays deleted", async () => {
     const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.remove("hosted", "the live delete");
+    await settle();
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      ctx.tourDocument.objects().map((o) => o.object.id),
+      "the waiting delete was dropped",
+    ).toContain("hosted");
     ctx.tourDocument.remove("hosted", "the live delete");
     await settle();
     finishLanded(ctx);
     expect(ctx.tourDocument.deleted(), "the Finish wrote it").toEqual([]);
-
-    dom.draftRestore.click();
     expect(
       ctx.tourDocument.objects().map((o) => o.object.id),
       "the delete is live work, newer than the draft",
     ).not.toContain("hosted");
   });
 
-  it("Restore after a Finish keeps a note changed here as it was changed", async () => {
+  // Why: the same for an edit: dropped at Restore with the note, made
+  // again and written by a Finish, it stays as changed here.
+  it("Restore drops an edit that waited; made again and finished, it stays as changed", async () => {
     const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
+      "the draft's value is back",
+    ).not.toMatchObject({ caption: LIVE.caption });
     ctx.tourDocument.edit(LIVE, "the live edit");
     await settle();
     finishLanded(ctx);
     expect(ctx.tourDocument.entries(), "the Finish wrote it").toEqual([]);
-
-    dom.draftRestore.click();
     // (As written: the stored copy names its station.)
     expect(
       ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
@@ -2170,9 +2250,11 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   });
 
   // Why: an edit made while the offer stands waits for the answer, so
-  // Restore puts the whole draft back and its note counts all of it; the
-  // edit that waited lands after it, on the restored draft.
-  it("Restore's note counts the whole draft, and the edit that waited lands after it", async () => {
+  // Restore puts the whole draft back and its note counts all of it. The
+  // edit that waited was built before the draft came back: replayed, it
+  // would write its old values over the draft's, so it is dropped, the
+  // note says to make it again, and made again it lands.
+  it("Restore's note counts the whole draft, and drops the edit that waited, saying so", async () => {
     const OTHER_PIN = pin("other");
     const disk = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
@@ -2197,6 +2279,12 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     page.dom.draftRestore.click();
     expect(page.ctx.placementNote).toContain("1 change");
     expect(page.ctx.placementNote).toContain("1 deletion restored");
+    expect(page.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      page.ctx.tourDocument.entries().map((p) => p.object),
+      "the waiting edit is dropped",
+    ).not.toContainEqual(inItsStation(LIVE));
+    page.ctx.tourDocument.edit(LIVE, "the live edit");
     expect(page.ctx.tourDocument.entries().map((p) => p.object)).toContainEqual(
       inItsStation(LIVE),
     );
@@ -2452,10 +2540,11 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps an edit of an id a discard rejected, made after a reload", async () => {
     const { store } = memoryStore(DISCARDED_ON_DISK);
     const second = await reopen(store);
-    second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
-    await settle();
-    // The edit waited for the answer, and lands after it.
+    // Decided first: an edit made over the undecided draft would wait,
+    // and Restore would drop it.
     second.dom.draftRestore.click();
+    await settle();
+    second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
     await settle();
 
     const third = await reopen(store);
@@ -2468,9 +2557,9 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps a deletion of an id a discard rejected, made after a reload", async () => {
     const { store } = memoryStore(DISCARDED_ON_DISK);
     const second = await reopen(store);
-    second.dom.objectList.listHandlers!.remove("hosted");
-    await settle();
     second.dom.draftRestore.click();
+    await settle();
+    second.dom.objectList.listHandlers!.remove("hosted");
     await settle();
 
     const third = await reopen(store);
@@ -2566,9 +2655,10 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   });
 
   // Why: an edit made while the draft is read waits for the answer: the
-  // older edit the draft held stays on disk until then, and the live edit
-  // lands over it after Restore.
-  it("writes an edit made while the draft opened over the older edit the draft held, once Restore decided it", async () => {
+  // older edit the draft held stays on disk until then. Restore keeps the
+  // draft's value and drops the waiting edit (it was built before the
+  // draft came back); made again, it lands over the draft's.
+  it("keeps the draft's older edit at Restore, drops the edit that waited, and writes it once made again", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("hosted")]: recordText(OLDER),
@@ -2583,7 +2673,57 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
 
     dom.draftRestore.click();
     await settle();
+    expect(onDisk(files, "hosted"), "the draft's value stays").toMatchObject({
+      caption: OLDER.caption,
+    });
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    await settle();
     expect(onDisk(files, "hosted")).toEqual(EDITED);
+  });
+
+  // Why: "Not now" applies nothing, so an edit that waited is cancelled;
+  // the creator is told, never left to find it missing.
+  it("Not now drops an edit that waited and says it was not applied", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: recordText(OLDER),
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourDocument.open(PUBLISHED);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDismiss.click();
+    expect(ctx.placementNote, "nothing waited").not.toBe(
+      DRAFT_EDIT_NOT_APPLIED,
+    );
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    dom.draftDismiss.click();
+    await settle();
+    expect(ctx.placementNote).toBe(DRAFT_EDIT_NOT_APPLIED);
+    expect(onDisk(files, "hosted")).toEqual(OLDER);
+  });
+
+  // Why: an edit made before the draft read finished waits with no offer
+  // on screen yet; a short note says the page is reading, so the edit
+  // seemingly doing nothing is explained.
+  it("says it is reading saved work when an edit waits before the offer", async () => {
+    let open: () => void = () => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: recordText(OLDER),
+    });
+    const { ctx, dom, setup } = wire(store, { openGate });
+    ctx.tourDocument.open(PUBLISHED);
+    setup.presentDraftForTour(TOUR);
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    open();
+    await settle();
+    expect(dom.draftOfferText.textContent).toContain(DRAFT_EDIT_WAITS);
   });
 
   it("writes a deletion made while the draft opened over the older edit the draft held, once Delete it decided it", async () => {
@@ -3056,9 +3196,10 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     );
   });
 
-  it("keeps a station this page moved over the draft's older pose", async () => {
+  it("keeps the draft's older pose at Restore, drops the move that waited, and keeps the move made again", async () => {
     // A station moved while the draft is read waits for the answer;
-    // Restore puts the draft's older pose back, and the move lands on it.
+    // Restore puts the draft's older pose back and drops the move (built
+    // before the draft came back), saying so; made again, it lands.
     const OLDER = { ...MOVED, lat: 47.5002 };
     const { store, files } = memoryStore({
       ...metaOnly(),
@@ -3072,6 +3213,10 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(page.dom.draftOffer.hidden, "the older pose is offered").toBe(false);
     page.dom.draftRestore.click();
     await settle();
+    expect(stationGeo(page), "the draft's pose stays").toEqual(OLDER);
+    expect(page.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
 
     const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
       stations?: { id: string; geo: unknown }[];
@@ -3082,8 +3227,8 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
 
   it("offers the other stations' poses beside a station this page moved, and restores them", async () => {
     // Why: a station moved while the offer stands must not make the draft
-    // read as spent; the move waits, and Restore puts every offered pose
-    // back before it lands.
+    // read as spent; the move waits, Restore puts every offered pose back
+    // and drops the move, which made again lands.
     const OTHER = stationIdOf("other");
     const OTHER_MOVED = { ...MOVED, lat: 47.5005 };
     const TWO = tourOf([HOSTED, pin("other")]);
@@ -3106,7 +3251,13 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     await settle();
     const geoOf = (id: string) =>
       page.ctx.tourDocument.state().stations.find((s) => s.id === id)?.geo;
-    expect(geoOf(STATION), "the move landed after the restore").toEqual(MOVED);
+    expect(geoOf(STATION), "the draft's pose is back").toEqual({
+      ...MOVED,
+      lat: 47.5002,
+    });
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
+    expect(geoOf(STATION), "the move made again landed").toEqual(MOVED);
     expect(geoOf(OTHER), "the offered pose is back").toEqual(OTHER_MOVED);
     const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
       stations?: { id: string; geo: unknown }[];
@@ -3411,7 +3562,8 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
   // opened tour lacks, and the draft keeps it whole (`createdStations`)
   // so a reload puts the pin back in THAT station. A placement made while
   // the offer stands waits for the answer; Restore brings the stored
-  // station back first, and the new pin's station joins it.
+  // station back and drops the placement, and the pin placed again gets
+  // its own station beside it.
   it("keeps the stored draft's created stations through a placement made before it is restored", async () => {
     const far = (id: string, lat: number): TourObject => ({
       ...pin(id),
@@ -3443,6 +3595,11 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     second.dom.draftRestore.click();
     await settle();
     expect(stationOf(second, "far1")).toBe(s1);
+    expect(stationOf(second, "far3"), "the waiting pin was dropped").toBe(
+      undefined,
+    );
+    second.ctx.tourDocument.place(far("far3", 47.52), {}, "a pin");
+    await settle();
     const s3 = stationOf(second, "far3");
     expect(s3, "the waiting pin landed").toBeDefined();
     expect([...createdIds(files)].sort()).toEqual([s1, s3].sort());

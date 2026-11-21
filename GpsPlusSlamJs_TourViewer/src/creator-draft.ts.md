@@ -195,7 +195,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
 - **Nothing but visits and codes is made before the draft opens**:
   placing waits for the tour's settle, which presents its draft in the
   same step (`archive-open.ts`), and an edit made while the draft is read
-  waits for it (`draft-edit-gate.ts`). With no tour open there is no
+  waits for it (`draft-edit-gate.ts`; the placement note says
+  `DRAFT_BEING_READ` meanwhile). With no tour open there is no
   namespace - that is not a storage failure and does not spend the one
   warning. When the store is assigned, the visits made meanwhile are
   written (after the read, so no branch deletes them), and a level
@@ -213,19 +214,32 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   draft gate (`draft-edit-gate.ts`, `ctx.store.draftGate`) until the
   draft is decided. The first edit that waits shows the offer again, its
   words saying so (`DRAFT_EDIT_WAITS`; in AR the placement note says
-  `DRAFT_EDIT_WAITS_IN_AR`). Restore applies the draft, then the edits
-  that waited, in their order; a landed "Delete it" deletes the draft,
-  then applies them; "Not now" again drops them (nothing applied), and the
-  next edit asks again. A draft with nothing to offer, or a read that
+  `DRAFT_EDIT_WAITS_IN_AR`). Restore drops the edits that waited (each
+  was built from the document before the draft came back, so replayed
+  after it it would write its old values over the draft's), applies the
+  draft and appends `DRAFT_EDIT_MAKE_AGAIN` to its note; a landed "Delete
+  it" deletes the draft, then applies them in their order; "Not now"
+  cancels them (nothing applied, the note says `DRAFT_EDIT_NOT_APPLIED`),
+  and the next edit asks again. A draft with nothing to offer, or a read that
   failed, lets them through at once. A close or another open ends the
   question: what waited is dropped with the tour (`reset`, and the gate
   itself on the document's `opened` / `closed`). So no edit ever lands
   on an undecided draft, which is what keeps every write below free of
-  "live work" rules. The offer's status lives here, not in the store: no
-  draft status slice exists. The codes are not gated (their record
-  re-states the waiting draft's, below).
+  "live work" rules. The offer's status lives here, not in the store: a
+  deviation named in `draft-edit-gate.ts.md`, with a draft status slice
+  as its follow-up. The codes are not gated (their record re-states the
+  waiting draft's, below).
+- **AR starts only once the draft is decided** (`readyForAr`, through the
+  session's `creatorDraftDecided` hook, awaited by `ar-entry.ts` before
+  the author pipeline starts). In AR the offer is out of sight, and an
+  edit there would wait for a question nobody sees, so Start AR waits for
+  a read still running, then, with an offer open, shows it again with
+  `DRAFT_DECIDE_BEFORE_AR` and leaves AR unstarted. A tour a scan opens
+  in the middle of an AR session can still meet an undecided draft there,
+  which is what `DRAFT_EDIT_WAITS_IN_AR` is for.
 - **"Delete it" shows its progress** (`async-ui-feedback`): the three
-  answers are disabled from the tap until the commit says how it went; a
+  answers are disabled and its label reads `DRAFT_DELETING` from the tap
+  until the commit says how it went; a
   commit that did not land re-enables them, reverts the in-memory
   rejection, says so (its own note) and keeps the question, the waiting
   edits still waiting.
@@ -301,7 +315,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   again, this page's only, once its commit landed.
 - **Restore puts the whole draft back** (`restoreWork`): every edit
   waited for the answer, so the document holds nothing of this open's
-  that the draft could outrank, and the edits that waited land after it.
+  that the draft could outrank; the edits that waited are dropped, and
+  the note says to make them again.
   Its note counts what it put back: the draft's code position is claimed
   only when `restoreInHand` took it (a code measured here keeps its
   place), and visits only those whose ids the log did not hold already.
@@ -352,8 +367,8 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   offer.
 - **Restored** frames first (the slice's `restored` moves them before the
   objects), so the moved items' records land inside their moved stations.
-  A station moved while the offer stood waited, and lands on the restored
-  pose.
+  A station moved while the offer stood waited, and Restore dropped it:
+  made again, it lands on the restored pose.
 - **Read first, in the record's own queue**: the edits made meanwhile
   wait, so the page's first write of the record follows the read.
 - **No pose rides along**: no edit lands while the stored record is
@@ -370,11 +385,13 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   record and owns it). An interrupted removal is safe: a record the
   opened tour carries is spent again at the next open.
 - The record's details and setting are not offered on the phone (it edits
-  only the tour's name, plan W2; its "needs no GPS" is the editor's,
-  Q-QF-1). Nor are a station's own fields, the order, the deleted
-  stations or the characters: a draft holding only those reads as spent
-  on the phone and is swept. A known gap, kept visible as `it.fails` rows
-  (`settingsGap`) in `draft-shared-behaviour.test.ts`.
+  only the tour's name; its "needs no GPS" is the editor's). Nor are a
+  station's own fields, the order, the deleted stations or the
+  characters: a draft holding only those reads as spent on the phone and
+  is swept. A known gap, kept visible by the `settingsGap` rows in
+  `draft-shared-behaviour.test.ts`, which assert the phone's exact
+  failure (nothing offered, or the rename not offered), so a row turns red
+  once the phone offers it.
 
 ## Visits in the draft (authoring plan 2026-09-28-0953 M3b)
 
@@ -409,10 +426,11 @@ opened among them, a rename made while "Delete it" runs landing after it,
 one that waited going with the tour when it closes first while the
 landed removal takes the record, and one leaving the record to a reopen
 through the same url padded; edits, deletions, moves and placements made
-while the draft is read waiting and landing after Restore or "Delete
-it"; an edit over an offered deletion not offered as deleted again, and
+while the draft is read waiting, dropped by Restore with its note and
+landing after "Delete it"; "Not now" dropping a waiting edit with its
+note; the note while the draft is read; the start of AR asking first; an edit over an offered deletion not offered as deleted again, and
 one whose record did not land keeping the tombstone; Restore's note
-counting the whole draft with the waiting edit landing after it, beside a
+counting the whole draft with the waiting edit dropped, beside a
 code measured here and beside visits the log already held; a draft object
 whose id equals a visit id restored; the waiting draft's codes re-stated
 after the page's, the page's winning, kept through "Not now" and dropped

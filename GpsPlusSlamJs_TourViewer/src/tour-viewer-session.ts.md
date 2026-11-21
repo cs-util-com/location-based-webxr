@@ -152,6 +152,8 @@ lives here.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
   cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `creatorDraftDecided` (whether a creator's AR may start, the open
+  tour's draft decided; resolves true until wired),
   `storedCodeVotes` (the viewer placement's vote half for a creator's
   pipeline at a stored code; null until wired), `creatorCanStartOnCodes`
   (whether a creator may start AR without location; false until wired),

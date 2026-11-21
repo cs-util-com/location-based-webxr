@@ -48,6 +48,10 @@ import {
 } from "./draft-persistence.js";
 import type { CreatorCodes } from "./creator-codes.js";
 import {
+  DRAFT_BEING_READ,
+  DRAFT_DELETING,
+  DRAFT_EDIT_MAKE_AGAIN,
+  DRAFT_EDIT_NOT_APPLIED,
   DRAFT_EDIT_WAITS as EDIT_WAITS,
   DRAFT_EDIT_WAITS_IN_AR as EDIT_WAITS_IN_AR,
 } from "./draft-edit-gate.js";
@@ -85,6 +89,12 @@ export interface CreatorDraft {
   present(tourUrl: string): void;
   /** A tour closed: its offer, namespace, rejections and answers go. */
   reset(): void;
+  /** The start of AR: true once the open tour's draft is decided or there
+   *  is none, after a read still running. False while it is undecided:
+   *  the offer shows again with `DRAFT_DECIDE_BEFORE_AR`, and AR stays
+   *  unstarted (in AR the offer is out of sight, and an edit there would
+   *  wait for it). */
+  readyForAr(): Promise<boolean>;
   /** Rewrite the open tour's meta (tour, printed size, rejections). True
    *  with no tour open: nothing to write. */
   saveMeta(): Promise<boolean>;
@@ -213,6 +223,10 @@ function withStoredCodes(
     levels: [...record.levels, ...stored.levels.filter((l) => !ids.has(l.id))],
   };
 }
+
+/** Said when AR is asked for while the draft is undecided. */
+export const DRAFT_DECIDE_BEFORE_AR =
+  "Choose Restore or Delete it for the unsaved work first - AR starts after that.";
 
 /** The note in AR while a draft is offered and nothing waits. */
 const OFFER_IN_AR =
@@ -364,6 +378,10 @@ export function wireCreatorDraft(deps: {
   let editWaits = false;
   /** A "Delete it" in progress: the offer's buttons are disabled. */
   let discarding = false;
+  /** "Delete it"'s own label, put back when it is no longer in progress. */
+  const discardLabel = dom.draftDiscard.textContent;
+  /** The open tour's draft read (`present`): the start of AR waits for it. */
+  let reading: Promise<unknown> = Promise.resolve();
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
   /** The open tour's draft took the page's earlier work: its `present`
@@ -768,8 +786,7 @@ export function wireCreatorDraft(deps: {
     dom.draftOffer.hidden = false;
     // The offer is outside the AR overlay, so a creator whose scan opened
     // the tour mid-session would not see it and would place the same
-    // content again (milestone review #4) - or would not know why a tap
-    // placed nothing.
+    // content again - or would not know why a tap placed nothing.
     if (deps.sessionLive()) {
       // With the superseded line, which this note must not hide.
       ctx.placementNote = [
@@ -788,15 +805,21 @@ export function wireCreatorDraft(deps: {
   }
 
   /** The gate's question (`DraftEditGate.hold`): an edit waits. Before the
-   *  offer is ready (the draft still reading) its words say so once it
-   *  shows. */
+   *  offer is ready (the draft still reading) a note says so, and the
+   *  offer's words say it once it shows. */
   function askAboutEdit(): void {
     editWaits = true;
-    if (offered !== null) showOffer(offered);
+    if (offered !== null) {
+      showOffer(offered);
+      return;
+    }
+    ctx.placementNote = DRAFT_BEING_READ;
+    deps.render();
   }
 
   /** The draft is decided (Restore, or a landed "Delete it"): the offer
-   *  goes and the waiting edits land, in the order they were made. */
+   *  goes and the edits still waiting land, in the order they were made
+   *  (none after a Restore, which dropped them first). */
   function decided(): void {
     dom.draftOffer.hidden = true;
     offered = null;
@@ -804,9 +827,11 @@ export function wireCreatorDraft(deps: {
     gate.release();
   }
 
-  /** "Delete it" in progress: no second answer meanwhile. */
+  /** "Delete it" in progress (async-ui-feedback): no second answer
+   *  meanwhile, and its label says it runs. */
   function setDiscarding(on: boolean): void {
     discarding = on;
+    dom.draftDiscard.textContent = on ? DRAFT_DELETING : discardLabel;
     dom.draftRestore.disabled = on;
     dom.draftDismiss.disabled = on;
     dom.draftDiscard.disabled = on;
@@ -817,6 +842,10 @@ export function wireCreatorDraft(deps: {
     if (waiting === null || discarding) return;
     // Decided: the codes become this page's below (`restoreLevels`).
     if (undecided !== null) undecided.codes = null;
+    // An edit that waited was built from the document before the draft
+    // came back: replayed after it, it would write its old values over the
+    // draft's. Dropped before anything is put back, and the note says so.
+    const dropped = gate.drop();
     // Into the SAME document a live placement changes, so the finish needs
     // no second path: it writes these into the manifest exactly as it
     // writes anything else (an edit of a hosted object replaces it by id),
@@ -846,7 +875,7 @@ export function wireCreatorDraft(deps: {
       writeSideM(dom.sizeInput, waiting.sizeM);
       ctx.activeSizeM = waiting.sizeM;
     }
-    // The draft is the document's now: the edits that waited land on it.
+    // The draft is the document's now; new edits land on it.
     decided();
     // Render them, or the readout says "5 objects placed" over an empty
     // scene and the creator places them again - new ids, real duplicates
@@ -855,11 +884,12 @@ export function wireCreatorDraft(deps: {
     deps.syncPreviews();
     // What was put back, not what was offered: a code measured here kept
     // its place, and a visit already held stayed.
-    ctx.placementNote = restoredText(restored.placed, levelBack, {
+    const back = restoredText(restored.placed, levelBack, {
       changed: restored.changed,
       deleted: restored.deleted,
       visits: visitsBack,
     });
+    ctx.placementNote = dropped > 0 ? `${back} ${DRAFT_EDIT_MAKE_AGAIN}` : back;
     deps.render();
   });
 
@@ -868,10 +898,14 @@ export function wireCreatorDraft(deps: {
     // Declining is NOT deleting: a mis-tap must not become the loss this
     // whole feature exists to prevent. The draft stays undecided: it is
     // offered again next time, and the next edit asks again. An edit that
-    // waited is dropped - it was made over a draft nobody decided on.
+    // waited is dropped - it was made over a draft nobody decided on - and
+    // the creator is told.
     dom.draftOffer.hidden = true;
     editWaits = false;
-    gate.drop();
+    if (gate.drop() > 0) {
+      ctx.placementNote = DRAFT_EDIT_NOT_APPLIED;
+      deps.render();
+    }
   });
 
   dom.draftDiscard.addEventListener("click", () => {
@@ -999,7 +1033,7 @@ export function wireCreatorDraft(deps: {
     // through at the end below.
     editWaits = false;
     gate.hold(askAboutEdit);
-    void (async (): Promise<boolean> => {
+    reading = (async (): Promise<boolean> => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
       if (stale()) return false;
       // Before this page can write to it: no write of this open goes with
@@ -1105,7 +1139,7 @@ export function wireCreatorDraft(deps: {
           .filter((line) => line !== null)
           .join(" ");
         deps.render();
-        // Said once (review #4): the replaced records go.
+        // Said once: the replaced records go.
         for (const id of notLive(superseded.map((o) => o.id))) {
           void writeForObject(store, tourUrl, id, (s) =>
             removeDraftObject(s, id).then(() => true),
@@ -1248,8 +1282,14 @@ export function wireCreatorDraft(deps: {
         // ended with it (`opened`, `closed`, `reset`).
         if (stale()) return;
         caughtUp = true;
-        // Nothing to decide: the edits that waited land, into this store.
-        if (!asked) gate.release();
+        // Nothing to decide: the edits that waited land, into this store,
+        // and a note that the page was reading goes.
+        if (asked) return;
+        if (ctx.placementNote === DRAFT_BEING_READ) {
+          ctx.placementNote = null;
+          deps.render();
+        }
+        gate.release();
       },
       () => {
         // A read that threw offers nothing: the waiting edits must not be
@@ -1259,9 +1299,25 @@ export function wireCreatorDraft(deps: {
     );
   }
 
+  async function readyForAr(): Promise<boolean> {
+    // The read of the tour open now: a tour opened meanwhile has its own.
+    let read: Promise<unknown>;
+    do {
+      read = reading;
+      await read.catch(() => undefined);
+    } while (read !== reading);
+    const waiting = offered;
+    if (waiting === null) return true;
+    showOffer(waiting);
+    ctx.placementNote = DRAFT_DECIDE_BEFORE_AR;
+    deps.render();
+    return false;
+  }
+
   return {
     present,
     forgetRefused,
+    readyForAr,
     reset: () => {
       supersededNote = null;
       unreadNote = null;

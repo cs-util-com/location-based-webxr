@@ -232,6 +232,11 @@ export interface TourViewerHooks {
    *  without a GPS fix (its geo and printed size): a refused location may
    *  then start on it (`ar-entry.ts`). */
   creatorCanStartOnCodes(): boolean;
+  /** A creator's AR entry asks about the open tour's undecided draft
+   *  first: true once it is decided (or there is none), after a draft
+   *  read still running; false shows the question and keeps AR unstarted
+   *  (`creator-draft.ts`'s `readyForAr`). */
+  creatorDraftDecided(): Promise<boolean>;
   /** Present the open tour's link in the print panel (M3's prefill), and
    *  advance the wizard. `origin` says which form the creator submitted
    *  from: an open started in step 4 must not answer by jumping to step 2
@@ -335,6 +340,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     storedCodeVotes: () => null,
     creatorCanStartOnCodes: () => false,
+    creatorDraftDecided: () => Promise.resolve(true),
     presentTourForPrint: () => undefined,
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,

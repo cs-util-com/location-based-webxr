@@ -34,6 +34,7 @@ import {
   FOUNTAIN,
   TOWN_HALL,
   WRAPPED_PIN,
+  deleteOfferedDraft,
   deleteWithUndo,
   editText,
   editorManifest,
@@ -2220,6 +2221,9 @@ test("a Ctrl+S pressed while the last tour's save still ran is not run later, un
   await page.locator("#choose-btn").click();
   await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  // The same tour opened again offers the closed tour's unsaved edit back,
+  // and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(page);
   await page.keyboard.press("Control+s");
   await page.evaluate(() => {
     // @ts-expect-error - set by the held write.
@@ -2305,6 +2309,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's save still ran sav
   await page.locator("#choose-btn").click();
   await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  // The same tour opened again offers the closed tour's unsaved edit back,
+  // and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(page);
   await editText(page, TOWN_HALL, "Saved by Ctrl+S in the second tour");
   await page.keyboard.press("Control+s");
   await page.evaluate(() => {
@@ -2359,6 +2366,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's Ctrl+S save still 
   await page.locator("#choose-btn").click();
   await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  // The same tour opened again offers the closed tour's unsaved edit back,
+  // and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(page);
   await editText(page, TOWN_HALL, "Saved by Ctrl+S in the second tour");
   await page.keyboard.press("Control+s");
   await page.evaluate(() => {
@@ -4282,6 +4292,9 @@ test("a Ctrl+S pressed in a tour opened while the last tour's copy was written s
   await page.locator("#choose-btn").click();
   await page.locator("#start-open").click();
   await expect(page.locator("#tour-file")).toHaveText("second.zip");
+  // The same tour opened again offers the closed tour's unsaved edit back,
+  // and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(page);
   await editText(page, TOWN_HALL, "Saved in the second tour");
   await page.keyboard.press("Control+s");
   await page.evaluate(() => Reflect.get(window, "__releaseWrite")());

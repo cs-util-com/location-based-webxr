@@ -1955,8 +1955,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       if (!(await writeMeta(s))) return fail();
       // The offered settings record goes too: awaited, inside the
       // namespace's work, so "Delete it" is done only once it went, and a
-      // removal that did not land fails it like the meta (M1b-2 milestone
-      // review #4).
+      // removal that did not land fails it like the meta.
       if (was.settings !== undefined && !(await settingsIn(s, null))) {
         return fail();
       }

@@ -35,7 +35,10 @@ since the flows plan M6.
     flows plan's `authorMode`; creator mode runs the author pipeline. The
     pipeline starts before the session is requested, so a start that fails
     (a declined permission prompt) disposes it (`endQrPipeline`): no session
-    end would, and a retry built another on top (2026-10-07).
+    end would, and a retry built another on top (2026-10-07). Before it,
+    creator mode awaits `hooks.creatorDraftDecided()`: false (the open
+    tour's draft is still undecided, its offer shown again) returns with
+    AR unstarted and no pipeline built.
   - `locationGate` (from `visitor-screen.ts`, DEC-N2): while `pending()`,
     a tap requests the location and returns without starting a session;
     the button reads "Allow location" through `arButtonView`.
