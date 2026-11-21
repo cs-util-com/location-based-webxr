@@ -42,18 +42,23 @@ afterEach(() => {
   document.body.textContent = "";
 });
 
-function mount(store = storeAt(4), isPhone = false) {
+function mount(
+  store = storeAt(4),
+  isPhone = false,
+  decode?: (blob: Blob) => Promise<CanvasImageSource>,
+) {
   const root = document.createElement("div");
   document.body.append(root);
   const controller: PageController = {
     store,
-    sides: { previews: new Map() },
+    sides: { previews: new Map(), sharpLooks: new Map() },
     chooseRecording: vi.fn(),
     save: vi.fn(() => Promise.resolve()),
   };
   mounted = mountSplatTrainerPage(root, controller, {
     win: window,
     isPhone,
+    ...(decode === undefined ? {} : { decode }),
   });
   const q = <T extends HTMLElement = HTMLElement>(sel: string): T => {
     const el = root.querySelector<T>(sel);
@@ -236,6 +241,66 @@ describe("the closer look", () => {
     q<HTMLButtonElement>('[data-act="next"]').click();
     expect(word()).toBe("Still training");
     expect(q<HTMLButtonElement>('[data-act="next"]').disabled).toBe(true);
+  });
+
+  /** A finished first stretch with a small look and a sharp copy kept,
+   *  canvases that record what they draw, and a decode the test answers. */
+  function finishedWithSharpCopy() {
+    const painted: unknown[] = [];
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      fillRect() {},
+      drawImage: (p: unknown) => painted.push(p),
+    } as unknown as CanvasRenderingContext2D);
+    let answer: (p: CanvasImageSource) => void = () => {};
+    const decode = vi.fn(
+      () =>
+        new Promise<CanvasImageSource>((resolve) => {
+          answer = resolve;
+        }),
+    );
+    const h = mount(storeAt(2), false, decode);
+    h.store.dispatch(A.trainingStarted());
+    finishCurrent(h.store, "good");
+    const small = { width: 480, height: 360 } as unknown as CanvasImageSource;
+    const blob = new Blob(["jpeg"]);
+    h.controller.sides.previews.set("w0", small);
+    h.controller.sides.sharpLooks.set("w0", blob);
+    printOf(h.root, 1)
+      ?.querySelector<HTMLButtonElement>(".print-frame")
+      ?.click();
+    const sharp = { close: vi.fn() };
+    const land = async () => {
+      answer(sharp as unknown as CanvasImageSource);
+      await Promise.resolve();
+      await Promise.resolve();
+    };
+    return { ...h, painted, decode, small, blob, sharp, land };
+  }
+
+  // Why: the loupe draws at 1200 px, and the tile's 480 px picture looked
+  // soft there. It decodes the sharp copy while it is open, shows the
+  // small picture until then, and lets the copy go when it closes.
+  it("shows the sharp copy in the loupe and lets it go on close", async () => {
+    const h = finishedWithSharpCopy();
+    expect(h.decode).toHaveBeenCalledWith(h.blob);
+    expect(h.painted.at(-1)).toBe(h.small);
+    await h.land();
+    expect(h.painted.at(-1)).toBe(h.sharp);
+    expect(h.sharp.close).not.toHaveBeenCalled();
+    h.q<HTMLButtonElement>('[data-act="close"]').click();
+    expect(h.sharp.close).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
+  });
+
+  // Why: a decode that lands after the loupe closed belongs to no one;
+  // kept, its pixels would stay held for the rest of the session.
+  it("closes a sharp copy that arrives after the loupe closed", async () => {
+    const h = finishedWithSharpCopy();
+    h.q<HTMLButtonElement>('[data-act="close"]').click();
+    await h.land();
+    expect(h.sharp.close).toHaveBeenCalledTimes(1);
+    expect(h.painted).not.toContain(h.sharp);
+    vi.restoreAllMocks();
   });
 
   it("names a stretch queued to train again Waiting, never Still training", () => {
