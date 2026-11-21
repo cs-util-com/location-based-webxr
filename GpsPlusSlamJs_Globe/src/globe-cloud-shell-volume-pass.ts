@@ -30,9 +30,9 @@
  *   at the cloud, and the zenith sky as ambient from a small table of the
  *   framework's CPU sky by the sun's cosine (`globe-cloud-shell-light.ts`).
  * - **The mix** with the slab: the slab drawn into its own target at its
- *   full share, then ONE composite of both, premultiplied and weighted
- *   (the shell 1 - the slab's share, the slab its share): mixed, never
- *   stacked, so the hand-over keeps the opacity.
+ *   full share, then ONE composite of both (`globe-cloud-composite.ts`),
+ *   premultiplied and weighted (the shell 1 - the slab's share, the slab
+ *   its share): mixed, never stacked, so the hand-over keeps the opacity.
  *
  * @see globe-cloud-shell-volume-pass.ts.md
  */
@@ -62,9 +62,8 @@ import {
 import type { SkyAtmosphere } from "gps-plus-slam-app-framework/visualization/atmosphere/sky-atmosphere";
 
 import type { GlobeAtmosphere } from "./globe-atmosphere.js";
+import { createGlobeCloudComposite } from "./globe-cloud-composite.js";
 import { GLOBE_CLOUD_FILTER_GLSL } from "./globe-cloud-filter.js";
-import { CLOUD_AIR_GLSL } from "./globe-cloud-march-glsl.js";
-import type { CloudAirUniforms } from "./globe-cloud-march-pass.js";
 import { ZENITH_MU, ZENITH_TABLE } from "./globe-cloud-shell-light.js";
 import {
   CLOUD_HIGH_LAYER,
@@ -471,153 +470,6 @@ void main() {
   gl_FragColor = vec4( lit * outAlpha, outAlpha + ( 1.0 - outAlpha ) * shadow );
 }`;
 
-const COMPOSITE_VERTEX = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = position.xy * 0.5 + 0.5;
-  gl_Position = vec4( position.xy, 0.0, 1.0 );
-}`;
-
-/**
- * The mix: the shell and the slab premultiplied, each by its weight, never
- * one over the other; then straight colour, three's tone mapping and colour
- * space, and the alpha blended over the frame (the slab's own composite).
- *
- * Behind the near clouds, by their share, their air: at full resolution
- * here, so it has no fringe at a silhouette. To the drawn relief or the
- * sphere it scatters over the frame; past them it is the sky, opaque by day
- * and clear of the stars at night. Where no depth tells what is drawn it
- * stays off the sky, so it never paints over a building.
- */
-const COMPOSITE_FRAGMENT = /* glsl */ `
-uniform float uH;
-uniform vec3 uFwd, uRight, uUp;
-uniform vec2 uTan;
-uniform vec3 uSun;
-uniform vec3 uSunCol;
-${CLOUD_AIR_GLSL}
-uniform sampler2D uSceneDepth;
-uniform mat4 uSceneInverseProjection;
-uniform float uSceneDepthOn;
-uniform float uAirOn;
-uniform sampler2D tShell;
-uniform sampler2D tSlab;
-uniform float uShellWeight;
-uniform float uSlabWeight;
-// The shell's ground shadow, drawn on its own (the cloud-shadows plan M1).
-uniform sampler2D tShadow;
-uniform float uShadowOn;
-// The high layer (round-5 plan §11, A): on, and in front (from above).
-uniform sampler2D tHigh;
-uniform float uHighOn;
-uniform float uHighInFront;
-// The near clouds: drawn into a share of their target, read through a tent
-// of four taps (one cloud pixel per canvas pixel would show the march's
-// grain), mixed with the old clouds by one weight, never stacked.
-uniform sampler2D tNear;
-uniform sampler2D tNearShadow;
-uniform float uNearWeight;
-uniform float uNearShadowOn;
-uniform float uShadowWeight;
-uniform vec2 uNearUv;
-uniform vec2 uNearRes;
-uniform float uNearTap;
-uniform float uNearGain;
-varying vec2 vUv;
-vec4 nearTap( vec2 c ) {
-  vec2 h = 0.5 / uNearRes;
-  return texture2D( tNear, clamp( c, h, uNearUv - h ) );
-}
-vec4 nearAt( vec2 uv ) {
-  vec2 c = uv * uNearUv;
-  vec2 o = uNearTap / uNearRes;
-  return 0.25 * ( nearTap( c + o ) + nearTap( c - o ) + nearTap( c + vec2( o.x, -o.y ) ) + nearTap( c + vec2( -o.x, o.y ) ) );
-}
-vec4 airAt( vec2 uv ) {
-  vec2 n = uv * 2.0 - 1.0;
-  vec3 d = normalize( uFwd + n.x * uTan.x * uRight + n.y * uTan.y * uUp );
-  float t = hitDown( d.y, max( uH, 0.0 ), 0.0 );
-  if ( uSceneDepthOn > 0.5 ) {
-    float z = texture2D( uSceneDepth, uv ).r;
-    if ( z < 1.0 ) {
-      vec4 v = uSceneInverseProjection * vec4( n, z * 2.0 - 1.0, 1.0 );
-      float scene = length( v.xyz / v.w ) * 0.001;
-      t = t >= 0.0 ? min( t, scene ) : scene;
-    }
-  }
-  float cosSun = dot( d, uSun );
-  float angle = acos( clamp( cosSun, -1.0, 1.0 ) );
-  vec3 ins, tr;
-  vec4 air;
-  if ( t >= 0.0 ) {
-    vec3 p = d * t;
-    segTo( d, p, max( altOf( p ), 0.0 ), ins, tr );
-    air = vec4( ins, 1.0 - dot( tr, vec3( 1.0 / 3.0 ) ) );
-  } else if ( uSceneDepthOn > 0.5 ) {
-    ins = skyRad( uH, d, tr ) + ESUN * tr * ( 1.0 - smoothstep( 0.0055, 0.0072, angle ) ) * 400.0;
-    air = vec4( ins, 1.0 - exp( -dot( ins, vec3( 0.2126, 0.7152, 0.0722 ) ) * 8.0 ) );
-  } else {
-    return vec4( 0.0 );
-  }
-  if ( cosSun > 0.825 ) {
-    float glow = 1.4 * exp( -angle * 90.0 ) + 0.1 * exp( -angle * 14.0 );
-    air.rgb += ESUN * sunTrans( max( uH, 0.0 ) ) * glow * vec3( 1.0, 0.97, 0.9 );
-  }
-  return air;
-}
-void main() {
-  vec4 shell = texture2D( tShell, vUv );
-  vec4 c = uShellWeight * shell;
-  if ( uSlabWeight > 0.0 ) {
-    // Per pixel (R4d review, finding 1; round 5): the shell gives up the
-    // slab's share only of the cloud the slab draws here, r = the slab's
-    // alpha over the shell's (1 where the shell draws none), so where the
-    // slab draws less (its fade ring, beyond its disc, a clear patch) the
-    // shell fills it. Twin: cloudShellPixelWeight.
-    vec4 slab = texture2D( tSlab, vUv );
-    float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
-    c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
-  }
-  if ( uNearWeight > 0.0 ) {
-    vec4 near = nearAt( vUv );
-    near.rgb *= uNearGain;
-    c = ( 1.0 - uNearWeight ) * c + uNearWeight * near;
-  }
-  float cloud = min( c.a, 1.0 );
-  // The ground shadow under both clouds (the cloud-shadows plan M1): in the
-  // shell's own alpha the slab's per-pixel share took it with the shell's
-  // clouds, and below the slab's ceiling the ground lost its shadows (an
-  // 0.12 share of shadowed points in the target, none on the screen at
-  // 5 km, measured). Black, under the mix.
-  if ( uShadowOn > 0.5 ) {
-    c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * uShadowWeight * texture2D( tShadow, vUv ).a;
-  }
-  if ( uNearShadowOn > 0.5 ) {
-    c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * uNearWeight * texture2D( tNearShadow, clamp( vUv * uNearUv, 0.5 / uNearRes, uNearUv - 0.5 / uNearRes ) ).a;
-  }
-  if ( uHighOn > 0.5 ) {
-    // Premultiplied over (twin of cloudLayerOver), its order by height.
-    vec4 high = texture2D( tHigh, vUv );
-    c.a = min( c.a, 1.0 );
-    c = uHighInFront > 0.5 ? high + ( 1.0 - high.a ) * c : c + ( 1.0 - c.a ) * high;
-    cloud += ( 1.0 - cloud ) * min( high.a, 1.0 );
-  }
-  if ( uAirOn > 0.5 ) {
-    // Over the ground's shadow, under the clouds.
-    vec4 air = uNearWeight * airAt( vUv );
-    c.rgb += ( 1.0 - cloud ) * air.rgb * uNearGain;
-    c.a = min( c.a, 1.0 );
-    c.a += ( 1.0 - c.a ) * air.a;
-  }
-  if ( c.a < 1e-4 ) discard;
-  gl_FragColor = vec4( c.rgb / c.a, 1.0 );
-  #include <tonemapping_fragment>
-  #include <colorspace_fragment>
-  gl_FragColor.a = min( c.a, 1.0 );
-}`;
-
 /** A full-screen triangle with `material`, in its own scene. */
 function fullScreen(material: THREE.Material): {
   scene: THREE.Scene;
@@ -798,30 +650,6 @@ interface CloudShellVolumeRenderOptions {
   disc?: CloudShellSlabDisc | null;
   /** How much of the slab's flat deck the shell takes (C4; default 1). */
   flatten?: number;
-  /** The near clouds, or null (default). */
-  near?: CloudShellNearMix | null;
-}
-
-/** The near clouds as the composite mixes them. */
-export interface CloudShellNearMix {
-  /** Premultiplied radiance, opacity in alpha. */
-  texture: THREE.Texture;
-  /** Their ground shadow, in alpha. */
-  shadowTexture: THREE.Texture;
-  /** The share of the textures this frame drew. */
-  uv: THREE.Vector2;
-  /** The size of the textures (pixels). */
-  resolution: THREE.Vector2;
-  /** The tent's reach (cloud pixels). */
-  tapPixels: number;
-  /** Their share, 0-1. At 1 the shell's own deck and shadow are not drawn. */
-  weight: number;
-  /** Their shadow was drawn this frame. */
-  shadow: boolean;
-  /** The march's frame, for the air behind them. */
-  air: CloudAirUniforms;
-  /** Their and the air's share of the camera's exposure (`nearCloudsGain`). */
-  gain: number;
 }
 
 /** Which of the pass's targets `alphaGrid` reads. */
@@ -1039,46 +867,12 @@ export function createGlobeCloudShellVolume(
   const highTarget = halfFloatTarget();
   /** The shell's ground shadow, alone (the cloud-shadows plan M1). */
   const shadowTarget = halfFloatTarget();
-  const compositeUniforms = {
-    tShell: { value: target.texture },
-    tShadow: { value: shadowTarget.texture },
-    uShadowOn: { value: 0 },
-    tSlab: { value: null as THREE.Texture | null },
-    uShellWeight: { value: 0 },
-    uSlabWeight: { value: 0 },
-    tHigh: { value: highTarget.texture },
-    uHighOn: { value: 0 },
-    uHighInFront: { value: 0 },
-    tNear: { value: null as THREE.Texture | null },
-    tNearShadow: { value: null as THREE.Texture | null },
-    uNearWeight: { value: 0 },
-    uNearShadowOn: { value: 0 },
-    uShadowWeight: { value: 1 },
-    uAirOn: { value: 0 },
-    uH: { value: 0 },
-    uFwd: { value: new THREE.Vector3() },
-    uRight: { value: new THREE.Vector3() },
-    uUp: { value: new THREE.Vector3() },
-    uTan: { value: new THREE.Vector2(1, 1) },
-    uSun: { value: new THREE.Vector3(0, 1, 0) },
-    uSunCol: { value: new THREE.Vector3() },
-    uSceneDepth: { value: null as THREE.Texture | null },
-    uSceneInverseProjection: { value: new THREE.Matrix4() },
-    uSceneDepthOn: { value: 0 },
-    uNearUv: { value: new THREE.Vector2(1, 1) },
-    uNearRes: { value: new THREE.Vector2(1, 1) },
-    uNearTap: { value: 0.5 },
-    uNearGain: { value: 1 },
-  };
-  const composite = new THREE.ShaderMaterial({
-    uniforms: compositeUniforms,
-    vertexShader: COMPOSITE_VERTEX,
-    fragmentShader: COMPOSITE_FRAGMENT,
-    depthTest: false,
-    depthWrite: false,
-    transparent: true,
+  const composite = createGlobeCloudComposite({
+    shell: target.texture,
+    shadow: shadowTarget.texture,
+    high: highTarget.texture,
   });
-  const compositeQuad = fullScreen(composite);
+  const compositeQuad = fullScreen(composite.material);
   const quadCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   const ecefFromWorld = new THREE.Matrix4();
   const rotation = new THREE.Matrix3();
@@ -1311,22 +1105,19 @@ export function createGlobeCloudShellVolume(
   /**
    * The march into its target (the shadow 0), the shadow alone into its
    * own, the high layer into its own; each cleared to alpha 0, the clear
-   * colour and the render target put back. With `deck` false only the high
-   * layer: the near clouds draw the whole deck.
+   * colour and the render target put back.
    */
-  const marchTargets = (deck: boolean) => {
+  const marchTargets = () => {
     const previous = renderer.getRenderTarget();
     renderer.getClearColor(clearColour);
     const clearAlpha = renderer.getClearAlpha();
     renderer.setClearColor(0x000000, 0);
     uniforms.uShadow.value = 0;
-    if (deck) {
-      renderer.setRenderTarget(target);
-      renderer.clear(true, false, false);
-      renderer.render(march.scene, quadCamera);
-    }
+    renderer.setRenderTarget(target);
+    renderer.clear(true, false, false);
+    renderer.render(march.scene, quadCamera);
     // The shadow alone, one column per pixel, into its own target.
-    if (deck && shadowStrength > 0) {
+    if (shadowStrength > 0) {
       renderer.setRenderTarget(shadowTarget);
       renderer.clear(true, false, false);
       uniforms.uShadow.value = shadowStrength;
@@ -1347,60 +1138,16 @@ export function createGlobeCloudShellVolume(
   /** On, framed and weighing something this frame. */
   const drawable = () => enabled && framed && (weight > 0 || slabWeight > 0);
 
-  /** The composite's switches for the shell's own layers. */
-  const applyShellSwitches = (nearWeight: number) => {
-    const deck = nearWeight < 1;
-    // The high layer at full strength wherever the shell draws (not handed
-    // to the slab), in front of the clouds from above its middle and
-    // behind them from below (premultiplied over, cloudLayerOver).
-    compositeUniforms.uHighOn.value = high !== null && shellIn > 0 ? 1 : 0;
-    compositeUniforms.uShadowOn.value =
-      deck && shadowStrength > 0 && shellIn > 0 ? 1 : 0;
-    compositeUniforms.uHighInFront.value =
-      high !== null && cameraKm > high.altitudeKm ? 1 : 0;
-    // The shell's own fade-in; the composite weighs it per pixel by what
-    // the slab draws (`cloudShellPixelWeight`).
-    compositeUniforms.uShellWeight.value = deck ? shellIn : 0;
-    compositeUniforms.uShadowWeight.value = 1 - nearWeight;
-  };
-
-  /** The near clouds' share of the composite. */
-  const applyNearMix = (near: CloudShellNearMix | null, nearWeight: number) => {
-    compositeUniforms.uNearWeight.value = nearWeight;
-    compositeUniforms.uNearShadowOn.value =
-      near?.shadow === true && nearWeight > 0 ? 1 : 0;
-    compositeUniforms.uAirOn.value = near !== null && nearWeight > 0 ? 1 : 0;
-    if (near === null) return;
-    const { air } = near;
-    compositeUniforms.uH.value = air.uH.value;
-    compositeUniforms.uFwd.value = air.uFwd.value;
-    compositeUniforms.uRight.value = air.uRight.value;
-    compositeUniforms.uUp.value = air.uUp.value;
-    compositeUniforms.uTan.value = air.uTan.value;
-    compositeUniforms.uSun.value = air.uSun.value;
-    compositeUniforms.uSunCol.value = air.uSunCol.value;
-    compositeUniforms.uSceneDepth.value = air.uSceneDepth.value;
-    compositeUniforms.uSceneInverseProjection.value =
-      air.uSceneInverseProjection.value;
-    compositeUniforms.uSceneDepthOn.value = air.uSceneDepthOn.value;
-    compositeUniforms.tNear.value = near.texture;
-    compositeUniforms.tNearShadow.value = near.shadowTexture;
-    compositeUniforms.uNearUv.value = near.uv;
-    compositeUniforms.uNearRes.value = near.resolution;
-    compositeUniforms.uNearTap.value = near.tapPixels;
-    compositeUniforms.uNearGain.value = near.gain;
-  };
-
   /** The composite's switches and weights, then the mix over the frame. */
-  const drawComposite = (
-    slabTexture: THREE.Texture | null,
-    near: CloudShellNearMix | null,
-  ) => {
-    const nearWeight = near?.weight ?? 0;
-    applyShellSwitches(nearWeight);
-    applyNearMix(near, nearWeight);
-    compositeUniforms.tSlab.value = slabTexture;
-    compositeUniforms.uSlabWeight.value = slabTexture === null ? 0 : slabWeight;
+  const drawComposite = (slabTexture: THREE.Texture | null) => {
+    composite.apply({
+      shellIn,
+      shadowStrength,
+      high,
+      cameraKm,
+      slabTexture,
+      slabWeight,
+    });
     renderer.render(compositeQuad.scene, quadCamera);
   };
 
@@ -1450,15 +1197,14 @@ export function createGlobeCloudShellVolume(
       const lut = atmosphere.transmittance();
       if (lut === null) return false;
       const slabTexture = options.slabTexture ?? null;
-      const near = options.near ?? null;
       uniforms.atmTransmittanceLut.value = lut;
       const { h } = fitTargets();
       applyRenderOptions(camera, options);
       // Radians a pixel of the march's target (km of footprint per km).
       uniforms.uPixelAngle.value =
         2 / ((camera.projectionMatrix.elements[5] ?? 1) * h);
-      if (shellIn > 0) marchTargets((near?.weight ?? 0) < 1);
-      drawComposite(slabTexture, near);
+      if (shellIn > 0) marchTargets();
+      drawComposite(slabTexture);
       drawn += 1;
       return true;
     },

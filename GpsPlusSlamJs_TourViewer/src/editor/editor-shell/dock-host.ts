@@ -68,7 +68,7 @@ import {
 
 /** The parts of the view box that move with the 3D view into its panel:
  *  the canvas, the model's notes over it, the map controls, the debug
- *  panel (put in the view box while the 3D view shows, `edit-main.ts`). */
+ *  panel. */
 const VIEW_PARTS = [
   ".view3d-canvas",
   ".model-notes",

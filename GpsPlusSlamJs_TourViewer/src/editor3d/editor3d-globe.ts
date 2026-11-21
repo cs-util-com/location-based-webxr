@@ -86,7 +86,6 @@ import {
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_INTRO,
-  CLOUD_MARCH_LAYER,
   GLOBE_VIEW_CLOUDS,
   globeQualityPixelRatio,
   globeViewClouds,
@@ -342,7 +341,6 @@ export async function openGlobeEditor(
     | "cloudWind"
     | "buildings"
     | "grade"
-    | "clouds"
     | "quality"
   >,
 ): Promise<Editor3dView> {
@@ -447,13 +445,8 @@ export async function openGlobeEditor(
     const coarsePointer =
       window.matchMedia?.("(pointer: coarse)").matches === true;
     const quality = resolveGlobeQuality(knobs.quality, coarsePointer);
-    // The near clouds are experimental (`clouds=new`); the old ones are the
-    // default.
-    const nearClouds = knobs.clouds === "new";
     // Over this height the interface stays under the clouds.
-    const cloudDeckKm = nearClouds
-      ? CLOUD_MARCH_LAYER.topKm
-      : GLOBE_VIEW_CLOUDS.cloudShellKm;
+    const cloudDeckKm = GLOBE_VIEW_CLOUDS.cloudShellKm;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -652,19 +645,6 @@ export async function openGlobeEditor(
         shadow: knobs.cloudShadow,
         // The buildings hide the clouds behind them, as the relief does.
         extra: () => editorCity?.extra() ?? [],
-        ...(nearClouds
-          ? {
-              near: {
-                // A tier named by hand is held; only the default steps down.
-                autoQuality: knobs.quality === null,
-                createWorker: () =>
-                  new Worker(
-                    new URL("./globe-cloud-bake-worker.ts", import.meta.url),
-                    { type: "module" },
-                  ),
-              },
-            }
-          : {}),
       }),
     });
     air = mountedAir;
@@ -1955,6 +1935,17 @@ export async function openGlobeEditor(
             approach: approach?.stats() ?? approachEnded,
             marks: marks.stats(),
             debug: debugLayer.stats(),
+            // The place of the drawn captures' bounds' centre (what
+            // `frameView` aims at for a tour with nothing positioned);
+            // null with none drawn.
+            scanCentre:
+              debugPoints.length === 0
+                ? null
+                : placeOfTour(
+                    new THREE.Box3()
+                      .setFromPoints(debugPoints)
+                      .getCenter(new THREE.Vector3()),
+                  ),
             // The speed streaks as last stepped, and the camera's distance
             // from the Earth's centre against the fit (the start's check).
             dust: dust.state(),

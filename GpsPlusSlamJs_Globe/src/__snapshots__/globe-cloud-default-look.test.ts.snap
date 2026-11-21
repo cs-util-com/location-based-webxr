@@ -1,0 +1,881 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`the default clouds of a globe view > draws the slab and the shell at 3 km as characterized 1`] = `
+{
+  "cloudShellM": 3000,
+  "draws": [
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 1,
+        "uBothSides": 0,
+        "uCells": [
+          1,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.8,
+        "uDeckTopKm": 3.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 1,
+        "uNoiseShare": 1,
+        "uOctaves": 5,
+        "uShadow": 0,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 1,
+        "uBothSides": 0,
+        "uCells": [
+          1,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.8,
+        "uDeckTopKm": 3.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 1,
+        "uNoiseShare": 1,
+        "uOctaves": 5,
+        "uShadow": 0.5,
+        "uShadowPass": 1,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 1,
+        "uCells": [
+          6,
+          6,
+        ],
+        "uCoverGain": 0.35,
+        "uDeckBaseKm": 8.8,
+        "uDeckTopKm": 9.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.3,
+        "uOctaves": 5,
+        "uShadow": 0.5,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "canvas",
+      "kind": "composite",
+      "uniforms": {
+        "uHighInFront": 0,
+        "uHighOn": 1,
+        "uShadowOn": 1,
+        "uShellWeight": 1,
+        "uSlabWeight": 1,
+      },
+    },
+  ],
+  "shell": {
+    "drawn": 1,
+    "share": 1,
+    "slabWeight": 1,
+    "weight": 0,
+  },
+  "shellLaw": {
+    "deckKm": [
+      2.8,
+      3.2,
+    ],
+    "high": {
+      "altitudeKm": 9,
+      "cellScale": 6,
+      "cover": 0.35,
+      "inFront": false,
+      "noiseShare": 0.3,
+      "shadow": 0.5,
+    },
+    "law": {
+      "aerial": 1,
+      "cellMix": 0,
+      "cells": [
+        1,
+        1,
+      ],
+      "marchSteps": 8,
+      "noiseShare": 1,
+      "octaves": 5,
+      "steps": 8,
+      "thicknessScale": 1,
+    },
+  },
+  "slab": [
+    {
+      "enabled": true,
+    },
+    {
+      "shadow": false,
+    },
+    {
+      "noise": "live",
+    },
+    {
+      "fineGain": 0.5,
+    },
+    {
+      "update": {
+        "altitudeKm": 3,
+        "ceilingKm": 40,
+        "cover": 1,
+        "fadeKm": 25,
+        "maxAheadM": 60000,
+        "mixed": true,
+        "radiusKm": 80,
+        "shellHeightM": 3000,
+        "target": {
+          "lat": 0,
+          "lng": 0,
+        },
+      },
+    },
+    {
+      "render": {
+        "composite": false,
+      },
+    },
+  ],
+  "state": {
+    "flat": 0,
+    "on": true,
+    "shellOn": true,
+    "shellShadow": 0.5,
+    "surfaceShadow": 0,
+  },
+  "surfaceShadow": 0,
+}
+`;
+
+exports[`the default clouds of a globe view > draws the slab and the shell at 20 km as characterized 1`] = `
+{
+  "cloudShellM": 3000,
+  "draws": [
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0.719323136,
+        "uBothSides": 0,
+        "uCells": [
+          1,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.8,
+        "uDeckTopKm": 3.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 1,
+        "uNoiseShare": 1,
+        "uOctaves": 5,
+        "uShadow": 0,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0.719323136,
+        "uBothSides": 0,
+        "uCells": [
+          1,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.8,
+        "uDeckTopKm": 3.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 1,
+        "uNoiseShare": 1,
+        "uOctaves": 5,
+        "uShadow": 0.5,
+        "uShadowPass": 1,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 1,
+        "uCells": [
+          6,
+          6,
+        ],
+        "uCoverGain": 0.35,
+        "uDeckBaseKm": 8.8,
+        "uDeckTopKm": 9.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.3,
+        "uOctaves": 5,
+        "uShadow": 0.5,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "canvas",
+      "kind": "composite",
+      "uniforms": {
+        "uHighInFront": 1,
+        "uHighOn": 1,
+        "uShadowOn": 1,
+        "uShellWeight": 1,
+        "uSlabWeight": 0.896,
+      },
+    },
+  ],
+  "shell": {
+    "drawn": 1,
+    "share": 1,
+    "slabWeight": 0.896,
+    "weight": 0.104,
+  },
+  "shellLaw": {
+    "deckKm": [
+      2.8,
+      3.2,
+    ],
+    "high": {
+      "altitudeKm": 9,
+      "cellScale": 6,
+      "cover": 0.35,
+      "inFront": true,
+      "noiseShare": 0.3,
+      "shadow": 0.5,
+    },
+    "law": {
+      "aerial": 1,
+      "cellMix": 0,
+      "cells": [
+        1,
+        1,
+      ],
+      "marchSteps": 8,
+      "noiseShare": 1,
+      "octaves": 5,
+      "steps": 8,
+      "thicknessScale": 1,
+    },
+  },
+  "slab": [
+    {
+      "enabled": true,
+    },
+    {
+      "shadow": false,
+    },
+    {
+      "noise": "live",
+    },
+    {
+      "fineGain": 0.5,
+    },
+    {
+      "update": {
+        "altitudeKm": 20,
+        "ceilingKm": 40,
+        "cover": 1,
+        "fadeKm": 25,
+        "maxAheadM": 60000,
+        "mixed": true,
+        "radiusKm": 80,
+        "shellHeightM": 3000,
+        "target": {
+          "lat": 0,
+          "lng": 0,
+        },
+      },
+    },
+    {
+      "render": {
+        "composite": false,
+      },
+    },
+  ],
+  "state": {
+    "flat": 0,
+    "on": true,
+    "shellOn": true,
+    "shellShadow": 0.5,
+    "surfaceShadow": 0,
+  },
+  "surfaceShadow": 0,
+}
+`;
+
+exports[`the default clouds of a globe view > draws the slab and the shell at 60 km as characterized 1`] = `
+{
+  "cloudShellM": 3000,
+  "draws": [
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          1.587401052,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.768314718,
+        "uDeckTopKm": 3.231685282,
+        "uFieldWeights": [
+          0.5519760395,
+          0.8338599713,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.9352999174,
+        "uOctaves": 4.841573588,
+        "uShadow": 0,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1.158426412,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          1.587401052,
+          1,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.768314718,
+        "uDeckTopKm": 3.231685282,
+        "uFieldWeights": [
+          0.5519760395,
+          0.8338599713,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.9352999174,
+        "uOctaves": 4.841573588,
+        "uShadow": 0.5,
+        "uShadowPass": 1,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1.158426412,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 1,
+        "uCells": [
+          6,
+          6,
+        ],
+        "uCoverGain": 0.35,
+        "uDeckBaseKm": 8.8,
+        "uDeckTopKm": 9.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.3,
+        "uOctaves": 4.841573588,
+        "uShadow": 0.5,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 8,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "canvas",
+      "kind": "composite",
+      "uniforms": {
+        "uHighInFront": 1,
+        "uHighOn": 1,
+        "uShadowOn": 1,
+        "uShellWeight": 1,
+        "uSlabWeight": 0,
+      },
+    },
+  ],
+  "shell": {
+    "drawn": 1,
+    "share": 1,
+    "slabWeight": 0,
+    "weight": 1,
+  },
+  "shellLaw": {
+    "deckKm": [
+      2.768314718,
+      3.231685282,
+    ],
+    "high": {
+      "altitudeKm": 9,
+      "cellScale": 6,
+      "cover": 0.35,
+      "inFront": true,
+      "noiseShare": 0.3,
+      "shadow": 0.5,
+    },
+    "law": {
+      "aerial": 0.8415735882,
+      "cellMix": 0.8415735882,
+      "cells": [
+        2,
+        1,
+      ],
+      "marchSteps": 8,
+      "noiseShare": 0.9352999174,
+      "octaves": 4.841573588,
+      "steps": 7.683147176,
+      "thicknessScale": 1.158426412,
+    },
+  },
+  "slab": [
+    {
+      "enabled": true,
+    },
+    {
+      "shadow": false,
+    },
+    {
+      "noise": "live",
+    },
+    {
+      "fineGain": 0.5,
+    },
+    {
+      "update": {
+        "altitudeKm": 60,
+        "ceilingKm": 40,
+        "cover": 1,
+        "fadeKm": 25,
+        "maxAheadM": 60000,
+        "mixed": true,
+        "radiusKm": 80,
+        "shellHeightM": 3000,
+        "target": {
+          "lat": 0,
+          "lng": 0,
+        },
+      },
+    },
+    {
+      "render": {
+        "composite": false,
+      },
+    },
+  ],
+  "state": {
+    "flat": 0,
+    "on": true,
+    "shellOn": true,
+    "shellShadow": 0.5,
+    "surfaceShadow": 0,
+  },
+  "surfaceShadow": 0,
+}
+`;
+
+exports[`the default clouds of a globe view > draws the slab and the shell at 120 km as characterized 1`] = `
+{
+  "cloudShellM": 3000,
+  "draws": [
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          2.5198421,
+          1.587401052,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.647653745,
+        "uDeckTopKm": 3.352346255,
+        "uFieldWeights": [
+          0.01354157914,
+          0.9999083086,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.688915024,
+        "uOctaves": 4.238268724,
+        "uShadow": 0,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 6,
+        "uThickness": 1.761731276,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          2.5198421,
+          1.587401052,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.647653745,
+        "uDeckTopKm": 3.352346255,
+        "uFieldWeights": [
+          0.01354157914,
+          0.9999083086,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.688915024,
+        "uOctaves": 4.238268724,
+        "uShadow": 0.5,
+        "uShadowPass": 1,
+        "uShellIn": 1,
+        "uSteps": 6,
+        "uThickness": 1.761731276,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 1,
+        "uCells": [
+          6,
+          6,
+        ],
+        "uCoverGain": 0.35,
+        "uDeckBaseKm": 8.8,
+        "uDeckTopKm": 9.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.3,
+        "uOctaves": 4.238268724,
+        "uShadow": 0.5,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 6,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "canvas",
+      "kind": "composite",
+      "uniforms": {
+        "uHighInFront": 1,
+        "uHighOn": 1,
+        "uShadowOn": 1,
+        "uShellWeight": 1,
+        "uSlabWeight": 0,
+      },
+    },
+  ],
+  "shell": {
+    "drawn": 1,
+    "share": 1,
+    "slabWeight": 0,
+    "weight": 1,
+  },
+  "shellLaw": {
+    "deckKm": [
+      2.647653745,
+      3.352346255,
+    ],
+    "high": {
+      "altitudeKm": 9,
+      "cellScale": 6,
+      "cover": 0.35,
+      "inFront": true,
+      "noiseShare": 0.3,
+      "shadow": 0.5,
+    },
+    "law": {
+      "aerial": 0.2382687235,
+      "cellMix": 0.2382687235,
+      "cells": [
+        2,
+        1,
+      ],
+      "marchSteps": 6,
+      "noiseShare": 0.688915024,
+      "octaves": 4.238268724,
+      "steps": 6.476537447,
+      "thicknessScale": 1.761731276,
+    },
+  },
+  "slab": [
+    {
+      "enabled": true,
+    },
+    {
+      "shadow": false,
+    },
+    {
+      "noise": "live",
+    },
+    {
+      "fineGain": 0.5,
+    },
+    {
+      "update": {
+        "altitudeKm": 120,
+        "ceilingKm": 40,
+        "cover": 1,
+        "fadeKm": 25,
+        "maxAheadM": 60000,
+        "mixed": true,
+        "radiusKm": 80,
+        "shellHeightM": 3000,
+        "target": {
+          "lat": 0,
+          "lng": 0,
+        },
+      },
+    },
+    {
+      "render": {
+        "composite": false,
+      },
+    },
+  ],
+  "state": {
+    "flat": 0,
+    "on": true,
+    "shellOn": true,
+    "shellShadow": 0.5,
+    "surfaceShadow": 0,
+  },
+  "surfaceShadow": 0,
+}
+`;
+
+exports[`the default clouds of a globe view > draws the slab and the shell at 400 km as characterized 1`] = `
+{
+  "cloudShellM": 3000,
+  "draws": [
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          4,
+          2.5198421,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.4,
+        "uDeckTopKm": 3.6,
+        "uFieldWeights": [
+          0.1780724239,
+          0.9840173839,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.4708039892,
+        "uOctaves": 3.5,
+        "uShadow": 0,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 5,
+        "uThickness": 3,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 0,
+        "uCells": [
+          4,
+          2.5198421,
+        ],
+        "uCoverGain": 1,
+        "uDeckBaseKm": 2.4,
+        "uDeckTopKm": 3.6,
+        "uFieldWeights": [
+          0.1780724239,
+          0.9840173839,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.4708039892,
+        "uOctaves": 3.5,
+        "uShadow": 0.5,
+        "uShadowPass": 1,
+        "uShellIn": 1,
+        "uSteps": 5,
+        "uThickness": 3,
+      },
+    },
+    {
+      "into": "target",
+      "kind": "march",
+      "uniforms": {
+        "uAerial": 0,
+        "uBothSides": 1,
+        "uCells": [
+          6,
+          6,
+        ],
+        "uCoverGain": 0.35,
+        "uDeckBaseKm": 8.8,
+        "uDeckTopKm": 9.2,
+        "uFieldWeights": [
+          1,
+          0,
+        ],
+        "uFlatten": 0,
+        "uNoiseShare": 0.3,
+        "uOctaves": 3.5,
+        "uShadow": 0.5,
+        "uShadowPass": 0,
+        "uShellIn": 1,
+        "uSteps": 5,
+        "uThickness": 1,
+      },
+    },
+    {
+      "into": "canvas",
+      "kind": "composite",
+      "uniforms": {
+        "uHighInFront": 1,
+        "uHighOn": 1,
+        "uShadowOn": 1,
+        "uShellWeight": 1,
+        "uSlabWeight": 0,
+      },
+    },
+  ],
+  "shell": {
+    "drawn": 1,
+    "share": 1,
+    "slabWeight": 0,
+    "weight": 1,
+  },
+  "shellLaw": {
+    "deckKm": [
+      2.4,
+      3.6,
+    ],
+    "high": {
+      "altitudeKm": 9,
+      "cellScale": 6,
+      "cover": 0.35,
+      "inFront": true,
+      "noiseShare": 0.3,
+      "shadow": 0.5,
+    },
+    "law": {
+      "aerial": 0,
+      "cellMix": 0.5,
+      "cells": [
+        4,
+        2,
+      ],
+      "marchSteps": 5,
+      "noiseShare": 0.4708039892,
+      "octaves": 3.5,
+      "steps": 5,
+      "thicknessScale": 3,
+    },
+  },
+  "slab": [
+    {
+      "enabled": true,
+    },
+    {
+      "shadow": false,
+    },
+    {
+      "noise": "live",
+    },
+    {
+      "fineGain": 0.5,
+    },
+    {
+      "update": {
+        "altitudeKm": 400,
+        "ceilingKm": 40,
+        "cover": 1,
+        "fadeKm": 25,
+        "maxAheadM": 60000,
+        "mixed": true,
+        "radiusKm": 80,
+        "shellHeightM": 3000,
+        "target": {
+          "lat": 0,
+          "lng": 0,
+        },
+      },
+    },
+    {
+      "render": {
+        "composite": false,
+      },
+    },
+  ],
+  "state": {
+    "flat": 0,
+    "on": true,
+    "shellOn": true,
+    "shellShadow": 0.5,
+    "surfaceShadow": 0,
+  },
+  "surfaceShadow": 0,
+}
+`;

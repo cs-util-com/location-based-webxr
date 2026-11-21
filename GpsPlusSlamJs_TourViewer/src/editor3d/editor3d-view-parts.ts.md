@@ -5,8 +5,9 @@
   with an older 3D view, since removed.
 - Public API:
   - `viewFailure(reason, message)` - an `Error` carrying `reason`
-    (`ViewFailureReason`: `empty`, `webgl`, `chunk`, `context-lost`),
-    which the view switch turns into its line.
+    (`ViewFailureReason`: `webgl`, `chunk`, `context-lost`), which the
+    3D view opener (`editor/view3d-opener.ts`) turns into the reason its
+    cannot-open page says.
   - `createViewRenderer(parameters?)` - a `THREE.WebGLRenderer`
     (`{ antialias: true }` by default), or a `webgl` failure when the
     constructor throws or the context is null (the renderer is then
@@ -18,7 +19,7 @@
 - Examples:
   ```ts
   const renderer = createViewRenderer();
-  throw viewFailure("empty", "the tour has nothing with a position");
+  throw viewFailure("webgl", "no WebGL context");
   ```
 - Tests: `editor3d-view-parts.test.ts` (`drawnCounts`); through the views' e2e (`editor3d.spec.js`, `editor3d-globe.spec.js`:
   a failed open's reason); `createViewRenderer`'s refusal

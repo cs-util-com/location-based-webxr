@@ -18,7 +18,8 @@ what the tour holds is read back from the manifest the page would write.
 - `tourShown(page)` - waits for the start dialog to close (it closes once
   the tour it opened is the editor's) and the cannot-open page to show.
 - `sessionEdit(page, { act, id, args }, expected)` - one session edit
-  through `window.__tourEditor`, then `edited()`; the outcome's kind must
+  through `window.__tourEditor.edit()`, the inspector's own commit path
+  (a delete's Undo offer ended, refresh, autosave told); the outcome's kind must
   be `expected`. `editText(page, id, text)` and `remove(page, id)` are its
   two common forms.
 - `deleteWithUndo(page, id)` - the page's own Delete (`deleteSelection`),
@@ -27,7 +28,10 @@ what the tour holds is read back from the manifest the page would write.
   the tour as a save would write it, an object's text or caption, and an
   object's station place and position.
 - `expectCaption(page, id, caption)` - waits for the tour, then polls
-  `captionOf` (`undefined`: the object is gone).
+  `captionOf`. `GONE` (`null`) is what `captionOf` answers for an
+  object the tour does not hold, apart from `undefined` for one with no
+  caption, so a check that an object is gone cannot pass on one that only
+  lost its text.
 - `setNoGps(page, on)` - the tour's "no GPS" choice through Tour details.
 
 ## Invariants

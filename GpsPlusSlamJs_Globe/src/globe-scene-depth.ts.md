@@ -97,6 +97,6 @@ relief at the horizon below the hand-over).
 `createGlobeSceneDepth(renderer, { carrierShare })` takes the band's
 `uCarrierShare` and holds it at 1 while the relief is drawn, so the depth has
 no dither holes; the value is given back before the method returns. Without it
-the near clouds' shadow and their stop at the ground flip between the relief
+a cloud pass's shadow and its stop at the ground flip between the relief
 and the sea's sphere pixel by pixel inside the band (a dark stipple around
 3.5 km). Covered by `globe-scene-depth.test.ts`.

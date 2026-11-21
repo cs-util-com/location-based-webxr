@@ -1,11 +1,8 @@
 /**
  * Why these tests matter: the desktop page's chrome state moved from
  * module variables into the store, so every view of the page reads one
- * copy. A setter that drops or mangles a field silently changes the 2D
- * page's subtle states - above all the drag guard: a drop recorded for a
- * marker no longer dragged (a stale map event) must not resurrect the
- * drag, and a spot nobody can draw must not become the drop a commit
- * moves the item to.
+ * copy. A setter that drops or mangles a field silently changes what the
+ * page shows: each setter must change only what it names.
  */
 
 import { createEmptyTourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -138,52 +135,22 @@ describe("editorView", () => {
       selected: null,
       openStories: [],
       busy: false,
-      moving: null,
       keepsWalk: false,
       openedWalk: false,
       doneBusy: false,
       undelivered: false,
-      message: null,
       picking: false,
       entryStep: null,
       duplicating: false,
-      viewMode: "2d",
+      view3dShown: false,
       view3dLoad: "idle",
       view3dFailure: null,
       ...SHELL_START,
     });
   });
 
-  it("keeps a drop only for the marker being dragged, and only a drawable spot", () => {
-    let state = reduce(initialEditorViewState, act.moveStarted({ id: "a" }));
-    expect(state.moving).toEqual({ id: "a", drop: null });
-    state = reduce(
-      state,
-      act.moveDropped({ id: "a", drop: { lat: 1, lng: 2 } }),
-    );
-    expect(state.moving).toEqual({ id: "a", drop: { lat: 1, lng: 2 } });
-    // Another marker's late event, and spots nobody can draw: ignored.
-    const after = [
-      act.moveDropped({ id: "b", drop: { lat: 3, lng: 4 } }),
-      act.moveDropped({ id: "a", drop: { lat: Number.NaN, lng: 4 } }),
-      act.moveDropped({ id: "a", drop: { lat: 3, lng: Infinity } }),
-    ].reduce(reduce, state);
-    expect(after.moving).toEqual({ id: "a", drop: { lat: 1, lng: 2 } });
-    const ended = reduce(after, act.moveEnded());
-    expect(ended.moving).toBeNull();
-    // A drop after the drag ended starts nothing.
-    expect(
-      reduce(ended, act.moveDropped({ id: "a", drop: { lat: 1, lng: 2 } }))
-        .moving,
-    ).toBeNull();
-  });
-
   it("sets each flag on its own, leaving the others as they are", () => {
     let state = reduce(initialEditorViewState, act.selected({ id: "x" }));
-    state = reduce(
-      state,
-      act.said({ message: { id: "x", text: "No.", refused: true } }),
-    );
     state = reduce(state, act.busyChanged({ busy: true }));
     state = reduce(state, act.walkChanged({ keepsWalk: true }));
     state = reduce(state, act.walkChanged({ openedWalk: true }));
@@ -195,24 +162,18 @@ describe("editorView", () => {
       selected: "x",
       openStories: [],
       busy: true,
-      moving: null,
       keepsWalk: true,
       openedWalk: true,
       doneBusy: true,
       undelivered: true,
-      message: { id: "x", text: "No.", refused: true },
       picking: true,
       entryStep: null,
       duplicating: true,
-      viewMode: "2d",
+      view3dShown: false,
       view3dLoad: "idle",
       view3dFailure: null,
       ...SHELL_START,
     });
-    // Selecting another item keeps the line: the page clears it itself.
-    expect(reduce(state, act.selected({ id: null })).message).toEqual(
-      state.message,
-    );
   });
 });
 
@@ -239,58 +200,58 @@ describe("createTourViewerStore with extra reducers", () => {
   });
 });
 
-describe("the view switch's state", () => {
+describe("the 3D view's load state", () => {
   // Why: the 3D view loads in three async ways (its chunk, its ground,
-  // WebGL), and the switch must show each state the CLAUDE.md async-UI
-  // rule asks for: loading while it loads, then the 3D view, or the map
-  // again with why. A late answer of a load the creator already left (a
-  // tour opened, the map asked for) must not throw the page into 3D.
-  it("goes from the map to loading to the 3D view and back", () => {
+  // WebGL), and the page must show each state the CLAUDE.md async-UI
+  // rule asks for: loading while it loads, then the 3D view, or its
+  // cannot-open page with why. A late answer of a load already left (the
+  // tour closed, another opening) must not bring the view back.
+  it("goes from loading to the 3D view and closes again", () => {
     let state = reduce(initialEditorViewState, act.view3dRequested());
     expect(state).toMatchObject({
-      viewMode: "2d",
+      view3dShown: false,
       view3dLoad: "loading",
       view3dFailure: null,
     });
     state = reduce(state, act.view3dShown());
-    expect(state).toMatchObject({ viewMode: "3d", view3dLoad: "idle" });
-    state = reduce(state, act.view2dRequested());
+    expect(state).toMatchObject({ view3dShown: true, view3dLoad: "idle" });
+    state = reduce(state, act.view3dClosed());
     expect(state).toMatchObject({
-      viewMode: "2d",
+      view3dShown: false,
       view3dLoad: "idle",
       view3dFailure: null,
     });
   });
 
-  it("lands on the map with the reason when the load fails", () => {
-    for (const reason of ["chunk", "webgl", "empty"] as const) {
+  it("ends with the reason when the load fails", () => {
+    for (const reason of ["chunk", "webgl", "error"] as const) {
       const state = [
         act.view3dRequested(),
         act.view3dFailed({ reason }),
       ].reduce(reduce, initialEditorViewState);
       expect(state).toMatchObject({
-        viewMode: "2d",
+        view3dShown: false,
         view3dLoad: "failed",
         view3dFailure: reason,
       });
     }
   });
 
-  it("falls back to the map when the 3D view loses its context", () => {
+  it("ends with the reason when the shown 3D view loses its context", () => {
     const state = [
       act.view3dRequested(),
       act.view3dShown(),
       act.view3dFailed({ reason: "context-lost" }),
     ].reduce(reduce, initialEditorViewState);
     expect(state).toMatchObject({
-      viewMode: "2d",
+      view3dShown: false,
       view3dLoad: "failed",
       view3dFailure: "context-lost",
     });
   });
 
-  it("ignores a load's late answer once the creator left it", () => {
-    const left = [act.view3dRequested(), act.view2dRequested()].reduce(
+  it("ignores a load's late answer once it was left", () => {
+    const left = [act.view3dRequested(), act.view3dClosed()].reduce(
       reduce,
       initialEditorViewState,
     );
@@ -304,7 +265,7 @@ describe("the view switch's state", () => {
     expect(reduce(loading, act.view3dRequested())).toEqual(loading);
   });
 
-  it("keeps the selection and every other field through the switch", () => {
+  it("keeps the selection and every other field through opens and closes", () => {
     const before = reduce(initialEditorViewState, act.selected({ id: "s" }));
     const after = [
       act.view3dRequested(),
@@ -312,7 +273,7 @@ describe("the view switch's state", () => {
       act.view3dFailed({ reason: "context-lost" }),
       act.view3dRequested(),
       act.view3dShown(),
-      act.view2dRequested(),
+      act.view3dClosed(),
     ].reduce(reduce, before);
     expect(after).toEqual(before);
   });
@@ -402,7 +363,7 @@ describe("the 3D view's shell state", () => {
     expect(reduce(open, tourDocumentActions.closed()).openStations).toEqual([]);
   });
 
-  it("keeps the shell's state through the view switch and a selection", () => {
+  it("keeps the shell's state through an open, a close and a selection", () => {
     const before = [
       act.stationFolded({ id: "a", open: true }),
       act.dockFolded({ dock: "inspector", folded: true }),
@@ -412,7 +373,7 @@ describe("the 3D view's shell state", () => {
       act.view3dRequested(),
       act.view3dShown(),
       act.selected({ id: "station:a" }),
-      act.view2dRequested(),
+      act.view3dClosed(),
       act.selected({ id: null }),
     ].reduce(reduce, before);
     expect(after).toEqual(before);

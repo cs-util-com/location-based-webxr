@@ -148,7 +148,7 @@ to a station, a story's name in the head takes the focus, selected.
 - `createEditorShell(deps)` -> `EditorShell`, made once by `edit-main.ts`:
   - `deps.store` (`ShellStore`: `getState()` with `tourDocument` and
     `editorView`, `subscribe`, `dispatch`);
-  - `deps.select(id)` - the page's selection (the map follows it);
+  - `deps.select(id)` - the page's selection;
   - `deps.step("undo" | "redo")` - one step of the edit history;
   - `deps.codes()` - the open tour's codes (`InspectorCode[]`);
   - `deps.loadPicture(path)` - a picture's bytes from the open tour;
@@ -639,7 +639,7 @@ the view's map tiles listed and Retry reaching the view, the tick
 feeding the Performance tab, and the help's line following the
 selection. The panel's history times come from a subscription the shell
 keeps for the page's life (each step stamped when first seen, so steps
-made on the 2D map are timed too).
+made while the view does not show are timed too).
 
 The lock's click in the page: `editor3d-edit.spec.js`.
 

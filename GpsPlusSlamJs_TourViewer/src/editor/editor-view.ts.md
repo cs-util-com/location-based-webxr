@@ -3,10 +3,9 @@
 ## Purpose
 
 The desktop editor's page state that is not the tour (`editorView`):
-what is selected, whether an edit or an open holds the page, the marker
-being dragged and where it was dropped, the walk's flags, Done's and the
-file picker's in-progress states, the card's last outcome line, and
-whether a save waits to be delivered again. The tour itself is
+what is selected, whether an open holds the page, the walk's flags,
+Done's and the file picker's in-progress states, whether a save waits to
+be delivered again, and the 3D view's load. The tour itself is
 `tourDocument`'s (`../tour-document.ts`); this slice is what the page's
 chrome reads, one copy for every view of the page.
 
@@ -16,8 +15,6 @@ chrome reads, one copy for every view of the page.
   - `selected` - the selected item's id (the model's, `station:<id>` for
     a station), or null;
   - `busy` - an open (or another long step) holds the page's controls;
-  - `moving` - `{ id, drop }`: the marker being dragged and the spot it
-    was last dropped on (null until it moved), or null;
   - `keepsWalk` - the tour was opened to be saved in place: its saves keep
     the walk, even after a refusal turned them into downloads;
   - `openedWalk` - the opened file carries a walk, none of it moved out
@@ -25,8 +22,6 @@ chrome reads, one copy for every view of the page.
   - `doneBusy` - Done is saving before it opens its dialog;
   - `undelivered` - a save the browser did not deliver waits (the save
     itself, with its zip, stays the page's: Blobs are never state);
-  - `message` - `{ id, text, refused? }`: the card's last outcome line,
-    for the item it was said about;
   - `picking` - the browser's file picker is open;
   - `entryStep` - `"opening"` or `"adding-scan"` while a tour given
     with a scan opens and then gets its scan (`editor-entry.ts`), null
@@ -39,13 +34,13 @@ chrome reads, one copy for every view of the page.
   - `duplicating` - a Duplicate is reading its pictures before it
     writes: another one does nothing meanwhile (a second Ctrl+D makes
     no copy);
-  - `viewMode` - `"2d"` (the map) or `"3d"` (the 3D view shows);
+  - `view3dShown` - the 3D view shows;
   - `view3dLoad` - `"idle"`, `"loading"` (the 3D view's code, ground
-    and WebGL are coming) or `"failed"` (the last load failed; the map
-    shows);
+    and WebGL are coming) or `"failed"` (the last load failed; the page
+    that says so shows, `view3d-failed-page.ts`);
   - `view3dFailure` - why the last load or the shown view failed
-    (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `empty`, `error`),
-    or null;
+    (`View3dFailure`: `chunk`, `webgl`, `context-lost`, `error`), or
+    null;
   - `gesture` - `{ id, handle }`: the 3D view's edit under way - a drag
     of a gizmo handle (`move`, `turn`, `dot`) or a held key (`key`) on
     the selection `id` - or null; emptied when a tour is opened or
@@ -77,14 +72,12 @@ chrome reads, one copy for every view of the page.
     `pickingChanged({ picking })`, `entryStepChanged({ step })` (an
     unknown step ignored), `undeliveredChanged({ waits })`,
     `duplicatingChanged({ duplicating })`;
-  - `moveStarted({ id })`, `moveDropped({ id, drop })`, `moveEnded()`;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
-  - `said({ message })` - the card's line, or none;
-  - the view switch's (`view-switch.ts` dispatches them):
+  - the 3D view's opener's (`view3d-opener.ts` dispatches them):
     `view3dRequested()` (loading; nothing while loading or shown),
     `view3dShown()` (only while loading), `view3dFailed({ reason })` (only
-    while loading or shown: back on the map, the reason kept),
-    `view2dRequested()` (the map, idle, no reason);
+    while loading or shown: not shown, the reason kept),
+    `view3dClosed()` (not shown, idle, no reason);
   - the shell's: `storyFolded({ id, open })` keeps `openStories`, the story
     folders unfolded in the tree (folded by default); `stationFolded({ id, open })` (an empty id ignored, no
     id twice), `sectionFolded({ section, open })`,
@@ -129,16 +122,10 @@ chrome reads, one copy for every view of the page.
   there.
 - **Not an edit.** No history, no draft write, no revision: nothing here
   is the tour.
-- **The drag guard.** A drop is kept only for the marker being dragged
-  (a late map event for another, or after the drag ended, changes
-  nothing) and only for a spot with finite coordinates: a commit moves the
-  item to `drop`, so a spot nobody can draw never reaches it.
-- **Setters, not rules.** `selected` does not clear `message`: the page
-  says when a line goes (`select`, an undo, a delivered save), as it did
-  with its module variables. Each action changes only the field it names.
-- **The view switch's fields stay consistent:** `viewMode` is `"3d"`
-  only with `view3dLoad` `"idle"`, a failure only with the map, and no
-  view action touches `selected` or the tour: switching keeps both. A
+- **Setters, not rules.** Each action changes only the field it names.
+- **The 3D view's fields stay consistent:** `view3dShown` only with
+  `view3dLoad` `"idle"`, a failure only while not shown, and no view
+  action touches `selected` or the tour: a load or a close keeps both. A
   late answer (`view3dShown` when no load runs) changes nothing.
 - **Kept out on purpose:** the drag preview and the camera target are
   scene resources, and the set of items moved since the last save
@@ -163,10 +150,8 @@ selectEditorView(store.getState()).moving; // { id: "a", drop: {...} }
 ## Tests
 
 `editor-view.test.ts`: the initial state; a drop kept only for the
-marker being dragged and only for a drawable spot (another marker's late
-event, NaN, Infinity and a drop after the drag ended all ignored); each
-flag set on its own, and `selected` keeping the line; `isEntryIdle` false
-while busy or between an entry's steps; the view switch's
+each flag set on its own; `isEntryIdle` false
+while busy or between an entry's steps; the 3D view's
 fields through each action, and late or doubled actions ignored; the
 shell's folds and layers, with unknown keys, empty ids and
 flags that are not booleans ignored; the unfolded stations emptied when
@@ -175,8 +160,8 @@ beside the shared ones by `createTourViewerStore`, a colliding key
 refused, and the phone's store without it.
 `editor-view.property.test.ts`: any run of the view actions keeps the
 fields consistent and never changes the selection. The page's use of it is
-covered by `playwright-tests/editor.spec.js` (the 2D editor's walks:
-selection, drag, Done, the picker, the walk) and
-`playwright-tests/editor3d.spec.js` (the switch into 3D and back).
+covered by `playwright-tests/editor.spec.js` (the editor's walks:
+selection, Done, the picker, the walk) and
+`playwright-tests/editor3d.spec.js` (the 3D view's loads and failures).
 
 `editor-view.test.ts` also covers the lock: locked by default, unlocked and locked again, listed once, a malformed payload ignored, and every station locked again at an open and a close.

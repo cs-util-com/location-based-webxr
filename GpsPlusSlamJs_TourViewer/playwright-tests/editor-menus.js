@@ -2,8 +2,7 @@
 /**
  * The desktop editor's top-bar menus, as the specs drive them: File's Open,
  * Save, Save a copy, Tour details, Add debug data, Keep the debug data and
- * Share and publish, and View's Top view, Frame, Show debug data and the
- * view switch. Each command opens its menu by its button and clicks its
+ * Share and publish, and View's Top view, Frame and Show debug data. Each command opens its menu by its button and clicks its
  * item, as a creator does - so a spec checks the menus too, and a renamed
  * item is changed here once.
  */
@@ -25,7 +24,6 @@ const VIEW_ITEMS = /** @type {const} */ ({
   top: "#studio-top",
   frame: "#studio-frame",
   debug: "#view-debug",
-  switch: "#view-switch",
 });
 
 /**
@@ -90,16 +88,3 @@ export const publish = (page) => fileCommand(page, "publish");
 
 /** File > Open… (once "Open another tour"). @param {Page} page */
 export const openAnother = (page) => fileCommand(page, "open");
-
-/**
- * Open tours on the 2D map, not in the 3D view (the default): most editor
- * specs work on the map's markers, rail and card. The page reads the flag
- * in its dev build only. Call it before the page loads; it holds for every
- * page of the context.
- * @param {import("@playwright/test").BrowserContext} context
- */
-export async function startOnMap(context) {
-  await context.addInitScript(() => {
-    /** @type {any} */ (window).__tourEditorStartOnMap = true;
-  });
-}

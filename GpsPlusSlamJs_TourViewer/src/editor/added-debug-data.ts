@@ -77,7 +77,7 @@ export interface AddDebugButton {
   busy(): boolean;
 }
 
-/** One add at a time, shown on every button that starts one (the map's
+/** One add at a time, shown on every button that starts one (the debug
  *  panel and the 3D view's top bar). */
 export function createAddDebugButton(
   ...buttons: readonly AddDebugButtonDom[]

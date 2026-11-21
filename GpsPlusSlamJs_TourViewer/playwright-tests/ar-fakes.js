@@ -22,8 +22,10 @@ import { E2E_QR_ARCHIVE, E2E_QR_TEXT } from "./qr-fixture.mjs";
  *   `viewer`: the seams hand the world parts a viewer standing at the last
  *   fix's AR pose (`getViewerCamera`), so a narration circle sees the
  *   visitor inside it and opens its card. A position and a forward look,
- *   not a camera: nothing projects through it, and a narrated text's words
- *   cannot travel from their sign with it (they stay at the bottom).
+ *   not a camera: nothing projects through it. A narrated text whose words
+ *   would travel from its sign (a Reading pick, or the creator's sign)
+ *   would start a travel that fails on every frame, so use it only with
+ *   texts whose words show at the bottom.
  *   `pdfViewer`: the browser shows PDFs itself, so the print PDF opens in a
  *   tab (recorded in `pdfTabs`) instead of being downloaded (M0b).
  *   `printSizeM`: what the print-size estimate reports (QR size consensus

@@ -19,7 +19,7 @@ imports alike).
 - `gps-plus-slam-editor-kit/chrome` (`src/chrome/index.ts`) - the shell
   chrome: DOM only, no three. The menu button and its item states
   (`menu-button`), the key target rules (`key-target`), the page-inert
-  hold (`page-inert`), the popover placement (`popover-place`), the status
+  hold (`page-inert`), the status
   lines (`status-lines`), the ground wait (`ground-wait`), the shell's
   icons (`shell-icons`), the docks' fold rule and its default layout
   (`dock-rule`), the tree's reorder, drag and click rules (`tree-reorder`,

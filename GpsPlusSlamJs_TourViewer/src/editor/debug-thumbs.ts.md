@@ -9,11 +9,11 @@ decoded picture (a blob URL is an imperative resource, not app state).
 
 ## Public API
 
-- `createDebugThumbs(): DebugThumbs`
+- `createDebugThumbs(free = revokeDebugThumbnail): DebugThumbs`
   - `set(image, picture)` - keep the `<img>` of capture `image`; an empty
-    name is ignored.
+    name is ignored; one it replaces is freed.
   - `get(image)` - the thumbnail, or undefined.
-  - `clear()` - forget them all.
+  - `clear()` - free and forget them all.
   - `version()` - a number that changes with every `set` and every
     `clear` of a non-empty table.
   - `size` - how many are kept.
@@ -22,9 +22,10 @@ decoded picture (a blob URL is an imperative resource, not app state).
 
 ## Invariants and assumptions
 
-- Frees nothing: each thumbnail's blob URL is revoked by the map's marker
-  that adopted it (`revokeDebugThumbnail`); a decoded `<img>` stays
-  drawable into a canvas after its URL was revoked.
+- Owns its thumbnails: each one it drops (a clear, a replacement) is
+  freed (`free`, the page's `revokeDebugThumbnail`), so no blob URL
+  outlives its tour; one the layer decoded after a stop never reaches the
+  table and is freed by the layer's `discard`.
 - The page clears it whenever the layer draws anew or clears
   (`edit-main.ts`), so it never outlives its captures.
 - A view polls `version()` once a frame; nothing subscribes.
@@ -40,4 +41,5 @@ if (thumbs.version() !== seen) redrawMissing(thumbs);
 ## Tests
 
 - `debug-thumbs.test.ts` - kept by name, version changes on set and on
-  clear (not on an empty clear), a nameless thumbnail ignored.
+  clear (not on an empty clear), a nameless thumbnail ignored, every
+  dropped thumbnail freed once.
