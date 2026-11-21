@@ -325,6 +325,16 @@ export const TOUR_LOADING_PLACING_LOCKED =
   "Your tour is still opening. You can place once it is open, so nothing is lost.";
 
 /**
+ * What the AR line says once the open tour's content list (tour.json) did
+ * not read: placing stays locked (`creator-placement.ts`), and the finish's
+ * blocked lead speaks only once there is work, so without this line the
+ * creator sees greyed buttons and no reason. Opening the tour again is the
+ * one move that can unlock it.
+ */
+export const TOUR_BROKEN_PLACING_LOCKED =
+  "Your tour's file did not read, so placing stays locked. Open the tour again.";
+
+/**
  * The creator's scan card in AR: look at the tour's printed code first,
  * until this visit has seen it. A later visit's notes are corrected through
  * the code only when the code was seen in that visit; nothing is blocked

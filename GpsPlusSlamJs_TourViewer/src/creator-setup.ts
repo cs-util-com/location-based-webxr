@@ -87,6 +87,7 @@ import {
   CREATOR_SCAN_CARD,
   NO_TOUR_PLACING_LOCKED,
   setupHint,
+  TOUR_BROKEN_PLACING_LOCKED,
   TOUR_LOADING_PLACING_LOCKED,
 } from "./qr-author-mode.js";
 
@@ -771,6 +772,11 @@ export function wireCreatorSetup(deps: {
       // Nor while its content list is still loading (`creator-placement.ts`).
       (ctx.session !== null && ctx.tourManifestStatus === "pending"
         ? `${TOUR_LOADING_PLACING_LOCKED} · `
+        : "") +
+      // Nor once it did not read: with no work held the finish's lead is
+      // silent, so this is the only reason the creator sees.
+      (ctx.session !== null && ctx.tourManifestStatus === "broken"
+        ? `${TOUR_BROKEN_PLACING_LOCKED} · `
         : "") +
       // A stored code ignored as moved: its votes are withdrawn, so a visit
       // it lined up waits for GPS again - say why, as the visitor is told.
