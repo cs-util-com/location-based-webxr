@@ -58,10 +58,13 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-media";
 
 import { driveFileId } from "gps-plus-slam-app-framework/utils/drive-file-id";
-import { isSessionJsonEntryName } from "gps-plus-slam-app-framework/storage/zip-reader";
+import {
+  isActionEntryName,
+  isSessionJsonEntryName,
+  withCappedZipEntries,
+} from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { fileNameFromContentDisposition } from "./content-disposition.js";
-import { isActionEntryName } from "./tour-read-set.js";
 import {
   tourFileKey,
   tourIdFileKey,
@@ -500,26 +503,25 @@ export function tourFileKeyOfFile(
  *  id from its `tour.json` (debug-captures plan, Q-I), else its content
  *  key. A file that is not a zip fails here, in plain words. */
 async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
-  const reader = new ZipReader(
-    new ByteSourceReader(
-      new LocalCacheByteSource(file),
-      limits.maxDirectoryBytes,
-    ),
-  );
   try {
-    const entries = await listZipEntriesCapped(reader, limits.maxEntries);
-    const seriesId = await seriesIdOf(entries, file.size, limits);
-    if (seriesId !== null) return tourSeriesFileKey(seriesId);
-    const tourId = await tourIdOf(entries, file.size, limits);
-    return tourId === null ? await tourFileKey(entries) : tourIdFileKey(tourId);
+    return await withCappedZipEntries(
+      file,
+      async (entries) => {
+        const seriesId = await seriesIdOf(entries, file.size, limits);
+        if (seriesId !== null) return tourSeriesFileKey(seriesId);
+        const tourId = await tourIdOf(entries, file.size, limits);
+        return tourId === null
+          ? await tourFileKey(entries)
+          : tourIdFileKey(tourId);
+      },
+      limits,
+    );
   } catch (err) {
     if (err instanceof ArchiveLimitError) throw err;
     throw new Error(
       `"${file.name}" is not a readable tour zip (${err instanceof Error ? err.message : String(err)}).`,
       { cause: err },
     );
-  } finally {
-    await reader.close();
   }
 }
 

@@ -36,7 +36,8 @@ manifest, manifestEntry, signatureEntry, manifestSha256, records }`.
   (`manifestSha256`, else `hash-mismatch`), the signature was verified at
   tier 1. Throws `unlisted-file` or `hash-mismatch`.
 - (module-private) `checkWholeArchive(blob, limits)` - TIER 3: a
-  complete copy opened through the same capped zip.js path, tier 1 run on
+  complete copy opened through the framework's one capped open
+  (`withCappedZipEntries` under the caller's `limits`), tier 1 run on
   it, then every listed entry hashed. Returns the copy's own tier-1 result.
 - `checkArchiveCopy(blob, limits, integrity): Promise<void>` - TIER 3 on
   demand: `blob` checked as a whole and required to carry the manifest

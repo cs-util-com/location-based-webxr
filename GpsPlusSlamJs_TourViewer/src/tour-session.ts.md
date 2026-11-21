@@ -42,7 +42,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
   editor's draft follows the bytes an in-place save wrote or a download
   made (`editor/editor-draft.ts`), and the phone's the file a Finish
   delivered (`creator-draft.ts` `follow`). Rejects as the open does for a file that is
-  not a readable zip.
+  not a readable zip. Its directory is read by the framework's one capped
+  open (`withCappedZipEntries` of `storage/zip-reader`, under the same
+  `limits`); the session's own open builds its reader itself, because its
+  entries are read lazily for as long as the session lives.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
     (`tour-integrity.ts`): `none` for a tour without `manifest.json`,

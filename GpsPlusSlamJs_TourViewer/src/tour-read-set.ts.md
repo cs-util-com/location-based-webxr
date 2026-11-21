@@ -28,14 +28,12 @@ which a visitor never sees.
     recorded frame (an earlier file's `captureSpots` named some, read as
     the tour's content until M1 of the debug-captures plan; the field is
     gone from the format).
-- `isActionEntryName(name)` - the recording's action stream as the
-  framework's parser reads it (it does not export its rule): an `actions/`
-  path segment, ending `.json`, and not the metadata a macOS re-zip adds
-  (a `__MACOSX/` folder, `._` resource-fork files; neither is JSON; the
-  rule is `isMacOsMetadataName` of `tour-file-key.ts`). The
-  framework's parser holds the same rule. Used by `tour-session.ts` (`hasRecording`),
-  by the splat trainer's reader (`splat-trainer/recording-reader.ts`) and
-  inside `recordingFoldersOf` here.
+- The recording's action stream is the framework parser's own rule,
+  `isActionEntryName` of `gps-plus-slam-app-framework/storage/zip-reader`
+  (an `actions/` path segment, ending `.json`, and not the metadata a
+  macOS re-zip adds), imported here and by `tour-session.ts`
+  (`hasRecording`) and the splat trainer's reader, so no check here can
+  disagree with the parser it guards. This module keeps no copy.
 - `recordingFolderOf(entryNames) -> string` - the folder the action stream
   sits under, with its trailing slash: `""` for a flat zip, `mytour/` for a
   recording re-zipped from its folder. Cut at the `actions/` segment of the
