@@ -39,7 +39,7 @@ editor session keeps what it returns in its one files table
     build. Absent: none may, and the refusal is the plain cap's. Present
     but false for the kind: the refusal adds that this kind cannot be made
     smaller here yet. Either way never above the absolute ceilings:
-    `ASSET_CEILING_BYTES` (512 MiB, `limits.ceilingBytes` overrides it) and
+    `ASSET_CEILING_BYTES` (512 MiB, `limits.ceilingBytes` overrides it; exported, since the model converters cap a whole bundle by it too) and
     `ASSET_CEILING_PIXELS` (8192 x 8192, a 48 MP photo fits), both
     PROVISIONAL until a phone memory measurement sets them; they guard the
     decode against huge files and crafted headers.

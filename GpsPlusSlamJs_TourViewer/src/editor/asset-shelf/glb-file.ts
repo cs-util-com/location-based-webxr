@@ -273,9 +273,21 @@ export function writeGlb(parts: GlbParts): Uint8Array<ArrayBuffer> {
     const first = objectOf((listOf(json, "buffers") ?? [])[0]) ?? {};
     json["buffers"] = [{ ...first, byteLength: bin.length }];
   }
+  return glbContainer(json, views.length === 0 ? null : bin);
+}
+
+/** `json` and `bin` as the bytes of a `.glb`: the JSON chunk padded with
+ *  spaces and, unless `bin` is null, one binary chunk padded with zeros
+ *  to a 4-byte length. Nothing in `json` is checked or changed: the
+ *  caller keeps its buffer views and `buffers[0]` true to `bin`. */
+export function glbContainer(
+  json: GltfObject,
+  bin: Uint8Array | null,
+): Uint8Array<ArrayBuffer> {
   const text = new TextEncoder().encode(JSON.stringify(json));
   const jsonLength = pad4(text.length);
-  const binPart = views.length === 0 ? 0 : 8 + bin.length;
+  const binLength = bin === null ? 0 : pad4(bin.length);
+  const binPart = bin === null ? 0 : 8 + binLength;
   const out = new Uint8Array(12 + 8 + jsonLength + binPart);
   const view = new DataView(out.buffer);
   view.setUint32(0, GLB_MAGIC, true);
@@ -285,9 +297,9 @@ export function writeGlb(parts: GlbParts): Uint8Array<ArrayBuffer> {
   view.setUint32(16, CHUNK_JSON, true);
   out.set(text, 20);
   out.fill(0x20, 20 + text.length, 20 + jsonLength);
-  if (binPart > 0) {
+  if (bin !== null) {
     const at = 20 + jsonLength;
-    view.setUint32(at, bin.length, true);
+    view.setUint32(at, binLength, true);
     view.setUint32(at + 4, CHUNK_BIN, true);
     out.set(bin, at + 8);
   }
