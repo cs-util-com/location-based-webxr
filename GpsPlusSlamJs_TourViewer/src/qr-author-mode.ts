@@ -315,6 +315,16 @@ export const NO_TOUR_PLACING_LOCKED =
   "Point at your hung code: it opens your tour. You can place once it is open, so nothing is lost.";
 
 /**
+ * What the AR line says while a tour is opening: the page has the tour,
+ * but its content list (tour.json) has not arrived, and only that opens
+ * the tour document. Placing IS locked then too (`creator-placement.ts`):
+ * work placed before it would land in no tour and be dropped when the
+ * content list opens.
+ */
+export const TOUR_LOADING_PLACING_LOCKED =
+  "Your tour is still opening. You can place once it is open, so nothing is lost.";
+
+/**
  * The creator's scan card in AR: look at the tour's printed code first,
  * until this visit has seen it. A later visit's notes are corrected through
  * the code only when the code was seen in that visit; nothing is blocked

@@ -477,7 +477,8 @@ export function createCreatorDocument(
     keepPicture: setPicture,
     open(opened) {
       // Nothing comes along: placing is locked while no tour is open
-      // (`creator-placement.ts`), so the empty document holds no work, and
+      // nor while its manifest is still loading (`creator-placement.ts`),
+      // so the empty document holds no work, and
       // another tour's work was dropped at its close.
       reopen(opened ?? noTour);
     },

@@ -540,8 +540,8 @@ export function wireArchiveOpen(deps: {
         manifest: TourManifest | null,
         document: TourManifest | null,
       ) => {
-        // The creator's work made before the manifest settled (or before
-        // any tour opened) comes along (scan-to-open plan §9 #5).
+        // The document opens empty of work: placing waits for this settle
+        // (`creator-placement.ts`), so nothing was made before it.
         ctx.tourDocument.open(document);
         ctx.tourManifestStatus = "settled";
         hooks.presentTourInfo({

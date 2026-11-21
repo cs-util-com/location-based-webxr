@@ -45,12 +45,16 @@ import {
 } from "./draft-persistence.js";
 import { serializeVisitLogEntry, type VisitLogEntry } from "./visit-log.js";
 import {
+  createEmptyTourManifest,
   tourObjectRecord,
   type TourObject,
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ObjectListHandlers } from "./object-list.js";
-import { finishBlockedLead } from "./qr-author-mode.js";
+import {
+  finishBlockedLead,
+  TOUR_LOADING_PLACING_LOCKED,
+} from "./qr-author-mode.js";
 import {
   asHosted,
   stationIdOf,
@@ -1231,6 +1235,39 @@ describe("placing is locked while no tour is open", () => {
     expect(dom.pinButton.disabled).toBe(false);
     expect(ctx.tourDocument.entries()).toHaveLength(1);
   });
+
+  it("stays locked while the open tour's manifest is still loading, and nothing is lost once it settles", async () => {
+    // Why this test matters: the page sets its session before tour.json
+    // has arrived, and only the manifest's settle opens the tour document.
+    // A pin placed in between landed in the "no tour" document, and the
+    // settle's open dropped it without a word. So placing waits for the
+    // manifest too, and the line says why.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    ctx.tourManifestStatus = "pending";
+    setup.renderAuthorReadout();
+
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinButton.disabled).toBe(true);
+    expect(dom.photoButton.disabled).toBe(true);
+    expect(dom.newStationButton.disabled).toBe(true);
+    expect(dom.status.textContent).toContain(TOUR_LOADING_PLACING_LOCKED);
+
+    // The settle, as the page runs it: the document opens, then the status.
+    ctx.tourDocument.open(createEmptyTourManifest());
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(dom.pinButton.disabled).toBe(false);
+    expect(dom.status.textContent).not.toContain(TOUR_LOADING_PLACING_LOCKED);
+    expect(ctx.tourDocument.entries()).toHaveLength(1);
+  });
 });
 
 describe("a placement reaches the draft", () => {
@@ -1710,9 +1747,12 @@ describe("work made before the tour's draft opened reaches it", () => {
     );
   });
 
-  it("asks before leaving when the open tour's tour.json did not read", async () => {
-    // Why: a broken manifest never presents a draft, so a placement made in
-    // that tour lives only in memory - the guard must not count it as kept.
+  it("locks placing when the open tour's tour.json did not read, and asks before leaving with work held", async () => {
+    // Why: a broken manifest never opens the tour document nor presents a
+    // draft, and its finish refuses, so a placement made in that tour could
+    // never be kept: placing stays locked. The leave guard does not lean
+    // on that lock - work held when the manifest reads broken is still
+    // not counted as kept.
     const { store } = memoryStore();
     const { ctx, dom, setup } = wire(store, { placeable: true });
     ctx.session = {
@@ -1721,10 +1761,19 @@ describe("work made before the tour's draft opened reaches it", () => {
       archive: { size: 1 },
     } as never;
     ctx.tourManifestStatus = "broken";
+    setup.renderAuthorReadout();
+    dom.pinLabel.value = "Gate";
+    dom.pinSave.click();
+    await settle();
+    expect(ctx.tourDocument.entries(), "nothing placed").toEqual([]);
+    expect(dom.pinButton.disabled).toBe(true);
+
+    ctx.tourManifestStatus = "settled";
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
     expect(ctx.tourDocument.entries()).toHaveLength(1);
+    ctx.tourManifestStatus = "broken";
     expect(setup.leaveNeedsConfirm()).toBe(true);
   });
 

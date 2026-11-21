@@ -123,7 +123,8 @@ generation, written, appliedDeletions, stationsAtStart })`,
   file without `tour.json` is NOT "no tour": the page opens it as an
   empty manifest of its own (a real, unnamed tour), whose stations the
   HUD, the settle and the write read from the first placement.
-- **`open` carries nothing.** Placing is locked while no tour is open
+- **`open` carries nothing.** Placing is locked while no tour is open,
+  and while an opening tour's manifest is still loading
   (`creator-placement.ts`: only an open tour keeps a draft on this phone),
   so the empty document holds no work when a tour opens; anything of
   another tour was dropped at its `close`, side tables included (M4 review

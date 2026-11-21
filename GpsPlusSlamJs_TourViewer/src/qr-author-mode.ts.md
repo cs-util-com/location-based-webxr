@@ -63,6 +63,12 @@ codeSeen, dismissed })` - the AR visit's first hint, on the creator's
   and the line names the reason and the move that unlocks it.
   `creator-setup.ts` puts it in the line's lead whenever `ctx.session` is
   null; `creator-setup.test.ts` pins that wiring.
+- `TOUR_LOADING_PLACING_LOCKED` - its sibling while a tour is opening (a
+  session, its `tour.json` still loading): "Your tour is still opening.
+  You can place once it is open, so nothing is lost." Placing is locked
+  then too, since only the manifest's settle opens the tour document.
+  `creator-setup.ts` leads with it while `ctx.tourManifestStatus` is
+  `pending`.
 - `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
   line that says a code correction was refused (M2c review #2): "Code seen
   N m from its saved position" (or "turned N°" when only the yaw broke the
