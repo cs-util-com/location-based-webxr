@@ -91,17 +91,27 @@ export const START_LABELS = {
   opened: "Saved and opened",
   notSaved: "Not saved - tap to try again",
   notOpened: "Saved, but it did not open - tap to try again",
+  cancelled: "Saved - the tour you have open stays open",
+  alreadyOpen: "A tour is already open on this phone",
   failed: "Could not save the tour file - tap to try again",
 } as const;
 
-export type StartOutcome = "opened" | "not-saved" | "not-opened" | "failed";
+export type StartOutcome =
+  | "opened"
+  | "not-saved"
+  | "not-opened"
+  | "cancelled"
+  | "already-open"
+  | "failed";
 
 /** What "start on this phone" needs: the starter zip, a save that says
- *  whether the creator kept the file, and the page's file open. */
+ *  whether the creator kept the file, the page's file open, and whether a
+ *  tour is open already. */
 export interface StartDeps {
   pack(): Promise<Blob>;
   save(blob: Blob, filename: string): Promise<boolean>;
   open(file: File): Promise<{ kind: string }>;
+  tourOpen(): boolean;
 }
 
 const STARTER_NAME = "tour.zip";
@@ -110,10 +120,14 @@ const STARTER_NAME = "tour.zip";
  * Save the empty starter tour on this phone, then open that same file as
  * the tour. The save comes first: a tour the creator did not keep a file
  * of would hold their work only in the page's backup, so a dismissed save
- * opens nothing. Never rejects.
+ * opens nothing. An open tour is never replaced by an empty one: the open
+ * asks first only while a rebuilt file is unsaved, so pins placed since
+ * would go without a question, and each try would save another empty
+ * file. Never rejects.
  */
 export async function startOnThisPhone(deps: StartDeps): Promise<StartOutcome> {
   try {
+    if (deps.tourOpen()) return "already-open";
     const blob = await deps.pack();
     // The save follows a short await after the tap; packing an empty zip
     // takes milliseconds, well inside the tap's user activation.
@@ -121,6 +135,8 @@ export async function startOnThisPhone(deps: StartDeps): Promise<StartOutcome> {
     if (!saved) return "not-saved";
     const file = new File([blob], STARTER_NAME, { type: "application/zip" });
     const outcome = await deps.open(file);
+    // "cancelled": the creator declined to leave the open tour.
+    if (outcome.kind === "cancelled") return "cancelled";
     return outcome.kind === "opened" ? "opened" : "not-opened";
   } catch {
     return "failed";
@@ -149,12 +165,8 @@ export interface StartQuestionDom {
   /** Done's "Make your code now" block and its button. */
   makeCode: { hidden: Hidden };
   makeCodeButton: Clickable;
-  /** Step 6; its toggle decides whether "Make your code now" shows. */
-  doneStep: {
-    open: boolean;
-    readonly dataset: Record<string, string | undefined>;
-    addEventListener(type: "toggle", fn: () => void): void;
-  };
+  /** Step 6; `data-hosted` tells the page's CSS which file steps show. */
+  doneStep: { readonly dataset: Record<string, string | undefined> };
 }
 
 /** The page's store as the start question reaches it. */
@@ -174,6 +186,8 @@ export function wireStartQuestion(deps: {
   openStep: (step: WizardStep) => void;
   /** `wizard.hosted`: whether the open tour has a link. */
   hosted: () => boolean;
+  /** `wizard.onTourChange`: calls back whenever `hosted()` may change. */
+  onTourChange: (listener: () => void) => void;
   /** The panel changed (the host tiles redraw for "share"). */
   onPanel?: (panel: StartPanel) => void;
   start: StartDeps;
@@ -226,9 +240,8 @@ export function wireStartQuestion(deps: {
     dom.doneStep.dataset.hosted = String(hosted);
     dom.makeCode.hidden = hosted;
   }
-  dom.doneStep.addEventListener("toggle", () => {
-    if (dom.doneStep.open) renderDone();
-  });
+  deps.onTourChange(renderDone);
+  renderDone();
 
   let busy = false;
   dom.startButton.textContent = START_LABELS.idle;
@@ -253,5 +266,7 @@ const OUTCOME_LABEL: Readonly<Record<StartOutcome, string>> = {
   opened: START_LABELS.opened,
   "not-saved": START_LABELS.notSaved,
   "not-opened": START_LABELS.notOpened,
+  cancelled: START_LABELS.cancelled,
+  "already-open": START_LABELS.alreadyOpen,
   failed: START_LABELS.failed,
 };

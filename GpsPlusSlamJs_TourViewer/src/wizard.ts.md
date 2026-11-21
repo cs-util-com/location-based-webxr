@@ -41,6 +41,10 @@ chosen opens `host`, a stored choice opens `link`.
   - `Wizard.hosted()` - whether the open tour came from a link. The map
     (`setup-stations.ts`) marks printing and hanging done only then, and
     step 6 offers "Make your code now" (`start-question.ts`) when not.
+  - `Wizard.onTourChange(listener)` - `listener` runs after every change
+    of the open tour (a creator's `presentTour`, `presentLocalTour`,
+    `presentNoTour`), so a reader of `hosted()` redraws even when no step
+    toggles (a close changes no step).
   - `Wizard.presentLaunchUrl(launchUrl)` re-points the link at the PRINTED
     payload once a code is generated (`launchHrefFromPrintedUrl`: the
     printed URL's query on the viewer's origin), so the tester decodes what

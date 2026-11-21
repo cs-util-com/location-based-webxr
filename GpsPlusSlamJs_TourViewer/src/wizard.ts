@@ -174,6 +174,10 @@ export interface Wizard {
   /** Whether the open tour came from a link: only then can a code be
    *  printed for it. A tour from a file is not, until its link opens. */
   hosted(): boolean;
+  /** Calls `listener` after every change of the open tour (opened from a
+   *  link in creator mode, opened from a file, closed), so a reader of
+   *  `hosted()` can redraw without waiting for a step to toggle. */
+  onTourChange(listener: () => void): void;
 }
 
 /** The launch link for `url`, relative to the page (the landing's `?qr=`
@@ -253,6 +257,8 @@ export function wireWizard(deps: {
   const arSessionActive = deps.arSessionActive ?? (() => false);
   /** The hosted url the remembered step belongs to (set by presentTour). */
   let tourUrl: string | null = null;
+  /** `onTourChange` listeners. */
+  const tourListeners: (() => void)[] = [];
   /** A step opened by `revealStep`, awaiting its own queued `toggle`. */
   let revealed: WizardStep | null = null;
 
@@ -461,6 +467,7 @@ export function wireWizard(deps: {
       // is remembered here (scan-to-open plan §9 #12).
       if (arSessionActive()) remember("measure");
       openStep(remembered(url) ?? options?.prefer ?? "print");
+      tourChanged();
     },
     presentLaunchUrl: (launchUrl) => {
       const href = launchHrefFromPrintedUrl(launchUrl, deps.debug);
@@ -476,10 +483,18 @@ export function wireWizard(deps: {
     },
     presentNoTour: forgetTour,
     hosted: () => tourUrl !== null,
+    onTourChange: (listener) => {
+      tourListeners.push(listener);
+    },
   };
 
   function forgetTour(): void {
     tourUrl = null;
     dom.visitorLink.hidden = true;
+    tourChanged();
+  }
+
+  function tourChanged(): void {
+    for (const listener of tourListeners) listener();
   }
 }

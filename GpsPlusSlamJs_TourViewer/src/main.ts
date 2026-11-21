@@ -1515,11 +1515,15 @@ if (mode === "creator") {
       wizard.openStep(step);
     },
     hosted: () => wizard.hosted(),
+    onTourChange: (listener) => {
+      wizard.onTourChange(listener);
+    },
     onPanel: () => hostPicker?.render(),
     start: {
       pack: () => packNewTour(),
       save: (blob, name) => seams.downloadZip(blob, name),
       open: (file) => archive.openFile(file, "measure-step"),
+      tourOpen: () => ctx.session !== null,
     },
   });
 }

@@ -57,6 +57,8 @@ function setup(
     save?: (blob: Blob, name: string) => Promise<boolean>;
     open?: (file: File) => Promise<{ kind: string }>;
     pack?: () => Promise<Blob>;
+    /** Whether a tour is open; the default fake open opens one. */
+    tourOpen?: boolean;
   } = {},
 ) {
   const node = () => new FakeNode();
@@ -86,7 +88,11 @@ function setup(
   const opened: WizardStep[] = [];
   const panels: (StartPanel | null)[] = [];
   const calls: string[] = [];
-  const state = { hosted: options.hosted ?? false };
+  const state = {
+    hosted: options.hosted ?? false,
+    tourOpen: options.tourOpen ?? false,
+  };
+  const tourListeners: (() => void)[] = [];
   const store = configureStore({
     reducer: { startQuestion: startQuestionReducer },
   });
@@ -96,6 +102,9 @@ function setup(
     initial: options.initial ?? null,
     openStep: (step) => opened.push(step),
     hosted: () => state.hosted,
+    onTourChange: (fn) => {
+      tourListeners.push(fn);
+    },
     onPanel: (panel) => panels.push(panel),
     start: {
       pack:
@@ -114,15 +123,32 @@ function setup(
         options.open ??
         ((file) => {
           calls.push(`open ${file.name}`);
+          state.tourOpen = true;
           return Promise.resolve({ kind: "opened" });
         }),
+      tourOpen: () => state.tourOpen,
     },
   });
+  /** The wizard's tour changed (opened, opened from a file, closed). */
+  const tourChanged = (hosted: boolean) => {
+    state.hosted = hosted;
+    for (const fn of tourListeners) fn();
+  };
   const shown = (): StartBlock[] =>
     START_BLOCKS.filter((b) => !dom.blocks[b].hidden);
   // The answer is read from the store, as the host tiles read it.
   const question = { panel: () => selectStartPanel(store.getState()) };
-  return { dom, opened, panels, calls, question, shown, state, store };
+  return {
+    dom,
+    opened,
+    panels,
+    calls,
+    question,
+    shown,
+    state,
+    store,
+    tourChanged,
+  };
 }
 
 describe("panelView", () => {
@@ -228,16 +254,25 @@ describe("Done's 'Make your code now' (start on this phone, share later)", () =>
   // the steps for replacing a file at a link that does not exist.
   it("shows for a tour without a link, and marks the step for the page's CSS", () => {
     const { dom } = setup({ hosted: false });
-    dom.doneStep.open = true;
-    dom.doneStep.fire("toggle");
     expect(dom.makeCode.hidden).toBe(false);
     expect(dom.doneStep.dataset.hosted).toBe("false");
   });
 
   it("stays hidden for a hosted tour", () => {
     const { dom } = setup({ hosted: true });
-    dom.doneStep.open = true;
-    dom.doneStep.fire("toggle");
+    expect(dom.makeCode.hidden).toBe(true);
+    expect(dom.doneStep.dataset.hosted).toBe("true");
+  });
+
+  // Why: a tour that closes while Done stays open changes no step, so a
+  // redraw tied to the step's toggle left the replace-the-hosted-file
+  // steps showing for a page with no tour. Done draws from the tour.
+  it("redraws whenever the tour changes, with no step toggled", () => {
+    const { dom, tourChanged } = setup({ hosted: true });
+    tourChanged(false);
+    expect(dom.makeCode.hidden).toBe(false);
+    expect(dom.doneStep.dataset.hosted).toBe("false");
+    tourChanged(true);
     expect(dom.makeCode.hidden).toBe(true);
     expect(dom.doneStep.dataset.hosted).toBe("true");
   });
@@ -272,6 +307,7 @@ describe("startOnThisPhone", () => {
         openedFile = file;
         return Promise.resolve({ kind: "opened" });
       },
+      tourOpen: () => false,
     });
     expect(outcome).toBe("opened");
     expect(order).toEqual(["pack", "save tour.zip", "open tour.zip"]);
@@ -289,6 +325,7 @@ describe("startOnThisPhone", () => {
         order.push("open");
         return Promise.resolve({ kind: "opened" });
       },
+      tourOpen: () => false,
     });
     expect(outcome).toBe("not-saved");
     expect(order).toEqual([]);
@@ -300,6 +337,7 @@ describe("startOnThisPhone", () => {
         pack: () => Promise.resolve(new Blob(["s"])),
         save: () => Promise.resolve(true),
         open: () => Promise.resolve({ kind: "failed" }),
+        tourOpen: () => false,
       }),
     ).toBe("not-opened");
     expect(
@@ -307,6 +345,7 @@ describe("startOnThisPhone", () => {
         pack: () => Promise.reject(new Error("no zip")),
         save: () => Promise.resolve(true),
         open: () => Promise.resolve({ kind: "opened" }),
+        tourOpen: () => false,
       }),
     ).toBe("failed");
     expect(
@@ -316,8 +355,47 @@ describe("startOnThisPhone", () => {
           throw new Error("picker broke");
         },
         open: () => Promise.resolve({ kind: "opened" }),
+        tourOpen: () => false,
       }),
     ).toBe("failed");
+  });
+
+  // Why: the open replaces whatever tour is open, and the page asks first
+  // only while a rebuilt file is unsaved, so pins placed since would be
+  // lost without a question; and every attempt saves another empty file.
+  // A tour already open is never replaced by an empty one from here.
+  it("refuses while a tour is open: nothing packed, saved or opened", async () => {
+    const order: string[] = [];
+    const outcome = await startOnThisPhone({
+      pack: () => {
+        order.push("pack");
+        return Promise.resolve(new Blob(["s"]));
+      },
+      save: () => {
+        order.push("save");
+        return Promise.resolve(true);
+      },
+      open: () => {
+        order.push("open");
+        return Promise.resolve({ kind: "opened" });
+      },
+      tourOpen: () => true,
+    });
+    expect(outcome).toBe("already-open");
+    expect(order).toEqual([]);
+  });
+
+  // Why: a declined "leave this tour?" is the creator's choice, not a
+  // failure, and must not invite another tap (each saves another file).
+  it("tells a declined open from one that failed", async () => {
+    expect(
+      await startOnThisPhone({
+        pack: () => Promise.resolve(new Blob(["s"])),
+        save: () => Promise.resolve(true),
+        open: () => Promise.resolve({ kind: "cancelled" }),
+        tourOpen: () => false,
+      }),
+    ).toBe("cancelled");
   });
 });
 
@@ -367,5 +445,27 @@ describe("the start button (async-UI rule)", () => {
     unopened.dom.startButton.fire("click");
     await settle();
     expect(unopened.dom.startButton.textContent).toBe(START_LABELS.notOpened);
+
+    const declined = setup({
+      open: () => Promise.resolve({ kind: "cancelled" }),
+    });
+    declined.dom.startButton.fire("click");
+    await settle();
+    expect(declined.dom.startButton.textContent).toBe(START_LABELS.cancelled);
+    expect(START_LABELS.cancelled).not.toMatch(/try again/);
+  });
+
+  // Why: the creator can walk back to this panel after the tour opened;
+  // a second tap used to save another empty file and open it over the
+  // tour, pins and all. It now changes nothing and says why.
+  it("a second tap after the tour opened saves and opens nothing", async () => {
+    const { dom, calls } = setup();
+    dom.startButton.fire("click");
+    await settle();
+    expect(dom.startButton.textContent).toBe(START_LABELS.opened);
+    dom.startButton.fire("click");
+    await settle();
+    expect(calls).toEqual(["pack", "save tour.zip", "open tour.zip"]);
+    expect(dom.startButton.textContent).toBe(START_LABELS.alreadyOpen);
   });
 });

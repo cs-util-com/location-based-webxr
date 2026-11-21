@@ -51,6 +51,22 @@ test("saves the starter tour, opens it here, and Done leads to making the code @
   expect(saved).toEqual([["tour.zip", "download"]]);
   await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
 
+  // Back at "Your file", a second tap must not save another empty file
+  // and open it over the tour that is open.
+  await page.getByTestId("station-link").click();
+  await expect(page.getByTestId("start-here")).toBeVisible();
+  await page.getByTestId("start-here").click();
+  await expect(page.getByTestId("start-here")).toHaveText(
+    "A tour is already open on this phone",
+  );
+  expect(
+    await page.evaluate(
+      () => /** @type {any} */ (window).__tourViewerTest.downloads.length,
+    ),
+  ).toBe(1);
+  await page.getByTestId("station-measure").click();
+  await expect(page.getByTestId("step-measure")).toHaveAttribute("open", "");
+
   // A new tour has no measured code: placing runs on the GPS fix alone.
   await page.getByTestId("enter-ar").click();
   await seedAlignment(page);

@@ -24,14 +24,16 @@ phone.
     already hangs (step 5, where `scan-open.ts` opens the tour from it).
   - `file` - the file open.
   - `later` - "Save the tour file and start".
-- `startOnThisPhone({ pack, save, open })` - packs the empty starter, saves
-  it (`save` resolves whether the creator kept it), and only then opens
-  that same file as the tour. Resolves `opened`, `not-saved` (dismissed:
-  nothing opens), `not-opened` (saved, the open did not succeed) or
-  `failed` (the pack or the save threw). Never rejects.
+- `startOnThisPhone({ pack, save, open, tourOpen })` - packs the empty
+  starter, saves it (`save` resolves whether the creator kept it), and
+  only then opens that same file as the tour. Resolves `opened`,
+  `already-open` (a tour is open: nothing is packed, saved or opened),
+  `not-saved` (dismissed: nothing opens), `cancelled` (saved, the creator
+  declined to leave the open tour), `not-opened` (saved, the open did not
+  succeed) or `failed` (the pack or the save threw). Never rejects.
 - `START_LABELS` - the start button's labels: idle, busy, then one per
   outcome.
-- `wireStartQuestion({ dom, store, initial, openStep, hosted, onPanel?, start })`
+- `wireStartQuestion({ dom, store, initial, openStep, hosted, onTourChange, onPanel?, start })`
   - the answer lives in the page's store (`start-question-slice.ts`,
     which also holds `START_ANSWERS` and `StartPanel`): a tap dispatches
     `startPanelShown`, and step 2 draws whatever the store holds,
@@ -42,8 +44,9 @@ phone.
   - "Start at the code" opens step 5 (`measure`);
   - the start button runs `startOnThisPhone`, busy and disabled while it
     runs, its outcome's label after (async-UI rule);
-  - on each opening of step 6 (`doneStep`'s `toggle`), `makeCode` shows
-    when the open tour has no link (`hosted()` false), and
+  - at wiring and on every change of the open tour (`onTourChange`, the
+    wizard's), `makeCode` shows when the open tour has no link
+    (`hosted()` false), and
     `doneStep.dataset.hosted` tells the page's CSS to hide the replace
     steps and the "uploaded?" question, which speak of a link that does
     not exist yet;
@@ -62,6 +65,11 @@ phone.
   `share`), so it is the store's (`start-question-slice.ts`); it is never
   saved, and a reload starts at the question again (or at `new` for a
   stored host). Which step is open stays the wizard's (`wizard.ts`).
+- **An open tour is never replaced from here.** The page's open asks
+  before leaving a tour only while a rebuilt file is unsaved, so pins
+  placed since would be lost without a question, and each try would save
+  another empty `tour.zip`; so the start button does nothing while a tour
+  is open (`already-open`), a second tap after its own open included.
 - **Save before open.** A dismissed save opens nothing: a tour opened from
   a file the creator did not keep would hold their work only in the page's
   backup. The save runs after a short await (packing an empty zip takes
@@ -80,11 +88,13 @@ const start = wireStartQuestion({
   initial: readTourHost(stepStore) === null ? null : "new",
   openStep: (step) => wizard.openStep(step),
   hosted: () => wizard.hosted(),
+  onTourChange: (listener) => wizard.onTourChange(listener),
   onPanel: () => hostPicker.render(),
   start: {
     pack: () => packNewTour(),
     save: (blob, name) => seams.downloadZip(blob, name),
     open: (file) => archive.openFile(file, "measure-step"),
+    tourOpen: () => ctx.session !== null,
   },
 });
 ```
@@ -95,9 +105,11 @@ const start = wireStartQuestion({
   panel dispatched from elsewhere is drawn; the
   routing as a property (a tap shows its panel, opens step 2, does nothing
   else); the back links; "Start at the code"; Done's "Make your code now"
-  for a tour with and without a link and its route to `share`; save before
-  open, a dismissed save opening nothing, the failures; the start button's
-  async labels.
+  for a tour with and without a link, redrawn on a tour change, and its
+  route to `share`; save before open, a dismissed save opening nothing,
+  the failures, a declined open told from a failed one, nothing done
+  while a tour is open; the start button's async labels and a second tap
+  after its own open.
 - `playwright-tests/setup-flow.spec.js` - the question and its routes in
   the real page; `playwright-tests/start-later.spec.js` - "Start on this
   phone now" saves `tour.zip` and opens it at step 5.

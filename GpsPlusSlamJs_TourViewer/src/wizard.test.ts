@@ -818,6 +818,25 @@ describe("a tour opened from a file (setup round 2, the start question)", () => 
     expect(store.get(wizardStepKey("https://h/t.zip"))).toBe("print");
   });
 
+  // Why this matters: Done draws its file steps from `hosted()`, and a
+  // tour that closes changes no step, so a reader redrawing on a step's
+  // toggle went stale. Every change of the open tour calls back.
+  it("calls back on every change of the open tour, a close included", () => {
+    const { dom } = fakeDom();
+    const wizard = wireWizard({
+      mode: "creator",
+      dom,
+      packStarter: () => Promise.resolve(new Blob()),
+      download: savedDownload,
+    });
+    const seen: boolean[] = [];
+    wizard.onTourChange(() => seen.push(wizard.hosted()));
+    wizard.presentTour("https://h/t.zip");
+    wizard.presentNoTour();
+    wizard.presentLocalTour("measure");
+    expect(seen).toEqual([true, false, false]);
+  });
+
   it("opens nothing on a visitor page", () => {
     const { dom } = fakeDom();
     const wizard = wireWizard({
