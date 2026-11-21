@@ -277,6 +277,19 @@ appliedDeletions, stationsAtStart, inPlaceAt? })`, `saveEnded({ generation, erro
   `saveReleased({ error? })`, `saveQueued({ queued })`,
   `saveBuilt()`, `saveDelivered({ inPlace, name })`, `saveLimited({
 largeTour?, cannotSave? })`.
+- The phone's Finish on the same slot (`creator-finish.ts`, through
+  `creator-document.ts`): it claims the slot as `"explicit"`, reports
+  `saveProgressed({ progress })` (`{ kind: "reading", bytes }`, then
+  `{ kind: "rebuilding", done, total }`; ignored while nobody holds the
+  slot and for the value already held, so a duplicate final count wakes
+  no subscriber), and releases it. `save.progress` is cleared by every
+  claim and by the release, and kept with the slot across `opened` and
+  `closed`. `finishWaitsChanged({ waits })` sets `save.finishWaits`, the
+  phone's Done waiting for the code being measured: its own field, not
+  `queued` (the desktop's Save behind the autosave); it never changes
+  `status`, and like the slot it is kept across `opened` and `closed`
+  (the page clears it). Covered by
+  `tour-document-save-status.property.test.ts`.
 - The 3D editor's station edits, each ONE step (refused, changing nothing,
   before an open, for an unknown station or item, or for a value the
   format refuses - the page asks the exported guard first and says why):
