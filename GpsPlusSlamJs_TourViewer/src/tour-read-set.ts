@@ -90,11 +90,13 @@ const RECORDED_FRAME = new RegExp(
 
 /** The folder of an action entry (the framework's `isActionEntryName`:
  *  under an `actions/` path SEGMENT, at the start or after a slash), with
- *  its trailing slash: what precedes its first such segment. */
+ *  its trailing slash: what precedes its first such segment. Only names
+ *  that pass `isActionEntryName` reach it; one without the segment would
+ *  read as flat (`""`), stated rather than left to `indexOf`'s -1. */
 function actionFolderOf(name: string): string {
-  return name.startsWith("actions/")
-    ? ""
-    : name.slice(0, name.indexOf("/actions/") + 1);
+  if (name.startsWith("actions/")) return "";
+  const at = name.indexOf("/actions/");
+  return at < 0 ? "" : name.slice(0, at + 1);
 }
 
 /**
