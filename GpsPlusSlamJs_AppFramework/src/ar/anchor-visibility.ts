@@ -229,7 +229,7 @@ export interface AnchorBoundsCache {
   /** Merge-root spheres, kept across fresh traversals until the bounds change. */
   readonly mergeRoots: Map<THREE.Object3D, MergeRootSphere>;
   /** Bind-time data of skinned and morphed parts, kept while its inputs are unchanged. */
-  readonly bindData: Map<THREE.Object3D, BindRecord>;
+  readonly bindData: Map<THREE.Object3D, BindRecords>;
 }
 
 /** An empty cache for one anchor. */
@@ -792,8 +792,10 @@ function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
     const mesh = object as THREE.SkinnedMesh;
     const bound = skinBound(mesh, bind);
     if (bound) return [{ kind: 'skinned', mesh, bound }];
-    // No usable skin data (unbound, missing attributes, zero weights): still
-    // drawn, so bounded like a plain mesh rather than dropped.
+    // No skeleton, or no positive weight: still drawn (zero weights collapse
+    // it onto its origin), so bounded like a plain mesh rather than dropped.
+    // A bound mesh missing skinIndex or skinWeight is not supported: three
+    // then skins with generic attribute values (sidecar, Known limits).
   }
   const morphed = morphBound(r, bind);
   if (morphed) {
@@ -824,27 +826,43 @@ const ORIGIN = new THREE.Vector3();
  * costly part of a traversal), with what it was computed from.
  */
 interface BindRecord {
-  /** The kind, geometry, morph flag, and each input attribute with its version. */
-  readonly key: readonly unknown[];
+  /**
+   * The morph flag and, per attribute the walk reads, its id (for
+   * interleaved data the shared buffer's uuid, offset and item size) and
+   * version; a swapped geometry brings other attributes, so the geometry
+   * itself is not part of it. Primitives only, so a replaced geometry is
+   * not kept alive.
+   */
+  readonly key: readonly (number | string | boolean | null)[];
   /** Skinned: the per-bone `boneInverse * bindMatrix` it used. */
   readonly toBone: readonly THREE.Matrix4[] | null;
   readonly value: SkinBound | MorphBound | null;
 }
 
+/**
+ * One renderable's records, per kind: a skinned mesh without a skinned
+ * bound falls back to its morph bound, and both walks are kept.
+ */
+type BindRecords = { skin?: BindRecord; morph?: BindRecord };
+
 /** The previous traversal's records, and the ones this traversal keeps. */
 interface BindLookup {
-  readonly previous: ReadonlyMap<THREE.Object3D, BindRecord>;
-  readonly kept: Map<THREE.Object3D, BindRecord>;
+  readonly previous: ReadonlyMap<THREE.Object3D, BindRecords>;
+  readonly kept: Map<THREE.Object3D, BindRecords>;
 }
 
 const BIND_ATTRIBUTES = ['position', 'skinIndex', 'skinWeight'] as const;
 
 /**
  * The previous traversal's value for `object` when its inputs are unchanged,
- * else `compute()`. An edit three would upload bumps an attribute's version,
- * a replaced attribute or geometry changes identity, and a rebind changes
- * `toBone`; each of these recomputes. Without a lookup (merge roots, built
- * once until the bounds change) it always computes.
+ * else `compute()`. An edit with `needsUpdate` bumps an attribute's version,
+ * a replaced attribute or geometry brings other ids, and a rebind changes
+ * `toBone`; each of these recomputes. An edit in place without
+ * `needsUpdate` is not seen, even where three uploads it anyway (before the
+ * first render, morph targets rebuilt after `geometry.dispose()`,
+ * `normalizeSkinWeights`): such a caller sets `needsUpdate` or calls
+ * `markAnchorBoundsChanged` (sidecar, Known limits). Without a lookup
+ * (merge roots, built once until the bounds change) it always computes.
  */
 function keptBind<T extends SkinBound | MorphBound>(
   bind: BindLookup | null,
@@ -855,36 +873,42 @@ function keptBind<T extends SkinBound | MorphBound>(
   compute: () => T | null
 ): T | null {
   if (!bind) return compute();
-  const key: unknown[] = [kind, geometry, geometry.morphTargetsRelative];
+  const key: BindRecord['key'][number][] = [geometry.morphTargetsRelative];
   for (const name of BIND_ATTRIBUTES) {
     pushAttribute(key, geometry.getAttribute(name));
   }
   for (const target of geometry.morphAttributes.position ?? []) {
     pushAttribute(key, target);
   }
-  const previous = bind.previous.get(object);
+  const previous = bind.previous.get(object)?.[kind];
   const record =
     previous &&
     sameItems(previous.key, key) &&
     sameMatrices(previous.toBone, toBone)
       ? previous
       : { key, toBone, value: compute() };
-  bind.kept.set(object, record);
+  const kept = bind.kept.get(object) ?? {};
+  kept[kind] = record;
+  bind.kept.set(object, kept);
   return record.value as T | null;
 }
 
-function pushAttribute(key: unknown[], a: Attribute | undefined): void {
+function pushAttribute(
+  key: BindRecord['key'][number][],
+  a: Attribute | undefined
+): void {
   if (!a) {
-    key.push(null, -1);
+    key.push(null);
     return;
   }
   const interleaved = a as THREE.InterleavedBufferAttribute;
-  key.push(
-    a,
-    interleaved.isInterleavedBufferAttribute
-      ? interleaved.data.version
-      : (a as THREE.BufferAttribute).version
-  );
+  if (interleaved.isInterleavedBufferAttribute) {
+    const data = interleaved.data;
+    key.push(data.uuid, interleaved.offset, interleaved.itemSize, data.version);
+    return;
+  }
+  const plain = a as THREE.BufferAttribute;
+  key.push(plain.id, plain.version);
 }
 
 function sameItems(a: readonly unknown[], b: readonly unknown[]): boolean {
@@ -1139,14 +1163,16 @@ function capEntries(
 
 /**
  * Merge the two alive clusters whose centres are nearest until `target`
- * remain. Each cluster keeps its nearest alive neighbour; after a merge only
- * the new cluster and the clusters whose neighbour was merged are scanned
- * again, so the whole run is O(n^2) time and O(n) memory.
+ * remain. Each cluster keeps its nearest alive neighbour. A cluster whose
+ * neighbour was merged is only marked stale (its recorded distance is then
+ * a lower bound) and rescanned when it is picked, so a merge costs O(n)
+ * even when many clusters share one neighbour, as coincident centres do:
+ * the whole run is O(n^2) time and O(n) memory.
  */
 function mergeNearestPairs(clusters: Cluster[], target: number): void {
   let alive = clusters.length;
   if (alive <= target) return;
-  const near: NearestTable = { index: [], dist: [] };
+  const near: NearestTable = { index: [], dist: [], stale: [] };
   for (let i = 0; i < clusters.length; i += 1) scanNearest(clusters, near, i);
   while (alive > target) {
     const i = closestCluster(clusters, near);
@@ -1166,10 +1192,15 @@ function mergeNearestPairs(clusters: Cluster[], target: number): void {
   }
 }
 
-/** Per cluster: index of and squared distance to its nearest alive neighbour. */
+/**
+ * Per cluster: index of and squared distance to its nearest alive neighbour,
+ * and whether that neighbour has merged since (the distance is then a lower
+ * bound: the alive set only lost members, and newer clusters were compared).
+ */
 interface NearestTable {
   readonly index: number[];
   readonly dist: number[];
+  readonly stale: boolean[];
 }
 
 function scanNearest(
@@ -1190,25 +1221,33 @@ function scanNearest(
   }
   near.index[i] = best;
   near.dist[i] = bestDist;
+  near.stale[i] = false;
 }
 
-/** The alive cluster with the nearest neighbour, or -1. */
+/**
+ * The alive cluster with the nearest neighbour, or -1. A stale pick is
+ * rescanned and the choice made again: its distance can only have grown,
+ * and every other recorded distance is exact or a lower bound.
+ */
 function closestCluster(
   clusters: readonly Cluster[],
   near: NearestTable
 ): number {
-  let i = -1;
-  let bestDist = Infinity;
-  for (let m = 0; m < clusters.length; m += 1) {
-    if (clusters[m]!.alive && near.dist[m]! < bestDist) {
-      bestDist = near.dist[m]!;
-      i = m;
+  for (;;) {
+    let i = -1;
+    let bestDist = Infinity;
+    for (let m = 0; m < clusters.length; m += 1) {
+      if (clusters[m]!.alive && near.dist[m]! < bestDist) {
+        bestDist = near.dist[m]!;
+        i = m;
+      }
     }
+    if (i < 0 || !near.stale[i]) return i;
+    scanNearest(clusters, near, i);
   }
-  return i;
 }
 
-/** After clusters `i` and `j` merged into the last cluster: rescan what pointed at them. */
+/** After clusters `i` and `j` merged into the last cluster: mark what pointed at them stale. */
 function updateNearest(
   clusters: readonly Cluster[],
   near: NearestTable,
@@ -1220,14 +1259,13 @@ function updateNearest(
   const centre = clusters[index]!.sphere.center;
   for (let m = 0; m < index; m += 1) {
     if (!clusters[m]!.alive) continue;
-    if (near.index[m] === i || near.index[m] === j) {
-      scanNearest(clusters, near, m);
-      continue;
-    }
+    if (near.index[m] === i || near.index[m] === j) near.stale[m] = true;
     const d = centre.distanceToSquared(clusters[m]!.sphere.center);
+    // Nearer than a lower bound of every other alive cluster: exact again.
     if (d < near.dist[m]!) {
       near.dist[m] = d;
       near.index[m] = index;
+      near.stale[m] = false;
     }
   }
 }

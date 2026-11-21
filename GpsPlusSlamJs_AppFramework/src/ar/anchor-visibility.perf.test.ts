@@ -29,6 +29,12 @@
  * catches a gross regression (a quadratic blow-up in the build, a traversal
  * per part), not a constant factor such as the earlier pair-heap merge
  * (21-24 ms on the desktop).
+ *
+ * Coincident centres (2026-11-21, machine at 53-97 % CPU from other jobs,
+ * best of 15): before the lazy rescan, 400 parts at one shared origin took
+ * 101-107 ms and at four 28-29 ms, against 3.3-3.9 ms on the grid (and
+ * 1000 parts at one origin about 2 s); after it, 3.1-4.8 ms and 2.9-3.3 ms
+ * against 3.2-3.6 ms on the grid. The ratio ceiling of 4 sits between.
  */
 
 import * as THREE from 'three';
@@ -53,6 +59,8 @@ const CALLS_PER_RUN = 200;
 const CACHED_CEILING_MS = 1;
 const FRESH_CEILING_MS = 150;
 const SKINNED_CEILING_MS = 2;
+/** Most a fresh traversal of parts with coincident centres may cost, as a multiple of the grid case. */
+const TIES_RATIO_CEILING = 4;
 
 function bestOf(runs: number, calls: number, fn: () => void): number {
   let best = Infinity;
@@ -64,8 +72,16 @@ function bestOf(runs: number, calls: number, fn: () => void): number {
   return best;
 }
 
-/** An anchor 10 m behind the camera (so every test runs to "out"). */
-function buildScene(): {
+/** Part i on a 20-wide grid, 0.5 m apart. */
+function onGrid(i: number): THREE.Vector3 {
+  return new THREE.Vector3((i % 20) * 0.5, Math.floor(i / 20) * 0.5, 0);
+}
+
+/**
+ * An anchor 10 m behind the camera (so every test runs to "out"), with
+ * PARTS parts placed by `place`.
+ */
+function buildScene(place: (i: number) => THREE.Vector3 = onGrid): {
   scene: THREE.Scene;
   anchor: THREE.Group;
   view: ReturnType<typeof createAnchorView>;
@@ -77,7 +93,7 @@ function buildScene(): {
   const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
   for (let i = 0; i < PARTS; i += 1) {
     const mesh = new THREE.Mesh(geometry);
-    mesh.position.set((i % 20) * 0.5, Math.floor(i / 20) * 0.5, 0);
+    mesh.position.copy(place(i));
     anchor.add(mesh);
   }
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
@@ -140,6 +156,42 @@ describe('anchor-visibility cost', () => {
     );
     expect(ms).toBeLessThan(FRESH_CEILING_MS);
   });
+
+  /**
+   * Parts whose origins coincide are the normal shape of a loaded model whose
+   * meshes are flat children of its root with the positions baked into the
+   * geometry: each is bounded about its own origin, so every centre is the
+   * same point. Ties in the nearest-neighbour table must not turn the merge
+   * down to the sphere cap cubic (each merge rescanning every cluster that
+   * pointed at the merged pair). That blow-up measured 30x the grid case
+   * locally (about 100 ms against 3.3 ms), still under the absolute ceiling,
+   * so the guard is the ratio to the grid case timed in the same test.
+   */
+  function freshMs(place: (i: number) => THREE.Vector3): number {
+    const { anchor, view } = buildScene(place);
+    const cache = createAnchorBoundsCache();
+    const options = { marginDeg: 5, cache, nowMs: 0, fresh: true };
+    const ms = bestOf(TIMING_RUNS, 10, () => {
+      isAnchorInView(view, anchor, options);
+    });
+    expect(cache.entries.length).toBeLessThanOrEqual(ANCHOR_SPHERE_CAP);
+    return ms;
+  }
+
+  for (const [name, place] of [
+    ['one shared origin', () => new THREE.Vector3(0, 0, 0)],
+    ['four shared origins', (i: number) => new THREE.Vector3(i % 4, 0, 0)],
+  ] as const) {
+    it(`a fresh traversal of ${PARTS} parts at ${name} costs about as much as on a grid`, () => {
+      const gridMs = freshMs(onGrid);
+      const ms = freshMs(place);
+      console.info(
+        `anchor-visibility fresh at ${name}: ${ms.toFixed(4)} ms/call against ${gridMs.toFixed(4)} on a grid (${PARTS} parts, 2 views)`
+      );
+      expect(ms).toBeLessThan(FRESH_CEILING_MS);
+      expect(ms).toBeLessThan(gridMs * TIES_RATIO_CEILING);
+    });
+  }
 
   it('a skinned part is bounded from its bones on every cached call within budget', () => {
     const { anchor, view } = buildScene();

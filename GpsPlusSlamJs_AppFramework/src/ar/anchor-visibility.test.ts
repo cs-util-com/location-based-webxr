@@ -795,10 +795,12 @@ describe('anchor-visibility: what is in view', () => {
   });
 
   it('a skinned mesh with no usable skin data is still bounded by its geometry', () => {
-    // An unbound skeleton, missing skin attributes or all-zero weights give
-    // no skinned bound, yet the mesh is still drawn (zero weights collapse
-    // it onto its origin). Dropping it would be a false "out"; its plain
-    // geometry sphere about its origin is the safe side.
+    // An unbound skeleton or all-zero weights give no skinned bound, yet the
+    // mesh is still drawn (zero weights collapse it onto its origin).
+    // Dropping it would be a false "out"; its plain geometry sphere about
+    // its origin is the safe side. A bound mesh missing a skin attribute is
+    // a known limit (three skins it with generic attribute values); the
+    // case here pins only that it is not dropped.
     const unbound = skinnedBox(1).mesh;
     const noWeights = skinnedBox(1);
     noWeights.geometry.deleteAttribute('skinWeight');
@@ -877,6 +879,104 @@ describe('anchor-visibility: what is in view', () => {
     for (let i = 2; i < buffer.array.length; i += 3) buffer.array[i]! += 200;
     buffer.needsUpdate = true; // the box is now drawn 100 m ahead
     expect(inView(rig, { fresh: true })).toBe(true);
+  });
+
+  it('a swapped geometry is bounded by its own vertices on the next fresh traversal', () => {
+    // A part whose geometry is replaced (a level of detail, a reloaded
+    // model) must not be served the old geometry's kept bind data, or the
+    // new shape could be drawn where the bound says nothing is.
+    const rig = makeRig();
+    const { mesh: skinned, bone } = skinnedBox(1);
+    skinned.add(bone);
+    skinned.bind(new THREE.Skeleton([bone]));
+    bone.position.set(0, 0, -300); // beyond the far plane
+    rig.anchor.add(skinned);
+    const morphed = morphedBoxBeyondPlane();
+    rig.anchor.add(morphed);
+    expect(inView(rig, { fresh: true })).toBe(false);
+    // Each new geometry is freshly built and its arrays written directly,
+    // so every attribute version equals the old one's: only the identity
+    // of the geometry and its attributes tells them apart.
+    const shifted = (
+      geometry: THREE.BufferGeometry,
+      by: THREE.Vector3
+    ): THREE.BufferGeometry => {
+      const array = (geometry.getAttribute('position') as THREE.BufferAttribute)
+        .array;
+      for (let i = 0; i < array.length; i += 3) {
+        array[i]! += by.x;
+        array[i + 1]! += by.y;
+        array[i + 2]! += by.z;
+      }
+      return geometry;
+    };
+    // Drawn 200 m nearer than its bone: 100 m ahead.
+    skinned.geometry = shifted(
+      skinnedBox(1).geometry,
+      new THREE.Vector3(0, 0, 200)
+    );
+    expect(inView(rig, { fresh: true })).toBe(true);
+    skinned.visible = false;
+    expect(inView(rig, { fresh: true })).toBe(false);
+    // The base moved 18 m toward the view: 0.5 m inside the side plane.
+    const plane = new THREE.Vector3(
+      Math.cos(Math.PI / 6),
+      0,
+      Math.sin(Math.PI / 6)
+    );
+    morphed.geometry = shifted(
+      morphedBoxBeyondPlane().geometry,
+      plane.clone().multiplyScalar(-18)
+    );
+    expect(inView(rig, { fresh: true })).toBe(true);
+  });
+
+  it('a skinned mesh bounded as a plain morphed one keeps its bind data across fresh traversals', () => {
+    // With all-zero weights a skinned mesh has no skinned bound and falls
+    // back to its morph bound: both walks read the same object, so the kept
+    // records must not overwrite each other, or every fresh traversal (each
+    // second while content waits) repeats both vertex walks.
+    const rig = makeRig();
+    const { mesh, bone, geometry } = skinnedBox(0);
+    const count = geometry.getAttribute('position').count;
+    geometry.morphAttributes.position = [
+      new THREE.Float32BufferAttribute(new Float32Array(count * 3), 3),
+    ];
+    geometry.morphTargetsRelative = true;
+    mesh.updateMorphTargets();
+    mesh.add(bone);
+    mesh.bind(new THREE.Skeleton([bone]));
+    mesh.position.set(0, 0, -300); // beyond the far plane
+    rig.anchor.add(mesh);
+    const reads = vi.spyOn(
+      geometry.getAttribute('position') as THREE.BufferAttribute,
+      'getX'
+    );
+    expect(inView(rig, { fresh: true })).toBe(false);
+    expect(reads).toHaveBeenCalled();
+    reads.mockClear();
+    expect(inView(rig, { fresh: true })).toBe(false);
+    expect(reads).not.toHaveBeenCalled();
+  });
+
+  it('kept bind data holds no geometry or attribute alive', () => {
+    // A key that held the objects would keep a replaced geometry and its
+    // vertex arrays in memory for as long as the part stays mounted; ids,
+    // buffer uuids and offsets identify them just as well.
+    const rig = makeRig();
+    const { mesh, bone } = skinnedBox(1);
+    mesh.add(bone);
+    mesh.bind(new THREE.Skeleton([bone]));
+    rig.anchor.add(mesh);
+    rig.anchor.add(morphedBoxBeyondPlane());
+    inView(rig, { fresh: true });
+    const keys = [...rig.cache.bindData.values()].flatMap((records) =>
+      Object.values(records).flatMap((record) => [...record.key])
+    );
+    expect(keys.length).toBeGreaterThan(0);
+    for (const item of keys) {
+      expect(item === null || typeof item !== 'object').toBe(true);
+    }
   });
 
   it('a merge root keeps its one sphere, moved by the root, until the bounds change', () => {
