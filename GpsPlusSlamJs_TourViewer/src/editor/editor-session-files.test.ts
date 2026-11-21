@@ -25,7 +25,7 @@ import { openTourFile, type TourSession } from "../tour-session.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { tourOf, withWorldObjects } from "../test-support/tour-of.js";
 import {
-  freeDraftLocks,
+  freeLocks,
   memoryDraftStores,
   type MemoryDraftStores,
 } from "../test-support/memory-draft-stores.js";
@@ -63,7 +63,7 @@ async function openedTour(): Promise<TourSession> {
 function draftOf(stores: MemoryDraftStores, unread?: () => void): EditorDraft {
   return createEditorDraft({
     openStore: stores.open,
-    holdLock: freeDraftLocks,
+    holdLock: freeLocks,
     noBackup: () => undefined,
     ...(unread === undefined ? {} : { unreadDraft: unread }),
   });

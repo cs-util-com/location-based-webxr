@@ -20,7 +20,7 @@ import { describe, expect, it } from "vitest";
 import { crc32 } from "../characters/png-text.js";
 
 import {
-  freeDraftLocks,
+  freeLocks,
   memoryDraftStores,
   type MemoryDraftStores,
 } from "../test-support/memory-draft-stores.js";
@@ -54,10 +54,12 @@ const ESSAY: TourObject = {
   geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
 };
 
-function draftOf(stores: { open: MemoryDraftStores["open"] }): EditorDraft {
+function draftOf(stores: {
+  open: (key: string) => Promise<DraftFileStore | undefined>;
+}): EditorDraft {
   return createEditorDraft({
     openStore: stores.open,
-    holdLock: freeDraftLocks,
+    holdLock: freeLocks,
     noBackup: () => undefined,
   });
 }
@@ -435,7 +437,7 @@ describe("the draft of a smaller file", () => {
       let said = 0;
       const again = createEditorDraft({
         openStore: stores.open,
-        holdLock: freeDraftLocks,
+        holdLock: freeLocks,
         noBackup: () => undefined,
         unreadDraft: () => {
           said += 1;
