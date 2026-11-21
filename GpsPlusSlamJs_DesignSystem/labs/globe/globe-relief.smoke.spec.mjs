@@ -343,6 +343,8 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
     const base = `${BASE}&detail=0&bandFill=0&cloudShell=0`;
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
     await parkAt(page, altKm);
+    // The parked pose reaches the drawn camera on the next frame.
+    await page.evaluate(() => window.__globeLab.timeFrames(1));
     const natural = await page.evaluate(() => {
       const s = window.__globeLab.state();
       return s.altitudeM;
