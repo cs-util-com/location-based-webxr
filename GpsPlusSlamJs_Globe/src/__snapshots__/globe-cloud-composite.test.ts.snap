@@ -1,0 +1,51 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`createGlobeCloudComposite > draws with the fragment shader recorded in its snapshot 1`] = `
+"
+uniform sampler2D tShell;
+uniform sampler2D tSlab;
+uniform float uShellWeight;
+uniform float uSlabWeight;
+// The shell's ground shadow, drawn on its own.
+uniform sampler2D tShadow;
+uniform float uShadowOn;
+// The high layer: on, and in front (from above).
+uniform sampler2D tHigh;
+uniform float uHighOn;
+uniform float uHighInFront;
+varying vec2 vUv;
+void main() {
+  vec4 shell = texture2D( tShell, vUv );
+  vec4 c = uShellWeight * shell;
+  if ( uSlabWeight > 0.0 ) {
+    // Per pixel: the shell gives up the slab's share only of the cloud the
+    // slab draws here, r = the slab's alpha over the shell's (1 where the
+    // shell draws none), so where the slab draws less (its fade ring,
+    // beyond its disc, a clear patch) the shell fills it. Twin:
+    // cloudShellPixelWeight.
+    vec4 slab = texture2D( tSlab, vUv );
+    float r = shell.a > 1e-4 ? min( 1.0, slab.a / shell.a ) : 1.0;
+    c = uShellWeight * ( 1.0 - uSlabWeight * r ) * shell + uSlabWeight * slab;
+  }
+  // The ground shadow under both clouds: in the shell's own alpha the
+  // slab's per-pixel share took it with the shell's clouds, and below the
+  // slab's ceiling the ground lost its shadows (an 0.12 share of shadowed
+  // points in the target, none on the screen at 5 km, measured). Black,
+  // under the mix.
+  if ( uShadowOn > 0.5 ) {
+    c.a = min( c.a, 1.0 );
+    c.a += ( 1.0 - c.a ) * texture2D( tShadow, vUv ).a;
+  }
+  if ( uHighOn > 0.5 ) {
+    // Premultiplied over (twin of cloudLayerOver), its order by height.
+    vec4 high = texture2D( tHigh, vUv );
+    c.a = min( c.a, 1.0 );
+    c = uHighInFront > 0.5 ? high + ( 1.0 - high.a ) * c : c + ( 1.0 - c.a ) * high;
+  }
+  if ( c.a < 1e-4 ) discard;
+  gl_FragColor = vec4( c.rgb / c.a, 1.0 );
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+  gl_FragColor.a = min( c.a, 1.0 );
+}"
+`;

@@ -48,7 +48,7 @@ import { signGrowth, TRAVEL_PLATE } from "./travelling-box-rules.js";
 import {
   mountWorldPart,
   canvasTexture,
-  mountedWorldParts,
+  mountedWorldPartSet,
   unmountWorldPart,
   type WorldPart,
 } from "./world-part.js";
@@ -452,11 +452,9 @@ export interface ReadingSignHandle extends WorldPart {
 const signs = new WeakSet<WorldPart>();
 
 /** The mounted reading sign standing for the text `blockId`, or null. */
-export function mountedReadingSign(
-  blockId: string,
-  parts: readonly WorldPart[] = mountedWorldParts(),
-): ReadingSignHandle | null {
-  for (const part of parts) {
+export function mountedReadingSign(blockId: string): ReadingSignHandle | null {
+  // The live set, not a copy: this runs several times a frame.
+  for (const part of mountedWorldPartSet()) {
     if (signs.has(part) && (part as ReadingSignHandle).block.id === blockId) {
       return part as ReadingSignHandle;
     }

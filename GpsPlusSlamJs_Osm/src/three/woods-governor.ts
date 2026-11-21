@@ -16,9 +16,8 @@
  * of a burst measures nothing. A consumer with a continuous loop passes
  * `chained: true` for every frame.
  *
- * THE RULE, after the near clouds' governor (`globe-cloud-governor.ts` in
- * the globe package, which this package cannot import; the two are kept as
- * copies, each naming the other):
+ * THE RULE, modelled on a cloud quality governor the globe package once had
+ * (removed with the cloud renderer it stepped; this is now the only copy):
  * - the smoothed interval above `slowMs` for `slowS` of counted frames steps
  *   one rung down; under `fastMs` for `fastS` steps one rung up;
  * - one frame longer than `gapMs` says nothing of the device (a hitch, a tab

@@ -49,7 +49,7 @@ over its whole plain text, hashed as the viewer hashes it
 (`sentenceTiming`, through the framework's `tour-markdown`), no
 creator's choice of where its words go (so they show in the box), and a
 narration circle around the gate with the same voice
-(`narration-stacking.spec.js`).
+(`narration-stacking.spec.js`). `narrated` takes effect only with a `longText`: the voice file, its asset, the timing, the text's narration and the circle share one gate, so a tour never names a voice it does not carry.
 `/ranges-ok/v4-tour.zip` is a tour in the earlier format 4, written
 literally: the app refuses it and deletes the draft it kept for it.
 

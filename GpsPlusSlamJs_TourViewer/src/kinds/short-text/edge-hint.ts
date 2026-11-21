@@ -213,8 +213,11 @@ export interface HintRect {
  * aside, nearest first: the nearest keeps its place, a farther tag in
  * view moves up over one it overlaps and a tag at the edge down below
  * it, `EDGE_HINT.stepPad` apart, past at most `EDGE_HINT.stepTries`
- * tags. A stepped tag stays inside the insets of a `screenH` px tall
- * screen (with no room it may then overlap again: readable beats apart).
+ * tags; where the insets of a `screenH` px tall screen leave no room on
+ * that side (a tag at the bottom edge, one in view near the top), it
+ * moves the other way. A stepped tag stays inside the insets (with no
+ * room either way it keeps its own side's clamped place and may overlap:
+ * readable beats apart).
  */
 export function edgeHintStepAside(
   tags: readonly HintRect[],
@@ -227,21 +230,37 @@ export function edgeHintStepAside(
     .sort((a, b) => a.t.distance - b.t.distance);
   const placed: { x: number; y: number; w: number; h: number }[] = [];
   for (const { t, i } of order) {
-    let y = t.y;
-    for (let tries = 0; tries < stepTries; tries++) {
-      const hit = placed.find(
+    const lo = insetTop;
+    const hi = screenH - insetBottom - t.h;
+    const hitAt = (y: number) =>
+      placed.find(
         (r) =>
           t.x < r.x + r.w + pad &&
           t.x + t.w + pad > r.x &&
           y < r.y + r.h + pad &&
           y + t.h + pad > r.y,
       );
-      if (hit === undefined) break;
-      y = t.edge ? hit.y + hit.h + pad : hit.y - t.h - pad;
-    }
-    if (y !== t.y) {
-      y = Math.min(Math.max(y, insetTop), screenH - insetBottom - t.h);
-    }
+    /** Steps past the tags it hits, all one way, each step clamped to the
+     *  insets; `free` once its box hits none, not when a clamp undid a
+     *  step. */
+    const sweep = (down: boolean) => {
+      let y = t.y;
+      for (let tries = 0; tries < stepTries; tries++) {
+        const hit = hitAt(y);
+        if (hit === undefined) return { y, free: true };
+        const next = down ? hit.y + hit.h + pad : hit.y - t.h - pad;
+        const clamped = Math.min(Math.max(next, lo), hi);
+        // The clamp undid the step: no room on this side.
+        if (clamped !== next) return { y: clamped, free: false };
+        y = next;
+      }
+      return { y, free: hitAt(y) === undefined };
+    };
+    // Its own side first (an edge tag down, one in view up), the other
+    // side when that one has no room.
+    const first = sweep(t.edge);
+    const other = first.free ? first : sweep(!t.edge);
+    const y = other.free ? other.y : first.y;
     placed.push({ x: t.x, y, w: t.w, h: t.h });
     ys[i] = y;
   }
@@ -259,6 +278,9 @@ export function edgeHintStepAside(
  *
  * It is a resource of the frame loop, like the set of mounted parts
  * (`world-part.ts`): screen boxes of one frame, no state of the app.
+ * One board per page assumes one play-mode tick loop per page: a second
+ * scene ticked on its own clock would rotate it every call and push its
+ * tags across the scenes.
  */
 const board = {
   seconds: Number.NaN,

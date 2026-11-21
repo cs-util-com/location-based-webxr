@@ -1,13 +1,16 @@
 /**
  * The package's progress clamp. Why this file matters: the fly-in clock
  * and the pin flight both read their progress through `clampProgress`, and
- * both rely on NaN reading as "not started" (0), which `clamp01` does not
- * give. The property pins the whole contract against a reference.
+ * both rely on NaN reading as "not started" (0), which a plain clamp does
+ * not give. The property pins the whole contract against a reference.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { clamp01, clampProgress } from "./globe-ease.js";
+import { clampProgress } from "./globe-ease.js";
+
+/** The plain clamp `clampProgress` is measured against. */
+const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
 
 describe("clampProgress", () => {
   it("reads NaN and anything at or below 0 as 0, and 1 or more as 1", () => {
