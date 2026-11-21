@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { type BackdropId, draftOf } from "./maker-draft.js";
+import { type BackdropId, draftOf, freshDraft } from "./maker-draft.js";
 import {
   makerActions as A,
   makerReducer,
@@ -27,7 +27,13 @@ const action: fc.Arbitrary<Action> = fc.oneof(
   fc.constant(A.copyRefused()),
   fc.constant(A.cutStarted()),
   fc.constant(A.cutFinished()),
-  fc.string({ maxLength: 40 }).map((m) => A.cutFailed(m)),
+  // Failures short and around the failure cap (200), as for the name.
+  fc
+    .oneof(
+      fc.string({ maxLength: 40 }),
+      fc.string({ minLength: 190, maxLength: 260 }),
+    )
+    .map((m) => A.cutFailed(m)),
   fc.constant(A.cutAborted()),
   fc.constant(A.cutReplaced()),
   fc.constantFrom("drawn", "steady").map((c) => A.talkChosen(c)),
@@ -62,6 +68,9 @@ const action: fc.Arbitrary<Action> = fc.oneof(
     .map((p) => A.saved(p)),
   fc.nat().map((t) => A.left(t)),
   fc.constant(A.startedAnother()),
+  fc.boolean().map((hadCut) => A.restored({ draft: freshDraft(), hadCut })),
+  fc.constant(A.saveStarted()),
+  fc.constant(A.saveEnded()),
 );
 
 /** Every state on the way, the first one included. */
@@ -99,6 +108,28 @@ describe("maker-slice properties", () => {
             : [],
         );
         expect(entered).toEqual(entered.map(() => "ready"));
+      }),
+    );
+  });
+
+  // Why: a save lands only on the draft of the generation it was started
+  // from, so the generation must move whenever another draft takes the
+  // current one's place (a new start, an Undo, a picture that is taken)
+  // and never on an edit of the same draft: a move too few lets a save
+  // mark the wrong draft, a move too many drops a save that was right.
+  it("moves the generation exactly when another draft takes the place", () => {
+    fc.assert(
+      fc.property(fc.array(action, { maxLength: 40 }), (actions) => {
+        const states = runAll(actions);
+        actions.forEach((a, i) => {
+          const before = states[i]!;
+          const after = states[i + 1]!;
+          const replaces =
+            A.startedAnother.match(a) ||
+            A.restored.match(a) ||
+            (A.cutStarted.match(a) && before.cut !== "cutting");
+          expect(after.generation).toBe(before.generation + (replaces ? 1 : 0));
+        });
       }),
     );
   });

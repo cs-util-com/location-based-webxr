@@ -56,6 +56,7 @@ import {
   createMakerStore,
   hasCut,
   isCutting,
+  isSaving,
   makerActions as A,
 } from "./maker-slice.js";
 import { busy, offerUndo } from "./maker-ui.js";
@@ -267,7 +268,9 @@ function renderDraftRow(): void {
   const said = t
     ? `&ldquo;${esc(t.length > 60 ? `${t.slice(0, 58)}...` : t)}&rdquo; - `
     : "";
-  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${draft().step + 1} of 6: ${esc((MAKER_STEPS[draft().step] ?? "").toLowerCase())}.</p></div><div class="row"><button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard>Discard</button></div>`;
+  // Discard waits while the draft is saved: an Undo of it would bring back
+  // a draft the library saved without marking it, and save it twice.
+  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${draft().step + 1} of 6: ${esc((MAKER_STEPS[draft().step] ?? "").toLowerCase())}.</p></div><div class="row"><button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard ${isSaving(page()) ? "disabled" : ""}>Discard</button></div>`;
   $("[data-continue]", dr).addEventListener("click", () => setView("steps"));
   $("[data-discard]", dr).addEventListener("click", () => {
     const before = draft();
@@ -1100,7 +1103,8 @@ async function save(): Promise<void> {
   // this draft: Discard or a new picture can put another in its place.
   const steady = draft().choice === "steady";
   const generation = page().generation;
-  // Start over waits; the generation guards the other ways regardless.
+  // Start over and Discard wait; the generation guards a new picture.
+  makerStore.dispatch(A.saveStarted());
   restartBtn.disabled = true;
   await busy(nextBtn, "Saving...", async () => {
     try {
@@ -1127,17 +1131,25 @@ async function save(): Promise<void> {
         A.saved({ id: rec.libraryId, name: rec.name, generation }),
       );
       justMade.add(rec.libraryId);
-      toast(`Saved on this device: ${rec.name}`);
+      // A new picture brought in while the library wrote has taken this
+      // draft's place, so the page does not show it as saved.
+      toast(
+        page().generation === generation
+          ? `Saved on this device: ${rec.name}`
+          : `Saved on this device: ${rec.name}. A new character was started meanwhile, so find ${rec.name} in your characters.`,
+      );
     } catch (e) {
       toast(
         `Saving did not work: ${reason(e)}. Your character is still here - try again.`,
         true,
       );
     } finally {
+      makerStore.dispatch(A.saveEnded());
       restartBtn.disabled = false;
     }
   });
-  render();
+  if (document.body.dataset.view === "home") void renderHome();
+  else render();
 }
 restartBtn.addEventListener("click", () => {
   const before = draft();
