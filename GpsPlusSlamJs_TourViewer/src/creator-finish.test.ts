@@ -28,7 +28,7 @@
  * framework's own packer tests, and the reason is the same: what a visitor
  * gets is the file, not the call.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -834,6 +834,146 @@ describe("a tour closed while the finish ends the AR session", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(dom.finishBlock.hidden).toBe(true);
+  });
+});
+
+describe("the Finish's status on the panel: running, progress, failure", () => {
+  // Why these tests matter: the Finish's status (running, its progress
+  // line, its failure) is read by the status line, the AR button's Done,
+  // the object list, the placement buttons and the measuring. They pin
+  // what a creator sees through the panel alone, so the status can move
+  // between holders (session fields, the document's save status) with the
+  // same tests green on both sides.
+
+  /** An archive read held until `release`: the Finish waits in "reading". */
+  function heldArchive(blob: () => Blob): {
+    extras: Record<string, unknown>;
+    release: () => void;
+  } {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {
+      extras: { readWholeArchive: () => held.then(blob) },
+      release: () => {
+        release();
+      },
+    };
+  }
+
+  /** Let the Finish's continuation and its save settle. */
+  async function turns(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  it("leads the status line with its progress while it runs, through re-renders, and starts no second Finish", async () => {
+    let archive: Blob = new Blob([]);
+    const hold = heldArchive(() => archive);
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: hold.extras,
+    });
+    const size = (ctx.session as unknown as { archive: { size: number } })
+      .archive.size;
+    archive = await hostedArchive([]);
+    dom.finishButton.click();
+    const reading = FINISH_LABELS.reading(size);
+    expect(dom.status.textContent).toBe(reading);
+    expect(dom.finishButton.disabled).toBe(true);
+    // Every store dispatch re-renders the readout: the progress stays.
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(reading);
+    // Done in AR while it runs starts nothing.
+    expect(setup.finishNow()).toBe(false);
+    hold.release();
+    await vi.waitFor(() => {
+      expect(dom.status.textContent).not.toBe(reading);
+    });
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
+  });
+
+  it("keeps a failure that came after the zip was made and handed over, until the next tap", async () => {
+    // The zip a failed Finish made is still saved off AR (F4 milestone
+    // review #1); that hand-over must not take the failure back: Done in
+    // AR stays refused and the retry stays on the panel until a tap.
+    const saves: string[] = [];
+    let failures = 1;
+    const status: { set?: (value: string) => void } = {};
+    const { dom, setup, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      onDisable: () => {
+        if (failures === 0) return;
+        failures -= 1;
+        status.set?.("ready"); // the session is down, then the end throws
+        throw new Error("the session would not end cleanly");
+      },
+      seamsExtras: {
+        downloadZip: (_blob: Blob, filename: string) => {
+          saves.push(filename);
+          return Promise.resolve(true);
+        },
+      },
+    });
+    status.set = (value) => {
+      arStatus.value = value;
+    };
+    const failed = FINISH_LABELS.failed("the session would not end cleanly");
+    dom.finishButton.click();
+    await vi.waitFor(() => {
+      expect(saves).toHaveLength(1);
+    });
+    await turns();
+    expect(dom.status.textContent).toBe(failed);
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(failed);
+    expect(dom.finishButton.hidden).toBe(false);
+    expect(dom.finishButton.disabled).toBe(false);
+    // A tap that starts no Finish (the zip already carries every change)
+    // leaves it standing.
+    dom.finishButton.click();
+    expect(dom.status.textContent).toBe(failed);
+    // The next tap that starts one (after a desk edit) clears it.
+    expect(setup.renameTour("Renamed")).toBeNull();
+    dom.finishButton.click();
+    expect(dom.status.textContent).not.toBe(failed);
+    await vi.waitFor(() => {
+      expect(saves).toHaveLength(2);
+    });
+    await turns();
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
+  });
+
+  it("stays running when its tour closes until it ends, and then reports no failure", async () => {
+    let archive: Blob = new Blob([]);
+    const hold = heldArchive(() => archive);
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: hold.extras,
+    });
+    const size = (ctx.session as unknown as { archive: { size: number } })
+      .archive.size;
+    archive = await hostedArchive([]);
+    dom.finishButton.click();
+    const reading = FINISH_LABELS.reading(size);
+    // The tour closes as `archive-open.ts` closes it: no session, the
+    // document back to no tour.
+    ctx.session = null;
+    ctx.tourDocument.close();
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(reading);
+    expect(setup.finishNow()).toBe(false);
+    hold.release();
+    await vi.waitFor(() => {
+      expect(dom.status.textContent).not.toBe(reading);
+    });
+    await turns();
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
   });
 });
 
