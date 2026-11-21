@@ -132,7 +132,11 @@ describe("createCaptionsFollow", () => {
   function make() {
     const box = { show: vi.fn(), hide: vi.fn() };
     let content: NarrationBoxContent | null = null;
+    // The players the visitor made, by text id: what the box was given,
+    // and what the sheet played.
+    const voices = new Map<string, NarrationBoxContent["player"]>();
     const narration = {
+      voiceOf: vi.fn((b: TourBlock) => voices.get(b.id) ?? null),
       verdictOf: vi.fn((): NarrationVerdict => "live"),
       captions: vi.fn(() => content),
       pauseAll: vi.fn(),
@@ -180,6 +184,11 @@ describe("createCaptionsFollow", () => {
       },
       give: (c: NarrationBoxContent | null) => {
         content = c;
+        if (c?.player !== undefined) voices.set(c.key, c.player);
+      },
+      /** A voice the reading sheet made and played, never shown. */
+      voice: (id: string, player: NarrationBoxContent["player"]) => {
+        voices.set(id, player);
       },
       mount: (id: string) => {
         const calls: (ReadingSignVoice | null)[] = [];
@@ -527,6 +536,50 @@ describe("createCaptionsFollow", () => {
     expect(calls(signA)).not.toContain("idle");
     expect(chips.get("b")).toBe("idle");
     expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+  });
+
+  // Why: a voice outlives an AR session (its end pauses, never resets),
+  // so a sign shown again after a re-entry must still say where its
+  // voice stands, not idle.
+  it("says paused for a text heard before an AR session ended", () => {
+    const { follow, set, give, mount, chips } = make();
+    const b = text("b", { view: "lectern" });
+    const a = text("a");
+    mount("b");
+    mount("a");
+    set({ blocks: [b, a], presentId: "s1", stored: null });
+    give(at(4000, "a", true));
+    follow.sync();
+    give(at(0, "b"));
+    set({ stored: READING });
+    follow.sync();
+    expect(chips.get("a")).toBe("paused");
+    follow.stop();
+    // The session end disposed the signs; the next session mounts new ones.
+    chips.clear();
+    mount("b");
+    mount("a");
+    follow.sync();
+    expect(chips.get("b")).toBe("idle");
+    expect(chips.get("a")).toBe("paused");
+  });
+
+  // Why: the reading sheet plays the same voice as the box, so a text
+  // played only in the sheet, never the shown one, has its sign say so.
+  it("gives a text played only in the reading sheet its voice's chip", () => {
+    const { follow, set, give, mount, chips, voice } = make();
+    mount("a");
+    mount("b");
+    set({ blocks: [text("a"), text("b")], presentId: "s1", stored: null });
+    give(at(0));
+    const sheet = at(3000, "b", true).player;
+    voice("b", sheet);
+    follow.sync();
+    expect(chips.get("a")).toBe("idle");
+    expect(chips.get("b")).toBe("playing");
+    sheet.pause();
+    follow.sync();
+    expect(chips.get("b")).toBe("paused");
   });
 
   // Why: leaving the station pauses its voices by name for the return, so
