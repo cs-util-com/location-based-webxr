@@ -55,7 +55,7 @@ step, state }`. Throws `RangeError` on a quality the shader cannot draw.
     channel of the flat water's above 10 km, and within 8 at 1 km.
   - The sea covers a pixel by `smoothstep( 0.5, 1.0, globeWater )`, less a
     painted cloud and less the drawn street map (`globeMapShare`, written
-    by `globe-osm-overlay.ts`).
+    by the map's fade patch in `globe-osm-fade.ts`).
   - The framework's water (`water-surface-material.ts`, `water-polish.ts`)
     is not reused: it is a local plane of travelling waves on three's
     standard material. This one is a planet's sea in ECEF with a slope

@@ -38,8 +38,9 @@ box's controller (`travelling-box.ts`) moves.
   paints nothing; then `paintKey()` is empty.
 - `hang` attaches the texture at `plateSizeM` of the box's size and font
   (one em = 0.136 m), so the plate is the box's shape.
-- `pressing()` is the box's own `state().pressing`, so a finger on the
-  ghost and one forwarded from the plate count alike.
+- `pressing()` is the box's own `pressing()` (no whole `state()` per
+  frame), so a finger on the ghost and one forwarded from the plate count
+  alike.
 
 ## Examples
 

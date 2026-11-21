@@ -29,6 +29,15 @@ out of the globe lab as a pure refactor; the lab imports it as
     a reader never uses a stale one;
   - `state()`: `{ frames, fresh, near }`;
   - `dispose()`.
+- `SCENE_DEPTH_GLSL`: the chunk a reading pass includes in its fragment
+  shader: the `uSceneDepth` and `uSceneInverseProjection` uniforms (set from
+  `texture` and `camera.projectionMatrixInverse`) and
+  `vec3 sceneViewPoint( vec2 uv, float z )`, the view-space point the depth
+  `z` read at `uv` (both 0 to 1) stands for. The pass samples the depth
+  itself (`texture2D` or `texture`, by its GLSL version) and skips
+  `z >= 1.0`. Included by `globe-atmosphere.ts`, its only user: the cloud
+  passes still reconstruct the depth inline with their own copy of the
+  same math, so a change here does not reach them.
 
 ## Invariants & assumptions
 

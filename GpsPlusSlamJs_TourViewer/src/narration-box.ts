@@ -149,6 +149,9 @@ export interface NarrationBox {
   endPress(kind: "up" | "cancel", x: number, y: number): void;
   /** Follows the voice; called by `show` and on every frame. */
   tick(): void;
+  /** A finger is down on the box (its own or a forwarded press): cheap,
+   *  for a per-frame read. */
+  pressing(): boolean;
   state(): NarrationBoxViewState;
   dispose(): void;
 }
@@ -952,6 +955,7 @@ export function createNarrationBox(deps: NarrationBoxDeps): NarrationBox {
     beginPress,
     movePress,
     endPress,
+    pressing: () => press !== null,
     state() {
       return {
         shown,

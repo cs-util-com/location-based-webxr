@@ -31,6 +31,7 @@ import {
   TRAVELLING_BOX_DEFAULTS,
   type TravelHideWhy,
 } from "./travelling-box-rules.js";
+import { createTravelRegistry } from "./travel-registry.js";
 import { CLOSING_TAP_GRACE_MS } from "./view-switch.js";
 
 /**
@@ -65,6 +66,8 @@ interface FakeSurface extends TravelSurface {
   down: boolean;
   onLayout: (() => void) | null;
   hung: Texture | null;
+  ghost: boolean | null;
+  inTravel: boolean;
 }
 
 function fakeSurface(): FakeSurface {
@@ -91,7 +94,9 @@ function fakeSurface(): FakeSurface {
     down: false,
     onLayout: null,
     hung: null,
-    travelling: () => true,
+    ghost: null,
+    inTravel: true,
+    travelling: () => s.inTravel,
     hideWhy: () => s.hide,
     canFold: () => false,
     gates: (m, k) => [letterGate(m, k)],
@@ -112,7 +117,9 @@ function fakeSurface(): FakeSurface {
       s.hung = null;
     },
     restingRect: () => REST,
-    setGhost: () => undefined,
+    setGhost(on) {
+      s.ghost = on;
+    },
     setPointer(on) {
       s.pointer = on;
     },
@@ -303,6 +310,30 @@ describe("createTravellingBox", () => {
     expect(box.ownsTap()).toBe(false);
     run(64);
     expect(box.state().place).toBe("dock");
+  });
+
+  // Why: an XR select fires at the touch's end, and a phone may offer it
+  // before the page's pointerdown; a press that starts on the plate and
+  // is dragged off it must still own that select, through the grace after
+  // the finger lifts, and the next tap must reach the world again.
+  it("owns the select of a press dragged off the plate, until the grace ends", () => {
+    box.frame();
+    run(320);
+    const target = new Target();
+    const c = box.state().plateQuad;
+    if (c === null) throw new Error("no plate on screen");
+    const cx = (c[0]![0] + c[2]![0]) / 2;
+    const cy = (c[0]![1] + c[2]![1]) / 2;
+    expect(box.ownsTap()).toBe(false);
+    expect(box.pointerDown(pointer("pointerdown", cx, cy), target)).toBe(true);
+    target.dispatchEvent(pointer("pointermove", cx + 150, cy + 300));
+    expect(box.ownsTap()).toBe(true);
+    target.dispatchEvent(pointer("pointerup", cx + 150, cy + 300));
+    expect(box.ownsTap()).toBe(true);
+    t += CLOSING_TAP_GRACE_MS - 1;
+    expect(box.ownsTap()).toBe(true);
+    t += 1;
+    expect(box.ownsTap()).toBe(false);
   });
 
   // Why: a finger that catches the words mid-flight holds them there.
@@ -516,5 +547,158 @@ describe("createTravellingBox", () => {
     expect(surface.hung).toBeNull();
     box.frame();
     expect(surface.layouts).toBe(1);
+  });
+
+  // Why: a stopped box must leave the page's registry and answer no
+  // pointer; else its last plate, still on screen for a frame, swallows a
+  // press meant for the live words behind it.
+  it("leaves the registry when stopped, so a press reaches the live plate", () => {
+    const registry = createTravelRegistry();
+    box.stop();
+    const live = fakeSurface();
+    scene.add(live.plate);
+    const make = (s: FakeSurface): TravellingBox =>
+      createTravellingBox({
+        surface: s,
+        scene,
+        camera,
+        knobs: TRAVELLING_BOX_DEFAULTS,
+        now: () => t,
+        reduceMotion: () => reduce,
+        viewRect: () => VIEW,
+        createCanvas: fakeCanvas,
+        registry,
+      });
+    make(live);
+    box = make(surface);
+    expect(registry.size()).toBe(2);
+    run(320, () => {
+      registry.frame();
+    });
+    const c = box.state().plateQuad;
+    if (c === null) throw new Error("no plate on screen");
+    const cx = (c[0]![0] + c[2]![0]) / 2;
+    const cy = (c[0]![1] + c[2]![1]) / 2;
+    box.stop();
+    expect(box.hit(cx, cy)).toBeNull();
+    expect(registry.size()).toBe(1);
+    expect(
+      registry.pointerDown(pointer("pointerdown", cx, cy), new Target()),
+    ).toBe(true);
+    expect(live.presses).toHaveLength(1);
+    expect(surface.presses).toEqual([]);
+  });
+
+  // Why: a surface shown at the bottom (not travelling) keeps its own box,
+  // which takes the fingers; the controller must never ghost it or switch
+  // its pointers off, and must give them back when the travel ends.
+  it("never ghosts a surface that does not travel, and gives it back", () => {
+    box.stop();
+    surface = fakeSurface();
+    scene.add(surface.plate);
+    surface.inTravel = false;
+    box = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs: TRAVELLING_BOX_DEFAULTS,
+      now: () => t,
+      reduceMotion: () => reduce,
+      viewRect: () => VIEW,
+      createCanvas: fakeCanvas,
+    });
+    run(400);
+    expect(surface.ghost).not.toBe(true);
+    expect(surface.pointer).not.toBe(false);
+    surface.inTravel = true;
+    run(32);
+    expect(surface.ghost).toBe(true);
+    standAt(16);
+    run(1200);
+    expect(surface.pointer).toBe(true);
+    standAt(3);
+    run(1200);
+    expect(surface.pointer).toBe(false);
+    surface.inTravel = false;
+    run(32);
+    expect(surface.ghost).toBe(false);
+    expect(surface.pointer).toBe(true);
+  });
+
+  // Why: the hysteresis belongs to the plate as the settled place, not to
+  // the words having landed on it: a half step back during the flight home
+  // (the em just under the threshold, above its keep) must not turn the
+  // flight round, or the words swing between plate and dock.
+  it("keeps the plate's hysteresis during the flight back", () => {
+    box.frame();
+    standAt(10);
+    run(16);
+    const at10 = box.state().metrics.letterPx;
+    const halfStep = (10 * at10) / 11.7;
+    standAt(16);
+    run(1200);
+    expect(box.state()).toMatchObject({ place: "dock", u: 1 });
+    standAt(7);
+    for (let i = 0; i < 100 && box.state().place !== "plate"; i++) run(16);
+    expect(box.state().place).toBe("plate");
+    run(16);
+    expect(box.state().u).toBeGreaterThan(0.5);
+    standAt(halfStep);
+    run(16);
+    const letter = box.state().metrics.letterPx;
+    expect(letter).toBeGreaterThan(12 * TRAVELLING_BOX_DEFAULTS.keep);
+    expect(letter).toBeLessThan(12);
+    run(800, () => {
+      expect(box.state().place).toBe("plate");
+    });
+    expect(box.state().u).toBe(0);
+  });
+
+  // Why: words still fading out are on screen; shown again before they
+  // went, they fly from where they are, never jump to the new place.
+  it("flies from the plate when shown again before the fade ended", () => {
+    run(400);
+    expect(box.state()).toMatchObject({ place: "plate", u: 0, presence: 1 });
+    surface.hide = "sheet open";
+    run(16);
+    expect(box.state().place).toBe("hidden");
+    expect(box.state().presence).toBeGreaterThan(0);
+    surface.hide = null;
+    standAt(3, Math.PI);
+    run(16);
+    expect(box.state().place).toBe("dock");
+    expect(box.state().u).toBeLessThan(0.2);
+  });
+
+  // Why: WebXR clips at the camera's own near plane (0.1 m), above the
+  // rules' margin; a plate inside it is cut by the clip, so it must not
+  // count as seen, readable or tappable.
+  it("treats a plate inside the camera's near plane as not seen", () => {
+    box.stop();
+    camera = new PerspectiveCamera(50, VIEW.width / VIEW.height, 0.1, 600);
+    camera.position.set(0, 1.5, 0.08);
+    camera.updateMatrixWorld();
+    box = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs: TRAVELLING_BOX_DEFAULTS,
+      now: () => t,
+      reduceMotion: () => reduce,
+      viewRect: () => VIEW,
+      createCanvas: fakeCanvas,
+    });
+    box.frame();
+    expect(box.state().metrics.valid).toBe(false);
+    expect(box.state().plateQuad).toBeNull();
+  });
+
+  // Why: a stopped box disposes its texture; the plate's material must not
+  // keep pointing at it, or the next draw of that plate uploads a dead one.
+  it("takes the disposed texture off the plate when stopped", () => {
+    run(400);
+    expect((surface.plate.material as MeshBasicMaterial).map).not.toBeNull();
+    box.stop();
+    expect((surface.plate.material as MeshBasicMaterial).map).toBeNull();
   });
 });

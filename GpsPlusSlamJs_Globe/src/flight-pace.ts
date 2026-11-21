@@ -28,6 +28,8 @@
  * @see flight-pace.ts.md
  */
 
+import { clampProgress } from "./globe-ease.js";
+
 export interface FlightPaceParams {
   /** The flight with the data already warm, ms: the shortest it can be. */
   readonly minMs: number;
@@ -81,12 +83,6 @@ function requireParams(params: FlightPaceParams): void {
       `smoothingMs must be a positive number, got ${smoothingMs}`,
     );
   }
-}
-
-/** Progress as the clock reads it: NaN and anything outside are clamped. */
-function clampProgress(progress: number): number {
-  if (!(progress > 0)) return 0;
-  return progress >= 1 ? 1 : progress;
 }
 
 /**

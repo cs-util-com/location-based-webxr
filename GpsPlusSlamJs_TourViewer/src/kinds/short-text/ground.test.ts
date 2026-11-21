@@ -333,6 +333,7 @@ describe("a ground arrow's tap", () => {
         for (const ndc of [{ x: 0, y: 0.95 }, ndcOf(camera, 6, 0, 3)]) {
           const sheet: unknown[] = [];
           routeVisitorTap(ndc as never, {
+            words: () => false,
             character: () => false,
             model: () => false,
             part: () => tapAt(scene, camera, ndc, part, toleranceDeg),

@@ -1208,7 +1208,7 @@ describe("placing is locked while no tour is open", () => {
     // phone. Work placed with none lived in memory alone, so a reload, a
     // tab kill or an AR crash lost it without a word. The camera opens the
     // tour from its printed code; until then the panel locks placing and
-    // says so (`entryHint`), and nothing can be lost.
+    // says so (`NO_TOUR_PLACING_LOCKED`), and nothing can be lost.
     const { store } = memoryStore();
     const { ctx, dom, setup } = wire(store, { placeable: true });
     const tour = ctx.session;
@@ -1529,7 +1529,7 @@ describe("work made before the tour's draft opened reaches it", () => {
     // 360 px phone), so a sentence at its end, or a long one at its start,
     // hides everything else. The placement's note follows it, and the full
     // sentence - where to open the tour - ends the line. With no tour
-    // open the locked-placing hint (`entryHint`) follows the lead.
+    // open the locked-placing hint (`NO_TOUR_PLACING_LOCKED`) follows the lead.
     expect(dom.status.textContent).toMatch(
       /^No tour open - nothing placed here is kept. · Point at your hung code: it opens your tour. [^·]+ · Pin "Gate" placed/,
     );

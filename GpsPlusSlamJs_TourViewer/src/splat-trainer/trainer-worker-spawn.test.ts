@@ -18,7 +18,7 @@ describe("workerShimSource", () => {
   // Why: the worker loads Splat.js only through this importer, and an
   // import() takes its referrer policy from the module it is written in.
   // Written in the blob: module, the request names no page; written in a
-  // module this site serves, it sent the site's origin to the CDN (seen in
+  // module this site serves, it sent this page's address to the CDN as the Referer (seen in
   // the browser test of the GPU trainer).
   it("leaves an import() written in the shim itself under the shared key", () => {
     const src = workerShimSource("https://a.test/w.js");

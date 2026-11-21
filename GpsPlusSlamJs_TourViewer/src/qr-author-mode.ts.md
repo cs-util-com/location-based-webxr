@@ -43,19 +43,26 @@ and the mint itself — raw-WebXR stable pose → GPS-world NUE →
   few fixes, the line says the code places the creator and that measuring a
   NEW code needs GPS ("N of 3 fixes"); `canMint` stays false - a vote-only
   visit mints nothing.
-- `entryHint({ tourOpen, codeSeen })` - the AR visit's first hint (authoring
-  plan 2026-09-28-0953 §3.2a, decision D5): "First, point the camera at
-  this tour's printed code: pins and photos placed before it is seen are
-  less exact." (plan 2026-10-15-0348 M0: it used to name "the code you
-  scanned to open this tour", false for a tour opened from a file or a
-  link) while a tour is open and the code in
-  hand has not been seen stable in this visit; empty once it has. It blocks
-  nothing: a later visit's notes are corrected through the code only when
-  the code was seen (D10b), and the owner chose a hint over a rule.
-  - With no tour open it says "Point at your hung code: it opens your
-    tour. You can place once it is open, so nothing is lost." - there
-    placing IS locked (`creator-placement.ts`), and the line names the
-    reason and the move that unlocks it.
+- `CREATOR_SCAN_CARD` and `creatorScanCardShown({ sessionLive, levels,
+codeSeen, dismissed })` - the AR visit's first hint, on the creator's
+  variant of the scan card: title "First, point the camera at this tour's
+  printed code", line "Pins and photos placed before it is seen are less
+  exact." It names the PRINTED code: "the code you scanned to open this
+  tour" was false for a tour opened from a file or a link. Shown only in a
+  live session of a tour with at least one measured code (`isLockableLevel`
+  from `scan-gate.ts`; a tour without one has no code to point at, and
+  `levels` null means none known), while this visit has not seen the code
+  and the creator has not closed the card. It blocks nothing: a later
+  visit's notes are corrected through the code only when the code was seen
+  in that visit, so it is a hint, not a rule. Tests: examples and a
+  property over all four inputs in `qr-author-mode.test.ts`.
+- `NO_TOUR_PLACING_LOCKED` - what the AR line leads with while no tour is
+  open: "Point at your hung code: it opens your tour. You can place once it
+  is open, so nothing is lost." There placing IS locked
+  (`creator-placement.ts`: only an open tour keeps a draft on this phone),
+  and the line names the reason and the move that unlocks it.
+  `creator-setup.ts` puts it in the line's lead whenever `ctx.session` is
+  null; `creator-setup.test.ts` pins that wiring.
 - `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
   line that says a code correction was refused (M2c review #2): "Code seen
   N m from its saved position" (or "turned N°" when only the yaw broke the

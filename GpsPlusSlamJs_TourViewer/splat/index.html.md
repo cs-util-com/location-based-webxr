@@ -14,10 +14,32 @@ The page logic lives in `src/splat-trainer/` (`splat-main.ts`,
 
 ## Head
 
-- `referrer: no-referrer`, `robots: noindex`, `color-scheme: light dark`,
-  an empty icon (no favicon request), title "Make a splat".
+- A Content-Security-Policy meta, allowing only what the page needs:
+  - `script-src 'self' blob:` and the one pinned Splat.js commit on
+    jsDelivr (`https://cdn.jsdelivr.net/gh/arrival-space/splat.js@<commit>/`,
+    the commit of `SPLAT_JS_COMMIT` in `src/splat-trainer/splat-js.ts`);
+  - `worker-src blob: 'self'`: the trainer's `blob:` start module and
+    Splat.js's own `blob:` tick worker, plus `'self'` because a module
+    worker's static imports are fetched as worker scripts (the start
+    module statically imports the built worker script; without `'self'`
+    the worker fails to start, measured in the browser);
+  - `connect-src 'self'` (which also covers the dev server's live-reload
+    socket): nothing the page or its workers run can send data to another
+    host;
+  - `default-src 'self'`, `img-src 'self' data: blob:`, `style-src 'self'
+'unsafe-inline'` (the dev server injects styles), `font-src 'self'
+data:`, `object-src 'none'`, `base-uri 'none'`, `form-action 'none'`.
+  - A pin changed in the code but not here fails `splat-js.test.ts`.
+- `referrer: no-referrer`, load-bearing: the policy limits where requests
+  go, not what they carry; this keeps the page's address out of the CDN's
+  request for Splat.js.
+- `robots: noindex`, `color-scheme: light dark`, an empty icon (no
+  favicon request), title "Make a splat".
 
 ## Tests
 
 `playwright-tests/splat-trainer.spec.js` and
-`playwright-tests/splat-trainer-gpu.spec.js`.
+`playwright-tests/splat-trainer-gpu.spec.js` (the trainer loading under
+the policy with no violation, and a worker's fetch to another host refused
+as `connect-src` before it reaches the network); the policy's directives
+in `src/splat-trainer/splat-js.test.ts`.

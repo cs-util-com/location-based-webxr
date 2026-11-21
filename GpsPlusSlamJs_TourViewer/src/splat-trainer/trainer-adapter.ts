@@ -11,12 +11,14 @@
  */
 
 import type { SplatInputs } from "./recording-reader.js";
+import type { AdapterLimits } from "./training-budget.js";
 import type { PlannedWindow } from "./window-plan.js";
 
-/** What the probe found. `integrated` trains, but slowly. */
+/** What the probe found. `integrated` trains, but slowly. `limits` are
+ *  the adapter's memory limits, when it reports them. */
 export type GpuProbe =
-  | { readonly kind: "ready" }
-  | { readonly kind: "integrated" }
+  | { readonly kind: "ready"; readonly limits?: AdapterLimits }
+  | { readonly kind: "integrated"; readonly limits?: AdapterLimits }
   | { readonly kind: "no-webgpu"; readonly detail: string };
 
 export interface TrainRequest {
@@ -43,8 +45,9 @@ export interface TrainProgress {
   readonly fraction: number;
   /** Seconds this stretch still needs, or null while not yet measured. */
   readonly secondsLeft: number | null;
-  /** Seconds until the next preview picture, or null when unknown. */
-  readonly nextPreviewInS: number | null;
+  /** Seconds between preview pictures while it trains, or null when
+   *  there are none. */
+  readonly previewEveryS: number | null;
 }
 
 interface TrainEvents {
@@ -76,6 +79,12 @@ export interface WindowTrainResult {
   readonly trainingS: number;
   /** The trained splat, or null when there is none (practice, failure). */
   readonly ply: Blob | null;
+  /** Why a `failed` run failed, in words; absent otherwise. */
+  readonly detail?: string;
+  /** False when training again cannot fix what made it fail (a library
+   *  that will not download, a photo that will not read, a stretch too
+   *  large for the card); absent when it might. */
+  readonly retryHelps?: false;
 }
 
 export type Verdict = "good" | "weak" | "poor";
@@ -86,6 +95,27 @@ export interface WindowJudgement {
   readonly reasons: readonly string[];
   /** One sentence for the print's caption. */
   readonly say: string;
+  /** False when "train again" cannot help, so the page does not offer it. */
+  readonly retryHelps?: false;
+}
+
+/**
+ * The judgement of a run that failed: poor, saying why when the run said
+ * so, and passing on that a second try cannot help.
+ */
+export function failedJudgement(
+  result: Pick<WindowTrainResult, "detail" | "retryHelps">,
+): WindowJudgement {
+  const detail = result.detail?.trim() ?? "";
+  return {
+    verdict: "poor",
+    reasons: ["the trainer stopped"],
+    say:
+      detail === ""
+        ? "Training stopped with an error."
+        : `Training stopped: ${detail}`,
+    ...(result.retryHelps === false ? { retryHelps: false as const } : {}),
+  };
 }
 
 export interface TrainerAdapter {
@@ -111,6 +141,7 @@ export interface GpuLike {
 
 export interface GpuAdapterLike {
   readonly isFallbackAdapter?: boolean;
+  readonly limits?: Partial<AdapterLimits>;
   readonly info?: {
     readonly vendor?: string;
     readonly architecture?: string;
@@ -130,7 +161,8 @@ const INTEL_CARD = /\bxe\d*-hpg\b/i;
  * cannot train; an Intel adapter that is not one of Intel's graphics
  * cards, or one that describes itself as built-in graphics, trains slowly
  * (`adapter.info` may say too little to be sure, so the page words this
- * as likely, not certain). Never throws.
+ * as likely, not certain). Passes on the adapter's memory limits when
+ * both are positive numbers. Never throws.
  */
 export async function probeWebGpu(
   gpu: GpuLike | undefined | null,
@@ -168,7 +200,18 @@ export async function probeWebGpu(
   const text = `${info.architecture ?? ""} ${info.description ?? ""}`;
   const intelBuiltIn =
     vendor === "intel" && !INTEL_CARD.test(String(info.architecture ?? ""));
-  return intelBuiltIn || BUILT_IN.test(text)
-    ? { kind: "integrated" }
-    : { kind: "ready" };
+  const kind =
+    intelBuiltIn || BUILT_IN.test(text) ? "integrated" : ("ready" as const);
+  const limits = limitsOf(adapter);
+  return limits === null ? { kind } : { kind, limits };
+}
+
+/** The adapter's two memory limits, or null unless both are positive. */
+function limitsOf(adapter: GpuAdapterLike): AdapterLimits | null {
+  const l = adapter.limits;
+  const binding = Number(l?.maxStorageBufferBindingSize);
+  const buffer = Number(l?.maxBufferSize);
+  return [binding, buffer].every((v) => Number.isFinite(v) && v > 0)
+    ? { maxStorageBufferBindingSize: binding, maxBufferSize: buffer }
+    : null;
 }

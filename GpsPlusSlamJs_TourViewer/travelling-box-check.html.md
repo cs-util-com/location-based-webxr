@@ -23,11 +23,11 @@ still until the hook moves it.
 
 ## What it does not show
 
-The camera image, the station and its pose chain, a real voice, taps on
-the plate, and the flight of the words to the bottom of the screen and
-back (a later step).
+The camera image, the station and its pose chain, and a real voice (the
+hook moves a clocked one). The taps, drags, the flight to the bottom of
+the screen and back, and the hiding are shown and tested here; the app's
+own wiring is tested in the Tour Viewer's AR specs.
 
 ## Tests
 
-`playwright-tests/travelling-box-check.spec.js`;
-`src/checks/travelling-box-check.test.ts`.
+`playwright-tests/travelling-box-check.spec.js`.

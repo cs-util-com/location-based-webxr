@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -66,5 +68,48 @@ describe("loadSplatJs", () => {
     await expect(loadSplatJs(() => Promise.resolve({}))).rejects.toThrow(
       /not the version/,
     );
+  });
+});
+
+describe("the page's content security policy", () => {
+  const html = readFileSync(
+    new URL("../../splat/index.html", import.meta.url),
+    "utf8",
+  );
+  const csp =
+    /<meta\s+http-equiv="Content-Security-Policy"\s+content="([^"]*)"/.exec(
+      html,
+    )?.[1] ?? "";
+  const directive = (name: string): string[] =>
+    csp
+      .split(";")
+      .map((d) => d.trim().split(/\s+/))
+      .find((d) => d[0] === name)
+      ?.slice(1) ?? [];
+
+  // Why: the page runs code it does not ship. The policy lets scripts come
+  // only from this site, the worker shim and the one pinned commit, so a
+  // pin changed in the code but not here fails before a browser does; and
+  // nothing the trainer runs may send data anywhere but this site.
+  it("allows scripts only from this site, blob: and the pinned commit", () => {
+    const pinned = `https://cdn.jsdelivr.net/gh/arrival-space/splat.js@${SPLAT_JS_COMMIT}/`;
+    expect(SPLAT_JS_URL.startsWith(pinned)).toBe(true);
+    expect(directive("script-src").sort()).toEqual(
+      ["'self'", "blob:", pinned].sort(),
+    );
+    // 'self' because a module worker's static imports are fetched as
+    // worker scripts: the blob: start module imports the built worker
+    // script statically (trainer-worker-spawn.ts).
+    expect(directive("worker-src").sort()).toEqual(["'self'", "blob:"]);
+    expect(directive("connect-src")).toEqual(["'self'"]);
+    expect(directive("default-src")).toEqual(["'self'"]);
+    expect(directive("object-src")).toEqual(["'none'"]);
+  });
+
+  // Why: the policy limits where requests go, not what they carry; the
+  // no-referrer meta is what keeps the page's address out of the CDN's
+  // request (see trainer-worker-spawn.ts).
+  it("keeps the no-referrer meta beside it", () => {
+    expect(html).toMatch(/<meta name="referrer" content="no-referrer" \/>/);
   });
 });

@@ -185,24 +185,62 @@ describe("the visitor's tap on the story's character", () => {
         calls.push("part");
         return part;
       },
+      words: () => {
+        calls.push("words");
+        return false;
+      },
       pinSheet: {
         close: () => calls.push("close"),
         tapped: () => calls.push("pin"),
       },
     });
     routeVisitorTap(null, targets(true, true));
-    expect(calls).toEqual(["character", "close"]);
+    expect(calls).toEqual(["words", "character", "close"]);
     calls.length = 0;
     routeVisitorTap(null, targets(false, true));
-    expect(calls).toEqual(["character", "model", "close"]);
+    expect(calls).toEqual(["words", "character", "model", "close"]);
     calls.length = 0;
     // A tapped part (a stand's page turned, a sign's text opened) closes
     // the pin sheet, as a model's card does.
     routeVisitorTap(null, targets(false, false, true));
-    expect(calls).toEqual(["character", "model", "part", "close"]);
+    expect(calls).toEqual(["words", "character", "model", "part", "close"]);
     calls.length = 0;
     routeVisitorTap(null, targets(false, false));
-    expect(calls).toEqual(["character", "model", "part", "pin"]);
+    expect(calls).toEqual(["words", "character", "model", "part", "pin"]);
+  });
+
+  // Why: a finger on the travelling words (a press on the plate, or its
+  // grace after the lift: `travelling-box.ts` ownsTap) makes an XR select
+  // the words', whatever lies behind them: it must not open a sheet, turn
+  // a page or close the pin sheet. Once the words let go, the next select
+  // reaches the world again.
+  it("gives a select the words own to nothing else, and the next one to the world", () => {
+    const calls: string[] = [];
+    let owns = true;
+    const to = {
+      words: () => owns,
+      character: () => {
+        calls.push("character");
+        return false;
+      },
+      model: () => {
+        calls.push("model");
+        return false;
+      },
+      part: () => {
+        calls.push("part");
+        return true;
+      },
+      pinSheet: {
+        close: () => calls.push("close"),
+        tapped: () => calls.push("pin"),
+      },
+    };
+    routeVisitorTap(null, to);
+    expect(calls).toEqual([]);
+    owns = false;
+    routeVisitorTap(null, to);
+    expect(calls).toEqual(["character", "model", "part", "close"]);
   });
 
   it("reads the tour's declared characters by id, once per manifest", () => {

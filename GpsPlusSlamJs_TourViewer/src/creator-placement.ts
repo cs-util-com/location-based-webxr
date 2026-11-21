@@ -180,7 +180,7 @@ export function wireCreatorPlacement(deps: {
    * And a tour open on this page: only an open tour keeps a draft on this
    * phone, so work placed with none would live in memory alone, and a
    * reload or a crash would lose it. The camera opens the tour from its
-   * printed code, which is what the locked panel asks for (`entryHint`).
+   * printed code, which is what the locked panel asks for (`NO_TOUR_PLACING_LOCKED`).
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();

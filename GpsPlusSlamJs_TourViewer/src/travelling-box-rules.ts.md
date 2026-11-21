@@ -35,12 +35,14 @@ can be replayed offline for any knob set.
   - `TRAVEL_EDGE`: 0.88 to enter the plate and 0.95 to keep it. These are
     NDC limits per axis for the plate's centre.
   - `TRAVEL_MIN_W` = 0.05: the smallest clip w a corner may have before
-    it counts as at the eye (`plateMetrics` and `quadOfClip` share it).
+    it counts as at the eye (`plateMetrics` and `quadOfClip` share it
+    as the default of their `minW`; the controller passes the camera's
+    near plane where that is further).
 - **`plateSizeM(boxCssW, boxCssH, fontPx, emM = TRAVEL_PLATE.emM)`** gives
   the plate in metres, so the plate keeps the box's aspect exactly; one em
   is `emM` metres (another surface may choose its own). It throws a
   `RangeError` on a size or em that is not positive and finite.
-- **`plateMetrics(cornersClip, centreClip, viewW, viewH, boxCssW, boxCssH, fontPx, lineHeightPx)`**
+- **`plateMetrics(cornersClip, centreClip, viewW, viewH, boxCssW, boxCssH, fontPx, lineHeightPx, minW = TRAVEL_MIN_W)`**
   gives `{ valid, onScreen, ndcX, ndcY, letterPxH, letterPxW, letterPx, linePx }`.
   - The corners are clip coordinates in a three.js plane's vertex order:
     TL, TR, BL, BR.
@@ -84,9 +86,12 @@ can be replayed offline for any knob set.
   progress `e` into the caller's `out` (kept from frame to frame, so a
   flight allocates nothing) and returns it.
 - **`signGrowth(d, from = 4.5, max = 1.6)`**.
-- **`quadOfClip(clip, viewW, viewH)`** gives screen px in polygon order
-  TL, TR, BR, BL, or null when a corner's w is at or under 0.05 or not
-  finite (the flight interpolates w, so a corner can reach the eye).
+- **`quadOfClip(clip, viewW, viewH, minW = TRAVEL_MIN_W)`** gives screen
+  px in polygon order TL, TR, BR, BL, or null when a corner's w is at or
+  under `minW` or not finite (the flight interpolates w, so a corner can
+  reach the eye). **`quadOfClipInto(clip, viewW, viewH, out, minW)`** is
+  the same written into four kept pairs, answering false instead of null:
+  the controller's per-frame form.
 - **`inQuad(x, y, quad)`** answers for a convex quad, edge included; a
   quad collapsed to a line or a point has no inside.
 

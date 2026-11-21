@@ -72,7 +72,7 @@ import {
   PDF_FILE_TYPE,
 } from "gps-plus-slam-app-framework/storage";
 import type { DepthSamplerConfig } from "gps-plus-slam-app-framework/ar/depth-sampler";
-import type { Camera, Object3D } from "three";
+import type { Camera, Object3D, Texture } from "three";
 
 import { loadGlbModel } from "./glb-model.js";
 import { ndcOfTargetRay, pickObject } from "./object-pick.js";
@@ -255,6 +255,10 @@ export interface TourViewerSeams {
   /** Switch the renderer's local clipping on: a cutaway model clips its
    *  materials by a plane. Does nothing without a renderer. */
   enableClipping(): void;
+  /** Uploads `texture` to the GPU now, so its first draw does not stall
+   *  a frame (the travelling words' texture). Does nothing without a
+   *  renderer. */
+  uploadTexture(texture: Texture): void;
   /** The page's one audio element for the stories (unlocked by the start
    *  tap, `scene-audio.ts`). A seam so the e2e records what played. */
   createAudioElement(): AudioElementLike;
@@ -392,6 +396,9 @@ export const realSeams: TourViewerSeams = {
   enableClipping: () => {
     const renderer = getRenderer();
     if (renderer) renderer.localClippingEnabled = true;
+  },
+  uploadTexture: (texture) => {
+    getRenderer()?.initTexture(texture);
   },
   createAudioElement: () => new Audio(),
   xrProjection0: () => getCamera()?.projectionMatrix.elements[0] ?? null,

@@ -1,5 +1,5 @@
 /**
- * Why these tests matter: both 3D views time their frames for the
+ * Why these tests matter: the 3D view times its frames for the
  * editor's Performance tab, and its badge counts the slow frames of the
  * last five seconds. A clock that kept every frame would grow without
  * bound; one that counted a slow frame forever would keep the badge up

@@ -74,8 +74,18 @@ synthetic scene's acceptance run and await field recordings.
   `shellDistanceM` around the training cameras.
 - `deadlineS` 1200: the longest a first try may train (a retry gets
   `timeScale` times it); the run then ends as `deadline`.
+- `prepareCapS` 300 (considered 120 / 300 / 600, not measured): the
+  longest preparing the graphics card (photo upload, seeding) may take
+  before the stretch fails in words; a retry gets `timeScale` times it.
+  120 s would likely cut off a slow integrated card uploading 100 photos;
+  600 s leaves a stuck print up for ten minutes. A measured upload time
+  over 300 s on a real card would raise it.
 - `goodHeldOutDb` 20, `weakHeldOutDb` 16: the judge's held-out sharpness
-  for good and weak; below weak is poor.
+  for good and weak; below weak is poor. Provisional, and laxer than the
+  plan's gate bars (good at 21 dB held out and 27 dB at the camera with
+  SSIM 0.70; not good under 19 dB held out or 25 dB at the camera): this
+  judge reads held-out sharpness only. A judge measured against people's
+  ratings replaces both.
 
 ## Invariants & assumptions
 

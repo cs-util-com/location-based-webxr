@@ -1,4 +1,4 @@
-# `editor3d-drawings.ts` - the item builders of both 3D views
+# `editor3d-drawings.ts` - the item builders of the 3D view
 
 ## Purpose
 
@@ -6,8 +6,6 @@ The one list of builders the globe view (`editor3d-globe.ts`) hands the
 stations layer
 (`editor3d-stations.ts`) to draw a station's items with. They are the
 visitor's own builders, so the editor shows an item as the phone does.
-Before this list each view wrote its own, and the globe's lacked the
-reading sign: a long text shown as a sign was drawn in the flat view only.
 
 ## Public API
 
@@ -33,8 +31,8 @@ reading sign: a long text shown as a sign was drawn in the flat view only.
 
 ## Invariants & assumptions
 
-- Both views spread the result into `createStationsLayer`'s deps; a
-  builder the layer gains belongs here, never in one view.
+- The globe view spreads the result into `createStationsLayer`'s deps;
+  a builder the layer gains belongs here, never in the view.
 - `EditorDrawings` is `Required<Pick<...>>`: the layer's deps are
   optional, so a plain `Pick` would let a listed builder go missing
   unnoticed; dropping one is a type error here. A builder newly added to

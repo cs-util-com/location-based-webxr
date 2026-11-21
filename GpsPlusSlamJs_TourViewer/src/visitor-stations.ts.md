@@ -152,7 +152,10 @@ One `figure-memo.ts` serves every stage made here, the story's and the free ones
   goes to the walk's toast, shown and announced (the toast's root is
   aria-hidden): `sayFailureInToast(toast)`, the scene view's
   `sayFailure`; no walk sheet, not said.
-  `routeVisitorTap` is `main.ts`'s order: the character, then a model's
+  `routeVisitorTap` is `main.ts`'s order: a select the travelling words
+  own (`words`: a finger on them or its grace, `travel-registry.ts`) is
+  theirs and reaches nothing else, not even the pin sheet's close; then
+  the character, then a model's
   card, then a world part (`world-part.ts`: a reading stand's page turns,
   a reading sign's text opens in the reading sheet); a tap any of them
   takes closes the pin sheet, one none of them takes is the

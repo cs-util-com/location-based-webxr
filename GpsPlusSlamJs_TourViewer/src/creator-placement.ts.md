@@ -64,7 +64,7 @@ troubleshooting recording's record of each placement. Split out of
     crash lost it silently. Pin, Photo and New station stay locked until
     the tour opens - from its printed code through the camera
     (`scan-open.ts`), or from a link or a file - and the panel's first
-    line says so (`entryHint` in `qr-author-mode.ts`).
+    line says so (`NO_TOUR_PLACING_LOCKED` in `qr-author-mode.ts`).
   - **Or a stored code's votes:** in a visit with no device fix a code the
     tour stores lines the session up by its votes (`creator-measuring.ts`),
     and the gate accepts "a stored code voted in this visit" in place of

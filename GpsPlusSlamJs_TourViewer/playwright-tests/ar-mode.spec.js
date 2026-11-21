@@ -1287,15 +1287,17 @@ test("a later visit adds a new code beside a stored one; the stored code's level
   expect(level.qr.geo?.lat).toEqual(expect.any(Number));
 });
 
-test("the creator's AR visit first asks for the tour's code, and stops asking once the code is seen (authoring plan 2026-09-28-0953 §3.2a, D5)", async ({
+test("the creator's AR visit first asks for the tour's code on the scan card, and stops asking once the code is seen", async ({
   page,
 }) => {
   // Why this matters: a later visit's notes are corrected through the code
-  // only when the code was seen in that visit (D10b), and the owner chose a
-  // hint over a rule - so the hint is the only thing that tells the author
-  // to look at the code first. Composed here with the real pipeline: the
-  // hint must go away through a real stable fused pose and the async
-  // identity hash, not a test's shortcut.
+  // only when the code was seen in that visit, and nothing blocks placing
+  // before it, so the card is the only thing that tells the creator to look
+  // at the code first. It is the visitor's scan card in the creator's
+  // variant, with the creator's own reason; the readout no longer leads
+  // with the sentence, where the two-line clamp cut it. Composed with the
+  // real pipeline: the card must go through a real stable fused pose and
+  // the async identity hash, not a test's shortcut.
   await page.goto("/");
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -1307,12 +1309,24 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
     },
   );
   await enterAr(page);
-  await expect(page.getByTestId("setup-status")).toHaveText(
-    /^First, point the camera at this tour's printed code:/,
+  const card = page.getByTestId("scan-card");
+  await expect(card).toBeVisible();
+  await expect(page.getByTestId("scan-card-title")).toHaveText(
+    "First, point the camera at this tour's printed code",
   );
-  // It asks; it does not block (D5): the readout is there beside it.
+  await expect(page.getByTestId("scan-card-line")).toHaveText(
+    "Pins and photos placed before it is seen are less exact.",
+  );
+  await expect(page.getByTestId("scan-card-close")).toBeVisible();
+  // The visitor's escape belongs to the visitor's gate.
+  await expect(page.getByTestId("scan-escape")).toBeHidden();
+  // It asks; it does not block: the readout is there beside it, without
+  // the sentence.
   await expect(page.getByTestId("setup-status")).toHaveText(
     /hold the phone on the printed code/i,
+  );
+  await expect(page.getByTestId("setup-status")).not.toHaveText(
+    /First, point the camera/,
   );
   await page.evaluate((text) => {
     /** @type {any} */ (window).__tourViewerTest.armQrDetection(text);
@@ -1331,11 +1345,62 @@ test("the creator's AR visit first asks for the tour's code, and stops asking on
     // page's timers fire only on demand): the visit waits for GPS, so the
     // stored code is not voted and the readout is the plain "Pose stable".
     .toMatch(/Pose stable/);
-  // The code's identity is a hash that lands a moment later; then the hint
+  // The code's identity is a hash that lands a moment later; then the card
   // goes, with nothing else to do.
-  await expect(page.getByTestId("setup-status")).not.toHaveText(
-    /First, point the camera/,
+  await expect(card).toBeHidden();
+});
+
+test("the creator's scan card closes at once on its x, and comes back with the next AR visit", async ({
+  page,
+}) => {
+  // Why this matters: the card is a hint, never a gate. A creator who has
+  // read it must be able to put it away before the code is seen, and a
+  // card that stayed closed for later visits would hide the reason in the
+  // very visit that needs it.
+  await page.goto("/");
+  await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    {
+      timeout: 15000,
+    },
   );
+  await enterAr(page);
+  const card = page.getByTestId("scan-card");
+  await expect(card).toBeVisible();
+  await page.getByTestId("scan-card-close").click();
+  await expect(card).toBeHidden();
+  await page.getByTestId("enter-ar").click();
+  await expect(page.locator("body")).not.toHaveAttribute(
+    "data-ar-active",
+    "true",
+  );
+  await page.getByTestId("enter-ar").click();
+  await expect(card).toBeVisible();
+});
+
+test("a tour without a measured code shows the creator no scan card", async ({
+  page,
+}) => {
+  // Why this matters: the card asks for the tour's printed code, and a
+  // tour none of whose codes is measured has no code that could help yet.
+  await page.goto("/");
+  await page
+    .getByTestId("link-input")
+    .fill("http://127.0.0.1:5197/ranges-ok/stations-tour-no-code.zip");
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    {
+      timeout: 15000,
+    },
+  );
+  await enterAr(page);
+  await expect(page.getByTestId("setup-controls")).toBeVisible();
+  await expect(page.getByTestId("scan-card")).toBeHidden();
 });
 
 test("the creator's empty status line takes no room on the setup page", async ({

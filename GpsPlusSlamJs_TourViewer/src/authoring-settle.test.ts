@@ -407,6 +407,8 @@ function authoring(
     (typeof DOM_KEYS)[number],
     ReturnType<typeof el>
   >;
+  /** The creator's variant of the scan card. */
+  const scanCard = { root: el(), title: el(), line: el(), close: el() };
   const ctx = createTourViewerSession();
   ctx.session = openTourWithNothingRead();
   const real = createTourViewerStore();
@@ -550,7 +552,7 @@ function authoring(
       openStep: () => undefined,
       revealStep: () => undefined,
     } as never,
-    dom: dom as unknown as CreatorSetupDom,
+    dom: { ...dom, scanCard } as unknown as CreatorSetupDom,
     openDraftStore: () =>
       (options.storeOpens ?? Promise.resolve()).then(() => options.store),
     ...(options.summary === undefined ? {} : { summary: options.summary }),
@@ -693,6 +695,7 @@ function authoring(
     },
     placePin,
     inWorldGroup,
+    scanCard,
     seeTheCode,
     mint,
     endVisit,
@@ -2203,46 +2206,87 @@ describe(
   },
 );
 
-describe("the entry hint (§3.2a, D5)", { timeout: SLOW_MS }, () => {
-  /** An open tour, as far as the panel's readout reads one. */
-  function openTour(a: ReturnType<typeof authoring>): void {
-    a.ctx.session = {
-      archive: { url: "https://example.test/tour.zip", size: 2048 },
-      entries: [],
-      hostedFileName: () => null,
-    } as never;
+describe("the creator's scan card", { timeout: SLOW_MS }, () => {
+  // Why: the card is the only thing that asks the creator to look at the
+  // code first, and the setup is its one writer in a creator's session.
+  // Composed here with the real codes and visits: it must close through a
+  // real sighting of the code in hand, open again with the next visit, and
+  // never block placing.
+
+  /** A tour with a measured code, as far as the card reads one. */
+  function measuredTour(a: ReturnType<typeof authoring>): void {
+    a.ctx.currentLevels = new Map([
+      [
+        "measured0001",
+        {
+          version: 1,
+          qr: {
+            physicalSizeM: 0.16,
+            geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+          },
+        } as never,
+      ],
+    ]);
   }
 
-  it("says first to point at the code, until this visit has seen it - and never blocks placing", async () => {
-    const a = await (async () => {
-      const b = authoring();
-      openTour(b);
-      await b.mint();
-      await b.placePin("Gate", [2, 0, -1]);
-      b.endVisit();
-      return b;
-    })();
+  it("asks first for the code, until this visit has seen it - and never blocks placing", async () => {
+    const a = authoring();
+    measuredTour(a);
+    await a.mint();
+    await a.placePin("Gate", [2, 0, -1]);
+    a.endVisit();
     a.beginVisit();
     a.setup.renderAuthorReadout();
-    expect(a.dom.status.textContent).toMatch(
-      /^First, point the camera at this tour's printed code:/,
+    expect(a.scanCard.root.hidden).toBe(false);
+    expect(a.scanCard.title.textContent).toBe(
+      "First, point the camera at this tour's printed code",
     );
-    // Placing is not blocked while the hint shows (D5).
+    // The readout no longer carries the sentence.
+    expect(a.dom.status.textContent).not.toMatch(/First, point the camera/);
+    // Placing is not blocked while the card shows.
     expect(a.dom.pinButton.disabled).toBe(false);
 
     a.seeTheCode();
     await flush();
-    expect(a.dom.status.textContent).not.toMatch(/First, point the camera/);
+    expect(a.scanCard.root.hidden).toBe(true);
   });
 
   it("stays while only a DIFFERENT code is seen", async () => {
     const a = authoring();
-    openTour(a);
+    measuredTour(a);
     a.codes.setInHand({ id: "ffffffffffff", json: "{}" }, null);
     a.beginVisit();
     a.seeTheCode();
     await flush();
-    expect(a.dom.status.textContent).toMatch(/First, point the camera/);
+    expect(a.scanCard.root.hidden).toBe(false);
+  });
+
+  it("closes at once on its x, for this visit only", () => {
+    const a = authoring();
+    measuredTour(a);
+    a.beginVisit();
+    a.setup.renderAuthorReadout();
+    expect(a.scanCard.root.hidden).toBe(false);
+    // A tap on the x is not also an XR select.
+    expect(a.scanCard.close.listens("beforexrselect")).toBe(true);
+    a.scanCard.close.click();
+    expect(a.scanCard.root.hidden).toBe(true);
+    a.setup.renderAuthorReadout();
+    expect(a.scanCard.root.hidden).toBe(true);
+    a.endVisit();
+    a.beginVisit();
+    a.setup.renderAuthorReadout();
+    expect(a.scanCard.root.hidden).toBe(false);
+  });
+
+  it("never shows for a tour without a measured code", () => {
+    const a = authoring();
+    a.ctx.currentLevels = new Map([
+      ["bare00000001", { version: 1, qr: {} } as never],
+    ]);
+    a.beginVisit();
+    a.setup.renderAuthorReadout();
+    expect(a.scanCard.root.hidden).toBe(true);
   });
 });
 
