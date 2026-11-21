@@ -59,7 +59,12 @@ export interface TrainerSettings {
    *  card's binding and buffer limits apply to. */
   readonly gpuBytesPerPixel: number;
   /** Shortest photo side the trainer may scale down to (px); below it a
-   *  window is refused as too large instead. Swept 64 / 128 / 256. */
+   *  window is refused as too large instead. The GPU trainer counts the
+   *  larger of this and Splat.js's own floor (320 px on the longer side:
+   *  240 px short for 4:3 photos, 180 px for 16:9), so at 128 it binds
+   *  only for photos wider than 2.5:1 and is inert for camera photos; of
+   *  the range 64 / 128 / 256 only 256 changes which stretches are
+   *  refused (4:3 and wider). Kept as the knob that raises the floor. */
   readonly minShortSidePx: number;
   /** Steps measured before a time estimate is shown: earlier ones carry
    *  shader compilation and warm-up. */
@@ -84,9 +89,10 @@ export interface TrainerSettings {
    *  it. Picked, not swept: a window of 100 photos took minutes on the
    *  graphics cards measured so far. */
   readonly deadlineS: number;
-  /** Preparing the graphics card (uploading the photos, seeding) may take
-   *  at most this long (s) before the stretch fails in words; "train
-   *  again" scales it. Picked, not measured: 120 s would likely cut off a
+  /** Loading the trainer library and preparing the graphics card
+   *  (uploading the photos, seeding) may take at most this long (s)
+   *  together, one cap from the worker's start, before the stretch fails
+   *  in words; "train again" scales it. Picked, not measured: 120 s would likely cut off a
    *  slow integrated card uploading 100 photos, 600 s leaves the creator
    *  watching a stuck print for ten minutes; 300 s sits between. A
    *  measured upload time on a slow card would replace it. */

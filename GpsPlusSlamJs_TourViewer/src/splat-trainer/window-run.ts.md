@@ -41,7 +41,9 @@ Promise<RunResult>`.
   on the abort (`cancelled`), whichever comes first; a load or a seed
   under way is not waited for once the run must end.
 - Preparation cap: from `preparing` until the session is seeded, one
-  timer of `prepareCapMs` runs; when it fires first, the run ends as
+  timer runs, due `prepareCapMs` after `prepareStartedAt` (the caller's
+  start of the wait, so the library's download counts too) or after the
+  call without it, at once when that moment has passed; when it fires first, the run ends as
   `failed` with "Preparing the graphics card took more than 5 min."
   (whole minutes from a minute on, else seconds), training never starts,
   and the session is disposed. The deadline timer replaces it once seeded.

@@ -92,7 +92,8 @@ class LoadTimeout extends Error {}
 
 /**
  * Trains the window of `msg`. Never rejects: a library that will not load
- * (or does not arrive within the job's `prepareCapMs`) or a photo that
+ * (or does not arrive within the job's `prepareCapMs`, which also bounds
+ * the preparation after it: one cap from the call on) or a photo that
  * will not decode ends as `failed` with the reason in `detail`; an abort
  * before training ends as `cancelled`.
  */
@@ -210,6 +211,8 @@ export async function trainInWorker<P = unknown>(
       trainPositions: job.trainPositions,
       etaMinIterations: job.etaMinIterations,
       prepareCapMs: job.prepareCapMs,
+      // The library's download and the preparation share one cap.
+      prepareStartedAt: t0,
       ...(job.photoBudgetBytes === undefined
         ? {}
         : { photoBudgetBytes: job.photoBudgetBytes }),
