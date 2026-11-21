@@ -56,7 +56,7 @@ export async function tourShown(page) {
  * One edit through the editor session, followed as an edit of the page's
  * own controls is; the session's answer must be `expected`.
  * @param {import("@playwright/test").Page} page
- * @param {{ act: "editText" | "remove" | "move", id: string, args?: unknown[] }} edit
+ * @param {{ act: "editText" | "remove" | "pose", id: string, args?: unknown[] }} edit
  * @param {string} expected
  */
 export async function sessionEdit(page, edit, expected) {

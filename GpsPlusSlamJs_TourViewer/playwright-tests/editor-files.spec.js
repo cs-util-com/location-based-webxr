@@ -15,6 +15,7 @@ import {
   backedUp,
   downloadedNames,
   editorTour,
+  geo,
   newEditorPage,
   noSavePicker,
   offerExistingOpfsFile,
@@ -655,13 +656,15 @@ test("a moved photo note survives a closed tab", async ({ page, context }) => {
   await page.goto("/edit.html");
   await openFile(page, buffer, "editor-fixture.zip");
   const before = await placeOf(page, FOUNTAIN);
-  // About 30 m north-east of where it stands (editor-tours.js's `geo`).
+  // About 35 m north-east of where it stands (`geo(-10, 20)` in
+  // editor-tours.js), through the editor's one move: a whole pose, with
+  // the note's height and turn as they were.
   await sessionEdit(
     page,
     {
-      act: "move",
+      act: "pose",
       id: FOUNTAIN,
-      args: [48.5203 + 20 / 111_320, 9.0536 + 40 / 73_800],
+      args: [{ ...geo(20, 40), rotation: [0, 0, 0, 1] }],
     },
     "moved",
   );
