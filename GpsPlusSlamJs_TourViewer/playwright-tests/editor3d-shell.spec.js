@@ -989,27 +989,6 @@ test("a card's click selects, unfolds and flies; a second deselects and folds; a
   );
   expect(headingTurn).toBeLessThan(1e-4);
   expect(Math.abs(after.pitchDeg - before.pitchDeg)).toBeLessThan(1e-4);
-
-  // The folds are the page's state: a trip to the map and back keeps the
-  // old gate unfolded and the station names' chip off.
-  await page.locator('#tree-body [data-layer="names"]').click();
-  await expect(page.locator('#tree-body [data-layer="names"]')).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-  await viewCommand(page, "switch");
-  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  // Over the map the bottom bar keeps only the save status, said to a
-  // screen reader; the panel's toggles are the 3D view's.
-  await expect(page.locator("#save-status")).toHaveAttribute("role", "status");
-  await expect(page.locator("#shell-toggles")).toBeHidden();
-  await viewCommand(page, "switch");
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
-  await expect(gate.locator(".kids")).toBeVisible();
-  await expect(page.locator('#tree-body [data-layer="names"]')).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
 });
 
 test("View's Top view and the zoom buttons drive the camera", async ({

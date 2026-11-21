@@ -3,9 +3,7 @@
  * is on, whose walk the layer shows (the tour's own, or debug data added
  * beside it), the camera captures it drew, each by its picture's entry
  * name and its place, and the panel's status line. The 3D view on the
- * globe draws from it; the switch, the status line and the map's
- * visibility follow it. The map is still drawn by the layer's own view
- * callbacks, with the same captures.
+ * globe draws from it; the switch and the status line follow it.
  *
  * Debug data, never the tour: no history, no draft, no save reads it. The
  * thumbnails are decoded pictures (blob URLs), so they stay out of the

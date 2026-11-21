@@ -1,30 +1,35 @@
 /**
  * Why these tests matter: the 3D view is the editor; where it cannot open
  * (no WebGL, its code not loaded, its graphics lost, an error) the page
- * used to fall back to the 2D map, which is being removed. It now says
+ * used to fall back to a 2D map, which is gone. It now says
  * plainly what happened on a page of its own, and keeps the tour's File
  * actions within reach - open another, save, save a copy, the details -
- * plus a way to try again. These pin when the page shows (a failure, never
- * "nothing positioned", which is no failure),
- * that it goes when the view shows or the load is left, what it says, that
- * each button runs its action, and that what it covers leaves the tab
- * order only while it shows.
+ * plus a way to try again. These pin when the page shows (a failure),
+ * that it goes when the view shows or the load is left, what it says, and
+ * that each button runs its action.
  */
 import { describe, expect, it, vi } from "vitest";
 
 import type { EditorViewState, View3dFailure } from "./editor-view.js";
-import { view3dFailureText } from "./view-switch.js";
+import { view3dFailureText } from "./view3d-opener.js";
 import {
   VIEW3D_FAILED_PAGE,
   failedPageReason,
   wireView3dFailedPage,
 } from "./view3d-failed-page.js";
 
-type View = Pick<EditorViewState, "viewMode" | "view3dLoad" | "view3dFailure">;
+type View = Pick<
+  EditorViewState,
+  "view3dShown" | "view3dLoad" | "view3dFailure"
+>;
 
-const idle: View = { viewMode: "2d", view3dLoad: "idle", view3dFailure: null };
+const idle: View = {
+  view3dShown: false,
+  view3dLoad: "idle",
+  view3dFailure: null,
+};
 const failed = (reason: View3dFailure): View => ({
-  viewMode: "2d",
+  view3dShown: false,
   view3dLoad: "failed",
   view3dFailure: reason,
 });
@@ -36,13 +41,10 @@ describe("failedPageReason", () => {
     }
   });
 
-  // Why: "nothing with a position" is no failure: the map shows such a
-  // tour, a passing line says why.
-  it("is null for an empty tour, an idle, loading or shown view", () => {
-    expect(failedPageReason(failed("empty"))).toBeNull();
+  it("is null for an idle, loading or shown view", () => {
     expect(failedPageReason(idle)).toBeNull();
     expect(failedPageReason({ ...idle, view3dLoad: "loading" })).toBeNull();
-    expect(failedPageReason({ ...idle, viewMode: "3d" })).toBeNull();
+    expect(failedPageReason({ ...idle, view3dShown: true })).toBeNull();
   });
 });
 
@@ -95,7 +97,6 @@ function harness(start: View) {
     saveCopy: button(),
     details: button(),
   };
-  const covered = [{ inert: false }, { inert: false }];
   const actions = {
     retry: vi.fn(),
     reload: vi.fn(),
@@ -119,8 +120,8 @@ function harness(start: View) {
     stackPx = px;
     resized?.();
   };
-  const page = wireView3dFailedPage({ dom, covered, store, actions, toasts });
-  return { dom, covered, actions, set, page, listeners, props, resize };
+  const page = wireView3dFailedPage({ dom, store, actions, toasts });
+  return { dom, actions, set, page, listeners, props, resize };
 }
 
 describe("wireView3dFailedPage", () => {
@@ -134,7 +135,7 @@ describe("wireView3dFailedPage", () => {
     expect(h.dom.heading.focused).toBe(1);
     h.set({ ...idle, view3dLoad: "loading" });
     expect(h.dom.root.hidden).toBe(true);
-    h.set({ ...idle, viewMode: "3d" });
+    h.set({ ...idle, view3dShown: true });
     expect(h.dom.root.hidden).toBe(true);
   });
 
@@ -142,27 +143,6 @@ describe("wireView3dFailedPage", () => {
     const h = harness(failed("chunk"));
     expect(h.dom.root.hidden).toBe(false);
     expect(h.dom.reason.textContent).toBe(view3dFailureText("chunk"));
-  });
-
-  it("never shows for an empty tour", () => {
-    const h = harness(idle);
-    h.set(failed("empty"));
-    expect(h.dom.root.hidden).toBe(true);
-  });
-
-  // Why: the page covers the map and the rail; their controls must not be
-  // reached by Tab behind it - and must be given back when it goes, but
-  // never touched while it stays hidden (the 3D view keeps the map inert
-  // itself while it shows, and the store changes on every edit).
-  it("makes what it covers inert only while it shows", () => {
-    const h = harness(idle);
-    h.covered[0]!.inert = true;
-    h.set({ ...idle, viewMode: "3d" });
-    expect(h.covered.map((c) => c.inert)).toEqual([true, false]);
-    h.set(failed("error"));
-    expect(h.covered.map((c) => c.inert)).toEqual([true, true]);
-    h.set(idle);
-    expect(h.covered.map((c) => c.inert)).toEqual([false, false]);
   });
 
   it("runs each button's action", () => {

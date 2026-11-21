@@ -12,7 +12,6 @@ import {
   dockWidthsAt as widths,
   openSampleIn3d,
 } from "./editor3d-fixture.js";
-import { viewCommand } from "./editor-menus.js";
 
 /**
  * The editor's panels docked around the 3D view at a desk: the list at
@@ -1662,24 +1661,13 @@ test("a kept layout opened in a wider window takes that window's side widths", a
 // (Problems, History, Map loading, Performance) stands there, and a list
 // widened by its splitter or a phone's group beside the view moved
 // without it, so the panel covered their rows. It stands in the 3D view's
-// own pane now: inside it whatever the docks around it do. Back on the
-// map it is in its place in the page again.
+// own pane now: inside it whatever the docks around it do.
 test("the debug panel stands inside the 3D view's pane with the bottom group open and on a phone held sideways", async ({
   page,
 }) => {
   test.setTimeout(150_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await answerHosts(page);
-  // Where the panel stands as the page is parsed: its place on the map.
-  await page.addInitScript(() => {
-    document.addEventListener("DOMContentLoaded", () => {
-      const panel = document.getElementById("debug-panel");
-      /** @type {any} */ (window).__debugPanelHome = {
-        parent: panel?.parentElement,
-        next: panel?.nextElementSibling,
-      };
-    });
-  });
   await openSampleIn3d(page);
   const viewPane = page.locator(".dock-host .dock-pane-view");
   const panel = viewPane.locator("#debug-panel");
@@ -1728,30 +1716,4 @@ test("the debug panel stands inside the 3D view's pane with the bottom group ope
       controls.y + controls.height <= wide.y,
     `the panel covers the map controls: ${JSON.stringify({ wide, controls })}`,
   ).toBe(true);
-
-  await viewCommand(page, "switch");
-  await expect(page.locator("body")).toHaveAttribute("data-view", "2d");
-  await expect(page.locator("#view3d #debug-panel")).toHaveCount(0);
-  await expect(page.locator("#debug-panel")).toBeVisible();
-  // Back in the very place it had at load, before its sibling there.
-  expect(
-    await page.evaluate(() => {
-      const home = /** @type {any} */ (window).__debugPanelHome;
-      const now = document.getElementById("debug-panel");
-      return (
-        home?.parent instanceof Element &&
-        now?.parentElement === home.parent &&
-        now?.nextElementSibling === home.next
-      );
-    }),
-  ).toBe(true);
-
-  // Its button keeps the focus while the panel moves into the view's pane
-  // (the page puts it into the view box, the docking moves it on): the
-  // switch is pressed without moving the focus, as a shortcut would.
-  await page.locator("#debug-add").focus();
-  await page.evaluate(() => document.getElementById("view-switch")?.click());
-  await expect(page.locator("body")).toHaveAttribute("data-view", "3d");
-  await expect(viewPane.locator("#debug-panel")).toBeVisible();
-  await expect(page.locator("#debug-add")).toBeFocused();
 });

@@ -5,9 +5,7 @@
 The debug layer's page state in the store (`debugLayer`): whether "Show
 debug data" is on, whose walk the layer shows, the camera captures it
 drew and the panel's status line. The 3D view on the globe draws from it;
-the switch, the status line and the map's visibility follow it. The 2D
-map is still drawn through the layer's view callbacks (`edit-main.ts`),
-with the same captures.
+the switch and the status line follow it.
 
 ## Public API
 

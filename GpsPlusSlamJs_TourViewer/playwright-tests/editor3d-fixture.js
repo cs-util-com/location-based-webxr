@@ -11,7 +11,6 @@ import {
   dockWidths,
   phoneGroupPx,
 } from "../src/editor/editor-shell/dock-layout.ts";
-import { startOnMap } from "./editor-menus.js";
 
 /** A 1x1 grey PNG: a map tile the page can decode. Encoded here, not
  *  pasted: a hand-copied one carried a broken checksum, so the browser
@@ -325,26 +324,6 @@ export async function reliefCarries(page) {
   );
 }
 
-/**
- * The editor page with the sample tour open on the 2D map (not in the 3D
- * view, the default: `openSampleIn3d`), for a spec that edits on the map
- * first or drives the view switch itself. The 3D view it switches to is
- * the globe, opened straight at the tour and without the clouds
- * (`gotoEditor`).
- * @param {import("@playwright/test").Page} page
- */
-export async function openSample(page) {
-  await startOnMap(page.context());
-  await gotoEditor(page);
-  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
-  // No tour, nothing to show in 3D: the switch waits for one.
-  await expect(page.locator("#view-switch")).toBeDisabled();
-  await page.locator(".start-choice:has(#start-example)").click();
-  await page.locator("#start-open").click();
-  // The sample's three stations and its two pins (its lectern has no row).
-  await expect(page.locator("#rail .row-title")).toHaveCount(5);
-}
-
 /** The editor's link: its 3D view is the globe. */
 export const GLOBE_VIEW = "/edit.html";
 
@@ -375,7 +354,6 @@ export async function openSampleIn3d(page) {
   await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
     timeout: 60_000,
   });
-  await expect(page.locator("#view-switch")).toHaveText("2D map");
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
 }
 

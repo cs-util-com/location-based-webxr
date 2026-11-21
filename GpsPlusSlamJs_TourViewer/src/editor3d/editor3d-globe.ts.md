@@ -216,6 +216,10 @@ surfaceShadow }`, or null where the ground sky cannot draw).
   rising ground the camera ends exactly `eyeM` over the end's ground),
   with ground under the start only, 50 km from a tour with none, and
   over a station added 50 km away after the open.
+- `stats().globe.scanCentre` is the place (`lat`, `lng`, `heightM`) of
+  the drawn debug captures' bounds' centre (null with none drawn): the
+  point the view aims at when it flies to a scan beside a tour with
+  nothing positioned.
 - `stats().look` is where the line of sight meets the sampled ground
   (else the tour's centre), and `stats().codePx` each code's drawn side on
   the canvas (its square's corners projected by the camera of the

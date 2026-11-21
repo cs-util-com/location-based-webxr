@@ -26,7 +26,7 @@ there.
   - `label` - the one word every creator page uses for the kind ("Pin",
     "Long text", "Photo", "Video", "Audio", "3D model", "Character"): what
     a block with no text of its own is called, the inspector's kind line,
-    the lists' and the rail's second line. Why "Pin" and "Photo", not the
+    the lists' second line. Why "Pin" and "Photo", not the
     format's words: see `object-describe.ts.md`.
   - `article` - `"a"` or `"an"` ("an audio").
   - `thing` - what a sentence calls one with no text of its own, lower
@@ -34,7 +34,7 @@ there.
   - `look` - the shell icon, the style class and the tree row's kind, one
     per kind.
   - `searchWords` - the words the tree's search finds the kind by besides
-    its name (the 2D rail's search reads the pin's and the photo's).
+    its name.
   - `fields` - its fields in the inspector's order (`FieldSpec`:
     `name`, `label`, `prose`, `number?` - a number's bounds, unit and
     need, the bounds the format's (`tour-kinds.ts` `TOUR_AUDIO_*`), and
@@ -94,7 +94,7 @@ there.
 
 - Words: `object-describe.ts` `objectTitle`, `object-list.ts`,
   `creator-placement.ts`, `object-editing.ts`, `move-question.ts` (an item with no text of its own),
-  `editor/editor-card.ts`, `editor/editor-model.ts`, `editor/edit-main.ts`
+  `editor/editor-model.ts`, `editor/edit-main.ts`
   (its add, delete and split toasts), `editor/editor-session.ts`
   (`objectName`), `editor/editor-shell/inspector-model.ts`,
   `editor/editor-shell/shell-inspector.ts` (the head icon and Delete).
@@ -168,9 +168,9 @@ there.
 - `object-describe.ts` `objectOwnText`: its switch names the kinds with a
   caption or a name and ends in `default: return object.title`. Not
   silent: a new kind without a `title` fails to compile there.
-- `editor/editor-card.ts` and `editor-model.ts` work in the 2D rail's
-  own kinds (`EditorItemKind`: code, pin, photo, station); they read the
-  list for the pin's and the photo's words.
+- `editor/editor-model.ts` works in its own kinds (`EditorItemKind`:
+  code, pin, photo, station); it reads the list for the pin's and the
+  photo's words.
 - `CHARACTER_VIEW_CHOICES` and the other view lists: views of one kind,
   not kinds.
 
