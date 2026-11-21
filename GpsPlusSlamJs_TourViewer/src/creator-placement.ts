@@ -7,6 +7,7 @@
  * @see creator-placement.ts.md
  */
 
+import { finishRunning } from "./finish-status.js";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import {
   MIN_ALIGNMENT_SAMPLES,
@@ -196,7 +197,7 @@ export function wireCreatorPlacement(deps: {
       (alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES ||
         deps.codeVoted?.() === true) &&
       arController.getState().status === "running" &&
-      !ctx.finishing
+      !finishRunning(ctx.tourDocument.state())
     );
   }
 

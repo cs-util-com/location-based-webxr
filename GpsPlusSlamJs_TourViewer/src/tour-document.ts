@@ -277,6 +277,16 @@ export type SettleChange =
  *  takes neither on either; r955 review #3). */
 export type TourSaveHolder = "explicit" | "auto" | "walk" | "copy" | "open";
 
+/** How far the slot holder's save has come, for its progress line: the
+ *  opened file being read (its size in bytes), then its entries rebuilt. */
+export type TourSaveProgress =
+  | { readonly kind: "reading"; readonly bytes: number }
+  | {
+      readonly kind: "rebuilding";
+      readonly done: number;
+      readonly total: number;
+    };
+
 /** The save status (what used to be a page's module-scope save flags). */
 export interface TourSaveStatus {
   /** idle; saving (the page's save slot is held, or a rebuild is queued
@@ -290,6 +300,15 @@ export interface TourSaveStatus {
   readonly rebuilds: number;
   /** An explicit Save was asked for while the autosave ran: it runs next. */
   readonly queued: boolean;
+  /** The slot holder's progress (the phone's Finish reports it); null
+   *  while nobody holds the slot, and reset by each claim. */
+  readonly progress: TourSaveProgress | null;
+  /** The phone's Done was tapped while a code was being measured: its
+   *  Finish starts once the measurement lands. Not `queued` (a Save
+   *  behind the autosave). Like the slot it is the page's: kept across
+   *  `opened` and `closed`; the page clears it when the measurement
+   *  lands and when the visit ends. It never changes `status`. */
+  readonly finishWaits: boolean;
   /** A save of this tour was built: the next rebuild starts from the
    *  page's own copy, whatever happens to the opened file. */
   readonly built: boolean;
@@ -452,6 +471,8 @@ const IDLE: TourSaveStatus = {
   by: null,
   rebuilds: 0,
   queued: false,
+  progress: null,
+  finishWaits: false,
   built: false,
   delivered: null,
   largeTour: false,
@@ -2034,12 +2055,27 @@ interface TourSaved {
   readonly swaps?: Readonly<Record<string, number>>;
 }
 
-/** A fresh save status that keeps who holds the page's save slot: the
+/** Two progress values say the same. */
+function sameProgress(
+  a: TourSaveProgress | null,
+  b: TourSaveProgress,
+): boolean {
+  if (a === null) return false;
+  if (a.kind === "reading") return b.kind === "reading" && a.bytes === b.bytes;
+  return b.kind === "rebuilding" && a.done === b.done && a.total === b.total;
+}
+
+/** A fresh save status that keeps who holds the page's save slot (with
+ *  that holder's progress, and a Done waiting for a measurement): the
  *  slot is the page's, and a save of the tour before lets it go itself
  *  once it sees the tour gone - until then the next tour waits, as the
  *  page's own flag made it wait before the store held it. */
 function slotKept(save: TourSaveStatus): TourSaveStatus {
-  return saveWith(IDLE, { by: save.by });
+  return saveWith(IDLE, {
+    by: save.by,
+    progress: save.progress,
+    finishWaits: save.finishWaits,
+  });
 }
 
 /**
@@ -5823,8 +5859,8 @@ const tourDocumentSlice = createSlice({
         save: saveWith(
           before.save,
           by === "copy" || by === "open"
-            ? { by }
-            : { by, error: null, resave: false },
+            ? { by, progress: null }
+            : { by, progress: null, error: null, resave: false },
         ),
       };
     },
@@ -5838,10 +5874,36 @@ const tourDocumentSlice = createSlice({
         ...before,
         save: saveWith(before.save, {
           by: null,
+          progress: null,
           ...(action.payload.error === undefined
             ? {}
             : { error: action.payload.error }),
         }),
+      };
+    },
+    /** The slot holder's save came this far (the phone's Finish). Ignored
+     *  while nobody holds the slot, and for the value already held. */
+    saveProgressed(
+      state,
+      action: PayloadAction<{ progress: TourSaveProgress }>,
+    ) {
+      const before = plain(state);
+      const { progress } = action.payload;
+      if (
+        before.save.by === null ||
+        sameProgress(before.save.progress, progress)
+      ) {
+        return before;
+      }
+      return { ...before, save: saveWith(before.save, { progress }) };
+    },
+    /** The phone's Done waits for the code being measured (or no longer). */
+    finishWaitsChanged(state, action: PayloadAction<{ waits: boolean }>) {
+      const before = plain(state);
+      if (before.save.finishWaits === action.payload.waits) return before;
+      return {
+        ...before,
+        save: saveWith(before.save, { finishWaits: action.payload.waits }),
       };
     },
     /** An explicit Save waits for the autosave that runs (or no longer). */

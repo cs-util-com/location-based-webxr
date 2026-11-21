@@ -73,16 +73,24 @@ module's sidecar states them as its contract.
 
 ## Invariants & assumptions
 
-- **A named deviation from the root rule "App state lives in the Redux
-  store"** (the r880 milestone review MEDIUM-1): the phone's save status
-  stays in the session object (`TourViewerSession`) beside the slice's
-  own (`save.rebuilds`, `save.error`) - `ctx.finishing` (a Finish
-  runs), `ctx.finishError` (why the last one failed),
-  `ctx.finishProgress` (its progress line) and `ctx.rebuiltZip` (the
-  file it made, a Blob - which stays outside the store either way). Two
-  places say whether a save runs, so a reader must know which one it
-  reads: the undo reads the slice (`canStep`); the object list's lock,
-  the readout, the Finish button and the AR button read `ctx`. Follow-up:
+- **The Finish's status is the tour document's save status** (read
+  through `finish-status.ts`): the Finish holds the page's save slot
+  while it runs (`finishClaimed` at the tap, `finishReleased` at its end,
+  after `saveEnded`), reports its progress into `save.progress`
+  (`finishProgressed`: the opened file's size, then the rebuilt entries,
+  let through only when their whole percent changes - `createProgressGate`,
+  so at most 101 rebuilding dispatches per Finish whatever the entry
+  count, the last at 100 %: every dispatch calls every store subscriber,
+  and the readout re-renders on each), and its failure is `save.error`, labelled by the selector.
+  The failure is released with the slot only for the tour the Finish
+  began on, and the claim of the next Finish puts it away. The phone
+  dispatches no `saveDelivered`: its reset of the error would let a
+  failed Finish's own hand-over of the zip it made clear the failure, and
+  its `delivered` is the desktop's "where the last save arrived", not
+  "this rebuilt file was saved" - which stays `ctx.rebuiltZip.delivered`
+  (the leave guard), beside the file itself (a Blob, outside the store
+  either way). Still a deviation from "App state lives in the Redux
+  store": `ctx.rebuiltZip`. Follow-up:
   the Finish moves onto the tour document's save thunk
   (`tour-document-save.ts`, the desktop editor's save since it was built;
   the same follow-up as this file's TEMPORARY boundary entry,
@@ -112,13 +120,18 @@ module's sidecar states them as its contract.
   object, or in AR a code in hand), an open tour AND
   a settled manifest load (pending or broken refuses, with the reason:
   finishing would overwrite a placement it could not read, M3 review #5);
-  runs once at a time (`ctx.finishing`). A **desk edit** (no AR visit, no
+  runs once at a time (`finishRunning`, the page's save slot). A **desk edit** (no AR visit, no
   code in hand, §9 D4) finishes too: it writes the objects and no level
   entry, so the hosted level files are kept byte for byte, and the
   finished log's `levelId` is null. While it runs the panel shows
   its progress with priority over the measuring readout, and a failure
-  stays on the line until the next tap (`ctx.finishProgress`,
-  `ctx.finishError`; store dispatches used to erase both). The
+  stays on the line until the next tap that starts a Finish
+  (`finishProgressLine`, `finishErrorLine`; store dispatches used to
+  erase both). A tap that starts none leaves it. Off AR the button stays
+  the retry only while a Finish could start (`readiness() === "ready"`):
+  after a failure that came after the zip was written, nothing is left to
+  write, so the button hides and the failure line stays until a change
+  makes a Finish possible again and its tap starts it. The
   continuation re-checks `ctx.session` after every await and ends the AR
   session only if it is still the one it started in
   (`ctx.arSessionGeneration`). An existing level for the same id (also in

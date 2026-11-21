@@ -161,6 +161,17 @@ describe('checkGlbInert', () => {
     expect(checkGlbInert(glb([1, 2])).ok).toBe(false);
   });
 
+  // Why this test matters: the check hands the shared chunk reader's
+  // refusal on as its own, so the creator reads why the file is no model;
+  // a check that swapped in a generic reason would still pass the tests
+  // above, which only look at `ok`.
+  it("passes the chunk reader's refusal reason through", () => {
+    expect(checkGlbInert(glb({ asset: { version: '2.0' } }, 1))).toEqual({
+      ok: false,
+      reason: 'only glTF 2.0 is supported',
+    });
+  });
+
   it('never throws on arbitrary bytes (property)', () => {
     fc.assert(
       fc.property(fc.uint8Array({ maxLength: 64 }), (bytes) => {

@@ -9,6 +9,7 @@
  * @see creator-measuring.ts.md
  */
 
+import { finishRunning } from "./finish-status.js";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import {
   mintQrLevel,
@@ -795,7 +796,7 @@ export function wireCreatorMeasuring(deps: {
   function maybeMeasure(canMint: boolean, measure: boolean): void {
     const text = ctx.lastDetectedText;
     if (!canMint || !measure || text === null) return;
-    if (ctx.finishing || !deps.sessionLive()) return;
+    if (finishRunning(ctx.tourDocument.state()) || !deps.sessionLive()) return;
     // Only a code in view now: see FRESH_DETECTION_MS.
     if (!(Date.now() - lastDetectionAtMs <= FRESH_DETECTION_MS)) return;
     const key = visitKeyOf(text);
