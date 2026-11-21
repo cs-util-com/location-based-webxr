@@ -26,6 +26,22 @@ describe("PAIR_GUIDE", () => {
     }
   });
 
+  // Why this test matters: on the first evening the light was dimmed
+  // before photo A, so A and B were equally dark; the order must be the
+  // first thing the card says, in bold.
+  it("opens the dimmed pairs with the order of light and photos, in bold", () => {
+    for (const key of ["1b", "1c"] as const) {
+      expect(PAIR_GUIDE[key].strongSteps, key).toBe(2);
+      expect(PAIR_GUIDE[key].steps.slice(0, 2), key).toEqual([
+        "Photo A with the light ON as normal.",
+        "Then dim the light, then photo B.",
+      ]);
+    }
+    for (const key of keys.filter((k) => k !== "1b" && k !== "1c")) {
+      expect(PAIR_GUIDE[key].strongSteps, key).toBe(0);
+    }
+  });
+
   it("names the spot repeats on the light pairs only", () => {
     for (const key of keys) {
       expect(PAIR_GUIDE[key].spotNote, key).toBe(key.startsWith("1"));

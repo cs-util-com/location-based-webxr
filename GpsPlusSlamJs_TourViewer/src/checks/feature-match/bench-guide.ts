@@ -13,6 +13,8 @@ export interface PairGuide {
   readonly purpose: string;
   /** The steps in order, without numbers (the page numbers them). */
   readonly steps: readonly string[];
+  /** How many leading steps the page shows in bold. */
+  readonly strongSteps: number;
   /** One short line of what spoils the pair. */
   readonly avoid: string;
   /** True for the light pairs, which are repeated at up to three spots. */
@@ -32,6 +34,10 @@ export const BEFORE_YOU_START: readonly string[] = [
 export const SPOT_NOTE =
   "Spot: test 1 is repeated at up to 3 places in the room (spot 1, 2, 3). After 1c, point the phone at another part of the room; the selector moves to 1a at the next spot by itself.";
 
+/** The order of light and photos, first and bold on the dimmed pairs. */
+const LIGHT_ON_A = "Photo A with the light ON as normal.";
+const DIM_THEN_B = "Then dim the light, then photo B.";
+
 const FLAT_SURFACE =
   "a FLAT surface with detail (a poster, a wall with pictures, a patterned door, a large book or map lying flat)";
 
@@ -44,31 +50,35 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Change nothing.",
       "Photo B.",
     ],
+    strongSteps: 0,
     avoid: "Moving the phone, changing the light.",
     spotNote: true,
   },
   "1b": {
     purpose: "Does a method still match when the light gets weaker?",
     steps: [
-      "Same place as 1a, phone lying still; normal light.",
-      "Photo A.",
-      "Dim the light: switch off the main light, keep one small lamp, or use a dimmer. Do not touch the phone.",
-      "Wait 2 seconds for the camera to adjust.",
-      "Photo B.",
+      LIGHT_ON_A,
+      DIM_THEN_B,
+      "Same place as 1a, phone lying still.",
+      "To dim: switch off the main light, keep one small lamp, or use a dimmer. Do not touch the phone.",
+      "After dimming, wait 2 seconds for the camera to adjust, then photo B.",
     ],
-    avoid: "Moving the phone between A and B.",
+    strongSteps: 2,
+    avoid: "Dimming before photo A, moving the phone between A and B.",
     spotNote: true,
   },
   "1c": {
     purpose: "Does a method still match with very little light?",
     steps: [
-      "Same place as 1a, phone lying still; normal light.",
-      "Photo A.",
-      "Make it as dark as possible while the room's shapes are still visible on the screen. Do not touch the phone.",
-      "Wait 2 seconds for the camera to adjust.",
-      "Photo B.",
+      LIGHT_ON_A,
+      DIM_THEN_B,
+      "Same place as 1a, phone lying still.",
+      "Dim as far as possible while the room's shapes are still visible on the screen. Do not touch the phone.",
+      "After dimming, wait 2 seconds for the camera to adjust, then photo B.",
     ],
-    avoid: "Fully black (nothing to match), moving the phone.",
+    strongSteps: 2,
+    avoid:
+      "Dimming before photo A, fully black (nothing to match), moving the phone.",
     spotNote: true,
   },
   "2a": {
@@ -78,6 +88,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Hold the phone upright: photo A.",
       "Same place, upright again: photo B. Holding by hand is fine.",
     ],
+    strongSteps: 0,
     avoid:
       "Deep scenes: turning the phone moves the lens a few cm, which does not matter on a flat surface only.",
     spotNote: false,
@@ -89,6 +100,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Upright: photo A.",
       "Turn the phone sideways (either way) and aim at the same centre: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Stepping closer or away.",
     spotNote: false,
   },
@@ -99,6 +111,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Upright: photo A.",
       "Hold the phone upside down and aim at the same centre: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Stepping closer or away.",
     spotNote: false,
   },
@@ -109,6 +122,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Upright: photo A.",
       "Tilt the phone 30-45 deg (like a clock hand at one o'clock) and aim at the same centre: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Stepping closer or away.",
     spotNote: false,
   },
@@ -119,6 +133,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "From 1.5 m: photo A.",
       "From the same place: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Moving between A and B.",
     spotNote: false,
   },
@@ -128,6 +143,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "From 1.5 m: photo A.",
       "Step straight back to about 3 m, keep the surface centred: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Zooming instead of stepping back.",
     spotNote: false,
   },
@@ -137,12 +153,14 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "From 1 m: photo A.",
       "Step straight back to about 3 m, keep the surface centred: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Zooming instead of stepping back.",
     spotNote: false,
   },
   "4a": {
     purpose: "The baseline for the side-step test on a flat surface.",
     steps: ["From one place: photo A of the flat surface.", "Photo B."],
+    strongSteps: 0,
     avoid: "Moving between A and B.",
     spotNote: false,
   },
@@ -153,6 +171,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Step about 1 m to the side, parallel to it.",
       "Turn to aim at the same centre: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Stepping closer or away.",
     spotNote: false,
   },
@@ -162,6 +181,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Aim into a deep room or a hallway (things near and far).",
       "From one place: photo A, then photo B.",
     ],
+    strongSteps: 0,
     avoid: "Anything moving in the scene (people, pets, a TV).",
     spotNote: false,
   },
@@ -172,12 +192,14 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
       "Step about 1 m to the side.",
       "Aim at the same centre: photo B.",
     ],
+    strongSteps: 0,
     avoid: "Anything moving in the scene (people, pets, a TV).",
     spotNote: false,
   },
   x: {
     purpose: 'Anything not in the list; the file name says "other".',
     steps: ["Photo A.", "Photo B."],
+    strongSteps: 0,
     avoid: "Anything personal in the picture.",
     spotNote: false,
   },
@@ -185,6 +207,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
     purpose:
       "A manual benchmark run: the Options decide what runs, and no photo test settings apply.",
     steps: ["Set the Options.", "Photo A.", "Photo B."],
+    strongSteps: 0,
     avoid: "Using it for the photo tests: pick their pair instead.",
     spotNote: false,
   },

@@ -18,7 +18,8 @@ Saving the benchmark's captured camera frames to the device: the photo pairs of 
 - `SavedFrame { name: "A" | "B", frame, source: { width, height } }`: a captured frame and the camera size it was taken from.
 - `pngChunkTypes(bytes)`: the chunk types in order; throws `not a PNG` on a wrong signature and `PNG truncated` when a chunk runs past the end. CRCs are not checked.
 - `assertPlainPng(bytes, label)`: throws `<label>: PNG carries a <type> chunk` for anything but `IHDR PLTE tRNS sRGB gAMA cHRM iCCP pHYs sBIT bKGD cICP cLLI mDCV IDAT IEND` (so `eXIf`, `tEXt`, `iTXt`, `zTXt`, `tIME` and unknown chunks are refused). The ancillary chunks it accepts only describe the pixels (density, significant bits, background, colour coding, HDR levels) and carry no device, time or place; another browser's encoder may add them, and `<label>: PNG has no IEND` for a cut-off file.
-- `framesInfo(frames, device, captureMaxLongEdge, tag)`: pretty JSON with exactly `format` (`feature-match-frames/1`), `pair` (the key), `pairLabel`, `spot`, `sequence`, `captureMaxLongEdge`, `frames` (name, file, width, height, sourceWidth, sourceHeight, greyMean, greySd rounded to 2 decimals) and `device`.
+- `lightCheck(key, meanA, meanB)` -> `"ok" | "not-darker" | "changed" | null`, from the two frames' grey means (0-255, else `RangeError`). For the dimmed pairs `1b` and `1c`, "not-darker" when B's mean is above `LIGHT_DARKER_RATIO` (0.8) times A's. For the control pair `1a`, "changed" when B differs from A by more than `LIGHT_CONTROL_TOLERANCE` (0.2) of A's mean. Both bounds count as "ok". `null` for every other pair. Why: on the first evening the light was dimmed before photo A, and the pair's A and B came out equally dark.
+- `framesInfo(frames, device, captureMaxLongEdge, tag, light)`: pretty JSON with exactly `format` (`feature-match-frames/1`), `pair` (the key), `pairLabel`, `spot`, `sequence`, `lightCheck` (the `lightCheck` result, `null` outside the light pairs), `captureMaxLongEdge`, `frames` (name, file, width, height, sourceWidth, sourceHeight, greyMean, greySd rounded to 2 decimals) and `device`.
 
 ## Invariants
 
@@ -36,4 +37,4 @@ pairFileNames(tag).all; // "feature-match-03-1b-s2-light-dimmed.zip"
 
 ## Tests
 
-`bench-export.test.ts` (the zip is read back with zip.js: every entry name and its bytes, the report left out when empty, the names distinct; the pair list, the names of a pair, a property test that names are ASCII without spaces and unique across sequence numbers, the manual run's tag and name, the refused tags, the spot field and the advance rule); the page's saved files are checked in `playwright-tests/feature-match-check.spec.js`.
+`bench-export.test.ts` (the zip is read back with zip.js: every entry name and its bytes, the report left out when empty, the names distinct; the pair list, the names of a pair, a property test that names are ASCII without spaces and unique across sequence numbers, the manual run's tag and name, `lightCheck` at ratios 0.7, 0.8 and 0.9 and the control's 20 % bounds, the refused tags, the spot field and the advance rule); the page's saved files are checked in `playwright-tests/feature-match-check.spec.js`.

@@ -257,6 +257,15 @@
       #before-start {
         margin: 0 0 8px;
       }
+      .light-warning {
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border: 2px solid #a02020;
+        border-radius: 8px;
+        background: #fdecea;
+        color: #7a1616;
+        font-weight: 600;
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -464,6 +473,7 @@
         </details>
       </section>
       <section aria-label="Results">
+        <p id="light-warning" class="light-warning" role="alert" hidden></p>
         <div class="table-wrap">
           <table id="results">
             <thead>

@@ -87,7 +87,8 @@ async function fakeCamera(page, mode = "ok") {
     const paint = () => {
       ctx.fillStyle = "#000";
       ctx.fillRect(0, 0, 160, 240);
-      ctx.fillStyle = "#fff";
+      // `window.__dim = true` dims the white half, as a dimmed lamp would.
+      ctx.fillStyle = w.__dim ? "#404040" : "#fff";
       ctx.fillRect(160, 0, 160, 240);
       requestAnimationFrame(paint);
     };
@@ -116,6 +117,27 @@ async function fakeCamera(page, mode = "ok") {
       },
     });
   }, mode);
+}
+
+/**
+ * Dims the fake camera and waits until the video shows a frame painted
+ * after it (the stream lags the canvas by a frame or two).
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function dimCamera(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        /** @type {Window & Record<string, unknown>} */ (window).__dim = true;
+        const video = /** @type {HTMLVideoElement} */ (
+          document.querySelector("#video")
+        );
+        video.requestVideoFrameCallback(() =>
+          video.requestVideoFrameCallback(() => resolve(undefined)),
+        );
+      }),
+  );
 }
 
 /**
@@ -311,6 +333,8 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
       "now: pair 1, 1b light: dimmed, spot 2",
     );
     await page.locator("#pair").selectOption("3a");
+    // A dimmed pair: the light changes between A and B.
+    await dimCamera(page);
   });
   // The run starts by itself; while it lasts nothing else can start.
   await expect(page.locator("#run")).toHaveText("Running...");
@@ -435,6 +459,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "device",
     "format",
     "frames",
+    "lightCheck",
     "pair",
     "pairLabel",
     "sequence",
@@ -446,6 +471,8 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     2,
     1,
   ]);
+  expect(info.lightCheck).toBe("ok");
+  await expect(page.locator("#light-warning")).toBeHidden();
   expect(
     info.frames.map((/** @type {{ width: number }} */ f) => f.width),
   ).toEqual([320, 320]);
@@ -799,3 +826,67 @@ for (const gpu of [true, false]) {
     ]);
   });
 }
+
+/**
+ * Why this test matters: on the first evening the light was dimmed before
+ * photo A, so the dimmed pairs had A and B equally dark and measured
+ * nothing about light. Photo B of a dimmed pair that is not darker must
+ * say so above the results, be recorded in the frames JSON, and keep the
+ * selector on the pair after Download all so it is taken again; the
+ * control pair warns the other way, when its light changed.
+ */
+test("the feature matching benchmark warns when the light did not change as the pair needs", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await chooseSiftOnly(page);
+  await page.locator("#pair").selectOption("1b");
+  await takePhotos(page);
+  await expect(page.locator("#light-warning")).toHaveText(
+    "Photo B is not darker than photo A - the light has to change BETWEEN the two photos. Take this pair again: photo A in normal light, then dim, then photo B.",
+  );
+  await expect(page.locator("#light-warning")).toBeVisible();
+  await expect(page.locator("#log")).toContainText("light check: not-darker");
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  await page.locator("#save-frames").click();
+  await expect(page.locator("#save-links a")).toHaveCount(5);
+  const stem = "feature-match-01-1b-s1-light-dimmed";
+  const [zipFile] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#save-links a").first().click(),
+  ]);
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
+  );
+  const entry = (await reader.getEntries()).find(
+    (e) => e.filename === "feature-match-frames.json",
+  );
+  if (!entry || entry.directory) {
+    throw new Error("no frames JSON in the zip");
+  }
+  expect(JSON.parse(await entry.getData(new TextWriter())).lightCheck).toBe(
+    "not-darker",
+  );
+  await reader.close();
+  expect(zipFile.suggestedFilename()).toBe(`${stem}.zip`);
+  // The pair is taken again: the selector stays.
+  await expect(page.locator("#log")).toContainText("pair kept: take 1b again");
+  await expect(page.locator("#pair")).toHaveValue("1b");
+
+  // The control pair: A in the normal light, B dimmed, is a changed light.
+  await page.locator("#pair").selectOption("1a");
+  await page.locator("#capture-a").click();
+  await expect(page.locator("#capture-a")).toHaveText("Take photo A");
+  await page.locator("#capture-a").click();
+  // A new photo A withdraws the old warning.
+  await expect(page.locator("#light-warning")).toBeHidden();
+  await dimCamera(page);
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#light-warning")).toContainText(
+    "the light changed during the control pair",
+  );
+  await expect(page.locator("#log")).toContainText("light check: changed");
+});

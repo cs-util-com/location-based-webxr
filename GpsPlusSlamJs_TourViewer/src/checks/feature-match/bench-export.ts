@@ -53,6 +53,42 @@ export type PairKey = (typeof PAIRS)[number]["key"] | typeof NO_PAIR.key;
 /** Spots the light pairs are repeated at. */
 const SPOTS = 3;
 
+/** A dimmed pair's photo B must be at most this share of A's grey mean. */
+export const LIGHT_DARKER_RATIO = 0.8;
+/** The control pair's photo B may differ from A's grey mean by this share. */
+export const LIGHT_CONTROL_TOLERANCE = 0.2;
+
+/**
+ * Whether the light changed as a light pair needs: "ok", "not-darker" (a
+ * dimmed pair whose B is not clearly darker than A) or "changed" (the
+ * control pair's light changed). Null for every other pair.
+ */
+export type LightCheck = "ok" | "not-darker" | "changed";
+
+/**
+ * @throws RangeError on a grey mean that is not a number from 0 to 255.
+ */
+export function lightCheck(
+  key: string,
+  meanA: number,
+  meanB: number,
+): LightCheck | null {
+  for (const m of [meanA, meanB]) {
+    if (!Number.isFinite(m) || m < 0 || m > 255) {
+      throw new RangeError(`grey mean must be 0 to 255, got ${String(m)}`);
+    }
+  }
+  if (key === "1b" || key === "1c") {
+    return meanB > LIGHT_DARKER_RATIO * meanA ? "not-darker" : "ok";
+  }
+  if (key === "1a") {
+    return Math.abs(meanB - meanA) > LIGHT_CONTROL_TOLERANCE * meanA
+      ? "changed"
+      : "ok";
+  }
+  return null;
+}
+
 /** Which pair a capture belongs to; fixed when photo A is taken. */
 export interface PairTag {
   readonly pair: string;
@@ -281,14 +317,15 @@ export function matchesInfo(
 }
 
 /**
- * The JSON saved with the frames: a fixed list of fields (the pair, sizes,
- * grey values, the device), no time and no place.
+ * The JSON saved with the frames: a fixed list of fields (the pair, the
+ * light check, sizes, grey values, the device), no time and no place.
  */
 export function framesInfo(
   frames: readonly SavedFrame[],
   device: DeviceInfo,
   captureMaxLongEdge: number,
   tag: PairTag,
+  light: LightCheck | null,
 ): string {
   return `${JSON.stringify(
     {
@@ -297,6 +334,7 @@ export function framesInfo(
       pairLabel: tag.pairLabel,
       spot: tag.spot,
       sequence: tag.sequence,
+      lightCheck: light,
       captureMaxLongEdge,
       frames: frames.map((f) => {
         const g = greyStats(f.frame);

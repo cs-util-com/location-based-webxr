@@ -9,6 +9,9 @@ import {
   allFilesZip,
   assertPlainPng,
   framesInfo,
+  LIGHT_CONTROL_TOLERANCE,
+  LIGHT_DARKER_RATIO,
+  lightCheck,
   matchesInfo,
   nextPair,
   pairFileNames,
@@ -142,6 +145,7 @@ describe("framesInfo", () => {
       DEVICE,
       1280,
       TAG,
+      "not-darker",
     ),
   ) as Record<string, unknown>;
 
@@ -152,6 +156,7 @@ describe("framesInfo", () => {
         "device",
         "format",
         "frames",
+        "lightCheck",
         "pair",
         "pairLabel",
         "spot",
@@ -161,6 +166,7 @@ describe("framesInfo", () => {
     expect(info.format).toBe("feature-match-frames/1");
     expect(info.captureMaxLongEdge).toBe(1280);
     expect(info.device).toEqual(DEVICE);
+    expect(info.lightCheck).toBe("not-darker");
   });
 
   // Why this test matters: the photos are scored offline per pair, and
@@ -206,6 +212,7 @@ describe("framesInfo", () => {
       DEVICE,
       1280,
       TAG,
+      null,
     );
     const keys: string[] = [];
     const walk = (v: unknown): void => {
@@ -225,6 +232,54 @@ describe("framesInfo", () => {
         ),
       ),
     ).toEqual([]);
+  });
+});
+
+// Why these tests matter: a light pair whose photo B is as bright as its
+// photo A (the light was dimmed before A instead of between A and B)
+// measures nothing about light, and was only seen in the saved numbers
+// after the evening. The check flags it at photo B, and the control pair
+// the other way round: its light must not change.
+describe("lightCheck", () => {
+  it("names the thresholds", () => {
+    expect(LIGHT_DARKER_RATIO).toBe(0.8);
+    expect(LIGHT_CONTROL_TOLERANCE).toBe(0.2);
+  });
+
+  it.each([
+    // [pair, mean A, mean B, result]
+    ["1b", 100, 70, "ok"],
+    ["1b", 100, 80, "ok"],
+    ["1b", 100, 90, "not-darker"],
+    ["1c", 100, 70, "ok"],
+    ["1c", 100, 80, "ok"],
+    ["1c", 100, 90, "not-darker"],
+    ["1b", 41.2, 41.2, "not-darker"],
+    ["1c", 23.2, 23.3, "not-darker"],
+    ["1b", 100, 130, "not-darker"],
+    ["1b", 0, 0, "ok"],
+    ["1a", 100, 100, "ok"],
+    ["1a", 100, 80, "ok"],
+    ["1a", 100, 120, "ok"],
+    ["1a", 100, 79, "changed"],
+    ["1a", 100, 121, "changed"],
+    ["1a", 0, 0, "ok"],
+    ["1a", 0, 5, "changed"],
+  ])("%s with grey means %d and %d is %s", (pair, a, b, result) => {
+    expect(lightCheck(pair, a, b)).toBe(result);
+  });
+
+  it("checks the light pairs only", () => {
+    for (const p of PAIRS.filter((q) => !q.key.startsWith("1"))) {
+      expect(lightCheck(p.key, 100, 10)).toBeNull();
+    }
+    expect(lightCheck("none", 100, 10)).toBeNull();
+  });
+
+  it("refuses grey means that are not numbers from 0 to 255", () => {
+    expect(() => lightCheck("1b", NaN, 10)).toThrow(RangeError);
+    expect(() => lightCheck("1b", 10, -1)).toThrow(RangeError);
+    expect(() => lightCheck("1b", 256, 10)).toThrow(RangeError);
   });
 });
 

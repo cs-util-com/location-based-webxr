@@ -12,6 +12,7 @@ import {
   assertPlainPng,
   FRAME_FILES,
   framesInfo,
+  lightCheck,
   matchesInfo,
   nextPair,
   NO_PAIR,
@@ -19,6 +20,7 @@ import {
   pairFileNames,
   pairTag,
   parseSpot,
+  type LightCheck,
   type PairKey,
   type PairTag,
   type SavedFrame,
@@ -91,6 +93,7 @@ interface Ui {
   readonly guideSteps: HTMLElement;
   readonly guideAvoid: HTMLElement;
   readonly guideSpot: HTMLElement;
+  readonly lightWarning: HTMLElement;
   readonly pairState: HTMLElement;
   readonly captureA: HTMLButtonElement;
   readonly captureB: HTMLButtonElement;
@@ -124,6 +127,7 @@ function findUi(root: ParentNode): Ui {
     guideSteps: $(root, "#guide-steps"),
     guideAvoid: $(root, "#guide-avoid"),
     guideSpot: $(root, "#guide-spot"),
+    lightWarning: $(root, "#light-warning"),
     pairState: $(root, "#pair-state"),
     captureA: $(root, "#capture-a"),
     captureB: $(root, "#capture-b"),
@@ -315,6 +319,14 @@ function openBeforeStartOnce(box: HTMLDetailsElement): void {
   }
 }
 
+/** The warning shown above the results for a light check that failed. */
+const LIGHT_WARNINGS: Readonly<Record<Exclude<LightCheck, "ok">, string>> = {
+  "not-darker":
+    "Photo B is not darker than photo A - the light has to change BETWEEN the two photos. Take this pair again: photo A in normal light, then dim, then photo B.",
+  changed:
+    "Photo B is more than 20 % brighter or darker than photo A - the light changed during the control pair. Take this pair again without changing the light.",
+};
+
 /** What a camera start came to: running, refused, or stopped meanwhile. */
 type CameraStart = "on" | "failed" | "stopped";
 
@@ -351,6 +363,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   let pairInProgress: PairTag | null = null;
   /** The newest pair whose Download all moved the selector on. */
   let advancedFor = 0;
+  /** The current pair's light check, set at photo B; null for other pairs. */
+  let light: LightCheck | null = null;
 
   ui.pair.replaceChildren(
     ...[...PAIRS, NO_PAIR].map((p) => {
@@ -370,7 +384,16 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   const showGuide = (): void => {
     const g = PAIR_GUIDE[ui.pair.value as PairKey] ?? PAIR_GUIDE.x;
     ui.guidePurpose.textContent = g.purpose;
-    ui.guideSteps.replaceChildren(...listItems(g.steps));
+    ui.guideSteps.replaceChildren(
+      ...listItems(g.steps).map((li, i) => {
+        if (i < g.strongSteps) {
+          const strong = document.createElement("strong");
+          strong.textContent = li.textContent;
+          li.replaceChildren(strong);
+        }
+        return li;
+      }),
+    );
     ui.guideAvoid.textContent = `Avoid: ${g.avoid}`;
     ui.guideSpot.textContent = SPOT_NOTE;
     ui.guideSpot.hidden = !g.spotNote;
@@ -560,6 +583,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     cameraRun = "none";
     cameraResults = [];
     clearSaved("after the run");
+    light = null;
+    ui.lightWarning.hidden = true;
     if (which === "a") {
       sequence++;
       pairInProgress = pairTag(
@@ -578,8 +603,34 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       refresh();
       return;
     }
+    checkLight();
     refresh();
     startRun("camera");
+  };
+
+  /**
+   * Photo B of a light pair against photo A: a dimmed pair must be darker,
+   * the control pair the same. A failed check is shown above the results
+   * and keeps the selector on the pair after Download all.
+   */
+  const checkLight = (): void => {
+    const { a, b } = captures;
+    if (!a || !b || !pairInProgress) {
+      return;
+    }
+    light = lightCheck(
+      pairInProgress.pair,
+      greyStats(a.frame).mean,
+      greyStats(b.frame).mean,
+    );
+    if (light === null) {
+      return;
+    }
+    log(`light check: ${light}`);
+    if (light !== "ok") {
+      ui.lightWarning.textContent = LIGHT_WARNINGS[light];
+      ui.lightWarning.hidden = false;
+    }
   };
 
   const saveFiles = async (): Promise<void> => {
@@ -589,7 +640,14 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       return;
     }
     const names = pairFileNames(tag);
-    const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX, tag);
+    const lightResult = light;
+    const info = framesInfo(
+      [a, b],
+      await deviceInfo(),
+      CAPTURE_MAX,
+      tag,
+      lightResult,
+    );
     const matches = matchesInfo(cameraResults, { a: a.frame, b: b.frame });
     const json = (text: string) =>
       new Blob([text], { type: "application/json" });
@@ -633,16 +691,23 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       }),
     );
     ui.saveLinks.firstElementChild?.addEventListener("click", () => {
-      advancePair(tag);
+      advancePair(tag, lightResult);
     });
   };
 
   /**
    * After the pair's Download all, the selector moves on to the next pair
-   * (once per pair; a second tap saves again but moves nothing).
+   * (once per pair; a second tap saves again but moves nothing). A pair
+   * whose light check failed stays selected, to be taken again.
    */
-  const advancePair = (tag: PairTag): void => {
+  const advancePair = (tag: PairTag, lightResult: LightCheck | null): void => {
     if (tag.sequence <= advancedFor) {
+      return;
+    }
+    if (lightResult !== null && lightResult !== "ok") {
+      advancedFor = tag.sequence;
+      ui.pairState.textContent = `saved pair ${String(tag.sequence)}; the light check failed: take ${tag.pair} again`;
+      log(`pair kept: take ${tag.pair} again (light check ${lightResult})`);
       return;
     }
     advancedFor = tag.sequence;
