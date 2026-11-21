@@ -192,8 +192,8 @@ async function rebuildFromListed(
   // backwards and refused to write back a name it had just read. The live
   // case was the coverage backfill: it finds `session.json` by suffix, so
   // it tolerates `./session.json`, and then could not re-emit it - the
-  // recording was skipped with a log line and no other trace (PR #438
-  // review). Re-emitting a name the input already carried is no new
+  // recording was skipped with a log line and no other trace.
+  // Re-emitting a name the input already carried is no new
   // hazard; inventing one is, and that is still refused.
   const archiveNameList = all.map((e) => e.filename);
   const dotSlash = archiveUsesDotSlash(archiveNameList);
@@ -202,13 +202,13 @@ async function rebuildFromListed(
   // form. One map rather than a bare name set, because every downstream
   // question is the same question - "does the archive already hold this
   // file?" - and asking it three different ways is what let `./x` and
-  // `x` both be written (PR #439 review #1).
+  // `x` both be written.
   const archiveByName = new Map(
     all.map((e) => [underArchiveConvention(e.filename, dotSlash), e.filename])
   );
   // Every new entry lands under the archive's convention, and the rule is
   // applied to ALL of them rather than only to the ones the archive
-  // already holds (PR #440 review): a caller that names an existing file
+  // already holds: a caller that names an existing file
   // either way replaces rather than duplicates, and a genuinely new file
   // goes in prefixed like its neighbours instead of leaving a flat name
   // in an otherwise `./`-written archive - the mixed archive this
@@ -230,7 +230,7 @@ async function rebuildFromListed(
     // Writing `key` in a mixed archive silently un-prefixed a path the
     // caller had supplied, and that is a live route: the Tour Viewer
     // builds each photo's path from the prefix it found the manifest at,
-    // and the reader looks it up by exact name (PR #441 review).
+    // and the reader looks it up by exact name.
     return {
       ...e,
       path: allDotSlash ? DOT_SLASH + key : e.path,
@@ -247,7 +247,7 @@ async function rebuildFromListed(
       // `./`, so `./content/<id>.jpg` is a path this call INVENTS, is
       // refused for its `.` segment, and dead-ends the creator's setup
       // at the moment they have finished walking. Replacing an existing
-      // entry was fixed first (PR #438); this is the other half.
+      // entry (the filter above) is the other half of the same rule.
       .map((e) => ({
         ...e,
         path: underArchiveConvention(e.path, dotSlash),

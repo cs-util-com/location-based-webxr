@@ -4,8 +4,8 @@
 
 ### Added
 
-- **One capped open of a zip Blob, and the shared entry-name rules**
-  (`storage/zip-reader`, deep import): `withCappedZipEntries` opens an
+- **`storage/zip-reader`** (deep import): one capped open of a zip Blob,
+  and the shared entry-name rules. `withCappedZipEntries` opens an
   untrusted zip Blob under the directory and entry caps,
   hands its entries to `use` and closes the reader once `use` settles;
   `isActionEntryName` is the parser's own rule for which entries are
