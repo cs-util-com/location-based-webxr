@@ -219,15 +219,14 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
   /** A voice speaks only for words someone sees: another text of the
    *  station shown pauses the old text's voice. A move between stations
    *  is the station's own pause (`arrive`), which keeps it for the return;
-   *  a frame with no text shown keeps the voice. */
+   *  a frame with no text shown keeps the voice, and so does a frame whose
+   *  shown text has no words yet (its read-along still unread): nobody
+   *  sees the new words, and a read that settles stale gives the old text
+   *  back. */
   function hush(shown: TourBlock | null): void {
-    if (shown !== null && voiced !== null && voiced.id !== shown.id) {
-      voiced.voice.pause();
-      voiced = null;
-    }
-    if (shown !== null && content !== null) {
-      voiced = { id: shown.id, voice: content.player };
-    }
+    if (shown === null || content === null) return;
+    if (voiced !== null && voiced.id !== shown.id) voiced.voice.pause();
+    voiced = { id: shown.id, voice: content.player };
   }
 
   /** A voice does not follow the visitor out of its station. */

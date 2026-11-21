@@ -538,6 +538,41 @@ describe("createCaptionsFollow", () => {
     expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
   });
 
+  // Why: a text whose read-along is still unread is already the shown one
+  // before its words can show (the box stays hidden). Pausing the old voice
+  // then would silence it while nobody sees either text's words, and if
+  // the read settles stale the old text comes back paused with no visitor
+  // action. The old voice pauses only once the new words show.
+  it("pauses the old voice only once the new text's words show", () => {
+    const { follow, set, give, mount, narration } = make();
+    const b = text("b", { view: "lectern" });
+    const a = text("a");
+    mount("b");
+    mount("a");
+    set({ blocks: [b, a], presentId: "s1", stored: null });
+    const voiceA = at(4000, "a", true);
+    give(voiceA);
+    follow.sync();
+    // b takes over while its timing is still unread: no words for it yet.
+    give(null);
+    set({ stored: READING });
+    follow.sync();
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
+    // The read settles stale: a is the shown text again, still speaking.
+    narration.verdictOf.mockImplementation((block?: TourBlock) =>
+      block?.id === "b" ? "stale" : "live",
+    );
+    give(voiceA);
+    follow.sync();
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
+    expect(voiceA.player.playing()).toBe(true);
+    // Read live after all: b's words show, and a's voice pauses.
+    narration.verdictOf.mockImplementation((): NarrationVerdict => "live");
+    give(at(0, "b"));
+    follow.sync();
+    expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+  });
+
   // Why: a voice outlives an AR session (its end pauses, never resets),
   // so a sign shown again after a re-entry must still say where its
   // voice stands, not idle.
