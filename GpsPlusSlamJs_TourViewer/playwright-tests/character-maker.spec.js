@@ -183,6 +183,31 @@ test.describe("character maker", () => {
     await expect(page.locator("#savedBox")).toBeHidden();
   });
 
+  // Why: Discard on the library view starts a new character, so the next
+  // "Make a character" must show an empty description, not the discarded
+  // text the draft no longer holds; its Undo brings the text back.
+  test("a discarded character leaves no text behind, and Undo brings it back", async ({
+    page,
+  }) => {
+    await page.goto("/characters.html");
+    await page.locator("#makeBtn").click();
+    await page.locator("#desc").fill("a friendly fox ranger with a green hat");
+    await page.locator("#toHome").click();
+    await page.locator("#draftRow [data-discard]").click();
+    await expect(page.locator("#draftRow")).toBeHidden();
+    await page.locator("#makeBtn").click();
+    await expect(page.locator("#desc")).toHaveValue("");
+
+    await page.locator("#toHome").click();
+    await page.locator("#makeBtn").click();
+    await page.locator("#desc").fill("a sleepy owl librarian");
+    await page.locator("#toHome").click();
+    await page.locator("#draftRow [data-discard]").click();
+    await page.locator("#undoBox button").click();
+    await page.locator("#draftRow [data-continue]").click();
+    await expect(page.locator("#desc")).toHaveValue("a sleepy owl librarian");
+  });
+
   for (const vp of VIEWPORTS) {
     test(`keeps the prototype's arrangement on a ${vp.name}`, async ({
       page,

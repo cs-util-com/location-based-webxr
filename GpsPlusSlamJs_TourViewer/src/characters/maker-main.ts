@@ -563,6 +563,8 @@ function render(): void {
   for (const p of $$("[data-panel]"))
     p.hidden = Number(p.dataset.panel) !== S.step;
   renderGreet();
+  // The box shows the draft's text: a new start or an Undo changes it.
+  if (desc.value !== S.desc) desc.value = S.desc;
   backBtn.hidden = S.step === 0 || (S.step === 5 && !!S.savedId);
   if (S.step === 1) {
     $("#prompt").innerHTML = promptHtml();
@@ -1066,7 +1068,6 @@ charName.addEventListener("input", () => {
 function startAnother(): void {
   makerStore.dispatch(A.startedAnother());
   R = null;
-  desc.value = "";
   $("#phases").hidden = true;
   $("#cutErr").hidden = true;
 }
@@ -1112,7 +1113,6 @@ $("#restart").addEventListener("click", () => {
   render();
   offerUndo(undoBox, "Started over", () => {
     restore(before, beforeR);
-    desc.value = draft().desc;
     render();
   });
 });
@@ -1155,7 +1155,6 @@ anim($<HTMLCanvasElement>("#pvCutTalk"), "talk", chosen);
 anim($<HTMLCanvasElement>("#pvFeet"), "talk", chosen, drawFeet);
 requestAnimationFrame(loop);
 
-desc.value = draft().desc;
 placeRail();
 // The cut picture is not kept over a reload: the store starts such a draft
 // at step 4 (a saved one as a new character), and the page asks again, calmly.
