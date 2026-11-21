@@ -153,6 +153,12 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
   /** The voice of every text shown in this session, by its id: a sign
    *  whose text is not the shown one says where that voice stopped. */
   const heard = new Map<string, Pick<NarrationClock, "nowMs" | "durationMs">>();
+  /** The last shown text of the present station with words, and its
+   *  voice: another text taking the words over pauses it. */
+  let voiced: {
+    readonly id: string;
+    readonly voice: Pick<NarrationClock, "pause">;
+  } | null = null;
 
   function stopTravel(): void {
     const running = travel;
@@ -213,9 +219,24 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
         : { id: shown.id, sign: shownSign, voice: content.player };
   }
 
+  /** A voice speaks only for words someone sees: another text of the
+   *  station shown pauses the old text's voice. A move between stations
+   *  is the station's own pause (`arrive`), which keeps it for the return;
+   *  a frame with no text shown keeps the voice. */
+  function hush(shown: TourBlock | null): void {
+    if (shown !== null && voiced !== null && voiced.id !== shown.id) {
+      voiced.voice.pause();
+      voiced = null;
+    }
+    if (shown !== null && content !== null) {
+      voiced = { id: shown.id, voice: content.player };
+    }
+  }
+
   /** A voice does not follow the visitor out of its station. */
   function arrive(presentId: string | null): void {
     if (presentId === presentSeen) return;
+    voiced = null;
     if (presentSeen !== null) deps.narration.pauseAll(presentSeen);
     presentSeen = presentId;
     if (presentId !== null) deps.narration.carryOn(presentId);
@@ -239,6 +260,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
           ? null
           : narratedShown(blocks, stored, (b) => deps.narration.verdictOf(b));
       content = shown === null ? null : deps.narration.captions(shown.block);
+      hush(shown?.block ?? null);
       const travelId =
         shown?.mode === "travel" && content !== null ? shown.block.id : null;
       steer(travelId, travelId === null ? null : deps.signOf(travelId));
@@ -249,6 +271,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
       presentSeen = null;
       content = null;
       chipped = null;
+      voiced = null;
       heard.clear();
       stopTravel();
       deps.box.hide();
