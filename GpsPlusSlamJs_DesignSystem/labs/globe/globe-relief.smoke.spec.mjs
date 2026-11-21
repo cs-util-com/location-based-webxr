@@ -21,7 +21,6 @@ import { expect, test } from "@playwright/test";
 
 import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 // `reliefNear=3`: these tests are about the exaggerated relief (its law, the
 // band, the clearance over a ridge drawn three times as high). Since the
@@ -37,15 +36,6 @@ const BASE =
  * it over the synthetic crest).
  */
 const HOLD_KM = 150;
-
-/**
- * The fixed dive to the hold, for the two tests that still need its
- * descent: parked there instead, the detail test's two loads at detail 0
- * read 5.3 levels apart (0.000 after the dive), and the phone's two caches
- * held 75.0 MiB against the 72 MiB bound, because a park reaches the hold
- * without the descent that loaded and released the globe's tiles on the way.
- */
-const DIVE_150 = "&diveMs=6000&landKm=150";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -68,29 +58,43 @@ const parkAt = (page, km, place = TARGET) =>
   );
 
 /**
- * Boots, parks `km` over the target (or, with `dive`, the page's context:
- * grants the target as the position and lands there through the pin's
- * dive), and waits for the relief to settle.
+ * After a park, waits until the globe's own tiles have finished: its queue
+ * empty, its release out of the band drained (a park leaves the band at
+ * once, so without this wait the release and the globe's last loads fall
+ * inside the measured frames) and its loaded count still for 3 s. Logs its
+ * own time.
  */
-async function parkAndSettle(page, hash, km, dive = null) {
-  if (dive) {
-    await dive.grantPermissions(["geolocation"], { origin: ORIGIN });
-    await dive.setGeolocation(TARGET);
-  }
-  const errors = await bootGlobe(page, dive ? `${hash}${DIVE_150}` : hash);
-  if (dive) {
-    await page.locator("#globe-pin").click();
-    await page.waitForFunction(
-      () => {
-        const s = window.__globeLab.state();
-        return s.phase === "landed" && s.pin.phase === "idle";
-      },
-      null,
-      { timeout: 120_000 },
-    );
-  } else {
-    await parkAt(page, km);
-  }
+async function settleGlobe(page) {
+  const started = Date.now();
+  await page.waitForFunction(
+    () => {
+      const s = window.__globeLab.state();
+      const ready =
+        s.pendingTiles === 0 && s.relief.lastRelease.globe?.drainedAt != null;
+      const w = window;
+      const key = `${s.loadedTiles},${s.relief.globeCachedBytes}`;
+      if (!ready || w.__globeKey !== key) {
+        w.__globeKey = key;
+        w.__globeSince = performance.now();
+        return false;
+      }
+      return performance.now() - w.__globeSince >= 3000;
+    },
+    null,
+    { timeout: 180_000, polling: 100 },
+  );
+  console.log(
+    `globe settled ${((Date.now() - started) / 1000).toFixed(1)} s after the relief (wait 180 s)`,
+  );
+}
+
+/**
+ * Boots, parks `km` over the target and waits for the relief to settle;
+ * with `globe`, then for the globe's own tiles too (`settleGlobe`).
+ */
+async function parkAndSettle(page, hash, km, { globe = false } = {}) {
+  const errors = await bootGlobe(page, hash);
+  await parkAt(page, km);
   const landedAt = Date.now();
   // Let the relief's tiles at the held altitude load and settle (its own
   // queues idle): a frame read while coarse tiles still stand in for fine
@@ -109,6 +113,7 @@ async function parkAndSettle(page, hash, km, dive = null) {
   console.log(
     `relief settled ${((Date.now() - landedAt) / 1000).toFixed(1)} s after parking (wait 180 s)`,
   );
+  if (globe) await settleGlobe(page);
   return errors;
 }
 
@@ -211,11 +216,13 @@ test("the relief's tiles take the terrain lab's detail under the hold", async ({
     const context = await browser.newContext();
     const page = await context.newPage();
     const weight = detail === "0b" ? 0 : detail;
+    // With the globe's own tiles waited for: without it, two parked loads
+    // at detail 0 read 5.3 levels apart (0.000 with it).
     const errors = await parkAndSettle(
       page,
       `${BASE}&detail=${weight}`,
       HOLD_KM,
-      context,
+      { globe: true },
     );
     if (weight > 0) {
       await page.waitForFunction(
@@ -326,6 +333,8 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
     const base = `${BASE}&detail=0&bandFill=0&cloudShell=0`;
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
     await parkAt(page, altKm);
+    // The parked pose reaches the drawn camera on the next frame.
+    await page.evaluate(() => window.__globeLab.timeFrames(1));
     const natural = await page.evaluate(() => {
       const s = window.__globeLab.state();
       return s.altitudeM;
@@ -503,7 +512,11 @@ test("the band's fade does not shimmer under a moving camera", async ({
 // drain keeps the globe's coarsest tiles on purpose: they are the stencil
 // fill behind the relief (plan 2026-10-04-1050 G6-1). Kept: more than
 // nothing (the fill needs them) and at most 8 MiB, the same eighth of the
-// globe's 64 MB budget (4.0 MiB measured on 2026-10-05).
+// globe's 64 MB budget (4.0 MiB measured on 2026-10-05). The relief's
+// device class is pinned to the phone: read from the input, a headless
+// browser is a desktop, whose relief budget is 256 MiB (parked or dived,
+// 75 to 99 MiB measured there), so the bound would test a budget the
+// phone never has.
 test("outside the band the other carrier fetches nothing and holds no memory, on a phone", async ({
   browser,
 }) => {
@@ -513,17 +526,14 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
     deviceScaleFactor: 2,
   });
   const page = await context.newPage();
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  // The dive's descent, not a park (`DIVE_150` says why).
-  const errors = await bootGlobe(page, `${BASE}${DIVE_150}`);
+  const errors = await bootGlobe(page, `${BASE}&reliefDevice=phone`);
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
     null,
     { timeout: 120_000 },
   );
   const above = await page.evaluate(() => window.__globeLab.state());
-  await page.locator("#globe-pin").click();
+  await parkAt(page, HOLD_KM);
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
