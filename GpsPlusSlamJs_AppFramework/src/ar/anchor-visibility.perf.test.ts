@@ -4,9 +4,10 @@
  * Why this test matters: a content anchor with a pending re-placement asks
  * `isAnchorInView` every frame, for every view, until the answer is "out".
  * The cached test must stay a fixed, small amount of work (at most
- * ANCHOR_SPHERE_CAP spheres per view, however large the subtree), and the
- * fresh traversal that confirms an "out" must stay linear in the subtree's
- * size. A regression that re-traversed on every cached call, or dropped the
+ * ANCHOR_SPHERE_CAP spheres per view for a subtree with no skinned, morphed
+ * or constant-size sprite parts, however large it is; those are never merged
+ * and each adds one), and the fresh traversal that confirms an "out" must
+ * stay cheap enough for the 1 s refresh. A regression that re-traversed on every cached call, or dropped the
  * sphere cap, would ship as a frame hitch no functional test can see, so
  * this file also pins the operation counts, which do not depend on the
  * machine. The fresh traversal is O(n^2) in the number of renderables
@@ -18,12 +19,13 @@
  * ceiling because CI timing depends on the machine, and the measured number
  * in this header for humans.
  *
- * Measured locally (2026-11-21, Windows / node 24, machine at about 100 %
+ * Measured locally (2026-11-21, Windows / node 24, machine at about 75 %
  * CPU from other jobs, so read the numbers as upper bounds), best of 15,
  * three runs: cached 0.006-0.008 ms per call, fresh 4.1-4.4 ms per call,
  * cached with a 64-bone skinned part 0.013-0.016 ms per call. The cached
- * ceilings are 100x above that. A CI runner measured the fresh traversal at
- * 28.7 ms (about 6.5x the desktop), so its ceiling sits 5x above that: it
+ * ceilings are 100x above that. Two CI runs measured the fresh traversal at
+ * 28.7 ms and 42.1 ms (about 6.5-10x the desktop), so its ceiling sits about
+ * 3.6x above the slower one: it
  * catches a gross regression (a quadratic blow-up in the build, a traversal
  * per part), not a constant factor such as the earlier pair-heap merge
  * (21-24 ms on the desktop).

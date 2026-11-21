@@ -8,8 +8,12 @@
  * drawn triangle (as three would place it: skinning through
  * `getVertexPosition`, instances through their matrices, sprite quads
  * through the sprite shader's corner formula) against each exact view
- * frustum (margin 0). Scenes mix boxes under sheared hierarchies, sprites
- * (world-scaled and constant-size, any `center`), instanced meshes,
+ * frustum (margin 0), while the predicate runs at a margin of 0, the
+ * recommended 5 deg or any value in [0, 30): a wider view may only add "in"
+ * answers, so a side the margin narrows by mistake shows up as a false
+ * "out". Scenes mix boxes under sheared hierarchies, sprites
+ * (world-scaled and constant-size, any `center`), instanced meshes (with
+ * sheared instance matrices),
  * skinned meshes with posed, scaled and morphed bones, merged model roots,
  * hidden and opted-out parts and layers, seen through one user camera or
  * one or two XR sub-cameras with random (also off-axis) projections.
@@ -50,6 +54,13 @@ const ignored = fc.constantFrom(
   false,
   false,
   true
+);
+
+/** The predicate's margin: none, the recommended one, or any up to 30 deg. */
+const marginArb = fc.oneof(
+  fc.constant(0),
+  fc.constant(5),
+  fc.double({ min: 0, max: 30, maxExcluded: true, noNaN: true })
 );
 
 const viewArb = fc.record({
@@ -103,14 +114,16 @@ const partArb = fc.oneof(
   fc.record({
     kind: fc.constant('instanced' as const),
     pos: vec3(20),
+    // `shear`: a rotation applied before the scale, which shears the
+    // instance matrix (a non-uniform scale between two rotations).
     instances: fc.array(
-      fc.record({ pos: vec3(15), rot: euler, scale: scale3 }),
+      fc.record({ pos: vec3(15), rot: euler, scale: scale3, shear: euler }),
       { minLength: 1, maxLength: 4 }
     ),
-    moved: fc.array(fc.record({ pos: vec3(15), rot: euler, scale: scale3 }), {
-      minLength: 4,
-      maxLength: 4,
-    }),
+    moved: fc.array(
+      fc.record({ pos: vec3(15), rot: euler, scale: scale3, shear: euler }),
+      { minLength: 4, maxLength: 4 }
+    ),
     groupRot: euler,
     groupScale: scale3,
     ...common,
@@ -343,6 +356,7 @@ function buildPart(
       part.instances.length
     );
     const m = new THREE.Matrix4();
+    const shear = new THREE.Matrix4();
     const setAll = (list: typeof part.instances) =>
       part.instances.forEach((_, i) => {
         const t = list[i]!;
@@ -351,6 +365,7 @@ function buildPart(
           new THREE.Quaternion().setFromEuler(new THREE.Euler(...t.rot)),
           new THREE.Vector3(...t.scale)
         );
+        m.multiply(shear.makeRotationFromEuler(new THREE.Euler(...t.shear)));
         mesh.setMatrixAt(i, m);
       });
     setAll(part.instances);
@@ -624,12 +639,13 @@ function drawnInView(
 function predicate(
   built: BuiltScene,
   cache: AnchorBoundsCache,
-  fresh: boolean
+  fresh: boolean,
+  marginDeg = 0
 ): boolean {
   built.scene.updateMatrixWorld(true);
   const view = updateAnchorView(createAnchorView(), built.camera, built.xr);
   return isAnchorInView(view, built.anchor, {
-    marginDeg: 0,
+    marginDeg,
     cache,
     fresh,
     nowMs: 0,
@@ -646,7 +662,7 @@ describe('anchor-visibility properties', () => {
     let drawn = 0;
     let runs = 0;
     fc.assert(
-      fc.property(sceneArb(48), (spec) => {
+      fc.property(sceneArb(48), marginArb, (spec, marginDeg) => {
         const built = buildScene(spec);
         const cache = createAnchorBoundsCache();
         predicate(built, cache, false); // build at the bind pose
@@ -655,7 +671,7 @@ describe('anchor-visibility properties', () => {
         runs += 1;
         const truth = oracleInView(built);
         if (truth) drawn += 1;
-        const said = predicate(built, cache, true);
+        const said = predicate(built, cache, true, marginDeg);
         expect(truth && !said, 'a drawn subtree tested out').toBe(false);
       }),
       { numRuns: 150 }
@@ -673,20 +689,81 @@ describe('anchor-visibility properties', () => {
     // Bones posed and scaled, morph influences, visibility toggled: all
     // after the build, none announced. At most 24 parts, so no merging.
     fc.assert(
-      fc.property(sceneArb(24), (spec) => {
+      fc.property(sceneArb(24), marginArb, (spec, marginDeg) => {
         const built = buildScene(spec);
         const cache = createAnchorBoundsCache();
-        predicate(built, cache, false);
+        predicate(built, cache, false, marginDeg);
         built.mutateLive();
         runs += 1;
         const truth = oracleInView(built);
         if (truth) drawn += 1;
-        const said = predicate(built, cache, false);
+        const said = predicate(built, cache, false, marginDeg);
         expect(truth && !said, 'a drawn subtree tested out').toBe(false);
       }),
       { numRuns: 150 }
     );
     expect(drawn).toBeGreaterThan(runs * NON_VACUOUS_SHARE);
+  });
+
+  it('a part just inside any side plane of any view is in at any margin', () => {
+    // Random scenes rarely put the only drawn part right at a side plane,
+    // so the properties above cannot see a side that the margin narrows
+    // instead of widening. Here a 1 mm part sits within 0.5 % of one side,
+    // inside, of a random (also off-axis) view at a random depth.
+    fc.assert(
+      fc.property(
+        viewArb,
+        fc.constantFrom('left', 'right', 'bottom', 'top'),
+        num(0, 1),
+        num(0.001, 0.005),
+        num(0.2, 0.8),
+        marginArb,
+        (v, side, depthT, inset, along, marginDeg) => {
+          const halfH =
+            v.near * Math.tan(THREE.MathUtils.degToRad(v.fovDeg) / 2);
+          const halfW = halfH * v.aspect;
+          const dx = v.skew[0] * halfW;
+          const dy = v.skew[1] * halfH;
+          // Side tangents (per metre of depth) of projectionFor's frustum.
+          const l = (-halfW + dx) / v.near;
+          const r = (halfW + dx) / v.near;
+          const b = (-halfH + dy) / v.near;
+          const t = (halfH + dy) / v.near;
+          const lerp = (lo: number, hi: number, f: number) =>
+            lo + (hi - lo) * f;
+          let tx = lerp(l, r, along);
+          let ty = lerp(b, t, along);
+          if (side === 'left') tx = lerp(l, r, inset);
+          if (side === 'right') tx = lerp(r, l, inset);
+          if (side === 'bottom') ty = lerp(b, t, inset);
+          if (side === 'top') ty = lerp(t, b, inset);
+          const depth = lerp(v.near * 2, v.far * 0.9, depthT);
+          const camera = new THREE.PerspectiveCamera();
+          applyTRS(camera, v.pos, v.rot);
+          camera.projectionMatrix.copy(projectionFor(v));
+          const scene = new THREE.Scene();
+          const anchor = new THREE.Group();
+          scene.add(anchor, camera);
+          scene.updateMatrixWorld(true);
+          const part = new THREE.Mesh(new THREE.SphereGeometry(0.001, 4, 2));
+          part.position
+            .set(tx * depth, ty * depth, -depth)
+            .applyMatrix4(camera.matrixWorld);
+          anchor.add(part);
+          scene.updateMatrixWorld(true);
+          const view = updateAnchorView(createAnchorView(), camera);
+          expect(
+            isAnchorInView(view, anchor, {
+              marginDeg,
+              cache: createAnchorBoundsCache(),
+              nowMs: 0,
+            }),
+            `${side} at margin ${marginDeg}`
+          ).toBe(true);
+        }
+      ),
+      { numRuns: 200 }
+    );
   });
 
   it('a rigid move of everything above the anchor parent and the camera leaves the answer unchanged', () => {

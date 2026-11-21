@@ -5,9 +5,11 @@
 ### Added
 
 - **Is any part of an anchor's subtree in view?** A conservative test that
-  never says "out" while a drawn part is in view, so content can re-place
-  only while none of it is visible: per-renderable spheres (instanced,
-  sprite, skinned and morphed meshes included) capped at 32 per anchor,
+  never says "out" while a drawn part is in view (CSS3D objects count as
+  their origin point only), so content can re-place only while none of it is
+  visible: per-renderable spheres (instanced, sprite, skinned and morphed
+  meshes included) merged down to 32 per anchor (skinned, morphed and
+  constant-size sprite parts are never merged),
   every XR sub-camera with its layers, a side margin, the target pose, and a
   1 s refresh for changes it cannot follow live.
   - **`ar/anchor-visibility`** (deep import): `isAnchorInView`,

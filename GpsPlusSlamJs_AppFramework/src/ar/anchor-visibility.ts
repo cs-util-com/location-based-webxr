@@ -6,7 +6,9 @@ import * as THREE from 'three';
  * pose?". A content anchor uses it to re-place its subtree only while none
  * of it is in view. The answer errs on one side only: a subtree that draws a
  * pixel is never reported out of view, while a subtree reported in view may
- * still draw nothing (a bound is larger than its content).
+ * still draw nothing (a bound is larger than its content). The one exception
+ * is a CSS3D object, which counts as the point at its origin (sidecar, Known
+ * limits).
  *
  * Everything is computed in the anchor's PARENT frame: the view is carried
  * into that frame through the camera's ancestor chain, and the subtree's
@@ -17,7 +19,12 @@ import * as THREE from 'three';
 /** Hysteresis margin, degrees, by which each side plane of a view widens. */
 export const ANCHOR_VIEW_MARGIN_DEG = 5;
 
-/** Most spheres one anchor's cache keeps; more are merged, nearest first. */
+/**
+ * Most spheres one anchor's cache keeps; more are merged, nearest first.
+ * Skinned, morphed and constant-screen-size sprite entries are never merged,
+ * so with more than ANCHOR_SPHERE_CAP - 1 of them the cache holds them all
+ * plus one merged sphere.
+ */
 export const ANCHOR_SPHERE_CAP = 32;
 
 /** Age, ms, after which a cache that keeps answering "in" asks for a fresh traversal. */
@@ -108,6 +115,10 @@ export function createAnchorView(): AnchorView {
  * the world by the user camera's parent, its own `projectionMatrix` (near
  * and far as the session set them) and its own `layers`. Otherwise the user
  * camera's world matrix, projection and layers are used.
+ *
+ * The frusta derived from it are carried into an anchor's parent frame on
+ * the first test against that parent and reused for the rest of the frame:
+ * call this again after moving a parent between two tests of one frame.
  */
 export function updateAnchorView(
   view: AnchorView,
@@ -212,20 +223,32 @@ interface MergeRootSphere {
 export interface AnchorBoundsCache {
   valid: boolean;
   builtAtMs: number;
+  /** The anchor the entries were built for; testing another one rebuilds. */
+  anchor: THREE.Object3D | null;
   entries: BoundEntry[];
   /** Merge-root spheres, kept across fresh traversals until the bounds change. */
   readonly mergeRoots: Map<THREE.Object3D, MergeRootSphere>;
+  /** Bind-time data of skinned and morphed parts, kept while its inputs are unchanged. */
+  readonly bindData: Map<THREE.Object3D, BindRecord>;
 }
 
 /** An empty cache for one anchor. */
 export function createAnchorBoundsCache(): AnchorBoundsCache {
-  return { valid: false, builtAtMs: 0, entries: [], mergeRoots: new Map() };
+  return {
+    valid: false,
+    builtAtMs: 0,
+    anchor: null,
+    entries: [],
+    mergeRoots: new Map(),
+    bindData: new Map(),
+  };
 }
 
 /** Call on a structural change of the anchor's subtree (a part mounted, unmounted or ready). */
 export function markAnchorBoundsChanged(cache: AnchorBoundsCache): void {
   cache.valid = false;
   cache.mergeRoots.clear();
+  cache.bindData.clear();
 }
 
 /**
@@ -319,6 +342,9 @@ function assertInViewInputs(
       'isAnchorInView: cache must come from createAnchorBoundsCache'
     );
   }
+  if (options.nowMs !== undefined && !Number.isFinite(options.nowMs)) {
+    throw new RangeError('isAnchorInView: nowMs must be finite');
+  }
 }
 
 function ensureBounds(
@@ -326,7 +352,7 @@ function ensureBounds(
   anchor: THREE.Object3D,
   options: AnchorInViewOptions
 ): void {
-  if (cache.valid && options.fresh !== true) return;
+  if (cache.valid && cache.anchor === anchor && options.fresh !== true) return;
   buildBounds(cache, anchor, options.nowMs ?? performance.now());
   if (options.counters) options.counters.traversals += 1;
 }
@@ -466,9 +492,7 @@ function morphTerm(r: Renderable, reach: Float64Array): number {
  * alone at 1) does not cover. Instanced and batched meshes are not handled
  * here (see the sidecar).
  */
-function morphBound(
-  r: Renderable
-): { base: number; reach: Float64Array } | null {
+function morphBound(r: Renderable, bind: BindLookup | null): MorphBound | null {
   if (r.isInstancedMesh || r.isBatchedMesh || !r.morphTargetInfluences) {
     return null;
   }
@@ -476,16 +500,21 @@ function morphBound(
   const targets = geometry?.morphAttributes.position;
   const position = geometry?.getAttribute('position');
   if (!geometry || !targets || targets.length === 0 || !position) return null;
-  return morphReachOf(position, targets, geometry.morphTargetsRelative);
+  return keptBind(bind, r, 'morph', geometry, null, () =>
+    morphReachOf(position, targets, geometry.morphTargetsRelative)
+  );
+}
+
+interface MorphBound {
+  readonly base: number;
+  readonly reach: Float64Array;
 }
 
 function morphReachOf(
-  position: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
-  targets: readonly (
-    THREE.BufferAttribute | THREE.InterleavedBufferAttribute
-  )[],
+  position: Attribute,
+  targets: readonly Attribute[],
   relative: boolean
-): { base: number; reach: Float64Array } | null {
+): MorphBound | null {
   const v = new THREE.Vector3();
   const delta = new THREE.Vector3();
   const reach = new Float64Array(targets.length);
@@ -529,7 +558,11 @@ function spriteWorldRadius(sprite: THREE.Sprite): number {
   return spriteSpread(sprite);
 }
 
-/** For a sizeAttenuation:false sprite: radius per unit of eye distance (perspective). */
+/**
+ * For a sizeAttenuation:false sprite: radius per unit of eye distance
+ * (perspective). three offsets its corners in view units; they are taken as
+ * world units here, which holds for a camera chain without scale.
+ */
 function nonAttenuatedSpriteSlope(sprite: THREE.Sprite): number {
   return isNonAttenuatedSprite(sprite) ? spriteSpread(sprite) : 0;
 }
@@ -700,8 +733,14 @@ function buildBounds(
   nowMs: number
 ): void {
   anchor.updateWorldMatrix(true, true);
+  if (cache.anchor !== anchor) {
+    cache.mergeRoots.clear();
+    cache.bindData.clear();
+    cache.anchor = anchor;
+  }
   const entries: BoundEntry[] = [];
   const keptRoots = new Map<THREE.Object3D, MergeRootSphere>();
+  const bind: BindLookup = { previous: cache.bindData, kept: new Map() };
   const visit = (object: THREE.Object3D): void => {
     if (object !== anchor && object.userData[FLAG_KEY] === FLAG_MERGE) {
       const sphere = cache.mergeRoots.get(object) ?? mergeRootSphere(object);
@@ -722,19 +761,21 @@ function buildBounds(
       }
       return;
     }
-    if (isRenderable(object)) entries.push(...entriesFor(object));
+    if (isRenderable(object)) entries.push(...entriesFor(object, bind));
     for (const child of object.children) visit(child);
   };
   visit(anchor);
   cache.mergeRoots.clear();
   for (const [root, sphere] of keptRoots) cache.mergeRoots.set(root, sphere);
+  cache.bindData.clear();
+  for (const [object, record] of bind.kept) cache.bindData.set(object, record);
   cache.entries = capEntries(entries, anchor);
   cache.valid = true;
   cache.builtAtMs = nowMs;
 }
 
 /** The cache entries for one renderable (none when it has no bound). */
-function entriesFor(object: THREE.Object3D): BoundEntry[] {
+function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
   const r = object as Renderable;
   if (r.isSprite) {
     return [nodeEntry(object, ORIGIN, 0, true)];
@@ -744,10 +785,10 @@ function entriesFor(object: THREE.Object3D): BoundEntry[] {
   }
   if (r.isSkinnedMesh) {
     const mesh = object as THREE.SkinnedMesh;
-    const bound = skinBound(mesh);
+    const bound = skinBound(mesh, bind);
     return bound ? [{ kind: 'skinned', mesh, bound }] : [];
   }
-  const morphed = morphBound(r);
+  const morphed = morphBound(r, bind);
   if (morphed) {
     return [
       {
@@ -771,6 +812,86 @@ function entriesFor(object: THREE.Object3D): BoundEntry[] {
 
 const ORIGIN = new THREE.Vector3();
 
+/**
+ * Bind-time data of one skinned or morphed renderable (the vertex walk, the
+ * costly part of a traversal), with what it was computed from.
+ */
+interface BindRecord {
+  /** The kind, geometry, morph flag, and each input attribute with its version. */
+  readonly key: readonly unknown[];
+  /** Skinned: the per-bone `boneInverse * bindMatrix` it used. */
+  readonly toBone: readonly THREE.Matrix4[] | null;
+  readonly value: SkinBound | MorphBound | null;
+}
+
+/** The previous traversal's records, and the ones this traversal keeps. */
+interface BindLookup {
+  readonly previous: ReadonlyMap<THREE.Object3D, BindRecord>;
+  readonly kept: Map<THREE.Object3D, BindRecord>;
+}
+
+const BIND_ATTRIBUTES = ['position', 'skinIndex', 'skinWeight'] as const;
+
+/**
+ * The previous traversal's value for `object` when its inputs are unchanged,
+ * else `compute()`. An edit three would upload bumps an attribute's version,
+ * a replaced attribute or geometry changes identity, and a rebind changes
+ * `toBone`; each of these recomputes. Without a lookup (merge roots, built
+ * once until the bounds change) it always computes.
+ */
+function keptBind<T extends SkinBound | MorphBound>(
+  bind: BindLookup | null,
+  object: THREE.Object3D,
+  kind: 'skin' | 'morph',
+  geometry: THREE.BufferGeometry,
+  toBone: readonly THREE.Matrix4[] | null,
+  compute: () => T | null
+): T | null {
+  if (!bind) return compute();
+  const key: unknown[] = [kind, geometry, geometry.morphTargetsRelative];
+  for (const name of BIND_ATTRIBUTES) {
+    pushAttribute(key, geometry.getAttribute(name));
+  }
+  for (const target of geometry.morphAttributes.position ?? []) {
+    pushAttribute(key, target);
+  }
+  const previous = bind.previous.get(object);
+  const record =
+    previous &&
+    sameItems(previous.key, key) &&
+    sameMatrices(previous.toBone, toBone)
+      ? previous
+      : { key, toBone, value: compute() };
+  bind.kept.set(object, record);
+  return record.value as T | null;
+}
+
+function pushAttribute(key: unknown[], a: Attribute | undefined): void {
+  if (!a) {
+    key.push(null, -1);
+    return;
+  }
+  const interleaved = a as THREE.InterleavedBufferAttribute;
+  key.push(
+    a,
+    interleaved.isInterleavedBufferAttribute
+      ? interleaved.data.version
+      : (a as THREE.BufferAttribute).version
+  );
+}
+
+function sameItems(a: readonly unknown[], b: readonly unknown[]): boolean {
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+function sameMatrices(
+  a: readonly THREE.Matrix4[] | null,
+  b: readonly THREE.Matrix4[] | null
+): boolean {
+  if (a === null || b === null) return a === b;
+  return a.length === b.length && a.every((m, i) => m.equals(b[i]!));
+}
+
 function nodeEntry(
   object: THREE.Object3D,
   centre: THREE.Vector3,
@@ -790,20 +911,61 @@ function nodeEntry(
 
 /** A renderable's bound in its own frame: instance spread first, then geometry. */
 function localSphere(r: Renderable): THREE.Sphere | null {
-  if (r.isInstancedMesh || r.isBatchedMesh) {
-    const withSphere = r as unknown as {
-      computeBoundingSphere(): void;
-      boundingSphere: THREE.Sphere | null;
-    };
-    withSphere.computeBoundingSphere();
-    const s = withSphere.boundingSphere;
-    return s && s.radius >= 0 ? s : null;
-  }
-  const geometry = r.geometry;
+  if (r.isInstancedMesh) return instancedSphere(r as THREE.InstancedMesh);
+  if (r.isBatchedMesh) return batchedSphere(r as unknown as THREE.BatchedMesh);
+  return geometrySphere(r.geometry);
+}
+
+function geometrySphere(
+  geometry: THREE.BufferGeometry | undefined
+): THREE.Sphere | null {
   if (!geometry) return null;
   if (!geometry.boundingSphere) geometry.computeBoundingSphere();
   const s = geometry.boundingSphere;
   return s && Number.isFinite(s.radius) && s.radius >= 0 ? s : null;
+}
+
+/**
+ * One sphere around every instance's geometry sphere, each scaled by the
+ * stretch of its instance matrix. three's own object sphere scales by the
+ * longest column instead, which a sheared instance matrix exceeds.
+ */
+function instancedSphere(mesh: THREE.InstancedMesh): THREE.Sphere | null {
+  const local = geometrySphere(mesh.geometry);
+  if (!local || !(mesh.count > 0)) return null;
+  const m = new THREE.Matrix4();
+  const centre = new THREE.Vector3();
+  const box = new THREE.Box3();
+  const each = (visit: (radius: number) => void): void => {
+    for (let i = 0; i < mesh.count; i += 1) {
+      mesh.getMatrixAt(i, m);
+      centre.copy(local.center).applyMatrix4(m);
+      visit(local.radius * maxStretch(m));
+    }
+  };
+  each((radius) => {
+    box.expandByPoint(scratchVec.copy(centre).addScalar(radius));
+    box.expandByPoint(scratchVec.copy(centre).addScalar(-radius));
+  });
+  const out = new THREE.Sphere(box.getCenter(new THREE.Vector3()), 0);
+  each((radius) => {
+    out.radius = Math.max(out.radius, out.center.distanceTo(centre) + radius);
+  });
+  return Number.isFinite(out.radius) ? out : null;
+}
+
+/**
+ * three's object sphere of a BatchedMesh (whose instance list is internal),
+ * widened by sqrt(3). three scales each instance's sphere by the longest
+ * column of its matrix; the true stretch is at most sqrt(3) times that
+ * (spectral norm <= Frobenius norm), and every instance sphere (c, r) lies
+ * in the union (C, R), so |c - C| + sqrt(3) r <= R + (sqrt(3) - 1) r <= sqrt(3) R.
+ */
+function batchedSphere(mesh: THREE.BatchedMesh): THREE.Sphere | null {
+  mesh.computeBoundingSphere();
+  const s = mesh.boundingSphere;
+  if (!s || !(s.radius >= 0) || !Number.isFinite(s.radius)) return null;
+  return new THREE.Sphere(s.center.clone(), s.radius * Math.sqrt(3));
 }
 
 /**
@@ -854,7 +1016,7 @@ function sphereInRoot(
   }
   if (r.isSkinnedMesh) {
     const mesh = r as unknown as THREE.SkinnedMesh;
-    const bound = skinBound(mesh);
+    const bound = skinBound(mesh, null);
     if (!bound) return null;
     const centre = new THREE.Vector3();
     skinnedWorldSphere(mesh, bound, centre);
@@ -864,7 +1026,7 @@ function sphereInRoot(
     );
   }
   const rel = new THREE.Matrix4().multiplyMatrices(invRoot, r.matrixWorld);
-  const morphed = morphBound(r);
+  const morphed = morphBound(r, null);
   if (morphed) {
     // Influences at build time: a merge root follows no inner change.
     return new THREE.Sphere(
@@ -1086,17 +1248,30 @@ interface SkinBound {
   readonly weightMax: number;
 }
 
-function skinBound(mesh: THREE.SkinnedMesh): SkinBound | null {
+function skinBound(
+  mesh: THREE.SkinnedMesh,
+  bind: BindLookup | null
+): SkinBound | null {
   const attrs = skinAttributes(mesh);
   if (!attrs) return null;
-  const { geometry, skeleton, position, skinIndex, skinWeight } = attrs;
-  const targets = geometry.morphAttributes.position ?? [];
+  const skeleton = attrs.skeleton;
   const toBone = skeleton.bones.map((_, i) =>
     new THREE.Matrix4().multiplyMatrices(
       skeleton.boneInverses[i] ?? new THREE.Matrix4(),
       mesh.bindMatrix
     )
   );
+  return keptBind(bind, mesh, 'skin', attrs.geometry, toBone, () =>
+    skinBoundOf(attrs, toBone)
+  );
+}
+
+function skinBoundOf(
+  attrs: NonNullable<ReturnType<typeof skinAttributes>>,
+  toBone: readonly THREE.Matrix4[]
+): SkinBound | null {
+  const { geometry, position, skinIndex, skinWeight } = attrs;
+  const targets = geometry.morphAttributes.position ?? [];
   const acc: SkinAccumulator = {
     toBone,
     targets,
@@ -1175,9 +1350,14 @@ function accumulateSkinVertex(
   for (let c = 0; c < skinWeight.itemSize; c += 1) {
     const w = Math.max(0, skinWeight.getComponent(vi, c));
     if (w === 0) continue;
-    sum += w;
     const bone = skinIndex.getComponent(vi, c);
-    if (bone >= 0 && bone < acc.toBone.length) foldBone(acc, bone);
+    // An index past the skeleton reads the bone texture's zero padding (past
+    // the texture, what is read is not defined): its weight moves the vertex
+    // nowhere, so it adds nothing to the sum.
+    if (bone >= 0 && bone < acc.toBone.length) {
+      sum += w;
+      foldBone(acc, bone);
+    }
   }
   acc.weightMin = Math.min(acc.weightMin, sum);
   acc.weightMax = Math.max(acc.weightMax, sum);

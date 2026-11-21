@@ -341,16 +341,46 @@ describe('anchor-visibility: what is in view', () => {
     rig.anchor.add(tinyMesh(atAngle(33, 10)));
     expect(inView(rig, { marginDeg: 0 })).toBe(false);
     expect(inView(rig, { marginDeg: ANCHOR_VIEW_MARGIN_DEG })).toBe(true);
-    // The same holds on each side of an off-axis projection.
+  });
+
+  it('each side of an off-axis projection widens outward by the margin', () => {
+    // The four side tangents of an off-axis projection differ (45 deg right,
+    // 26.6 deg left, top and bottom); a sign slip on any one of them narrows
+    // that side, a false "out" at the margin in use. One point 3 deg beyond
+    // each side: out at margin 0, in at margin 5.
     const offAxis = new THREE.PerspectiveCamera();
     offAxis.projectionMatrix.makePerspective(-0.05, 0.1, 0.05, -0.05, 0.1, 200);
-    rig.camera = offAxis;
-    rig.anchor.clear();
-    const rightDeg = THREE.MathUtils.radToDeg(Math.atan(1));
-    rig.anchor.add(tinyMesh(atAngle(rightDeg + 3, 10)));
-    markAnchorBoundsChanged(rig.cache);
-    expect(inView(rig, { marginDeg: 0 })).toBe(false);
-    expect(inView(rig, { marginDeg: 5 })).toBe(true);
+    const sides: [string, THREE.Vector3][] = [];
+    const deg = (t: number) => THREE.MathUtils.radToDeg(Math.atan(t)) + 3;
+    const up = (d: number) => {
+      const a = THREE.MathUtils.degToRad(d);
+      return new THREE.Vector3(0, 10 * Math.sin(a), -10 * Math.cos(a));
+    };
+    sides.push(['right', atAngle(deg(1), 10)]);
+    sides.push(['left', atAngle(-deg(0.5), 10)]);
+    sides.push(['top', up(deg(0.5))]);
+    sides.push(['bottom', up(-deg(0.5))]);
+    for (const [side, at] of sides) {
+      const rig = makeRig();
+      rig.camera = offAxis;
+      rig.anchor.add(tinyMesh(at));
+      expect(inView(rig, { marginDeg: 0 }), side).toBe(false);
+      expect(inView(rig, { marginDeg: 5 }), side).toBe(true);
+    }
+  });
+
+  it('a cache built for one anchor is rebuilt when another anchor is tested with it', () => {
+    // Nothing else binds a cache to its anchor: testing anchor B with A's
+    // cache would read A's parts, none of which count under B, and say "out"
+    // while B's part is in view.
+    const rig = makeRig();
+    rig.anchor.add(tinyMesh(new THREE.Vector3(100, 0, -10)));
+    expect(inView(rig)).toBe(false);
+    const other = new THREE.Group();
+    other.add(tinyMesh(new THREE.Vector3(0, 0, -10)));
+    rig.parent.add(other);
+    rig.anchor = other;
+    expect(inView(rig)).toBe(true);
   });
 
   it('content behind the camera is out', () => {
@@ -628,6 +658,169 @@ describe('anchor-visibility: what is in view', () => {
     expect(inView(rig)).toBe(false);
   });
 
+  it('a weight on a bone index past the skeleton adds nothing to the weight sum', () => {
+    // A malformed file: each vertex weighs 0.5 on bone 0 and 0.5 on index 3
+    // of a one-bone skeleton. three reads a zero matrix for the bad index
+    // (the bone texture's padding), so the vertex is drawn at half its bone
+    // transform: the bone 300 m ahead puts the box 150 m ahead, in view.
+    const rig = makeRig();
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const count = geometry.getAttribute('position').count;
+    const index: number[] = [];
+    const weight: number[] = [];
+    for (let i = 0; i < count; i += 1) {
+      index.push(0, 3, 0, 0);
+      weight.push(0.5, 0.5, 0, 0);
+    }
+    geometry.setAttribute(
+      'skinIndex',
+      new THREE.Uint16BufferAttribute(index, 4)
+    );
+    geometry.setAttribute(
+      'skinWeight',
+      new THREE.Float32BufferAttribute(weight, 4)
+    );
+    const mesh = new THREE.SkinnedMesh(geometry);
+    const bone = new THREE.Bone();
+    mesh.add(bone);
+    mesh.bind(new THREE.Skeleton([bone]));
+    bone.position.set(0, 0, -300);
+    rig.anchor.add(mesh);
+    expect(inView(rig)).toBe(true);
+  });
+
+  /**
+   * An instance matrix with a non-uniform scale between two rotations, which
+   * shears it: its largest stretch (4) exceeds every column length (2.9), so
+   * a bound scaled by the largest column (three's `Sphere.applyMatrix4`)
+   * falls short. Placed so the farthest drawn vertex (found by brute force)
+   * reaches 0.05 m inside the right side plane.
+   */
+  function placeShearedInstance(
+    rig: Rig,
+    mesh: THREE.Object3D,
+    geometry: THREE.BufferGeometry,
+    instance: THREE.Matrix4
+  ): void {
+    rig.anchor.add(mesh);
+    rig.scene.updateMatrixWorld(true);
+    const plane = new THREE.Vector3(
+      Math.cos(Math.PI / 6),
+      0,
+      Math.sin(Math.PI / 6)
+    );
+    const position = geometry.getAttribute('position');
+    let reach = 0;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < position.count; i += 1) {
+      v.fromBufferAttribute(position, i).applyMatrix4(instance);
+      reach = Math.max(reach, -v.dot(plane));
+    }
+    mesh.position.copy(atAngle(30, 20)).addScaledVector(plane, reach - 0.05);
+  }
+
+  function shearedMatrix(): THREE.Matrix4 {
+    return new THREE.Matrix4()
+      .makeRotationY((5 * Math.PI) / 6)
+      .multiply(new THREE.Matrix4().makeScale(4, 1, 1))
+      .multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 4));
+  }
+
+  it('a sheared instance of an InstancedMesh is still bounded', () => {
+    const rig = makeRig();
+    const geometry = new THREE.BoxGeometry(1, 1, 1).translate(1, 0, 0);
+    const mesh = new THREE.InstancedMesh(geometry, undefined, 1);
+    mesh.setMatrixAt(0, shearedMatrix());
+    placeShearedInstance(rig, mesh, geometry, shearedMatrix());
+    expect(inView(rig)).toBe(true);
+  });
+
+  it('a sheared instance of a BatchedMesh is still bounded', () => {
+    const rig = makeRig();
+    const geometry = new THREE.BoxGeometry(1, 1, 1).translate(1, 0, 0);
+    const mesh = new THREE.BatchedMesh(1, 64, 64);
+    const id = mesh.addInstance(mesh.addGeometry(geometry));
+    mesh.setMatrixAt(id, shearedMatrix());
+    placeShearedInstance(rig, mesh, geometry, shearedMatrix());
+    expect(inView(rig)).toBe(true);
+  });
+
+  it('bind-time bounds are reused by a fresh traversal until the geometry or the bind changes', () => {
+    // The vertex walk of a skinned or morphed part is the expensive part of
+    // a traversal (tens of ms for a 20k-vertex rig with 50 blend shapes), and
+    // a fresh traversal runs every second while content waits. It reads the
+    // same bind data each time, so it is kept; an attribute replaced or
+    // edited (its version bumps, as three needs to upload it), a swapped
+    // geometry and a rebind still recompute.
+    const rig = makeRig();
+    const mesh = morphedBoxBeyondPlane();
+    rig.anchor.add(mesh);
+    const { mesh: skinned, bone } = skinnedBox(1);
+    skinned.add(bone);
+    skinned.bind(new THREE.Skeleton([bone]));
+    bone.position.set(0, 0, -300); // beyond the far plane
+    rig.anchor.add(skinned);
+    const morphReads = vi.spyOn(
+      mesh.geometry.getAttribute('position') as THREE.BufferAttribute,
+      'getX'
+    );
+    const skinReads = vi.spyOn(
+      skinned.geometry.getAttribute('position') as THREE.BufferAttribute,
+      'getX'
+    );
+    expect(inView(rig, { fresh: true })).toBe(false);
+    expect(morphReads).toHaveBeenCalled();
+    expect(skinReads).toHaveBeenCalled();
+    morphReads.mockClear();
+    skinReads.mockClear();
+    expect(inView(rig, { fresh: true })).toBe(false);
+    expect(morphReads).not.toHaveBeenCalled();
+    expect(skinReads).not.toHaveBeenCalled();
+
+    // A target edited in place (18 m toward the view at influence 1).
+    mesh.morphTargetInfluences![0] = 1;
+    const target = mesh.geometry.morphAttributes.position![0]!;
+    for (let i = 0; i < target.count; i += 1) {
+      target.setXYZ(i, target.getX(i) * 3, 0, target.getZ(i) * 3);
+    }
+    target.needsUpdate = true;
+    expect(inView(rig, { fresh: true })).toBe(true);
+    mesh.visible = false;
+
+    // New bone inverses (a rebind): the box is now drawn 200 m nearer than
+    // its bone, 100 m ahead.
+    expect(inView(rig, { fresh: true })).toBe(false);
+    skinned.skeleton.boneInverses[0]!.makeTranslation(0, 0, 200);
+    expect(inView(rig, { fresh: true })).toBe(true);
+  });
+
+  it('an interleaved position edited in place is read again by a fresh traversal', () => {
+    // Loaded models often carry interleaved vertex data, whose version lives
+    // on the shared buffer, not on the attribute: the kept bind data must
+    // follow that version too.
+    const rig = makeRig();
+    const { mesh: skinned, bone } = skinnedBox(1);
+    const plain = skinned.geometry.getAttribute(
+      'position'
+    ) as THREE.BufferAttribute;
+    const buffer = new THREE.InterleavedBuffer(
+      new Float32Array(plain.array),
+      3
+    );
+    skinned.geometry.setAttribute(
+      'position',
+      new THREE.InterleavedBufferAttribute(buffer, 3, 0)
+    );
+    skinned.add(bone);
+    skinned.bind(new THREE.Skeleton([bone]));
+    bone.position.set(0, 0, -300); // beyond the far plane
+    rig.anchor.add(skinned);
+    expect(inView(rig, { fresh: true })).toBe(false);
+    for (let i = 2; i < buffer.array.length; i += 3) buffer.array[i]! += 200;
+    buffer.needsUpdate = true; // the box is now drawn 100 m ahead
+    expect(inView(rig, { fresh: true })).toBe(true);
+  });
+
   it('a merge root keeps its one sphere, moved by the root, until the bounds change', () => {
     const rig = makeRig();
     const model = new THREE.Group();
@@ -779,6 +972,13 @@ describe('anchor-visibility: frames, counts and inputs', () => {
     expect(() => anchorBoundsNeedRefresh(cache, Number.NaN)).toThrow(
       RangeError
     );
+    // A non-finite build stamp would make anchorBoundsNeedRefresh false for
+    // ever, so a stale "in" would never be refreshed.
+    for (const nowMs of [Number.NaN, Infinity, -Infinity]) {
+      expect(() =>
+        isAnchorInView(view, rig.anchor, { marginDeg: 0, cache, nowMs })
+      ).toThrow(RangeError);
+    }
     expect(
       isAnchorInView(createAnchorView(), rig.anchor, { marginDeg: 0, cache })
     ).toBe(false);
