@@ -118,11 +118,15 @@ export function checkImageWithinCap(
   return { ok: true };
 }
 
+/** Why a buffer or image would make three.js fetch from outside the file,
+ *  or null. Only buffer 0 may leave out its `uri` (it is then the binary
+ *  chunk); three.js resolves a later buffer without one to the empty URL
+ *  and fetches the page itself. */
 function uriProblem(owner: string, value: unknown): string | null {
   if (!Array.isArray(value)) return null;
-  for (const item of value) {
+  for (const [i, item] of value.entries()) {
     const uri = (item as { uri?: unknown } | null)?.uri;
-    if (uri === undefined) continue;
+    if (uri === undefined && (owner === 'image' || i === 0)) continue;
     if (typeof uri !== 'string' || !uri.startsWith('data:')) {
       return `a ${owner} points outside the file`;
     }
@@ -180,20 +184,38 @@ function dataUriBytes(uri: string, fileBytes: number): Uint8Array | null {
   return read.ok ? read.bytes : null;
 }
 
-/** A buffer view's bytes in the binary chunk (buffer 0), or null. */
+/** A buffer's bytes as three.js's GLTFLoader (`loadBuffer`) loads them:
+ *  from its `data:` URI whenever it has a `uri` (buffer 0 too), from the
+ *  binary chunk only for buffer 0 without one; null when neither reads. */
+function bufferBytes(
+  bin: Uint8Array | null,
+  json: Record<string, unknown>,
+  index: unknown,
+  fileBytes: number
+): Uint8Array | null {
+  const buffers = json['buffers'];
+  if (!Array.isArray(buffers) || !Number.isSafeInteger(index)) return null;
+  const uri = (buffers[index as number] as { uri?: unknown } | null)?.uri;
+  if (typeof uri === 'string') return dataUriBytes(uri, fileBytes);
+  return index === 0 && uri === undefined ? bin : null;
+}
+
+/** A buffer view's bytes in the buffer three.js loads for it, or null. */
 function bufferViewBytes(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
-  index: unknown
+  index: unknown,
+  fileBytes: number
 ): Uint8Array | null {
   const views = json['bufferViews'];
   if (!Array.isArray(views) || !Number.isSafeInteger(index)) return null;
   const view = views[index as number] as
     | { buffer?: unknown; byteOffset?: unknown; byteLength?: unknown }
     | undefined;
-  if (bin === null || view?.buffer !== 0) return null;
-  const range = rangeIn(view.byteOffset ?? 0, view.byteLength, bin.length);
-  return range === null ? null : bin.subarray(range[0], range[1]);
+  const buffer = bufferBytes(bin, json, view?.buffer, fileBytes);
+  if (buffer === null || view === undefined) return null;
+  const range = rangeIn(view.byteOffset ?? 0, view.byteLength, buffer.length);
+  return range === null ? null : buffer.subarray(range[0], range[1]);
 }
 
 /** `[offset, offset + length]` when both are safe integers that fit in
@@ -211,9 +233,10 @@ function rangeIn(
   return start >= 0 && end >= start && end <= size ? [start, end] : null;
 }
 
-/** The bytes of one glTF image: its `data:` URI decoded (capped at the
- *  file's own length, `fileBytes`), or its buffer view in the binary
- *  chunk; null when they cannot be found. */
+/** The bytes of one glTF image as three.js loads them: its buffer view
+ *  whenever it names one (even beside a `uri`), else its `data:` URI
+ *  decoded (capped at the file's own length, `fileBytes`); null when they
+ *  cannot be found. */
 function imageBytes(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
@@ -221,9 +244,12 @@ function imageBytes(
   fileBytes: number
 ): Uint8Array | null {
   const record = image as { uri?: unknown; bufferView?: unknown } | null;
+  if (record?.bufferView !== undefined) {
+    return bufferViewBytes(bin, json, record.bufferView, fileBytes);
+  }
   return typeof record?.uri === 'string'
     ? dataUriBytes(record.uri, fileBytes)
-    : bufferViewBytes(bin, json, record?.bufferView);
+    : null;
 }
 
 /** Why one of the model's images may not be decoded, or null. The binary

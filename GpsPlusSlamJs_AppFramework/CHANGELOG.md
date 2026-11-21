@@ -234,6 +234,15 @@
 
 ### Fixed
 
+- **`checkGlbInert` measures a model's pictures from the bytes three.js
+  loads** (`ar/tour-media`). A buffer with a `data:` URI is measured from
+  that URI, buffer 0 too, and the binary chunk only for buffer 0 without
+  one, as three.js's GLTFLoader reads them; an image's `bufferView` is
+  measured before a `uri` beside it. Before, a 4 x 4 header in the binary
+  chunk passed while buffer 0's `data:` URI held a 16384 x 16384 picture
+  that the phone then decoded (about 1 GiB), past the pixel cap. A buffer
+  after the first without a `uri` is now refused: three.js fetches the
+  page itself for it.
 - A creator's draft record of a narrated long text reads again
   (`parseTourObject`).
 

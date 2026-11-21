@@ -40,10 +40,13 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 ## Invariants
 
 - A `.glb` is inert when it is glTF 2.0 binary, every `buffers[].uri` and
-  `images[].uri` is absent (the binary chunk) or a `data:` URI - never a
-  relative path or an http URL the page would fetch - and it uses none of
+  `images[].uri` is absent or a `data:` URI - never a relative path or an
+  http URL the page would fetch - and it uses none of
   the extensions that need a decoder from outside (`KHR_draco_mesh_compression`,
   `EXT_meshopt_compression`, `KHR_meshopt_compression`, `KHR_texture_basisu`).
+  Only buffer 0 may leave out its `uri` (it is then the binary chunk):
+  three.js resolves a later buffer without one to the empty URL and
+  fetches the page itself, so such a buffer is refused.
 - **The chunk structure is exactly what the format allows** (K0 milestone
   review R8): one JSON chunk, an optional binary chunk, then the end, with
   the header's length equal to the data's. three.js's loader walks EVERY
@@ -61,11 +64,17 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   phone photo, 8.4 MP admits only a figure, 33.6 MP lets one decode take
   128 MiB. Reversed by a phone that cannot hold one 64 MiB decode beside
   its AR session (unmeasured), or tours that need 8K textures.
-- `checkGlbInert` measures every `images[]` entry: its buffer view in the
-  binary chunk (buffer 0, inside the chunk) or its base64 `data:` URI,
-  read strictly by `utils/data-uri.ts` (the decoder the Tour Viewer's glTF
-  import uses too; whitespace or missing padding is unreadable); an
-  image it cannot find or measure refuses the model.
+- `checkGlbInert` measures every `images[]` entry from the bytes three.js's
+  GLTFLoader would decode: its buffer view whenever it names one (three
+  prefers it over a `uri` beside it), else its base64 `data:` URI. A buffer
+  view is read from the buffer three loads (`loadBuffer`): its `data:` URI
+  whenever the buffer has a `uri` (buffer 0 too), the binary chunk only for
+  buffer 0 without one. Measuring the binary chunk for buffer 0 regardless
+  let a 4 x 4 header there pass while its `data:` buffer held a
+  16384 x 16384 picture (1 GiB decoded). Every `data:` URI is read strictly
+  by `utils/data-uri.ts` (the decoder the Tour Viewer's glTF import uses
+  too; whitespace or missing padding is unreadable), capped at the file's
+  own length; an image it cannot find or measure refuses the model.
 - `checkGlbInert` never throws, whatever the bytes.
 - Pure: no I/O, no DOM.
 
@@ -82,7 +91,12 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 
 `tour-media.test.ts`: the pixel cap and its sweep, a model's images in
 the binary chunk and as `data:` URIs, an unmeasurable or unfindable image,
-a set cap (R2); the allowlist's members, that no type able to carry
+a set cap (R2); an image `data:` URI read as strict base64 only (spaced
+or unpadded refused); the pixel cap measuring what three.js loads (buffer
+0 from its `data:` URI rather than the binary chunk, an image in a later
+`data:` buffer, a buffer that does not decode strictly, a `bufferView`
+preferred over a `uri` beside it, a later buffer without a `uri`
+refused); the allowlist's members, that no type able to carry
 script or markup is admitted, exact matching, entry names, a never-throws
 property; `.glb` inertness with built binaries (binary chunk and `data:`
 accepted; http, relative and protocol-relative URIs refused for buffers and

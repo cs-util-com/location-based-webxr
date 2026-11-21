@@ -385,6 +385,113 @@ describe('the pixel cap (R2)', () => {
   });
 });
 
+const bufferUri = (bytes: Uint8Array): string =>
+  `data:application/octet-stream;base64,${btoa(String.fromCharCode(...bytes))}`;
+
+/** A model whose one image sits at `bufferViews[0]` = buffer `buffer`,
+ *  bytes 0-24, with `buffers` as given and `bin` as its binary chunk. */
+function viewImageGlb(
+  buffers: readonly Record<string, unknown>[],
+  buffer: number,
+  bin: Uint8Array | null,
+  image: Record<string, unknown> = { bufferView: 0, mimeType: 'image/png' }
+): Uint8Array {
+  const model = glb({
+    asset: { version: '2.0' },
+    buffers,
+    bufferViews: [{ buffer, byteOffset: 0, byteLength: 24 }],
+    images: [image],
+  });
+  return bin === null
+    ? model
+    : withChunks(model, [{ type: BIN_CHUNK, data: bin }]);
+}
+
+/**
+ * Why these tests matter: three.js's GLTFLoader (`loadBuffer`) reads
+ * buffer 0 from the binary chunk ONLY when it has no `uri`; any buffer
+ * with a `uri` is loaded from that URI, and an image with a `bufferView`
+ * is loaded from the view even when it also names a `uri`. A check that
+ * measured anything else measured a picture the phone never decodes: a
+ * 4 x 4 header in the binary chunk passed while a few kilobytes of
+ * `data:` buffer made the phone decode a 16384 x 16384 picture (1 GiB).
+ */
+describe('the pixel cap measures what three.js loads', () => {
+  it('measures buffer 0 from its data: URI, not from the binary chunk', () => {
+    const decoy = new Uint8Array(24);
+    decoy.set(pngHeader(4, 4));
+    const check = checkGlbInert(
+      viewImageGlb(
+        [{ byteLength: 24, uri: bufferUri(pngHeader(16384, 16384)) }],
+        0,
+        decoy
+      )
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  it('measures an image in a later data: buffer, and accepts a small one', () => {
+    const buffers = (w: number) => [
+      { byteLength: 4 },
+      { byteLength: 24, uri: bufferUri(pngHeader(w, w)) },
+    ];
+    const bin = new Uint8Array(4);
+    expect(checkGlbInert(viewImageGlb(buffers(64), 1, bin))).toEqual({
+      ok: true,
+    });
+    expect(checkGlbInert(viewImageGlb(buffers(16384), 1, bin))).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  it('refuses an image in a data: buffer that does not decode strictly', () => {
+    const uri = bufferUri(pngHeader(4, 4));
+    const comma = uri.indexOf(',') + 1;
+    const spaced = uri.slice(0, comma + 8) + ' ' + uri.slice(comma + 8);
+    expect(
+      checkGlbInert(viewImageGlb([{ byteLength: 24, uri: spaced }], 0, null))
+    ).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/image 0 cannot be found/),
+    });
+  });
+
+  it('measures an image from its bufferView even when it also names a uri', () => {
+    const bin = new Uint8Array(24);
+    bin.set(pngHeader(16384, 16384));
+    const check = checkGlbInert(
+      viewImageGlb([{ byteLength: 24 }], 0, bin, {
+        bufferView: 0,
+        mimeType: 'image/png',
+        uri: dataUri(pngHeader(4, 4)),
+      })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  // Why: three.js resolves a later buffer without a `uri` to the empty
+  // URL and fetches the page itself; only buffer 0 may be the binary chunk.
+  it('refuses a buffer after the first that has no uri', () => {
+    const check = checkGlbInert(
+      glb({
+        asset: { version: '2.0' },
+        buffers: [{ byteLength: 4 }, { byteLength: 4 }],
+      })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: 'a buffer points outside the file',
+    });
+  });
+});
+
 /**
  * The cap sweep (R2): what each candidate cap admits of the images a tour
  * meets, and what one decode then costs (RGBA, 4 bytes a pixel). The
