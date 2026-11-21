@@ -189,10 +189,12 @@ describe('the workflow stays inside the free plan and never hangs', () => {
     expect(testJob.strategy['fail-fast']).toBe(false);
   });
 
-  // GitHub keeps only ONE pending run per concurrency group, so pushes to
-  // main must not share one: of three quick merges the middle one would lose
-  // its run. Every event but a pull request gets a group of its own (its run
-  // id), so a push to main, a dispatch and the nightly run are never cancelled.
+  // Pushes to main share one group, and a newer push cancels the older run,
+  // running or pending: on main the tier compares against nothing, so the
+  // newer run tests everything the older one would, and a red main is
+  // bisected with one dispatch run instead. A dispatch (the nightly full set
+  // included) groups by its run id, so it is never cancelled. GitHub keeps
+  // only ONE pending run per group, so no other event may share a group.
   // A pull request groups by its ref under a fixed prefix, NOT
   // `github.workflow`: in the full-ci label's call of this workflow that would
   // name the calling workflow, a group of its own. Sharing the group is the
@@ -201,9 +203,9 @@ describe('the workflow stays inside the free plan and never hangs', () => {
   // otherwise hold about 14 of the account's 20 concurrent jobs for nothing. The
   // tier run's jobs and its `CI result` then show as cancelled on the pull
   // request, which is accepted.
-  it('cancels a superseded pull request run, the tier run when full-ci starts, and gives every push to main its own run', () => {
+  it('groups a pull request by its ref, every push to main in one group, and every other run by its run id', () => {
     expect(workflow.concurrency.group).toBe(
-      "ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+      "ci-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && github.ref == 'refs/heads/main' && 'push-main' || github.run_id }}"
     );
     expect(workflow.concurrency.group).not.toContain('github.workflow');
   });
@@ -216,16 +218,17 @@ describe('the workflow stays inside the free plan and never hangs', () => {
   // one (there is nothing older for it to supersede); it waits instead, and
   // then runs the whole tier after the full run, a rare waste of job slots.
   // Every other pull request event, the full-ci label's included, cancels the
-  // older run, and no other event cancels anything.
+  // older run, a push to main cancels the older push run, and no other event
+  // cancels anything.
   //
   // A label event carries `github.event.label`; any label other than full-ci
   // never cancels, even if GitHub placed the called workflow in the group
   // before it evaluated the caller job's `if`. The check reads the label's
   // presence rather than the event's action, so this file still names no
   // label event (see the label test below).
-  it('lets the full-ci run and later pushes cancel the older run, but never the opened run or another label', () => {
+  it('lets the full-ci run, later pushes and a newer push to main cancel the older run, but never the opened run or another label', () => {
     expect(workflow.concurrency['cancel-in-progress']).toBe(
-      "${{ github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}"
+      "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}"
     );
   });
 
