@@ -385,6 +385,219 @@ describe('the pixel cap (R2)', () => {
   });
 });
 
+const bufferUri = (bytes: Uint8Array): string =>
+  `data:application/octet-stream;base64,${btoa(String.fromCharCode(...bytes))}`;
+
+/** A model whose one image sits at `bufferViews[0]` = buffer `buffer`,
+ *  bytes 0-24, with `buffers` as given and `bin` as its binary chunk. */
+function viewImageGlb(
+  buffers: readonly Record<string, unknown>[],
+  buffer: number,
+  bin: Uint8Array | null,
+  image: Record<string, unknown> = { bufferView: 0, mimeType: 'image/png' }
+): Uint8Array {
+  const model = glb({
+    asset: { version: '2.0' },
+    buffers,
+    bufferViews: [{ buffer, byteOffset: 0, byteLength: 24 }],
+    images: [image],
+  });
+  return bin === null
+    ? model
+    : withChunks(model, [{ type: BIN_CHUNK, data: bin }]);
+}
+
+/**
+ * Why these tests matter: three.js's GLTFLoader (`loadBuffer`) reads
+ * buffer 0 from the binary chunk ONLY when it has no `uri`; any buffer
+ * with a `uri` is loaded from that URI, and an image with a `bufferView`
+ * is loaded from the view even when it also names a `uri`. A check that
+ * measured anything else measured a picture the phone never decodes: a
+ * 4 x 4 header in the binary chunk passed while a few kilobytes of
+ * `data:` buffer made the phone decode a 16384 x 16384 picture (1 GiB).
+ */
+describe('the pixel cap measures what three.js loads', () => {
+  it('measures buffer 0 from its data: URI, not from the binary chunk', () => {
+    const decoy = new Uint8Array(24);
+    decoy.set(pngHeader(4, 4));
+    const check = checkGlbInert(
+      viewImageGlb(
+        [{ byteLength: 24, uri: bufferUri(pngHeader(16384, 16384)) }],
+        0,
+        decoy
+      )
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  it('measures an image in a later data: buffer, and accepts a small one', () => {
+    const buffers = (w: number) => [
+      { byteLength: 4 },
+      { byteLength: 24, uri: bufferUri(pngHeader(w, w)) },
+    ];
+    const bin = new Uint8Array(4);
+    expect(checkGlbInert(viewImageGlb(buffers(64), 1, bin))).toEqual({
+      ok: true,
+    });
+    expect(checkGlbInert(viewImageGlb(buffers(16384), 1, bin))).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  // The binary chunk holds a readable 4 x 4 header at the same range, so
+  // a check that fell back to the chunk for an unreadable URI would pass.
+  it('refuses an image in a data: buffer that does not decode strictly', () => {
+    const uri = bufferUri(pngHeader(4, 4));
+    const comma = uri.indexOf(',') + 1;
+    const spaced = uri.slice(0, comma + 8) + ' ' + uri.slice(comma + 8);
+    const decoy = new Uint8Array(24);
+    decoy.set(pngHeader(4, 4));
+    expect(
+      checkGlbInert(viewImageGlb([{ byteLength: 24, uri: spaced }], 0, decoy))
+    ).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/image 0 cannot be found/),
+    });
+  });
+
+  it('measures an image from its bufferView even when it also names a uri', () => {
+    const bin = new Uint8Array(24);
+    bin.set(pngHeader(16384, 16384));
+    const check = checkGlbInert(
+      viewImageGlb([{ byteLength: 24 }], 0, bin, {
+        bufferView: 0,
+        mimeType: 'image/png',
+        uri: dataUri(pngHeader(4, 4)),
+      })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/16384 x 16384/),
+    });
+  });
+
+  // Why: three.js resolves a later buffer without a `uri` to the empty
+  // URL and fetches the page itself; only buffer 0 may be the binary chunk.
+  it('refuses a buffer after the first that has no uri', () => {
+    const check = checkGlbInert(
+      glb({
+        asset: { version: '2.0' },
+        buffers: [{ byteLength: 4 }, { byteLength: 4 }],
+      })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: 'a buffer points outside the file',
+    });
+  });
+});
+
+/** A model whose one mesh draws from buffer view 0, with `fields` laid
+ *  over its JSON. */
+function meshGlb(fields: Record<string, unknown>): Uint8Array {
+  return withChunks(
+    glb({
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: 12 }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 12 }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 1, type: 'VEC3' },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      ...fields,
+    }),
+    [{ type: BIN_CHUNK, data: new Uint8Array(12) }]
+  );
+}
+
+/**
+ * Why these tests matter: three.js's GLTFLoader reads `json.buffers[i]`,
+ * `json.bufferViews[i]` and the like by key, whatever their type, and
+ * loads a buffer for any key a view names. An object in place of a list,
+ * or a view naming its buffer by a string, so reached a buffer the check
+ * never looked at: a `buffers` object holding an http URI made every open
+ * of the tour fetch it, and `buffer: "0"` (which is not buffer 0 to
+ * three's `=== 0`) made it fetch the page.
+ */
+describe('checkGlbInert - lists and references as three.js reads them', () => {
+  it('accepts the plain model these tests vary', () => {
+    expect(checkGlbInert(meshGlb({}))).toEqual({ ok: true });
+  });
+
+  it('refuses a buffer, view, accessor or image list that is not a list', () => {
+    const beacon = {
+      0: { uri: 'https://beacon.example/x', byteLength: 12 },
+    };
+    expect(checkGlbInert(meshGlb({ buffers: beacon }))).toEqual({
+      ok: false,
+      reason: '"buffers" is not a list',
+    });
+    for (const key of ['bufferViews', 'accessors', 'images']) {
+      expect(checkGlbInert(meshGlb({ [key]: { 0: {} } })), key).toEqual({
+        ok: false,
+        reason: `"${key}" is not a list`,
+      });
+    }
+  });
+
+  it('refuses a view whose buffer is not a whole number', () => {
+    for (const buffer of ['0', 'length', 'constructor', 0.5, -1, null]) {
+      const check = checkGlbInert(
+        meshGlb({ bufferViews: [{ buffer, byteOffset: 0, byteLength: 12 }] })
+      );
+      expect(check, String(buffer)).toEqual({
+        ok: false,
+        reason: 'a buffer view names no buffer of the file',
+      });
+    }
+  });
+
+  // three.js's meshopt plugin loads the buffer its extension names before
+  // it looks for a decoder, and whether or not the extension is declared.
+  it('refuses a view extension naming a buffer by anything but a whole number', () => {
+    const viewWith = (buffer: unknown) =>
+      meshGlb({
+        bufferViews: [
+          {
+            buffer: 0,
+            byteOffset: 0,
+            byteLength: 12,
+            extensions: { KHR_meshopt_compression: { buffer } },
+          },
+        ],
+      });
+    expect(checkGlbInert(viewWith(0))).toEqual({ ok: true });
+    for (const buffer of ['0', 'length', null]) {
+      expect(checkGlbInert(viewWith(buffer)), String(buffer)).toEqual({
+        ok: false,
+        reason: 'a buffer view names no buffer of the file',
+      });
+    }
+  });
+
+  // three.js takes a URI as data only when it matches /^data:.*,.*$/; any
+  // other is resolved against the loader's path and fetched.
+  it('refuses a data: URI three.js would not read as data', () => {
+    for (const uri of ['data:x', 'data:\n,AAAA', 'data:;base64,AA\nAA']) {
+      expect(
+        checkGlbInert(glb({ asset: { version: '2.0' }, buffers: [{ uri }] })),
+        JSON.stringify(uri)
+      ).toEqual({ ok: false, reason: 'a buffer points outside the file' });
+      expect(
+        checkGlbInert(glb({ asset: { version: '2.0' }, images: [{ uri }] })),
+        JSON.stringify(uri)
+      ).toEqual({
+        ok: false,
+        reason: expect.stringMatching(/image points outside the file/),
+      });
+    }
+  });
+});
+
 /**
  * The cap sweep (R2): what each candidate cap admits of the images a tour
  * meets, and what one decode then costs (RGBA, 4 bytes a pixel). The
@@ -419,5 +632,120 @@ describe('the pixel cap sweep (R2)', () => {
     expect(CAPS.map((c) => Math.round((c * 4) / 2 ** 20))).toEqual([
       16, 32, 64, 128,
     ]);
+  });
+});
+
+/** A model of one accessor without a buffer view (three.js allocates it
+ *  as zeros) and `binBytes` bytes of binary chunk to set the file length. */
+function zerosGlb(accessor: Record<string, unknown>, binBytes = 0): Uint8Array {
+  const model = glb({
+    asset: { version: '2.0' },
+    ...(binBytes > 0 ? { buffers: [{ byteLength: binBytes }] } : {}),
+    accessors: [accessor],
+  });
+  return binBytes > 0
+    ? withChunks(model, [{ type: BIN_CHUNK, data: new Uint8Array(binBytes) }])
+    : model;
+}
+
+/** A one-byte-per-element accessor asking for `bytes(fileLength)` bytes, in
+ *  a file of about `binBytes` bytes; the count's digits change the file's
+ *  length, so it is rebuilt until the two agree. */
+function scalarGlbAsking(
+  bytes: (fileLength: number) => number,
+  binBytes: number
+): Uint8Array {
+  let model = zerosGlb(
+    { componentType: 5121, count: 1, type: 'SCALAR' },
+    binBytes
+  );
+  for (let i = 0; i < 4; i += 1) {
+    model = zerosGlb(
+      { componentType: 5121, count: bytes(model.length), type: 'SCALAR' },
+      binBytes
+    );
+  }
+  return model;
+}
+
+const MiB = 2 ** 20;
+
+/**
+ * Why these tests matter: three.js's GLTFLoader allocates every accessor
+ * without a buffer view, and every sparse one, as a new array of `count`
+ * elements (`loadAccessor`), and uploads every accessor to the GPU, so a
+ * few bytes of JSON (`count: 100000000`, `VEC4`, float) made a phone
+ * allocate 1.6 GB. The accessors of a model together may ask for 64 MiB,
+ * or 8 times the file's length when that is more. Measured on 48 real
+ * models (this repo's and others on the development machine): the most
+ * any asked for was 3.7 MB, and the highest ratio to its file's length
+ * 3.69 (a 44 KB model, far under the floor); the repo's own LOD
+ * prototypes reach 2.28, from accessors left without a buffer view.
+ */
+describe('checkGlbInert - the memory its accessors ask for', () => {
+  it('refuses an accessor that asks for 1.6 GB of zeros', () => {
+    const check = checkGlbInert(
+      zerosGlb({ componentType: 5126, count: 100_000_000, type: 'VEC4' })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/accessors ask for 1526 MiB/),
+    });
+  });
+
+  it('admits 64 MiB in a small file, and not a byte more', () => {
+    const vec4 = { componentType: 5126, type: 'VEC4' };
+    expect(
+      checkGlbInert(zerosGlb({ ...vec4, count: (64 * MiB) / 16 }))
+    ).toEqual({ ok: true });
+    expect(
+      checkGlbInert(
+        zerosGlb({ componentType: 5121, count: 64 * MiB + 1, type: 'SCALAR' })
+      ).ok
+    ).toBe(false);
+  });
+
+  it('admits 8 times the file length above the floor, and not a byte more', () => {
+    const binBytes = 9 * MiB;
+    expect(checkGlbInert(scalarGlbAsking((n) => 8 * n, binBytes))).toEqual({
+      ok: true,
+    });
+    expect(checkGlbInert(scalarGlbAsking((n) => 8 * n + 1, binBytes)).ok).toBe(
+      false
+    );
+  });
+
+  it('sums every accessor, sparse ones included', () => {
+    const half = { componentType: 5126, count: (40 * MiB) / 4, type: 'SCALAR' };
+    const model = glb({
+      asset: { version: '2.0' },
+      accessors: [half, { ...half, sparse: { count: 1 } }],
+    });
+    expect(checkGlbInert(model).ok).toBe(false);
+    expect(
+      checkGlbInert(glb({ asset: { version: '2.0' }, accessors: [half] }))
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses an accessor whose count, type or component type it cannot read', () => {
+    for (const accessor of [
+      { componentType: 5126, count: '4', type: 'VEC3' },
+      { componentType: 5126, count: -1, type: 'VEC3' },
+      { componentType: 5126, count: 1.5, type: 'VEC3' },
+      { componentType: 5126, type: 'VEC3' },
+      { componentType: 5126, count: 1, type: 'constructor' },
+      { componentType: 5124, count: 1, type: 'VEC3' },
+      null,
+    ]) {
+      expect(
+        checkGlbInert(
+          glb({ asset: { version: '2.0' }, accessors: [accessor] })
+        ),
+        JSON.stringify(accessor)
+      ).toEqual({
+        ok: false,
+        reason: 'its accessor 0 cannot be read',
+      });
+    }
   });
 });

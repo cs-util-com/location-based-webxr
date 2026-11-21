@@ -234,6 +234,27 @@
 
 ### Fixed
 
+- **`checkGlbInert` measures a model's pictures from the bytes three.js
+  loads** (`ar/tour-media`). A buffer with a `data:` URI is measured from
+  that URI, buffer 0 too, and the binary chunk only for buffer 0 without
+  one, as three.js's GLTFLoader reads them; an image's `bufferView` is
+  measured before a `uri` beside it. Before, a 4 x 4 header in the binary
+  chunk passed while buffer 0's `data:` URI held a 16384 x 16384 picture
+  that the phone then decoded (about 1 GiB), past the pixel cap. A buffer
+  after the first without a `uri` is now refused: three.js fetches the
+  page itself for it.
+- **`checkGlbInert` reads a model's lists and buffer names as three.js
+  does** (`ar/tour-media`). `buffers`, `bufferViews`, `accessors` and
+  `images` must be lists: an object `buffers` holding an http URI under
+  key `0` passed, and three.js fetched it on every open. A buffer view's
+  `buffer`, and any of its extensions' `buffer` (meshopt), must be a
+  whole number; `"0"` made three.js fetch the page. A `data:` URI needs
+  the comma three.js's own test requires, or it is resolved and fetched.
+- **`checkGlbInert` caps the memory a model's accessors ask for**
+  (`ar/tour-media`): at most 64 MiB together, or 8 times the file's
+  length when that is more. One accessor without a buffer view
+  (`count: 100000000`, `VEC4`, float) made three.js allocate 1.6 GB. An
+  accessor whose count, type or component type cannot be read is refused.
 - A creator's draft record of a narrated long text reads again
   (`parseTourObject`).
 

@@ -8,10 +8,12 @@
  */
 import { describe, expect, it } from "vitest";
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
+import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 
 import {
   appendView,
   gatherAccessor,
+  glbContainer,
   type GlbParts,
   readAccessor,
   readGlb,
@@ -84,7 +86,12 @@ describe("readGlb and writeGlb", () => {
     expect(readGlb(unknown)).toMatchObject({ ok: false, why: "unsupported" });
     const twoBuffers = handGlb({
       asset: { version: "2.0" },
-      buffers: [{ byteLength: 4 }, { byteLength: 4 }],
+      // A later buffer needs a uri (three.js fetches the page for one
+      // without), so the second one is embedded.
+      buffers: [
+        { byteLength: 4 },
+        { byteLength: 4, uri: "data:application/octet-stream;base64,AAAAAA==" },
+      ],
     });
     expect(readGlb(twoBuffers)).toMatchObject({
       ok: false,
@@ -339,5 +346,23 @@ describe("gatherAccessor", () => {
     expect(gatherAccessor(parts, 0, new Uint32Array(0))).toBe(false);
     expect(JSON.stringify(parts.json)).toBe(before);
     expect(parts.views.length).toBe(1);
+  });
+});
+
+describe("glbContainer", () => {
+  // Why this test matters: the binary chunk's stated length must be the
+  // padded one, or every reader that walks the chunks (three.js and the
+  // tour's own check) finds the zero padding as bytes after the last chunk.
+  it("states the padded length of a binary chunk that is not a multiple of 4", () => {
+    const glb = glbContainer(
+      { asset: { version: "2.0" } },
+      Uint8Array.of(1, 2, 3),
+    );
+    const chunks = readGlbChunks(glb);
+    expect(chunks.ok).toBe(true);
+    if (!chunks.ok) return;
+    expect(chunks.bin?.length).toBe(4);
+    expect(Array.from(chunks.bin ?? [])).toEqual([1, 2, 3, 0]);
+    expect(glb.length % 4).toBe(0);
   });
 });

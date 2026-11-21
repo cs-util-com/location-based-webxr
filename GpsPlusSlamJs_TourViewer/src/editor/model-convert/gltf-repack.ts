@@ -511,13 +511,14 @@ function repack(ctx: Context): RepackResult {
     return start;
   });
   if (views.length > 0) json["bufferViews"] = views;
+  // No bytes and no view to name a buffer: no binary chunk and no buffer.
   const bin =
-    length === 0 && buffers.length === 0 ? null : new Uint8Array(length);
-  buffers.forEach((buffer, b) => bin!.set(buffer, starts[b]));
-  pictures.forEach(([, bytes], k) => bin!.set(bytes, pictureStarts[k]));
+    length === 0 && views.length === 0 ? null : new Uint8Array(length);
   if (bin === null) {
     delete json["buffers"];
   } else {
+    buffers.forEach((buffer, b) => bin.set(buffer, starts[b]));
+    pictures.forEach(([, bytes], k) => bin.set(bytes, pictureStarts[k]));
     const first = { ...objectOf((listOf(json, "buffers") ?? [])[0]) };
     delete first["uri"];
     json["buffers"] = [{ ...first, byteLength: bin.length }];

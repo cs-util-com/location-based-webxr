@@ -98,6 +98,81 @@ export type GlbCheck = { ok: true } | { ok: false; reason: string };
  */
 export const TOUR_MAX_IMAGE_PIXELS = 4096 * 4096;
 
+/**
+ * The most bytes a model's accessors may ask for together: 64 MiB (one
+ * image decode at the pixel cap), or 8 times the file's length when that
+ * is more. three.js allocates an accessor without a buffer view, and a
+ * sparse one, as a new array of `count` elements, and uploads every
+ * accessor to the GPU. Measured on 48 real models: the most any asked for
+ * was 3.7 MB (17 times under the floor), and the highest ratio to its
+ * file's length 3.69, for a 44 KB model (so at least 2.2 times under the
+ * factor even without the floor). What would reverse it: a real model of
+ * more than 8 MiB whose accessors ask for more than 8 times its length
+ * (overlapping accessors, or many sparse morph targets).
+ */
+const ACCESSOR_BYTES_FLOOR = 64 * 2 ** 20;
+const ACCESSOR_BYTES_PER_FILE_BYTE = 8;
+
+/** Elements per accessor item, by glTF accessor type. */
+const ITEM_SIZES: ReadonlyMap<unknown, number> = new Map([
+  ['SCALAR', 1],
+  ['VEC2', 2],
+  ['VEC3', 3],
+  ['VEC4', 4],
+  ['MAT2', 4],
+  ['MAT3', 9],
+  ['MAT4', 16],
+]);
+
+/** Bytes per element, by glTF accessor component type. */
+const COMPONENT_BYTES: ReadonlyMap<unknown, number> = new Map([
+  [5120, 1],
+  [5121, 1],
+  [5122, 2],
+  [5123, 2],
+  [5125, 4],
+  [5126, 4],
+]);
+
+/** The bytes one accessor asks three.js for (`count` items), or null when
+ *  its count, type or component type cannot be read. */
+function accessorBytes(accessor: unknown): number | null {
+  const record = accessor as {
+    count?: unknown;
+    type?: unknown;
+    componentType?: unknown;
+  } | null;
+  const size = ITEM_SIZES.get(record?.type);
+  const bytes = COMPONENT_BYTES.get(record?.componentType);
+  if (size === undefined || bytes === undefined) return null;
+  return isIndex(record?.count)
+    ? (record!.count as number) * size * bytes
+    : null;
+}
+
+/** Why the model's accessors together ask for more memory than a phone
+ *  should give a file `fileBytes` long, or null. `accessors` is a list
+ *  or undefined. */
+function accessorsProblem(
+  accessors: unknown,
+  fileBytes: number
+): string | null {
+  if (!Array.isArray(accessors)) return null;
+  const cap = Math.max(
+    ACCESSOR_BYTES_FLOOR,
+    ACCESSOR_BYTES_PER_FILE_BYTE * fileBytes
+  );
+  let total = 0;
+  for (const [i, accessor] of accessors.entries()) {
+    const bytes = accessorBytes(accessor);
+    if (bytes === null) return `its accessor ${String(i)} cannot be read`;
+    total += bytes;
+  }
+  if (total <= cap) return null;
+  const mib = (n: number) => String(Math.ceil(n / 2 ** 20));
+  return `its accessors ask for ${mib(total)} MiB, more than a phone can safely hold for this file (${mib(cap)} MiB)`;
+}
+
 /** Whether an image's header states a size within `maxPixels`. An image
  *  whose size cannot be read from its first bytes is refused too: it is
  *  not decoded unmeasured. The reason is plain words. */
@@ -118,16 +193,70 @@ export function checkImageWithinCap(
   return { ok: true };
 }
 
+/** The URIs three.js reads as data rather than resolving them against
+ *  its path and fetching them (`LoaderUtils.resolveURL`, three 0.170 to
+ *  0.185): a comma is required and `.` matches no line break. */
+const DATA_URI = /^data:.*,.*$/;
+
+/** Why one of the lists three.js reads by key is not a list, or null.
+ *  three reads `json.buffers[0]` from an object as readily as from an
+ *  array, so an object would hide its entries from every check here. */
+function listsProblem(json: Record<string, unknown>): string | null {
+  for (const key of ['buffers', 'bufferViews', 'accessors', 'images']) {
+    const value = json[key];
+    if (value !== undefined && !Array.isArray(value)) {
+      return `"${key}" is not a list`;
+    }
+  }
+  return null;
+}
+
+/** Why a buffer or image would make three.js fetch from outside the file,
+ *  or null. Only buffer 0 may leave out its `uri` (it is then the binary
+ *  chunk); three.js resolves a later buffer without one to the empty URL
+ *  and fetches the page itself. `value` is a list or undefined. */
 function uriProblem(owner: string, value: unknown): string | null {
   if (!Array.isArray(value)) return null;
-  for (const item of value) {
+  for (const [i, item] of value.entries()) {
     const uri = (item as { uri?: unknown } | null)?.uri;
-    if (uri === undefined) continue;
-    if (typeof uri !== 'string' || !uri.startsWith('data:')) {
+    if (uri === undefined && (owner === 'image' || i === 0)) continue;
+    if (typeof uri !== 'string' || !DATA_URI.test(uri)) {
       return `a ${owner} points outside the file`;
     }
   }
   return null;
+}
+
+const isIndex = (value: unknown): boolean =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+/** Why a buffer view would make three.js load a buffer by a key that is no
+ *  index (`"0"` is not buffer 0 to its `=== 0`, so it fetches the page),
+ *  or null. Its `buffer` and every extension's `buffer` are checked: the
+ *  meshopt plugin loads the buffer its extension names before it looks
+ *  for a decoder, declared or not. */
+function viewsProblem(views: unknown): string | null {
+  if (!Array.isArray(views)) return null;
+  for (const item of views) {
+    const view = item as { buffer?: unknown; extensions?: unknown } | null;
+    if (![view?.buffer, ...extensionBuffers(view?.extensions)].every(isIndex)) {
+      return 'a buffer view names no buffer of the file';
+    }
+  }
+  return null;
+}
+
+/** The `buffer` of every extension object in `extensions` that has one. */
+function extensionBuffers(extensions: unknown): unknown[] {
+  if (typeof extensions !== 'object' || extensions === null) return [];
+  return Object.values(extensions)
+    .filter(
+      (extension): extension is { buffer?: unknown } =>
+        typeof extension === 'object' &&
+        extension !== null &&
+        'buffer' in extension
+    )
+    .map((extension) => extension.buffer);
 }
 
 function extensionProblem(json: Record<string, unknown>): string | null {
@@ -142,6 +271,17 @@ function extensionProblem(json: Record<string, unknown>): string | null {
     if (decoder !== undefined) return `it needs a decoder (${decoder})`;
   }
   return null;
+}
+
+/** Why the model's lists, URIs or buffer names would let three.js reach
+ *  outside the file, or null. */
+function referencesProblem(json: Record<string, unknown>): string | null {
+  return (
+    listsProblem(json) ??
+    uriProblem('buffer', json['buffers']) ??
+    viewsProblem(json['bufferViews']) ??
+    uriProblem('image', json['images'])
+  );
 }
 
 /**
@@ -161,8 +301,8 @@ export function checkGlbInert(
   if (!chunks.ok) return { ok: false, reason: chunks.reason };
   const { json, bin } = chunks;
   const problem =
-    uriProblem('buffer', json['buffers']) ??
-    uriProblem('image', json['images']) ??
+    referencesProblem(json) ??
+    accessorsProblem(json['accessors'], bytes.length) ??
     extensionProblem(json) ??
     imagesProblem(
       bin,
@@ -180,20 +320,38 @@ function dataUriBytes(uri: string, fileBytes: number): Uint8Array | null {
   return read.ok ? read.bytes : null;
 }
 
-/** A buffer view's bytes in the binary chunk (buffer 0), or null. */
+/** A buffer's bytes as three.js's GLTFLoader (`loadBuffer`) loads them:
+ *  from its `data:` URI whenever it has a `uri` (buffer 0 too), from the
+ *  binary chunk only for buffer 0 without one; null when neither reads. */
+function bufferBytes(
+  bin: Uint8Array | null,
+  json: Record<string, unknown>,
+  index: unknown,
+  fileBytes: number
+): Uint8Array | null {
+  const buffers = json['buffers'];
+  if (!Array.isArray(buffers) || !Number.isSafeInteger(index)) return null;
+  const uri = (buffers[index as number] as { uri?: unknown } | null)?.uri;
+  if (typeof uri === 'string') return dataUriBytes(uri, fileBytes);
+  return index === 0 && uri === undefined ? bin : null;
+}
+
+/** A buffer view's bytes in the buffer three.js loads for it, or null. */
 function bufferViewBytes(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
-  index: unknown
+  index: unknown,
+  fileBytes: number
 ): Uint8Array | null {
   const views = json['bufferViews'];
   if (!Array.isArray(views) || !Number.isSafeInteger(index)) return null;
   const view = views[index as number] as
     | { buffer?: unknown; byteOffset?: unknown; byteLength?: unknown }
     | undefined;
-  if (bin === null || view?.buffer !== 0) return null;
-  const range = rangeIn(view.byteOffset ?? 0, view.byteLength, bin.length);
-  return range === null ? null : bin.subarray(range[0], range[1]);
+  const buffer = bufferBytes(bin, json, view?.buffer, fileBytes);
+  if (buffer === null || view === undefined) return null;
+  const range = rangeIn(view.byteOffset ?? 0, view.byteLength, buffer.length);
+  return range === null ? null : buffer.subarray(range[0], range[1]);
 }
 
 /** `[offset, offset + length]` when both are safe integers that fit in
@@ -211,9 +369,10 @@ function rangeIn(
   return start >= 0 && end >= start && end <= size ? [start, end] : null;
 }
 
-/** The bytes of one glTF image: its `data:` URI decoded (capped at the
- *  file's own length, `fileBytes`), or its buffer view in the binary
- *  chunk; null when they cannot be found. */
+/** The bytes of one glTF image as three.js loads them: its buffer view
+ *  whenever it names one (even beside a `uri`), else its `data:` URI
+ *  decoded (capped at the file's own length, `fileBytes`); null when they
+ *  cannot be found. */
 function imageBytes(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
@@ -221,9 +380,12 @@ function imageBytes(
   fileBytes: number
 ): Uint8Array | null {
   const record = image as { uri?: unknown; bufferView?: unknown } | null;
+  if (record?.bufferView !== undefined) {
+    return bufferViewBytes(bin, json, record.bufferView, fileBytes);
+  }
   return typeof record?.uri === 'string'
     ? dataUriBytes(record.uri, fileBytes)
-    : bufferViewBytes(bin, json, record?.bufferView);
+    : null;
 }
 
 /** Why one of the model's images may not be decoded, or null. The binary
