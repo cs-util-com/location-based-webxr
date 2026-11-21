@@ -22,7 +22,6 @@ import {
   letterGate,
   plateMetrics,
   plateSizeM,
-  quadOfClipInto,
   settlePlace,
   signGrowth,
   stepToward,
@@ -33,21 +32,7 @@ import {
   type PlateMetrics,
   type WantInput,
 } from "./travelling-box-rules";
-
-/** `quadOfClipInto` into fresh pairs, or null: the tests' readable form. */
-function quadOfClip(
-  clip: ArrayLike<number>,
-  viewW: number,
-  viewH: number,
-): [number, number][] | null {
-  const out: [number, number][] = [
-    [0, 0],
-    [0, 0],
-    [0, 0],
-    [0, 0],
-  ];
-  return quadOfClipInto(clip, viewW, viewH, out) ? out : null;
-}
+import { quadOfClip } from "./test-support/quad-of-clip.js";
 
 const K = TRAVELLING_BOX_DEFAULTS;
 
