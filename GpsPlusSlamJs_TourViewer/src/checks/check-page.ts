@@ -4,6 +4,7 @@
  * view's module is loaded only when its view is asked for, so a view pays
  * for its own scene alone. See `check-page.ts.md`.
  */
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 
 /** Where a view draws: the full-page root, and the screen host the
  *  visitor page keeps for its narration card (used by `then-now`). */
@@ -33,8 +34,12 @@ export const CHECK_VIEWS = {
   },
   "then-now": {
     title: "Then and now check",
-    start: async ({ root, cardHost }) =>
-      (await import("./then-now-check.js")).startThenNowCheck(root, cardHost),
+    // Its Swipe line is a range input: a vertical swipe that starts on it
+    // must scroll the page, as on every page with a slider.
+    start: async ({ root, cardHost }) => {
+      guardSlidersIn(root.ownerDocument);
+      (await import("./then-now-check.js")).startThenNowCheck(root, cardHost);
+    },
   },
   "travelling-box": {
     title: "Travelling box check",

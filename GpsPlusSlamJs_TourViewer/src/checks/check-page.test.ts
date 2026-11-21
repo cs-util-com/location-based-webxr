@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
+import { describe, expect, it, vi } from "vitest";
 
 import { CHECK_VIEWS, checkViewOf, startCheckPage } from "./check-page.js";
+import { startThenNowCheck } from "./then-now-check.js";
+
+// The then-now view draws with WebGL, which jsdom has not; its start is
+// stood in for so the page around it can be tested.
+vi.mock("./then-now-check.js", () => ({ startThenNowCheck: vi.fn() }));
+vi.mock("gps-plus-slam-app-framework/utils/slider-scroll-guard", () => ({
+  guardSlidersIn: vi.fn(() => () => undefined),
+}));
 
 const NAMES = Object.keys(CHECK_VIEWS);
 
@@ -114,5 +123,18 @@ describe("startCheckPage", () => {
     } finally {
       view.start = start;
     }
+  });
+
+  // Why: the then-now view builds a range input (the Swipe line), and a
+  // vertical swipe that starts on a slider must scroll, not move it, on
+  // every page with one; the page-wide guard is what does that.
+  it("guards the then-now view's slider before it starts", async () => {
+    const own = document.implementation.createHTMLDocument("x");
+    const page = hosts(own);
+    await expect(startCheckPage(own, "?view=then-now", page)).resolves.toBe(
+      "then-now",
+    );
+    expect(guardSlidersIn).toHaveBeenCalledWith(own);
+    expect(startThenNowCheck).toHaveBeenCalledWith(page.root, page.cardHost);
   });
 });
