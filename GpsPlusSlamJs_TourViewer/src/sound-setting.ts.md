@@ -55,7 +55,7 @@ sound off refuses.
   refused while off, a `tapped` while off calling `turnOn` (after the
   hand-over, with nothing kept quiet, so no other voice carries on), every voice's `carryOn` gated (a hand-over while off leaves the
   new running voice quiet), the running voice held when it goes off and
-  the quiet one carried on when it comes back; `aside` forgets a voice kept quiet, as `ended` does. Each voice reaches `focus`
+  the quiet one carried on when it comes back; `aside` forgets a voice kept quiet, as `ended` does. A voice the inner focus lets go (`forget`) hears it through its gate. Each voice reaches `focus`
   behind one gate object of its own (a `WeakMap`), so `running()` answers
   the caller's voice.
 

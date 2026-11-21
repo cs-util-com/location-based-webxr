@@ -23,6 +23,9 @@ export interface Voice {
   carryOn(): void;
   /** Out for good: a tap starts it again. */
   stop(): void;
+  /** Let go while held: it stays paused where it stands, out of the
+   *  channel, and only a tap goes on. */
+  forget?(): void;
   /** A story's voice: its step waits for its end, so it is held, never
    *  stopped. */
   readonly story?: boolean;
@@ -40,9 +43,10 @@ export interface VoiceFocus {
    *  carries on when that ends. False with nothing running or the place
    *  taken: it stays out of the channel. */
   behind(voice: Voice): boolean;
-  /** `voice` pauses without handing the channel on: running, the channel
-   *  is free and the voice held behind it keeps waiting, for the end of
-   *  the next voice that runs; held, it is forgotten. */
+  /** `voice` pauses without handing the channel to a free voice: running,
+   *  a story's voice held behind it carries on (its step waits for it),
+   *  and a free one is let go (`forget`), leaving the channel free; held,
+   *  `voice` is forgotten. */
   aside(voice: Voice): void;
   running(): Voice | null;
 }
@@ -94,8 +98,20 @@ export function createVoiceFocus(): VoiceFocus {
       return true;
     },
     aside(voice) {
-      if (paused === voice) paused = null;
-      else if (running === voice) running = null;
+      if (paused === voice) {
+        paused = null;
+        return;
+      }
+      if (running !== voice) return;
+      const behind = paused;
+      paused = null;
+      if (behind?.story === true) {
+        running = behind;
+        behind.carryOn();
+        return;
+      }
+      running = null;
+      behind?.forget?.();
     },
     running: () => running,
   };
@@ -115,7 +131,7 @@ export interface FocusedPlayer extends NarrationPlayer {
   carryOn(): boolean;
   /** Off and back to its start, until a tap. */
   stop(): void;
-  /** Pause and leave the channel without waking the voice held behind
+  /** Pause and leave the channel without waking a free voice held behind
    *  it (`VoiceFocus.aside`): a pause nobody tapped for. */
   aside(): void;
 }
@@ -142,6 +158,9 @@ export function focusedPlayer(
       held = false;
       inner.pause();
       inner.seek(0);
+    },
+    forget() {
+      held = false;
     },
   };
   inner.onChange(() => {

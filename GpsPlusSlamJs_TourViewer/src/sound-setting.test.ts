@@ -154,8 +154,10 @@ describe("the voice focus under the setting", () => {
   });
 
   it("forgets a voice set aside while off, and frees the channel", () => {
-    // Why: a voice the page set aside (words nobody sees any more) is out
-    // of the channel; sound back on must not carry it on as the quiet one.
+    // Why: the gate must hand a voice set aside on to the inner focus,
+    // which frees the channel; sound back on then carries nothing on. It
+    // cannot tell whether the gate also forgets its quiet voice: the inner
+    // focus no longer runs it, so sound back on would skip it either way.
     const setting = createSoundSetting({ storage: memory() });
     const focus = silencedFocus(createVoiceFocus(), setting);
     const calls: string[] = [];
@@ -169,6 +171,31 @@ describe("the voice focus under the setting", () => {
     focus.aside(a);
     setting.set(true);
     expect(calls).toEqual(["hold"]);
+    expect(focus.running()).toBeNull();
+  });
+
+  it("lets go of the free voice held behind one set aside", () => {
+    // Why: the inner focus lets that voice go through the gate; a gate
+    // that dropped the call would leave a narration player thinking it is
+    // still held, to be woken by the next voice's end.
+    const setting = createSoundSetting({ storage: memory() });
+    const focus = silencedFocus(createVoiceFocus(), setting);
+    const calls: string[] = [];
+    const held: Voice = {
+      hold: () => calls.push("hold"),
+      carryOn: () => calls.push("carryOn"),
+      stop: () => calls.push("stop"),
+      forget: () => calls.push("forget"),
+    };
+    const shown: Voice = {
+      hold: () => undefined,
+      carryOn: () => undefined,
+      stop: () => undefined,
+    };
+    focus.tapped(held);
+    focus.tapped(shown);
+    focus.aside(shown);
+    expect(calls).toEqual(["hold", "forget"]);
     expect(focus.running()).toBeNull();
   });
 });

@@ -275,6 +275,22 @@ describe("the visitor's narrated texts", () => {
     expect(made.map((p) => p.on)).toEqual([true, false]);
   });
 
+  // Why: the page sets a voice aside when nobody sees its words any more;
+  // the voice held behind it is let go, so leaving the station does not
+  // keep that one either, and the return starts nothing by itself.
+  it("keeps no voice set aside, nor the one behind it, for the return", () => {
+    const { visitor, made } = make(() => timingFile());
+    const first = visitor.sheetNarration(text())?.player;
+    const second = visitor.sheetNarration({ ...text(), id: "yard" })?.player;
+    first?.play();
+    second?.play();
+    second?.aside?.();
+    expect(made.map((p) => p.on)).toEqual([false, false]);
+    visitor.pauseAll("gate");
+    visitor.carryOn("gate");
+    expect(made.map((p) => p.on)).toEqual([false, false]);
+  });
+
   // Why: a finger scrubbing the box holds its voice without pausing it in
   // the channel, so it is still the one heard. Walking off mid-scrub must
   // not pause it first as if it were waiting: that hands the channel to

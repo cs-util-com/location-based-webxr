@@ -16,6 +16,7 @@ function voice(name: string, log: string[], story = false): Voice {
     hold: () => log.push(`${name} holds`),
     carryOn: () => log.push(`${name} carries on`),
     stop: () => log.push(`${name} stops`),
+    forget: () => log.push(`${name} is let go`),
   };
 }
 
@@ -392,22 +393,38 @@ describe("a voice behind the running one", () => {
 
 describe("a voice set aside", () => {
   // Why: a pause nobody asked for (the page silencing a text whose words
-  // nobody sees any more) must not hand the channel to the voice held
+  // nobody sees any more) must not hand the channel to a free voice held
   // behind it: that one would start by itself, with no visitor action. It
-  // keeps waiting and carries on when the next voice that runs ends.
-  it("wakes nothing held behind it, which waits for the next voice", () => {
+  // is let go instead, so no later voice's end wakes it either.
+  it("wakes no free voice held behind it, and lets it go for good", () => {
     const focus = createVoiceFocus();
     const log: string[] = [];
     const [a, b, c] = ["a", "b", "c"].map((n) => voice(n, log));
     focus.tapped(a!);
     focus.tapped(b!);
     focus.aside(b!);
-    expect(log).toEqual(["a holds"]);
+    expect(log).toEqual(["a holds", "a is let go"]);
     expect(focus.running()).toBeNull();
     expect(focus.selfStart(c!)).toBe(true);
     focus.ended(c!);
-    expect(log).toEqual(["a holds", "a carries on"]);
-    expect(focus.running()).toBe(a);
+    expect(log).toEqual(["a holds", "a is let go"]);
+    expect(focus.running()).toBeNull();
+  });
+
+  // Why: a story's step waits for its held voice's end (its timer is off,
+  // its character tap refused), so a story voice left held with nobody
+  // running would freeze the story. It carries on, as the channel promises
+  // for what a tap held.
+  it("carries on a story's voice held behind it", () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const story = voice("story", log, true);
+    const free = voice("free", log);
+    focus.tapped(story);
+    focus.tapped(free);
+    focus.aside(free);
+    expect(log).toEqual(["story holds", "story carries on"]);
+    expect(focus.running()).toBe(story);
   });
 
   // Why: a held voice set aside is out of the channel, as one that ended:
@@ -427,14 +444,18 @@ describe("a voice set aside", () => {
   });
 
   // Why: the player's own pause hands the channel on; its aside pauses
-  // the sound the same way but leaves the voice held behind it silent.
-  it("a player set aside pauses, and the player held behind it stays silent", () => {
+  // the sound the same way but leaves the player held behind it silent,
+  // and no longer wanted: a later voice's end does not wake it, and the
+  // station's leaving does not keep it to carry on at the return. A tap
+  // on it goes on from where it stood.
+  it("a player set aside pauses, and lets the player held behind it go", () => {
     const focus = createVoiceFocus();
     const a = player();
     const b = player();
     const held = focusedPlayer(a, focus);
     const shown = focusedPlayer(b, focus);
     held.play();
+    held.seek(400);
     shown.play();
     shown.aside();
     expect(b.calls).toEqual(["play", "pause"]);
@@ -442,10 +463,49 @@ describe("a voice set aside", () => {
     expect(shown.wanted()).toBe(false);
     expect(a.calls).toEqual(["play", "pause"]);
     expect(held.playing()).toBe(false);
-    expect(held.wanted()).toBe(true);
-    // A tap on it later plays it as ever.
+    expect(held.wanted()).toBe(false);
+    const later = focusedPlayer(player(), focus);
+    later.play();
+    later.pause();
+    expect(held.playing()).toBe(false);
     held.play();
     expect(held.playing()).toBe(true);
+    expect(held.nowMs()).toBe(400);
+  });
+
+  // Why: the story path end to end through the wrappers. The box's play
+  // tapped over a story's narrator sound holds the clip (its step waits);
+  // a text switch sets the box's voice aside, and the clip must resume and
+  // tell its step it is no longer held.
+  it("a player set aside over a story's clip resumes the clip", async () => {
+    const focus = createVoiceFocus();
+    const calls: string[] = [];
+    const heldStates: boolean[] = [];
+    const audio = focusedSceneAudio(
+      {
+        unlock: () => undefined,
+        play: () => {
+          calls.push("play");
+          return Promise.resolve();
+        },
+        stop: () => calls.push("stop"),
+        pause: () => calls.push("pause"),
+        resume: () => calls.push("resume"),
+        durationMs: () => 5,
+      },
+      focus,
+      (held) => heldStates.push(held),
+    );
+    await audio.play(new Blob(), () => undefined);
+    const shown = focusedPlayer(player(), focus);
+    shown.play();
+    expect(calls).toEqual(["play", "pause"]);
+    expect(heldStates.at(-1)).toBe(true);
+    shown.aside();
+    expect(calls).toEqual(["play", "pause", "resume"]);
+    expect(heldStates.at(-1)).toBe(false);
+    expect(focus.running()).not.toBeNull();
+    expect(shown.running()).toBe(false);
   });
 });
 

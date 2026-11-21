@@ -7,7 +7,8 @@ describe("createVoiceFocus (properties)", () => {
   // Why: the invariant that makes "one audible" true whatever the visitor
   // taps: after any sequence, at most one voice sounds, at most one waits,
   // a stopped voice is out for good, a story's voice is never stopped, and a
-  // voice set aside wakes nobody.
+  // voice set aside wakes nobody but a story's voice held behind it (its
+  // step waits for that voice's end).
   it("holds one voice running and one paused through any sequence", () => {
     const event = fc.record({
       who: fc.integer({ min: 0, max: 3 }),
@@ -37,8 +38,15 @@ describe("createVoiceFocus (properties)", () => {
           } else if (what === "behind") {
             if (focus.behind(v)) sounding.delete(who);
           } else if (what === "aside") {
+            const wasRunning = focus.running() === v;
+            const before = new Set(sounding);
+            before.delete(who);
             focus.aside(v);
             sounding.delete(who);
+            const woken = [...sounding].filter((i) => !before.has(i));
+            // Only voice 0 is a story's, and only the running voice set
+            // aside hands it the channel.
+            expect(woken).toEqual(wasRunning && woken.length > 0 ? [0] : []);
           } else {
             focus.ended(v);
             sounding.delete(who);

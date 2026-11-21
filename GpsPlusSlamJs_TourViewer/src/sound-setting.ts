@@ -165,6 +165,9 @@ export function silencedFocus(
         if (quiet === gate) quiet = null;
         voice.stop();
       },
+      forget: () => {
+        voice.forget?.();
+      },
     };
     gates.set(voice, gate);
     voices.set(gate, voice);
