@@ -32,6 +32,7 @@ import {
   TOUR_MAX_IMAGE_PIXELS,
 } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
+import { decodeDataUri } from "gps-plus-slam-app-framework/utils/data-uri";
 
 import {
   glbContainer,
@@ -42,7 +43,6 @@ import {
 } from "../asset-shelf/glb-file.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
 import { resolveReference } from "./bundle-paths.js";
-import { decodeDataUri } from "./data-uri.js";
 import { sniffImage } from "./image-sniff.js";
 import { compressionOf, note, refusal } from "./model-import-words.js";
 
@@ -75,12 +75,14 @@ export type RepackResult =
 const SHOWN = "PNG, JPEG, WebP and AVIF";
 
 /** A valid 1 x 1 PNG: the stand-in for a picture that was left out. */
-const PLACEHOLDER_PNG = Uint8Array.from(
-  atob(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
-  ),
-  (c) => c.charCodeAt(0),
-);
+const PLACEHOLDER_PNG = ((): Uint8Array => {
+  const read = decodeDataUri(
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    128,
+  );
+  if (!read.ok) throw new Error("the placeholder picture does not decode");
+  return read.bytes;
+})();
 
 const pad4 = (n: number) => (n + 3) & ~3;
 

@@ -6,7 +6,7 @@
 
 - `normalizeBundlePath(path): string | null`: backslashes become `/`, empty and `.` segments go, `..` folds; leading slashes are dropped (the path is relative to the bundle root). Null for an empty path or one that climbs above the root.
 - `resolveReference(uri, from, files): Reference`, `from` being the referring file's own path among `files`:
-  - `{ kind: "data", uri }` for a `data:` URI (decoded by the caller, `data-uri.ts`);
+  - `{ kind: "data", uri }` for a `data:` URI (decoded by the caller, with the framework's `utils/data-uri`);
   - `{ kind: "scheme", scheme }` for any other scheme (`https:`, `http:`, `file:`, `blob:`...): never read, never fetched;
   - `{ kind: "outside", name }` for a relative path whose `..` climbs out of the given files: refused, not guessed by basename;
   - `{ kind: "file", path }`, `path` exactly as given in `files`;

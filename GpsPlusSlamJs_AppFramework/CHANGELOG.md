@@ -4,6 +4,11 @@
 
 ### Added
 
+- **`utils/data-uri`** (deep import): `decodeDataUri(uri, maxBytes)`
+  decodes a strict base64 `data:` URI after checking its decoded size
+  against the cap from its length alone (a refusal carries that size);
+  `decodedLengthOf(payload)` is that length. The one decoder for glTF
+  data URIs: the tour media check and the Tour Viewer's glTF import.
 - **`storage/zip-reader`** (deep import): one capped open of a zip Blob,
   and the shared entry-name rules. `withCappedZipEntries` opens an
   untrusted zip Blob under the directory and entry caps,
@@ -178,6 +183,10 @@
 
 ### Changed
 
+- `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
+  `utils/data-uri`, strictly: a payload with whitespace or without its
+  padding, which plain `atob` accepted, is now an image that cannot be
+  found, and refuses the model.
 - `ImageHeaderInfo` (`utils/image-header`) is a union on `type` rather
   than one interface: only its `webp` member has `alpha`, and it is
   required there. Code that builds a `{ type: 'webp', width, height }`

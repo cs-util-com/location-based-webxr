@@ -16,6 +16,7 @@
  * make a phone allocate gigabytes (tour kit K4 review R2).
  */
 
+import { decodeDataUri } from '../utils/data-uri.js';
 import { imageInfo } from '../utils/image-header.js';
 
 type TourMediaKind = 'image' | 'model' | 'audio' | 'video';
@@ -235,15 +236,11 @@ function binChunk(bytes: Uint8Array): Uint8Array | null {
   return bytes.subarray(at + 8, at + 8 + view.getUint32(at, true));
 }
 
-/** A base64 `data:` URI's bytes, or null. */
-function dataUriBytes(uri: string): Uint8Array | null {
-  const comma = uri.indexOf(',');
-  if (comma < 0 || !uri.slice(0, comma).endsWith(';base64')) return null;
-  try {
-    return Uint8Array.from(atob(uri.slice(comma + 1)), (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
+/** A strict base64 `data:` URI's bytes, or null. The URI is part of the
+ *  file, so its decoded bytes are never more than the file's own. */
+function dataUriBytes(uri: string, fileBytes: number): Uint8Array | null {
+  const read = decodeDataUri(uri, fileBytes);
+  return read.ok ? read.bytes : null;
 }
 
 /** A buffer view's bytes in the binary chunk (buffer 0), or null. */
@@ -287,7 +284,7 @@ function imageBytes(
 ): Uint8Array | null {
   const record = image as { uri?: unknown; bufferView?: unknown } | null;
   return typeof record?.uri === 'string'
-    ? dataUriBytes(record.uri)
+    ? dataUriBytes(record.uri, bytes.length)
     : bufferViewBytes(bytes, json, record?.bufferView);
 }
 
