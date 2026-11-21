@@ -38,10 +38,11 @@ function reviewStep() {
 describe('claude-code-review.yml cost controls', () => {
   it('pins the review model to an exact model ID through claude_args', () => {
     // The pinned action version has no `model` input; its docs route the model
-    // through `claude_args: --model <id>`.
+    // through `claude_args: --model <id>`. Opus 5, not 5.5: the pinned action
+    // ended every 5.5 run at once with an error, so no PR was reviewed.
     const args = String(reviewStep().with?.claude_args ?? '');
     const models = [...args.matchAll(/--model\s+(\S+)/g)].map((m) => m[1]);
-    expect(models).toEqual(['claude-opus-5-5']);
+    expect(models).toEqual(['claude-opus-5']);
   });
 
   it('skips PRs that change only prototype gallery files, and nothing else', () => {

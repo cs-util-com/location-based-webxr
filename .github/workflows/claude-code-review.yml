@@ -80,11 +80,12 @@ jobs:
 
           # Opus rather than Sonnet: bug-finding recall is the whole point of
           # this job, and the gap widens on the large multi-file release-train
-          # PRs this repo produces. Opus 5.5 lists below Opus 5 per token.
+          # PRs this repo produces. Kept on Opus 5: with `claude-opus-5-5` every run
+          # of the pinned action ended at once with an error and no review.
           # Pinned to an exact ID rather than the floating `opus` alias,
           # matching how the actions above are SHA-pinned. The pinned action
           # version has no `model` input; `--model` in `claude_args` is its
           # documented way to choose the model.
           claude_args: |
-            --model claude-opus-5-5
+            --model claude-opus-5
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
