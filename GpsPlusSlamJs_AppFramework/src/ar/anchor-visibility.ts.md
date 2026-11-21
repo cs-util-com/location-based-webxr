@@ -104,12 +104,18 @@ through the `ar` barrel.
   or the 1 s refresh covers them.
 - **Kept bind data.** The vertex walk of a skinned or morphed part (tens of
   ms for a 20k-vertex rig with 50 blend shapes) is kept across fresh
-  traversals, keyed by the geometry, `morphTargetsRelative`, each read
-  attribute and its version (for interleaved data the shared buffer's), and
-  for a skinned part the bind-to-bone matrices compared by value. Replacing
-  or editing an attribute (with `needsUpdate`, as three needs to upload it),
-  swapping the geometry or rebinding recomputes it; an edit without
-  `needsUpdate` is not seen until `markAnchorBoundsChanged`.
+  traversals, per renderable and per kind (skin, morph: a skinned mesh
+  without a skinned bound falls back to its morph bound, and both are kept).
+  It is keyed by `morphTargetsRelative` and, per read attribute, its `id`
+  (for interleaved data the shared buffer's `uuid`, the offset and item
+  size) and version (for interleaved data the shared buffer's), and for a
+  skinned part by the bind-to-bone matrices compared by value. The key holds
+  no geometry or attribute, so a replaced one is not kept in memory.
+  Replacing or editing an attribute with `needsUpdate`, swapping the
+  geometry or rebinding recomputes it. **Contract:** after any in-place edit
+  of a skinned or morphed part, set `needsUpdate` on the edited attribute or
+  call `markAnchorBoundsChanged`, also where three itself would not need it
+  (see Known limits).
 - **Sphere per renderable.**
   - Mesh, Points, Line: rotation-invariant about the renderable's origin,
     radius `|c| + r` of the geometry's bounding sphere, scaled by the largest
@@ -148,9 +154,9 @@ through the `ar` barrel.
     which is then applied. Assumes non-negative weights (as glTF requires); a
     negative weight is clamped to 0. A weight on a bone index outside the
     skeleton adds nothing to the weight sum, as it moves no vertex. A skinned
-    mesh with no usable skin data (no skeleton, no `skinIndex` or
-    `skinWeight`, or no positive weight) is still drawn, so it is bounded as a
-    plain mesh instead.
+    mesh with no skeleton, or with no positive weight, is still drawn, so it
+    is bounded as a plain mesh instead. A bound skinned mesh missing
+    `skinIndex` or `skinWeight` is not supported (see Known limits).
 - **Stretch.** The largest scale of a matrix is bounded by the square root of
   the Gershgorin bound of its Gram matrix, an upper bound on the spectral norm
   that stays safe under shear (`getMaxScaleOnAxis` underestimates it there).
@@ -213,6 +219,18 @@ not tightness).
   rectangle: a wide element can be in view while its origin is out.
   Ignore it, or place a fully transparent proxy mesh of its size under
   it (it must stay `visible` to count).
+- Kept bind data is not versioned beyond the attributes' own versions, and
+  three uploads some in-place edits that bump no version: an edit before
+  the part's first render, morph targets rebuilt after
+  `geometry.dispose()` (where `needsUpdate` changes nothing for three), and
+  `SkinnedMesh.normalizeSkinWeights()` after a build. A fresh traversal
+  keeps the old, possibly too small bound for such an edit. Set
+  `needsUpdate` on the edited attribute or call `markAnchorBoundsChanged`
+  after any in-place edit of a skinned or morphed part.
+- A bound `SkinnedMesh` missing its `skinIndex` or `skinWeight` attribute
+  is not supported: three then skins it with generic attribute values,
+  which this bound does not model. It is bounded as a plain mesh, which
+  may be too small. Give every skinned geometry both attributes.
 - The out-of-view dwell before acting (two consecutive "out" answers, a
   confirmation with `fresh: true`) is the caller's, not this module's.
 
@@ -256,8 +274,10 @@ renderer.setAnimationLoop((time) => {
   validation, each side of an off-axis projection widened by the margin, a
   cache reused for another anchor, a bone index outside the skeleton, sheared
   instances of an instanced and a batched mesh, the kept bind data (reused,
-  then recomputed after an edit in place, an interleaved edit and a rebind), a
-  skinned mesh without usable skin data, a view wider than the angle clamp,
+  then recomputed after an edit in place, an interleaved edit, a rebind and
+  a swapped geometry whose attribute versions match; kept per kind; a key
+  of primitives only), a skinned mesh with no skeleton or zero weights, a
+  view wider than the angle clamp,
   the anchor as its own merge root,
   and a premise test that drives a real `WebXRManager` frame loop.
 - `anchor-visibility.property.test.ts`: never a false "out" against an
