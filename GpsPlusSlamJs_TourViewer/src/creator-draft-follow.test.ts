@@ -364,7 +364,7 @@ describe("the phone draft's settings record", () => {
       ]),
     };
     expect(
-      await draft.saveSettings({ needsNoGps: false, frames: [frame] }, []),
+      await draft.saveSettings({ needsNoGps: false, frames: [frame] }),
     ).toBe(true);
     await flush();
     const stored = ns.files(OLD).get(SETTINGS_KEY);
@@ -372,11 +372,11 @@ describe("the phone draft's settings record", () => {
     expect(parseSettingsRecord(stored as string)?.frames).toEqual([frame]);
   });
 
-  // Why: the page re-states the created stations it read with every later
-  // write of the record, so a frame its read dropped was gone for good. A
-  // station's story may name the opened tour's assets; read without that
-  // tour, such a frame did not read.
-  it("reads the stored frames against the opened tour, so a later write keeps one naming its asset", async () => {
+  // Why: a station's story may name the opened tour's assets; read without
+  // that tour, such a frame did not read and the draft said part of it
+  // was lost. (The phone restores no frame from the record alone: the
+  // shared suite's `settingsGap` rows.)
+  it("reads the stored frames against the opened tour, so a frame naming its asset reads", async () => {
     const frame = {
       id: "s-new",
       geo: { lat: 48.5205, lon: 9.05, alt: 340, rotation: [0, 0, 0, 1] },
@@ -409,7 +409,7 @@ describe("the phone draft's settings record", () => {
       SETTINGS_KEY,
       JSON.stringify({ needsNoGps: false, createdStations: [frame] }),
     );
-    const { draft } = await wired(
+    const { ctx } = await wired(
       ns,
       tourOf([pin("a")], {
         assets: [
@@ -423,12 +423,7 @@ describe("the phone draft's settings record", () => {
         ],
       }),
     );
-    expect(await draft.saveSettings({ needsNoGps: true }, [])).toBe(true);
-    await flush();
-    const stored = JSON.parse(ns.files(OLD).get(SETTINGS_KEY) as string) as {
-      createdStations?: { id: string }[];
-    };
-    expect(stored.createdStations?.map((f) => f.id)).toEqual(["s-new"]);
+    expect(ctx.placementNote).toBeNull();
   });
 });
 

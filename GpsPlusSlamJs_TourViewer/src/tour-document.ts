@@ -373,18 +373,6 @@ export interface TourDocumentState {
   /** The details as set; the cover is shown and written only while its
    *  image is in the tour (`effectiveDetails`). */
   readonly details: TourDetailFields;
-  /** Changed here since the open: live work, which a draft's offer never
-   *  overrides. */
-  readonly touched: {
-    readonly needsNoGps: boolean;
-    readonly details: boolean;
-    /** A station's frame moved here since the open. */
-    readonly stations: boolean;
-    /** The stations a station move moved here since the open (an undo
-     *  keeps the name; a restore never adds one): their live poses outrank
-     *  a draft's poses not yet decided on, station by station. */
-    readonly movedStations: readonly string[];
-  };
   /** The draft's settings record carries the details (once they were set
    *  or restored here: an untouched record has no opinion about them). */
   readonly detailsRecorded: boolean;
@@ -693,12 +681,6 @@ export const initialTourDocumentState: TourDocumentState = {
   deleted: [],
   needsNoGps: false,
   details: {},
-  touched: {
-    needsNoGps: false,
-    details: false,
-    stations: false,
-    movedStations: [],
-  },
   detailsRecorded: false,
   stationsRecorded: false,
   framesRecorded: false,
@@ -1810,7 +1792,6 @@ function goTo(
   view: TourDocumentView,
 ): TourDocumentState {
   if (state.written === null) return state;
-  const settingMoved = view.needsNoGps !== state.needsNoGps;
   const detailsMoved = DETAIL_FIELDS.some(
     (f) => view.details[f] !== state.details[f],
   );
@@ -1826,12 +1807,6 @@ function goTo(
     timings: view.timings ?? {},
     needsNoGps: view.needsNoGps,
     details: view.details,
-    touched: {
-      needsNoGps: state.touched.needsNoGps || settingMoved,
-      details: state.touched.details || detailsMoved,
-      stations: state.touched.stations || stationsMoved || framesChanged,
-      movedStations: state.touched.movedStations,
-    },
     detailsRecorded: state.detailsRecorded || detailsMoved,
     stationsRecorded: state.stationsRecorded || stationsMoved,
     framesRecorded: state.framesRecorded || framesChanged,
@@ -2535,13 +2510,6 @@ function stationMove(
       stations: before.stations.map((s) =>
         s.id === stationId ? { ...s, geo } : s,
       ),
-      touched: {
-        ...before.touched,
-        stations: true,
-        movedStations: before.touched.movedStations.includes(stationId)
-          ? before.touched.movedStations
-          : [...before.touched.movedStations, stationId],
-      },
       stationsRecorded: true,
     },
     what,
@@ -3199,7 +3167,6 @@ function frameReplaced(
     before,
     {
       stations,
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     what,
@@ -3578,11 +3545,6 @@ function filesEdited(
     {
       ...lists,
       stations,
-      touched: {
-        ...before.touched,
-        ...(frames.size === 0 ? {} : { stations: true }),
-        ...(details === undefined ? {} : { details: true }),
-      },
       ...(frames.size === 0 ? {} : { framesRecorded: true }),
       ...(details === undefined ? {} : { details, detailsRecorded: true }),
     },
@@ -3848,7 +3810,6 @@ function childMove(
         { ...before, placed, deleted: lists.deleted, stations: frames },
         [left],
       ),
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -3874,7 +3835,6 @@ function stationAdd(
     {
       stations: [...before.stations, frame],
       handMade: [...before.handMade, payload.stationId],
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -3905,7 +3865,6 @@ function stationDelete(
       ...(written
         ? { deletedStations: [...before.deletedStations, stationId] }
         : {}),
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -3942,7 +3901,6 @@ function stationsReorder(
         }),
         ...frames.filter((f) => !listed.has(f.id)),
       ],
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -4087,7 +4045,6 @@ function stationDuplicate(
     {
       placed,
       stations: [...frames.slice(0, at), copy, ...frames.slice(at)],
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -4337,7 +4294,6 @@ function folderPivotCentre(
     {
       placed,
       stations: before.stations.map((s) => (s.id === frame.id ? moved : s)),
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -4399,7 +4355,6 @@ function folderReframe(
     {
       placed,
       stations: before.stations.map((s) => (s.id === frame.id ? moved : s)),
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     payload.what,
@@ -4430,7 +4385,6 @@ function foldersEdited(
         { ...before, placed, deleted, stations: frames },
         [frame.id],
       ),
-      touched: { ...before.touched, stations: true },
       framesRecorded: true,
     },
     what,
@@ -4709,7 +4663,6 @@ function folderUngroup(
       placed: after.placed,
       deleted: after.deleted,
       stations: after.stations,
-      touched: after.touched,
       framesRecorded: true,
     },
     what,
@@ -5105,7 +5058,6 @@ function applySettle(
     {
       placed: moved.placed,
       stations: moved.stations,
-      touched: moved.touched,
       stationsRecorded: moved.stationsRecorded,
       codes: coded,
     },
@@ -5582,7 +5534,6 @@ const tourDocumentSlice = createSlice({
         before,
         {
           needsNoGps: action.payload.needsNoGps,
-          touched: { ...before.touched, needsNoGps: true },
         },
         action.payload.what,
       );
@@ -5609,11 +5560,6 @@ const tourDocumentSlice = createSlice({
         {
           details: action.payload.details,
           ...(setting ? { needsNoGps } : {}),
-          touched: {
-            ...before.touched,
-            details: true,
-            ...(setting ? { needsNoGps: true } : {}),
-          },
           detailsRecorded: true,
         },
         action.payload.what,

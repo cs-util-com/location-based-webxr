@@ -315,28 +315,28 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
     put back by the session's own rules: an object the tour carries takes
     the draft's version (`upsertPlaced`), a deletion its tombstone
-    (`deleteObject`); live work on an id wins; an id the tour no longer
+    (`deleteObject`); the whole draft comes back (every edit waits
+    while the offer is undecided, `draft-edit-gate.ts`, so none is
+    outranked here); an id the tour no longer
     carries is skipped; an object its station cannot carry (a draft
     of an older build, or whose station is gone) is seated by the
     rule, never skipped; the stations the draft's objects were seated in
     that the tour lacks come back whole first (the record's
     `createdStations`, with `handMadeStations` naming those added by
     hand);
-    the settings are applied unless the setting was
-    changed here since the open (counted among `changed`), and the
-    record's details likewise unless they were (each changed field counted;
+    the settings are applied (counted among `changed`), and the
+    record's details likewise (each changed field counted;
     a cover naming no image of the tour - a photo deleted since - is
     dropped and the rest restored, M4a review #1; other details the format
-    would drop leave them as they are); the record's station poses but those of the
-    stations moved here (`posesToRestore`, station by station: a move of
-    one never drops the others'; each station whose pose differs counted; applied
+    would drop leave them as they are); the record's station poses that
+    differ from the tour's (`changedStations`; each such station counted; applied
     before the objects, so an item restores under the frame it was placed
     under, and its reach is checked there - review #1 of the tour document
     milestone); the stations edited there (the record's `frames`, at the
     opened file's poses, `order` and `deletedStations`: a station renamed,
     added, deleted, reordered or copied there; the stations it does not
-    name keep the opened file's version) unless a station was changed
-    here (each station change counted, `stationEditsBetween`); a copy made there (the offer's
+    name keep the opened file's version; each station change counted,
+    `stationEditsBetween`); a copy made there (the offer's
     `made`, an id the tour does not carry) put back with its picture
     (`files`; a photo copy without one is skipped); what was applied
     is written to the draft again. Returns the counts.
@@ -542,7 +542,7 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
 the saved `tour.json`; an empty pin refused; a delete undone in place; an
 edit made during a save kept for the next; the saved file's name; the
 draft's calls (an edited note's delete undone writes its record again),
-a restore (live work winning, unknown ids skipped), an unknown id refused,
+a restore (the whole draft, unknown ids skipped), an unknown id refused,
 a move far beyond its station seated in a station at its new spot (and
 the emptied one dropped) and a draft offering one restored the same way, a
 new note NAMING a station too far away refused in words
@@ -633,6 +633,7 @@ examples).
 ## `swapAsset` with a draft, and restoring a swap
 
 - `swapAsset` is async: judged by the document's rule, written to the draft (`EditorSessionDraft.swapAsset`, with the new record), judged again, then the files table and the document take it in one synchronous step. Without a draft it is taken before the first await. `backedUp` false: the draft could not keep it.
+- A swap whose record waits for the draft question (`draft-edit-gate.ts`): the table keeps the bytes the standing record names until the record lands, then takes the smaller file. Dropped instead (Restore, "Not now"), the draft is written back to the standing record and bytes and the swap answers a refusal (`SWAP_DROPPED`), so the shelf queues the file again; document, table and draft agree.
 - `restore`: an offered file whose id the written tour lists is a smaller file for that asset. It is left out of `restored.assets` and dispatched as `assetOptimized` after the rest, counted among `changed`.
 - `restore` puts every restored file the document lists back on the shelf: a plain file as `added` (queued again, so an over-cap file is made smaller and the save stops refusing once it lands) unless the creator chose "use the original" for it (`originalChosen`, kept in the draft by `swapAsset`'s third argument): that one comes back kept, with the original-used words and a retry (`shelf.originalKept`), a smaller file with its kept original as optimized (`shelf.restored`, the original loaded from the draft's bytes, else from the opened file's entry, and a made model's level of detail as the draft kept it: the shelf's swap hands it over, `swapAsset` writes it with the smaller file). A smaller file at the same path that is not smaller is left off.
 - A save resolves with `wrote` (id to the Blob it wrote): the page hands it to the draft's `landed`, which spends an entry only when its own bytes were written.

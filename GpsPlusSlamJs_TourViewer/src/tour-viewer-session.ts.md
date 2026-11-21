@@ -152,6 +152,8 @@ lives here.
 - `interface TourViewerHooks` / `createUnwiredHooks()` - the late-bound
   cross-module calls (`renderArStatus`, `renderArEntry`, `renderAuthorReadout`,
   `tryPlaceTour`, `startAuthorPipeline`, `startViewerPipeline`,
+  `creatorDraftDecided` (whether a creator's AR may start, the open
+  tour's draft decided, answered at once; true until wired),
   `storedCodeVotes` (the viewer placement's vote half for a creator's
   pipeline at a stored code; null until wired), `creatorCanStartOnCodes`
   (whether a creator may start AR without location; false until wired),
@@ -193,6 +195,9 @@ loadImage }` once the open tour's manifest settled, `manifest` null for
 
 ## Invariants & assumptions
 
+- **The draft gate runs first** (`draftGate`, `draft-edit-gate.ts`): its
+  middleware sits before the document's listener, so an edit it holds
+  while a draft is undecided reaches neither the reducer nor the draft.
 - **One writer per group, readers anywhere.** The owner module named above
   is the only one that writes a group's fields; `teardownSession`
   (`archive-open.ts`) and the AR session end (`ar-entry.ts`) are the two

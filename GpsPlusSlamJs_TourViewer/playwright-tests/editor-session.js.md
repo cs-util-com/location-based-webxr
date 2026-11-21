@@ -33,6 +33,10 @@ what the tour holds is read back from the manifest the page would write.
   caption, so a check that an object is gone cannot pass on one that only
   lost its text.
 - `setNoGps(page, on)` - the tour's "no GPS" choice through Tour details.
+- `deleteOfferedDraft(page)` - answers the open tour's draft offer with
+  "Delete it" and waits for the offer to go: an edit made before the
+  answer waits for it, so a walk that edits a tour opened again (whose
+  earlier, unsaved edit is offered back) answers first.
 
 ## Invariants
 

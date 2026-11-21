@@ -31,6 +31,9 @@ export interface FinishGuardInput {
   readonly draftPersists: boolean;
   /** The last Finish failed (its retry must stay reachable). */
   readonly finishFailed: boolean;
+  /** An edit waits for the draft question (`draft-edit-gate.ts`): held in
+   *  memory only, in no backup and no tour file. */
+  readonly editWaits: boolean;
 }
 
 const FINISH = "Finish - rebuild the zip";
@@ -40,12 +43,16 @@ const LEAVE_WITH_BACKUP =
   "The updated tour file is not saved yet. Leave anyway? Your changes stay on this phone, and you can finish and save them later.";
 const LEAVE_WITHOUT_BACKUP =
   "Your changes are not saved anywhere yet, and this device holds no backup copy of them. Leave anyway and lose them?";
+const LEAVE_EDIT_WAITS =
+  "Your last change waits for your answer about the unsaved work and is not kept anywhere yet. Leave anyway and lose it?";
 
 /** The question before the page or the tour goes away: it promises the
  *  phone keeps the work only while the draft backs it up (U2 milestone
  *  review #3). */
 export function leaveQuestion(input: FinishGuardInput): string {
-  return input.draftPersists ? LEAVE_WITH_BACKUP : LEAVE_WITHOUT_BACKUP;
+  // No backup at all: the plain question covers a waiting edit too.
+  if (!input.draftPersists) return LEAVE_WITHOUT_BACKUP;
+  return input.editWaits ? LEAVE_EDIT_WAITS : LEAVE_WITH_BACKUP;
 }
 
 export function changedSinceFinish(input: FinishGuardInput): boolean {
@@ -92,6 +99,7 @@ export function hideFinishForResult(input: FinishGuardInput): boolean {
  *  unfinished changes at all (U2 milestone review #3). With the draft, the
  *  changes are offered again, so they never ask. */
 export function leaveNeedsConfirm(input: FinishGuardInput): boolean {
+  if (input.editWaits) return true;
   if (input.rebuilt !== null && !input.rebuilt.delivered) return true;
   return !input.draftPersists && unsavedWork(input);
 }

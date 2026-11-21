@@ -34,12 +34,7 @@ reducers' building blocks, so a page cannot apply them differently.
   frame is pending.
 - `deleted: string[]` - ids of written objects deleted and not yet written.
 - `needsNoGps`, `details` (`TourDetailFields`) - the setting and the details
-  as set; `touched` says which were changed here since the open (live work,
-  which a draft's offer never overrides - `touched.stations` for a station
-  moved here, and `touched.movedStations` naming each station a station
-  move moved here (an undo keeps the name; a restore never adds one):
-  their poses outrank a draft's undecided poses station by station,
-  `withUndecidedPoses` in `tour-document-draft.ts`); `detailsRecorded` and `stationsRecorded` say the draft's
+  as set; `detailsRecorded` and `stationsRecorded` say the draft's
   settings record carries the details, and the station poses (`StationPose`,
   `{ id, geo }`: set by a station move or by an open whose frames moved,
   review #1 of the tour document milestone - without them a reload after a
@@ -224,7 +219,7 @@ afterHome?, joinStation? })`
   frames lack (an undo across a save of a restore, a redo after a station
   move; found by the station-rule property). A save that lands after a
   frame moved prunes the same way. A step marks the station poses as the
-  draft's to keep (`stationsRecorded`, `touched.stations`) only when a
+  draft's to keep (`stationsRecorded`) only when a
   frame both views carry differs: a station the rule started or dropped
   is no moved station. A step that carries codes (a settle's) sets their
   saved texts too, under the rule of `settleApplied` above, and the step
@@ -232,8 +227,7 @@ afterHome?, joinStation? })`
 - `restored({ objects, deleted, needsNoGps?, details?, stations?,
 createdStations?, handMadeStations?, frames?, order?, deletedStations?,
 rerun?, what, newStationIds? })` - a draft's work,
-  already filtered by the page's rules, as one step to undo; not live work
-  (`touched` unchanged). In order: the station poses (each named
+  already filtered by the page's rules, as one step to undo. In order: the station poses (each named
   station's frame takes its pose, `stationsRecorded` set); the CREATED
   stations' whole frames the document lacks (a draft keeps them, so a
   reload brings a pin's station back with it); then each object - in its

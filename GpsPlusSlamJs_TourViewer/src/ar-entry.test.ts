@@ -852,6 +852,69 @@ describe("a visitor of a tour not finished yet gets no Start", () => {
   });
 });
 
+describe("a creator's AR entry asks about unsaved work first", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why this test matters: an edit made in AR while a draft is undecided
+  // would wait for an answer the creator cannot give in AR, and Restore
+  // would then drop it. So the start asks first: while the draft answer
+  // is not given (the hook says false) AR does not start, and no author
+  // pipeline is created for a start that did not happen.
+  it("does not start AR while the draft question is unanswered", async () => {
+    const h = harness({ mode: "creator", enableOk: true });
+    let pipelines = 0;
+    h.hooks.startAuthorPipeline = () => {
+      pipelines += 1;
+      return true;
+    };
+    let answered = false;
+    h.hooks.creatorDraftDecided = () => answered;
+    await h.enter();
+    expect(h.arController.enable).not.toHaveBeenCalled();
+    expect(pipelines).toBe(0);
+    answered = true;
+    await h.enter();
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+    expect(pipelines).toBe(1);
+  });
+
+  // Why: a visitor makes no draft, so the question is never asked there.
+  it("never asks a visitor", async () => {
+    const h = harness({ enableOk: true });
+    let asked = 0;
+    h.hooks.creatorDraftDecided = () => {
+      asked += 1;
+      return false;
+    };
+    await h.enter();
+    expect(asked).toBe(0);
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: a second tap while a start is still under way
+  // built a second author pipeline over the first and left the session
+  // without its code detector. One start at a time: the tap during a
+  // start does nothing, and once that start ended a tap starts again.
+  it("a second tap during a start builds no second pipeline", async () => {
+    const h = harness({ mode: "creator", enableOk: true });
+    let pipelines = 0;
+    h.hooks.startAuthorPipeline = () => {
+      pipelines += 1;
+      return true;
+    };
+    h.hooks.creatorDraftDecided = () => true;
+    h.dom.enterArButton.click();
+    h.dom.enterArButton.click();
+    await settle();
+    expect(pipelines).toBe(1);
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+    await h.enter();
+    expect(pipelines, "the start's end lets the next tap in").toBe(2);
+  });
+});
+
 describe("a visitor's phone without AR copies the link (polish round M4a, V4)", () => {
   // Why: a visitor who scanned the poster with a phone that cannot run AR
   // had a dead grey button. V4 makes it the way on: copy this page's link

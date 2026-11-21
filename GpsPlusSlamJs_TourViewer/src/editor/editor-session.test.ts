@@ -977,11 +977,12 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
   });
 
   // Why (E2c plan review #7, #11): Restore puts the draft's work back by
-  // the session's own rules; live edits made while the offer stood are
-  // newer and win; an id the file no longer carries cannot be edited
-  // (the editor places nothing new); and what was applied is written
-  // back, so it is backed up as this page's work.
-  it("restores a draft's changes and deletions, live work winning, unknown ids skipped", async () => {
+  // the session's own rules, all of it: an edit made while the offer
+  // stood waits for the answer (`draft-edit-gate.ts`) and lands after the
+  // restore, so none is outranked here. An id the file no longer carries
+  // cannot be edited (the editor places nothing new); and what was
+  // applied is written back, so it is backed up as this page's work.
+  it("restores a draft's changes and deletions whole, unknown ids skipped", async () => {
     const { session, manifest } = await opened([pin("a"), pin("b"), pin("c")]);
     const draft = loggedDraft();
     const editor = createEditorSession({
@@ -990,19 +991,21 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       levels: new Map(),
       draft,
     });
-    editor.editText("b", "live");
-    draft.calls.length = 0;
     const applied = editor.restore({
       objects: [pin("a", "restored"), pin("b", "old draft"), pin("x")],
       deleted: ["c", "gone"],
     });
-    expect(applied).toEqual({ changed: 1, deleted: 1 });
-    expect(draft.calls).toEqual(["save a restored", "tombstone c"]);
+    expect(applied).toEqual({ changed: 2, deleted: 1 });
+    expect(draft.calls).toEqual([
+      "save a restored",
+      "save b old draft",
+      "tombstone c",
+    ]);
     const labels = editor
       .model()
       .items.filter((i) => i.kind === "pin")
       .map((i) => i.title);
-    expect(labels).toEqual(["restored", "live"]);
+    expect(labels).toEqual(["restored", "old draft"]);
     expect(editor.changeCount()).toBe(3);
     const saved = await editor.save({ keepScan: false });
     expect(withWorldObjects(saved.written).objects.map((o) => o.id)).toEqual([
@@ -1285,9 +1288,10 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     await session.close();
   });
 
-  it("restores a draft's setting unless it was changed here meanwhile", async () => {
-    // Why (E2c's "live work wins"): the offer is older than anything the
-    // creator did since the open.
+  it("restores a draft's setting", async () => {
+    // Why: the offered setting comes back and is written as this page's.
+    // A setting changed while the offer stands waits for the answer
+    // (`draft-edit-gate.ts`), so Restore never weighs one against it.
     const restoring = await opened([pin("a")]);
     const draft = loggedDraft();
     const editor = createEditorSession({
@@ -1306,20 +1310,6 @@ describe("createEditorSession, the tour's needs-no-GPS setting (QR-first M1b-2)"
     expect(editor.changeCount()).toBe(1);
     expect(draft.calls).toEqual(["settings needsNoGps=true"]);
     await restoring.session.close();
-
-    const live = await opened([pin("a")]);
-    const mine = createEditorSession({ ...live, levels: new Map() });
-    mine.setNeedsNoGps(true);
-    mine.setNeedsNoGps(false);
-    expect(
-      mine.restore({
-        objects: [],
-        deleted: [],
-        settings: { needsNoGps: true },
-      }),
-    ).toEqual({ changed: 0, deleted: 0 });
-    expect(mine.needsNoGps()).toBe(false);
-    await live.session.close();
   });
 
   it("checks the open tour's stations and codes for the setting's warnings", async () => {
@@ -1771,7 +1761,8 @@ describe("createEditorSession, the tour details (W2)", () => {
     await session.close();
   });
 
-  it("restores a draft's details unless they were changed here meanwhile", async () => {
+  it("restores a draft's details", async () => {
+    // Why: as the setting above; the details come back whole.
     const { session, manifest } = await opened([pin("a")], { title: "Old" });
     const offered = {
       needsNoGps: false,
@@ -1786,12 +1777,6 @@ describe("createEditorSession, the tour details (W2)", () => {
       editor.restore({ objects: [], deleted: [], settings: offered }),
     ).toEqual({ changed: 1, deleted: 0 });
     expect(editor.details().name).toBe("From the draft");
-    const other = createEditorSession({ session, manifest, levels: new Map() });
-    other.setDetails(form({ name: "Typed here" }));
-    expect(
-      other.restore({ objects: [], deleted: [], settings: offered }),
-    ).toEqual({ changed: 0, deleted: 0 });
-    expect(other.details().name).toBe("Typed here");
     await session.close();
   });
 });

@@ -116,6 +116,13 @@ generation, written, appliedDeletions, stationsAtStart })`,
 
 ## Invariants & assumptions
 
+- **A held change** (`held: true`): while the page's draft question is
+  undecided, an edit waits in the store's draft gate (`draft-edit-gate.ts`)
+  and is not in the document yet. Its `backedUp` settles after it lands
+  (true for a dropped one: nothing of it was left unsaved); its draft
+  writes, made when the gate replays it, count as its own (`heldWrites`);
+  a held placement is seated once it lands, against the document just
+  before it (`heldLanding`).
 - **The save status is not all here yet**: the slice's `save` says
   whether a write runs for the undo (`canStep`); the phone's Finish keeps
   its own beside it - a named deviation from the root Redux rule, with its

@@ -2946,13 +2946,13 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   // FAILS. Twice in three rounds the crash-safety feature has been the way
   // work is lost, both times through a fix that looked right.
   //
-  // THE ORDER HERE IS THE TEST. A first attempt discarded and then measured
-  // again before placing - and passed against the bug, because the mint path
-  // writes the meta itself and put the gate file back. What reaches the
-  // defect is minting BEFORE the discard: the offer is not modal, so a
-  // creator can measure and place while it sits there, and after the tap
-  // the code in hand is still set - which is the one state where placement
-  // is allowed with no meta on disk.
+  // Changed rule: Start AR now asks for the answer first. Before, the
+  // offer was not modal, and the order that reached the defect was minting
+  // BEFORE the discard (the code in hand still set after the tap, the one
+  // state where placement was allowed with no meta on disk). AR no longer
+  // starts while the draft is undecided, so that order cannot be made; the
+  // test now pins that Start AR waits for the answer, and that the work
+  // made after "Delete it" survives the crash.
   //
   // Three sessions (a navigation, three reloads, two code measurements) take
   // about 17 s alone and more than the default 30 s with six workers: 6 of
@@ -2977,9 +2977,8 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
     /1 object placed/,
   );
 
-  // Second session: the draft is offered, and it is left ON SCREEN while the
-  // creator measures and places. That is what keeps the level set across the
-  // discard.
+  // Second session: the draft is offered, and Start AR asks for the answer
+  // first - AR stays unstarted, and the note says why.
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -2992,10 +2991,19 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   );
   await openMeasureStep(page);
   await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
-  await measureTheCode(page);
+  await enterAr(page);
+  await expect(page.getByTestId("setup-status")).toContainText(
+    "Choose Restore or Delete it for the unsaved work first",
+  );
+  await expect(page.locator("body")).not.toHaveAttribute(
+    "data-ar-active",
+    "true",
+  );
+  await expect(page.getByTestId("draft-offer")).toBeVisible();
 
   await page.getByTestId("draft-discard").click();
   await expect(page.getByTestId("draft-offer")).toBeHidden();
+  await measureTheCode(page);
 
   await page.getByTestId("setup-pin").click();
   await page.getByTestId("pin-label").fill("Placed after the discard");
@@ -3027,22 +3035,20 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
   );
 });
 
-test("a pin placed BEFORE Delete it survives too: the discard rejects the old draft, not this session's work", async ({
+test("a pin placed right after Delete it is on disk at once: the discard rejects the old draft, not this session's work", async ({
   page,
 }) => {
-  // Why this test matters (PR #447 review). The sibling above covers
-  // placements made AFTER the tap. This is the same data loss one tap
-  // earlier, and it is worse because nothing on screen changes at all.
+  // Why this test matters: a durability check. After "Delete it" the
+  // namespace holds the meta, the codes and exactly this session's pin, on
+  // disk, not only on screen. A crash before finishing loses pins that are
+  // only on screen silently, because the write SUCCEEDED and the
+  // no-persistence notice only fires on failure.
   //
-  // The draft offer is not modal and placement is not gated on it, so a
-  // creator can measure and place while it sits there. `store.clear()`
-  // then empties the WHOLE namespace - including the `object:` files just
-  // written for this session's pins, which were never part of the draft
-  // being rejected - and only the meta is written back. The pins stay in
-  // `ctx.placedObjects`, stay on the readout and still reach the finished
-  // zip, so the creator sees nothing wrong. A crash before finishing loses
-  // them, silently, because the write SUCCEEDED and the no-persistence
-  // notice only fires on failure.
+  // It was written for a defect that can no longer arise this way: a pin
+  // placed while the offer sat there was wiped when `store.clear()`
+  // emptied the WHOLE namespace on "Delete it". AR now starts only once
+  // the draft is decided, so the pin is placed after the tap, and the test
+  // keeps the durability that defect broke.
   //
   // Third time this feature has been the way work is lost. The assertion
   // that matters is the offer's TEXT: visibility alone is satisfied by the
@@ -3065,7 +3071,8 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
     /1 object placed/,
   );
 
-  // Second session: leave the offer up, measure, and place BEFORE tapping.
+  // Second session: "Delete it" first (AR waits for it), then measure and
+  // place.
   await page.reload();
   await page.getByTestId("link-input").fill(RANGES_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -3078,16 +3085,12 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
   );
   await openMeasureStep(page);
   await expect(page.getByTestId("draft-offer")).toBeVisible({ timeout: 15000 });
-  await measureTheCode(page);
-  await page.getByTestId("setup-pin").click();
-  await page.getByTestId("pin-label").fill("Placed before the discard");
-  await page.getByTestId("pin-save").click();
-  await expect(page.getByTestId("setup-status")).toContainText(
-    /1 object placed/,
-  );
-
   await page.getByTestId("draft-discard").click();
   await expect(page.getByTestId("draft-offer")).toBeHidden();
+  await measureTheCode(page);
+  await page.getByTestId("setup-pin").click();
+  await page.getByTestId("pin-label").fill("Placed right after the discard");
+  await page.getByTestId("pin-save").click();
 
   // The pin is still on screen, and it has to still be on disk.
   await expect(page.getByTestId("setup-status")).toContainText(
@@ -3147,8 +3150,8 @@ test("a pin placed BEFORE Delete it survives too: the discard rejects the old dr
     // The meta, the codes record and EXACTLY ONE object, which is the
     // post-re-write state
     // and no other. A COUNT threshold was the first attempt and it waited
-    // for nothing: before the tap this namespace already holds three files
-    // (the meta the second session's mint rewrote, plus both pins), so
+    // for nothing: this namespace already held three files before (the
+    // meta, the codes and the first session's pin), so
     // `>= 2` passed whether or not the clear had even started - the same
     // slack the comment above argues against, wearing a poll (PR #450
     // review, found independently by both reviewers).

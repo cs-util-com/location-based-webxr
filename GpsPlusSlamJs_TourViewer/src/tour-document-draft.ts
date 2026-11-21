@@ -327,96 +327,10 @@ function codesRecord(
  *  the settings record, and the codes record (a page that measures codes:
  *  the phone's). */
 export interface TourDocumentDraft extends DraftObjectWrites {
-  /** `movedStations`: the stations whose pose moved here since the open
-   *  (`touched.movedStations`), whose poses in `settings` are live work. */
-  saveSettings(
-    settings: TourSettingsRecord,
-    movedStations: readonly string[],
-  ): Promise<boolean>;
+  saveSettings(settings: TourSettingsRecord): Promise<boolean>;
   saveCodes?(codes: TourCodesRecord): Promise<boolean>;
   /** Whether the draft holds a file brought in (absent: every one). */
   holdsFile?(id: string): boolean;
-}
-
-/** `record` carrying the poses a draft holds that nobody decided on yet
- *  (`undecided`: offered, or declined with "Not now"). The poses of the
- *  stations moved here since the open (`moved`) are live work and win;
- *  every other station keeps its undecided pose, and one the record does
- *  not name is added, so no write before the decision loses a declined
- *  move. A record without poses carries the undecided ones whole. */
-export function withUndecidedPoses<R extends TourSettingsRecord>(
-  record: R,
-  undecided: readonly StationPose[] | null,
-  moved: readonly string[],
-): R {
-  if (undecided === null || undecided.length === 0) return record;
-  if (record.stations === undefined) return { ...record, stations: undecided };
-  const live = new Set(moved);
-  const held = new Map(undecided.map((p) => [p.id, p]));
-  const named = new Set(record.stations.map((p) => p.id));
-  const stations = [
-    ...record.stations.map((p) => (live.has(p.id) ? p : (held.get(p.id) ?? p))),
-    ...undecided.filter((p) => !named.has(p.id) && !live.has(p.id)),
-  ];
-  return sameJson(stations, record.stations) ? record : { ...record, stations };
-}
-
-/** What a stored record holds that nobody decided on yet, against the
- *  opened tour's stations (`opened`): its station poses while one differs
- *  from the opened tour's (`poses`, the whole list as the record holds
- *  it), and its created stations the opened tour lacks (`created`); null
- *  for none. Both pages hold these per open (`withUndecidedPoses`,
- *  `withCreated`) until Restore or a landed "Delete it" decides them. */
-export function undecidedOf(
-  record: Pick<TourSettingsRecord, "stations" | "createdStations"> | undefined,
-  opened: readonly StationPose[],
-): {
-  poses: readonly StationPose[] | null;
-  created: readonly StationFrame[] | null;
-} {
-  const poses =
-    record?.stations !== undefined &&
-    changedStations(record.stations, opened).length > 0
-      ? record.stations
-      : null;
-  const carried = new Set(opened.map((p) => p.id));
-  const created = (record?.createdStations ?? []).filter(
-    (f) => !carried.has(f.id),
-  );
-  return { poses, created: created.length === 0 ? null : created };
-}
-
-/** The offered station poses a Restore puts back: each that differs from
- *  the station's pose in `against` (a station it lacks is skipped), unless
- *  the station moved here since the open (`moved`): that pose is live
- *  work and wins, station by station, never the whole offer at once. */
-export function posesToRestore(
-  offered: readonly StationPose[] | undefined,
-  against: readonly StationPose[],
-  moved: readonly string[],
-): StationPose[] {
-  const changed = new Set(changedStations(offered, against));
-  return (offered ?? []).filter(
-    (p) => changed.has(p.id) && !moved.includes(p.id),
-  );
-}
-
-/** `record` with the stored created stations whose ids it lacks
- *  (`stored`: a draft's not yet decided on): the record's own frame of an
- *  id wins (this page's, newer). A live record names only the page's own
- *  created stations, so without them a write before the decision took the
- *  draft's stations off disk, and the next open dropped the objects that
- *  name them. */
-export function withCreated<R extends TourSettingsRecord>(
-  record: R,
-  stored: readonly StationFrame[] | null,
-): R {
-  const own = record.createdStations ?? [];
-  const have = new Set(own.map((f) => f.id));
-  const extra = (stored ?? []).filter((f) => !have.has(f.id));
-  return extra.length === 0
-    ? record
-    : { ...record, createdStations: [...own, ...extra] };
 }
 
 /** The settings record as the document holds it now. */
@@ -669,7 +583,7 @@ export function followDocument(
   const was = settingsRecord(before);
   const now = settingsRecord(after);
   if (!sameJson(was, now)) {
-    void draft.saveSettings(now, after.touched.movedStations);
+    void draft.saveSettings(now);
   }
   if (draft.saveCodes === undefined || hands === undefined) return;
   const codesWere = codesRecord(before, hands.before);

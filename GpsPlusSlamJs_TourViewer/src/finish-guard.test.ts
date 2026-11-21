@@ -28,6 +28,7 @@ function input(overrides: Partial<FinishGuardInput> = {}): FinishGuardInput {
     rebuilt: null,
     draftPersists: true,
     finishFailed: false,
+    editWaits: false,
     ...overrides,
   };
 }
@@ -106,6 +107,16 @@ describe("leaveNeedsConfirm", () => {
     );
     // Unfinished pins survive in the draft and are offered again: no ask.
     expect(leaveNeedsConfirm(input({ placedCount: 3 }))).toBe(false);
+  });
+
+  // Why: an edit waiting for the answer about the unsaved work is in no
+  // backup and in no tour file yet - leaving loses it, even on a phone
+  // whose draft holds everything else; the question says what is lost.
+  it("asks while an edit waits for the draft question, and says it is lost", () => {
+    expect(leaveNeedsConfirm(input({ editWaits: true }))).toBe(true);
+    expect(leaveQuestion(input({ editWaits: true }))).toMatch(
+      /waits for your answer/,
+    );
   });
 });
 

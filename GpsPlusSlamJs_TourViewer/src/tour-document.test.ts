@@ -536,12 +536,6 @@ describe("tour document: settings and details", () => {
       }),
     );
     expect(changeCount(state)).toBe(3);
-    expect(state.touched).toEqual({
-      needsNoGps: true,
-      details: true,
-      stations: false,
-      movedStations: [],
-    });
     expect(state.detailsRecorded).toBe(true);
     const written = manifestToWrite(state)!;
     expect(written.needsNoGps).toBe(true);
@@ -578,13 +572,6 @@ describe("tour document: a restore", () => {
     );
     expect(changeCount(state)).toBe(4);
     expect(state.detailsRecorded).toBe(true);
-    // A restore is not live work: a later offer may still set them.
-    expect(state.touched).toEqual({
-      needsNoGps: false,
-      details: false,
-      stations: false,
-      movedStations: [],
-    });
     state = reduce(state, act.undone());
     expect(changeCount(state)).toBe(0);
   });

@@ -235,6 +235,8 @@ export function wireCreatorPlacement(deps: {
   }
 
   /** Put `object` into the tour document; null (and said) when refused,
+   *  "held" while it waits for the draft question (it lands later, with
+   *  the arm it took, so the arm stays taken),
    *  else the object as the document took it and whether it started its
    *  own station ("New station here" was armed, D8: the document consumes
    *  the arm only when it takes the object, and the object then names
@@ -243,7 +245,7 @@ export function wireCreatorPlacement(deps: {
   function placeInTour(
     object: TourObject,
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
-  ): { object: TourObject; ownStation: boolean } | null {
+  ): { object: TourObject; ownStation: boolean } | "held" | null {
     const what =
       object.kind === "shortText"
         ? `the pin "${object.caption}"`
@@ -258,6 +260,9 @@ export function wireCreatorPlacement(deps: {
     void change.backedUp.then((ok) => {
       if (!ok) deps.draft.warnNoBackup();
     });
+    // Waiting for the draft question (`draft-edit-gate.ts`): not placed
+    // yet, and the question on screen says why - no refusal note.
+    if (change.held === true) return "held";
     return { object: change.object, ownStation: change.ownStation };
   }
 
@@ -442,6 +447,10 @@ export function wireCreatorPlacement(deps: {
             },
           }),
     });
+    if (placedPin === "held") {
+      deps.render();
+      return;
+    }
     if (placedPin === null) {
       giveBackNewStationArm(ownStation, visit);
       deps.render();
@@ -532,6 +541,10 @@ export function wireCreatorPlacement(deps: {
           placement: { visit, local: odomNueFromWebXr(cameraPose) },
           ownStation,
         });
+        if (placedPhoto === "held") {
+          deps.render();
+          return;
+        }
         if (placedPhoto === null) {
           giveBackNewStationArm(ownStation, visit);
           deps.render();

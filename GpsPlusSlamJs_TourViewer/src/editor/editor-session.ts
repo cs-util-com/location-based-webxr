@@ -81,6 +81,7 @@ import {
   type DetailsForm,
   type TourDetailFields,
 } from "../tour-details-form.js";
+import { isHeldEdit } from "../draft-edit-gate.js";
 import {
   canStep,
   changeCount,
@@ -129,7 +130,7 @@ import {
   STATION_RADIUS_MAX_M,
   STATION_RADIUS_MIN_M,
 } from "../station-geometry.js";
-import { followDocument, posesToRestore } from "../tour-document-draft.js";
+import { changedStations, followDocument } from "../tour-document-draft.js";
 import { blockFileKind, withBlockFile } from "../block-file.js";
 import { sameJson } from "../same-json.js";
 import { newTourId } from "../tour-file-key.js";
@@ -756,6 +757,10 @@ const NOT_APPLIED = "That change could not be made to the tour as it is now.";
 const SWAP_REFUSED =
   "That smaller file could not replace the one in the tour: the tour no longer holds that file, or the new file is not of its kind.";
 
+/** A swap whose record waited for the draft question and was dropped. */
+const SWAP_DROPPED =
+  "The smaller file was not applied: it was made before the answer about the unsaved changes.";
+
 /** A station as the undo's words name it. */
 function stationName(frame: { readonly title?: string }): string {
   return frame.title === undefined ? "a station" : `"${frame.title}"`;
@@ -765,11 +770,7 @@ function stationName(frame: { readonly title?: string }): string {
  *  shares (`draft-actions.ts`), and the tour's settings (QR-first M1b-2)
  *  with its details (W2). */
 export interface EditorSessionDraft extends DraftObjectWrites {
-  /** `movedStations`: the stations whose pose moved here since the open. */
-  saveSettings(
-    settings: EditorTourSettings,
-    movedStations: readonly string[],
-  ): Promise<boolean>;
+  saveSettings(settings: EditorTourSettings): Promise<boolean>;
   /** A file brought in, with its bytes: written before the record that
    *  names it; whether it landed. */
   saveAsset(asset: TourAsset, blob: Blob): Promise<boolean>;
@@ -1734,11 +1735,12 @@ export function createEditorSession(input: {
   }
 
   /** `edit` dispatched, and whether the document took it (a reducer that
-   *  refuses returns the state it had). */
-  function took(edit: () => void): boolean {
+   *  refuses returns the state it had) or it waits for the draft question
+   *  (`draft-edit-gate.ts`): it lands once the question is answered. */
+  function took(edit: () => unknown): boolean {
     const was = doc().revision;
-    edit();
-    return doc().revision !== was;
+    const out = edit();
+    return isHeldEdit(out) || doc().revision !== was;
   }
 
   const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
@@ -1965,6 +1967,7 @@ export function createEditorSession(input: {
   }
 
   const swapRefused: EditorRefusal = { kind: "refused", reason: SWAP_REFUSED };
+  const swapDropped: EditorRefusal = { kind: "refused", reason: SWAP_DROPPED };
 
   /** `swapAsset`: judged first, so a refused file never reaches the draft
    *  or the table. */
@@ -2007,9 +2010,29 @@ export function createEditorSession(input: {
       }
       return swapRefused;
     }
+    const before = files.get(id);
     files.set(id, file.blob);
-    store.dispatch(final.action);
+    const out = store.dispatch(final.action);
+    if (!isHeldEdit(out)) return { kind: "swapped", backedUp };
+    // The record waits for the draft question (`draft-edit-gate.ts`): the
+    // table keeps the bytes the standing record names meanwhile, and takes
+    // the smaller file only once the record lands.
+    putBack(id, before);
+    if ((await out.landed) === null) {
+      // Dropped (Restore, "Not now"): the draft gets the record that
+      // stands back, so no later open offers the swap again, and the shelf
+      // is told it was not applied.
+      if (was !== undefined) await draft.swapAsset(was, before);
+      return swapDropped;
+    }
+    files.set(id, file.blob);
     return { kind: "swapped", backedUp };
+  }
+
+  /** The bytes of `id` in the table back to `blob`, or none. */
+  function putBack(id: string, blob: Blob | undefined): void {
+    if (blob === undefined) files.delete(id);
+    else files.set(id, blob);
   }
 
   /** The shelf's file `assetId` with its uses as they stand, or why it
@@ -3628,26 +3651,24 @@ export function createEditorSession(input: {
     restore(work) {
       const state = mine();
       if (state === null) return { changed: 0, deleted: 0 };
-      const live = new Set([
-        ...state.placed.map((p) => p.object.id),
-        ...state.deleted,
-      ]);
+      // Every edit waited for this answer (`draft-edit-gate.ts`): the
+      // document holds no work of this open's, so the whole draft comes
+      // back, and the edits that waited land on it afterwards.
       const settings = work.settings;
-      // The draft's station poses (D17; the r875 milestone review #1) -
-      // each but a station moved here meanwhile: live work wins, station by
-      // station. Only a station the tour carries, at a pose other than its
-      // own.
-      const stations = posesToRestore(
-        settings?.stations,
-        state.stations,
-        state.touched.movedStations,
+      // The draft's station poses: only
+      // a station the tour carries, at a pose other than its own.
+      const moved = new Set(
+        changedStations(settings?.stations, state.stations),
+      );
+      const stations = (settings?.stations ?? []).filter((p) =>
+        moved.has(p.id),
       );
       // An object its station cannot carry (the station is gone, or an
       // older draft) is seated by the rule as the restore puts it back
       // (`restored`), never skipped. One the tour
       // does not carry is skipped unless the offer names it a copy made
       // here: that is put back with its picture (a photo without one is
-      // not), unless deleted here since.
+      // not).
       const offeredPicture = (object: TourObject): Blob | undefined =>
         work.pictures?.get(object.id) ?? files.get(object.id);
       // The files the offer brings, and the objects naming files held
@@ -3671,25 +3692,20 @@ export function createEditorSession(input: {
       const made = work.objects.filter(
         (object) =>
           madeIds.has(object.id) &&
-          !live.has(object.id) &&
           find(object.id) === undefined &&
           held(object) &&
           (!isCapturedPhoto(object) || offeredPicture(object) !== undefined),
       );
       const objects = [
         ...work.objects.filter(
-          (object) =>
-            !live.has(object.id) &&
-            find(object.id) !== undefined &&
-            held(object),
+          (object) => find(object.id) !== undefined && held(object),
         ),
         ...made,
       ];
       // The stations edited, added, deleted, reordered or copied there,
-      // whole - unless a station was changed here meanwhile: live work
-      // wins.
+      // whole.
       const framesWork =
-        settings === undefined || state.touched.stations
+        settings === undefined
           ? {}
           : {
               ...(settings.frames === undefined
@@ -3702,13 +3718,10 @@ export function createEditorSession(input: {
                 ? {}
                 : { deletedStations: settings.deletedStations }),
             };
-      const deleted = work.deleted.filter(
-        (id) => !live.has(id) && find(id) !== undefined,
-      );
-      // The tour's characters there, whole - unless one was declared or
-      // removed here meanwhile: live work wins.
+      const deleted = work.deleted.filter((id) => find(id) !== undefined);
+      // The tour's characters there, whole.
       const characterWork =
-        settings?.characters === undefined || state.charactersRecorded
+        settings?.characters === undefined
           ? {}
           : { characters: settings.characters };
       // The stations the draft's objects were seated in that the tour
@@ -3723,9 +3736,7 @@ export function createEditorSession(input: {
         ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
       };
       const needsNoGps =
-        settings !== undefined &&
-        !state.touched.needsNoGps &&
-        settings.needsNoGps !== state.needsNoGps
+        settings !== undefined && settings.needsNoGps !== state.needsNoGps
           ? settings.needsNoGps
           : undefined;
       // The details against the tour with the draft's objects back: a
@@ -3744,7 +3755,7 @@ export function createEditorSession(input: {
         }),
       );
       const details =
-        settings?.details === undefined || state.touched.details
+        settings?.details === undefined
           ? null
           : restoredDetails(withObjects, settings.details);
       const was = effectiveDetails(withObjects);

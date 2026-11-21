@@ -259,6 +259,9 @@ export interface CreatorSetup {
   /** The open tour stores a code that can line a visit up without a GPS
    *  fix: a refused location may start on it (`ar-entry.ts`). */
   creatorCanStartOnCodes: () => boolean;
+  /** The AR entry's question about the open tour's draft
+   *  (`TourViewerHooks.creatorDraftDecided`). */
+  creatorDraftDecided: () => boolean;
   /** A tour closed: step 5's download and status are stale (M3 review #6). */
   resetFinishStep: () => void;
   /** A creator's AR visit runs: show the earlier visits' objects. */
@@ -396,7 +399,7 @@ export function wireCreatorSetup(deps: {
   // makes for the same changes (`draft-actions.ts`).
   ctx.tourDocument.follow({
     ...draftObjectWrites(draft),
-    saveSettings: (settings, moved) => draft.saveSettings(settings, moved),
+    saveSettings: (settings) => draft.saveSettings(settings),
     saveCodes: (record) => draft.saveCodes(record),
   });
   /** The placed objects' previews and the earlier visits' frame
@@ -1011,6 +1014,7 @@ export function wireCreatorSetup(deps: {
       // whatever a draft continuation reported.
       draftPersists: ctx.session !== null && draft.persists(),
       finishFailed: finishFailed(ctx.tourDocument.state()),
+      editWaits: ctx.store.draftGate.waiting(),
     };
   }
 
@@ -1115,6 +1119,7 @@ export function wireCreatorSetup(deps: {
     leaveQuestion: () => leaveQuestion(guardInput()),
     startAuthorPipeline: () => measuring.start(),
     creatorCanStartOnCodes: () => creator && measuring.canStartOnCodes(),
+    creatorDraftDecided: () => !creator || draft.readyForAr(),
     beginAuthorVisit: () => {
       if (!creator) return;
       // The visit's wait for a first GPS fix (whether a stored code lines

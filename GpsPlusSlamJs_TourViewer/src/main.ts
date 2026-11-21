@@ -794,6 +794,7 @@ const setup = wireCreatorSetup({
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
 hooks.creatorCanStartOnCodes = setup.creatorCanStartOnCodes;
+hooks.creatorDraftDecided = setup.creatorDraftDecided;
 hooks.resetFinishStep = setup.resetFinishStep;
 // The save cannot be forgotten (UI round 1, U2): another tour, or leaving
 // the page, asks first while a rebuilt tour file was not saved.

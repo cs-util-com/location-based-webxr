@@ -15,6 +15,7 @@
  * is stood in.
  */
 import type { TourDocumentState } from "./tour-document.js";
+import { DRAFT_EDIT_MAKE_AGAIN } from "./draft-edit-gate.js";
 import {
   finishErrorLine,
   finishFailed,
@@ -4273,6 +4274,13 @@ describe(
         // The creator uploaded that edit: the next load opens it hosted.
         const a1 = { ...a0, caption: "Gate, phone 1" } as TourObject;
         const b = await load(store, [a1]);
+        // The visits are offered: answered first, since an edit made over
+        // the undecided draft would wait and Restore would drop it.
+        await vi.waitFor(() => {
+          expect(b.dom.draftOfferText.textContent).not.toBe("");
+        });
+        b.dom.draftRestore.click();
+        await flush();
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone 2");
         await flush();
         // The tab dies before a Finish: the reload, still hosted at A1.
@@ -4319,8 +4327,9 @@ describe(
       });
 
       // Why (re-review #2): an edit made while the draft is still opening
-      // is written when it opens; its base must still name the version the
-      // creator edited (the desktop's), or the next load drops it.
+      // waits for the answer; Restore drops it and says to make it again,
+      // and the edit made again must still name the version the creator
+      // edited (the desktop's) as its base, or the next load drops it.
       it("keeps an edit made while the draft opens, over a desktop edit (re-review #2)", async () => {
         const store = memoryDraftStore();
         const a0 = hosted("h1", "Gate");
@@ -4345,6 +4354,15 @@ describe(
         b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
         open();
+        await flush();
+        // The edit waited for the answer; Restore dropped it.
+        await vi.waitFor(() => {
+          expect(b.dom.draftOfferText.textContent).not.toBe("");
+        });
+        b.dom.draftRestore.click();
+        await flush();
+        expect(b.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+        b.dom.objectList.listHandlers!.editText("h1", "Gate, phone again");
         await flush();
         const c = await load(store, [desk]);
         await vi.waitFor(() => {
@@ -5942,6 +5960,28 @@ describe(
       for (const land of a.encodes.waiting.splice(0)) land();
       await flush();
       expect(a.ctx.placementNote).toMatch(/^Capturing failed/);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
+
+    // Why: a placement that waits for the draft question (a tour a scan
+    // opened while AR runs) is not refused - it lands once the draft is
+    // decided, with the station the arm started. Giving the arm back
+    // would let the next item start a second station for one tap, and
+    // the waiting pin would still take the first.
+    it("a placement that waits for the draft question keeps the arm taken", async () => {
+      const a = authoring();
+      await a.mint();
+      const nearby = await stationNearby(a);
+      a.ctx.store.draftGate.hold(() => undefined);
+      a.dom.newStationButton.click();
+      await a.placePin("Waits", [1, 0, 1]);
+      expect(a.ctx.store.draftGate.waiting()).toBe(true);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+      expect(a.ctx.store.draftGate.release()).toBe(1);
+      const waited = a.ctx.tourDocument.entries().at(-1)!.object;
+      expect(waited.kind).toBe("shortText");
+      expect(waited.station).toBeDefined();
+      expect(waited.station).not.toBe(nearby);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
   },

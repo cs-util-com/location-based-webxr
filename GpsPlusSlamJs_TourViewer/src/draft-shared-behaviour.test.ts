@@ -28,9 +28,11 @@ import fc from "fast-check";
 import { Group, Matrix4, type Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
+import type { UnknownAction } from "@reduxjs/toolkit";
 import {
   serializeTourManifest,
   type TourAsset,
+  type TourManifest,
   type TourPicture,
   type TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
@@ -38,6 +40,8 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 
 import { objectContentKey } from "./authoring-draft.js";
+import { DRAFT_EDIT_MAKE_AGAIN } from "./draft-edit-gate.js";
+import { createDraftOffer, type DraftOfferView } from "./editor/draft-offer.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import { createEditorDraft } from "./editor/editor-draft.js";
 import { createEditorSession } from "./editor/editor-session.js";
@@ -47,8 +51,10 @@ import { openTourFile } from "./tour-session.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import {
   documentObjects,
+  effectiveDetails,
   manifestToWrite,
   selectTourDocument,
+  tourDocumentActions,
 } from "./tour-document.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import { editorStore } from "./test-support/editor-store.js";
@@ -78,6 +84,21 @@ function pin(id: string, caption = `pin ${id}`, lat = 48.52): TourPin {
 /** Two pins, each in a station of its own (`st-a`, `st-b`). */
 const OPENED = [pin("a"), pin("b", "pin b", 48.5202)];
 
+/** A picture the opened tour lists, which a character may show. */
+const CAST: TourAsset = {
+  id: "cast1",
+  path: "content/cast1.png",
+  kind: "image",
+  width: 4,
+  height: 2,
+};
+
+/** The tour both pages open: `OPENED`, its file listing `CAST`. */
+function openedTour(): TourManifest {
+  const manifest = tourOf(OPENED);
+  return { ...manifest, assets: [...manifest.assets, CAST] };
+}
+
 /** About 33 m north of pin a: beyond every station's radius. */
 const NORTH = 48.5205;
 
@@ -97,7 +118,7 @@ const MOVED: QrGeoPose = {
 
 async function tourFile(): Promise<File> {
   const zip = await packFilesAsZip([
-    { path: "tour.json", data: serializeTourManifest(tourOf(OPENED)) },
+    { path: "tour.json", data: serializeTourManifest(openedTour()) },
   ]);
   return new File([zip], "tour.zip", { type: "application/zip" });
 }
@@ -141,6 +162,19 @@ function shapeOf(store: ReturnType<typeof editorStore>): DocumentShape {
   };
 }
 
+/** What the document holds beyond its objects' content and its stations'
+ *  poses: the tour's details, the stations' order and titles, and the
+ *  declared characters. */
+function extrasOf(store: ReturnType<typeof editorStore>): string {
+  const state = selectTourDocument(store.getState());
+  const written = manifestToWrite(state);
+  return JSON.stringify({
+    details: effectiveDetails(state),
+    stations: (written?.stations ?? []).map((s) => [s.id, s.title ?? null]),
+    characters: written?.characters ?? [],
+  });
+}
+
 /** One page over one browser's draft, driven through its own code path. */
 interface DraftPage {
   edit(id: string, text: string): Promise<void>;
@@ -159,14 +193,30 @@ interface DraftPage {
   /** A station moved with its items (the phone: as its settle moves it
    *  after a code's re-measure; the desktop: a drag). */
   moveStation(stationId: string, geo: QrGeoPose): Promise<void>;
-  /** The offer's words; "" while nothing is offered. */
+  /** A change of the document made through the page's store: work this
+   *  page's own controls may not reach (the phone renames no station,
+   *  reorders none and declares no character), which its draft keeps all
+   *  the same. */
+  act(action: UnknownAction): Promise<void>;
+  /** The offer's words; "" while nothing is offered. While a draft is
+   *  undecided, an edit waits and the offer is shown again as the
+   *  question the edit waits for. */
   offer(): string;
-  /** The offer's three answers. */
+  /** The offer's three answers. "Delete it" then lets a waiting edit
+   *  through; Restore and "Not now" drop it, and say so. */
   restore(): Promise<void>;
   decline(): Promise<void>;
   discard(): Promise<void>;
+  /** The page's last line to the creator (the phone's note, the
+   *  desktop's last toast). */
+  said(): string;
   /** The document the page holds now. */
   shape(): DocumentShape;
+  /** The document's details, station order and titles, and characters. */
+  extras(): string;
+  /** Whether the draft is undecided (offered, or put off with "Not
+   *  now"): an edit then waits for the answer. */
+  undecided(): boolean;
   /** The page said something it should keep did not land: that this
    *  device keeps no backup copy, or that a "Delete it" did not delete. */
   saidNotKept(): boolean;
@@ -193,7 +243,7 @@ type OpenPage = (browser: MemoryDraftStores) => Promise<DraftPage>;
 
 const openDesktop: OpenPage = async (browser) => {
   const session = await openTourFile(await tourFile());
-  const manifest = tourOf(OPENED);
+  const manifest = openedTour();
   let warned = false;
   let key: string | null = null;
   const draft = createEditorDraft({
@@ -215,7 +265,43 @@ const openDesktop: OpenPage = async (browser) => {
     draft: draft.writes(),
     store,
   });
-  let offer = opened.offer;
+  const offer = opened.offer;
+  let said = "";
+  let view: DraftOfferView | null = null;
+  // As `edit-main.ts` wires it: the page's own answers, rendered into
+  // `view` instead of a toast.
+  const answers =
+    offer === null
+      ? null
+      : createDraftOffer({
+          gate: store.draftGate,
+          text: offer.text,
+          render: (next) => {
+            view = next;
+          },
+          say: (text, error = false) => {
+            said = text;
+            if (error) warned = true;
+          },
+          current: () => true,
+          restore: () => {
+            const applied = editor.restore(offer);
+            draft.restored();
+            return {
+              count: applied.changed + applied.deleted,
+              line: "Restored.",
+            };
+          },
+          discard: () => draft.discard(),
+          discardFailed: "Could not delete the saved draft.",
+          changed: () => undefined,
+        });
+  const answering = () => {
+    if (answers === null || !store.draftGate.holding()) {
+      throw new Error("the desktop offered nothing");
+    }
+    return answers;
+  };
   const pictures = new Map<string, string>();
   let placed = 0;
   const idle = async () => {
@@ -261,27 +347,27 @@ const openDesktop: OpenPage = async (browser) => {
       editor.moveStation(stationId, geo);
       return idle();
     },
-    offer: () => offer?.text ?? "",
-    restore: async () => {
-      // As `edit-main.ts`'s offer toast runs Restore.
-      if (offer === null) throw new Error("the desktop offered nothing");
-      editor.restore(offer);
-      draft.restored();
-      offer = null;
-      await idle();
-    },
-    decline: () => {
-      // "Not now" only closes the toast: the offer waits for the next open.
-      offer = null;
+    act: (action) => {
+      store.dispatch(action);
       return idle();
     },
-    discard: async () => {
-      // "Delete it"; a refused discard is said in a toast of its own.
-      if (!(await draft.discard())) warned = true;
-      offer = null;
+    offer: () => view?.text ?? "",
+    restore: async () => {
+      answering().restore();
       await idle();
     },
+    decline: async () => {
+      answering().notNow();
+      await idle();
+    },
+    discard: async () => {
+      await answering().deleteIt();
+      await idle();
+    },
+    said: () => said,
     shape: () => shapeOf(store),
+    extras: () => extrasOf(store),
+    undecided: () => store.draftGate.holding(),
     saidNotKept: () => warned,
     space: () => {
       if (key === null) throw new Error("the desktop opened no draft");
@@ -386,7 +472,7 @@ const openPhone: OpenPage = async (browser) => {
   const ctx = createTourViewerSession(store);
   ctx.session = session;
   ctx.tourManifestStatus = "settled";
-  ctx.tourDocument.open(tourOf(OPENED));
+  ctx.tourDocument.open(openedTour());
   ctx.currentLevels = await session.loadQrLevels();
   ctx.currentLevelTexts = session.levelTexts();
   let key: string | null = null;
@@ -520,6 +606,8 @@ const openPhone: OpenPage = async (browser) => {
       arStatus = "idle";
       await idle();
       const id = idsOf(shapeOf(store)).find((i) => !before.has(i));
+      // A placement that waits for the draft's answer places nothing yet.
+      if (id === undefined && !dom.draftOffer.hidden) return "";
       if (id === undefined) {
         throw new Error(`the phone placed nothing: ${ctx.placementNote ?? ""}`);
       }
@@ -559,11 +647,18 @@ const openPhone: OpenPage = async (browser) => {
       );
       await idle();
     },
+    act: (action) => {
+      store.dispatch(action);
+      return idle();
+    },
     offer: () => (dom.draftOffer.hidden ? "" : dom.draftOfferText.textContent),
     restore: () => answer(dom.draftRestore),
     decline: () => answer(dom.draftDismiss),
     discard: () => answer(dom.draftDiscard),
+    said: () => ctx.placementNote ?? "",
     shape: () => shapeOf(store),
+    extras: () => extrasOf(store),
+    undecided: () => store.draftGate.holding(),
     saidNotKept: () => warned,
     space: () => {
       if (key === null) throw new Error("the phone opened no draft");
@@ -644,7 +739,12 @@ async function restoresWhatWasLeft(
 
 /** Whether the page holds an object with this id. */
 function holds(page: DraftPage, id: string): boolean {
-  return page.shape().objects.some((o) => o.includes(`"id":"${id}"`));
+  return holdsIn(page.shape(), id);
+}
+
+/** Whether a document holds an object with this id. */
+function holdsIn(shape: DocumentShape, id: string): boolean {
+  return shape.objects.some((o) => o.includes(`"id":"${id}"`));
 }
 
 /** Each row once per page, through the page's adapter (`PAGES`). */
@@ -866,7 +966,296 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
       expect(holds(next, "q"), `a crash after ${String(landed)}`).toBe(whole);
     }
   }, 60_000);
+
+  // Why: "Not now" is for looking only. An edit made after it waits for
+  // the answer to the offer, asked again, and never lands on the
+  // undecided draft: every part of the draft survives - the parts the
+  // settings record holds (the tour's name, the stations' order, a
+  // character) as much as a deletion - until "Delete it" takes it all.
+  // Each written on its own, so a part the page loses shows by name.
+  const DECLINED: readonly (readonly [
+    string,
+    (page: DraftPage) => Promise<void>,
+  ])[] = [
+    [
+      "a rename of the tour",
+      (p) =>
+        p.act(
+          tourDocumentActions.detailsChanged({
+            details: { title: "The castle walk" },
+            what: "the tour's name",
+          }),
+        ),
+    ],
+    [
+      "a reorder of the stations",
+      (p) =>
+        p.act(
+          tourDocumentActions.stationsReordered({
+            order: ["st-b", "st-a"],
+            what: "the stations' order",
+          }),
+        ),
+    ],
+    ["a deletion", (p) => p.remove("b")],
+    [
+      "a character",
+      (p) =>
+        p.act(
+          tourDocumentActions.characterDeclared({
+            character: { id: "c1abc", name: "Ranger Rita", image: CAST.id },
+            what: "a character",
+          }),
+        ),
+    ],
+  ];
+
+  /** The phone offers and restores the objects, the deletions and the
+   *  station poses of a draft, not the rest of its settings record (the
+   *  tour's details, the stations' own fields and order, the characters):
+   *  a draft holding only those reads as spent there and is swept at the
+   *  next open, Not now or not. A known gap of the phone page, recorded
+   *  here so it turns green (and must be flipped) once the phone restores
+   *  the whole record; only the deletion row holds on both pages. */
+  const settingsGap = (work: string) =>
+    name === "phone" && work !== "a deletion";
+
+  describe.each(DECLINED)("%s declined with Not now", (workName, work) => {
+    const gap = settingsGap(workName);
+    /** The work left on a fresh page, the tour opened again, "Not now",
+     *  and the first edit, which waits for the answer. */
+    async function declinedThenEdited() {
+      const { browser, page, opened } = await freshPage(open);
+      const openedExtras = page.extras();
+      await work(page);
+      const left = { shape: page.shape(), extras: page.extras() };
+      expect(left).not.toEqual({ shape: opened, extras: openedExtras });
+      expect(page.saidNotKept()).toBe(false);
+      const offered = await reopen(open, browser, page);
+      await offered.decline();
+      expect(offered.offer()).toBe("");
+      await offered.edit("a", "The gate");
+      // The edit waits: nothing is applied, and the offer asks again.
+      expect(offered.shape()).toEqual(opened);
+      expect(offered.extras()).toBe(openedExtras);
+      expect(offered.offer()).not.toBe("");
+      return { browser, offered, opened, openedExtras, left };
+    }
+
+    const caption = (p: DraftPage, id: string) => captionIn(p.shape(), id);
+
+    async function survivesRestore(): Promise<void> {
+      const { browser, offered, left } = await declinedThenEdited();
+      await offered.restore();
+      expect(offered.offer()).toBe("");
+      expect(offered.extras()).toBe(left.extras);
+      expect(holds(offered, "b")).toBe(holdsIn(left.shape, "b"));
+      // The edit that waited was built before the draft came back: it is
+      // dropped, and the page says so.
+      expect(caption(offered, "a")).toBe(captionIn(left.shape, "a"));
+      expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+      // No question comes again in this session.
+      await offered.edit("a", "The well");
+      expect(offered.offer()).toBe("");
+      expect(caption(offered, "a")).toBe("The well");
+      const next = await reopen(open, browser, offered);
+      expect(next.offer()).not.toBe("");
+      await next.restore();
+      expect(next.extras()).toBe(left.extras);
+      expect(caption(next, "a")).toBe("The well");
+    }
+    it("survives the first edit and Restore, which drops the edit, and the next open", async () => {
+      // Expected to fail while it shows the gap, with the gap's own
+      // failure (the phone swept the draft: nothing to decline); red once
+      // the gap is closed, and flipped then.
+      const failed = await survivesRestore().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(String(failed)).toBe(gap ? NOTHING_OFFERED : "null");
+    }, 60_000);
+
+    async function goneOnDelete(): Promise<void> {
+      const { browser, offered, openedExtras } = await declinedThenEdited();
+      await offered.discard();
+      expect(offered.saidNotKept()).toBe(false);
+      expect(offered.offer()).toBe("");
+      expect(offered.extras()).toBe(openedExtras);
+      expect(holds(offered, "b")).toBe(true);
+      expect(caption(offered, "a")).toBe("The gate");
+      // The next open offers the edit alone.
+      const next = await reopen(open, browser, offered);
+      expect(next.offer()).not.toBe("");
+      await next.restore();
+      expect(next.extras()).toBe(openedExtras);
+      expect(holds(next, "b")).toBe(true);
+      expect(caption(next, "a")).toBe("The gate");
+    }
+    it("is gone after the first edit and Delete it; the edit is kept", async () => {
+      // Expected to fail while it shows the gap, with the gap's own
+      // failure; red once the gap is closed, and flipped then.
+      const failed = await goneOnDelete().then(
+        () => null,
+        (e: unknown) => e,
+      );
+      expect(String(failed)).toBe(gap ? NOTHING_OFFERED : "null");
+    }, 60_000);
+  });
+
+  // Why: the question's own "Not now" applies nothing: the waiting edit is
+  // dropped, the draft stays undecided, and the next edit asks again.
+  it("the question put off: the edit is dropped and the next edit asks again", async () => {
+    const { browser, page, opened } = await freshPage(open);
+    await page.edit("b", "The well");
+    const offered = await reopen(open, browser, page);
+    await offered.decline();
+    await offered.edit("a", "The gate");
+    expect(offered.offer()).not.toBe("");
+    await offered.decline();
+    expect(offered.offer()).toBe("");
+    expect(offered.shape()).toEqual(opened);
+    await offered.edit("a", "The gate");
+    expect(offered.offer()).not.toBe("");
+    expect(offered.shape()).toEqual(opened);
+  }, 60_000);
+
+  // Why: a station the draft renamed must survive a station moved while
+  // the offer stands and then Restore: the move waits for the answer, and
+  // Restore brings the whole draft back and drops the move (built before
+  // the draft came back), saying so; made again, it lands on the draft.
+  // The phone does not restore a station's own fields (`settingsGap`).
+  async function renameKept(): Promise<void> {
+    const { browser, page, opened } = await freshPage(open);
+    await page.act(
+      tourDocumentActions.stationEdited({
+        stationId: "st-b",
+        edit: { title: "The well" },
+        what: "the station's title",
+      }),
+    );
+    const renamed = page.extras();
+    const offered = await reopen(open, browser, page);
+    expect(offered.offer(), "the rename is offered").not.toBe("");
+    await offered.moveStation("st-a", MOVED);
+    expect(offered.shape()).toEqual(opened);
+    await offered.restore();
+    expect(offered.extras()).toBe(renamed);
+    expect(offered.shape()).toEqual(opened);
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    await offered.moveStation("st-a", MOVED);
+    expect(offered.shape().stations).toContain(
+      JSON.stringify({ id: "st-a", geo: MOVED }),
+    );
+    const next = await reopen(open, browser, offered);
+    await next.restore();
+    expect(next.extras()).toBe(renamed);
+    expect(next.shape().stations).toContain(
+      JSON.stringify({ id: "st-a", geo: MOVED }),
+    );
+  }
+  it("while the offer stands, a station move and then Restore keep the draft's station rename", async () => {
+    // Expected to fail while it shows the gap (as `it.fails` would):
+    // red once the gap is closed, and flipped then.
+    const failed = await renameKept().then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(String(failed)).toBe(
+      settingsGap("a station rename") ? RENAME_NOT_OFFERED : "null",
+    );
+  }, 60_000);
+
+  // Why the next three matter: an edit that waited for the answer was
+  // built from the document before the draft came back. Replayed after a
+  // Restore it would write its whole old values over the draft's: a
+  // caption edit would put pin a back at the file's station pose although
+  // the draft moved that station, a details Apply would undo the draft's
+  // name, a drag would move a station the draft changed the pin of. So
+  // Restore keeps the draft's value, drops the edit, and says so.
+  it("the draft moved a station, a caption edit of its pin waits: Restore keeps the draft's pose and drops the edit", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.moveStation("st-a", MOVED);
+    const drafted = page.shape();
+    const offered = await reopen(open, browser, page);
+    await offered.edit("a", "The gate");
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(offered.shape()).toEqual(drafted);
+    expect(captionIn(offered.shape(), "a")).not.toBe("The gate");
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+  }, 60_000);
+
+  it("the draft renamed the tour, a details change waits: Restore keeps the draft's name and drops the change", async () => {
+    const { browser, page } = await freshPage(open);
+    // An object change too, so the phone (which offers no details alone,
+    // `settingsGap`) offers this draft.
+    await page.edit("b", "The well");
+    await page.act(
+      tourDocumentActions.detailsChanged({
+        details: { title: "The castle walk" },
+        what: "the tour's name",
+      }),
+    );
+    const offered = await reopen(open, browser, page);
+    await offered.act(
+      tourDocumentActions.detailsChanged({
+        details: { title: "Held name" },
+        what: "the tour's name",
+      }),
+    );
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(offered.extras()).not.toContain("Held name");
+    expect(offered.extras().includes("The castle walk")).toBe(
+      !settingsGap("a rename of the tour"),
+    );
+    expect(captionIn(offered.shape(), "b")).toBe("The well");
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+  }, 60_000);
+
+  it("the draft changed a pin's text, a drag of its station waits: Restore keeps the text and drops the drag", async () => {
+    const { browser, page, opened } = await freshPage(open);
+    await page.edit("a", "The gate");
+    const offered = await reopen(open, browser, page);
+    await offered.moveStation("st-a", MOVED);
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(captionIn(offered.shape(), "a")).toBe("The gate");
+    expect(offered.shape().stations).toEqual(opened.stations);
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+  }, 60_000);
+
+  // Why: "Delete it" throws the draft away, so an edit that waited was
+  // built from the state that stays: it is let through, and nothing says
+  // it was dropped.
+  it("Delete it lets the waiting edit through", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.edit("b", "The well");
+    const offered = await reopen(open, browser, page);
+    await offered.edit("a", "The gate");
+    expect(offered.offer()).not.toBe("");
+    await offered.discard();
+    expect(offered.offer()).toBe("");
+    expect(captionIn(offered.shape(), "a")).toBe("The gate");
+    expect(captionIn(offered.shape(), "b")).toBe("pin b");
+    expect(offered.said()).not.toContain(DRAFT_EDIT_MAKE_AGAIN);
+  }, 60_000);
 });
+
+/** A pin's caption in a document; undefined without one. */
+function captionIn(shape: DocumentShape, id: string): string | undefined {
+  return shape.objects
+    .map((o) => JSON.parse(o) as { id: string; caption?: string })
+    .find((o) => o.id === id)?.caption;
+}
+
+/** The phone's failure while it shows the settings gap: the draft was
+ *  swept as spent, so there is no offer to answer. */
+const NOTHING_OFFERED = "Error: the phone offered nothing";
+
+/** The same gap in the rename row: the reopen offers nothing. */
+const RENAME_NOT_OFFERED =
+  "AssertionError: the rename is offered: expected '' not to be '' // Object.is equality";
 
 // --- the property -----------------------------------------------------------
 
@@ -894,7 +1283,9 @@ type Fault =
   | { readonly kind: "meta" }
   | { readonly kind: "crash"; readonly after: number };
 
-type Step = readonly [Op, Fault];
+/** A step: an op, its fault, and the answer to the question the op asks
+ *  when it is an edit made while the draft is undecided. */
+type Step = readonly [Op, Fault, Answer];
 
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   fc.record({
@@ -942,6 +1333,8 @@ const faultArb: fc.Arbitrary<Fault> = fc.oneof(
 
 /** An edit and a station move write object records: a refusal of those
  *  is drawn more often for them. */
+const answerArb = fc.constantFrom<Answer>("restore", "decline", "discard");
+
 const stepArb: fc.Arbitrary<Step> = opArb.chain((op) =>
   fc.tuple(
     fc.constant(op),
@@ -957,10 +1350,11 @@ const stepArb: fc.Arbitrary<Step> = opArb.chain((op) =>
           { weight: 3, arbitrary: faultArb },
         )
       : faultArb,
+    answerArb,
   ),
 );
 
-/** The sequences every run tries first: each turns red on a draft that
+/** The ops and faults every run tries first: each turns red on a draft that
  *  stops writing an id after one of its writes was refused, that removes a
  *  deleted object's record before its tombstone, or that loses a meta
  *  written by a Restore or a "Delete it"; and the sequences that once
@@ -968,7 +1362,7 @@ const stepArb: fc.Arbitrary<Step> = opArb.chain((op) =>
  *  lost by a later write, a refused tombstone of a station's last object,
  *  an edit at a declined station, a crash inside a station move, a station
  *  moved while the offer stands and then Restore. */
-const SEEDED: Step[][] = [
+const SEEDED_PAIRS: (readonly [Op, Fault])[][] = [
   [
     [
       { kind: "edit", id: "a", text: "The gate" },
@@ -1043,6 +1437,27 @@ const SEEDED: Step[][] = [
     [{ kind: "reopen", answer: "later" }, { kind: "none" }],
     [{ kind: "moveStation", id: "st-a" }, { kind: "none" }],
     [{ kind: "answer", answer: "restore" }, { kind: "none" }],
+  ],
+];
+
+/** The sequences every run tries first: the ones above, each question an
+ *  edit asks answered with Restore; an edit at a declined station
+ *  answered with "Delete it"; a placement left offered, then a delete
+ *  put off and an edit restored, both with a refused meta write. */
+const SEEDED: Step[][] = [
+  ...SEEDED_PAIRS.map((steps) =>
+    steps.map(([op, fault]): Step => [op, fault, "restore"]),
+  ),
+  [
+    [{ kind: "moveStation", id: "st-a" }, { kind: "none" }, "restore"],
+    [{ kind: "reopen", answer: "decline" }, { kind: "none" }, "restore"],
+    [{ kind: "edit", id: "a", text: "The gate" }, { kind: "none" }, "discard"],
+  ],
+  [
+    [{ kind: "place", at: 0 }, { kind: "none" }, "restore"],
+    [{ kind: "reopen", answer: "later" }, { kind: "none" }, "restore"],
+    [{ kind: "remove", id: "a" }, { kind: "meta" }, "decline"],
+    [{ kind: "edit", id: "b", text: "The well" }, { kind: "meta" }, "restore"],
   ],
 ];
 
@@ -1156,26 +1571,15 @@ const isStation = (key: string): boolean => key.startsWith("station");
  * refused one): what comes back for it is then not pinned, but the page
  * must have said a write did not land. A later change of it in a step that
  * lost none writes it whole again and untaints it.
- *
- * `undecided`: the stations "Not now" left at a pose the draft holds but
- * the page does not show. `offStation`: the objects changed at such a
- * station, whose place the draft does not pin (the known gap "after Not
- * now, an edit of a moved station's object keeps it at its station"):
- * everything else about them is compared. Both go when that row turns
- * green.
  */
 interface Expected {
   entries: Map<string, string>;
   tainted: Set<string>;
-  undecided: Set<string>;
-  offStation: Set<string>;
 }
 
 const expectedOf = (shape: DocumentShape): Expected => ({
   entries: entriesOf(shape),
   tainted: new Set(),
-  undecided: new Set(),
-  offStation: new Set(),
 });
 
 /** The key of the station `key`'s object stands at in `shape`, if any. */
@@ -1224,13 +1628,6 @@ function follow(
     // A station showing again (an object back at it) is no change of its
     // own either: it keeps the pose the draft holds for it.
     if (isStation(key) && !was.has(key) && expected.entries.has(key)) continue;
-    if (isStation(key)) expected.undecided.delete(key);
-    else {
-      const station = stationKeyOf(after, key);
-      if (station !== undefined && expected.undecided.has(station)) {
-        expected.offStation.add(key);
-      } else expected.offStation.delete(key);
-    }
     if (content === undefined) expected.entries.delete(key);
     else expected.entries.set(key, content);
     if (lostWrite) expected.tainted.add(key);
@@ -1284,12 +1681,6 @@ function holdsExpected(
   const got = entriesOf(shape);
   for (const key of comparedKeys([expected.entries], got)) {
     if (unpinned(expected, shape, key)) continue;
-    if (expected.offStation.has(key)) {
-      expect(withoutPlace(key, got.get(key)), `${where}: ${key}`).toBe(
-        withoutPlace(key, expected.entries.get(key)),
-      );
-      continue;
-    }
     expect(got.get(key), `${where}: ${key}`).toBe(expected.entries.get(key));
   }
   expect(
@@ -1380,7 +1771,6 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     }
     for (const [id, content] of objectsById(shape)) {
       if (!relative || unpinned(expected, shape, `object:${id}`)) continue;
-      if (expected.offStation.has(`object:${id}`)) continue;
       expect(held, `${where}: a version never held`).toContain(content);
     }
   };
@@ -1391,53 +1781,20 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     page = await reopen(open, browser, page);
     return page;
   };
-  /** The stations the draft holds at a pose the page does not show:
-   *  undecided while the offer stands, and after "Not now", until a
-   *  Restore or a landed "Delete it". */
-  const undecidedIn = (shape: DocumentShape) => {
-    const shown = entriesOf(shape);
-    for (const [key, pose] of expected.entries) {
-      if (isStation(key) && shown.has(key) && shown.get(key) !== pose) {
-        expected.undecided.add(key);
-      }
-    }
-  };
-  for (const [op, fault] of steps) {
-    // A reopen's own load comes first; the fault is set for its answer.
-    if (op.kind === "reopen") {
-      const loaded = await next();
-      if (loaded.offer() === "") {
-        holdsExpected(
-          expected,
-          loaded.shape(),
-          said,
-          "an open that offered nothing",
-        );
-        continue;
-      }
-      if (op.answer === "later") {
-        undecidedIn(loaded.shape());
-        continue;
-      }
-    }
-    if (op.kind === "answer" && page.offer() === "") continue;
-    // "later" went on above: a reopen here is answered.
-    const answer: Answer | null =
-      op.kind === "answer"
-        ? op.answer
-        : op.kind === "reopen" && op.answer !== "later"
-          ? op.answer
-          : null;
+  /** One answer to the offer, or one step on the live page, with its
+   *  fault. */
+  const take = async (
+    op: Exclude<Op, { kind: "reopen" | "answer" }> | null,
+    answer: Answer | null,
+    fault: Fault,
+  ): Promise<void> => {
     const before = page.shape();
     const refusedBefore = browser.refused.length;
     browser.failPutsOf = fault.kind === "refuse" ? fault.keys : null;
     browser.failMetaPuts = fault.kind === "meta" ? 1 : 0;
     browser.crashAfter = fault.kind === "crash" ? fault.after : null;
-    if (op.kind === "reopen" || op.kind === "answer") {
-      if (answer !== null) await page[answer]();
-    } else {
-      await apply(page, op);
-    }
+    if (answer !== null) await page[answer]();
+    else if (op !== null) await apply(page, op);
     browser.failPutsOf = null;
     browser.failMetaPuts = 0;
     const lostWrite = browser.refused.length > refusedBefore;
@@ -1455,11 +1812,11 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
       // What came back is what the draft now holds; a record a refused
       // write left behind stays as it is until it is written again.
       expected = { ...expected, entries: entriesOf(restored) };
-      continue;
+      return;
     }
     if (answer === null) {
       follow(expected, before, after, lostWrite);
-      continue;
+      return;
     }
     said ||= page.saidNotKept();
     if (answer === "restore") {
@@ -1468,17 +1825,73 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
       expected = {
         entries: entriesOf(after),
         tainted: lostWrite ? expected.tainted : new Set(),
-        undecided: lostWrite ? expected.undecided : new Set(),
-        offStation: lostWrite ? expected.offStation : new Set(),
       };
     }
-    // "Not now": the stations the draft holds at a pose the page does not
-    // show stay undecided until a Restore or a landed "Delete it".
-    if (answer === "decline") undecidedIn(after);
-    // A "Delete it" that landed leaves the file; one that did not is
-    // said, and the work stays to be offered again. "Not now" keeps it.
-    if (answer === "discard" && !page.saidNotKept()) {
+    // A "Delete it" that landed decides the draft and leaves the file; one
+    // that did not is said, and the work stays to be offered again. "Not
+    // now" keeps it.
+    if (answer === "discard" && !page.undecided()) {
       expected = expectedOf(after);
+    }
+  };
+  for (const [op, fault, asked] of steps) {
+    // A reopen's own load comes first; the fault is set for its answer.
+    if (op.kind === "reopen") {
+      const loaded = await next();
+      if (loaded.offer() === "") {
+        holdsExpected(
+          expected,
+          loaded.shape(),
+          said,
+          "an open that offered nothing",
+        );
+        continue;
+      }
+      if (op.answer === "later") continue;
+      await take(null, op.answer, fault);
+      continue;
+    }
+    if (op.kind === "answer") {
+      if (page.offer() !== "") await take(null, op.answer, fault);
+      continue;
+    }
+    if (!page.undecided()) {
+      await take(op, null, fault);
+      continue;
+    }
+    // An edit while the draft is undecided waits for the answer: nothing
+    // of it is applied before, and the page asks (shows the offer).
+    const before = page.shape();
+    await apply(page, op);
+    expect(page.shape(), "an edit applied before the answer").toEqual(before);
+    // Nothing waits: the op took no step (an undo with nothing to undo).
+    if (page.offer() === "") continue;
+    // The question's answer. "Not now" and Restore drop the waiting edit
+    // (Restore saying so, and the creator then makes it again); "Delete
+    // it" lets it through after its own change (the order is the gate's,
+    // `draft-edit-gate.test.ts`).
+    if (asked === "decline") {
+      await page.decline();
+      expect(page.shape(), "an edit applied after Not now").toEqual(before);
+      continue;
+    }
+    const asking = page;
+    await take(null, asked, fault);
+    expect(
+      fault.kind === "crash" ||
+        asked !== "restore" ||
+        asking.said().includes(DRAFT_EDIT_MAKE_AGAIN),
+      "a Restore that dropped a waiting edit says so",
+    ).toBe(true);
+    // A "Delete it" that did not land keeps the question, the edit still
+    // waiting: put off, so the next step starts with nothing waiting.
+    if (fault.kind !== "crash" && page.undecided()) {
+      await page.decline();
+      continue;
+    }
+    // Made again after the Restore that dropped it.
+    if (asked === "restore" && !page.undecided()) {
+      await take(op, null, { kind: "none" });
     }
   }
   const last = await next();
@@ -1510,37 +1923,50 @@ describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
   }, 600_000);
 
   // Why: "Not now" keeps the work for the next open, a moved station
-  // among it. The next station move writes the settings record, and the
-  // stations this page did not move keep the declined poses there: were
-  // they written as the page shows them (the file's), the declined move
-  // would be lost while its object's moved record stays, and Restore
-  // would bring that object back off its station.
-  it("after Not now, another station's move keeps the declined move", async () => {
-    const { browser, page } = await freshPage(open);
+  // among it, and is for looking only: another station's move made then
+  // waits for the answer, asked again. Restore brings the declined move
+  // back and drops the waiting one, saying so; made again it lands beside
+  // the declined one, both kept by the next open - never the file's pose
+  // written over the declined one, which would bring its object back off
+  // its station.
+  it("after Not now, another station's move waits, Restore keeps the declined move and drops the waiting one", async () => {
+    const { browser, page, opened } = await freshPage(open);
     await page.moveStation("st-b", { ...MOVED, lat: NORTH + 0.004 });
     const moved = page.shape();
     const offered = await reopen(open, browser, page);
     await offered.decline();
     await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    expect(offered.shape()).toEqual(opened);
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(offered.shape(), "the waiting move dropped").toEqual(moved);
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    const both = offered.shape();
+    expect(objectsById(both).get("b")).toBe(objectsById(moved).get("b"));
+    expect(stationsByKey(both).get("station:st-a")).toBe(
+      JSON.stringify({ id: "st-a", geo: { ...MOVED, lat: NORTH + 0.003 } }),
+    );
     const next = await reopen(open, browser, offered);
     await next.restore();
-    expect(objectsById(next.shape()).get("b")).toBe(
-      objectsById(moved).get("b"),
-    );
+    expect(entriesOf(next.shape())).toEqual(entriesOf(both));
   }, 60_000);
 
   // Why: a placement may start a station of its own, which the settings
-  // record holds whole while its object's record names it. "Not now"
-  // keeps both for the next open; a record this page writes meanwhile (a
-  // station moved) must still hold that station, or the next open finds
-  // an object in a station nobody knows and drops it.
-  it("after Not now, a station move keeps the station a placement started", async () => {
+  // record holds whole while its object's record names it. After "Not
+  // now" a station move waits for the answer; Restore brings that station
+  // back (and drops the move), so the next open still finds the
+  // placement's station and never drops the object that names it.
+  it("after Not now, a station move waits for Restore and keeps the station a placement started", async () => {
     const { browser, page } = await freshPage(open);
     await page.place(0);
     const placed = page.shape();
     const offered = await reopen(open, browser, page);
     await offered.decline();
     await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
     const next = await reopen(open, browser, offered);
     await next.restore();
     const added = [...objectsById(placed).keys()].filter(
@@ -1553,48 +1979,57 @@ describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
   }, 60_000);
 
   // Why: the offer stands until it is answered, and the creator may move
-  // a station meanwhile. Restore then puts back every offered pose but
-  // that station's: the moved one is live work and wins, every other is
-  // the draft's, its objects at their offsets from it.
-  it("while the offer stands, a station move and then Restore keep the other station's offered move", async () => {
-    const { browser, page } = await freshPage(open);
+  // a station meanwhile. The move waits for the answer: Restore puts back
+  // every offered pose and drops the move, saying so; made again it lands
+  // on top - the moved station where the creator put it, every other the
+  // draft's, its objects at their offsets from it.
+  it("while the offer stands, a station move waits, Restore keeps the offered move and drops the waiting one", async () => {
+    const { browser, page, opened } = await freshPage(open);
     await page.moveStation("st-b", { ...MOVED, lat: NORTH + 0.004 });
     const moved = page.shape();
     const offered = await reopen(open, browser, page);
     expect(offered.offer()).not.toBe("");
     await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    expect(offered.shape()).toEqual(opened);
     await offered.restore();
+    expect(offered.shape(), "the waiting move dropped").toEqual(moved);
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
     const shape = offered.shape();
     expect(stationsByKey(shape).get("station:st-b")).toBe(
       stationsByKey(moved).get("station:st-b"),
     );
     expect(objectsById(shape).get("b")).toBe(objectsById(moved).get("b"));
+    expect(stationsByKey(shape).get("station:st-a")).toBe(
+      JSON.stringify({ id: "st-a", geo: { ...MOVED, lat: NORTH + 0.003 } }),
+    );
   }, 60_000);
 
-  // Why: "Not now" keeps a moved station undecided, and an object of that
-  // station edited meanwhile is written where the page shows it, at the
-  // file's pose of its station; Restore then brings the moved station
-  // back, and the object away from it (both pages, no fault needed). A
-  // known gap, pinned so it is not forgotten: this turns red once such an
-  // object keeps its offset from its station, and then the property's
-  // `offStation` narrowing goes.
-  it.fails(
-    "known gap: after Not now, an edit of a moved station's object keeps it at its station",
-    async () => {
-      const { browser, page } = await freshPage(open);
-      await page.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
-      const offered = await reopen(open, browser, page);
-      await offered.decline();
-      await offered.edit("a", "The gate");
-      const next = await reopen(open, browser, offered);
-      await next.restore();
-      const shape = next.shape();
-      expect(entriesOf(shape).get("object:a")).toBe(
-        entriesOf(offered.shape()).get("object:a"),
-      );
-    },
-    60_000,
-  );
+  // Why: after "Not now" a moved station is undecided, and an edit of an
+  // object at it waits for the answer instead of being written where the
+  // page shows it (at the file's pose of its station). Restore brings the
+  // moved station back and drops the edit, saying so; made again it lands
+  // at the moved station, so the object keeps its offset from its station
+  // across the next open.
+  it("after Not now, an edit of a moved station's object waits, is dropped by Restore, and made again keeps it at its station", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    const offered = await reopen(open, browser, page);
+    await offered.decline();
+    await offered.edit("a", "The gate");
+    expect(offered.offer()).not.toBe("");
+    await offered.restore();
+    expect(captionIn(offered.shape(), "a")).not.toBe("The gate");
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    await offered.edit("a", "The gate");
+    const next = await reopen(open, browser, offered);
+    await next.restore();
+    const shape = next.shape();
+    expect(entriesOf(shape).get("object:a")).toBe(
+      entriesOf(offered.shape()).get("object:a"),
+    );
+    expect(entriesOf(shape).get("object:a")).toContain('"The gate"');
+  }, 60_000);
 
   // Why: a station move writes its objects' records and the settings
   // record one by one, so a tab closed between them brings an object back

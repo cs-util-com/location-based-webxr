@@ -30,6 +30,7 @@ import {
   TOWN_HALL,
   WRAPPED_PIN,
   captionOf,
+  deleteOfferedDraft,
   editText,
   expectCaption,
   GONE,
@@ -248,6 +249,81 @@ test("Not now keeps the earlier edits for the next open, and Delete it throws th
   await expect(fourth.locator(".toast.draft-offer")).toHaveCount(0);
 });
 
+/**
+ * Whether the page asks before it is left now: the page's own
+ * `beforeunload` listener run on a cancellable event, without leaving.
+ * @param {import("@playwright/test").Page} page
+ */
+function asksBeforeLeaving(page) {
+  return page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
+test("an edit waiting for the offer asks before the tab closes, and Delete it says it runs with every answer off", async ({
+  page,
+  context,
+}) => {
+  // Why: an edit made before the offer is answered waits in memory only -
+  // a closed tab would lose it without a word. And while "Delete it" runs
+  // (async-ui-feedback) it says so, and no second answer can start over it.
+  const buffer = await editorTour();
+  await page.goto("/edit.html");
+  await openFile(page, buffer, "editor-fixture.zip");
+  await editText(page, TOWN_HALL, "Kept in the browser");
+  await backedUp(page);
+  await page.close();
+  const next = await newEditorPage(context);
+  await openFile(next, buffer, "editor-fixture.zip");
+  const offer = next.locator(".toast.draft-offer");
+  await expect(offer).toContainText("1 change");
+  expect(await asksBeforeLeaving(next), "nothing waits yet").toBe(false);
+  // Held, so not yet applied: the edit hook reports no change.
+  await next.evaluate(
+    ({ id, text }) =>
+      // @ts-expect-error - the editor's dev-only test hook.
+      window.__tourEditor.edit((/** @type {any} */ session) =>
+        session.editText(id, text),
+      ),
+    { id: TOWN_HALL, text: "Waits for the answer" },
+  );
+  await expect(offer).toContainText("Your change waits for this choice");
+  expect(await asksBeforeLeaving(next), "an edit waits").toBe(true);
+  // The draft's files are removed only when the test lets them go.
+  await next.evaluate(() => {
+    const proto = FileSystemDirectoryHandle.prototype;
+    const original = proto.removeEntry;
+    /** @type {(() => void)[]} */
+    const queued = [];
+    proto.removeEntry = function (...args) {
+      return new Promise((resolve, reject) => {
+        queued.push(() => {
+          original.apply(this, args).then(resolve, reject);
+        });
+      });
+    };
+    // @ts-expect-error - read by the test below.
+    window.__letRemovesGo = () => {
+      proto.removeEntry = original;
+      for (const go of queued.splice(0)) go();
+    };
+  });
+  await offer.locator("button", { hasText: "Delete it" }).click();
+  await expect(
+    offer.locator("button", { hasText: "Deleting..." }),
+  ).toBeVisible();
+  await expect(offer.locator("button")).toHaveCount(3);
+  for (const button of await offer.locator("button").all()) {
+    await expect(button).toBeDisabled();
+  }
+  // @ts-expect-error - set above.
+  await next.evaluate(() => window.__letRemovesGo());
+  await expect(offer).toBeHidden();
+  await expectCaption(next, TOWN_HALL, "Waits for the answer");
+});
+
 test("a delivered download clears nothing: the original reopened still offers the edits", async ({
   page,
   context,
@@ -338,6 +414,9 @@ test("a download of a tour that carries a walk leaves it out by default, and kee
   await page.close();
   const next = await newEditorPage(context);
   await openFile(next, tour, "wrapped.zip");
+  // The lean download left the edit unsaved, so the second open offers it
+  // back, and an edit made before the answer waits for it: answered first.
+  await deleteOfferedDraft(next);
   await expect(fileItem(next, "keepWalk")).toHaveJSProperty("hidden", false);
   await fileCommand(next, "keepWalk");
   await expect(fileItem(next, "keepWalk")).toHaveAttribute(

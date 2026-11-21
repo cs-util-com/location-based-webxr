@@ -162,6 +162,11 @@ were here. What stays is the Finish's side:
     visit has seen. A held code's sightings dispatch about once per stable
     QR frame; a new pose of the same code, or a stored code's sighting, is
     shown at the next dispatch (as before the codes lived in the store).
+  - `CreatorSetup.creatorDraftDecided(): boolean` - the creator draft's
+    `readyForAr`, answered at once (always true on a visitor's page):
+    false keeps AR unstarted and says why (read, deletion or question).
+  - The leave guard's input carries `editWaits` (`draftGate.waiting()`):
+    an edit waiting for the draft question makes leaving ask first.
   - `CreatorSetup.startAuthorPipeline(): boolean` - validates the printed
     size (opening step 2 when it is unusable), creates the author tracking
     controller into `ctx.qrController`; false keeps AR unstarted.
@@ -306,10 +311,10 @@ were here. What stays is the Finish's side:
   - **Draft**: an edit is a record under the same id; a delete of a
     hosted object is `writeDraftDeletion`; the offer names changes and
     deletions (`restoreOfferText`); a restore replaces by id and brings
-    deletions back as tombstones, with live work on the same id winning.
-    The spent sweep and the discard skip ids changed live since the read
-    (`notLive`, `creator-draft.ts`): an edit keeps its id, so unlike a new placement its file
-    can be in the read's list.
+    deletions back as tombstones, the whole draft: every edit waits
+    while it is undecided (`draft-edit-gate.ts`), and lands after the
+    answer. The spent sweep and the discard skip only this page's visit
+    ids (`notLive`, `creator-draft.ts`).
   - **Overlay taps are not scene taps**: `beforexrselect` is cancelled on
     the panel (the PhysicsDemo pattern), so a tap on Delete does not also
     select what stands behind the button. The framework's reticle driver
@@ -344,6 +349,7 @@ const setup = wireCreatorSetup({
 });
 hooks.renderAuthorReadout = setup.renderAuthorReadout;
 hooks.startAuthorPipeline = setup.startAuthorPipeline;
+hooks.creatorDraftDecided = setup.creatorDraftDecided;
 ```
 
 ## Tests

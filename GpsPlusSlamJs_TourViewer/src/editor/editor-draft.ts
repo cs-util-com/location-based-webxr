@@ -40,7 +40,7 @@
  * it (or a build wrote the other value, the "built but never put in place"
  * walk), offered by a later open whose file does not carry it, spent by one
  * that does, carried along by a key move, and thrown away by "Delete it"
- * unless changed since the open. The value last set here is kept, and the
+ * (an edit made meanwhile waits for the answer). The value last set here is kept, and the
  * keep is decided again whenever a build or a landed write changes what
  * it is measured against (M1b-2 milestone review #1: a setting turned
  * back while a save builds). No base, deliberately: a file that differs
@@ -126,10 +126,7 @@ import {
   parseSettingsRecord,
   settingsRecordText,
   SETTINGS_KEY,
-  withCreated,
   withFiledNarration,
-  undecidedOf,
-  withUndecidedPoses,
 } from "../tour-document-draft.js";
 
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
@@ -490,8 +487,7 @@ function settingsWhatOf(
 }
 
 /**
- * Said once an offer was restored: what came back, or - when nothing did,
- * live work having won - why, in the offer's own terms (M1b-2 milestone
+ * Said once an offer was restored: what came back, or - when nothing did - why, in the offer's own terms (M1b-2 milestone
  * review #6).
  */
 export function restoredLine(
@@ -772,13 +768,8 @@ interface EditorDraftOpened {
 /** The settings record's write (QR-first M1b-2). */
 interface DraftSettingsWrites {
   /** The tour's settings as they stand now: kept while the file does not
-   *  carry them, the record removed once it does.
-   *  `movedStations`: the stations whose pose moved here since the open,
-   *  whose poses in `settings` are live work. */
-  saveSettings(
-    settings: EditorTourSettings,
-    movedStations: readonly string[],
-  ): Promise<boolean>;
+   *  carry them, the record removed once it does. */
+  saveSettings(settings: EditorTourSettings): Promise<boolean>;
 }
 
 /** The writes and a save's two notes for one opened tour (E2c review #6,
@@ -918,9 +909,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   /** Per id, this page's latest change since the opened file: the object,
    *  or null for a deletion. */
   const pending = new Map<string, TourObject | null>();
-  /** Every id this page wrote since the open: live work, which wins over
-   *  the offer and is never rejected with it. */
-  const touched = new Set<string>();
   /** The bases as written (a mirror, for a key move). */
   const bases = new Map<string, DraftBase>();
   /** The offer, until restored or deleted ("Not now" keeps it). */
@@ -944,25 +932,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   const pendingPictures = new Map<string, Blob>();
   /** The settings record this page keeps (THE SETTINGS), or null. */
   let settingsPending: EditorTourSettings | null = null;
-  /** The settings as last set here since the open, or null: live work,
-   *  which wins over the offer and is never thrown away with it. Kept
+  /** The settings as last set here since the open, or null. Kept
    *  whether or not its record is, so a build or a landed write can decide
    *  the keep again (M1b-2 milestone review #1). */
   let settingsWanted: EditorTourSettings | null = null;
-  /** The stations whose pose moved here since the open, as `settingsWanted`
-   *  was set: their poses in it are live work. */
-  let settingsMoved: readonly string[] = [];
-  /** The offered record's station poses while nobody decided on them
-   *  (offered, or "Not now"): every record this page writes carries them
-   *  for the stations not moved here, so a later move or rename never
-   *  costs a declined move. Cleared by Restore and by a "Delete it" whose
-   *  rejection landed. */
-  let undecidedPoses: readonly StationPose[] | null = null;
-  /** The offered record's created stations the opened file lacks, by the
-   *  same rule: a live record names only this page's own, so every record
-   *  written before the decision adds them (the page's own frame of an id
-   *  wins), or the next open drops the objects that name them. */
-  let undecidedCreated: readonly StationFrame[] | null = null;
   /** The manifests builds wrote since the open (their settings, and the
    *  images a recorded cover is measured against): a change back to the
    *  file's value still differs from a built copy that may be put in
@@ -984,20 +957,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
    *  record must now be written (`settingsPending`) or removed (null). */
   function redecideSettings(): boolean {
     if (settingsWanted === null) return false;
-    const wanted = posedRecord(settingsWanted);
-    const next = keepSettings(wanted) ? wanted : null;
+    const next = keepSettings(settingsWanted) ? settingsWanted : null;
     if (sameRecord(next, settingsPending)) return false;
     settingsPending = next;
     return true;
-  }
-  /** `settings` with the undecided poses of the stations not moved here,
-   *  and the undecided created stations: a record holding them is not the
-   *  file's, so it is kept. */
-  function posedRecord(settings: EditorTourSettings): EditorTourSettings {
-    return withCreated(
-      withUndecidedPoses(settings, undecidedPoses, settingsMoved),
-      undecidedCreated,
-    );
   }
   let told = false;
   let generation = 0;
@@ -1451,13 +1414,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     files.clear();
     filesHere.clear();
     filesNotKept.clear();
-    touched.clear();
     bases.clear();
     settingsPending = null;
     settingsWanted = null;
-    settingsMoved = [];
-    undecidedPoses = null;
-    undecidedCreated = null;
     built.length = 0;
     if (s === null) return;
     // After its queued writes (E2c review #6): until they land, another
@@ -1524,26 +1483,24 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     }
     // An offer not yet answered (or put off with "Not now") moves too.
     if (offer !== null) {
+      // Every edit waits while it is undecided (`draft-edit-gate.ts`), so
+      // none of its ids is this page's.
       for (const object of offer.objects) {
-        if (!touched.has(object.id)) {
-          carried.push(
-            carry(
-              next,
-              object.id,
-              object,
-              bases.get(object.id),
-              offer.pictures?.get(object.id),
-              waitFor(object),
-            ),
-          );
-        }
+        carried.push(
+          carry(
+            next,
+            object.id,
+            object,
+            bases.get(object.id),
+            offer.pictures?.get(object.id),
+            waitFor(object),
+          ),
+        );
       }
       for (const id of offer.deleted) {
-        if (!touched.has(id)) {
-          carried.push(carry(next, id, null, undefined, undefined));
-        }
+        carried.push(carry(next, id, null, undefined, undefined));
       }
-      if (offer.settings !== undefined && settingsWanted === null) {
+      if (offer.settings !== undefined) {
         carried.push(writeSettingsIn(next, offer.settings, filesIn));
       }
     }
@@ -1748,9 +1705,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             (notes > 0 && addsStations(storedSettings, file)))
             ? storedSettings
             : undefined;
-        const undecided = undecidedOf(settings, file.stations ?? []);
-        undecidedPoses = undecided.poses;
-        undecidedCreated = undecided.created;
         if (
           settingsText !== undefined &&
           settings === undefined &&
@@ -1951,8 +1905,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           live() ? api.forgetDeletion(id) : Promise.resolve(true),
         forgetObject: (id) =>
           live() ? api.forgetObject(id) : Promise.resolve(),
-        saveSettings: (settings, moved) =>
-          live() ? api.saveSettings(settings, moved) : Promise.resolve(true),
+        saveSettings: (settings) =>
+          live() ? api.saveSettings(settings) : Promise.resolve(true),
         saveAsset: (asset, blob) =>
           live() ? api.saveAsset(asset, blob) : Promise.resolve(true),
         holdsFile: (id) => api.holdsFile(id),
@@ -1975,15 +1929,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
 
     restored() {
       offer = null;
-      undecidedPoses = null;
-      undecidedCreated = null;
-      // Decided: a record written before with them is written again as the
-      // page set it (the phone clears its holder before the restore's own
-      // write, to the same end).
-      const s = space;
-      if (s !== null && redecideSettings()) {
-        void writeSettingsIn(s, settingsPending);
-      }
     },
 
     async discard() {
@@ -1991,10 +1936,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       const was = offer;
       offer = null;
       if (s === null || was === null) return true;
-      // Minus what was edited since the open: that is live work now.
-      const ids = [...was.objects.map((o) => o.id), ...was.deleted].filter(
-        (id) => !touched.has(id),
-      );
+      // Every edit waits while the draft is undecided
+      // (`draft-edit-gate.ts`), so none of these is this page's work.
+      const ids = [...was.objects.map((o) => o.id), ...was.deleted];
       const before = s.rejected;
       s.rejected = [...new Set([...before, ...ids])];
       // THE COMMIT POINT: once the meta rejects them, the next read
@@ -2009,26 +1953,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         return false;
       };
       if (!(await writeMeta(s))) return fail();
-      // The offered settings record goes too, unless changed since the
-      // open (live work): awaited, inside the namespace's work, so "Delete
-      // it" is done only once it went, and a removal that did not land
-      // fails it like the meta (M1b-2 milestone review #4).
-      if (
-        was.settings !== undefined &&
-        settingsWanted === null &&
-        !(await settingsIn(s, null))
-      ) {
+      // The offered settings record goes too: awaited, inside the
+      // namespace's work, so "Delete it" is done only once it went, and a
+      // removal that did not land fails it like the meta.
+      if (was.settings !== undefined && !(await settingsIn(s, null))) {
         return fail();
-      }
-      // Committed: the undecided poses are rejected with the draft, so no
-      // later record carries them. Not before the removal above: a refused
-      // one arms the offer again, its undecided poses with it.
-      undecidedPoses = null;
-      undecidedCreated = null;
-      // Changed since the open: the record is that live work's, written
-      // again without the rejected poses it carried.
-      if (settingsWanted !== null && s === space && redecideSettings()) {
-        void writeSettingsIn(s, settingsPending);
       }
       // The offered files go with it, minus those brought in since.
       dropFiles(
@@ -2156,7 +2085,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       pending.set(id, object);
       if (blob === undefined) pendingPictures.delete(id);
       else pendingPictures.set(id, blob);
-      touched.add(id);
       const seen = seenKey(id);
       if (seen !== undefined) {
         bases.set(id, withBaseKey(bases.get(id), "seen", seen));
@@ -2178,12 +2106,10 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     },
     saveDeletion(id) {
       pending.set(id, null);
-      touched.add(id);
       return write(id, (store) => writeDraftDeletion(store, id));
     },
     forgetDeletion(id) {
       if (pending.get(id) === null) pending.delete(id);
-      touched.add(id);
       return write(id, (store) => removeDraftDeletion(store, id));
     },
     saveAsset(asset, blob) {
@@ -2248,14 +2174,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       );
     },
     holdsOriginal: (id) => files.get(id)?.original?.blob !== undefined,
-    saveSettings(settings, movedStations) {
+    saveSettings(settings) {
       settingsWanted = settings;
-      settingsMoved = movedStations;
-      // With the undecided poses of the stations not moved here; kept
-      // while the file on disk differs, or a build wrote other values
+      // Kept while the file on disk differs, or a build wrote other values
       // (THE SETTINGS); else the record goes.
-      const record = posedRecord(settings);
-      settingsPending = keepSettings(record) ? record : null;
+      settingsPending = keepSettings(settings) ? settings : null;
       const s = space;
       return s === null
         ? Promise.resolve(true)
@@ -2263,7 +2186,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
     },
     forgetObject(id) {
       pending.delete(id);
-      touched.add(id);
       return write(id, (store) =>
         removeDraftObject(store, id).then(() => true),
       ).then(() => undefined);

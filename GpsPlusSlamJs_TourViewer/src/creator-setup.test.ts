@@ -63,6 +63,14 @@ import {
   withCaption,
 } from "./test-support/tour-of.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
+import {
+  DRAFT_BEING_READ,
+  DRAFT_DELETING,
+  DRAFT_EDIT_MAKE_AGAIN,
+  DRAFT_EDIT_NOT_APPLIED,
+  DRAFT_EDIT_WAITS,
+} from "./draft-edit-gate.js";
+import { DRAFT_DECIDE_BEFORE_AR, DRAFT_DELETE_RUNS } from "./creator-draft.js";
 import { manifestToWrite } from "./tour-document.js";
 
 /** One fake element: the properties this module writes, and a click it can
@@ -494,7 +502,7 @@ describe("rejecting a draft deletes what was rejected, and nothing else", () => 
     );
 
     // This session places, AFTER the draft was read. In the app this is
-    // `recordPlacement`; here the file is written the same way it would be.
+    // `writeObject`; here the file is written the same way it would be.
     await store.put(objectKey("mine"), recordText(pin("mine")));
 
     dom.draftDiscard.click();
@@ -638,7 +646,7 @@ describe("the rejection is committed by the meta write", () => {
     // deleted. Without a word on screen they carry on believing the draft
     // is gone, and meet it again on the next open with no explanation.
     // This module has exactly one channel for a refused write and
-    // `recordPlacement` already uses it for the same underlying condition -
+    // `draftWrite` already uses it for the same underlying condition -
     // the store refused a `put`. A discard that fails silently is that
     // condition reported nowhere (PR #455 review, CodeRabbit).
     const { store, files } = memoryStore(
@@ -1299,7 +1307,7 @@ describe("a placement reaches the draft", () => {
     // Why this test matters: this is THE write the whole feature exists
     // for - the one that survives the OS killing the tab mid-walk - and
     // until the mutation sweep of 2026-09-11 the entire body of
-    // `recordPlacement` could be deleted with every unit test still
+    // the placement's draft write could be deleted with every unit test still
     // green. Sixteen tests covered what happens to a draft AFTERWARDS and
     // none covered it being made.
     const { store, files } = memoryStore();
@@ -1509,7 +1517,7 @@ describe("a placement reaches the draft", () => {
       "but nothing may be written to the closed tour's folder",
     ).toBe(before);
     // Deliberately NOT asserted: that the creator is warned. In this branch
-    // `recordPlacement` sets the note synchronously and the pin handler's
+    // `draftWrite` sets the note synchronously and the pin handler's
     // own "Pin placed" note overwrites it two lines later, so the warning
     // never reaches the screen - and the once-per-session flag is burnt on
     // the way past. It is not reachable in the app today (the same close
@@ -1534,6 +1542,162 @@ describe("a draft offered while the AR session runs", () => {
     await settle();
     expect(dom.draftOffer.hidden).toBe(false);
     expect(String(ctx.placementNote)).toMatch(/restore it after leaving AR/);
+  });
+});
+
+describe("a creator's AR entry asks about the draft first", () => {
+  function drafted() {
+    return memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
+    });
+  }
+
+  // Why this test matters: in AR the offer is out of sight, so an edit
+  // made there would wait for an answer nobody can give, and Restore
+  // would drop it. The start of AR asks first: while the draft is
+  // undecided (here put off with "Not now") AR stays unstarted, the offer
+  // shows again with a line saying why, and once Restore decided it AR
+  // may start.
+  it("keeps AR unstarted while the draft is undecided, and says why", async () => {
+    const { ctx, dom, setup } = wire(drafted().store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    dom.draftDismiss.click();
+    expect(dom.draftOffer.hidden).toBe(true);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(dom.draftOffer.hidden).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_DECIDE_BEFORE_AR);
+    dom.draftRestore.click();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  /** A draft store open that waits until the test lets it go. */
+  function gatedOpen() {
+    let open: () => void = () => undefined;
+    let fail: (e: Error) => void = () => undefined;
+    const openGate = new Promise<void>((resolve, reject) => {
+      open = resolve;
+      fail = reject;
+    });
+    return { openGate, open, fail };
+  }
+
+  // Why this test matters: a draft still being read at the tap may turn
+  // out to hold work, yet the start must not wait for it either - WebXR
+  // starts only inside the tap's own user activation, and an await of an
+  // unknown length spends it (a second tap meanwhile built a second
+  // pipeline). So the tap says the read runs and starts nothing; the next
+  // tap, once the read ended, decides on what it found.
+  it("says the draft is being read and starts nothing until the read ends", async () => {
+    const gate = gatedOpen();
+    const { ctx, dom, setup } = wire(drafted().store, {
+      openGate: gate.openGate,
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided(), "still reading").toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    gate.open();
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_DECIDE_BEFORE_AR);
+  });
+
+  // Why: with no draft the read's end lets AR start, and the note that
+  // said it was reading goes with it - left standing it would claim a
+  // read that is over.
+  it("lets AR start once a read found no draft, and the reading note goes", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(memoryStore().store, {
+      openGate: gate.openGate,
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    gate.open();
+    await settle();
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: a read that throws offers nothing; its reading note must go too,
+  // or it stands over a page that is no longer reading anything.
+  it("clears the reading note when the read throws", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(memoryStore().store, {
+      openGate: gate.openGate,
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    gate.fail(new Error("no private file system"));
+    await settle();
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: AR's readiness is the tour open NOW. A tour opened while the
+  // first one's draft was read has its own read: the first one's end
+  // neither clears the note nor lets AR start, and its draft is never
+  // offered for the second tour.
+  it("follows the tour opened during the read, not the one before it", async () => {
+    const gate = gatedOpen();
+    const empty = memoryStore().store;
+    // The second tour's read outlasts the first one's: its store answers
+    // only once the test lets it.
+    const later = gatedOpen();
+    const slow: DraftFileStore = {
+      ...empty,
+      getText: (key) => later.openGate.then(() => empty.getText(key)),
+      keys: () => later.openGate.then(() => empty.keys()),
+    };
+    const { ctx, dom, setup } = wire(drafted().store, {
+      openGate: gate.openGate,
+      storeFor: (key) => (key.includes("other-tour") ? slow : drafted().store),
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    ctx.openGeneration += 1;
+    setup.presentDraftForTour(OTHER_TOUR);
+    gate.open();
+    await settle();
+    // The first tour's read ended; the open tour's still runs, and its
+    // note stands.
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    expect(setup.creatorDraftDecided(), "the open tour still reads").toBe(
+      false,
+    );
+    later.open();
+    await settle();
+    expect(
+      dom.draftOfferText.textContent,
+      "the first tour's draft is not offered",
+    ).toBe("");
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: a tour closed while its draft was read leaves no read running;
+  // the note that said one ran goes when the read ends.
+  it("clears the reading note when the tour closed during the read", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(drafted().store, { openGate: gate.openGate });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    setup.resetFinishStep();
+    gate.open();
+    await settle();
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: with no draft to decide the start goes on at once.
+  it("lets AR start with no draft", async () => {
+    const { setup } = wire(memoryStore().store);
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.creatorDraftDecided()).toBe(true);
   });
 });
 
@@ -1628,6 +1792,25 @@ describe("work made before the tour's draft opened reaches it", () => {
       true,
     );
     expect(setup.leaveQuestion()).toContain("holds no backup copy");
+  });
+
+  // Why this test matters: an edit that waits for the draft question is
+  // held in memory only - neither the draft nor a tour file has it - so a
+  // reload or a closed tab must ask first, as it does for any work no
+  // backup holds.
+  it("asks before leaving while an edit waits for the draft question", async () => {
+    const { ctx, setup } = wire(memoryStore().store, { placeable: true });
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.leaveNeedsConfirm(), "nothing waits").toBe(false);
+    ctx.store.draftGate.hold(() => undefined);
+    expect(setup.renameTour("Castle walk")).toBeNull();
+    expect(ctx.store.draftGate.waiting()).toBe(true);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+    expect(setup.leaveQuestion()).toMatch(/waits for your answer/);
+    ctx.store.draftGate.release();
+    expect(setup.leaveNeedsConfirm(), "landed, in the draft").toBe(false);
   });
 
   it("keeps asking before leaving while the settled tour's draft is still opening", async () => {
@@ -1825,17 +2008,17 @@ describe("work made before the tour's draft opened reaches it", () => {
     expect(setup.leaveNeedsConfirm()).toBe(true);
   });
 
-  it("writes the placements into the draft once it opens", async () => {
+  // Why: placing waits for the tour's settle, which presents the draft in
+  // the same step (`archive-open.ts`); a pin placed while the draft is
+  // still being read waits for the read and is written into it.
+  it("writes a placement made while the draft is read into it", async () => {
     const { store, files } = memoryStore();
     const { ctx, dom, setup } = wire(store, { placeable: true });
+    setup.presentDraftForTour(TOUR);
     dom.pinLabel.value = "Gate";
     dom.pinSave.click();
     await settle();
     const id = String(ctx.tourDocument.entries()[0]?.object.id);
-    expect(files.has(objectKey(id)), "nothing to write to yet").toBe(false);
-
-    setup.presentDraftForTour(TOUR);
-    await settle();
     expect(files.has(objectKey(id))).toBe(true);
   });
 
@@ -2140,37 +2323,57 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     doc.saveEnded(generation);
   }
 
-  it("Restore after a Finish leaves a note deleted here deleted", async () => {
+  // Why: a delete made over the undecided draft waits, and Restore drops
+  // the delete, made before the draft came back, and says so; made again
+  // and written by a Finish, it stays deleted.
+  it("Restore drops a delete that waited; made again and finished, it stays deleted", async () => {
     const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.remove("hosted", "the live delete");
+    await settle();
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      ctx.tourDocument.objects().map((o) => o.object.id),
+      "the waiting delete was dropped",
+    ).toContain("hosted");
     ctx.tourDocument.remove("hosted", "the live delete");
     await settle();
     finishLanded(ctx);
     expect(ctx.tourDocument.deleted(), "the Finish wrote it").toEqual([]);
-
-    dom.draftRestore.click();
     expect(
       ctx.tourDocument.objects().map((o) => o.object.id),
       "the delete is live work, newer than the draft",
     ).not.toContain("hosted");
   });
 
-  it("Restore after a Finish keeps a note changed here as it was changed", async () => {
+  // Why: the same for an edit: dropped at Restore with the note, made
+  // again and written by a Finish, it stays as changed here.
+  it("Restore drops an edit that waited; made again and finished, it stays as changed", async () => {
     const { ctx, dom } = await offeredEdit();
+    ctx.tourDocument.edit(LIVE, "the live edit");
+    await settle();
+    dom.draftRestore.click();
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
+      "the draft's value is back",
+    ).not.toMatchObject({ caption: LIVE.caption });
     ctx.tourDocument.edit(LIVE, "the live edit");
     await settle();
     finishLanded(ctx);
     expect(ctx.tourDocument.entries(), "the Finish wrote it").toEqual([]);
-
-    dom.draftRestore.click();
     // (As written: the stored copy names its station.)
     expect(
       ctx.tourDocument.objects().find((o) => o.object.id === "hosted")?.object,
     ).toMatchObject({ caption: LIVE.caption });
   });
 
-  // Why: Restore leaves out what live work outranks, but its note counted
-  // the whole offer - "1 change restored" for an edit it had skipped.
-  it("Restore's note counts what it put back, not what was offered", async () => {
+  // Why: an edit made while the offer stands waits for the answer, so
+  // Restore puts the whole draft back and its note counts all of it. The
+  // edit that waited was built before the draft came back: replayed, it
+  // would write its old values over the draft's, so it is dropped, the
+  // note says to make it again, and made again it lands.
+  it("Restore's note counts the whole draft, and drops the edit that waited, saying so", async () => {
     const OTHER_PIN = pin("other");
     const disk = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
@@ -2186,17 +2389,28 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(page.dom.draftOfferText.textContent).toContain("1 deletion");
     page.ctx.tourDocument.edit(LIVE, "the live edit");
     await settle();
+    expect(page.dom.draftOfferText.textContent).toContain(DRAFT_EDIT_WAITS);
+    expect(
+      page.ctx.tourDocument.entries().map((p) => p.object),
+      "the edit waits",
+    ).not.toContainEqual(inItsStation(LIVE));
 
     page.dom.draftRestore.click();
+    expect(page.ctx.placementNote).toContain("1 change");
     expect(page.ctx.placementNote).toContain("1 deletion restored");
-    expect(page.ctx.placementNote).not.toContain("change");
+    expect(page.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    expect(
+      page.ctx.tourDocument.entries().map((p) => p.object),
+      "the waiting edit is dropped",
+    ).not.toContainEqual(inItsStation(LIVE));
+    page.ctx.tourDocument.edit(LIVE, "the live edit");
+    expect(page.ctx.tourDocument.entries().map((p) => p.object)).toContainEqual(
+      inItsStation(LIVE),
+    );
 
-    // Everything outranked: nothing is claimed, the code least of all.
+    // No code was measured: none is claimed.
     const all = await offeredEdit();
-    all.ctx.tourDocument.edit(LIVE, "the live edit");
-    await settle();
     all.dom.draftRestore.click();
-    expect(all.ctx.placementNote).toContain("Nothing was restored");
     expect(all.ctx.placementNote).not.toContain("measured position");
   });
 
@@ -2215,11 +2429,10 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   });
 
   // Why: a live edit's record does not outrank a tombstone an older draft
-  // left for the same id (`readDraft` lets the tombstone win), and the
-  // edited id is live work, so "Delete it" does not sweep it either. The
-  // reload then offered to delete the note the creator had just edited,
-  // and a crash after the edit brought it back as deleted. A live record
-  // takes its id's tombstone away after it, as an undo of a delete does.
+  // left for the same id (`readDraft` lets the tombstone win). An edit
+  // made over the offered deletion waits for the answer; after "Delete it"
+  // it lands and its record is the id's, so a reload offers the change it
+  // is, never a delete.
   it("a note edited here over an offered deletion is not offered as deleted again", async () => {
     const disk = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
@@ -2235,9 +2448,8 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     await settle();
     expect(
       disk.files.has(deletedKey("hosted")),
-      "the live record took the tombstone away",
-    ).toBe(false);
-    finishLanded(page.ctx);
+      "the edit waits: the offered deletion is untouched",
+    ).toBe(true);
     page.dom.draftDiscard.click();
     await settle();
     expect(disk.files.has(deletedKey("hosted"))).toBe(false);
@@ -2291,17 +2503,17 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   });
 
   it("does not sweep a hosted object's file the creator edited while the draft was being read", async () => {
-    // A spent draft deletes what the read returned. A new placement can
-    // never be in that list (its id is fresh) - but an edit keeps its id,
-    // so the sweep would take the live edit's file with it.
+    // A spent draft deletes what the read returned. An edit keeps its id,
+    // so a sweep that ran after it would take the live edit's file with
+    // it: the edit waits for the read, and lands after the sweep.
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("hosted")]: recordText(HOSTED),
     });
     const { ctx, setup } = wire(store);
     ctx.tourDocument.open(tourOf([HOSTED]));
-    ctx.tourDocument.edit(EDITED, "the live edit");
     setup.presentDraftForTour(TOUR);
+    ctx.tourDocument.edit(EDITED, "the live edit");
     await settle();
 
     expect(files.has(objectKey("hosted"))).toBe(true);
@@ -2309,10 +2521,9 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
     expect(parseDraftObject(String(files.get(objectKey("hosted"))))).toEqual(
       inItsStation(EDITED),
     );
-    const meta = JSON.parse(String(files.get(META_KEY))) as {
-      rejected?: string[];
-    };
-    expect(meta.rejected ?? []).not.toContain("hosted");
+    expect(ctx.tourDocument.entries().map((p) => p.object)).toEqual([
+      inItsStation(EDITED),
+    ]);
   });
 });
 
@@ -2448,6 +2659,10 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps an edit of an id a discard rejected, made after a reload", async () => {
     const { store } = memoryStore(DISCARDED_ON_DISK);
     const second = await reopen(store);
+    // Decided first: an edit made over the undecided draft would wait,
+    // and Restore would drop it.
+    second.dom.draftRestore.click();
+    await settle();
     second.dom.objectList.listHandlers!.editText("hosted", NEW_TEXT);
     await settle();
 
@@ -2461,6 +2676,8 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
   it("keeps a deletion of an id a discard rejected, made after a reload", async () => {
     const { store } = memoryStore(DISCARDED_ON_DISK);
     const second = await reopen(store);
+    second.dom.draftRestore.click();
+    await settle();
     second.dom.objectList.listHandlers!.remove("hosted");
     await settle();
 
@@ -2556,32 +2773,92 @@ describe("the order of the draft's writes (M4 review #1, #2 and #7)", () => {
     expect(later.dom.draftOffer.hidden).toBe(true);
   });
 
-  it("writes an edit made while the draft opened over the older edit the draft held", async () => {
+  // Why: an edit made while the draft is read waits for the answer: the
+  // older edit the draft held stays on disk until then. Restore keeps the
+  // draft's value and drops the waiting edit (it was built before the
+  // draft came back); made again, it lands over the draft's.
+  it("keeps the draft's older edit at Restore, drops the edit that waited, and writes it once made again", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("hosted")]: recordText(OLDER),
     });
-    const { ctx, setup } = wire(store);
+    const { ctx, dom, setup } = wire(store);
     ctx.tourDocument.open(PUBLISHED);
-    // Made before the draft namespace opened: nothing to write it to yet.
-    ctx.tourDocument.edit(EDITED, "the live edit");
     setup.presentDraftForTour(TOUR);
+    ctx.tourDocument.edit(EDITED, "the live edit");
     await settle();
+    expect(dom.draftOfferText.textContent).toContain(DRAFT_EDIT_WAITS);
+    expect(onDisk(files, "hosted"), "no edit lands undecided").toEqual(OLDER);
 
+    dom.draftRestore.click();
+    await settle();
+    expect(onDisk(files, "hosted"), "the draft's value stays").toMatchObject({
+      caption: OLDER.caption,
+    });
+    expect(ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    await settle();
     expect(onDisk(files, "hosted")).toEqual(EDITED);
   });
 
-  it("writes a deletion made while the draft opened over the older edit the draft held", async () => {
+  // Why: "Not now" applies nothing, so an edit that waited is cancelled;
+  // the creator is told, never left to find it missing.
+  it("Not now drops an edit that waited and says it was not applied", async () => {
     const { store, files } = memoryStore({
       [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
       [objectKey("hosted")]: recordText(OLDER),
     });
-    const { ctx, setup } = wire(store);
+    const { ctx, dom, setup } = wire(store);
     ctx.tourDocument.open(PUBLISHED);
-    ctx.tourDocument.remove("hosted", "the hosted pin");
     setup.presentDraftForTour(TOUR);
     await settle();
+    dom.draftDismiss.click();
+    expect(ctx.placementNote, "nothing waited").not.toBe(
+      DRAFT_EDIT_NOT_APPLIED,
+    );
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    dom.draftDismiss.click();
+    await settle();
+    expect(ctx.placementNote).toBe(DRAFT_EDIT_NOT_APPLIED);
+    expect(onDisk(files, "hosted")).toEqual(OLDER);
+  });
 
+  // Why: an edit made before the draft read finished waits with no offer
+  // on screen yet; a short note says the page is reading, so the edit
+  // seemingly doing nothing is explained.
+  it("says it is reading saved work when an edit waits before the offer", async () => {
+    let open: () => void = () => undefined;
+    const openGate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: recordText(OLDER),
+    });
+    const { ctx, dom, setup } = wire(store, { openGate });
+    ctx.tourDocument.open(PUBLISHED);
+    setup.presentDraftForTour(TOUR);
+    ctx.tourDocument.edit(EDITED, "the live edit");
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    open();
+    await settle();
+    expect(dom.draftOfferText.textContent).toContain(DRAFT_EDIT_WAITS);
+  });
+
+  it("writes a deletion made while the draft opened over the older edit the draft held, once Delete it decided it", async () => {
+    const { store, files } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("hosted")]: recordText(OLDER),
+    });
+    const { ctx, dom, setup } = wire(store);
+    ctx.tourDocument.open(PUBLISHED);
+    setup.presentDraftForTour(TOUR);
+    ctx.tourDocument.remove("hosted", "the hosted pin");
+    await settle();
+    expect(files.has(deletedKey("hosted")), "the deletion waits").toBe(false);
+
+    dom.draftDiscard.click();
+    await settle();
     expect(files.has(deletedKey("hosted"))).toBe(true);
     expect(files.has(objectKey("hosted"))).toBe(false);
   });
@@ -3038,10 +3315,10 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     );
   });
 
-  it("keeps a station this page moved over the draft's older pose", async () => {
-    // Live work is newer than any draft (as for objects, M4 review #2):
-    // a station moved before the draft opened is written over the stored
-    // record, and a restore does not move it back.
+  it("keeps the draft's older pose at Restore, drops the move that waited, and keeps the move made again", async () => {
+    // A station moved while the draft is read waits for the answer;
+    // Restore puts the draft's older pose back and drops the move (built
+    // before the draft came back), saying so; made again, it lands.
     const OLDER = { ...MOVED, lat: 47.5002 };
     const { store, files } = memoryStore({
       ...metaOnly(),
@@ -3049,8 +3326,15 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     });
     const page = wire(store);
     page.ctx.tourDocument.open(PUBLISHED);
-    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
     page.setup.presentDraftForTour(TOUR);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
+    expect(page.dom.draftOffer.hidden, "the older pose is offered").toBe(false);
+    page.dom.draftRestore.click();
+    await settle();
+    expect(stationGeo(page), "the draft's pose stays").toEqual(OLDER);
+    expect(page.ctx.placementNote).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
     await settle();
 
     const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
@@ -3061,10 +3345,9 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
   });
 
   it("offers the other stations' poses beside a station this page moved, and restores them", async () => {
-    // Why: a station moved here outranks the draft's pose for THAT station
-    // only. The open counted no stored pose as work once any station had
-    // moved, so the draft read as spent: no offer, and the undecided poses
-    // of the other stations held on with nothing to decide them.
+    // Why: a station moved while the offer stands must not make the draft
+    // read as spent; the move waits, Restore puts every offered pose back
+    // and drops the move, which made again lands.
     const OTHER = stationIdOf("other");
     const OTHER_MOVED = { ...MOVED, lat: 47.5005 };
     const TWO = tourOf([HOSTED, pin("other")]);
@@ -3077,17 +3360,23 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     });
     const page = wire(store);
     page.ctx.tourDocument.open(TWO);
-    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
     page.setup.presentDraftForTour(TOUR);
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
     await settle();
 
-    expect(page.dom.draftOffer.hidden, "the other pose is work").toBe(false);
-    expect(page.dom.draftOfferText.textContent).toContain("1 change");
+    expect(page.dom.draftOffer.hidden, "the poses are work").toBe(false);
+    expect(page.dom.draftOfferText.textContent).toContain("2 changes");
     page.dom.draftRestore.click();
     await settle();
     const geoOf = (id: string) =>
       page.ctx.tourDocument.state().stations.find((s) => s.id === id)?.geo;
-    expect(geoOf(STATION), "the live move wins").toEqual(MOVED);
+    expect(geoOf(STATION), "the draft's pose is back").toEqual({
+      ...MOVED,
+      lat: 47.5002,
+    });
+    page.ctx.tourDocument.moveStation(STATION, MOVED, "a station");
+    await settle();
+    expect(geoOf(STATION), "the move made again landed").toEqual(MOVED);
     expect(geoOf(OTHER), "the offered pose is back").toEqual(OTHER_MOVED);
     const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
       stations?: { id: string; geo: unknown }[];
@@ -3162,26 +3451,26 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     ).toMatchObject({ title: "Castle walk" });
   });
 
+  // Why: a write of the record still queued when the tour closes must
+  // write what the tour held when it was issued: the restored pose and
+  // the last name, not the closed (empty) state.
   it("a settings write queued for a tour that then closed keeps that tour's poses", async () => {
-    // Why (the r880 fix re-review, L2): the undecided poses were one
-    // variable for the page, read when the write RUNS - so a rename still
-    // queued when the tour closed read the closed state (no poses), and
-    // the draft lost the moved station.
     const { store, files, releaseHeldKeys } = memoryStore(
       { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
       { holdKeys: (key) => key === SETTINGS_KEY },
     );
     const page = await opened(store);
     expect(page.dom.draftOffer.hidden).toBe(false);
+    page.dom.draftRestore.click();
     expect(page.setup.renameTour("Castle walk")).toBeNull();
     expect(page.setup.renameTour("Castle walk two")).toBeNull();
     await settle();
-    // The tour closes while the second write waits behind the first.
+    // The tour closes while the writes wait behind each other.
     page.setup.resetFinishStep();
-    releaseHeldKeys();
-    await settle();
-    releaseHeldKeys();
-    await settle();
+    for (let i = 0; i < 4; i += 1) {
+      releaseHeldKeys();
+      await settle();
+    }
 
     expect(storedPose(files), "the closed tour's pose kept").toEqual(MOVED);
     expect(
@@ -3279,11 +3568,10 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     );
   });
 
-  it("a Delete it that lands after the tour closed keeps a rename made after the tap", async () => {
-    // Why: the other side of the test above. A rename between the tap and
-    // the close is live work written into the record; after the close
-    // there is no document left to tell, so the removal is skipped rather
-    // than taking the name with it.
+  // Why: "Delete it" deletes the draft, then applies the edit that waited
+  // for it: a rename made while the removal runs lands after it, in the
+  // record, and is never taken with the draft.
+  it("a rename made while Delete it runs waits for it, and lands after it", async () => {
     const { store, files, releaseHeldKeys } = memoryStore(
       { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
       { holdKeys: (key) => key === META_KEY },
@@ -3292,20 +3580,37 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     page.ctx.tourDocument.open(PUBLISHED);
     page.setup.presentDraftForTour(TOUR);
     await settle();
+    const label = page.dom.draftDiscard.textContent;
     page.dom.draftDiscard.click();
     await settle();
+    expect(page.dom.draftRestore.disabled, "in progress").toBe(true);
+    expect(page.dom.draftDiscard.textContent, "says it runs").toBe(
+      DRAFT_DELETING,
+    );
+    // AR waits for the deletion, and says that is what it waits for.
+    expect(page.setup.creatorDraftDecided()).toBe(false);
+    expect(page.ctx.placementNote).toBe(DRAFT_DELETE_RUNS);
     expect(page.setup.renameTour("Castle walk")).toBeNull();
     await settle();
-    page.setup.resetFinishStep();
-    page.ctx.tourDocument.close();
-    releaseHeldKeys();
-    await settle();
+    for (let i = 0; i < 4; i += 1) {
+      releaseHeldKeys();
+      await settle();
+    }
 
+    expect(page.dom.draftOffer.hidden, "decided").toBe(true);
+    expect(page.dom.draftDiscard.textContent, "its label is back").toBe(label);
+    expect(page.setup.creatorDraftDecided()).toBe(true);
+    const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
+      details?: unknown;
+      stations?: { id: string; geo: unknown }[];
+    };
+    expect(stored.details, "the name lands").toMatchObject({
+      title: "Castle walk",
+    });
     expect(
-      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
-        .details,
-      "the name, live work, stays",
-    ).toMatchObject({ title: "Castle walk" });
+      stored.stations?.find((s) => s.id === STATION)?.geo,
+      "the draft's pose went with it",
+    ).not.toEqual(MOVED);
   });
 
   it("a Delete it that lands after the tour was reopened by the same url, padded, leaves the record to that open", async () => {
@@ -3334,11 +3639,11 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(files.has(SETTINGS_KEY), "the reopen's record stays").toBe(true);
   });
 
-  it("a Delete it that lands after the tour closed keeps a rename made before the tap", async () => {
-    // Why: the record was live work AT the tap (the rename was written
-    // before it, so no write follows the tap to count). After the close
-    // there is no document to rewrite it from, so the removal is skipped
-    // rather than taking the name with it.
+  // Why: a rename made over the undecided draft waits for the answer. If
+  // the tour closes before "Delete it" lands, the question ends with the
+  // tour: the rename never applied, and the landed removal takes the
+  // draft's record.
+  it("a Delete it that lands after the tour closed removes the record, and a rename that waited goes with the tour", async () => {
     const { store, files, releaseHeldKeys } = memoryStore(
       { ...metaOnly(), [SETTINGS_KEY]: record([{ id: STATION, geo: MOVED }]) },
       { holdKeys: (key) => key === META_KEY },
@@ -3349,18 +3654,17 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     await settle();
     expect(page.setup.renameTour("Castle walk")).toBeNull();
     await settle();
+    expect(page.dom.draftOfferText.textContent).toContain(DRAFT_EDIT_WAITS);
     page.dom.draftDiscard.click();
     await settle();
     page.setup.resetFinishStep();
     page.ctx.tourDocument.close();
-    releaseHeldKeys();
-    await settle();
+    for (let i = 0; i < 4; i += 1) {
+      releaseHeldKeys();
+      await settle();
+    }
 
-    expect(
-      (JSON.parse(String(files.get(SETTINGS_KEY))) as { details?: unknown })
-        .details,
-      "the name, live work, stays",
-    ).toMatchObject({ title: "Castle walk" });
+    expect(files.has(SETTINGS_KEY)).toBe(false);
   });
 
   it("keeps the offered pose when Delete it does not land, for a rename after it", async () => {
@@ -3382,14 +3686,13 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(storedPose(files), "the pose is still the draft's").toEqual(MOVED);
   });
 
-  it("keeps the stored draft's created stations through a live write before it is restored", async () => {
-    // Why: a placement beyond every station's radius starts a station the
-    // opened tour lacks, and the draft keeps it whole (`createdStations`)
-    // so a reload puts the pin back in THAT station. A live write before
-    // the offer is answered ("Not now", or working on) rewrote the record
-    // from the page's own document, which knows only ITS created
-    // stations - the stored ones were gone from disk, and the next
-    // reload's Restore seated the pins by the rule under new ids.
+  // Why: a placement beyond every station's radius starts a station the
+  // opened tour lacks, and the draft keeps it whole (`createdStations`)
+  // so a reload puts the pin back in THAT station. A placement made while
+  // the offer stands waits for the answer; Restore brings the stored
+  // station back and drops the placement, and the pin placed again gets
+  // its own station beside it.
+  it("keeps the stored draft's created stations through a placement made before it is restored", async () => {
     const far = (id: string, lat: number): TourObject => ({
       ...pin(id),
       geo: { ...pin(id).geo, lat },
@@ -3411,20 +3714,30 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     expect(s1, "the pin started a station").toBeDefined();
     expect(createdIds(files)).toEqual([s1]);
 
-    // A reload: the offer stands unanswered while a new pin starts another
-    // station - a live write of the settings record.
+    // A reload: the offer stands unanswered while a new pin is placed.
     const second = await opened(store);
     expect(second.dom.draftOffer.hidden, "the pin is offered").toBe(false);
     second.ctx.tourDocument.place(far("far3", 47.52), {}, "a pin");
     await settle();
+    expect(createdIds(files), "the placement waits").toEqual([s1]);
+    second.dom.draftRestore.click();
+    await settle();
+    expect(stationOf(second, "far1")).toBe(s1);
+    expect(stationOf(second, "far3"), "the waiting pin was dropped").toBe(
+      undefined,
+    );
+    second.ctx.tourDocument.place(far("far3", 47.52), {}, "a pin");
+    await settle();
     const s3 = stationOf(second, "far3");
+    expect(s3, "the waiting pin landed").toBeDefined();
     expect([...createdIds(files)].sort()).toEqual([s1, s3].sort());
 
-    // Another reload, and Restore: the first pin is back in its station.
+    // Another reload, and Restore: both pins are back in their stations.
     const third = await opened(store);
     third.dom.draftRestore.click();
     await settle();
     expect(stationOf(third, "far1")).toBe(s1);
+    expect(stationOf(third, "far3")).toBe(s3);
   });
 });
 

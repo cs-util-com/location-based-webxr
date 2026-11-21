@@ -509,9 +509,11 @@ describe("createEditorDraft", () => {
     expect(reopened.offer?.objects.map(captionOf)).toEqual(["during"]);
   });
 
-  it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
-    // Why (review #7): live edits win over an unanswered offer, and a
-    // rejection must not hide a change made after it.
+  it("Delete it takes the offer's records, and an edit that waited for it is kept", async () => {
+    // Why: every edit waits while the offer stands (`draft-edit-gate.ts`),
+    // so "Delete it" takes every offered record; the edits that waited land
+    // after it, and a rejection must not hide them (an edit of a deleted
+    // id, a deletion of an offered one).
     const b = memoryDraftStores();
     const earlier = draftIn(b);
     const original = tour(pin("a"), pin("b"), pin("c"));
@@ -523,9 +525,8 @@ describe("createEditorDraft", () => {
     earlier.close();
     const draft = draftIn(b);
     expect((await draft.open(K1, original)).offer?.objects).toHaveLength(2);
-    // Landed well before the tap: only the discard's own rule keeps it.
-    expect(await draft.saveObject(pin("a", "live a"))).toBe(true);
     expect(await draft.discard()).toBe(true);
+    expect(await draft.saveObject(pin("a", "live a"))).toBe(true);
     void draft.saveDeletion("c");
     await draft.idle();
     draft.close();
@@ -941,7 +942,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const first = draftIn(b);
     const opened = tour(pin("a"));
     await first.open(K1, opened);
-    expect(await first.saveSettings({ needsNoGps: true }, [])).toBe(true);
+    expect(await first.saveSettings({ needsNoGps: true })).toBe(true);
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -956,7 +957,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const opened = tour(pin("a"));
     await first.open(K1, opened);
     void first.saveObject(pin("a", "edited"));
-    void first.saveSettings({ needsNoGps: true }, []);
+    void first.saveSettings({ needsNoGps: true });
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -968,8 +969,8 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const first = draftIn(b);
     const opened = flagged(pin("a"));
     await first.open(K1, opened);
-    void first.saveSettings({ needsNoGps: false }, []);
-    void first.saveSettings({ needsNoGps: true }, []);
+    void first.saveSettings({ needsNoGps: false });
+    void first.saveSettings({ needsNoGps: true });
     await first.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
     first.close();
@@ -981,7 +982,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const first = draftIn(b);
     const opened = flagged(pin("a"));
     await first.open(K1, opened);
-    void first.saveSettings({ needsNoGps: false }, []);
+    void first.saveSettings({ needsNoGps: false });
     await first.idle();
     first.close();
     expect((await draftIn(b).open(K1, opened)).offer?.settings).toEqual({
@@ -996,7 +997,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
-    void draft.saveSettings({ needsNoGps: true }, []);
+    void draft.saveSettings({ needsNoGps: true });
     draft.writes().built(flagged(pin("a")));
     await draft.idle();
     draft.close();
@@ -1018,10 +1019,10 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
-    void draft.saveSettings({ needsNoGps: true }, []);
+    void draft.saveSettings({ needsNoGps: true });
     const built = flagged(pin("a"));
     draft.writes().built(built);
-    void draft.saveSettings({ needsNoGps: false }, []);
+    void draft.saveSettings({ needsNoGps: false });
     await draft.idle();
     draft.close();
     const copy = draftIn(b);
@@ -1037,7 +1038,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
-    void draft.saveSettings({ needsNoGps: true }, []);
+    void draft.saveSettings({ needsNoGps: true });
     const written = flagged(pin("a"));
     draft.writes().built(written);
     draft.writes().landed(written, K1);
@@ -1045,7 +1046,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
     // Off again after the landed save: pending against the file on disk
     // NOW (flagged), not against the file first opened.
-    void draft.saveSettings({ needsNoGps: false }, []);
+    void draft.saveSettings({ needsNoGps: false });
     await draft.idle();
     draft.close();
     expect((await draftIn(b).open(K1, written)).offer?.settings).toEqual({
@@ -1060,7 +1061,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     void draft.saveObject(pin("a", "saved"));
     const written = tour(pin("a", "saved"));
     draft.writes().built(written);
-    void draft.saveSettings({ needsNoGps: true }, []);
+    void draft.saveSettings({ needsNoGps: true });
     draft.writes().landed(written, K1);
     await draft.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
@@ -1074,7 +1075,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const written = tour(pin("a", "saved"));
     draft.writes().built(written);
     // Changed while the save ran: not in the written file.
-    void draft.saveSettings({ needsNoGps: true }, []);
+    void draft.saveSettings({ needsNoGps: true });
     draft.writes().landed(written, K2);
     await draft.idle();
     draft.close();
@@ -1089,7 +1090,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const earlier = draftIn(b);
     const original = tour(pin("a"));
     await earlier.open(K1, original);
-    void earlier.saveSettings({ needsNoGps: true }, []);
+    void earlier.saveSettings({ needsNoGps: true });
     await earlier.idle();
     earlier.close();
     const draft = draftIn(b);
@@ -1107,28 +1108,29 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     });
   });
 
-  it("Delete it throws an offered setting away, never one changed since the open", async () => {
+  it("Delete it throws an offered setting away, and one written after it is kept", async () => {
+    // Why: the setting the creator changes while the offer stands waits
+    // for "Delete it" and is written after it, so it outlives the removal.
     const b = memoryDraftStores();
     const original = tour(pin("a"));
-    for (const changedSince of [false, true]) {
+    for (const changedAfter of [false, true]) {
       const earlier = draftIn(b);
       await earlier.open(K1, original);
-      void earlier.saveSettings({ needsNoGps: true }, []);
+      void earlier.saveSettings({ needsNoGps: true });
       await earlier.idle();
       earlier.close();
       const draft = draftIn(b);
       expect((await draft.open(K1, original)).offer?.settings).toEqual({
         needsNoGps: true,
       });
-      // The creator turned it on here as well: live work.
-      if (changedSince) await draft.saveSettings({ needsNoGps: true }, []);
       expect(await draft.discard()).toBe(true);
+      if (changedAfter) await draft.saveSettings({ needsNoGps: true });
       await draft.idle();
       draft.close();
       const later = draftIn(b);
       const reopened = await later.open(K1, original);
       expect(reopened.offer?.settings).toEqual(
-        changedSince ? { needsNoGps: true } : undefined,
+        changedAfter ? { needsNoGps: true } : undefined,
       );
       await later.idle();
       later.close();
@@ -1141,7 +1143,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     await draft.open(K1, tour(pin("a")));
     const old = draft.writes();
     await draft.open(K2, tour(pin("a")));
-    expect(await old.saveSettings({ needsNoGps: true }, [])).toBe(true);
+    expect(await old.saveSettings({ needsNoGps: true })).toBe(true);
     await draft.idle();
     expect(b.spaces.get(editorDraftKey(K2))?.has(SETTINGS)).toBe(false);
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS) ?? false).toBe(
@@ -1241,7 +1243,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     b.failIn.add(editorDraftKey(K1));
-    expect(await draft.saveSettings({ needsNoGps: true }, [])).toBe(false);
+    expect(await draft.saveSettings({ needsNoGps: true })).toBe(false);
     expect(draft.said).toEqual(["storage"]);
   });
 });
@@ -1272,8 +1274,8 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
       const draft = draftIn(b);
       const original = tour(pin("a"));
       await draft.open(K1, original);
-      void draft.saveSettings({ needsNoGps: true }, []);
-      void draft.saveSettings({ needsNoGps: false }, []);
+      void draft.saveSettings({ needsNoGps: true });
+      void draft.saveSettings({ needsNoGps: false });
       const written = flagged(pin("a"));
       draft.writes().built(written);
       if (path !== "download") {
@@ -1297,8 +1299,8 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
-    void draft.saveSettings({ needsNoGps: true }, []);
-    void draft.saveSettings({ needsNoGps: false }, []);
+    void draft.saveSettings({ needsNoGps: true });
+    void draft.saveSettings({ needsNoGps: false });
     draft.writes().built(flagged(pin("a")));
     await draft.idle();
     draft.close();
@@ -1311,7 +1313,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a")));
-    void first.saveSettings({ needsNoGps: true }, []);
+    void first.saveSettings({ needsNoGps: true });
     await first.idle();
     first.close();
     const alone = draftIn(b);
@@ -1325,7 +1327,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const second = draftIn(c);
     await second.open(K1, flagged(pin("a")));
     void second.saveObject(pin("a", "edited"));
-    void second.saveSettings({ needsNoGps: false }, []);
+    void second.saveSettings({ needsNoGps: false });
     await second.idle();
     second.close();
     expect((await draftIn(c).open(K1, flagged(pin("a")))).offer?.text).toBe(
@@ -1339,7 +1341,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const b = memoryDraftStores();
     const earlier = draftIn(b);
     await earlier.open(K1, tour(pin("a")));
-    void earlier.saveSettings({ needsNoGps: true }, []);
+    void earlier.saveSettings({ needsNoGps: true });
     await earlier.idle();
     earlier.close();
     const draft = draftIn(b);
@@ -1356,7 +1358,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const earlier = draftIn(b);
     await earlier.open(K1, original);
     void earlier.saveObject(pin("a", "edited"));
-    void earlier.saveSettings({ needsNoGps: true }, []);
+    void earlier.saveSettings({ needsNoGps: true });
     await earlier.idle();
     earlier.close();
     const draft = draftIn(b);
@@ -1379,7 +1381,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const earlier = draftIn(b);
     await earlier.open(K1, original);
     void earlier.saveObject(pin("a", "edited"));
-    void earlier.saveSettings({ needsNoGps: true }, []);
+    void earlier.saveSettings({ needsNoGps: true });
     await earlier.idle();
     earlier.close();
     const draft = draftIn(b);
@@ -1500,13 +1502,10 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
-    await first.saveSettings(
-      {
-        needsNoGps: false,
-        details: { title: "New", contact: "guide@example.org" },
-      },
-      [],
-    );
+    await first.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", contact: "guide@example.org" },
+    });
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -1523,14 +1522,8 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
-    void first.saveSettings(
-      { needsNoGps: false, details: { title: "New" } },
-      [],
-    );
-    void first.saveSettings(
-      { needsNoGps: false, details: { title: "Old" } },
-      [],
-    );
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
+    void first.saveSettings({ needsNoGps: false, details: { title: "Old" } });
     await first.idle();
     first.close();
     expect((await draftIn(b).open(K1, opened)).offer).toBeNull();
@@ -1540,10 +1533,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, named("Old", pin("a")));
-    void first.saveSettings(
-      { needsNoGps: false, details: { title: "New" } },
-      [],
-    );
+    void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
     await first.idle();
     first.close();
     expect(
@@ -1556,7 +1546,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
-    void first.saveSettings({ needsNoGps: true }, []);
+    void first.saveSettings({ needsNoGps: true });
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -1570,10 +1560,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
-    void first.saveSettings(
-      { needsNoGps: true, details: { title: "New" } },
-      [],
-    );
+    void first.saveSettings({ needsNoGps: true, details: { title: "New" } });
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -1596,13 +1583,10 @@ describe("createEditorDraft, the tour's details (W2)", () => {
       cover: "f",
     };
     await first.open(K1, withPhoto);
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        details: { title: "Old", description: "Up.", cover: "f" },
-      },
-      [],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      details: { title: "Old", description: "Up.", cover: "f" },
+    });
     const without: TourManifest = {
       ...named("Old", photo("g")),
       description: "Up.",
@@ -1615,13 +1599,10 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     // A record whose other details still differ is offered for them alone.
     const second = draftIn(b);
     await second.open(K1, without);
-    void second.saveSettings(
-      {
-        needsNoGps: false,
-        details: { title: "New", description: "Up.", cover: "f" },
-      },
-      [],
-    );
+    void second.saveSettings({
+      needsNoGps: false,
+      details: { title: "New", description: "Up.", cover: "f" },
+    });
     await second.idle();
     second.close();
     const { offer } = await draftIn(b).open(K1, without);
@@ -1696,52 +1677,11 @@ describe("createEditorDraft, the stations the page created", () => {
         ]),
       ]),
     };
-    void draft.saveSettings({ needsNoGps: false, frames: [story] }, []);
+    void draft.saveSettings({ needsNoGps: false, frames: [story] });
     await draft.idle();
     const stored = b.spaces.get(editorDraftKey(K1))?.get(SETTINGS);
     expect(typeof stored).toBe("string");
     expect(parseSettingsRecord(stored as string)?.frames).toEqual([story]);
-  });
-
-  // Why: "Not now" keeps an offered station move for the next open, and a
-  // record this page writes meanwhile (another station moved) must carry
-  // it for the stations not moved here, or the declined move is lost
-  // while its objects' moved records stay. A landed "Delete it" rejects
-  // those poses: the live record is written again without them.
-  it("a declined station move rides along a later station's move, until Delete it lands", async () => {
-    const b = memoryDraftStores();
-    const opened = tour(pin("a"), pin("b"));
-    const at = (id: string, lat: number) => ({
-      id,
-      geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
-    });
-    const first = draftIn(b);
-    await first.open(K1, opened);
-    void first.saveSettings(
-      { needsNoGps: false, stations: [at("st-a", 48.5), at("st-b", 48.504)] },
-      ["st-b"],
-    );
-    await first.idle();
-    first.close();
-    const second = draftIn(b);
-    const { offer } = await second.open(K1, opened);
-    expect(offer?.settings?.stations).toEqual([
-      at("st-a", 48.5),
-      at("st-b", 48.504),
-    ]);
-    void second.saveSettings(
-      { needsNoGps: false, stations: [at("st-a", 48.503), at("st-b", 48.5)] },
-      ["st-a"],
-    );
-    await second.idle();
-    const stored = (): unknown =>
-      parseSettingsRecord(
-        b.spaces.get(editorDraftKey(K1))?.get(SETTINGS) as string,
-      )?.stations;
-    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.504)]);
-    expect(await second.discard()).toBe(true);
-    await second.idle();
-    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.5)]);
   });
 
   /** A draft whose settings record holds st-b moved, opened again: the
@@ -1754,10 +1694,10 @@ describe("createEditorDraft, the stations the page created", () => {
     });
     const first = draftIn(b);
     await first.open(K1, opened);
-    void first.saveSettings(
-      { needsNoGps: false, stations: [at("st-a", 48.5), at("st-b", 48.504)] },
-      ["st-b"],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      stations: [at("st-a", 48.5), at("st-b", 48.504)],
+    });
     await first.idle();
     first.close();
     const second = draftIn(b);
@@ -1774,36 +1714,32 @@ describe("createEditorDraft, the stations the page created", () => {
   }
 
   // Why: "Delete it" commits with the meta, then removes the offered
-  // record. When that removal does not land the offer is armed again, and
-  // the undecided poses must stay with it: without them the next record
-  // this page writes (another station's move) loses the declined move.
-  it("a Delete it whose record removal is refused keeps the undecided poses for the next write", async () => {
+  // record. When that removal does not land the offer is armed again and
+  // the record stays as offered: no write of this page's can have changed
+  // it meanwhile, since every edit waits for the answer.
+  it("a Delete it whose record removal is refused leaves the offered record, and a second one removes it", async () => {
     const b = memoryDraftStores();
     const { second, at, stored } = await offeredStB(b);
     b.failRemoveOf.add(SETTINGS);
     expect(await second.discard()).toBe(false);
     b.failRemoveOf.clear();
-    void second.saveSettings(
-      { needsNoGps: false, stations: [at("st-a", 48.503), at("st-b", 48.5)] },
-      ["st-a"],
-    );
     await second.idle();
-    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.504)]);
+    expect(stored()).toEqual([at("st-a", 48.5), at("st-b", 48.504)]);
+    expect(await second.discard()).toBe(true);
+    await second.idle();
+    expect(stored()).toBeUndefined();
   });
 
-  // Why: Restore decides the offer, as on the phone: from then on the
-  // record holds what the page set, not the poses the offer carried. A
-  // record written before Restore with them is written again without.
-  it("Restore writes the record again as the page set it, without the undecided poses", async () => {
+  // Why: Restore decides the offer: from then on the record holds what
+  // the page sets, whole, with no pose of the offer carried along.
+  it("after Restore the record is written as the page set it", async () => {
     const b = memoryDraftStores();
     const { second, at, stored } = await offeredStB(b);
-    void second.saveSettings(
-      { needsNoGps: false, stations: [at("st-a", 48.503), at("st-b", 48.5)] },
-      ["st-a"],
-    );
-    await second.idle();
-    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.504)]);
     second.restored();
+    void second.saveSettings({
+      needsNoGps: false,
+      stations: [at("st-a", 48.503), at("st-b", 48.5)],
+    });
     await second.idle();
     expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.5)]);
   });
@@ -1814,13 +1750,10 @@ describe("createEditorDraft, the stations the page created", () => {
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
     void first.saveObject(movedA());
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        createdStations: [frame("s-new")],
-      },
-      [],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
     await first.idle();
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
     first.close();
@@ -1839,20 +1772,14 @@ describe("createEditorDraft, the stations the page created", () => {
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
     void first.saveObject(movedA());
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        createdStations: [frame("s-new")],
-      },
-      [],
-    );
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        createdStations: [frame("s-new", 48.5207)],
-      },
-      [],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new", 48.5207)],
+    });
     await first.idle();
     first.close();
     const { offer } = await draftIn(b).open(K1, opened);
@@ -1864,13 +1791,10 @@ describe("createEditorDraft, the stations the page created", () => {
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        createdStations: [frame("s-new")],
-      },
-      [],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
     await first.idle();
     const carried: TourManifest = {
       ...opened,
@@ -1889,13 +1813,10 @@ describe("createEditorDraft, the stations the page created", () => {
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
-    void first.saveSettings(
-      {
-        needsNoGps: false,
-        createdStations: [frame("s-new")],
-      },
-      [],
-    );
+    void first.saveSettings({
+      needsNoGps: false,
+      createdStations: [frame("s-new")],
+    });
     await first.idle();
     first.close();
     const again = draftIn(b);
@@ -2089,10 +2010,7 @@ describe("the files a draft keeps", () => {
       geo: { lat: 48.5205, lon: 9.0, alt: 340, headingDeg: 0 },
       station: "s-new",
     });
-    void draft.saveSettings(
-      { needsNoGps: false, createdStations: [station] },
-      [],
-    );
+    void draft.saveSettings({ needsNoGps: false, createdStations: [station] });
     await draft.idle();
     draft.close();
     const again = draftIn(b);

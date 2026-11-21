@@ -134,7 +134,7 @@ editor's own namespace, one tab at a time. Design:
     tour opens; nothing deletes it.
 - `restoredLine(count, offer)` - the line said once an offer was restored:
   "N earlier change(s) is/are back - not saved yet.", or, when nothing came
-  back (live work won), why in the offer's own terms: the notes, this
+  back, why in the offer's own terms: the notes, this
   tour's "needs no GPS" setting, or both (M1b-2 milestone review #6).
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
   `EditorDraftDeps`, `EditorDraftOffer`, `EditorTourSettings` (`open`'s result type stays
@@ -249,7 +249,8 @@ editor's own namespace, one tab at a time. Design:
   a landed write that carries it clears it; a key move carries it (and an
   unanswered offer's), and the old namespace's goes with it; "Delete it"
   removes an offered one after the meta's commit point, awaited, failing
-  the discard when it does not land, never one changed since the open.
+  the discard when it does not land (no write of this page's can have
+  replaced it meanwhile: the edits wait for the answer).
   **The value last set here is kept** (`settingsWanted`), whether or not
   its record is, and the keep is decided again by each build and each
   landed write (M1b-2 milestone review #1): turned on, a save started, and
@@ -272,27 +273,10 @@ editor's own namespace, one tab at a time. Design:
   frames; "differs" compares each named station's pose with the file's
   (`changedStations`, ids the file does not carry ignored); a pose that does
   not read (`parseGeoPose`) makes the record unreadable, and it goes.
-  **Undecided poses ride along**, as on the phone: while an offered
-  record's station poses are neither restored nor rejected (offered, or
-  "Not now"), `undecidedPoses` holds them (set by the open that offers a
-  record whose poses differ from the file's, `undecidedOf` as on the
-  phone), and every record this page
-  writes carries them by `withUndecidedPoses`: the live pose of each
-  station moved here since the open (`saveSettings`'s `movedStations`,
-  kept as `settingsMoved`), the undecided pose of every other. So the keep
-  is decided for that record: one holding undecided poses differs from
-  the file and is kept, even when the value set here equals it. Restore
-  clears them (`restored`) and writes the record again as the page set it;
-  "Delete it" clears them once its rejection landed whole (the meta, and
-  the offered record's removal when it removes one), and, when the
-  settings were changed here, writes the live record again without them;
-  a "Delete it" that did not land, the removal included, keeps them with
-  the offer it arms again.
-  The offered record's created stations the opened file lacks ride along
-  the same way (`undecidedCreated`, added by `withCreated`, the page's own
-  frame of an id winning): a live record names only this page's own, so
-  without them a station move after "Not now" took a placement's new
-  station off disk, and the next open dropped the object that names it.
+  **No pose rides along**: every edit waits while the offer is
+  undecided (`draft-edit-gate.ts`), so no record is written over an
+  undecided one; Restore and a landed "Delete it" come first, and the
+  record written after them is the page's own, whole.
   **No base, and what that costs** (milestone review #3; the first build of
   this bullet claimed the other value was always one "this browser saw or
   wrote", which does not hold): a file that differs from the record holds

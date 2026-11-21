@@ -23,6 +23,7 @@ import {
   type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
+import { isHeldEdit } from "./draft-edit-gate.js";
 import {
   canPlace,
   canStep,
@@ -97,6 +98,12 @@ export type CreatorObject = Omit<
  *  it caused settled - true when all landed, or when no draft follows. */
 export interface DocumentChange {
   readonly backedUp: Promise<boolean>;
+  /** The change waits for the answer to the draft question
+   *  (`draft-edit-gate.ts`): it is not in the document yet, lands once
+   *  Restore or "Delete it" let it through, and is dropped when the
+   *  question is put off. `backedUp` then settles after its landing (true
+   *  for a dropped one: nothing of it was left unsaved). */
+  readonly held?: true;
 }
 
 /** A placement the document took: `object` as the document holds it, and
@@ -325,6 +332,14 @@ export function createCreatorDocument(
   /** The draft writes the dispatch under way issued, while one is
    *  collected (the listener runs inside the dispatch). */
   let collecting: Promise<boolean>[] | null = null;
+  /** The draft writes of each held edit, by its action: its landing is a
+   *  dispatch of the gate's, outside `change`. */
+  const heldWrites = new Map<UnknownAction, Promise<boolean>[]>();
+  /** Each held change's landing (`HeldEdit.landed`). */
+  const landings = new WeakMap<
+    DocumentChange,
+    Promise<{ readonly before: unknown } | null>
+  >();
   let followed = false;
 
   store.dispatch(tourDocumentActions.opened({ manifest: noTour }));
@@ -338,14 +353,40 @@ export function createCreatorDocument(
     const writes: Promise<boolean>[] = [];
     const outer = collecting;
     collecting = writes;
+    let out: unknown;
     try {
-      store.dispatch(action);
+      out = store.dispatch(action);
     } finally {
       collecting = outer;
     }
-    return {
-      backedUp: Promise.all(writes).then((all) => all.every(Boolean)),
+    const all = (): Promise<boolean> =>
+      Promise.all(writes).then((done) => done.every(Boolean));
+    if (!isHeldEdit(out)) return { backedUp: all() };
+    heldWrites.set(action, writes);
+    const taken: DocumentChange = {
+      held: true,
+      backedUp: out.landed.then((landed) => {
+        heldWrites.delete(action);
+        return landed === null ? true : all();
+      }),
     };
+    landings.set(taken, out.landed);
+    return taken;
+  }
+
+  /** Run `then` with the document as it stood just before a held change
+   *  landed; never for one dropped. */
+  function heldLanding(
+    taken: DocumentChange,
+    then: (before: TourDocumentState) => void,
+  ): Promise<void> {
+    const landing = landings.get(taken);
+    if (landing === undefined) return Promise.resolve();
+    return landing.then((landed) => {
+      if (landed !== null) {
+        then(selectTourDocument(landed.before as CreatorDocumentRoot));
+      }
+    });
   }
 
   /** The objects of `s`, each joined with the side tables. */
@@ -514,6 +555,13 @@ export function createCreatorDocument(
           ...(ownStation ? { newStation: true } : {}),
         }),
       );
+      if (placed.held === true) {
+        // Seated once it lands, from the document just before.
+        void heldLanding(placed, (landedBefore) =>
+          anchorStarted(landedBefore, [given.id]),
+        );
+        return { ...placed, object: given, ownStation };
+      }
       anchorStarted(before, [given.id]);
       // The object as the station rule seated it.
       const object =
@@ -600,7 +648,9 @@ export function createCreatorDocument(
               what,
             }),
           );
-          if (state().revision === before.revision) return null;
+          if (taken.held !== true && state().revision === before.revision) {
+            return null;
+          }
           return taken;
         },
       };
@@ -720,9 +770,7 @@ export function createCreatorDocument(
           collecting?.push(forgotten);
           return forgotten.then(() => undefined);
         },
-        saveSettings: collected((record, moved) =>
-          draft.saveSettings(record, moved),
-        ),
+        saveSettings: collected((record) => draft.saveSettings(record)),
         ...(draft.saveCodes === undefined
           ? {}
           : { saveCodes: collected(draft.saveCodes.bind(draft)) }),
@@ -733,17 +781,24 @@ export function createCreatorDocument(
         // The edits, and every change of the codes the draft keeps (their
         // record follows them, plan M3b).
         predicate: isAnyOf(isDocumentEdit, isCodeChange),
-        effect: (_action, api) => {
-          followDocument(
-            tracked,
-            selectTourDocument(api.getOriginalState()),
-            selectTourDocument(api.getState()),
-            (id) => pictures.get(id),
-            {
-              before: handIn(api.getOriginalState()),
-              after: handIn(api.getState()),
-            },
-          );
+        effect: (action, api) => {
+          // A held edit let through: its writes are its change's.
+          const outer = collecting;
+          collecting ??= heldWrites.get(action) ?? null;
+          try {
+            followDocument(
+              tracked,
+              selectTourDocument(api.getOriginalState()),
+              selectTourDocument(api.getState()),
+              (id) => pictures.get(id),
+              {
+                before: handIn(api.getOriginalState()),
+                after: handIn(api.getState()),
+              },
+            );
+          } finally {
+            collecting = outer;
+          }
         },
       });
     },
