@@ -348,12 +348,17 @@ async function desktopPage(
         ),
       ),
     move: (id, lat, lon, joinStation) => {
-      editor.move(
-        id,
-        lat,
-        lon,
-        joinStation === undefined ? {} : { joinStation },
+      // As the 3D view's drag ends: the whole pose, its height and turn kept.
+      const found = documentObjects(selectTourDocument(store.getState())).find(
+        (o) => o.object.id === id,
       );
+      if (found !== undefined) {
+        editor.pose(
+          id,
+          { ...found.object.geo, lat, lon },
+          joinStation === undefined ? {} : { joinStation },
+        );
+      }
       return draft.idle();
     },
     moveStation: (stationId, geo) => {

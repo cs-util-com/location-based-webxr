@@ -30,7 +30,7 @@ rule before a third page used it (the shared-helper rule). Pure.
     names for two things. "Note" remains the one word for "a pin or a
     photo" together ("3 notes", "Find a code or note"), and a search still
     finds a pin or a photo by "note" and by the old words
-    (`editor/editor-model.ts` `filterItems`).
+    (`editor/editor-shell/tree-model.ts`, through `KIND_EDIT`'s `searchWords`).
 - `objectOwnText(object): string | undefined` - the text a free block
   carries for its name (a caption, a character's name, else a title); unlike
   `objectTitle` it can be empty. One case per kind, checked exhaustive by

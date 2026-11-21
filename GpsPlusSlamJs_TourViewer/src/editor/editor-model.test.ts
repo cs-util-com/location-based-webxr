@@ -18,11 +18,9 @@ import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import {
   buildEditorModel,
-  filterItems,
+  matchesQuery,
   ON_CODE_M,
-  photoSource,
   selectedStationOf,
-  type EditorModel,
 } from "./editor-model.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { stationContent } from "../test-support/station-content.js";
@@ -97,11 +95,6 @@ function stationAt(id: string, geo: QrGeoPose, title?: string): TourStation {
     hint: "arrow",
     ...stationContent([]),
   };
-}
-
-/** The items besides the stations. */
-function notStations(m: EditorModel) {
-  return m.items.filter((i) => i.kind !== "station");
 }
 
 describe("buildEditorModel", () => {
@@ -307,71 +300,18 @@ describe("buildEditorModel", () => {
   });
 });
 
-describe("filterItems", () => {
-  // Built inside each test: the store the geo maths needs exists only
-  // once beforeAll has run.
-  const model = () =>
-    buildEditorModel({
-      manifest: manifest(),
-      objects: [pin("p", "The Town Hall"), pin("q", "Fountain")],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-
-  it("finds by title or second line, ignoring case and blanks", () => {
-    expect(filterItems(model().items, "  town ").map((i) => i.id)).toEqual([
-      "p",
-    ]);
+describe("matchesQuery", () => {
+  // Why: the tree's search finds an item by this one rule; a creator
+  // types with stray blanks, in any case, and an accent may come composed
+  // or as a combining mark, and each must still find the item.
+  it("finds a trimmed query in any text, ignoring case and the Unicode form", () => {
+    expect(matchesQuery("  town ", ["The Town Hall"])).toBe(true);
+    expect(matchesQuery("café", ["Café corner"])).toBe(true);
+    expect(matchesQuery("well", ["The Town Hall", "Fountain"])).toBe(false);
   });
 
-  // Why: the search box says "Find a code or note", and a creator looks
-  // for a kind by the word a page showed them - "note", "pin", "photo", or
-  // the words the 3D editor used before ("short text", "picture"). An
-  // item whose own text carries none of them must still be found.
-  it("finds pins and photos by their kind's words, old and new, and by 'note'", () => {
-    const m = buildEditorModel({
-      manifest: manifest(),
-      objects: [pin("p", "The Town Hall"), photo("f", "Market day")],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    const ids = (q: string) => filterItems(m.items, q).map((i) => i.id);
-    expect(ids("pin")).toEqual(["p"]);
-    expect(ids("short text")).toEqual(["p"]);
-    expect(ids("photo")).toEqual(["f"]);
-    expect(ids("Picture")).toEqual(["f"]);
-    expect(ids("note")).toEqual(["p", "f"]);
-  });
-
-  it("shows everything for an empty search", () => {
-    expect(filterItems(model().items, "")).toHaveLength(2);
-  });
-});
-
-describe("photoSource (E1 review #1)", () => {
-  // Why: a placed photo's image is a content path inside the tour's
-  // folder, read through it (`loadContentEntry`). (A recorded photo's was
-  // the archive's own entry name, and joining the folder to both read it
-  // from the wrong path; no item is a recorded photo now, so every photo
-  // source is content.)
-  it("reads a placed photo as content", () => {
-    const m = buildEditorModel({
-      manifest: manifest(),
-      objects: [photo("f")],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(photoSource(notStations(m)[0]!)).toBe("content/f.jpg");
-  });
-
-  it("is null for an item without a photo", () => {
-    const m = buildEditorModel({
-      manifest: manifest(),
-      objects: [pin("p", "x")],
-      levels: new Map(),
-      fileName: "tour.zip",
-    });
-    expect(photoSource(m.items[0]!)).toBeNull();
+  it("finds an empty query in everything", () => {
+    expect(matchesQuery("   ", [])).toBe(true);
   });
 });
 

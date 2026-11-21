@@ -27,12 +27,6 @@ page keeps with it - a photo's bytes, a visit's frame).
   gets a tombstone in `deleted`, a local one none; returns the lists. An
   undo is the tour document's (`tour-document.ts`: it goes back to the
   view before the delete), so no record of the delete is kept here.
-- `moveObjectTo(object, lat, lon)` - a map move keeping height and facing
-  (a pin's `headingDeg`, a photo's world-frame rotation); throws a
-  `RangeError` for a position off the globe.
-  A longitude past 180 (a drag on one of the map's world copies) is
-  folded back onto the globe; a non-finite one, or a latitude past 90, is
-  refused (PR #611 review).
 - `EditEntry`, `AuthoringObject<P>`, `EditLists<P>`.
 
 ## Invariants & assumptions
@@ -55,7 +49,6 @@ const gone = deleteObject({ placed, deleted }, objects[0]!);
 
 `object-edits.test.ts`: a pin's text edited, refused when empty, left
 alone when the same or a photo's; a hosted delete's tombstone, a local
-delete without one; the delete property; a map move keeping height and
-facing, and refusing a position off the globe; `upsertPlaced`.
+delete without one; the delete property; `upsertPlaced`.
 `object-editing.test.ts` still pins the list functions through the phone's
 wiring.

@@ -93,6 +93,22 @@ function pin(id: string, label = `pin ${id}`): TourPin {
   };
 }
 
+/** An item put at `lat`/`lon` at the fixtures' height, as the 3D view's
+ *  drag ends: in `pose`. */
+function poseAt(
+  editor: EditorSession,
+  id: string,
+  lat: number,
+  lon: number,
+  options?: { readonly joinStation?: string },
+) {
+  return editor.pose(
+    id,
+    { lat, lon, alt: 340, rotation: [0, 0, 0, 1] },
+    options,
+  );
+}
+
 function photo(id: string): TourPicture {
   return {
     id,
@@ -176,7 +192,7 @@ describe("createEditorSession", () => {
       levels: new Map(),
     });
     expect(editor.editText("a", "New")).toEqual({ kind: "edited" });
-    editor.move("b", 48.53, 9.06);
+    poseAt(editor, "b", 48.53, 9.06);
     editor.remove("c");
     expect(editor.changeCount()).toBe(3);
     const saved = await editor.save({ keepScan: false });
@@ -879,7 +895,7 @@ describe("createEditorSession, edge cases", () => {
       manifest,
       levels: new Map(),
     });
-    editor.move("a", 48.53, 9.06);
+    poseAt(editor, "a", 48.53, 9.06);
     expect(editor.pendingIds()).toEqual(["a"]);
     await editor.save({ keepScan: false });
     expect(editor.pendingIds()).toEqual([]);
@@ -943,7 +959,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       draft,
     });
     editor.editText("a", "New");
-    editor.move("b", 48.53, 9.06);
+    poseAt(editor, "b", 48.53, 9.06);
     editor.remove("a");
     expect(editor.undo().kind).toBe("undone");
     expect(draft.calls).toEqual([
@@ -1038,7 +1054,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     // Said in the same words as an edit (PR #622 bot finding C): the
     // page must not toast "Deleted" with an Undo, or drop a move silently.
-    expect(editor.move("zzz", 48.5, 9.0)).toEqual({
+    expect(poseAt(editor, "zzz", 48.5, 9.0)).toEqual({
       kind: "refused",
       reason: NOT_IN_TOUR,
     });
@@ -1068,18 +1084,10 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       levels: new Map(),
     });
     // About 22 km north of its station: beyond the format's 10 km bound.
-    expect(editor.move("a", 48.72, 9.05)).toMatchObject({
+    expect(poseAt(editor, "a", 48.72, 9.05)).toMatchObject({
       kind: "refused",
       reason: TOO_FAR_FROM_STATION,
     });
-    expect(
-      editor.pose("a", {
-        lat: 48.72,
-        lon: 9.05,
-        alt: 340,
-        rotation: [0, 0, 0, 1],
-      }),
-    ).toMatchObject({ kind: "refused" });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -1093,11 +1101,11 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
     });
     const home = stationIdOf("a");
     const other = stationIdOf("b");
-    expect(editor.move("a", 48.53, 9.06)).toEqual({ kind: "moved" });
+    expect(poseAt(editor, "a", 48.53, 9.06)).toEqual({ kind: "moved" });
     let saved = await carried((await editor.save({ keepScan: false })).blob);
     expect(saved.objects.find((o) => o.id === "a")?.station).toBe(home);
     expect(saved.stations.map((s) => s.id)).toContain(home);
-    expect(editor.move("a", 48.53, 9.06, { joinStation: other })).toEqual({
+    expect(poseAt(editor, "a", 48.53, 9.06, { joinStation: other })).toEqual({
       kind: "moved",
     });
     expect(editor.undo()).toMatchObject({ kind: "undone" });
@@ -1125,7 +1133,7 @@ describe("createEditorSession, the draft (M6 E2c)", () => {
       manifest: huge,
       levels: new Map(),
     });
-    expect(editor.move("a", 48.72, 9.05)).toMatchObject({ kind: "refused" });
+    expect(poseAt(editor, "a", 48.72, 9.05)).toMatchObject({ kind: "refused" });
     expect(editor.changeCount()).toBe(0);
     await session.close();
   });
@@ -1818,7 +1826,7 @@ describe("createEditorSession, undo and redo (W2)", () => {
     const original = editor.model();
     expect(editor.undo()).toEqual({ kind: "nothing" });
     editor.editText("a", "New");
-    editor.move("b", 48.53, 9.06);
+    poseAt(editor, "b", 48.53, 9.06);
     editor.remove("a");
     editor.setNeedsNoGps(true);
     editor.setDetails(form({ name: "Castle walk" }));

@@ -89,7 +89,6 @@ type Command =
   | { kind: "deleteStation"; at: number }
   | { kind: "duplicateStation"; at: number }
   | { kind: "reorder" }
-  | { kind: "moveItem"; item: string; dLat: number }
   | { kind: "poseItem"; item: string; dLat: number; newStation: boolean }
   | { kind: "groundItem"; item: string; alt: number }
   | { kind: "removeItem"; item: string }
@@ -123,11 +122,6 @@ const command: fc.Arbitrary<Command> = fc.oneof(
   fc.record({ kind: fc.constant("deleteStation" as const), at }),
   fc.record({ kind: fc.constant("duplicateStation" as const), at }),
   fc.constant({ kind: "reorder" as const }),
-  fc.record({
-    kind: fc.constant("moveItem" as const),
-    item,
-    dLat: fc.double({ min: -0.0005, max: 0.0005, noNaN: true }),
-  }),
   fc.record({
     kind: fc.constant("poseItem" as const),
     item,
@@ -232,16 +226,6 @@ describe("the station lock", () => {
               case "reorder": {
                 const ids = [...before.keys()].reverse();
                 editor.reorderStations(ids);
-                break;
-              }
-              case "moveItem": {
-                const found = manifestToWrite(store.getState().tourDocument);
-                if (found === null) break;
-                try {
-                  editor.move(c.item, 48.52 + c.dLat, 9.05);
-                } catch {
-                  // A position nobody can draw: not this property's.
-                }
                 break;
               }
               case "poseItem":

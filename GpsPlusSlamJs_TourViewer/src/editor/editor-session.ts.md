@@ -15,7 +15,7 @@ over it: it asks the document's own guards first (`objectFits`,
 `canPlace`, `canStep` - the reducers keep the same rules, so a refusal
 here is only the page's words for one) and checks what only the page can
 (a photo's picture for an undo), then dispatches. An edit's payload is
-shaped by the document too (`pinTextChange`, `objectMoveChange`), and the
+shaped by the document too (`pinTextChange`), and the
 save is the document's (`../tour-document-save.ts`): thunks dispatched
 into the store, whose handle keeps the newest bytes, the photo spots'
 decision and the save queue, while the slice's save status says whether
@@ -156,16 +156,6 @@ never state). Design:
     has a sentence of its own. A free short text's `caption` is its pin
     text: it goes `editText`'s way (`pinTextEdit`'s rule, "the text of
     <name>"), so a pin's caption has one rule, never two.
-  - `move(id, lat, lon, { joinStation? })` - `moveObjectTo` (height and facing kept),
-    through the document's `objectMoveChange`:
-    `{ kind: "moved" }`, or `EditorRefusal` (module-private: `refused` with `NOT_IN_TOUR`)
-    for an id the tour no longer carries (PR #622 bot finding C), and
-    `TOO_FAR_FROM_STATION` for a spot the format's 10 km bound between an
-    item and its station (`TOUR_ITEM_MAX_OFFSET_M`) rules out: a far drag
-    once made every later save fail, so it is refused and said. The item
-    keeps its station, in or out of the circle, or changes to
-    `joinStation`, the creator's answer; a move never starts a station.
-    Throws for a position nobody can draw.
   - `remove(id)` - `deleteObject`; `{ kind: "deleted" }`, undone like any
     edit (`undo()`). A deleted photo's picture is kept for that undo - the
     one its entry carries, else read once through `loadPhoto` - since a

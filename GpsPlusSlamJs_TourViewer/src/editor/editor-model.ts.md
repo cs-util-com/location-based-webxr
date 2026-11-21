@@ -2,8 +2,8 @@
 
 ## Purpose
 
-What the desktop editor (`/tour/edit.html`, M6 E1) shows of a tour, as
-data: the rail's rows (codes, pins, photos) and the map's marks. Built on
+What the desktop editor (`/tour/edit.html`) shows of a tour, as data: its
+items (codes, pins, photos, stations) with their positions. Built on
 the summary's model (`summary-model.ts` `buildSummaryModel`) and the one
 naming rule (`object-describe.ts`), so a code and a note carry the same
 name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
@@ -44,28 +44,15 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
   station is listed, the automatic ones that hold the pins and photos
   included. A station standing within `ON_CODE_M` (1 m) of a code's
   measured point carries `onCode: true`: a station names no code,
-  but a creator still puts stations at codes, and the map draws such a
-  station beside the code, never under it (PR #609 review). Its `at`
-  stays its own point.
-- `photoSource(item)` - where a photo item's bytes are: its content path
-  (`loadContentEntry` joins the tour's folder); null without a photo (E1
-  review #1).
+  but a creator still puts stations at codes, and such a station is drawn
+  beside the code, never under it. Its `at` stays its own point.
 - `foldForSearch(text)` - a text in the search's one form (NFC, lower case);
   the add palette's query folds with it too.
 - `matchesQuery(query, texts)` - (both sides folded to one Unicode form,
   NFC, and lower case) whether the trimmed query is in one of
-  `texts`, case-insensitive; an empty query is in everything. The one
-  matching rule of the 2D rail's search and the 3D tree's
-  (`editor-shell/tree-model.ts`).
-- `filterItems(items, query)` - the rows whose title, meta or kind's
-  words contain the trimmed query (`matchesQuery`); all for an empty
-  query. The kind's words (`KIND_SEARCH_WORDS`) are its kind's row's
-  search words (`src/kinds/edit-kinds.ts` `KIND_EDIT`), the 3D tree's
-  too: "note" for a pin and a photo (the search box says "Find a code or
-  note") and the words the 3D editor once showed ("short text",
-  "picture"), so an item whose own text names no kind is still found by
-  them; the kind's own word ("Pin", "Photo") is in its meta.
-- `EditorItem`, `EditorItemKind`, `EditorModel`.
+  `texts`, case-insensitive; an empty query is in everything. The
+  matching rule of the tree's search (`editor-shell/tree-model.ts`).
+- `EditorModel` (its items are `EditorItem`s, a type of this module only).
 - `STATION_PREFIX` - `"station:"`, the prefix of a station's item id (the
   page and the 3D view's editing tell a station's selection by it).
 - `selectedStationOf(selected, manifest)` -> the station id for
@@ -92,10 +79,11 @@ name on the phone and on the desktop (M6 E1 plan review #1, #3). Design:
 ```ts
 const model = buildEditorModel({
   manifest: (await session.loadTourManifest())!,
+  objects,
   levels: await session.loadQrLevels(),
   fileName: file.name,
 });
-const rows = filterItems(model.items, searchBox.value);
+const found = matchesQuery(searchBox.value, [model.items[0]!.title]);
 ```
 
 ## Tests
@@ -105,4 +93,4 @@ position, "The code" alone, the notes' titles and distance lines, the
 no debug camera capture listed, the stations, a station at a code's point (`onCode`,
 just inside and just outside `ON_CODE_M`), an undrawable note kept off the
 map, a placed 3D model listed nowhere, the
-title fallback, the filter and `photoSource`.
+title fallback and the search's matching rule.

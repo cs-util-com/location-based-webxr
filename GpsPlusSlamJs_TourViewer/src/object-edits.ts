@@ -118,30 +118,3 @@ export function deleteObject<P extends EditEntry>(
         : [...lists.deleted],
   };
 }
-
-/**
- * The object moved to `lat`/`lon` on a map (the desktop editor's Move):
- * its height and facing are kept - a pin's `headingDeg`, a photo's
- * world-frame rotation, which a move of a few metres leaves correct. On
- * sloped ground the kept height may be off; the page says so.
- *
- * A longitude past 180 (a drag on one of the map's world copies, PR #611
- * review) is folded back onto the globe.
- *
- * @throws RangeError for a position nobody can draw.
- */
-export function moveObjectTo(
-  object: TourObject,
-  lat: number,
-  lon: number,
-): TourObject {
-  if (!Number.isFinite(lat) || Math.abs(lat) > 90) {
-    throw new RangeError(`latitude ${String(lat)} is not on the globe`);
-  }
-  if (!Number.isFinite(lon)) {
-    throw new RangeError(`longitude ${String(lon)} is not on the globe`);
-  }
-  const onGlobe =
-    Math.abs(lon) <= 180 ? lon : ((((lon + 180) % 360) + 360) % 360) - 180;
-  return { ...object, geo: { ...object.geo, lat, lon: onGlobe } };
-}
