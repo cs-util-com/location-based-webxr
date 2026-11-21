@@ -41,6 +41,15 @@ export const PAIRS = [
   { key: "x", label: "other" },
 ] as const;
 
+/**
+ * The selector's "none": a manual run that uses the Options. Not part of
+ * the protocol, so nextPair never moves into or out of it.
+ */
+export const NO_PAIR = { key: "none", label: "manual run" } as const;
+
+/** A key of PAIRS, or NO_PAIR's. */
+export type PairKey = (typeof PAIRS)[number]["key"] | typeof NO_PAIR.key;
+
 /** Spots the light pairs are repeated at. */
 const SPOTS = 3;
 
@@ -59,7 +68,7 @@ export interface PairTag {
  *   sequence that is not an integer of at least 1.
  */
 export function pairTag(key: string, spot: number, sequence: number): PairTag {
-  const p = PAIRS.find((q) => q.key === key);
+  const p = [...PAIRS, NO_PAIR].find((q) => q.key === key);
   if (!p) {
     throw new Error(`unknown pair ${key}`);
   }

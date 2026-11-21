@@ -4,6 +4,7 @@ import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
   FRAME_FILES,
+  NO_PAIR,
   PAIRS,
   allFilesZip,
   assertPlainPng,
@@ -528,6 +529,18 @@ describe("pairs", () => {
     for (const inner of Object.values(FRAME_FILES)) {
       expect(own).not.toContain(inner);
     }
+  });
+
+  // Why this test matters: "none" is the manual run that uses the Options;
+  // its files must still be named, and the selector must not move on from
+  // it into the protocol by itself.
+  it("tags and names a manual run, and stays on it", () => {
+    const tag = pairTag(NO_PAIR.key, 1, 4);
+    expect(tag.pairLabel).toBe("manual run");
+    expect(pairFileNames(tag).all).toBe(
+      "feature-match-04-none-s1-manual-run.zip",
+    );
+    expect(nextPair(NO_PAIR.key, 1)).toEqual({ key: "none", spot: 1 });
   });
 
   it("refuses an unknown key, a spot outside 1-3 and a bad running number", () => {

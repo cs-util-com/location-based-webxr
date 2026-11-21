@@ -96,6 +96,7 @@ describe("formatReport", () => {
     input: "synthetic 640x480 (seed 1)",
     sizes: [320, 640],
     runs: 5,
+    warmup: true,
     results: [ok, failed],
     errors: ["camera: NotAllowedError: Permission denied"],
   });
@@ -179,9 +180,13 @@ describe("UNKNOWN_DEVICE", () => {
       input: "x",
       sizes: [320],
       runs: 1,
+      warmup: false,
       results: [],
       errors: [],
     });
+    // Why: a single run with no warm-up includes the first-call cost, so
+    // the report must say so or its time reads as a warm number.
+    expect(text).toContain("sizes (long edge): 320; runs: 1, no warm-up");
     expect(text).toContain("model: -, platform version: -");
     expect(text).toContain("webgpu: -");
   });

@@ -14,13 +14,16 @@ import {
   framesInfo,
   matchesInfo,
   nextPair,
+  NO_PAIR,
   PAIRS,
   pairFileNames,
   pairTag,
   parseSpot,
+  type PairKey,
   type PairTag,
   type SavedFrame,
 } from "./bench-export";
+import { BEFORE_YOU_START, PAIR_GUIDE, SPOT_NOTE } from "./bench-guide";
 import {
   describeGrey,
   fitInside,
@@ -33,6 +36,7 @@ import {
   buildMethods,
   parseRuns,
   precisionsFrom,
+  runSettings,
   selectionGaps,
 } from "./bench-methods";
 import { errorText, formatBytes, type LoadDeps } from "./bench-net";
@@ -63,6 +67,8 @@ const PICTURE_LINE_CAP = 200;
 const PICTURE_GAP = 8;
 /** Save's label after a camera run that measured nothing. */
 const NOTHING_MEASURED = "nothing measured: tap to save the photos anyway";
+/** Set once "Before you start" has been shown open; it then starts closed. */
+const BEFORE_START_SEEN = "feature-match-check.before-start-seen";
 
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -79,6 +85,12 @@ interface Ui {
   readonly video: HTMLVideoElement;
   readonly pair: HTMLSelectElement;
   readonly spot: HTMLInputElement;
+  readonly beforeStart: HTMLDetailsElement;
+  readonly beforeStartList: HTMLElement;
+  readonly guidePurpose: HTMLElement;
+  readonly guideSteps: HTMLElement;
+  readonly guideAvoid: HTMLElement;
+  readonly guideSpot: HTMLElement;
   readonly pairState: HTMLElement;
   readonly captureA: HTMLButtonElement;
   readonly captureB: HTMLButtonElement;
@@ -106,6 +118,12 @@ function findUi(root: ParentNode): Ui {
     video: $(root, "#video"),
     pair: $(root, "#pair"),
     spot: $(root, "#spot"),
+    beforeStart: $(root, "#before-start"),
+    beforeStartList: $(root, "#before-start-list"),
+    guidePurpose: $(root, "#guide-purpose"),
+    guideSteps: $(root, "#guide-steps"),
+    guideAvoid: $(root, "#guide-avoid"),
+    guideSpot: $(root, "#guide-spot"),
     pairState: $(root, "#pair-state"),
     captureA: $(root, "#capture-a"),
     captureB: $(root, "#capture-b"),
@@ -273,6 +291,30 @@ function chosenSizes(root: ParentNode): number[] {
     .filter((v) => Number.isFinite(v) && v > 0);
 }
 
+/** Whether the browser offers WebGPU at all (an adapter may still fail). */
+const hasWebGpu = (): boolean =>
+  Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
+
+const listItems = (texts: readonly string[]): HTMLLIElement[] =>
+  texts.map((t) => {
+    const li = document.createElement("li");
+    li.textContent = t;
+    return li;
+  });
+
+/**
+ * "Before you start" is open on the first visit and closed on later ones.
+ * Storage may be blocked (private mode): it is then open every time.
+ */
+function openBeforeStartOnce(box: HTMLDetailsElement): void {
+  try {
+    box.open = localStorage.getItem(BEFORE_START_SEEN) === null;
+    localStorage.setItem(BEFORE_START_SEEN, "1");
+  } catch {
+    box.open = true;
+  }
+}
+
 /** What a camera start came to: running, refused, or stopped meanwhile. */
 type CameraStart = "on" | "failed" | "stopped";
 
@@ -311,13 +353,30 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   let advancedFor = 0;
 
   ui.pair.replaceChildren(
-    ...PAIRS.map((p) => {
+    ...[...PAIRS, NO_PAIR].map((p) => {
       const option = document.createElement("option");
       option.value = p.key;
-      option.textContent = `${p.key} ${p.label}`;
+      option.textContent =
+        p.key === NO_PAIR.key
+          ? "none: manual run with the Options"
+          : `${p.key} ${p.label}`;
       return option;
     }),
   );
+  ui.beforeStartList.replaceChildren(...listItems(BEFORE_YOU_START));
+  openBeforeStartOnce(ui.beforeStart);
+
+  /** The guidance card follows the selector. */
+  const showGuide = (): void => {
+    const g = PAIR_GUIDE[ui.pair.value as PairKey] ?? PAIR_GUIDE.x;
+    ui.guidePurpose.textContent = g.purpose;
+    ui.guideSteps.replaceChildren(...listItems(g.steps));
+    ui.guideAvoid.textContent = `Avoid: ${g.avoid}`;
+    ui.guideSpot.textContent = SPOT_NOTE;
+    ui.guideSpot.hidden = !g.spotNote;
+  };
+  ui.pair.addEventListener("change", showGuide);
+  showGuide();
 
   const log = (line: string): void => {
     const t = (performance.now() / 1000).toFixed(1);
@@ -590,6 +649,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     const next = nextPair(tag.pair, tag.spot);
     ui.pair.value = next.key;
     ui.spot.value = String(next.spot);
+    showGuide();
     ui.pairState.textContent = `saved pair ${String(tag.sequence)}; next: ${next.key}, spot ${String(next.spot)}`;
     log(`next pair: ${next.key}, spot ${String(next.spot)}`);
   };
@@ -737,12 +797,22 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     if (!pair) {
       return { text: "not run: no input", results: null };
     }
+    // A protocol pair sets runs, warm-up, backend and model file itself.
+    const settings = runSettings(
+      {
+        pair: kind === "camera" ? (pairInProgress?.pair ?? null) : null,
+        backends: backendsFrom(tickedValues(root, "backend")),
+        precisions: precisionsFrom(tickedValues(root, "model")),
+        runs: parseRuns(valueOf(root, "#runs")),
+      },
+      hasWebGpu(),
+    );
     const selection = {
       sift: checked(root, "#m-sift"),
       xfeat: checked(root, "#m-xfeat"),
       aliked: checked(root, "#m-aliked"),
-      backends: backendsFrom(tickedValues(root, "backend")),
-      precisions: precisionsFrom(tickedValues(root, "model")),
+      backends: settings.backends,
+      precisions: settings.precisions,
     };
     const gaps = selectionGaps(selection);
     if (gaps.length > 0) {
@@ -761,7 +831,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       );
       return { text: "not run: nothing ticked", results: null };
     }
-    const runs = parseRuns(valueOf(root, "#runs"));
+    const { runs, warmup } = settings;
     stopCamera();
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
@@ -778,10 +848,11 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     log(
       `run: ${String(methods.length)} methods, sizes ${sizes.join("/")}, ${String(runs)} runs`,
     );
+    log(settings.line);
     const results = await runBenchmark(
       methods,
       pair.input,
-      { sizes, runs },
+      { sizes, runs, warmup },
       {
         now: () => performance.now(),
         yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
@@ -810,6 +881,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       input: pair.text,
       sizes,
       runs,
+      warmup,
       results,
       errors,
     });

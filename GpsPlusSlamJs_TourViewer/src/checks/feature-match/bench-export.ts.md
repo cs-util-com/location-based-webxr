@@ -7,7 +7,8 @@ Saving the benchmark's captured camera frames to the device: the photo pairs of 
 ## Public API
 
 - `PAIRS`: the protocol's pairs in the order taken, `{ key, label }`: `1a` light: control (same light), `1b` light: dimmed, `1c` light: dark, not black, `2a` rotation: control (both upright), `2b` rotation: 90 deg, `2c` rotation: 180 deg, `2d` rotation: tilted 30-45 deg, `3a` distance: control (both 1.5 m), `3b` distance: 1.5 m to 3 m, `3c` distance: 1 m to 3 m, `4a` side step, flat: control, `4b` side step, flat: 1 m, `4c` side step, deep: control, `4d` side step, deep: 1 m, `x` other. The light pairs are repeated at up to three spots.
-- `pairTag(key, spot, sequence)` -> `PairTag { pair, pairLabel, spot, sequence }`; throws on an unknown key, a spot that is not an integer 1-3 or a sequence below 1 or not an integer.
+- `NO_PAIR` (`{ key: "none", label: "manual run" }`): the selector's manual run, which uses the Options; not in `PAIRS`, so `nextPair` never moves into or out of it. `PairKey`: a key of `PAIRS` or `none`. Each key's guidance texts are in `bench-guide.ts`.
+- `pairTag(key, spot, sequence)` -> `PairTag { pair, pairLabel, spot, sequence }` (`key` a `PAIRS` key or `none`); throws on an unknown key, a spot that is not an integer 1-3 or a sequence below 1 or not an integer.
 - `parseSpot(text)`: the spot field's value; anything but 1, 2 or 3 reads as 1.
 - `nextPair(key, spot)` -> `{ key, spot }`: the next pair in `PAIRS`; `1c` at a spot below 3 goes on to `1a` at the next spot, `1c` at spot 3 to `2a` at spot 1, every other pair keeps its spot, and `x` (the last) stays.
 - `pairFileNames(tag)` -> `{ all, A, B, info, matches }`: the names one pair's files are offered under, `feature-match-<sequence, two digits at least>-<key>-s<spot>-<label slug>` plus `.zip`, `-frame-a.png`, `-frame-b.png`, `-frames.json`, `-matches.json`, e.g. `feature-match-03-1b-s2-light-dimmed.zip`. The slug is the label in lower case with every run of other characters one hyphen, so names are ASCII without spaces, and the sequence makes them unique within a page session.
@@ -35,4 +36,4 @@ pairFileNames(tag).all; // "feature-match-03-1b-s2-light-dimmed.zip"
 
 ## Tests
 
-`bench-export.test.ts` (the zip is read back with zip.js: every entry name and its bytes, the report left out when empty, the names distinct; the pair list, the names of a pair, a property test that names are ASCII without spaces and unique across sequence numbers, the refused tags, the spot field and the advance rule); the page's saved files are checked in `playwright-tests/feature-match-check.spec.js`.
+`bench-export.test.ts` (the zip is read back with zip.js: every entry name and its bytes, the report left out when empty, the names distinct; the pair list, the names of a pair, a property test that names are ASCII without spaces and unique across sequence numbers, the manual run's tag and name, the refused tags, the spot field and the advance rule); the page's saved files are checked in `playwright-tests/feature-match-check.spec.js`.

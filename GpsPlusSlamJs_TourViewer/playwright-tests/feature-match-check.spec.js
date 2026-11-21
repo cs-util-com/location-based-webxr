@@ -558,6 +558,8 @@ test("the feature matching benchmark names a run that measured nothing", async (
   await page.goto("/feature-match-check.html");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
+  // A protocol pair would set the backend itself; "none" uses the Options.
+  await page.locator("#pair").selectOption("none");
   // XFeat ticked, but no backend: it would drop out without a word.
   await page.locator("#m-xfeat").check();
   for (const b of ["webgpu", "wasm"]) {
@@ -679,3 +681,121 @@ test("the feature matching benchmark keeps the camera off when a run starts duri
   expect(state.tracks).toEqual(["ended"]);
   await expect(page.locator("#camera-box")).toBeHidden();
 });
+
+/**
+ * Why this test matters: the photo tests are taken from what the page says
+ * on the phone, so the card under the selector must always show the
+ * selected pair's purpose, numbered steps and what to avoid, and follow the
+ * selector; the general rules are open on the first visit only; the Options
+ * and Copy log say they are not part of the photo tests.
+ */
+test("the feature matching benchmark guides each pair and the first visit", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, fulfillSift);
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+
+  await expect(page.locator("#before-start")).toHaveAttribute("open", "");
+  await expect(page.locator("#before-start-list")).toContainText(
+    "Lock the screen rotation. Do not zoom.",
+  );
+  await expect(page.locator("#before-start-list li")).toHaveCount(5);
+
+  await expect(page.locator("#pair")).toHaveValue("1a");
+  await expect(page.locator("#guide-purpose")).toHaveText(
+    "How many matches survive when nothing changes.",
+  );
+  await expect(page.locator("#guide-steps li")).toHaveCount(4);
+  await expect(page.locator("#guide-avoid")).toHaveText(
+    "Avoid: Moving the phone, changing the light.",
+  );
+  await expect(page.locator("#guide-spot")).toBeVisible();
+
+  await page.locator("#pair").selectOption("2b");
+  await expect(page.locator("#guide-purpose")).toHaveText(
+    "Does a method cope with a quarter turn?",
+  );
+  await expect(page.locator("#guide-steps li")).toHaveCount(3);
+  await expect(page.locator("#guide-steps li").last()).toHaveText(
+    "Turn the phone sideways (either way) and aim at the same centre: photo B.",
+  );
+  await expect(page.locator("#guide-avoid")).toHaveText(
+    "Avoid: Stepping closer or away.",
+  );
+  await expect(page.locator("#guide-spot")).toBeHidden();
+
+  await page.locator("#pair").selectOption("none");
+  await expect(page.locator("#guide-purpose")).toContainText(
+    "the Options decide what runs",
+  );
+  await expect(page.locator("#options-note")).toContainText(
+    "Photo tests set these themselves",
+  );
+  await expect(page.locator("#copy-note")).toHaveText(
+    "Not needed for the photo tests - the zip already contains the log. Use it to paste a quick timing run into a chat.",
+  );
+  expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+
+  await page.reload();
+  await expect(page.locator("#log")).toContainText("ready");
+  await expect(page.locator("#before-start")).not.toHaveAttribute("open");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * The run's method headers in the report, in order.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function reportHeaders(page) {
+  return (await page.locator("#report").inputValue())
+    .split("\n")
+    .filter((l) => l.startsWith("## "));
+}
+
+/**
+ * Why this test matters: the first zip of the photo tests ran 5 runs after
+ * a warm-up on WebGPU and WASM with both XFeat files, because the protocol's
+ * settings had to be set by hand in Options. With the Options untouched, a
+ * picked pair must run once, without a warm-up, on WebGPU only with one
+ * XFeat file, and say so in the log and the report; where the browser has
+ * no WebGPU it falls back to WASM and says that. The real methods cannot
+ * load here (the network is refused), so their report headers name what
+ * would have run.
+ */
+for (const gpu of [true, false]) {
+  test(`the feature matching benchmark runs a photo test pair with its own settings (${gpu ? "WebGPU" : "no WebGPU"})`, async ({
+    page,
+  }) => {
+    await routeNetwork(page, fulfillSift);
+    await fakeCamera(page);
+    await page.addInitScript((hasGpu) => {
+      Object.defineProperty(navigator, "gpu", {
+        configurable: true,
+        value: hasGpu ? { requestAdapter: async () => null } : undefined,
+      });
+    }, gpu);
+    await page.goto("/feature-match-check.html");
+    await expect(page.locator("#log")).toContainText("ready");
+    await page.locator("#pair").selectOption("2a");
+    await takePhotos(page);
+    await expect(page.locator("#run-state")).toContainText("done: 3 methods");
+
+    const backend = gpu ? "webgpu" : "wasm";
+    await expect(page.locator("#log")).toContainText(
+      `runs: 1, no warm-up, backends ${backend}${gpu ? "" : " (no WebGPU on this device)"}, XFeat files fp16 (photo test 2a)`,
+    );
+    expect(await page.locator("#report").inputValue()).toContain(
+      "sizes (long edge): 320, 480, 640; runs: 1, no warm-up",
+    );
+    expect(await reportHeaders(page)).toEqual([
+      "## SIFT (plain JS)",
+      `## XFeat (LiteRT.js) ${backend} xfeat_fp16.tflite`,
+      `## ALIKED + LightGlue (onnxruntime-web) ${backend}`,
+    ]);
+  });
+}

@@ -107,7 +107,8 @@ export interface BenchHooks {
 
 /**
  * Runs every method on the pair at every long edge: per size one warm-up
- * (extract A, extract B, match) and then `runs` timed rounds. Extraction is
+ * (extract A, extract B, match; unless `warmup` is false) and then `runs`
+ * timed rounds. Extraction is
  * timed per frame (2 x runs samples), matching per pair. A method that fails
  * to load, or a size that fails, is kept with its error; the loop goes on
  * and every loaded method is disposed.
@@ -115,7 +116,12 @@ export interface BenchHooks {
 export async function runBenchmark(
   methods: readonly BenchMethod[],
   input: BenchInput,
-  options: { readonly sizes: readonly number[]; readonly runs: number },
+  options: {
+    readonly sizes: readonly number[];
+    readonly runs: number;
+    /** Default true; false skips the warm-up round. */
+    readonly warmup?: boolean;
+  },
   hooks: BenchHooks,
 ): Promise<MethodResult[]> {
   const runs = Math.max(1, Math.floor(options.runs));
@@ -143,6 +149,7 @@ export async function runBenchmark(
           input,
           longEdge,
           runs,
+          options.warmup ?? true,
           hooks,
         );
         sizes.push(size);
@@ -184,6 +191,7 @@ async function runSize(
   input: BenchInput,
   longEdge: number,
   runs: number,
+  warmup: boolean,
   hooks: BenchHooks,
 ): Promise<SizeResult> {
   let width = 0;
@@ -204,8 +212,10 @@ async function runSize(
     ));
     const fa = resizeFrame(input.a, width, height);
     const fb = resizeFrame(input.b, width, height);
-    await runner.match(await runner.extract(fa), await runner.extract(fb));
-    await hooks.yieldToUi();
+    if (warmup) {
+      await runner.match(await runner.extract(fa), await runner.extract(fb));
+      await hooks.yieldToUi();
+    }
     for (let r = 0; r < runs; r++) {
       const t0 = hooks.now();
       const ea = await runner.extract(fa);
