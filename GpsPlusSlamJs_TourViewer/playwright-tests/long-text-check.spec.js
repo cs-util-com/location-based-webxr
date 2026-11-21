@@ -12,7 +12,7 @@ import { expect, test } from "@playwright/test";
  * port can lose every gap and still pass a test that only asks whether the
  * sheet is visible. These pin positions and gaps, worked out here from the
  * prototype's CSS numbers (not from the code under test), through the
- * check page `long-text-check.html`, and that a real tap on a sentence
+ * check page `check.html?view=long-text`, and that a real tap on a sentence
  * moves the reading mark there.
  *
  * Not pinned here: how the page looks beyond its boxes (the side-by-side
@@ -80,7 +80,7 @@ async function open(page, viewport) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/long-text-check.html");
+  await page.goto("/check.html?view=long-text");
   await page.waitForFunction(() => window.__longTextCheck?.state().sheet.open);
   // The sheet slides in: measure it where it comes to rest.
   await page.waitForFunction(() =>
@@ -226,7 +226,7 @@ test("a rich text: pictures load when scrolled near, a link asks before it leave
       route.fulfill({ status: 200, body: "a page", contentType: "text/plain" }),
     );
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/long-text-check.html?text=rich&ar=1");
+  await page.goto("/check.html?view=long-text&text=rich&ar=1");
   await page.waitForFunction(() => window.__longTextCheck?.state().sheet.open);
   const text = page.getByTestId("long-text-text");
   const pictures = text.locator('img[src^="blob:"]');
@@ -291,7 +291,7 @@ test("a rich text: pictures load when scrolled near, a link asks before it leave
   expect(await page.evaluate(() => window.__longTextCheck?.opened())).toEqual(
     [],
   );
-  expect(page.url()).toContain("/long-text-check.html");
+  expect(page.url()).toContain("/check.html?view=long-text");
 
   // "Stay" opens nothing; a second tap and "Open" opens the page once.
   await ask.getByRole("button", { name: "Stay" }).click();

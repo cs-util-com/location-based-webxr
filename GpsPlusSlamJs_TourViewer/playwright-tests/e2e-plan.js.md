@@ -57,7 +57,7 @@ cannot reach.
   (`EDITOR_PAGES`: `edit.html` and `asset-optimizer-check.html`, the check
   page that runs the editor's own optimizers); `viewer` opens only other
   pages; `both` opens an editor page and another page.
-- **What `pathArea` calls editor-only:** the editor's pages, `src/editor/`,
+- **What `pathArea` calls editor-only:** the editor's pages, the optimizer check page's module `src/checks/asset-optimizer-check-page.ts`, `src/editor/`,
   `src/editor3d/`, the editor kit's `src/chrome/` (its only folder today;
   a new kit folder is `null` until classified), and the editor-only spec
   helpers `editor3d-fixture.js`, `editor-menus.js` and `editor-tours.js`. **Viewer-only:** `index.html` and `src/landing/`,
@@ -132,7 +132,9 @@ both.
 
 ## Off the map and the older 3D view (inventory, 2026-11-03)
 
-The globe is the editor's 3D view; the 2D map is to be removed, and the
+The globe is the editor's 3D view; the 2D map has since been removed
+(with its rail, card and view switch; the specs below that opened on it
+now open without WebGL or through the test hook), and the
 older OrbitControls view (`?globe=0`) was removed on 2026-11-18 (see the
 third batch below). What each editor spec still opens, by
 what becomes of it (counts are `test(` titles; a title in a loop counts

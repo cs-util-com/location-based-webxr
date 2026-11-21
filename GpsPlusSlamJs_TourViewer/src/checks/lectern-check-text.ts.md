@@ -3,7 +3,7 @@
 ## Purpose
 
 `CHECK_TEXT` (`title`, `body`): the narrated-text prototype's record, its
-title and first two paragraphs verbatim, so `lectern-check.html` and the
+title and first two paragraphs verbatim, so `check.html?view=lectern` and the
 prototype show the same words when compared side by side.
 
 ## Invariants

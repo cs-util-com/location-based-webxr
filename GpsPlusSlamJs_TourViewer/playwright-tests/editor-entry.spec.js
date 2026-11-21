@@ -1,17 +1,27 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
 
-import { openAnother, save, startOnMap } from "./editor-menus.js";
+import { openAnother, save } from "./editor-menus.js";
+import { setNoGps } from "./editor-session.js";
 
 /**
  * The desktop editor's small fixes and its way in (tour editor plan
  * 2026-10-17-1816, W1; plan 2026-10-15-0348 M0 and M5).
  */
 
-// On the 2D map: nothing here is about the view, and the 3D view (the
-// default) would ask the relief and map hosts for tiles.
+// Without WebGL: nothing here is about the view, and the 3D view would
+// ask the relief and map hosts for tiles. The file pickers stay: the new
+// tour's save question needs them.
 test.beforeEach(async ({ context }) => {
-  await startOnMap(context);
+  await context.addInitScript(() => {
+    const real = HTMLCanvasElement.prototype.getContext;
+    /** @type {any} */ (HTMLCanvasElement.prototype).getContext = function (
+      /** @type {string} */ kind,
+      /** @type {unknown[]} */ ...rest
+    ) {
+      return kind.startsWith("webgl") ? null : real.call(this, kind, ...rest);
+    };
+  });
 });
 
 test("Save with nothing changed says so in a toast, and saves nothing", async ({
@@ -191,7 +201,7 @@ test.describe("the start card", () => {
     await page.locator("#start-open").click();
     await page.evaluate(() => /** @type {any} */ (window).__answerSave(null));
     await expect(page.locator("#topbar")).toBeVisible();
-    await page.locator("#no-gps-input").check();
+    await setNoGps(page, true);
     await expect(page.locator("body")).toHaveAttribute("data-draft", "saved");
     // The unsaved-work guard asks before the card shows again.
     let asked = 0;
@@ -205,8 +215,9 @@ test.describe("the start card", () => {
     await page.locator("#start-open").click();
     await page.evaluate(() => /** @type {any} */ (window).__answerSave(null));
     await expect(page.locator("#open-modal")).toBeHidden();
-    await expect(page.locator("#no-gps-input")).not.toBeChecked();
     await expect(page.locator(".toast.draft-offer")).toHaveCount(0);
+    await page.locator("#tour-name").click();
+    await expect(page.locator("#details-no-gps")).not.toBeChecked();
   });
 
   test("the example opens to look around and asks nowhere to save", async ({

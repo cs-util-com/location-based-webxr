@@ -11,7 +11,7 @@ import { expect, test } from "@playwright/test";
  * pointer capture, a touch anywhere but the knob goes through the layer
  * to the world, the layer stands aside for the walk sheet's open list,
  * and the drawn frame shows then on the left of the line and today on
- * the right, up to a few pixels from it. The page is `then-now-check.html`: one
+ * the right, up to a few pixels from it. The page is `check.html?view=then-now`: one
  * production then-and-now part seen from exactly its viewpoint.
  *
  * What it cannot catch: how the line feels under a thumb on a phone in
@@ -65,7 +65,7 @@ for (const viewport of VIEWPORTS) {
     const errors = /** @type {string[]} */ ([]);
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize(viewport);
-    await page.goto("/then-now-check.html");
+    await page.goto("/check.html?view=then-now");
     await page.waitForFunction(() => window.__thenNowCheck?.state() != null);
 
     // Lined up: the panel is open in Fade, nothing is cut.

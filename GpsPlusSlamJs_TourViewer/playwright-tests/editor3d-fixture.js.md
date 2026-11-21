@@ -4,7 +4,7 @@
 
 What the 3D view's e2e specs share (`editor3d.spec.js`,
 `editor3d-shell.spec.js`): the relief's and the map's hosts answered
-locally, the editor page with the sample tour open (on the map or in 3D), and the 3D view's
+locally, the editor page with the sample tour open in 3D, and the 3D view's
 stats.
 
 ## Public API
@@ -24,17 +24,13 @@ stats.
   ground. Nothing leaves the machine.
 - `cityRequests` - `{ overpass, tileHost }`, the city worker's requests
   answered so far in this test process (height tiles are not counted).
-- `openSample(page)` - `/edit.html` on the 2D map (`startOnMap` of
-  `editor-menus.js`: the 3D view is the default), ready, the switch
-  disabled without a tour, then the sample tour open (three rows in the
-  rail).
 - `openSampleIn3d(page)` - `/edit.html`, the sample tour open as a
-  creator gets it: in the 3D view (`body[data-view="3d"]`, the switch
-  saying "2D map"), its three stations placed.
+  creator gets it: in the 3D view (`body[data-view="3d"]`), its three
+  stations placed.
 - `openZip(page, zip, name)` - a tour zip opened through the page's file
   input, as a dropped file.
 - `view3d(page)` - `window.__tourEditor.view3d()`: the shown 3D view's
-  stats, or null on the map.
+  stats, or null while it does not show.
 - `noApproach(page)`, `noClouds(page)` - init scripts: the next globe open
   starts at street level, or without the heavy clouds.
 - `capture(target, path)` - a page or locator screenshot, taken only with

@@ -33,7 +33,7 @@ says it. Pure; `edit-main.ts` opens the file and runs the layer.
   them back idle and enabled however `work` settles (a file shown,
   refused, or a read that threw - the throw passes on). A `run` while one
   is running starts nothing and resolves null, whichever button started
-  it (the map's panel and the 3D view's top bar each have one). A button
+  it (the debug panel and the 3D view's top bar each have one). A button
   is structural (`{ disabled, textContent }`), so the tests run in node;
   the top bar's passes its label's text through.
 

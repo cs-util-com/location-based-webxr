@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The code of `lectern-check.html` (`lectern-check.html.md`): one long text
+The code of `check.html?view=lectern` (`check.html.md`): one long text
 on the production reading stand (`lectern-view.ts` `mountLectern`) in the
 narrated-text prototype's square, seen from its 1.6 m eye 2.6 m in front,
 so the stand can be compared side by side with the prototype and the

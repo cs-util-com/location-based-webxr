@@ -21,12 +21,12 @@ import {
   answerHosts,
   capture,
   dockSettled,
-  openSample,
+  openSampleIn3d,
   openZip,
   view3d,
   gotoEditor,
 } from "./editor3d-fixture.js";
-import { save, viewCommand } from "./editor-menus.js";
+import { save } from "./editor-menus.js";
 import { useWideFont } from "./wide-font.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
@@ -68,7 +68,7 @@ async function openWithPin(page, { turning = false, headingDeg = 0 } = {}) {
     delete window.showSaveFilePicker;
   });
   await answerHosts(page);
-  await openSample(page);
+  await openSampleIn3d(page);
   const placed = await page.evaluate(
     ({ id, alt, turning, headingDeg }) => {
       const hook = /** @type {any} */ (window).__tourEditor;
@@ -101,10 +101,6 @@ async function openWithPin(page, { turning = false, headingDeg = 0 } = {}) {
     { id: PIN, alt: SQUARE_GROUND_M + N_M + 1.5, turning, headingDeg },
   );
   expect(placed.kind).toBe("placed");
-  await viewCommand(page, "switch");
-  await expect(page.locator("#view-switch")).toHaveText("2D map", {
-    timeout: 60_000,
-  });
   await expect.poll(async () => (await view3d(page))?.stations).toBe(3);
   return placed.station;
 }

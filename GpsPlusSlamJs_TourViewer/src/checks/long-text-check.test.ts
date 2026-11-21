@@ -48,14 +48,14 @@ describe("longTextCheckOptions", () => {
 
   it("reads the voice, the view and the open switch; unknown values fall back", () => {
     expect(
-      longTextCheckOptions("?voice=stale&view=captions&open=0"),
+      longTextCheckOptions("?voice=stale&look=captions&open=0"),
     ).toMatchObject({ voice: "stale", view: "captions", open: false });
     expect(longTextCheckOptions("?voice=timed")).toMatchObject({
       voice: "timed",
       view: "reading",
       open: true,
     });
-    expect(longTextCheckOptions("?voice=loud&view=lectern")).toMatchObject({
+    expect(longTextCheckOptions("?voice=loud&look=lectern")).toMatchObject({
       voice: null,
       view: "reading",
     });

@@ -18,25 +18,17 @@ The Tour Viewer's Vite config: the dev server (the e2e's too) and the build.
 - `build.rollupOptions.input`: `index.html` (the app); `splat/index.html`,
   the splat trainer page (`splat/index.html.md`), linked from nothing and
   reachable at `/tour/splat/`; `splat-scene-check.html`, the check page of
-  the splat trainer's reader (`splat-scene-check.html.md`); and
-  `write-probe.html`, an on-device measurement page linked from nothing
-  (`write-probe.html.md`); an entry so that it is built and reachable at
-  `/tour/write-probe.html` on a branch preview, as the Recorder does for its
-  measurement pages. And `edit.html`, the desktop editor (M6 E1, `edit.html.md`),
+  the splat trainer's reader (`splat-scene-check.html.md`). And `edit.html`, the desktop editor (M6 E1, `edit.html.md`),
   reachable at `/tour/edit.html` and linked from the setup page's "You
   already have a tour?" box and step 5 on a device without AR (tour editor
   plan 2026-10-17-1816, W1). And `legal.html`, which forwards to the
   site-wide legal page at `/legal/` (`legal.html.md`), at `/tour/legal.html`.
   And `characters.html`, the character maker and the library of characters
   on this device (`characters.html.md`), at `/tour/characters.html`.
-  And `file-access-check.html`, an on-device check of what a phone's
-  browser lets the editor do with a file it saves, linked from nothing
-  (`file-access-check.html.md`), at `/tour/file-access-check.html`.
-  And the check pages `model-views-check.html`, `character-views-check.html`, `item-lab.html`,
-  `lectern-check.html` (a long text on its reading stand,
-  `lectern-check.html.md`), `then-now-check.html` (then and now's
-  picture and its Swipe line, `then-now-check.html.md`) and `long-text-check.html` (a long text in
-  its reading sheet, `long-text-check.html.md`), each linked from nothing.
+  And the check pages `check.html` (the prototype-parity views, one per
+  `?view=`: reading stand, reading sheet, then and now, travelling box,
+  model views and character views; `check.html.md`) and `item-lab.html`,
+  each linked from nothing.
 - `plugins`: `globeAssetsRoute(<GpsPlusSlamJs_Globe/assets>)`
   (`src/dev-server/globe-assets-route.ts`): the dev server (and so the e2e)
   answers `/globe-assets/*` from the Globe package's committed assets,

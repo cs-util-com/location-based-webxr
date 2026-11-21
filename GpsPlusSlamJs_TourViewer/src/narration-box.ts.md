@@ -243,7 +243,7 @@ box.hide();
 - `narration-box-timeline.test.ts` and
   `narration-box-timeline.property.test.ts` - the arithmetic, with
   properties.
-- `playwright-tests/narration-check.spec.js` - the layout at three
+- `playwright-tests/long-text-narration.spec.js` - the layout at three
   viewports against the prototype's numbers, the name and disclosure on
   the first line (the disclosure's first line right after the name), the
   thumb, every word on the 22 px line grid, the line count against the

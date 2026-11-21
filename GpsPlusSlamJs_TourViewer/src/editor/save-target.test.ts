@@ -534,7 +534,8 @@ describe("pickSaveFile", () => {
  * - and nothing saved by itself. Where the browser has both file dialogs,
  * it asks for a file (as it opens, or at its first Save) and keeps saving
  * into it. Android was held back until a check on a phone (Chrome 155,
- * Android 10, the file-access check page) showed its picked files behave
+ * Android 10, the file-access check page, removed and in git history)
+ * showed its picked files behave
  * as a desktop's: saved under a new name, kept across a reload with one tap
  * to grant the permission again, and a rewrite cut short by closing the tab
  * leaves the old file whole (the new bytes are swapped in only when the

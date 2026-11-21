@@ -38,6 +38,7 @@ import {
   editText,
   editorManifest,
   expectCaption,
+  GONE,
   setNoGps,
   withoutWebgl,
 } from "./editor-session.js";
@@ -760,7 +761,7 @@ test("deletes a note with Undo, and a saved delete takes the photo's file", asyn
   await openThroughChooser(page, await editorTour(), "editor-fixture.zip");
   await expect(page.locator("#tour-name")).toHaveText("Editor fixture");
   await deleteWithUndo(page, FOUNTAIN);
-  await expectCaption(page, FOUNTAIN, undefined);
+  await expectCaption(page, FOUNTAIN, GONE);
   await page.locator(".toast button", { hasText: "Undo" }).click();
   await expectCaption(page, FOUNTAIN, "Fountain");
   await expect(page.locator("#save-status")).toHaveText("No changes");
