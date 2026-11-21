@@ -1198,11 +1198,19 @@ function bindPin({
         );
       }
       if (phase !== "idle") return;
-      const located = landing.locate(place);
       const params = getParams();
-      onLocated(located, params);
+      // Parked again over the place it holds (a series of heights): only
+      // the camera moves, so its data and detail are not asked for again.
+      const again =
+        landing.located?.lat === place.lat &&
+        landing.located?.lng === place.lng &&
+        flight.state().phase === "landed";
+      const located = again ? landing.located : landing.locate(place);
+      if (!again) {
+        onLocated(located, params);
+        arrival.start(located, params);
+      }
       controls.release();
-      arrival.start(located, params);
       setFrameTarget(located);
       const heldM = Math.max(altitudeM, diveFloorM(located, altitudeM));
       flight.park(
