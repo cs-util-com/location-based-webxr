@@ -14,6 +14,7 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import { memoryDraftStore } from "./test-support/memory-draft-stores.js";
 import { stationBlocks } from "./test-support/station-content.js";
 import { isAnyOf } from "@reduxjs/toolkit";
 import { beforeAll, describe, expect, it, vi } from "vitest";
@@ -312,42 +313,14 @@ async function flush(): Promise<void> {
   for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
 
-/** A plain in-memory draft store. */
-function memoryDraftStore(): {
-  store: DraftFileStore;
-  files: Map<string, unknown>;
-} {
-  const files = new Map<string, unknown>();
-  const store: DraftFileStore = {
-    put: (key, data) => {
-      files.set(key, data);
-      return Promise.resolve(true);
-    },
-    getText: (key) => {
-      const value = files.get(key);
-      return Promise.resolve(typeof value === "string" ? value : undefined);
-    },
-    getBlob: () => Promise.resolve(undefined),
-    keys: () => Promise.resolve([...files.keys()]),
-    remove: (key) => {
-      files.delete(key);
-      return Promise.resolve();
-    },
-    clear: () => {
-      files.clear();
-      return Promise.resolve();
-    },
-  };
-  return { store, files };
-}
-
 /**
  * A draft store whose writes wait until `release`, so a test sees the
  * in-progress state - and which can REFUSE a write (false, as a quota wall
  * does) or REJECT one (a throw), for the failure branches.
  */
 function slowDraftStore() {
-  const { store, files } = memoryDraftStore();
+  const store = memoryDraftStore();
+  const { files } = store;
   const held: (() => void)[] = [];
   const mode = { refuse: false, reject: false };
   const slow: DraftFileStore = {
@@ -359,7 +332,7 @@ function slowDraftStore() {
             reject(new Error("the store threw"));
             return;
           }
-          if (!mode.refuse) files.set(key, data);
+          if (!mode.refuse) files.set(key, data as Blob | string);
           resolve(!mode.refuse);
         });
       }),
@@ -885,7 +858,8 @@ describe(
       // A page reload restores from the draft. Without the rewrite it would
       // bring back the tap-time geo the settle just replaced (plan §3.2 says
       // only a KILLED tab keeps the tap-time geo).
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -1997,7 +1971,8 @@ describe(
     // replaced its saved pose, and left the notes the first visit placed
     // beside it behind by the two visits' GPS difference (here 20 m).
     it("keeps a code measured earlier on this page as the reference in a later visit, though another code is in hand", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -2389,7 +2364,7 @@ describe(
     it("edits a hosted pin's text in place: one record by id, a new label, a log with before and after", async () => {
       const a = await withHostedTour(
         [hostedPin("h1", "Hosted gate")],
-        memoryDraftStore().store,
+        memoryDraftStore(),
       );
       a.dom.objectList.listHandlers!.editText("h1", "  The old mill ");
       await flush();
@@ -2421,7 +2396,8 @@ describe(
     it("records the hosted version an edit started from, once (M6 E2p)", async () => {
       // Why: the base is what lets a newer edit elsewhere (the desktop
       // editor) win over this draft; a second edit must not move it.
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const hosted = hostedPin("h1", "Gate");
       const a = await withHostedTour([hosted], store);
       a.pick.fn = () => "h1";
@@ -2439,7 +2415,8 @@ describe(
     it("shows the edit as in progress until the draft write lands, then says whether it did", async () => {
       // The async-UI rule: an in-progress state, then the durable end
       // state - and a refused write said, never swallowed.
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const held: (() => void)[] = [];
       let refuse = false;
       const slow: DraftFileStore = {
@@ -2447,7 +2424,7 @@ describe(
         put: (key, data) =>
           new Promise<boolean>((resolve) => {
             held.push(() => {
-              files.set(key, data);
+              files.set(key, data as Blob | string);
               resolve(!refuse);
             });
           }),
@@ -2480,7 +2457,8 @@ describe(
     });
 
     it("deletes a hosted pin as a tombstone: gone from the scene and the list, recorded in the draft and the log", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       a.dom.objectList.listHandlers!.remove("h1");
       await flush();
@@ -2496,7 +2474,8 @@ describe(
     });
 
     it("deletes a pin placed on this device outright - no tombstone, its draft file gone", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = await withHostedTour([], store);
       await a.mint();
       await a.placePin("Temp", [1, 0, 1]);
@@ -2739,7 +2718,8 @@ describe(
     // be read.
 
     it("offers Undo after deleting a hosted pin, and Undo brings it back to the list, the scene, the draft and the log", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       // On the page: in AR the strip's persistent Undo takes the note's
       // place, so the note's Undo is the page's.
@@ -2762,7 +2742,8 @@ describe(
     });
 
     it("undoes the delete of an edited hosted pin WITH its edit, and of a pin placed on this device with its record", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       const list = a.dom.objectList;
       list.listHandlers!.editText("h1", "Mill");
@@ -2830,7 +2811,8 @@ describe(
     // same path as the note's (`undoDelete`: the list, the scene, the
     // draft, the log).
     it("offers a delete in AR in the strip's Undo, past the note's hold, and a tap brings the pin back to the list, the scene, the draft and the log", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = await withHostedTour([hostedPin("h1", "Gate")], store);
       const list = a.dom.objectList;
       list.listHandlers!.remove("h1");
@@ -3133,7 +3115,7 @@ describe(
       async function asked() {
         const a = await withHostedTour(
           [hostedPin("h1", "Gate")],
-          memoryDraftStore().store,
+          memoryDraftStore(),
         );
         await a.mint();
         await a.placePin("Tower", [100, 0, 0]);
@@ -3208,7 +3190,7 @@ describe(
     it(`keeps an outcome through a tap that only selects, for ${String(OUTCOME_HOLD_MS)} ms`, async () => {
       const a = await withHostedTour(
         [hostedPin("h1", "Gate"), hostedPin("h2", "Mill")],
-        memoryDraftStore().store,
+        memoryDraftStore(),
       );
       const list = a.dom.objectList;
       list.listHandlers!.editText("h1", "The old mill");
@@ -3863,7 +3845,8 @@ describe(
     // the creator took back. The codes record follows the undo and the
     // hand letting go: it keeps the earlier text, and names no hand.
     it("writes the earlier text into the draft's codes at an undo of the settle", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const { a, stored } = await secondVisit({
         yawDeg: 20,
         northM: 3,
@@ -4148,7 +4131,8 @@ describe(
     }
 
     it("logs each visit at its settle, through its own alignment, into the draft, and the Finish summarises both", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const summary = summaryFake();
       const a = authoring({ store, summary });
       await openFinishableTour(a);
@@ -4242,7 +4226,7 @@ describe(
       }
 
       it("offers a placement moved after a download-only Finish (review #2)", async () => {
-        const { store } = memoryDraftStore();
+        const store = memoryDraftStore();
         const a = await load(store, []);
         a.setWalk(walk());
         await a.mint();
@@ -4266,7 +4250,7 @@ describe(
       });
 
       it("offers a later edit of an object the phone itself published (review #1)", async () => {
-        const { store } = memoryDraftStore();
+        const store = memoryDraftStore();
         const a0 = hosted("h1", "Gate");
         const a = await load(store, [a0]);
         a.setWalk(walk());
@@ -4294,7 +4278,7 @@ describe(
       // this device's work, so the later edit must be offered - a base
       // decided once per page load called it "replaced" and deleted it.
       it("offers an edit made after the creator uploaded this page's own Finish (re-review #1)", async () => {
-        const { store } = memoryDraftStore();
+        const store = memoryDraftStore();
         const a = await load(store, [hosted("h1", "Gate")]);
         a.setWalk(walk());
         await a.mint();
@@ -4327,7 +4311,7 @@ describe(
       // is written when it opens; its base must still name the version the
       // creator edited (the desktop's), or the next load drops it.
       it("keeps an edit made while the draft opens, over a desktop edit (re-review #2)", async () => {
-        const { store } = memoryDraftStore();
+        const store = memoryDraftStore();
         const a0 = hosted("h1", "Gate");
         const a = await load(store, [a0]);
         a.setWalk(walk());
@@ -4385,7 +4369,7 @@ describe(
         }
 
         it("after a yes, a pin deleted on the desktop stays deleted", async () => {
-          const { store } = memoryDraftStore();
+          const store = memoryDraftStore();
           const a = await placeAndFinish(store);
           a.dom.uploadYes.click();
           await vi.waitFor(() => {
@@ -4417,7 +4401,7 @@ describe(
         });
 
         it("with no yes, the pin is offered back as before", async () => {
-          const { store } = memoryDraftStore();
+          const store = memoryDraftStore();
           const a = await placeAndFinish(store);
           a.dom.uploadNo.click();
           expect(a.dom.uploadAsk.hidden).toBe(true);
@@ -4437,7 +4421,7 @@ describe(
         // versions as hosted - so a pin placed after Finish A read as
         // "deleted elsewhere" at the next open of A's file, and was lost.
         it("a question left from an earlier Finish never notes a later Finish that was not saved", async () => {
-          const { store } = memoryDraftStore();
+          const store = memoryDraftStore();
           const a = await placeAndFinish(store);
           const first = a.ctx.rebuiltZip;
           const hostedA = [...tourObjects(a.ctx.tourDocument.manifest()!)];
@@ -4468,7 +4452,8 @@ describe(
       });
 
       it("says a desktop edit won once, and forgets the replaced record (review #4)", async () => {
-        const { store, files } = memoryDraftStore();
+        const store = memoryDraftStore();
+        const { files } = store;
         const a0 = hosted("h1", "Gate");
         const a = await load(store, [a0]);
         a.setWalk(walk());
@@ -4493,7 +4478,7 @@ describe(
     });
 
     it("brings a restored draft's visits back into the summary after a reload", async () => {
-      const { store } = memoryDraftStore();
+      const store = memoryDraftStore();
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour(TOUR);
@@ -4533,7 +4518,8 @@ describe(
     // evidence for that code. Visits keep a draft alive until the author
     // discards it (the zip never carries them).
     it("keeps a draft that holds only AR visits across a reload, offers them, and drops them only on a discard", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour(TOUR);
@@ -4571,7 +4557,8 @@ describe(
     // alignment like every visit record - and it must not take the code in
     // hand, which would change what the settle corrects through.
     it("logs a stable sighting of the tour's other stored code as that code's visit, without taking it in hand", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour(TOUR);
@@ -4816,7 +4803,8 @@ describe(
     });
 
     it("keeps a visit with no fix and no code out of the visit log", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour("https://example.test/tour.zip");
@@ -4951,7 +4939,8 @@ describe(
     });
 
     it("measures both codes, and the draft keeps both levels", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -4980,7 +4969,8 @@ describe(
     // no saved pose in it - the summary after Finish could not say where it
     // is, or grade its saved pose by the visit it came from.
     it("logs both codes measured in the visit, each with the pose its settle saved", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -5012,7 +5002,8 @@ describe(
     // visit's other codes are settled with an empty hand too, and none of
     // them takes the hand.
     it("settles the visit's other measured codes when the hand is empty", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -5042,7 +5033,8 @@ describe(
     // the first code was re-minted through the wrong moment's alignment -
     // here 3 m and 8 degrees off where it was measured.
     it("re-mints each code through the alignment of its own measurement", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       a.setup.presentDraftForTour("https://example.test/tour.zip");
       await flush();
@@ -5558,7 +5550,7 @@ describe(
     // visit, which settles again at its end. Judged again against the level
     // the first settle already restored, the undo would be lost or doubled.
     it("re-applies an undo after a failed Finish, exactly once", async () => {
-      const { store } = memoryDraftStore();
+      const store = memoryDraftStore();
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour("https://example.test/tour.zip");
@@ -5596,7 +5588,7 @@ describe(
     // would read as a keep - the result and the log would contradict what
     // was written.
     it("re-applies a move after a failed Finish, as the same decision", async () => {
-      const { store } = memoryDraftStore();
+      const store = memoryDraftStore();
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour("https://example.test/tour.zip");
@@ -5733,7 +5725,7 @@ describe(
     // offer - an Undo of it would drop the first settle's line while the
     // change stays in the document.
     it("withdraws a settle's Undo when a failed Finish unsettles it, and offers none for the re-settle", async () => {
-      const { store } = memoryDraftStore();
+      const store = memoryDraftStore();
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour("https://example.test/tour.zip");
@@ -5769,7 +5761,8 @@ describe(
     // Why (M6 milestone review #4; D19, §7j #12): a real move leaves the
     // pins where they are, and is the visit log's boundary for the code.
     it("a move takes no pin along and marks the move in the visit log", async () => {
-      const { store, files } = memoryDraftStore();
+      const store = memoryDraftStore();
+      const { files } = store;
       const a = authoring({ store });
       await openFinishableTour(a);
       a.setup.presentDraftForTour("https://example.test/tour.zip");

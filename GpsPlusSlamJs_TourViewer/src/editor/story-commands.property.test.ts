@@ -38,7 +38,7 @@ import {
   freeLocks,
   memoryDraftStores,
   writtenJson,
-} from "../test-support/memory-draft.js";
+} from "../test-support/memory-draft-stores.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { withReferencedAssets } from "../tour-content.js";
