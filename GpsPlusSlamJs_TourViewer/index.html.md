@@ -193,13 +193,16 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   the words. `ar-mode.spec.js` pins its centring and the skip's place.
   The creator's variant is the same element under
   `body[data-mode="creator"]` (no second card): the animation beside the
-  words, placed under the readout card (a fixed top offset sized for the
-  readout's two clamped lines, and hidden while the readout is opened by
-  a tap), off the screen centre where the placing ring aims, with
+  words, placed under the readout card (a fixed top offset of 90 px: the
+  readout's two clamped lines' 70 px, a 10 px gap and 10 px to spare;
+  hidden while the readout is opened by a tap or while the size offer,
+  which sits above the readout and pushes it down, shows), off the screen
+  centre where the placing ring aims, with
   `#scan-card-close` (44 px, the only part that takes taps; hidden in the
   visitor's card) and no escape. `ar-layout.spec.js` pins it by positions
   at 360x640, 320x640, 412x915 and 915x412 (under the readout and Done,
-  above the strip, the centre clear).
+  under the readout's two clamped lines whatever it says, above the
+  strip, the centre clear, hidden while the size offer shows).
 - **"You already have a tour?"** (`#have-tour`, creator-only, tour editor
   plan 2026-10-17-1816 W1): BELOW the map and the steps, so the first-time
   story stays first. Two halves, chosen by CSS from the page's AR check

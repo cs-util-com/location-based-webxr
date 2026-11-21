@@ -2784,14 +2784,18 @@
          words, off the screen centre (where the placing ring aims) just
          under the readout card, with a close that works at once. The top
          offset is the readout's two clamped lines (12 px panel padding,
-         2 x 10 px border, 2 x 14 px x 1.35) plus a 10 px gap; an opened
-         readout is the creator's to read, so the card steps aside then. */
+         2 x 10 px border, 2 x 14 px x 1.35, about 70 px) plus a 10 px
+         gap, with 10 px to spare. It holds only while the readout is the
+         panel's first card: an opened readout is the creator's to read,
+         and the size offer (above the readout) pushes it down, so the
+         card steps aside for either. */
       body[data-mode="creator"] #scan-card {
         place-items: start center;
         padding: calc(90px + env(safe-area-inset-top)) 12px 0;
       }
       body[data-mode="creator"]:has(#setup-status[data-clamped="false"])
-        #scan-card {
+        #scan-card,
+      body[data-mode="creator"]:has(#size-offer:not([hidden])) #scan-card {
         display: none;
       }
       body[data-mode="creator"] #scan-card .scan-card-panel {

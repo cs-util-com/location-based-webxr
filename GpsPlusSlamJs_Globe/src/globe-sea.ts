@@ -178,7 +178,7 @@ export function seaWaveCoord(
 /**
  * THE SEA'S SHADOW INTERFACE: how much of the sun reaches the sea here, 1
  * in the open. `cloudShadow` is the surface's own shadow value at the
- * point; the near clouds' shadow arrives by changing this one function.
+ * point; any other cloud shadow arrives by changing this one function.
  */
 export const GLOBE_SEA_SHADOW_GLSL = /* glsl */ `
 float globeSeaSunShadow( float cloudShadow ) {

@@ -386,6 +386,8 @@ function slowDraftStore() {
  */
 function authoring(
   options: {
+    /** The page's mode (default "creator"). */
+    mode?: "creator" | "visitor";
     store?: DraftFileStore;
     /** Holds the draft's opening until it settles (the window between
      *  the object list showing and the namespace being open). */
@@ -536,7 +538,7 @@ function authoring(
   } as unknown as TourViewerSeams;
   const setup = wireCreatorSetup({
     ctx,
-    mode: "creator",
+    mode: options.mode ?? "creator",
     arStore,
     arController: {
       getState: () => ({ status: device.live ? "running" : "idle" }),
@@ -2287,6 +2289,23 @@ describe("the creator's scan card", { timeout: SLOW_MS }, () => {
     a.beginVisit();
     a.setup.renderAuthorReadout();
     expect(a.scanCard.root.hidden).toBe(true);
+  });
+
+  it("is never touched on a visitor page, where the visitor's entry owns it", () => {
+    // Why: `#scan-card` is one element with one writer per mode; a
+    // creator-side listener or render on a visitor page would hide the
+    // visitor's card, or close it on a tap meant for the visitor's own.
+    const a = authoring({ mode: "visitor" });
+    measuredTour(a);
+    a.scanCard.root.hidden = false;
+    expect(a.scanCard.close.listens("click")).toBe(false);
+    expect(a.scanCard.close.listens("beforexrselect")).toBe(false);
+    a.beginVisit();
+    a.setup.renderAuthorReadout();
+    a.scanCard.close.click();
+    a.setup.renderAuthorReadout();
+    expect(a.scanCard.root.hidden).toBe(false);
+    expect(a.scanCard.title.textContent).toBe("");
   });
 });
 

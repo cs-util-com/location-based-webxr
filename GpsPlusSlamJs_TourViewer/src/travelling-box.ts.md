@@ -98,9 +98,11 @@ the last seen, else the dock's flat corners, flown by `flightClip` at
   per frame from `getBoundingClientRect`.
 - No allocation per frame in the measuring path: the matrices, vectors,
   clip arrays and both quads' corners are kept and written in place
-  (`quadOfClipInto`); `state()` copies them for its reader. The rules'
-  small result objects (`plateMetrics`, `wantPlace`, `settlePlace`)
-  are the one per-frame garbage left.
+  (`quadOfClipInto`); `state()` copies them for its reader. Small
+  per-frame garbage is left elsewhere: the rules' result objects
+  (`plateMetrics`, `wantPlace`, `settlePlace`), the surface's layout
+  (its paint model), the gates' array, the hide rule's input, the paint
+  key's string and the screen tuples of `midSpan` and `screenOf`.
 - A corner counts as on screen only beyond the camera's near plane where
   that is further than the rules' margin (`TRAVEL_MIN_W`): WebXR clips at
   0.1 m, taken from the camera.

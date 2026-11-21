@@ -41,7 +41,6 @@ describe("readGlobeSwitch", () => {
       cloudWind: GLOBE_SWITCH.cloudWind.fallback,
       buildings: 1,
       grade: null,
-      clouds: "old",
       quality: null,
     });
     expect(readGlobeSwitch("?tour=https://example.org/walk.zip")).toEqual(
@@ -49,17 +48,16 @@ describe("readGlobeSwitch", () => {
     );
   });
 
-  // Why: the old clouds are the default and the new ones experimental,
-  // reached only by `clouds=new` exactly; `clouds=old` stays accepted so
-  // links written while the new clouds were the default keep working, and
-  // a mistyped value must not silently switch the experiment on.
-  it("reads the clouds' experiment and the quality's name", () => {
-    expect(readGlobeSwitch("").clouds).toBe("old");
-    expect(readGlobeSwitch("?clouds=new").clouds).toBe("new");
-    expect(readGlobeSwitch("?clouds=old").clouds).toBe("old");
-    for (const value of ["", "nope", "New", "1", "true"]) {
-      expect(readGlobeSwitch(`?clouds=${value}`).clouds).toBe("old");
+  // Why: links written while the page had a second, experimental cloud
+  // renderer carry `clouds=new` or `clouds=old`; both now open the one
+  // cloud look as any link does.
+  it("reads an old link's clouds switch as nothing", () => {
+    for (const value of ["new", "old", "", "nope"]) {
+      expect(readGlobeSwitch(`?clouds=${value}`)).toEqual(readGlobeSwitch(""));
     }
+  });
+
+  it("reads the quality's name", () => {
     expect(readGlobeSwitch("?quality=low").quality).toBe("low");
     expect(readGlobeSwitch("?quality=").quality).toBe("");
   });

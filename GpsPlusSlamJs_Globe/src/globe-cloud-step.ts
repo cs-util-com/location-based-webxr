@@ -13,13 +13,7 @@ import type * as THREE from "three";
 
 import type { CloudNoiseMode } from "gps-plus-slam-app-framework/visualization/atmosphere/cloud-live-noise";
 
-import type {
-  CloudMarchFrame,
-  GlobeCloudMarch,
-} from "./globe-cloud-march-pass.js";
-
 import { flatCloudShare } from "./globe-cloud-flat-fade.js";
-import { cloudShellCoverLift } from "./globe-cloud-march-law.js";
 import type { GlobeCloudShell } from "./globe-cloud-shell.js";
 import {
   type CloudShellNoiseCascade,
@@ -31,13 +25,11 @@ import {
   cloudShellVolumeShares,
 } from "./globe-cloud-shell-volume.js";
 import type {
-  CloudShellNearMix,
   CloudShellSlabDisc,
   GlobeCloudShellVolume,
 } from "./globe-cloud-shell-volume-pass.js";
-import { CLOUD_VOLUME, cloudVolumeShare } from "./globe-cloud-volume.js";
+import { CLOUD_VOLUME } from "./globe-cloud-volume.js";
 import type { GlobeCloudVolume } from "./globe-cloud-volume-pass.js";
-import { nearCloudsGain } from "./globe-sky-hand-over.js";
 import type { LatLng } from "./globe-target.js";
 
 /** The shell law's knobs (the lab's hash names). */
@@ -75,12 +67,6 @@ export interface GlobeCloudKnobs extends CloudShellLawKnobs {
   readonly cloudHighCell: number;
   readonly cloudHighCover: number;
   readonly cloudHighShare: number;
-  /** 1: the near clouds, where a page has them. Absent: the slab. */
-  readonly cloudNear?: number;
-  /** Where they are gone (km); the old ceiling drives the shell's stations. */
-  readonly cloudNearCeilingKm?: number;
-  /** The band below it they fade in over (km). */
-  readonly cloudNearFadeKm?: number;
 }
 
 /**
@@ -243,11 +229,6 @@ interface GlobeCloudRenderFrame {
   readonly sceneDepthWeight: number;
   /** How much of the slab's flat deck the shell takes (`cloudShellFlat`). */
   readonly flatten: number;
-  /** What the near clouds need, or nothing without them. */
-  readonly near?: Pick<
-    CloudMarchFrame,
-    "timeS" | "quality" | "pixelScale" | "sceneDepth"
-  >;
 }
 
 /** The shell's and the slab's alpha on one grid (debug hooks). */
@@ -281,8 +262,6 @@ export interface GlobeCloudStep {
   readonly shares: CloudShellVolumeShares | null;
   /** The last plan's shadow strengths. */
   readonly shadow: { readonly shell: number; readonly mapFactor: number };
-  /** The near clouds' share in the last plan (0: none are drawn). */
-  readonly nearShare: number;
   /**
    * The slab's disc as the shell weighs it per pixel: its centre (world x,
    * z; null on the camera), the deck's height and its radius (m); null
@@ -312,17 +291,6 @@ export interface GlobeCloudStep {
 interface GlobeCloudStepOptions {
   readonly cloudVolume: GlobeCloudVolume | null;
   readonly shellVolume: GlobeCloudShellVolume | null;
-  /** The near clouds, in charge below their ceiling once they are ready. */
-  readonly near?: Pick<
-    GlobeCloudMarch,
-    | "ready"
-    | "render"
-    | "texture"
-    | "shadowTexture"
-    | "uv"
-    | "resolution"
-    | "uniforms"
-  > | null;
 }
 
 /** The shell's frame (`GlobeCloudShellVolume.update`) from the knobs. */
@@ -341,10 +309,7 @@ function shellFrame(
     stations: cloudShellStationsFromKnobs(p),
     target: frame.target,
     deckKm: frame.deck.heightM() / 1000,
-    cover:
-      p.cloudNear === 1
-        ? p.cloudVolumeCover * cloudShellCoverLift(altitudeKm)
-        : p.cloudVolumeCover,
+    cover: p.cloudVolumeCover,
     cascade: cloudShellCascadeFromKnobs(altitudeKm, p),
     highLayer: {
       on: p.cloudHigh === 1,
@@ -362,58 +327,11 @@ function shellFrame(
 export function createGlobeCloudStep({
   cloudVolume,
   shellVolume,
-  near = null,
 }: GlobeCloudStepOptions): GlobeCloudStep {
   /** This frame's drawers of the clouds (`cloudShellVolumeShares`). */
   let shares: CloudShellVolumeShares | null = null;
   /** The shadows' strengths this frame (`cloudShellShadowStrengths`). */
   let shadow = { shell: 0, mapFactor: 1 };
-  /** The near clouds' share this frame, and their shadow's strength. */
-  let nearShare = 0;
-  let nearShadow = 0;
-
-  /** Their share at the camera: 0 until ready, without a shell or a height. */
-  const nearShareAt = (p: GlobeCloudKnobs, cameraAltM: number) =>
-    near?.ready === true &&
-    p.cloudNear === 1 &&
-    shares !== null &&
-    Number.isFinite(cameraAltM)
-      ? cloudVolumeShare(Math.max(0, cameraAltM) / 1000, {
-          ceilingKm: p.cloudNearCeilingKm ?? CLOUD_VOLUME.ceilingKm,
-          fadeKm: p.cloudNearFadeKm ?? CLOUD_VOLUME.fadeKm,
-        })
-      : 0;
-
-  /** Draws the near clouds; the composite's mix, or null. */
-  const drawNear = (
-    camera: THREE.PerspectiveCamera,
-    frame: GlobeCloudRenderFrame,
-  ): CloudShellNearMix | null => {
-    if (near === null || frame.near === undefined || nearShare <= 0) {
-      return null;
-    }
-    const drawn = near.render({
-      ...frame.near,
-      camera,
-      worldFromEcef: frame.worldFromEcef,
-      sunEcef: frame.sunEcef,
-      shadow: nearShadow,
-    });
-    if (!drawn) return null;
-    const air = near.uniforms();
-    return {
-      texture: near.texture,
-      shadowTexture: near.shadowTexture,
-      uv: near.uv,
-      resolution: near.resolution,
-      tapPixels: frame.near.quality.tapPixels,
-      weight: nearShare,
-      shadow: nearShadow > 0,
-      air,
-      gain: nearCloudsGain(frame.sunIntensity, air.uSun.value.y),
-    };
-  };
-
   const slabDisc = (): CloudShellSlabDisc | null => {
     if (!cloudVolume) return null;
     const s = cloudVolume.state();
@@ -476,8 +394,6 @@ export function createGlobeCloudStep({
         strength: p.cloudShellShadow,
         shellIn: shares?.shellIn ?? 0,
       });
-      nearShare = nearShareAt(p, cameraAltM);
-      nearShadow = p.cloudShellShadow;
       return { shellOn, flat, flatShadow, shares, shadow };
     },
     updateVolumes(p, frame) {
@@ -492,22 +408,6 @@ export function createGlobeCloudStep({
     render(camera, frame) {
       if (!cloudVolume) return;
       const mixing = shares !== null;
-      const nearMix = drawNear(camera, frame);
-      // Below their ceiling the near clouds draw instead of the slab, and
-      // the shell gets none to weigh, so nothing old fills their gaps.
-      if (nearMix !== null && shellVolume) {
-        shellVolume.render(camera, {
-          worldFromEcef: frame.worldFromEcef,
-          sunEcef: frame.sunEcef,
-          sunIntensity: frame.sunIntensity,
-          slabTexture: null,
-          sceneDepthWeight: frame.sceneDepthWeight,
-          disc: null,
-          flatten: 0,
-          near: nearMix,
-        });
-        return;
-      }
       const slabDrawn = cloudVolume.render(camera, frame.relief, frame.extra, {
         composite: !mixing,
       });
@@ -529,9 +429,6 @@ export function createGlobeCloudStep({
     },
     get shadow() {
       return shadow;
-    },
-    get nearShare() {
-      return nearShare;
     },
     slabDisc,
     readBack(bands = 1) {
