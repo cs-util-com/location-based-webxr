@@ -76,6 +76,8 @@ and so the e2e can drag the line and read the cut. Code:
 `src/checks/then-now-check.ts`, which documents the hook
 `window.__thenNowCheck`. The page copies the visitor page's screen host
 rules (`#narration-card-root`), so the panel sits where it sits there.
+The view installs the page-wide slider guard (`check-page.ts.md`), as
+every page with a slider does.
 
 - Shows: "Today" as a plain blue backdrop and the old picture as a red
   one with a light grid. Choose Swipe in the panel and drag the round
@@ -193,6 +195,24 @@ portrait in the walk card (`#scene-portrait` in `index.html`), not on
 this page.
 
 - Tests: `playwright-tests/character-views.spec.js`.
+
+## The old pages
+
+Each view used to be its own page; those pages were removed and are in git
+history. An old link maps to the new one like this (every other query key
+carries over unchanged):
+
+- `lectern-check.html` - `check.html?view=lectern`
+- `long-text-check.html` - `check.html?view=long-text`, with its old
+  `view=captions` now `look=captions` (for example
+  `long-text-check.html?voice=timed&view=captions` is
+  `check.html?view=long-text&voice=timed&look=captions`)
+- `then-now-check.html` - `check.html?view=then-now`
+- `travelling-box-check.html` - `check.html?view=travelling-box`
+- `model-views-check.html` - `check.html?view=model-views`
+- `character-views-check.html` - `check.html?view=character-views`
+- `narration-look-check.html`, `file-access-check.html` and
+  `write-probe.html` have no view: they were removed with the others.
 
 ## Tests
 

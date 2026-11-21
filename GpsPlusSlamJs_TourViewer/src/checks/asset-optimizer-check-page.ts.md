@@ -15,7 +15,7 @@ None as exports. On import it:
 - The optimizers are the editor's shipped rows (`ASSET_OPTIMIZERS`) through the real Worker; only the swept field of `OPTIMIZER_SETTINGS` changes.
 - The large view's state lives in `model-compare-view.ts` (a pure reducer); three.js objects, the made variants' cache and the fixed-drawing renderer are resources held in this module.
 - A run disables only the controls of its own section that were enabled, marks the section `aria-busy`, says a failure in words, and enables those controls again either way.
-- Only the editor page loads this module: `playwright-tests/e2e-plan.js` counts it as editor-only, and `tests/repo-config/tour-viewer-e2e-plan.test.js` holds that no other page reaches it.
+- Only the optimizer check page (`asset-optimizer-check.html`, one of the editor pages) loads this module: `playwright-tests/e2e-plan.js` counts it as editor-only, and `tests/repo-config/tour-viewer-e2e-plan.test.js` holds that no other page reaches it.
 
 ## Tests
 
