@@ -5,8 +5,8 @@
  *
  * Why this file matters: the intro now starts far out (50,000 km from the
  * centre, which is also how far the controls zoom out) and flies in to the
- * user in one of four variants. Each must END at the same pose and field
- * of view, or the hand-over to the controls jumps; the zoom-out limit
+ * user at the lab's field of view. It must END at the target, or the
+ * hand-over to the controls jumps; the zoom-out limit
  * must hold in the real controls (it overrides a private library method);
  * and the permission rule must neither prompt nor wait when no position
  * can come, yet take a position that arrives late without a jump.
@@ -56,7 +56,7 @@ const libraryKm = (fovYDeg, aspect) => {
  * (the corner black, so the lit centre cannot be space).
  */
 async function zoomOutToLimit(page) {
-  await bootGlobe(page, `at=30,15&turnMs=10000&intro=distance&${BASE}`, {
+  await bootGlobe(page, `at=30,15&turnMs=10000&${BASE}`, {
     phase: "turning",
   });
   const early = await cameraNow(page);
@@ -73,7 +73,7 @@ async function zoomOutToLimit(page) {
   // (PARAMS.turnMs, 0-10,000): the run must be the one asked for.
   expect(first.turnMs).toBe(10_000);
   expect(first.km).toBeGreaterThanOrEqual(0.999 * early.limitKm);
-  await applyHash(page, `at=30,15&turnMs=0&intro=distance&${BASE}`);
+  await applyHash(page, `at=30,15&turnMs=0&${BASE}`);
   await page.waitForFunction(
     () => window.__globeLab.state().phase === "arrived",
   );
@@ -118,37 +118,27 @@ async function zoomOutToLimit(page) {
   return result;
 }
 
-// WHY: every variant hands the camera over at one pose and field of view
-// (DEC-GL5-2), and the lab's fovY equals it, so applyLive never snaps back.
-test("every variant ends at the same pose and field of view", async ({
+// WHY: the fly-in hands the camera over at the target, at the lab's fovY:
+// it never changes the field of view, so applyLive never
+// snaps it back and a press mid-flight needs no ease.
+test("the fly-in ends at the target, at the lab's field of view", async ({
   page,
 }) => {
   test.setTimeout(120_000);
-  const ends = [];
-  for (const intro of ["narrow", "distance", "fov", "dolly"]) {
-    const hash = `at=30,15&turnMs=1500&intro=${intro}&${BASE}`;
-    if (ends.length === 0) await bootGlobe(page, hash);
-    else await applyHash(page, hash);
-    await page.waitForFunction(
-      (want) => {
-        const s = window.__globeLab.state();
-        return s.intro === want && s.phase === "arrived";
-      },
-      intro,
-      { timeout: 60_000 },
-    );
-    ends.push({ intro, ...(await cameraNow(page)) });
-  }
-  console.log(
-    `intro ends: ${ends.map((e) => `${e.intro} ${e.km.toFixed(1)} km, fov ${e.cameraFov}, centre ${e.centre?.lat.toFixed(3)},${e.centre?.lng.toFixed(3)}`).join("; ")}`,
+  await bootGlobe(page, `at=30,15&turnMs=1500&${BASE}`);
+  await page.waitForFunction(
+    () => window.__globeLab.state().phase === "arrived",
+    undefined,
+    { timeout: 60_000 },
   );
-  for (const e of ends) {
-    expect(Math.abs(e.km - ends[0].km), e.intro).toBeLessThan(0.01);
-    expect(e.cameraFov, e.intro).toBe(50);
-    expect(e.fov, e.intro).toBe(50);
-    expect(Math.abs(e.centre.lat - 30), e.intro).toBeLessThan(0.01);
-    expect(Math.abs(e.centre.lng - 15), e.intro).toBeLessThan(0.01);
-  }
+  const end = await cameraNow(page);
+  console.log(
+    `intro end: ${end.km.toFixed(1)} km, fov ${end.cameraFov}, centre ${end.centre?.lat.toFixed(3)},${end.centre?.lng.toFixed(3)}`,
+  );
+  expect(end.cameraFov).toBe(50);
+  expect(end.fov).toBe(50);
+  expect(Math.abs(end.centre.lat - 30)).toBeLessThan(0.01);
+  expect(Math.abs(end.centre.lng - 15)).toBeLessThan(0.01);
 });
 
 // WHY (DEC-GL5-1): the intro starts far out, and the controls zoom out as
@@ -180,115 +170,6 @@ test("on a portrait phone the zoom-out is never less than the library's or twice
   expect(r.libraryKm).toBeGreaterThan(50_000);
   expect(r.limitKm).toBeCloseTo(2 * r.fitKm, 0);
   await context.close();
-});
-
-/** How close the field of view must come back to the lab's fovY, degrees. */
-const FOV_TOLERANCE_DEG = 0.01;
-
-// WHY (§3.1): on a phone the globe gets touched while it
-// flies in. The narrow variant widens the view to 80 degrees on the way;
-// a press must not leave it there. The view eases back to the lab's fovY
-// over about 0.5 s, then holds it. "No snap" is read by TIME, from the
-// lab's `fovReturnAt` hook (the same ease the frame loop applies), because
-// under the CPU rasteriser no frame may land early in the ease: a quarter
-// of the way in, the view must be strictly between where it was and fovY.
-test("a press during the fly-in eases the field of view back to fovY", async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
-  await bootGlobe(page, `at=30,15&turnMs=10000&intro=narrow&${BASE}`, {
-    phase: "turning",
-  });
-  // The flight asked for, not the default an out-of-range value falls to.
-  expect(await page.evaluate(() => window.__globeLab.state().turnMs)).toBe(
-    10_000,
-  );
-  const before = await cameraNow(page);
-  expect(before.cameraFov).toBeGreaterThan(before.fov + 10);
-  // Every frame's field of view, from the press for 1.5 s (3x the ease),
-  // with the ease's value for the moment that frame applied it. Sampling
-  // starts BEFORE the press, so the page round trip after it costs no
-  // early frames.
-  await page.evaluate(() => {
-    const w = /** @type {any} */ (window);
-    w.__fovSamples = [];
-    document.getElementById("globe-canvas")?.addEventListener(
-      "pointerdown",
-      () => {
-        w.__pressAt = performance.now();
-      },
-      { capture: true, once: true },
-    );
-    const step = () => {
-      if (w.__pressAt !== undefined) {
-        const e = w.__globeLab.fovReturnAt(0);
-        w.__fovSamples.push({
-          ms: performance.now() - w.__pressAt,
-          fov: w.__globeLab.state().cameraFov,
-          sinceEase: e ? e.lastFrameAt - e.at : null,
-          easeMs: e ? e.ms : null,
-          expected: e
-            ? w.__globeLab.fovReturnAt((e.lastFrameAt - e.at) / e.ms).fov
-            : null,
-        });
-      }
-      if (w.__pressAt === undefined || performance.now() - w.__pressAt < 1500)
-        requestAnimationFrame(step);
-      else w.__fovDone = true;
-    };
-    requestAnimationFrame(step);
-  });
-  const box = await page.locator("#globe-canvas").boundingBox();
-  if (!box) throw new Error("no canvas");
-  const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  await page.mouse.move(c.x, c.y);
-  await page.mouse.down();
-  await page.mouse.move(c.x + 10, c.y);
-  await page.mouse.up();
-  await page.waitForFunction(() => /** @type {any} */ (window).__fovDone);
-  const samples = await page.evaluate(
-    () => /** @type {any} */ (window).__fovSamples,
-  );
-  const after = await cameraNow(page);
-  const ease = await page.evaluate(() =>
-    [0.1, 0.25, 0.5, 0.75, 1].map((f) => window.__globeLab.fovReturnAt(f)),
-  );
-  console.log(
-    `fov after a press at ${before.cameraFov.toFixed(1)} deg: ${samples.map((s) => `${s.ms.toFixed(0)}ms ${s.fov.toFixed(2)}`).join(", ")}; end ${after.cameraFov} vs fovY ${after.fov} (tolerance ${FOV_TOLERANCE_DEG}: ${[0.5, 1, 2].map((k) => `x${k} ${Math.abs(after.cameraFov - after.fov) <= FOV_TOLERANCE_DEG * k ? "ok" : "NO"}`).join(" ")})`,
-  );
-  expect(after.phase).toBe("user");
-  expect(Math.abs(after.cameraFov - after.fov)).toBeLessThanOrEqual(
-    FOV_TOLERANCE_DEG,
-  );
-  console.log(
-    `the ease by time: ${ease[0] ? `${ease[0].from.toFixed(2)} -> ${ease[0].to} over ${ease[0].ms} ms; at 0.1/0.25/0.5/0.75/1: ${ease.map((e) => e.fov.toFixed(2)).join("/")}` : "none recorded"}`,
-  );
-  const quarter = ease[1];
-  expect(quarter, "an ease back to fovY was recorded").not.toBeNull();
-  // It started from the variant's interim value, not from fovY.
-  expect(quarter.from).toBeGreaterThan(after.fov + 10);
-  expect(quarter.to).toBe(after.fov);
-  expect(quarter.fov).toBeLessThan(quarter.from - FOV_TOLERANCE_DEG);
-  expect(quarter.fov).toBeGreaterThan(quarter.to + FOV_TOLERANCE_DEG);
-  // The frames themselves (review 2026-10-01-2124 Minor 5): every frame
-  // drawn inside the ease holds exactly the ease's value for its moment,
-  // strictly between the start and fovY, so a snap that still records an
-  // ease fails here. At least one such frame must have landed.
-  const inEase = samples.filter(
-    (s) => s.sinceEase !== null && s.sinceEase > 0 && s.sinceEase < s.easeMs,
-  );
-  console.log(
-    `frames inside the ease: ${inEase.map((s) => `${s.sinceEase.toFixed(0)}ms ${s.fov.toFixed(2)} (ease ${s.expected.toFixed(2)})`).join(", ") || "none"}`,
-  );
-  expect(
-    inEase.length,
-    "at least one frame lands inside the ease (FOV_RETURN_MS)",
-  ).toBeGreaterThan(0);
-  for (const s of inEase) {
-    expect(Math.abs(s.fov - s.expected)).toBeLessThan(1e-6);
-    expect(s.fov).toBeLessThan(quarter.from);
-    expect(s.fov).toBeGreaterThan(quarter.to);
-  }
 });
 
 /**
@@ -359,7 +240,7 @@ test("a late position blends in while the intro flies, and the intro ends there"
   test.setTimeout(120_000);
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(COLOGNE);
-  await bootGlobe(page, `turnMs=6000&intro=distance&${BASE}`);
+  await bootGlobe(page, `turnMs=6000&${BASE}`);
   await page.waitForFunction(
     () => window.__globeLab.state().phase === "arrived",
     null,
@@ -397,7 +278,7 @@ const angleBetween = (a, b) => {
 };
 /** Midnight UTC at the equinox: Cologne is about 128 degrees from the sun. */
 const NIGHT_BASE =
-  "time=2026-03-20T00:00:00Z&turnMs=6000&intro=distance&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0";
+  "time=2026-03-20T00:00:00Z&turnMs=6000&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0";
 const CAP_DEG = 90;
 /** How far off the cap the settled start may read (the angles above). */
 const CAP_TOLERANCE_DEG = 1;
@@ -554,7 +435,7 @@ test("a late position moves the held view without a jump, frame by frame", async
 // (within a few frames) at the same target.
 test("the turn cap and the fly-in's length, swept", async ({ page }) => {
   test.setTimeout(120_000);
-  const at = "at=50.94,6.96&spinMs=0&intro=distance";
+  const at = "at=50.94,6.96&spinMs=0";
   const night =
     "time=2026-03-20T00:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0";
   await bootGlobe(page, `${at}&turnMs=10000&${night}`, { phase: "turning" });

@@ -30,7 +30,7 @@ setCloudShellShare(share, flat?), dispose() }`.
       surface, its shadow, the shell, the volume's coverage) shares, so the
       swap reaches all of them at once. `updateClouds(renderer)` is that
       step alone, for a page that draws the relief's tiles without the
-      globe's (the globe-terrain lab).
+      globe's.
     - `cloudShell` (`globe-cloud-shell.ts`, round-6 plan G6-2) sits in a
       group that copies `tiles.group`'s matrix on every sun sync, so it
       stays in the tiles' ECEF frame; hidden until it has a share.
@@ -68,10 +68,9 @@ setCloudShellShare(share, flat?), dispose() }`.
       and the globe's top level is not always in view, so it drew a whole
       sphere under the relief every frame (a city dive recorded too few
       frames, the stencil fill's cost smoke ran out of time).
-      It is hidden until an `update` decides (a page that never calls it,
-      the terrain lab, drew it under its relief, where its crack check
-      counts the background as a crack), and an altitude not known (not a
-      positive number, as a camera still at the Earth's centre reads)
+      It is hidden until an `update` decides, so a page that never calls
+      it does not draw it under its relief, and an altitude not known (not
+      a positive number, as a camera still at the Earth's centre reads)
       decides nothing. The tiles hide it where they are drawn, except in
       small patches under coarse, partly loaded tiles, whose chords sag
       deeper than its 6 km (a vertex every 4 degrees sags about 7.8 km at

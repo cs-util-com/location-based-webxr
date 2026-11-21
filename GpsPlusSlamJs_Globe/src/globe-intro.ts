@@ -1,9 +1,8 @@
 /**
- * The globe's fly-in (round-5 plan 2026-10-01-0945 §3.1, decisions
- * DEC-GL5-1..3): from far out on the sun side to the user, in one of four
- * ways of trading distance against field of view, all ending at one pose.
- * Pure: directions are unit [x, y, z] vectors (ECEF), distances km from
- * the Earth's centre, angles degrees.
+ * The globe's fly-in: from far out on the sun side to the user, by distance
+ * alone (the field of view stays the page's throughout). Pure: directions
+ * are unit [x, y, z] vectors (ECEF), distances km from the Earth's centre,
+ * angles degrees.
  *
  * @see globe-intro.ts.md
  */
@@ -13,32 +12,18 @@ import { smoothstep } from "./globe-ease.js";
 /** A direction or point as [x, y, z]. */
 export type Vec3 = readonly [number, number, number];
 
-/** The four ways in (the lab's `intro=` select). */
-export const INTRO_VARIANTS = ["distance", "narrow", "fov", "dolly"] as const;
-type IntroVariant = (typeof INTRO_VARIANTS)[number];
-
 /**
  * The fly-in's numbers:
  * - `maxKm`: the farthest the camera may be from the centre, where the
  *   intro starts (DEC-GL5-1: about 3 times the fitted distance);
- * - `endFovDeg`: the field of view every variant ends at (DEC-GL5-2);
  * - `turnCapDeg`: the most the view turns from the sun side to the user
  *   (DEC-GL5-3);
- * - `wideFovDeg`: where `narrow` and `fov` start; `dollyStartFovDeg`
- *   where `dolly` starts (it widens to the end; with an end of 50 it
- *   barely changes, as the preview says);
- * - `fovPhase`: the share of the `fov` variant spent narrowing the field
- *   of view while still far out, before the short fly in;
  * - `lateFixBlendMs`: how long a position that arrives during the intro
  *   takes to become the target (no jump).
  */
 export const GLOBE_INTRO = Object.freeze({
   maxKm: 50_000,
-  endFovDeg: 50,
   turnCapDeg: 90,
-  wideFovDeg: 80,
-  dollyStartFovDeg: 50,
-  fovPhase: 0.6,
   lateFixBlendMs: 1500,
 });
 
@@ -138,87 +123,43 @@ export interface IntroPose {
   readonly direction: Vec3;
   /** The camera's distance from the centre. */
   readonly distanceKm: number;
-  /** The vertical field of view. */
-  readonly fovDeg: number;
 }
 
 /** What one intro flies between. */
 export interface IntroPath {
-  readonly variant: IntroVariant;
   readonly start: Vec3;
   readonly target: Vec3;
   readonly startKm: number;
   readonly endKm: number;
-  readonly endFovDeg: number;
 }
 
 /**
- * The camera at `t` (0 to 1, clamped) of the intro:
- * - the direction turns from `start` to `target` (eased) over the whole
- *   intro, in every variant;
- * - `distance`: the distance falls from `startKm` to `endKm` evenly in its
- *   logarithm (so each halving takes as long), eased; the field of view
- *   stays at the end's;
- * - `narrow`: the same flight while the field of view narrows from 80
- *   degrees to the end's;
- * - `fov`: the camera holds `startKm` while the field of view narrows
- *   from 80 degrees over the first `fovPhase`, then flies in at the end's;
- * - `dolly`: the flight while the field of view widens from 50 degrees to
- *   the end's.
- * Every variant is at exactly (`target`, `endKm`, `endFovDeg`) at t = 1.
- * RangeError for an unknown variant, a non-finite `t`, distances that
- * are not positive and finite, or a field of view outside (0, 180).
+ * The camera at `t` (0 to 1, clamped) of the intro: the direction turns
+ * from `start` to `target` (eased), and the distance falls from
+ * `startKm` to `endKm` evenly in its logarithm (so each halving takes as
+ * long), eased. Exactly at (`target`, `endKm`) at t = 1. RangeError for
+ * a non-finite `t` or distances that are not positive and finite.
  */
 export function introCameraPose(t: number, path: IntroPath): IntroPose {
   checkPath(t, path);
-  const { variant, startKm, endKm, endFovDeg } = path;
+  const { startKm, endKm } = path;
   const u = Math.min(1, Math.max(0, t));
   const target = unit(path.target, "the target");
-  if (u >= 1)
-    return { direction: target, distanceKm: endKm, fovDeg: endFovDeg };
+  if (u >= 1) return { direction: target, distanceKm: endKm };
   const direction = slerp(unit(path.start, "the start"), target, smoothstep(u));
-  const logDistance = (s: number): number =>
-    Math.exp(
-      Math.log(startKm) + (Math.log(endKm) - Math.log(startKm)) * smoothstep(s),
-    );
-  const lerp = (a: number, b: number, s: number): number =>
-    a + (b - a) * smoothstep(s);
-  if (variant === "fov") {
-    const p = GLOBE_INTRO.fovPhase;
-    return {
-      direction,
-      distanceKm: logDistance(Math.max(0, (u - p) / (1 - p))),
-      fovDeg: lerp(GLOBE_INTRO.wideFovDeg, endFovDeg, Math.min(1, u / p)),
-    };
-  }
-  return {
-    direction,
-    distanceKm: logDistance(u),
-    fovDeg: lerp(START_FOV[variant] ?? endFovDeg, endFovDeg, u),
-  };
+  const distanceKm = Math.exp(
+    Math.log(startKm) + (Math.log(endKm) - Math.log(startKm)) * smoothstep(u),
+  );
+  return { direction, distanceKm };
 }
-
-/** Where the flying variants' field of view starts (`distance`: the end's). */
-const START_FOV: Partial<Record<IntroVariant, number>> = {
-  narrow: GLOBE_INTRO.wideFovDeg,
-  dolly: GLOBE_INTRO.dollyStartFovDeg,
-};
 
 /** introCameraPose's refusals (see there). */
 function checkPath(t: number, path: IntroPath): void {
   if (!Number.isFinite(t)) throw new RangeError(`t must be finite, got ${t}`);
-  if (!INTRO_VARIANTS.includes(path.variant)) {
-    throw new RangeError(`unknown intro variant ${String(path.variant)}`);
-  }
   for (const km of [path.startKm, path.endKm]) {
     if (!(km > 0 && Number.isFinite(km))) {
       throw new RangeError(`distances must be positive, got ${km}`);
     }
-  }
-  if (!(path.endFovDeg > 0 && path.endFovDeg < 180)) {
-    throw new RangeError(
-      `the end field of view must be in (0, 180), got ${path.endFovDeg}`,
-    );
   }
 }
 

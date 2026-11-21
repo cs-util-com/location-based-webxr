@@ -1,7 +1,7 @@
 /**
  * Synthetic Terrarium heights for every page and suite that draws the
- * globe's relief without a network: the design system's globe and
- * terrain-carrier labs (generated in the page) and the apps' e2e (encoded
+ * globe's relief without a network: the design system's globe lab
+ * (generated in the page) and the apps' e2e (encoded
  * in Node by the workspace's Terrarium encoder,
  * `scripts/e2e/terrarium-png.mjs`). One surface for all of them, so a
  * suite that asserts a height reads the same ground the page draws.

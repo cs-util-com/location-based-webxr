@@ -11,7 +11,8 @@
  * Terrarium's) while the globe's imagery is plate carrée (EPSG:4326), so
  * every tile showed imagery from a different latitude (at 46.5 N, from
  * about 26 N: the Sahara instead of the Alps). These tests pin each fix
- * on the CPU side; the GPU side is the lab's globe-terrain smoke.
+ * on the CPU side; the GPU side has no browser test now (the sidecar
+ * names the checks that left with the carrier lab).
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";

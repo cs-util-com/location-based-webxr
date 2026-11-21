@@ -3,7 +3,7 @@
  *
  * Why this test matters: the intro meets every place and every time of day
  * (the sun anywhere), so its invariants are checked over random targets,
- * suns, caps, moments and variants rather than at a few hand-picked ones:
+ * suns, caps and moments rather than at a few hand-picked ones:
  * the start is exactly min(cap, the sun's angle) from the target and on
  * the great circle towards the sun, and on the way the camera never leaves
  * the span between its start and its end.
@@ -12,7 +12,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
-  INTRO_VARIANTS,
   flyInStart,
   introCameraPose,
   introStartDirection,
@@ -69,32 +68,27 @@ describe("introStartDirection, over any target, sun and cap", () => {
   });
 });
 
-describe("introCameraPose, at any moment of any variant", () => {
+describe("introCameraPose, at any moment", () => {
   it("stays between its start and its end", () => {
     fc.assert(
       fc.property(
         direction,
         direction,
-        fc.constantFrom(...INTRO_VARIANTS),
         unitShare(fc),
         fc.double({ min: 7000, max: 60_000, noNaN: true }),
         fc.double({ min: 7000, max: 60_000, noNaN: true }),
-        (start, target, variant, t, a, b) => {
+        (start, target, t, a, b) => {
           const startKm = Math.max(a, b);
           const endKm = Math.min(a, b);
           const p = introCameraPose(t, {
-            variant,
             start,
             target,
             startKm,
             endKm,
-            endFovDeg: 50,
           });
           expect(Math.hypot(...p.direction)).toBeCloseTo(1, 9);
           expect(p.distanceKm).toBeGreaterThanOrEqual(endKm * (1 - 1e-12));
           expect(p.distanceKm).toBeLessThanOrEqual(startKm * (1 + 1e-12));
-          expect(p.fovDeg).toBeGreaterThanOrEqual(50 - 1e-9);
-          expect(p.fovDeg).toBeLessThanOrEqual(80 + 1e-9);
         },
       ),
     );

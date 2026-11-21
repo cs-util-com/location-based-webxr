@@ -43,7 +43,7 @@
     retries and fades it by altitude, as in the lab.
   - The approach: `createGlobeApproach` (`globe-approach.ts`), `createGlobeLandingFlight`
     (`globe-landing-flight.ts`),
-    `createApproachDrive` and `createFovReturn` (`globe-approach-camera.ts`)
+    `createApproachDrive` (`globe-approach-camera.ts`)
     and `pinEnd` (`pin-flight.ts`): the lab's own pin flight, a meteor from
     far out down to a place, and its frame loop's drive, for a page that
     lands on a place (the Tour Viewer's editor). A page sets the camera only

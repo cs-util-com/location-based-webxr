@@ -15,7 +15,7 @@ import type { Ellipsoid } from "3d-tiles-renderer";
 
 import type { GlobeApproach } from "./globe-approach.js";
 import { orbitPose, type OrbitPose } from "./globe-camera.js";
-import { surfaceRadiusAlong } from "./globe-dive.js";
+import { surfaceRadiusAlong } from "./oblique-camera.js";
 import { groundRevisionM } from "./landing-ground.js";
 import {
   meteorLinkStart,

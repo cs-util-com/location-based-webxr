@@ -57,17 +57,15 @@ import {
   readGlobeClockSetting,
   sameGlobeClockSetting,
 } from "/globe/globe-clock.js";
-import { GLOBE_DIVE, obliqueCamera } from "/globe/globe-dive.js";
+import { GLOBE_DIVE } from "/globe/globe-dive.js";
+import { obliqueCamera } from "/globe/oblique-camera.js";
 import { globePinView, nextPinPhase } from "/globe/globe-pin.js";
 import { METEOR_PACE, pinFailed } from "/globe/pin-flight.js";
 import {
   approachRestartKey,
   createGlobeApproach,
 } from "/globe/globe-approach.js";
-import {
-  createApproachDrive,
-  createFovReturn,
-} from "/globe/globe-approach-camera.js";
+import { createApproachDrive } from "/globe/globe-approach-camera.js";
 import { createArrivalPrefetch } from "/globe/globe-arrival-prefetch.js";
 import { createGlobeLandingFlight } from "/globe/globe-landing-flight.js";
 import {
@@ -75,7 +73,7 @@ import {
   landedLineText,
   readoutThrottle,
 } from "/globe/globe-readout.js";
-import { GLOBE_INTRO, INTRO_VARIANTS } from "/globe/globe-intro.js";
+import { GLOBE_INTRO } from "/globe/globe-intro.js";
 import { globeZoomOutLimitM } from "/globe/globe-zoom-limit.js";
 import {
   GLOBE_TERRAIN,
@@ -332,9 +330,8 @@ const PARAMS = {
   turnMs: { fallback: 5000, min: 0, max: 10_000 },
   // The fly-in (round-5 plan 2026-10-01-0945 §3.1; `turnMs` is its
   // length): how far out it starts, which is also how far the controls may
-  // zoom out (km from the centre, DEC-GL5-1), and how far it may turn from
-  // the sun side to the target (degrees, DEC-GL5-3). The variant is the
-  // `intro=` text key (`readHashParams`).
+  // zoom out (km from the centre), and how far it may turn from the sun
+  // side to the target (degrees).
   maxKm: { fallback: GLOBE_INTRO.maxKm, min: 20_000, max: 100_000 },
   turnCap: { fallback: GLOBE_INTRO.turnCapDeg, min: 0, max: 180 },
   // The pin's dive (round-2 plan 2026-09-26-2055 M3g): its length (where
@@ -890,11 +887,6 @@ function readHashParams() {
     // A camera pose to open at (volume-cloud plan §16): the Debug export's
     // `link`; the intro is skipped and the camera handed to the controls.
     view: parseViewText(params.get("view")),
-    // The fly-in's variant (round-5 plan §3.1): one of INTRO_VARIANTS,
-    // `narrow` (the default case) when absent or unknown.
-    intro: INTRO_VARIANTS.includes(params.get("intro"))
-      ? params.get("intro")
-      : "narrow",
     clock,
     timeScale: clock.scale ?? (clock.startMs === null ? 1 : 0),
     // The recorder's sweep (null: one run) and the place of a single run
@@ -1178,6 +1170,51 @@ function bindPin({
   }
   render();
   return {
+    /**
+     * Parks the camera `altitudeM` above `place` ({ lat, lng }; never
+     * below the clearance over its ground), looking at it at the flight's
+     * pitch law, with everything a landing there sets: the place located,
+     * its detail and city data asked for, the world frame moved to it. The
+     * approach holds it as landed until a touch or a restart. For the
+     * smokes that measure a held view. Only from idle; RangeError for a
+     * place or an altitude that is not finite and positive.
+     */
+    parkAt(place, altitudeM) {
+      if (
+        !(Number.isFinite(place?.lat) && Number.isFinite(place?.lng)) ||
+        !(altitudeM > 0 && Number.isFinite(altitudeM))
+      ) {
+        throw new RangeError(
+          `parking needs a finite place and altitude, got ${JSON.stringify(place)}, ${altitudeM}`,
+        );
+      }
+      if (phase !== "idle") return;
+      const params = getParams();
+      // Parked again over the place it holds (a series of heights): only
+      // the camera moves, so its data and detail are not asked for again.
+      const again =
+        landing.located?.lat === place.lat &&
+        landing.located?.lng === place.lng &&
+        flight.state().phase === "landed";
+      const located = again ? landing.located : landing.locate(place);
+      if (!again) {
+        onLocated(located, params);
+        arrival.start(located, params);
+      }
+      controls.release();
+      setFrameTarget(located);
+      const heldM = Math.max(altitudeM, diveFloorM(located, altitudeM));
+      flight.park(
+        performance.now(),
+        located,
+        obliqueCamera(
+          ellipsoid,
+          orbitPose(ellipsoid, located),
+          heldM,
+          pitchAtDeg(heldM, { pitchLowDeg: params.pitchLow }),
+        ),
+      );
+    },
     /**
      * Flies the dive to `place` ({ lat, lng }) without asking for the
      * device's position (a `land=1` link, §12.4 R15), as a press would
@@ -1752,14 +1789,6 @@ async function start() {
   let heldView = false;
   /** While the plate measures the atmosphere's cost: "on", "off" or null. */
   let costMode = null;
-  /**
-   * The field of view easing back to fovY when the fly-in is interrupted
-   * (`/globe/globe-approach-camera.js`); its last ease is kept for the
-   * `fovReturnAt` test hook.
-   */
-  const fovReturn = createFovReturn(camera, () => params.fovY);
-  /** One frame of the ease back to fovY, if one is due. */
-  const returnFov = (now) => fovReturn.step(now);
   // The nearest drawn ground and the highest drawn peak for the clip planes
   // (F2a, M4): the relief's sampler at the camera's ground point and on a
   // ring of eight points as far out as the camera stands above that ground
@@ -2025,10 +2054,11 @@ async function start() {
       : { near: params.reliefNear };
   /**
    * The least altitude over `target` (the clearance rule, F1): its ground
-   * from a ray down onto the drawn relief, exaggerated as at the hand-over
-   * altitude, plus the clearance; 0 without the relief or a loaded tile.
+   * from a ray down onto the drawn relief, exaggerated as at `altitudeM`
+   * (the dive's landing by default), plus the clearance; 0 without the
+   * relief or a loaded tile.
    */
-  const diveFloorM = (target) => {
+  const diveFloorM = (target, altitudeM = params.landKm * 1000) => {
     if (!terrain) return 0;
     const ground = terrain.plugin.sampleCartographicElevation(
       target.lat * DEG,
@@ -2036,7 +2066,7 @@ async function start() {
     );
     if (ground === null) return 0;
     const heightM = ground / Math.max(terrain.plugin.heightScale, 1);
-    const e = exaggerationAt(params.landKm * 1000, heightLaw());
+    const e = exaggerationAt(altitudeM, heightLaw());
     return minimumAltitudeM(heightM, e, GLOBE_FLIGHT.clearanceM);
   };
   /**
@@ -2190,8 +2220,6 @@ async function start() {
   /** One frame of the approach on the camera (`/globe/globe-approach-camera.js`). */
   const driveApproach = createApproachDrive({
     approach: flight,
-    camera,
-    fovReturn,
     placeCameraEcef,
     fitDistance: () => view.fitDistance(),
   });
@@ -2204,15 +2232,12 @@ async function start() {
       // The recorder's paths (§4.2) place the camera themselves.
       perf.drive(now);
     } else if (flight.drives) {
-      // The intro's orbit frame, or the dive's (which sets no field of
-      // view: one the fly-in left eases back).
+      // The intro's orbit frame, or the dive's.
       driveApproach(now);
       camera.updateMatrixWorld();
       controls.followIntro();
       if (params.flight === 2 && flight.pinFlight) recentreFrame();
     } else {
-      // The user took the camera, perhaps mid-fly-in: ease back to fovY.
-      returnFov(now);
       controls.pickFrom(surfaceTiles().group);
       if (!heldView) controls.update();
       recentreFrame();
@@ -3079,18 +3104,6 @@ void main() {
       frame();
     },
     /**
-     * A test hook (round-5 M1): the last ease of the field of view back to
-     * fovY, read by TIME rather than by the frames that happened to land:
-     * `{ from, to, ms, at, lastFrameAt, fov }`, `fov` being what the frame
-     * loop sets `fraction` x `ms` after the ease began (at `at`,
-     * performance.now()); `lastFrameAt` is when a frame last applied it, so
-     * a test can check the camera holds exactly that frame's value (review
-     * 2026-10-01-2124 Minor 5). Null before any ease.
-     */
-    fovReturnAt(fraction) {
-      return fovReturn.at(fraction);
-    },
-    /**
      * The cost probe (round-4 plan DEC-GL4-2/4): `n` frames drawn back to
      * back, then one pixel read so the GPU has finished them; the wall
      * time in ms. Under SwiftShader it is relative only: compare two
@@ -3116,6 +3129,11 @@ void main() {
       terrain.setDetail({ ratio, side, extentM, halfM: extentM }, target);
       return target;
     },
+    /**
+     * Parks the camera `altitudeM` above `place`, as a landing there
+     * would leave it (`bindPin`'s `parkAt`): the smokes' held views.
+     */
+    parkAt: (place, altitudeM) => pin?.parkAt(place, altitudeM),
     /** The dive's altitude at a dive time (m), the camera unmoved. */
     diveAltitudeAt: (ms) => flight.diveAltitudeAt(ms),
     /** Holds the camera at a dive time (ms; null runs on); its altitude. */
@@ -3647,7 +3665,6 @@ void main() {
             pitchAtDeg(altitudeM, { pitchLowDeg: params.pitchLow }),
           );
         placeCameraEcef(cameraPose.position, cameraPose.quaternion);
-        returnFov(now);
         controls.followIntro();
       },
       updateControls: () => controls.update(),

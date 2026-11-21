@@ -460,6 +460,9 @@ test("flight=2: a land=1 link flies the continuous flight and lands", async ({
   expect(phases).toContain("descending");
   expect(st.pin.flight?.phase).toBe("landed");
   expect(st.pin.phase).toBe("idle");
+  // The flight's own landing path moved the world into the place's frame
+  // (the frame smoke parks, so it checks only the park hook's half).
+  expect(st.worldFrame).toEqual(BERN);
   // The landed line comes once the relief has a height under the camera,
   // or after GLOBE_READOUT.landedWaitMs (8 s) as the altitude above sea
   // level: here the relief is often not drawn yet at the landing (r816's

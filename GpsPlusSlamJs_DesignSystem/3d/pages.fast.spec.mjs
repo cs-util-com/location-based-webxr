@@ -37,7 +37,6 @@ const READY = {
   "/labs/ar-shadows/index.html": "__arShadowsLab",
   "/labs/building-geometry/index.html": "__buildingGeometry",
   "/labs/globe/index.html": "__globeLab",
-  "/labs/globe-terrain/index.html": "__terrainCarrier",
   "/labs/terrain/index.html": "__terrainLab",
   "/labs/terrain/compare.html": "__terrainCompare",
   "/labs/city-look/index.html": null,
@@ -311,19 +310,6 @@ test("the globe lab's query picks the tone curve and the hash's grade leaves it 
   );
   expect(await toneCurve(page)).toEqual(NEUTRAL);
   expect(problems).toEqual([]);
-});
-
-test("the globe-terrain carrier lab opens and draws without errors @pr", async ({
-  page,
-}) => {
-  const problems = await watch(page);
-  await page.goto("/labs/globe-terrain/");
-  await ready(page, "__terrainCarrier");
-  await frames(page, 10);
-  expect(problems).toEqual([]);
-  const stdev = await drawnStdev(page);
-  console.log(`globe-terrain lab drawn: stdev ${stdev.toFixed(1)}`);
-  expect(stdev).toBeGreaterThan(DRAWN_MIN_STDEV);
 });
 
 // One switch stands for all eight styles: measured, no style links a shader

@@ -25,7 +25,6 @@ import { expect, test } from "@playwright/test";
 
 import { bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 /** Over the synthetic ridge's crest (globe-relief.smoke's clearance test). */
 const TARGET = { latitude: 46.545, longitude: 9.125 };
 /**
@@ -38,7 +37,7 @@ const TARGET = { latitude: 46.545, longitude: 9.125 };
 // hold exercises the failure; at the default E 1 it would not (r790
 // milestone review F1).
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&diveMs=6000&detail=0&holeColor=1&bandFill=0&reliefNear=3";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&sky=0&relief=1&reliefHeights=synthetic&detail=0&holeColor=1&bandFill=0&reliefNear=3";
 /** The bounds' sweep factors (the owner's rule: a one-value verdict is provisional). */
 const SWEEP = [0.5, 1, 2];
 /** The share of pixels two frames 1 mm apart may differ in. */
@@ -49,18 +48,18 @@ const FLICKER_LEVELS = 16;
 const swept = (value, bound) =>
   `${value.toExponential(2)} (bound ${bound}: ${SWEEP.map((k) => `x${k} ${value <= bound * k ? "ok" : "NO"}`).join(" ")})`;
 
-/** Pins the ridge, holds at `holdKm` and waits for the settled relief. */
-async function holdOverRidge(page, context, holdKm, extra = "") {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, `${BASE}&landKm=${holdKm}${extra}`);
-  await page.locator("#globe-pin").click();
+/** Parks over the ridge at `holdKm` and waits for the settled relief. */
+async function holdOverRidge(page, holdKm, extra = "") {
+  const errors = await bootGlobe(page, `${BASE}${extra}`);
+  await page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [TARGET.latitude, TARGET.longitude, holdKm * 1000],
+  );
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
       return (
         s.phase === "landed" &&
-        s.pin.phase === "idle" &&
         (s.relief?.share ?? 0) >= 1 &&
         s.relief?.visibleTiles > 0 &&
         s.relief.settled
@@ -94,10 +93,9 @@ const report = (label, p) =>
 for (const holdKm of [5, 2]) {
   test(`the planes hold the ridge at a ${holdKm} km hold: no clipped ground, no z-fighting`, async ({
     page,
-    context,
   }) => {
     test.setTimeout(420_000);
-    const errors = await holdOverRidge(page, context, holdKm);
+    const errors = await holdOverRidge(page, holdKm);
     const p = await probe(page);
     console.log(report(`planes at a ${holdKm} km hold`, p));
     expect(errors).toEqual([]);
@@ -108,10 +106,9 @@ for (const holdKm of [5, 2]) {
 
 test("the positive control: the planes over the ellipsoid clip the ridge at a 2 km hold", async ({
   page,
-  context,
 }) => {
   test.setTimeout(420_000);
-  const errors = await holdOverRidge(page, context, 2, "&reliefPlanes=0");
+  const errors = await holdOverRidge(page, 2, "&reliefPlanes=0");
   const p = await probe(page);
   console.log(report("planes over the ellipsoid at a 2 km hold", p));
   expect(errors).toEqual([]);
