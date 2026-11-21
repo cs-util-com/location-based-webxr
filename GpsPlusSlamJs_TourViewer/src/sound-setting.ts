@@ -165,6 +165,9 @@ export function silencedFocus(
         if (quiet === gate) quiet = null;
         voice.stop();
       },
+      forget: () => {
+        voice.forget?.();
+      },
     };
     gates.set(voice, gate);
     voices.set(gate, voice);
@@ -201,6 +204,11 @@ export function silencedFocus(
       focus.ended(gate);
     },
     behind: (voice) => focus.behind(gated(voice)),
+    aside(voice) {
+      const gate = gated(voice);
+      if (quiet === gate) quiet = null;
+      focus.aside(gate);
+    },
     running() {
       const running = focus.running();
       return running === null ? null : (voices.get(running) ?? running);

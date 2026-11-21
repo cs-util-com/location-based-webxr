@@ -6,11 +6,13 @@ import { createVoiceFocus, type Voice } from "./voice-focus.js";
 describe("createVoiceFocus (properties)", () => {
   // Why: the invariant that makes "one audible" true whatever the visitor
   // taps: after any sequence, at most one voice sounds, at most one waits,
-  // a stopped voice is out for good, and a story's voice is never stopped.
+  // a stopped voice is out for good, a story's voice is never stopped, and a
+  // voice set aside wakes nobody but a story's voice held behind it (its
+  // step waits for that voice's end).
   it("holds one voice running and one paused through any sequence", () => {
     const event = fc.record({
       who: fc.integer({ min: 0, max: 3 }),
-      what: fc.constantFrom("tapped", "selfStart", "behind", "ended"),
+      what: fc.constantFrom("tapped", "selfStart", "behind", "ended", "aside"),
     });
     fc.assert(
       fc.property(fc.array(event, { maxLength: 40 }), (events) => {
@@ -28,6 +30,12 @@ describe("createVoiceFocus (properties)", () => {
         const focus = createVoiceFocus();
         for (const { who, what } of events) {
           const v = voices[who]!;
+          // What sounds before the event, but the voice itself: an aside
+          // may add no voice to it but a story's (voice 0), and that only
+          // when the running voice is set aside.
+          const before = new Set(sounding);
+          before.delete(who);
+          const wasRunning = focus.running() === v;
           if (what === "tapped") {
             focus.tapped(v);
             sounding.add(who);
@@ -35,10 +43,18 @@ describe("createVoiceFocus (properties)", () => {
             if (focus.selfStart(v)) sounding.add(who);
           } else if (what === "behind") {
             if (focus.behind(v)) sounding.delete(who);
+          } else if (what === "aside") {
+            focus.aside(v);
+            sounding.delete(who);
           } else {
             focus.ended(v);
             sounding.delete(who);
           }
+          const woken = [...sounding].filter((i) => !before.has(i));
+          const allowed = wasRunning && woken.length > 0 ? [0] : [];
+          expect(what !== "aside" || woken.join() === allowed.join()).toBe(
+            true,
+          );
           expect(sounding.size).toBeLessThanOrEqual(1);
           const running = focus.running();
           expect([...sounding]).toEqual(

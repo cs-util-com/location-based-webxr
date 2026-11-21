@@ -34,12 +34,8 @@ export const CHECK_VIEWS = {
   },
   "then-now": {
     title: "Then and now check",
-    // Its Swipe line is a range input: a vertical swipe that starts on it
-    // must scroll the page, as on every page with a slider.
-    start: async ({ root, cardHost }) => {
-      guardSlidersIn(root.ownerDocument);
-      (await import("./then-now-check.js")).startThenNowCheck(root, cardHost);
-    },
+    start: async ({ root, cardHost }) =>
+      (await import("./then-now-check.js")).startThenNowCheck(root, cardHost),
   },
   "travelling-box": {
     title: "Travelling box check",
@@ -76,6 +72,8 @@ export function checkViewOf(search: string): CheckViewName | null {
 /**
  * Starts the view `search` names: the body carries it as `data-view` (the
  * page's CSS gives each view its backdrop) and the title is the view's.
+ * The whole page is slider-guarded first, as every page is: a vertical
+ * swipe that starts on a range input scrolls the page.
  * Without a known view the root lists the views as links, so a person who
  * opens the bare page can pick one. Rejects when the view's module fails
  * to load or start.
@@ -85,6 +83,7 @@ export async function startCheckPage(
   search: string,
   hosts: CheckHosts,
 ): Promise<CheckViewName | null> {
+  guardSlidersIn(doc);
   const name = checkViewOf(search);
   if (name === null) {
     doc.title = "Check pages";

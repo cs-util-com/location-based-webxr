@@ -154,7 +154,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
    *  voice: another text taking the words over pauses it. */
   let voiced: {
     readonly id: string;
-    readonly voice: Pick<NarrationClock, "pause">;
+    readonly voice: Pick<NarrationClock, "pause" | "aside">;
   } | null = null;
 
   function stopTravel(): void {
@@ -186,14 +186,17 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
    *  earlier one, or played in the reading sheet), idle without one. The
    *  sign whose text stops being the shown one (the visitor left, or
    *  another text shows) says so outside the station's blocks too,
-   *  wherever it still stands; a sign gone is left alone. */
+   *  wherever it still stands, unless the loop painted it this frame from
+   *  its voice; a sign gone is left alone. */
   function chips(blocks: readonly TourBlock[], shown: TourBlock | null): void {
     const shownSign =
       shown === null || content === null ? null : deps.signOf(shown.id);
+    const painted = new Set<ReadingSignHandle>();
     for (const block of blocks) {
       if (!readsAlong(block, deps.narration.verdictOf(block))) continue;
       const sign = deps.signOf(block.id);
       if (sign === null) continue;
+      painted.add(sign);
       if (block === shown && content !== null) {
         sign.setVoiceState(chipOf(content.player, deps.playing(block.id)));
         continue;
@@ -206,6 +209,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
     if (
       chipped !== null &&
       chipped.sign !== shownSign &&
+      !painted.has(chipped.sign) &&
       deps.signOf(chipped.id) === chipped.sign
     ) {
       chipped.sign.setVoiceState(chipOf(chipped.voice, false));
@@ -219,15 +223,22 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
   /** A voice speaks only for words someone sees: another text of the
    *  station shown pauses the old text's voice. A move between stations
    *  is the station's own pause (`arrive`), which keeps it for the return;
-   *  a frame with no text shown keeps the voice. */
+   *  a frame with no text shown keeps the voice, and so does a frame whose
+   *  shown text has no words yet (while its read-along is being read): nobody
+   *  sees the new words, and a read that settles stale gives the old text
+   *  back. */
   function hush(shown: TourBlock | null): void {
-    if (shown !== null && voiced !== null && voiced.id !== shown.id) {
-      voiced.voice.pause();
-      voiced = null;
-    }
-    if (shown !== null && content !== null) {
-      voiced = { id: shown.id, voice: content.player };
-    }
+    if (shown === null || content === null) return;
+    if (voiced !== null && voiced.id !== shown.id) pauseAside(voiced.voice);
+    voiced = { id: shown.id, voice: content.player };
+  }
+
+  /** The page's own pause, not the visitor's: it hands the voice channel
+   *  to no free voice held behind it, which would start by itself (a
+   *  story's carries on: its step waits for it). */
+  function pauseAside(voice: Pick<NarrationClock, "pause" | "aside">): void {
+    if (voice.aside === undefined) voice.pause();
+    else voice.aside();
   }
 
   /** A voice does not follow the visitor out of its station. */

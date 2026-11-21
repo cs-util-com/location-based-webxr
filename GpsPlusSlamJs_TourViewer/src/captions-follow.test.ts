@@ -21,10 +21,11 @@ import {
   type TravelStart,
 } from "./captions-follow.js";
 import type { NarrationBoxContent } from "./narration-box.js";
-import type { NarrationClock } from "./narration-player.js";
+import type { NarrationClock, NarrationPlayer } from "./narration-player.js";
 import type { NarrationVerdict } from "./narration-timing.js";
 import type { ReadingSignHandle, ReadingSignVoice } from "./reading-sign.js";
 import { withPreferredView } from "./visitor-prefs.js";
+import { createVoiceFocus, focusedPlayer } from "./voice-focus.js";
 
 const POSE = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
 
@@ -536,6 +537,117 @@ describe("createCaptionsFollow", () => {
     expect(calls(signA)).not.toContain("idle");
     expect(chips.get("b")).toBe("idle");
     expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+  });
+
+  // Why: a text whose read-along is still unread is already the shown one
+  // before its words can show (the box stays hidden). Pausing the old voice
+  // then would silence it while nobody sees either text's words, and if
+  // the read settles stale the old text comes back paused with no visitor
+  // action. The old voice pauses only once the new words show.
+  it("pauses the old voice only once the new text's words show", () => {
+    const { follow, set, give, mount, narration } = make();
+    const b = text("b", { view: "lectern" });
+    const a = text("a");
+    mount("b");
+    mount("a");
+    set({ blocks: [b, a], presentId: "s1", stored: null });
+    const voiceA = at(4000, "a", true);
+    give(voiceA);
+    follow.sync();
+    // b takes over while its timing is still unread: no words for it yet.
+    give(null);
+    set({ stored: READING });
+    follow.sync();
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
+    // The read settles stale: a is the shown text again, still speaking.
+    narration.verdictOf.mockImplementation((block?: TourBlock) =>
+      block?.id === "b" ? "stale" : "live",
+    );
+    give(voiceA);
+    follow.sync();
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
+    expect(voiceA.player.playing()).toBe(true);
+    // Read live after all: b's words show, and a's voice pauses.
+    narration.verdictOf.mockImplementation((): NarrationVerdict => "live");
+    give(at(0, "b"));
+    follow.sync();
+    expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+  });
+
+  // Why: while the new text's read-along is being read the old voice
+  // speaks on, so its sign must keep saying it plays: painting the old
+  // shown text's "paused" over the loop's "playing" flashes the chip for a
+  // frame. The sign the loop painted this frame is left alone.
+  it("never flashes the old sign paused while its voice speaks on", () => {
+    const { follow, set, give, mount, calls, playing } = make();
+    const b = text("b", { view: "lectern" });
+    mount("b");
+    const signA = mount("a");
+    set({ blocks: [b, text("a")], presentId: "s1", stored: null });
+    give(at(4000, "a", true));
+    playing(true);
+    follow.sync();
+    expect(calls(signA)).toEqual(["playing"]);
+    // b is the shown text now, its read-along still being read.
+    playing(false);
+    give(null);
+    set({ stored: READING });
+    follow.sync();
+    follow.sync();
+    expect(calls(signA)).not.toContain("paused");
+    expect(calls(signA).at(-1)).toBe("playing");
+  });
+
+  // Why: pausing a voice hands the voice channel on, so a voice held behind
+  // the shown text's (another text's narration, or a story's clip, tapped
+  // over by the box's play) would start by itself at the switch, with no
+  // visitor action. The switch's pause must leave it silent.
+  it("wakes no voice held behind the old one at a text switch", () => {
+    const { follow, set, give, mount } = make();
+    const focus = createVoiceFocus();
+    const inner = (): NarrationPlayer & { on: boolean } => {
+      const listeners = new Set<() => void>();
+      const p = {
+        on: false,
+        nowMs: () => 4000,
+        durationMs: () => 9000,
+        playing: () => p.on,
+        play() {
+          p.on = true;
+          for (const l of [...listeners]) l();
+        },
+        pause() {
+          p.on = false;
+          for (const l of [...listeners]) l();
+        },
+        seek: () => undefined,
+        onChange(listener: () => void) {
+          listeners.add(listener);
+          return () => listeners.delete(listener);
+        },
+        dispose: () => undefined,
+      };
+      return p;
+    };
+    const heldInner = inner();
+    const shownInner = inner();
+    const held = focusedPlayer(heldInner, focus);
+    const shown = focusedPlayer(shownInner, focus);
+    held.play();
+    shown.play();
+    expect(heldInner.on).toBe(false);
+    const b = text("b", { view: "lectern" });
+    mount("b");
+    mount("a");
+    set({ blocks: [b, text("a")], presentId: "s1", stored: null });
+    give({ key: "a", player: shown } as unknown as NarrationBoxContent);
+    follow.sync();
+    give(at(0, "b"));
+    set({ stored: READING });
+    follow.sync();
+    expect(shownInner.on).toBe(false);
+    expect(heldInner.on).toBe(false);
+    expect(focus.running()).toBeNull();
   });
 
   // Why: a voice outlives an AR session (its end pauses, never resets),
