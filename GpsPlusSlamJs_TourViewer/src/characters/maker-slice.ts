@@ -47,6 +47,11 @@ export interface MakerState {
    * does not land on it. Not stored: it counts within one page session.
    */
   readonly generation: number;
+  /**
+   * While the library writes a save: the page keeps Start over and Discard
+   * disabled, so the draft being saved stays in place. Not stored.
+   */
+  readonly saving: boolean;
 }
 
 const isStep = (i: unknown): i is number =>
@@ -70,7 +75,7 @@ export function makerStateFrom(stored: unknown): MakerState {
     : d.step >= 4
       ? { ...d, step: 3 }
       : d;
-  return { draft, cut: "none", version: 0, generation: 0 };
+  return { draft, cut: "none", version: 0, generation: 0, saving: false };
 }
 
 /** Whether a stored draft comes back without the picture it was at. */
@@ -131,11 +136,12 @@ const makerSlice = createSlice({
       s.cut = "ready";
       s.version += 1;
     },
+    /** Kept to `TEXT_MAX` characters, as a stored draft is read back. */
     cutFailed(s, a: PayloadAction<string>) {
       s.cut = "none";
       s.draft.failure =
         typeof a.payload === "string" && a.payload
-          ? a.payload
+          ? a.payload.slice(0, TEXT_MAX)
           : "Something went wrong";
     },
     /** A newer request replaced the cut. */
@@ -180,6 +186,13 @@ const makerSlice = createSlice({
       s.draft.savedId = id.slice(0, TEXT_MAX);
       s.draft.savedName = name.slice(0, TEXT_MAX);
     },
+    /** A save began: it ends with `saveEnded`, whether it worked or not. */
+    saveStarted(s) {
+      s.saving = true;
+    },
+    saveEnded(s) {
+      s.saving = false;
+    },
     /** The page was hidden at `at` (ms), for the welcome-back offer. */
     left(s, a: PayloadAction<number>) {
       if (isTime(a.payload)) s.draft.leftAt = a.payload;
@@ -211,6 +224,7 @@ interface PageState {
 
 export const hasCut = (s: MakerState): boolean => s.cut === "ready";
 export const isCutting = (s: MakerState): boolean => s.cut === "cutting";
+export const isSaving = (s: MakerState): boolean => s.saving;
 
 /**
  * The page's store, started from what storage held. Every change of the

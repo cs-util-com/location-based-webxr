@@ -5,6 +5,7 @@ import {
   createMakerStore,
   hasCut,
   isCutting,
+  isSaving,
   makerActions as A,
   makerReducer,
   makerStateFrom,
@@ -27,6 +28,7 @@ describe("maker-slice", () => {
       cut: "none",
       version: 0,
       generation: 0,
+      saving: false,
     });
     const back = makerStateFrom({ step: 5, maxStep: 3, desc: "a fox" });
     expect(back.draft).toMatchObject({ step: 3, maxStep: 3, desc: "a fox" });
@@ -218,6 +220,37 @@ describe("maker-slice", () => {
     // Edits of the same draft keep its generation.
     const edited = run(s, A.descChanged("a fox"), A.named("Pippa"), A.went(1));
     expect(edited.generation).toBe(g);
+  });
+
+  // Why: while a save runs, the page disables the controls that would put
+  // another draft in its place (Start over, Discard): a draft replaced
+  // while the library writes is saved but not marked, and an Undo of it
+  // would save the same character a second time. The flag is the page's
+  // one place to ask, and a save that fails ends it as one that works.
+  it("knows while a save runs", () => {
+    expect(isSaving(fresh())).toBe(false);
+    const named = run(fresh(), A.named("Pip"));
+    const saving = run(named, A.saveStarted());
+    expect(isSaving(saving)).toBe(true);
+    expect(saving.draft).toBe(named.draft);
+    const done = run(
+      saving,
+      A.saved({ id: "c1", name: "Pip", generation: 0 }),
+      A.saveEnded(),
+    );
+    expect(isSaving(done)).toBe(false);
+    expect(done.draft.savedId).toBe("c1");
+    expect(isSaving(run(saving, A.saveEnded()))).toBe(false);
+    // Not kept over a reload: a page starts with no save running.
+    expect(makerStateFrom(saving.draft).saving).toBe(false);
+  });
+
+  // Why: a failure message comes from the cut worker, and a stored one over
+  // 200 characters is dropped when the page loads again (draftOf), so the
+  // reducer keeps no more than that.
+  it("keeps at most 200 characters of a failure", () => {
+    const s = run(fresh(), A.cutStarted(), A.cutFailed("f".repeat(250)));
+    expect(s.draft.failure).toBe("f".repeat(200));
   });
 
   // Why: a stored name or saved name over 200 characters is dropped when

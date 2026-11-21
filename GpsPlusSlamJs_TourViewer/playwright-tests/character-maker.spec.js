@@ -60,6 +60,8 @@ const labels = (page) =>
  * `window.__cutPosts` counts the cut requests sent, `window.__cutAnswers`
  * the final answers handed to the page; the count moves after the page's
  * handler ran, so a test that sees it can look at what the answer did.
+ * `window.__onCutPost`, when set, is called as each cut request is sent,
+ * so a test can act at that moment rather than after a guessed delay.
  * Installed before the page loads, so the page's own worker is wrapped.
  */
 function slowSeams() {
@@ -68,11 +70,15 @@ function slowSeams() {
   w.__pngDelay = 0;
   w.__cutPosts = 0;
   w.__cutAnswers = 0;
+  w.__onCutPost = null;
   const RealWorker = window.Worker;
   window.Worker = class extends RealWorker {
     /** @param {any} m @param {any} [t] */
     postMessage(m, t) {
-      if (m && m.type === "cut") w.__cutPosts += 1;
+      if (m && m.type === "cut") {
+        w.__cutPosts += 1;
+        w.__onCutPost?.();
+      }
       super.postMessage(m, t);
     }
     set onmessage(fn) {
@@ -91,6 +97,22 @@ function slowSeams() {
   const toBlob = HTMLCanvasElement.prototype.toBlob;
   HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
     toBlob.call(this, (b) => setTimeout(() => cb(b), w.__pngDelay), ...rest);
+  };
+}
+/**
+ * Holds every file write of the library until `window.__releaseWrites()`;
+ * `window.__writesHeld` counts the writes waiting. A held write means the
+ * pictures are written and the library itself is saving.
+ */
+function holdWrites() {
+  const w = /** @type {any} */ (window);
+  const real = FileSystemFileHandle.prototype.createWritable;
+  w.__writesHeld = 0;
+  const gate = new Promise((release) => (w.__releaseWrites = release));
+  FileSystemFileHandle.prototype.createWritable = async function (...args) {
+    w.__writesHeld += 1;
+    await gate;
+    return real.apply(this, args);
   };
 }
 const counter = (page, name) =>
@@ -223,6 +245,7 @@ test.describe("character maker", () => {
     expect(await labels(page)).toContain("Saving...");
     await expect(page.locator("#nextBtn")).toBeEnabled();
     await expect(page.locator("#nextBtn")).not.toHaveText("Saving...");
+    await expect(page.locator("#restart")).toBeEnabled();
     await expect(page.locator("#savedBox")).toBeHidden();
   });
 
@@ -393,14 +416,13 @@ test.describe("character maker", () => {
     );
   });
 
-  // Why: the save reads the name late (above), so a Discard while the
-  // pictures are written would save the fresh draft's empty name and
-  // description, and mark that fresh draft as saved. The save goes only
-  // to the draft it was started from; a character put away meanwhile is
-  // not saved, and the page says so.
-  test("a character discarded while it is saved is not saved", async ({
-    page,
-  }) => {
+  // Why: the save reads the name late (above), and a Discard while it runs
+  // would put a fresh draft in its place; an Undo of that Discard would
+  // bring back a draft the library had saved without marking it, and the
+  // next save would make a second copy. So Discard waits while the
+  // character is saved, like Start over, and once the save has ended the
+  // library view shows the one character and no unfinished draft.
+  test("Discard waits while the character is saved", async ({ page }) => {
     await page.addInitScript(slowSeams);
     await toStep4(page);
     await bringPicture(page, drawSheet);
@@ -413,12 +435,68 @@ test.describe("character maker", () => {
     await page.locator("#nextBtn").click();
     await expect(page.locator("#nextBtn")).toHaveText("Saving...");
     await page.locator("#toHome").click();
-    await page.locator("#draftRow [data-discard]").click();
+    await expect(page.locator("#draftRow [data-discard]")).toBeDisabled();
+    await expect(page.locator("#libCount")).toHaveText("1 character");
+    await expect(page.locator("#draftRow")).toBeHidden();
     await expect(page.locator("#toasts")).toContainText(
-      "The character was not saved",
+      "Saved on this device: Ranger Rita",
+    );
+  });
+
+  // Why: a picture brought in while the pictures are written starts another
+  // character, so the save stops before the library writes anything and
+  // says so; the new picture's cut is held, so its own toast cannot cover
+  // that line.
+  test("a new picture while the pictures are written stops the save", async ({
+    page,
+  }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#nextBtn").click();
+    await page.evaluate(() => {
+      const w = /** @type {any} */ (window);
+      w.__pngDelay = 800;
+      w.__cutDelay = 5000;
+    });
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#nextBtn")).toHaveText("Saving...");
+    await bringPicture(page, drawSheet);
+    await expect(page.locator("#toasts")).toContainText(
+      "The character was not saved, because a new one was started meanwhile.",
     );
     await page.reload();
     await expect(page.locator("#libCount")).toHaveText("0 characters");
+  });
+
+  // Why: once the library writes, the save goes through even when a new
+  // picture starts another character meanwhile; the new draft is not
+  // marked as saved, so the toast must not read as if this page still
+  // showed the saved one: it says where the character went.
+  test("a new picture while the library writes leaves an honest toast", async ({
+    page,
+  }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#nextBtn").click();
+    await page.locator("#charName").fill("Ranger Rita");
+    await page.evaluate(holdWrites);
+    await page.locator("#nextBtn").click();
+    await expect.poll(() => counter(page, "__writesHeld")).toBeGreaterThan(0);
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__cutDelay = 5000;
+    });
+    await bringPicture(page, drawSheet);
+    await page.evaluate(() => /** @type {any} */ (window).__releaseWrites());
+    await expect(page.locator("#toasts")).toContainText(
+      "Saved on this device: Ranger Rita. A new character was started meanwhile",
+    );
+    await expect(page.locator("#savedBox")).toBeHidden();
+    await page.reload();
+    await expect(page.locator("#libCount")).toHaveText("1 character");
   });
 
   // Why: Start over sits in the header next to the save; while the
@@ -461,26 +539,26 @@ test.describe("character maker", () => {
     await expect(page.locator('[data-panel="4"]')).toBeVisible();
     const posts = await counter(page, "__cutPosts");
     const answers = await counter(page, "__cutAnswers");
-    const nudge = (by) =>
-      page.evaluate((d) => {
-        const r = /** @type {HTMLInputElement} */ (
-          document.querySelector("#rEdge")
-        );
+    // The moment the first re-cut is sent, a second change asks for a
+    // re-cut that waits behind it (the sliders wait 220 ms), and the new
+    // picture comes in after that request (300 ms) and replaces it. Both
+    // are page timers set while the first request is sent, and its answer
+    // is held 1500 ms after it arrives, so they fire in this order under
+    // any load.
+    await page.evaluate((b64) => {
+      const w = /** @type {any} */ (window);
+      const r = /** @type {HTMLInputElement} */ (
+        document.querySelector("#rEdge")
+      );
+      const nudge = (/** @type {number} */ d) => {
         r.value = String(Number(r.value) + d);
         r.dispatchEvent(new Event("input"));
-      }, by);
-    await page.evaluate(() => {
-      /** @type {any} */ (window).__cutDelay = 1500;
-    });
-    await nudge(1);
-    await expect.poll(() => counter(page, "__cutPosts")).toBe(posts + 1);
-    // A second change while the first re-cut runs: its re-cut waits. The
-    // new picture comes in after that re-cut was asked for (the sliders
-    // wait 220 ms) and replaces it.
-    await nudge(-1);
-    await page.evaluate(
-      (b64) =>
-        new Promise((done) =>
+      };
+      w.__cutDelay = 1500;
+      w.__onCutPost = () => {
+        w.__onCutPost = null;
+        queueMicrotask(() => {
+          nudge(-1);
           setTimeout(() => {
             const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
             const dt = new DataTransfer();
@@ -492,14 +570,17 @@ test.describe("character maker", () => {
             );
             input.files = dt.files;
             input.dispatchEvent(new Event("change"));
-            done(null);
-          }, 500),
-        ),
-      sheet,
-    );
+          }, 300);
+        });
+      };
+      nudge(1);
+    }, sheet);
     await expect
       .poll(() => counter(page, "__cutAnswers"), { timeout: 15000 })
       .toBe(answers + 2);
+    // The first re-cut and the new picture were sent; the replaced re-cut
+    // never was.
+    expect(await counter(page, "__cutPosts")).toBe(posts + 2);
     await expect(page.locator('[data-panel="4"]')).toBeVisible();
     await expect(page.locator("#cutStatus")).toHaveText("");
     await expect(page.locator("#stage")).not.toHaveClass(/recutting/);
