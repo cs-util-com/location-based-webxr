@@ -352,6 +352,40 @@ describe("createGpuTrainer", () => {
     expect(s.worker.sent[0]?.job.photoBudgetBytes).toBe(192 * 2 ** 20);
   });
 
+  // Why: the card's budget and the photo size are two checks; a photo size
+  // the budget cannot judge (here a frame width that is not a whole
+  // number) once threw the good budget away with it, and the library then
+  // shrank its photos to its own 700e6 bytes, more than such a card binds.
+  it("keeps the card's budget when the photo size cannot be judged", async () => {
+    const limits = {
+      maxStorageBufferBindingSize: 128 * 2 ** 20,
+      maxBufferSize: 256 * 2 ** 20,
+    };
+    const base = await request();
+    const req: TrainRequest = {
+      ...base,
+      inputs: {
+        ...base.inputs,
+        census: { ...base.inputs.census, frameWidth: 640.5 },
+      },
+    };
+    const s = setup({
+      gpu: {
+        requestAdapter: () =>
+          Promise.resolve({ info: { vendor: "nvidia" }, limits }),
+      },
+    });
+    const run = s.trainer.trainWindow(
+      req,
+      s.events,
+      new AbortController().signal,
+    );
+    await settle();
+    s.worker.reply(finished());
+    expect((await run).outcome).toBe("finished");
+    expect(s.worker.sent[0]?.job.photoBudgetBytes).toBe(192 * 2 ** 20);
+  });
+
   // Why: without the card's limits there is no budget to pass on; the
   // trainer then shrinks to its own.
   it("passes no photo budget when the card's limits are unknown", async () => {
@@ -547,5 +581,29 @@ describe("createGpuTrainer: stages and looks", () => {
     s.worker.reply({ type: "preview", picture: after as never });
     expect(after.closed).toBe(true);
     expect(s.previews).toEqual([look]);
+  });
+
+  // Why: a look is the worker's ImageBitmap, and a close that throws (a
+  // picture already let go of) must not escape the worker's message
+  // handler, neither while the stretch is stopping nor after it ended.
+  it("lets a late look's failing close pass", async () => {
+    const s = setup();
+    const ctrl = new AbortController();
+    const run = s.trainer.trainWindow(await request(), s.events, ctrl.signal);
+    await settle();
+    const throwing = {
+      close: () => {
+        throw new Error("already closed");
+      },
+    };
+    ctrl.abort();
+    expect(() =>
+      s.worker.reply({ type: "preview", picture: throwing as never }),
+    ).not.toThrow();
+    await run;
+    expect(() =>
+      s.worker.reply({ type: "preview", picture: throwing as never }),
+    ).not.toThrow();
+    expect(s.previews).toEqual([]);
   });
 });

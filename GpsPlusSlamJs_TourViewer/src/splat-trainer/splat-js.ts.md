@@ -49,7 +49,10 @@ mirror, never bundled or vendored.
   `trainer-defaults.ts`) are re-read whenever `SPLAT_JS_COMMIT` moves: no
   unit test sees the library, which is loaded from the CDN at run time,
   so a pin moved to a commit with another floor would pass every test.
-  The comment at the pin says so.
+  The comment at the pin says so. The same holds for one fact that is
+  not a number: `src/gpu/context.js` requests the adapter's storage
+  binding and buffer limits (up to 4 GiB) for the device it trains on, so
+  the budget computed from the adapter's limits is the device's.
 - The session options name Splat.js's own switches: `camOpt` (camera
   refinement) and `expComp` (exposure compensation) are off, because the
   recording's poses and the at-camera scoring must stay comparable.

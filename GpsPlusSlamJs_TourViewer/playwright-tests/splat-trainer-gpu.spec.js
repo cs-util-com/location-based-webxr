@@ -173,10 +173,14 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
     });
   });
   // A refusal in the page reaches the document's event below; one in the
-  // trainer worker reaches neither that event nor Playwright (which hears
-  // only a worker's console calls), so the stand-in turns the worker's own
-  // event into a console call, heard here. Refusals from the time before
-  // the stand-in runs show as a failed stretch instead.
+  // trainer worker reaches neither that event nor Playwright (the
+  // browser's own "Refused to ..." line in a worker is not a console
+  // call), so the stand-in turns the worker's own event into a console
+  // call, which the page's console event hears (Playwright dispatches a
+  // worker's console calls on the page too). Checked once by hand: a
+  // stand-in that fetched another host turned this test red with that
+  // refusal. Refusals from the time before the stand-in runs show as a
+  // failed stretch instead.
   /** @type {string[]} */
   const cspConsole = [];
   /** @param {import("@playwright/test").ConsoleMessage} m */
@@ -184,7 +188,6 @@ test("the GPU trainer loads Splat.js from its pinned address, sending no Referer
     if (/Content Security Policy/.test(m.text())) cspConsole.push(m.text());
   };
   page.on("console", noteCsp);
-  page.on("worker", (w) => w.on("console", noteCsp));
   await page.addInitScript(() => {
     /** @type {any} */ (window).__cspViolations = [];
     document.addEventListener("securitypolicyviolation", (e) =>
