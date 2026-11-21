@@ -32,7 +32,7 @@ import {
 } from "./maker-draft.js";
 
 /** `cutting` while a picture is cut, `ready` while a cut is shown. */
-export type CutStatus = "none" | "cutting" | "ready";
+type CutStatus = "none" | "cutting" | "ready";
 
 export interface MakerState {
   readonly draft: MakerDraft;
@@ -207,5 +207,3 @@ export function createMakerStore(opts: {
     middleware: (gd) => gd().prepend(listener.middleware),
   });
 }
-
-export type MakerStore = ReturnType<typeof createMakerStore>;

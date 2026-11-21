@@ -24,7 +24,7 @@
   - `startedAnother()`: a fresh draft with the backdrop kept; a ready cut is dropped, a running one keeps running.
   - `restored({ draft, hadCut })`: Undo; the draft through `draftOf`, and unless a cut runs, `ready` or `none` from `hadCut`.
 - `makerReducer`, selectors `hasCut(state)` and `isCutting(state)`.
-- `createMakerStore({ stored, save })`: the page's store, preloaded from `makerStateFrom(stored)`. A listener calls `save(draft)` once for every action that changes the draft object (none for a status-only change); a `save` that throws is logged and never breaks a dispatch. `MakerStore` is its type.
+- `createMakerStore({ stored, save })`: the page's store, preloaded from `makerStateFrom(stored)`. A listener calls `save(draft)` once for every action that changes the draft object (none for a status-only change); a `save` that throws is logged and never breaks a dispatch.
 
 ## Invariants
 
