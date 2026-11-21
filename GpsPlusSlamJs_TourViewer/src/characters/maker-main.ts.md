@@ -9,7 +9,8 @@
 - **Steps:** describe; copy the prompt (when the browser refuses the clipboard, the text is selected for the author); make the picture; bring it back (file, paste button, page paste, drop); check (backdrops, "As drawn" preselected and "Steady body" one tap away, "Adjust the cut" folded, its sliders cutting again 220 ms after the last change); name and save; "Make another".
 - **Cut:** in a module Worker through `createCutClient`; the phases show as they run; a newer request replaces an older one, whose `AbortError` is ignored.
 - **Save:** the chosen frames composed into the sheet and the first pose as `image.png`, through the library, which writes `character.json` last.
-- **Draft:** kept in `localStorage` (`characters:maker-draft`) and read back through `draftOf`. The picture is not kept, so after a reload at the check or save step the page goes back to step 4 and asks for it again.
+- **State:** the draft, the step and the cut status live in the Redux store of `maker-slice.ts` (`createMakerStore`); every change is a dispatch, and the page reads `makerStore.getState()` again after one. Renders are explicit calls, not a store subscription, so typing never re-renders under the caret. Beside the store stay the cut picture (`R`: canvases and pixel data; the store says `ready` exactly while it is set), the library promise, the greeting text, the re-cut timer, the talk-style render cache and the library view's generation guard.
+- **Draft:** the store's listener keeps it in `localStorage` (`characters:maker-draft`; a write that fails, as in private mode, is ignored), and the store starts from it through `makerStateFrom`. The picture is not kept, so after a reload at the check or save step the page goes back to step 4 and asks for it again.
 - `?in=editor` hides the "Tour editor" link and changes the lead; `?start=new` opens the steps.
 
 ## Async feedback
@@ -22,4 +23,4 @@ The first statement after the imports is `startErrorReporting({ app: "tour-viewe
 
 ## Tests
 
-`playwright-tests/character-maker.spec.js` (the whole flow, the reload, the exchange file both ways, a cut failure, a JPEG refusal, a failed save, the layout at three viewports). The modules it uses have their own unit tests.
+`playwright-tests/character-maker.spec.js` (the whole flow, the reload, the exchange file both ways, a cut failure, a JPEG refusal, a failed save, the layout at three viewports). The modules it uses have their own unit tests; the page's rules are the reducers of `maker-slice.ts`.
