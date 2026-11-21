@@ -62,7 +62,9 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   128 MiB. Reversed by a phone that cannot hold one 64 MiB decode beside
   its AR session (unmeasured), or tours that need 8K textures.
 - `checkGlbInert` measures every `images[]` entry: its buffer view in the
-  binary chunk (buffer 0, inside the chunk) or its base64 `data:` URI; an
+  binary chunk (buffer 0, inside the chunk) or its base64 `data:` URI,
+  read strictly by `utils/data-uri.ts` (the decoder the Tour Viewer's glTF
+  import uses too; whitespace or missing padding is unreadable); an
   image it cannot find or measure refuses the model.
 - `checkGlbInert` never throws, whatever the bytes.
 - Pure: no I/O, no DOM.

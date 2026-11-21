@@ -319,6 +319,33 @@ describe('the pixel cap (R2)', () => {
     expect(checkImageWithinCap(pngHeader(301, 300), 300 * 300).ok).toBe(false);
   });
 
+  // Why: the tour's check and the Tour Viewer's glTF import read data: URIs
+  // with one decoder, so a URI the import refuses as garbled can never pass
+  // here as an image measured from a leniently decoded payload.
+  it('reads an image data: URI as strict base64 only', () => {
+    // One trailing byte when needed, so the base64 carries padding to drop.
+    const png = pngHeader(4, 4);
+    const bytes = new Uint8Array(png.length + (png.length % 3 === 0 ? 1 : 0));
+    bytes.set(png);
+    const uri = dataUri(bytes);
+    expect(
+      checkGlbInert(glb({ asset: { version: '2.0' }, images: [{ uri }] }))
+    ).toEqual({ ok: true });
+    const comma = uri.indexOf(',') + 1;
+    const spaced = uri.slice(0, comma + 8) + ' ' + uri.slice(comma + 8);
+    const unpadded = uri.replace(/=+$/, '');
+    expect(unpadded).not.toBe(uri);
+    for (const garbled of [spaced, unpadded]) {
+      const check = checkGlbInert(
+        glb({ asset: { version: '2.0' }, images: [{ uri: garbled }] })
+      );
+      expect(check, garbled).toEqual({
+        ok: false,
+        reason: expect.stringMatching(/image 0 cannot be found/),
+      });
+    }
+  });
+
   it("checks a model's images, in its binary chunk or as data: URIs", () => {
     expect(checkGlbInert(texturedGlb(pngHeader(2048, 2048)))).toEqual({
       ok: true,

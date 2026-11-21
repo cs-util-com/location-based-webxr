@@ -16,6 +16,7 @@
  * make a phone allocate gigabytes (tour kit K4 review R2).
  */
 
+import { decodeDataUri } from '../utils/data-uri.js';
 import { readGlbChunks } from '../utils/glb-chunks.js';
 import { imageInfo } from '../utils/image-header.js';
 
@@ -163,19 +164,20 @@ export function checkGlbInert(
     uriProblem('buffer', json['buffers']) ??
     uriProblem('image', json['images']) ??
     extensionProblem(json) ??
-    imagesProblem(bin, json, options.maxImagePixels ?? TOUR_MAX_IMAGE_PIXELS);
+    imagesProblem(
+      bin,
+      json,
+      options.maxImagePixels ?? TOUR_MAX_IMAGE_PIXELS,
+      bytes.length
+    );
   return problem === null ? { ok: true } : { ok: false, reason: problem };
 }
 
-/** A base64 `data:` URI's bytes, or null. */
-function dataUriBytes(uri: string): Uint8Array | null {
-  const comma = uri.indexOf(',');
-  if (comma < 0 || !uri.slice(0, comma).endsWith(';base64')) return null;
-  try {
-    return Uint8Array.from(atob(uri.slice(comma + 1)), (c) => c.charCodeAt(0));
-  } catch {
-    return null;
-  }
+/** A strict base64 `data:` URI's bytes, or null. The URI is part of the
+ *  file, so its decoded bytes are never more than the file's own. */
+function dataUriBytes(uri: string, fileBytes: number): Uint8Array | null {
+  const read = decodeDataUri(uri, fileBytes);
+  return read.ok ? read.bytes : null;
 }
 
 /** A buffer view's bytes in the binary chunk (buffer 0), or null. */
@@ -209,31 +211,35 @@ function rangeIn(
   return start >= 0 && end >= start && end <= size ? [start, end] : null;
 }
 
-/** The bytes of one glTF image: its `data:` URI decoded, or its buffer
- *  view in the binary chunk; null when they cannot be found. */
+/** The bytes of one glTF image: its `data:` URI decoded (capped at the
+ *  file's own length, `fileBytes`), or its buffer view in the binary
+ *  chunk; null when they cannot be found. */
 function imageBytes(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
-  image: unknown
+  image: unknown,
+  fileBytes: number
 ): Uint8Array | null {
   const record = image as { uri?: unknown; bufferView?: unknown } | null;
   return typeof record?.uri === 'string'
-    ? dataUriBytes(record.uri)
+    ? dataUriBytes(record.uri, fileBytes)
     : bufferViewBytes(bin, json, record?.bufferView);
 }
 
 /** Why one of the model's images may not be decoded, or null. The binary
- *  chunk is `bin` (null when the model has none). */
+ *  chunk is `bin` (null when the model has none); the whole file is
+ *  `fileBytes` long, the cap on any image's decoded `data:` URI. */
 function imagesProblem(
   bin: Uint8Array | null,
   json: Record<string, unknown>,
-  maxPixels: number
+  maxPixels: number,
+  fileBytes: number
 ): string | null {
   const images = json['images'];
   if (images === undefined) return null;
   if (!Array.isArray(images)) return '"images" is not a list';
   for (const [i, image] of images.entries()) {
-    const data = imageBytes(bin, json, image);
+    const data = imageBytes(bin, json, image, fileBytes);
     if (data === null) {
       return `its image ${String(i)} cannot be found in the file`;
     }
