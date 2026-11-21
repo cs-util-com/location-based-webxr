@@ -483,7 +483,6 @@ describe("a voice set aside", () => {
     const heldStates: boolean[] = [];
     const audio = focusedSceneAudio(
       {
-        unlock: () => undefined,
         play: () => {
           calls.push("play");
           return Promise.resolve();
