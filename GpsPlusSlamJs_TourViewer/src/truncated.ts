@@ -1,7 +1,7 @@
 /**
  * A line of text kept short: cut at `n` characters with "…" at the end.
  * The one copy in the package (the editor's notes, the creator's panel
- * label, the tour's short name, the map chip and the 3D marks).
+ * label, the tour's short name and the 3D marks).
  *
  * @see truncated.ts.md
  */

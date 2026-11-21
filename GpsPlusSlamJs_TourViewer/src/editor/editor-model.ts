@@ -26,7 +26,7 @@ import {
   type MapPoint,
 } from "../summary-model.js";
 
-export type EditorItemKind = "code" | "pin" | "photo" | "station";
+type EditorItemKind = "code" | "pin" | "photo" | "station";
 
 /** One row in the rail and, with a position, one mark on the map. */
 export interface EditorItem {

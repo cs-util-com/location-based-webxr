@@ -9,8 +9,8 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * view cannot open, while the File menu, the status line, the toasts and the
  * draft stay in use. An edit goes through the editor session the way a
  * control of the page would (the dev server's `window.__tourEditor` hook,
- * then its `edited()`), and what the tour holds is read from the manifest
- * the page would write.
+ * its `edit()`: the inspector's own commit path), and what the tour holds
+ * is read from the manifest the page would write.
  */
 
 // The editor fixture's objects (editor-tours.js): the "Town hall" pin, the
@@ -61,13 +61,14 @@ export async function tourShown(page) {
  */
 export async function sessionEdit(page, edit, expected) {
   await tourShown(page);
-  const kind = await page.evaluate(({ act, id, args }) => {
-    // @ts-expect-error - the editor's dev-only test hook.
-    const hook = window.__tourEditor;
-    const outcome = hook.editor()[act](id, ...(args ?? []));
-    hook.edited();
-    return outcome.kind;
-  }, edit);
+  const kind = await page.evaluate(
+    ({ act, id, args }) =>
+      // @ts-expect-error - the editor's dev-only test hook.
+      window.__tourEditor.edit((/** @type {any} */ session) =>
+        session[act](id, ...(args ?? [])),
+      ),
+    edit,
+  );
   expect(kind).toBe(expected);
 }
 
@@ -106,19 +107,24 @@ export function editorManifest(page) {
   );
 }
 
+/** What `captionOf` answers for an object the tour does not hold: never
+ *  a caption, so an object that is there with no caption reads apart. */
+export const GONE = null;
+
 /**
  * The text (a pin's) or caption (a photo's) of the tour's object `id` as
- * the page would write it, or `undefined` when the tour has no such object.
+ * the page would write it (`undefined`: it has none), or `GONE` when the
+ * tour has no such object.
  * @param {import("@playwright/test").Page} page
  * @param {string} id
- * @returns {Promise<string | undefined>}
+ * @returns {Promise<string | undefined | null>}
  */
 export async function captionOf(page, id) {
   const manifest = await editorManifest(page);
   const block = manifest.stations
     .flatMap((/** @type {any} */ s) => stationBlocks(s))
     .find((/** @type {{ id: string }} */ b) => b.id === id);
-  return block === undefined ? undefined : block.caption;
+  return block === undefined ? GONE : block.caption;
 }
 
 /**
@@ -149,10 +155,10 @@ export async function placeOf(page, id) {
 
 /**
  * Wait until the tour shows and its object `id` reads `caption`
- * (`undefined`: gone).
+ * (`GONE`: the tour no longer holds it).
  * @param {import("@playwright/test").Page} page
  * @param {string} id
- * @param {string | undefined} caption
+ * @param {string | null} caption
  */
 export async function expectCaption(page, id, caption) {
   await tourShown(page);

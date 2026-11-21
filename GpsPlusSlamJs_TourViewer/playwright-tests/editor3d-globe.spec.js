@@ -35,6 +35,26 @@ import {
  *  Earth (whose whole view stands thousands of kilometres up). */
 const FRAMED_MAX_M = 20_000;
 
+/** How far over the ground the camera may stand from a framed point: an
+ *  aimed view stands 30 m back from it at 30 degrees down (26 m over the
+ *  ground) for anything as small as two captures 10 m apart; the whole
+ *  Earth is seen from thousands of kilometres away. */
+const AIMED_MAX_M = 100;
+
+/**
+ * The distance (m) over the ground between two places, flat over so short
+ * a way.
+ * @param {{ lat: number, lng: number }} a @param {{ lat: number, lng: number }} b
+ */
+function overGroundM(a, b) {
+  const north = (b.lat - a.lat) * 111_320;
+  const east =
+    (b.lng - a.lng) *
+    111_320 *
+    Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+  return Math.hypot(north, east);
+}
+
 /**
  * The sky's colour: the per-channel median (0-255) of the canvas's top
  * tenth, read from a screenshot (a software-drawn WebGL keeps no drawing
@@ -432,13 +452,23 @@ test("flies to a recording's camera captures when the tour has nothing positione
       timeout: 90_000,
     })
     .toMatchObject({ captures: 2, shown: true });
-  // Framed, the camera stands over the captures; the whole Earth is seen
-  // from thousands of kilometres up.
+  // Framed, the camera stands low (the whole Earth is seen from thousands
+  // of kilometres up) and over the ground beside the captures' centre:
+  // the view is on them, not merely low somewhere else.
   await expect
-    .poll(async () => (await view3d(page))?.globe?.altitudeM, {
-      timeout: 60_000,
-    })
-    .toBeLessThan(FRAMED_MAX_M);
+    .poll(
+      async () => {
+        const stats = await view3d(page);
+        const centre = stats?.globe?.scanCentre;
+        if (!stats || !centre) return null;
+        return {
+          low: stats.globe.altitudeM < FRAMED_MAX_M,
+          beside: overGroundM(stats.globe.pose, centre) < AIMED_MAX_M,
+        };
+      },
+      { timeout: 60_000 },
+    )
+    .toEqual({ low: true, beside: true });
   expect(await rejections(page)).toEqual([]);
 });
 

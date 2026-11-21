@@ -75,9 +75,6 @@ function harness(
       thumb: (image, picture) => {
         log.push(`thumb ${image} ${picture}`);
       },
-      visible: (on) => {
-        log.push(`visible ${String(on)}`);
-      },
       clear: () => {
         log.push("clear");
       },
@@ -107,7 +104,6 @@ describe("the debug camera capture layer", () => {
     expect(log).toEqual([
       `status ${DEBUG_READING_LINE}`,
       "draw images/frame-000000.jpg,images/frame-000001.jpg,images/frame-000002.jpg",
-      "visible true",
       `status ${debugShownLine(3)}`,
       "thumb images/frame-000000.jpg thumb:images/frame-000000.jpg",
       "thumb images/frame-000001.jpg thumb:images/frame-000001.jpg",
@@ -291,24 +287,10 @@ describe("the debug camera capture layer", () => {
     expect(log.filter((l) => l.startsWith("discard"))).toEqual([
       "discard thumb:images/frame-000001.jpg",
     ]);
-    // The first thumbnail reached the map, whose clear revokes it.
+    // The first thumbnail reached the view, whose clear revokes it.
     expect(log).toContain(
       "thumb images/frame-000000.jpg thumb:images/frame-000000.jpg",
     );
-  });
-
-  it("shows and hides its markers on the switch, also before they are drawn", async () => {
-    const { layer, log } = harness(() => Promise.resolve(placed(1)));
-    layer.setVisible(false);
-    await layer.start();
-    expect(log.slice(0, 4)).toEqual([
-      "visible false",
-      `status ${DEBUG_READING_LINE}`,
-      "draw images/frame-000000.jpg",
-      "visible false",
-    ]);
-    layer.setVisible(true);
-    expect(log.at(-1)).toBe("visible true");
   });
 
   it("thumbnails exactly the pictures it may decode, each once, in capture order (property)", async () => {

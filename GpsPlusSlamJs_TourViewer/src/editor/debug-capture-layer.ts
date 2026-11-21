@@ -2,7 +2,7 @@
  * The desktop editor's debug layer (M1 of the debug-captures plan): the
  * walk's camera captures, placed by the capture-time join
  * (`debug-captures.ts`) once the tour has opened, drawn as small
- * thumbnails on the map. They are debug data - never the tour's content:
+ * thumbnails on the globe. They are debug data - never the tour's content:
  * this module reaches only its view and its status line, never the tour
  * document, a save or the draft, and a creator cannot select, move or
  * tab to a capture. The phone has no such layer.
@@ -32,7 +32,7 @@ export function debugDeclinedLine(reason: string): string {
   return `No debug data shown: ${reason}.`;
 }
 
-/** The line once the captures are drawn (on the map or the globe). */
+/** The line once the captures are drawn. */
 export function debugShownLine(count: number): string {
   return `Debug data: ${String(count)} camera ${count === 1 ? "capture" : "captures"} shown.`;
 }
@@ -41,14 +41,13 @@ export function debugShownLine(count: number): string {
  *  aspect. Small on purpose: a long walk has a thousand of them. */
 const DEBUG_THUMB_WIDTH_PX = 32;
 
-/** What the layer draws into (the editor map's debug pane). */
+/** What the layer draws into (the page hands them to the store and the
+ *  globe; whether they show is the store's switch). */
 interface DebugLayerView<T> {
   /** One marker per capture, without a picture yet. */
   draw(captures: readonly DebugCapture[]): void;
   /** The capture's thumbnail into its marker. */
   thumb(image: string, picture: T): void;
-  /** Show or hide every marker. */
-  visible(on: boolean): void;
   /** Remove every marker. */
   clear(): void;
 }
@@ -75,8 +74,6 @@ export interface DebugLayerDeps<T> {
 export interface DebugLayer {
   /** Read, draw and thumbnail; settles when done or stopped. Once. */
   start(): Promise<void>;
-  /** The "Show debug data" switch. */
-  setVisible(on: boolean): void;
   /** The tour closed: stop reading and decoding, remove the markers. */
   stop(): void;
 }
@@ -85,7 +82,6 @@ export function createDebugCaptureLayer<T>(
   deps: DebugLayerDeps<T>,
 ): DebugLayer {
   let stopped = false;
-  let visible = true;
 
   async function thumbnailOf(image: string): Promise<T | null> {
     try {
@@ -133,7 +129,6 @@ export function createDebugCaptureLayer<T>(
       }
       const { captures } = read.captures;
       deps.view.draw(captures);
-      deps.view.visible(visible);
       deps.status(debugShownLine(captures.length));
       // One decode at a time, in capture order: a long walk never holds
       // more than one full-size picture decoded at once.
@@ -147,10 +142,6 @@ export function createDebugCaptureLayer<T>(
         }
         if (picture !== null) deps.view.thumb(c.image, picture);
       }
-    },
-    setVisible(on) {
-      visible = on;
-      deps.view.visible(on);
     },
     stop() {
       if (stopped) return;
