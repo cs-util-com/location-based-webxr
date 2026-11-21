@@ -35,11 +35,22 @@ import {
  *  Earth (whose whole view stands thousands of kilometres up). */
 const FRAMED_MAX_M = 20_000;
 
-/** How far over the ground the camera may stand from a framed point: an
- *  aimed view stands 30 m back from it at 30 degrees down (26 m over the
- *  ground) for anything as small as two captures 10 m apart; the whole
- *  Earth is seen from thousands of kilometres away. */
+/** How far along the ground the camera may stand from a framed point: an
+ *  aimed view stands 30 m back from it at 30 degrees down (26 m away along
+ *  the ground, about 15 m up) for anything as small as two captures 10 m
+ *  apart; the whole Earth is seen from thousands of kilometres away. Under
+ *  about 26 m would fail a correct framing. */
 const AIMED_MAX_M = 100;
+
+/** How high over the ground under it a framing camera may stand: an aimed
+ *  view of two captures stands about 15 m up; one a few kilometres
+ *  straight above them, centred but at the wrong scale, would draw them
+ *  sub-pixel. */
+const FRAMED_HEIGHT_MAX_M = 200;
+
+/** Where the view is pulled back to once the creator took it (m from the
+ *  tour's centre): far over `FRAMED_MAX_M`, so a flight back is plain. */
+const MOVED_AWAY_M = 200_000;
 
 /**
  * The distance (m) over the ground between two places, flat over so short
@@ -398,8 +409,11 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
 // gives the tour nothing to frame, so the view would stay on the whole
 // Earth, its two camera captures ten metres apart drawn as one speck. The
 // globe flies to the captures once they are drawn. (The code stays: the
-// editor opens no zip without a tour.json or a code.)
-test("flies to a recording's camera captures when the tour has nothing positioned", async ({
+// editor opens no zip without a tour.json or a code.) Once the creator
+// moved the view, captures landing later (a second "Add debug data")
+// leave it where they put it: a flight would take them away from what
+// they were looking at.
+test("flies to a recording's camera captures when the tour has nothing positioned, and not after the creator moved the view", async ({
   page,
 }) => {
   test.setTimeout(240_000);
@@ -453,22 +467,59 @@ test("flies to a recording's camera captures when the tour has nothing positione
     })
     .toMatchObject({ captures: 2, shown: true });
   // Framed, the camera stands low (the whole Earth is seen from thousands
-  // of kilometres up) and over the ground beside the captures' centre:
-  // the view is on them, not merely low somewhere else.
+  // of kilometres up), close over the ground (a camera kilometres straight
+  // above the captures would draw them sub-pixel) and beside the
+  // captures' centre: the view is on them, not merely low somewhere else.
   await expect
     .poll(
       async () => {
         const stats = await view3d(page);
         const centre = stats?.globe?.scanCentre;
-        if (!stats || !centre) return null;
+        const groundM = stats?.globe?.groundUnderCameraM;
+        if (!stats || !centre || typeof groundM !== "number") return null;
         return {
           low: stats.globe.altitudeM < FRAMED_MAX_M,
+          close: stats.globe.altitudeM - groundM < FRAMED_HEIGHT_MAX_M,
           beside: overGroundM(stats.globe.pose, centre) < AIMED_MAX_M,
         };
       },
       { timeout: 60_000 },
     )
-    .toEqual({ low: true, beside: true });
+    .toEqual({ low: true, close: true, beside: true });
+
+  // The creator takes the view (a wheel step on the canvas) and it ends
+  // up far from the captures; the same walk added as debug data then
+  // lands a new capture set, which must not fly the view back.
+  const canvas = page.locator("#view3d canvas.view3d-canvas");
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("no 3D canvas");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, 100);
+  await page.evaluate(
+    (m) => /** @type {any} */ (window).__tourEditor.view3dDistance(m),
+    MOVED_AWAY_M,
+  );
+  const away = async () =>
+    ((await view3d(page))?.globe?.altitudeM ?? 0) > FRAMED_MAX_M;
+  await expect.poll(away, { timeout: 30_000 }).toBe(true);
+  await page.locator("#debug-add-input").setInputFiles({
+    name: "walk.zip",
+    mimeType: "application/zip",
+    buffer: await (
+      await page.request.get(
+        "http://127.0.0.1:5197/ranges-ok/recording-tour.zip",
+      )
+    ).body(),
+  });
+  // An added walk draws its line: the new set is in.
+  await expect
+    .poll(async () => (await view3d(page))?.globe?.debug?.linePoints ?? 0, {
+      timeout: 90_000,
+    })
+    .toBe(2);
+  // A flight would have begun within these frames.
+  await afterFrames(page, 20);
+  expect(await away()).toBe(true);
   expect(await rejections(page)).toEqual([]);
 });
 
