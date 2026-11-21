@@ -23,6 +23,7 @@ import {
   type BackdropId,
   type CutChoice,
   cutChoiceOf,
+  DESC_MAX,
   draftOf,
   freshDraft,
   isBackdropId,
@@ -91,10 +92,15 @@ const makerSlice = createSlice({
       s.draft.maxStep = Math.max(s.draft.maxStep, Math.min(a.payload, 3));
       goTo(s, a.payload);
     },
-    /** A new description makes an earlier copy of the prompt stale. */
+    /**
+     * A new description makes an earlier copy of the prompt stale. Kept to
+     * `DESC_MAX` characters, as a stored draft is read back.
+     */
     descChanged(s, a: PayloadAction<string>) {
-      if (typeof a.payload !== "string" || a.payload === s.draft.desc) return;
-      s.draft.desc = a.payload;
+      if (typeof a.payload !== "string") return;
+      const desc = a.payload.slice(0, DESC_MAX);
+      if (desc === s.draft.desc) return;
+      s.draft.desc = desc;
       s.draft.copiedAt = 0;
     },
     copied(s, a: PayloadAction<number>) {

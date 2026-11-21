@@ -15,8 +15,8 @@
 - `makerActions`:
   - `went(i)`: a tap on a step; only an integer 0-5 that `reachable` allows. Raises the furthest step to at least `min(i, 3)`.
   - `reached(i)`: Next on steps 1-3 and the return from the image AI: raises the furthest step to `min(i, 3)` first, then goes as `went` does (so step 5 or 6 still needs a cut).
-  - `descChanged(text)`: a different text clears the copy time; the same text is a no-op.
-  - `copied(at)` (a finite time, else ignored), `copyRefused()`.
+  - `descChanged(text)`: cut to `DESC_MAX` (2000) characters, as `draftOf` reads a stored one back; a different text clears the copy time; the same text is a no-op.
+  - `copied(at)` (a finite time >= 0, else ignored), `copyRefused()`.
   - `cutStarted()`: ignored while a cut runs; otherwise clears the failure, the talk choice and the saved id, goes to step 4 and sets `cutting`.
   - `cutFinished()` (`ready`, version + 1), `cutFailed(message)` (`none`, the failure kept; an empty message becomes "Something went wrong"), `cutAborted()` (`cutting` becomes `none`, else nothing), `cutReplaced()` (version + 1, only with a cut).
   - `talkChosen("drawn" | "steady")` (version + 1; anything else ignored), `groundChosen(id)` (an unknown backdrop ignored), `cutChanged(choice)` (through `cutChoiceOf`: a value outside its slider's range takes its default), `cutReset()`.
@@ -30,7 +30,7 @@
 
 - The step stays in 0-5, the furthest step in 0-3, and `went`/`reached` never enter step 5 or 6 (index 4 or 5) without `ready`.
 - Every draft the reducers make survives `draftOf(JSON.parse(JSON.stringify(draft)))` unchanged, so what the listener stores is what the next page load reads.
-- Renders stay explicit calls in the page (no subscription render), so typing in the description or the name never re-renders under the caret.
+- Renders stay explicit calls in the page (no subscription render): a render rebuilds the step list and binds its listeners again, which a subscription would do on every keystroke. The page therefore renders after each dispatch that changes what is shown (`maker-main.ts.md`, State).
 
 ## Example
 

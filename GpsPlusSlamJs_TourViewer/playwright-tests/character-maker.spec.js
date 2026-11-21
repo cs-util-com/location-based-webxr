@@ -53,6 +53,49 @@ async function recordLabels(page, selector) {
 const labels = (page) =>
   page.evaluate(() => /** @type {any} */ (window).__labels);
 
+/**
+ * A slow cut worker and a slow PNG writer, switched on from the test with
+ * `window.__cutDelay` and `window.__pngDelay` (ms): a worker's final
+ * answer (not its phase reports) and a canvas's toBlob are held that long.
+ * `window.__cutPosts` counts the cut requests sent, `window.__cutAnswers`
+ * the final answers handed to the page; the count moves after the page's
+ * handler ran, so a test that sees it can look at what the answer did.
+ * Installed before the page loads, so the page's own worker is wrapped.
+ */
+function slowSeams() {
+  const w = /** @type {any} */ (window);
+  w.__cutDelay = 0;
+  w.__pngDelay = 0;
+  w.__cutPosts = 0;
+  w.__cutAnswers = 0;
+  const RealWorker = window.Worker;
+  window.Worker = class extends RealWorker {
+    /** @param {any} m @param {any} [t] */
+    postMessage(m, t) {
+      if (m && m.type === "cut") w.__cutPosts += 1;
+      super.postMessage(m, t);
+    }
+    set onmessage(fn) {
+      super.onmessage = (/** @type {MessageEvent} */ ev) => {
+        if (ev.data && ev.data.type === "phase") return fn?.call(this, ev);
+        setTimeout(() => {
+          fn?.call(this, ev);
+          w.__cutAnswers += 1;
+        }, w.__cutDelay);
+      };
+    }
+    get onmessage() {
+      return super.onmessage;
+    }
+  };
+  const toBlob = HTMLCanvasElement.prototype.toBlob;
+  HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
+    toBlob.call(this, (b) => setTimeout(() => cb(b), w.__pngDelay), ...rest);
+  };
+}
+const counter = (page, name) =>
+  page.evaluate((n) => /** @type {any} */ (window)[n], name);
+
 async function toStep4(page) {
   await page.goto("/characters.html");
   await page.locator("#makeBtn").click();
@@ -191,6 +234,8 @@ test.describe("character maker", () => {
   }) => {
     await page.goto("/characters.html");
     await page.locator("#makeBtn").click();
+    // The box holds no more than the draft keeps over a reload.
+    await expect(page.locator("#desc")).toHaveAttribute("maxlength", "2000");
     await page.locator("#desc").fill("a friendly fox ranger with a green hat");
     await page.locator("#toHome").click();
     await page.locator("#draftRow [data-discard]").click();
@@ -206,6 +251,146 @@ test.describe("character maker", () => {
     await page.locator("#undoBox button").click();
     await page.locator("#draftRow [data-continue]").click();
     await expect(page.locator("#desc")).toHaveValue("a sleepy owl librarian");
+  });
+
+  // Why: Undo of "Start over" brings the old character back with its cut;
+  // once a new picture is cut, that Undo would put the old picture over
+  // the new one, so the new picture takes the offer away.
+  test("a new picture takes away the Undo of Start over", async ({ page }) => {
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#restart").click();
+    await expect(page.locator("#undoBox button")).toBeVisible();
+    await bringPicture(page, drawSheet);
+    // Read at once: the offer would also go by itself after a few seconds,
+    // so a later look could not tell the two apart.
+    expect(await page.locator("#undoBox button").count()).toBe(0);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await expect(page.locator("#summary")).toContainText("4 poses found");
+  });
+
+  // Why: "Adjust the cut" cuts the picture again in the worker. When that
+  // answer arrives after "Start over", there is no cut on the page for it
+  // to replace, so it is dropped, and the Undo that follows shows the old
+  // cut without a line claiming it was just updated. The same holds when
+  // Start over comes before the re-cut even began: the "Cutting again"
+  // line does not stay behind.
+  test("a re-cut that lands after Start over is dropped", async ({ page }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    const posts = await counter(page, "__cutPosts");
+    const answers = await counter(page, "__cutAnswers");
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__cutDelay = 1500;
+      const r = /** @type {HTMLInputElement} */ (
+        document.querySelector("#rEdge")
+      );
+      r.value = String(Number(r.value) + 1);
+      r.dispatchEvent(new Event("input"));
+    });
+    await expect.poll(() => counter(page, "__cutPosts")).toBe(posts + 1);
+    await page.locator("#restart").click();
+    await expect.poll(() => counter(page, "__cutAnswers")).toBe(answers + 1);
+    await page.locator("#undoBox button").click();
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await expect(page.locator("#cutStatus")).toHaveText("");
+    await expect(page.locator("#stage")).not.toHaveClass(/recutting/);
+
+    // A slider moved and Start over in one go: the re-cut has not begun.
+    await page.evaluate(() => {
+      const r = /** @type {HTMLInputElement} */ (
+        document.querySelector("#rEdge")
+      );
+      r.value = String(Number(r.value) - 1);
+      r.dispatchEvent(new Event("input"));
+      /** @type {HTMLButtonElement} */ (
+        document.querySelector("#restart")
+      ).click();
+    });
+    await expect(page.locator("#cutStatus")).toHaveText("");
+    await expect(page.locator("#stage")).not.toHaveClass(/recutting/);
+  });
+
+  // Why: after a cut the page waits a moment before it shows the check
+  // step; a second picture brought in during that moment starts its own
+  // cut, and the first cut's end must not mark the second one as over
+  // (the picture buttons would come back while it still cuts).
+  test("the end of one cut does not end the next one", async ({ page }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    const sheet = await page.evaluate(drawSheet);
+    await page.evaluate((b64) => {
+      const w = /** @type {any} */ (window);
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const second = new File([bytes], "second.png", { type: "image/png" });
+      const pick = /** @type {HTMLButtonElement} */ (
+        document.querySelector("#pickBtn")
+      );
+      const input = /** @type {HTMLInputElement} */ (
+        document.querySelector("#picFile")
+      );
+      const toasts = /** @type {HTMLElement} */ (
+        document.querySelector("#toasts")
+      );
+      w.__enabledWhileCutting = false;
+      let sent = false;
+      // The moment the first cut reports its result, the second picture
+      // comes in, and its answer is held back.
+      new MutationObserver(() => {
+        if (sent || !toasts.textContent?.includes("Four poses found")) return;
+        sent = true;
+        w.__cutDelay = 1500;
+        const dt = new DataTransfer();
+        dt.items.add(second);
+        input.files = dt.files;
+        input.dispatchEvent(new Event("change"));
+      }).observe(toasts, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      new MutationObserver(() => {
+        if (sent && w.__cutAnswers < 2 && !pick.disabled) {
+          w.__enabledWhileCutting = true;
+        }
+      }).observe(pick, { attributes: true, attributeFilter: ["disabled"] });
+    }, sheet);
+    await page.locator("#picFile").setInputFiles({
+      name: "sheet.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(sheet, "base64"),
+    });
+    await expect
+      .poll(() => counter(page, "__cutAnswers"), { timeout: 15000 })
+      .toBe(2);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    expect(await counter(page, "__enabledWhileCutting")).toBe(false);
+  });
+
+  // Why: the pictures are written before the character is saved, and a
+  // name typed meanwhile is the one the author sees, so it is the one
+  // saved.
+  test("a name typed while the pictures are written is the one saved", async ({
+    page,
+  }) => {
+    await page.addInitScript(slowSeams);
+    await toStep4(page);
+    await bringPicture(page, drawSheet);
+    await expect(page.locator('[data-panel="4"]')).toBeVisible();
+    await page.locator("#nextBtn").click();
+    await page.locator("#charName").fill("Ranger Rita");
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__pngDelay = 800;
+    });
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#nextBtn")).toHaveText("Saving...");
+    await page.locator("#charName").fill("Ranger Rob");
+    await expect(page.locator("#savedBox")).toContainText(
+      "Ranger Rob is on this device now",
+    );
   });
 
   for (const vp of VIEWPORTS) {

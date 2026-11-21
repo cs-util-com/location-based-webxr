@@ -743,6 +743,8 @@ const isAbort = (e: unknown): boolean =>
 
 async function runImport(blob: Blob): Promise<void> {
   if (isCutting(page())) return;
+  // An Undo of a new start would put the old picture over this one.
+  undoBox.replaceChildren();
   R = null;
   makerStore.dispatch(A.cutStarted());
   $("#cutErr").hidden = true;
@@ -766,7 +768,11 @@ async function runImport(blob: Blob): Promise<void> {
     await sleep(400);
     go(4);
   } catch (e) {
-    if (isAbort(e)) return;
+    if (isAbort(e)) {
+      // A newer request replaced this cut.
+      makerStore.dispatch(A.cutAborted());
+      return;
+    }
     const known = e instanceof CutFailed;
     makerStore.dispatch(
       A.cutFailed(known ? e.message : "Something went wrong"),
@@ -779,8 +785,8 @@ async function runImport(blob: Blob): Promise<void> {
     $("[data-go-prompt]", card).addEventListener("click", () => go(1));
     toast(`The picture did not work: ${draft().failure}`, true);
   } finally {
-    // Ends a cut a newer request replaced; after a result or a failure it does nothing.
-    makerStore.dispatch(A.cutAborted());
+    // No status change here: after a result the page waits a moment, and a
+    // picture brought in meanwhile has started a cut of its own.
     if (document.body.dataset.view === "steps") render();
   }
 }
@@ -1010,29 +1016,39 @@ $("#cutReset").addEventListener("click", () => {
   onCutChange();
 });
 async function recut(): Promise<void> {
-  if (!R) return;
-  try {
-    // null: the worker cuts the picture it already holds again. A newer
-    // change replaces this request, which then ends as an AbortError.
-    const r = await cutClient.cut(null, cutSettingsFor(draft().cut));
-    R = resultOf(r);
-    makerStore.dispatch(A.cutReplaced());
-    cutStatus(
-      "ok",
-      !draft().cut.islandMin
-        ? "Updated. Cleaning small specks is off."
-        : r.specks
-          ? `Updated. ${r.specks} small speck${r.specks === 1 ? "" : "s"} cleaned away.`
-          : "Updated. No small specks found.",
-    );
-    renderCheck();
-  } catch (e) {
-    if (isAbort(e)) return;
-    cutStatus(
-      "bad",
-      `With these settings the picture cannot be cut: ${e instanceof Error ? e.message : "it did not work."} The last good cut is still shown.`,
-    );
+  // Start over, Make another or Discard can drop the cut before this runs
+  // or while the worker cuts: then there is no cut to replace, the answer
+  // is dropped and the line claims nothing.
+  let line: readonly ["ok" | "bad", string] = ["ok", ""];
+  if (hasCut(page())) {
+    try {
+      // null: the worker cuts the picture it already holds again. A newer
+      // change replaces this request, which then ends as an AbortError.
+      const r = await cutClient.cut(null, cutSettingsFor(draft().cut));
+      if (hasCut(page())) {
+        R = resultOf(r);
+        makerStore.dispatch(A.cutReplaced());
+        line = [
+          "ok",
+          !draft().cut.islandMin
+            ? "Updated. Cleaning small specks is off."
+            : r.specks
+              ? `Updated. ${r.specks} small speck${r.specks === 1 ? "" : "s"} cleaned away.`
+              : "Updated. No small specks found.",
+        ];
+        renderCheck();
+      }
+    } catch (e) {
+      if (isAbort(e)) return;
+      if (hasCut(page())) {
+        line = [
+          "bad",
+          `With these settings the picture cannot be cut: ${e instanceof Error ? e.message : "it did not work."} The last good cut is still shown.`,
+        ];
+      }
+    }
   }
+  cutStatus(...line);
   $("#stage").classList.remove("recutting");
 }
 
@@ -1079,16 +1095,19 @@ function restore(before: MakerDraft, beforeR: CutResult | null): void {
 async function save(): Promise<void> {
   const raw = chosenRaw();
   if (!raw) return;
+  // The talk style goes with the frames chosen here.
+  const steady = draft().choice === "steady";
   await busy(nextBtn, "Saving...", async () => {
-    const S = draft();
     try {
       const frames = await pngOf(canvasOf(composeSheet(raw)));
       const image = await pngOf(canvasOf(raw[0]!));
-      const rec = await (
-        await library()
-      ).save({
+      const lib = await library();
+      // Read now: a name typed while the pictures were written is the one
+      // the author sees.
+      const S = draft();
+      const rec = await lib.save({
         name: S.name,
-        steady: S.choice === "steady",
+        steady,
         describedAs: S.desc.trim(),
         frames,
         image,

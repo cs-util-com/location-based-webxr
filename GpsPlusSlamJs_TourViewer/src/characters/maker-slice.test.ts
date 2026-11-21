@@ -75,6 +75,16 @@ describe("maker-slice", () => {
     });
     expect(run(s, A.copyRefused()).draft.copiedAt).toBe(0);
     expect(run(s, A.copied(Number.NaN))).toBe(s);
+    expect(run(s, A.copied(-1))).toBe(s);
+  });
+
+  // Why: a stored description longer than 2000 characters is dropped when
+  // the page loads again, so the reducer keeps no more than that; the box
+  // has the same maxlength, and a script or a paste past it is cut.
+  it("keeps at most 2000 characters of description", () => {
+    const long = run(fresh(), A.descChanged("a".repeat(2500)));
+    expect(long.draft.desc).toBe("a".repeat(2000));
+    expect(run(long, A.descChanged("a".repeat(2100)))).toBe(long);
   });
 
   // Why: a picture brought back starts a fresh cut at step 4: an earlier
@@ -182,7 +192,7 @@ describe("maker-slice", () => {
   // of the draft is written once, and an action that changes only the cut
   // status writes nothing; a write that throws (private mode) does not
   // break the page.
-  it("writes the draft whenever it changes", () => {
+  it("writes the draft whenever it changes", async () => {
     const save = vi.fn();
     const store = createMakerStore({ stored: null, save });
     store.dispatch(A.descChanged("a fox"));
@@ -196,13 +206,24 @@ describe("maker-slice", () => {
     store.dispatch(A.cutStarted());
     store.dispatch(A.cutFinished());
     expect(save).toHaveBeenCalledTimes(2);
-    const throwing = createMakerStore({
-      stored: null,
-      save: () => {
-        throw new Error("private mode");
-      },
-    });
-    expect(() => throwing.dispatch(A.named("Pip"))).not.toThrow();
-    expect(throwing.getState().characterMaker.draft.name).toBe("Pip");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const throwing = createMakerStore({
+        stored: null,
+        save: () => {
+          throw new Error("private mode");
+        },
+      });
+      expect(() => throwing.dispatch(A.named("Pip"))).not.toThrow();
+      expect(throwing.getState().characterMaker.draft.name).toBe("Pip");
+      // The failed write is logged once, not thrown and not silent.
+      await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+      expect(warn).toHaveBeenCalledWith(
+        "the character draft was not kept",
+        expect.any(Error),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

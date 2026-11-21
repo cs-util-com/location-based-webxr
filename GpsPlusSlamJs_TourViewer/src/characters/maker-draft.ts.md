@@ -6,7 +6,8 @@
 
 - `MAKER_STEPS` (six labels). `BackdropId` and `isBackdropId(v)` (whether `v` is one of the four backdrops); `TalkChoice` (`drawn` or `steady`).
 - `CutChoice`, `CUT_CHOICE_DEFAULTS` (from `CUT_SETTINGS`), `CUT_SLIDERS` (min, max and step of each slider), `cutChoiceOf(input: unknown)` (field by field; a value outside its slider's range takes its default), `cutSettingsFor(choice)`.
-- `MakerDraft`, `freshDraft()`, `draftOf(input: unknown)` (field by field; a bad field takes its fresh value), `hasDraft(d)`.
+- `MakerDraft`, `freshDraft()`, `draftOf(input: unknown)` (field by field; a bad field takes its fresh value, a description over `DESC_MAX` too), `hasDraft(d)`.
+- `DESC_MAX` (2000): the longest description a draft keeps; the slice cuts a longer one and the page's box has the same `maxlength`.
 - `stepInfo(d, i, hasCut)`: `{ state, sub }` for step `i` of the stepper.
 - `reachable(d, i, hasCut)`: whether a tap on step `i` may go there.
 - `nextLabel(d, hasCut, cutting)`: `{ label, disabled }` of the Next button.

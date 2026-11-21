@@ -15,7 +15,14 @@ type Action = Parameters<typeof makerReducer>[1];
 const action: fc.Arbitrary<Action> = fc.oneof(
   fc.integer({ min: -2, max: 8 }).map((i) => A.went(i)),
   fc.integer({ min: -2, max: 8 }).map((i) => A.reached(i)),
-  fc.string({ maxLength: 2000 }).map((t) => A.descChanged(t)),
+  // Short texts, and texts around the description cap (2000), so the cap
+  // itself is tested: plain fc.string rarely reaches that length.
+  fc
+    .oneof(
+      fc.string({ maxLength: 40 }),
+      fc.string({ minLength: 1990, maxLength: 2500 }),
+    )
+    .map((t) => A.descChanged(t)),
   fc.oneof(fc.nat(), fc.constant(Number.NaN)).map((t) => A.copied(t)),
   fc.constant(A.copyRefused()),
   fc.constant(A.cutStarted()),
@@ -62,13 +69,13 @@ describe("maker-slice properties", () => {
   it("keeps the step in range and the last two steps behind a cut", () => {
     fc.assert(
       fc.property(fc.array(action, { maxLength: 40 }), (actions) => {
-        for (const s of runAll(actions)) {
+        const states = runAll(actions);
+        for (const s of states) {
           expect(s.draft.step).toBeGreaterThanOrEqual(0);
           expect(s.draft.step).toBeLessThanOrEqual(5);
           expect(s.draft.maxStep).toBeGreaterThanOrEqual(0);
           expect(s.draft.maxStep).toBeLessThanOrEqual(3);
         }
-        const states = runAll(actions);
         // The cut status before every step change that entered step 5 or 6.
         const entered = actions.flatMap((a, i) =>
           (A.went.match(a) || A.reached.match(a)) &&
