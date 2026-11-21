@@ -10,6 +10,7 @@
  * readout keeps listing the old tour's codes. This drives the real submit
  * handler; the open fails after the teardown, which is all it needs.
  */
+import { finishFailed } from "./finish-status.js";
 import { describe, expect, it, vi } from "vitest";
 import { createFusedPoseTally } from "gps-plus-slam-app-framework/ar/qr";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
@@ -178,18 +179,20 @@ describe("a tour switch ends the closing tour's scan state", () => {
 });
 
 describe("a tour switch forgets the closing tour's failed finish", () => {
-  it("clears finishError, which otherwise locks Save in the next tour", async () => {
+  it("clears the failed finish, which otherwise locks Save in the next tour", async () => {
     // Why this test matters (TourViewer scan-to-open plan §9 #8, a
-    // pre-existing bug): while `finishError` is set the panel keeps Save
+    // pre-existing bug): while a finish's failure stands the panel keeps Save
     // off, and only a finish clears it - which returns early without a
     // measured level. A failed finish in tour A therefore locked Save in
     // tour B until a reload; scan-to-open makes switching tours routine.
     const ctx = createTourViewerSession();
     ctx.session = openTour();
-    ctx.finishError = "Rebuilding the zip failed: quota";
+    ctx.tourDocument.finishClaimed();
+    ctx.tourDocument.finishReleased("Rebuilding the zip failed: quota");
+    expect(finishFailed(ctx.tourDocument.state())).toBe(true);
     const dom = openAnotherTour(ctx);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
-    expect(ctx.finishError).toBeNull();
+    expect(finishFailed(ctx.tourDocument.state())).toBe(false);
   });
 });
 

@@ -23,6 +23,13 @@
  */
 
 import {
+  finishErrorLine,
+  finishFailed,
+  finishProgressLine,
+  finishRunning,
+  finishWaitsForMeasurement,
+} from "./finish-status.js";
+import {
   AUTHOR_DEFAULT_SIZE_M,
   type MintAlignmentInfo,
 } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
@@ -475,7 +482,7 @@ export function wireCreatorSetup(deps: {
   const undo = wireCreatorUndo({
     tour: ctx.tourDocument,
     dom: undoChip(dom),
-    locked: () => ctx.finishing,
+    locked: () => finishRunning(ctx.tourDocument.state()),
     // Object mode: the selected object's actions take the strip's place.
     hidden: () => editing.selected() !== null,
   });
@@ -651,7 +658,8 @@ export function wireCreatorSetup(deps: {
    *  the measurement lands the save the creator asked for starts by itself
    *  (`measuringSettled`, r837 review #2): a window of milliseconds left
    *  no time to read a "tap again". */
-  let doneWaits = false;
+  const doneWaits = (): boolean =>
+    finishWaitsForMeasurement(ctx.tourDocument.state());
   dom.status.addEventListener("click", () => {
     statusExpanded = !statusExpanded;
     renderAuthorReadout();
@@ -696,14 +704,18 @@ export function wireCreatorSetup(deps: {
     // something to finish: a creator who measured, placed content and then
     // left AR could tap it on the page before this milestone, and F11 asked
     // for the greyed-out AR buttons to go, not for the finish to become
-    // session-only (M3 milestone review #4). A failed finish keeps it too,
-    // or its own "try again" would have nothing to try.
+    // session-only (M3 milestone review #4). After a failed finish it is
+    // the retry, and only while a Finish could start: a failure that came
+    // after the zip was written leaves nothing to write, and a retry there
+    // would do nothing (the failure line stays either way).
     // In a session the AR button's Done is the one way out (polish round
     // M3, Q-Done): the panel's Finish steps aside, and comes back as the
     // retry after a failed finish.
+    const tourState = ctx.tourDocument.state();
+    const finishError = finishErrorLine(tourState);
     dom.finishButton.hidden = sessionLive()
-      ? ctx.finishError === null
-      : !(ctx.finishError !== null || finish.readiness() === "ready");
+      ? finishError === null
+      : finish.readiness() !== "ready";
     // The save cannot be forgotten (UI round 1, U2): after AR with changes
     // not finished, Finish says so; while a rebuilt file waits for its
     // save on a phone, Finish steps aside for it.
@@ -718,13 +730,13 @@ export function wireCreatorSetup(deps: {
     // The finish step owns the line while it runs and after it failed
     // (M3 review #1/#3): store dispatches keep arriving during the rebuild
     // (GPS fixes, detections) and used to overwrite both.
-    if (ctx.finishing) {
-      dom.status.textContent = ctx.finishProgress;
+    if (finishRunning(tourState)) {
+      dom.status.textContent = finishProgressLine(tourState);
       dom.finishButton.disabled = true;
       return;
     }
-    if (ctx.finishError !== null) {
-      dom.status.textContent = ctx.finishError;
+    if (finishError !== null) {
+      dom.status.textContent = finishError;
       dom.finishButton.disabled = false;
       return;
     }
@@ -764,7 +776,7 @@ export function wireCreatorSetup(deps: {
     // unlocked (scan-to-open plan §5 #13).
     const lead =
       blockedLead +
-      (doneWaits && measuring.inFlight()
+      (doneWaits() && measuring.inFlight()
         ? `${DONE_WAITS_FOR_MEASURING} · `
         : "") +
       // With no tour open placing is locked: say why and what unlocks it.
@@ -847,8 +859,8 @@ export function wireCreatorSetup(deps: {
    *  why. Consumed here, never in the readout, so an early-returning
    *  render cannot leave it set for a later measurement (review #6). */
   function measuringSettled(): void {
-    if (doneWaits && !measuring.inFlight()) {
-      doneWaits = false;
+    if (doneWaits() && !measuring.inFlight()) {
+      ctx.tourDocument.finishWaits(false);
       if (sessionLive() && changedSinceFinish(guardInput()) && finish.start()) {
         return;
       }
@@ -998,7 +1010,7 @@ export function wireCreatorSetup(deps: {
       // a backup write failed. With no tour open nothing is backed up,
       // whatever a draft continuation reported.
       draftPersists: ctx.session !== null && draft.persists(),
-      finishFailed: ctx.finishError !== null,
+      finishFailed: finishFailed(ctx.tourDocument.state()),
     };
   }
 
@@ -1076,7 +1088,7 @@ export function wireCreatorSetup(deps: {
       // would end the visit with its changes unsaved and nothing said in
       // AR, so Done stays and says so (PR #598 review).
       if (measuring.inFlight()) {
-        doneWaits = true;
+        ctx.tourDocument.finishWaits(true);
         renderAuthorReadout();
         return true;
       }
@@ -1131,7 +1143,7 @@ export function wireCreatorSetup(deps: {
       codes.endVisit();
       settle.endVisit();
       statusExpanded = false;
-      doneWaits = false;
+      ctx.tourDocument.finishWaits(false);
       scanCardDismissed = false;
       // What the previews were made from, and the earlier visits' frame.
       previews.endVisit();
@@ -1145,7 +1157,7 @@ export function wireCreatorSetup(deps: {
     },
     resetFinishStep: () => {
       // A Done waiting for a measurement was for the closing tour.
-      doneWaits = false;
+      ctx.tourDocument.finishWaits(false);
       // The code in hand and the book belonged to the closing tour (M5
       // review #9). First, so nothing reset below reads them.
       codes.reset();

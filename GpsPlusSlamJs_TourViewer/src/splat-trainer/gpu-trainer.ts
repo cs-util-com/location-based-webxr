@@ -13,6 +13,7 @@
  * @see gpu-trainer.ts.md
  */
 
+import { closePicture } from "./kept-look.js";
 import { SPLAT_JS_MIN_TRAIN_DIM } from "./splat-js.js";
 import { planWindowJob } from "./splat-inputs.js";
 import {
@@ -64,9 +65,10 @@ const megabytes = (bytes: number): string => String(Math.ceil(bytes / 1e6));
  * The photo memory budget of a card with `limits` for a window of
  * `photos` photos of `width` x `height`, and why the window cannot train
  * on it, in words (null when it fits). The smallest size counted is the
- * larger of `minShortSidePx` and the one Splat.js stops shrinking at.
- * Null when the sizes are not ones the budget can judge (the trainer then
- * meets them itself).
+ * larger of `minShortSidePx` and the one Splat.js stops shrinking at
+ * (for camera photos the library's, see `minShortSidePx`). Null when
+ * the limits are not ones the budget can read; sizes it cannot judge keep
+ * the budget and refuse nothing (the trainer then meets them itself).
  */
 function cardFit(
   photos: number,
@@ -82,15 +84,20 @@ function cardFit(
       ? Math.round((short * SPLAT_JS_MIN_TRAIN_DIM) / long)
       : short;
   let budgetBytes: number;
-  let fit: PhotoScale;
   try {
     budgetBytes = memoryBudgetBytes(limits, settings);
+  } catch {
+    return null;
+  }
+  // A size the budget cannot judge still leaves the budget to pass on.
+  let fit: PhotoScale;
+  try {
     fit = photoScale(photos, width, height, budgetBytes, {
       ...settings,
       minShortSidePx: Math.max(settings.minShortSidePx, libraryFloor),
     });
   } catch {
-    return null;
+    return { budgetBytes, tooLarge: null };
   }
   return {
     budgetBytes,
@@ -193,7 +200,7 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
               previewEveryS: data.progress.previewEveryS,
             });
           } else if (data.type === "preview") {
-            if (signal.aborted) data.picture.close();
+            if (signal.aborted) closePicture(data.picture);
             else events.onPreview(data.picture);
           } else {
             const r = data.result;
@@ -238,7 +245,7 @@ export function createGpuTrainer(deps: GpuTrainerDeps): TrainerAdapter {
       // A look already on its way when the worker ended still arrives:
       // it is closed, not left holding its pixels until collected.
       worker.onmessage = ({ data }) => {
-        if (data.type === "preview") data.picture.close();
+        if (data.type === "preview") closePicture(data.picture);
       };
       worker.onerror = null;
       worker.terminate();

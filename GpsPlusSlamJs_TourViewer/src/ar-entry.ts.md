@@ -78,8 +78,10 @@ since the flows plan M6.
       code is being measured it stays and says "tap Done again" (PR #598
       review: the finish waits for the measurement); with no
       finish to run, while one runs ("Saving…", still tappable - M3 review
-      #1), or after a failed one ("Close AR"), it just leaves. The draft
-      keeps every change either way;
+      #1), or after a failed one ("Close AR"), it just leaves - both read
+      from the tour document's save status (`finishRunning`,
+      `finishFailed`, `finish-status.ts`). The draft keeps every change
+      either way;
     - on a VISITOR's phone without AR the click copies `location.href`
       through `seams.copyText` ("Copying…" disabled, then "Link copied"; a
       failure restores "Copy link" and puts the address-bar advice in

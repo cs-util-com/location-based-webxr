@@ -442,6 +442,40 @@ describe("runWindow", () => {
     },
   );
 
+  // Why: the library's download and the photo upload shared one print
+  // ("Loading", then "Preparing") but each had its own cap of
+  // prepareCapMs, so a stuck stretch showed for up to twice the cap. The
+  // time spent before the run counts against the one cap, and the words
+  // still name the whole cap.
+  it("counts preparation time spent before the run against its cap", async () => {
+    const hold = gate();
+    const s = scripted({ hold: { load: hold.promise } });
+    const clock = manualClock();
+    clock.t = 200_000;
+    const run = runWindow(
+      s.mod,
+      { ...input, prepareCapMs: 300_000, prepareStartedAt: 0 },
+      () => {},
+      new AbortController().signal,
+      clock,
+    );
+    await tick();
+    clock.t = 299_999;
+    clock.fireDue();
+    await tick();
+    clock.t = 300_000;
+    clock.fireDue();
+    const r = await Promise.race([
+      run,
+      tick()
+        .then(() => tick())
+        .then(() => "still preparing" as const),
+    ]);
+    expect(r).toMatchObject({ outcome: "failed", ply: null });
+    if (typeof r === "string") return;
+    expect(r.detail).toBe("Preparing the graphics card took more than 5 min.");
+  });
+
   // Why: a stray abort listener would keep the run's closure alive after
   // it ended and fire into a finished run.
   it("removes its abort listener when it ends", async () => {

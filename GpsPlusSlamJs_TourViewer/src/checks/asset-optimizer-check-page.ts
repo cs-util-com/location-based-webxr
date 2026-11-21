@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
+import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
 import {
   ASSET_OPTIMIZERS,
@@ -206,10 +207,9 @@ interface GlbJson {
 /** The bytes of the coarser levels' index lists a file carries
  *  (`primitive.extras.lod.indices`), read from its JSON chunk. */
 function chainBytesOf(bytes: Uint8Array): number {
-  const view = new DataView(bytes.buffer, bytes.byteOffset);
-  const json = JSON.parse(
-    new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))),
-  ) as GlbJson;
+  const chunks = readGlbChunks(bytes);
+  if (!chunks.ok) throw new Error(`the file is no GLB: ${chunks.reason}`);
+  const json = chunks.json as GlbJson;
   let sum = 0;
   for (const mesh of json.meshes ?? []) {
     for (const primitive of mesh.primitives ?? []) {

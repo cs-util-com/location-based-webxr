@@ -16,6 +16,12 @@
  */
 
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
+import {
+  GLB_CHUNK_BIN,
+  GLB_CHUNK_JSON,
+  GLB_MAGIC,
+  readGlbChunks,
+} from "gps-plus-slam-app-framework/utils/glb-chunks";
 
 /** A glTF JSON object, as parsed (untrusted: every field is checked where
  *  it is read). */
@@ -106,25 +112,6 @@ function extensionProblem(json: GltfObject): string | null {
     : `it uses a glTF extension this optimizer does not know (${JSON.stringify(unknown)})`;
 }
 
-/** The binary chunk (empty when the model has none). The bytes passed
- *  `checkGlbInert`, so the chunk layout is already known to be sound. */
-function binChunkOf(bytes: Uint8Array): Uint8Array {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const at = 20 + view.getUint32(12, true);
-  if (at + 8 > bytes.length) return new Uint8Array(0);
-  return bytes.subarray(at + 8, at + 8 + view.getUint32(at, true));
-}
-
-function jsonOf(bytes: Uint8Array): GltfObject {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const parsed: unknown = JSON.parse(
-    new TextDecoder().decode(bytes.subarray(20, 20 + view.getUint32(12, true))),
-  );
-  const json = objectOf(parsed);
-  if (json === null) throw new Error("its JSON chunk is not an object");
-  return json;
-}
-
 /** Each buffer view's bytes in `bin`, or the reason one does not fit. */
 function viewsOf(json: GltfObject, bin: Uint8Array): Uint8Array[] | string {
   const list = listOf(json, "bufferViews");
@@ -152,15 +139,15 @@ function viewsOf(json: GltfObject, bin: Uint8Array): Uint8Array[] | string {
 export function readGlb(bytes: Uint8Array): GlbRead {
   const inert = checkGlbInert(bytes);
   if (!inert.ok) return { ok: false, why: "unreadable", reason: inert.reason };
-  let json: GltfObject;
-  try {
-    json = jsonOf(bytes);
-  } catch {
-    return { ok: false, why: "unreadable", reason: "its JSON does not parse" };
-  }
+  // The tour's check read these chunks with the same reader, so this
+  // cannot refuse; the branch only keeps the types honest.
+  const chunks = readGlbChunks(bytes);
+  if (!chunks.ok)
+    return { ok: false, why: "unreadable", reason: chunks.reason };
+  const json = chunks.json;
   const problem = bufferProblem(json) ?? extensionProblem(json);
   if (problem !== null) return unsupported(problem);
-  const views = viewsOf(json, binChunkOf(bytes));
+  const views = viewsOf(json, chunks.bin ?? new Uint8Array(0));
   if (typeof views === "string") {
     return { ok: false, why: "unreadable", reason: views };
   }
@@ -255,10 +242,6 @@ function packViews(parts: GlbParts): {
   return { views, bin };
 }
 
-const GLB_MAGIC = 0x46546c67;
-const CHUNK_JSON = 0x4e4f534a;
-const CHUNK_BIN = 0x004e4942;
-
 /** `parts` as a `.glb`: one JSON chunk and, when any view is still named,
  *  one binary chunk holding exactly those views. Views no accessor or
  *  image names are left out. `parts` is changed (the views renumbered). */
@@ -294,13 +277,13 @@ export function glbContainer(
   view.setUint32(4, 2, true);
   view.setUint32(8, out.length, true);
   view.setUint32(12, jsonLength, true);
-  view.setUint32(16, CHUNK_JSON, true);
+  view.setUint32(16, GLB_CHUNK_JSON, true);
   out.set(text, 20);
   out.fill(0x20, 20 + text.length, 20 + jsonLength);
   if (bin !== null) {
     const at = 20 + jsonLength;
     view.setUint32(at, binLength, true);
-    view.setUint32(at + 4, CHUNK_BIN, true);
+    view.setUint32(at + 4, GLB_CHUNK_BIN, true);
     out.set(bin, at + 8);
   }
   return out;

@@ -17,6 +17,7 @@
  */
 
 import { decodeDataUri } from '../utils/data-uri.js';
+import { readGlbChunks } from '../utils/glb-chunks.js';
 import { imageInfo } from '../utils/image-header.js';
 
 type TourMediaKind = 'image' | 'model' | 'audio' | 'video';
@@ -82,10 +83,6 @@ const DECODER_EXTENSIONS: ReadonlySet<string> = new Set([
   'KHR_texture_basisu',
 ]);
 
-const GLB_MAGIC = 0x46546c67; // "glTF"
-const CHUNK_JSON = 0x4e4f534a; // "JSON"
-const CHUNK_BIN = 0x004e4942; // "BIN\0"
-
 export type GlbCheck = { ok: true } | { ok: false; reason: string };
 
 /**
@@ -148,68 +145,10 @@ function extensionProblem(json: Record<string, unknown>): string | null {
 }
 
 /**
- * Why the bytes are not exactly the shape the format allows - one JSON
- * chunk, an optional binary chunk, then the end, with the header's length
- * equal to the data's - or null. three.js's loader walks EVERY chunk and
- * takes a later JSON chunk over the first, so a check that read only the
- * first one passed a model whose second chunk points outside the file
- * (K0 milestone review R8).
- */
-function glbStructureProblem(
-  view: DataView,
-  chunkLength: number
-): string | null {
-  if (view.getUint32(8, true) !== view.byteLength) {
-    return 'its declared length does not match the file';
-  }
-  let end = 20 + chunkLength;
-  if (end + 8 <= view.byteLength) {
-    if (view.getUint32(end + 4, true) !== CHUNK_BIN) {
-      return 'it has a chunk other than one JSON and one binary chunk';
-    }
-    end += 8 + view.getUint32(end, true);
-  }
-  return end === view.byteLength
-    ? null
-    : 'it has data past its last chunk, or a chunk that runs past the end';
-}
-
-/** Why the 20-byte header and first chunk header are not a glTF 2.0
- *  binary opening with a JSON chunk that fits the data, or null. */
-function glbHeaderProblem(view: DataView): string | null {
-  if (view.byteLength < 20) return 'it is too short to be a .glb';
-  if (view.getUint32(0, true) !== GLB_MAGIC) return 'it is not a .glb file';
-  if (view.getUint32(4, true) !== 2) return 'only glTF 2.0 is supported';
-  return view.getUint32(16, true) !== CHUNK_JSON ||
-    20 + view.getUint32(12, true) > view.byteLength
-    ? 'its JSON chunk is missing or truncated'
-    : null;
-}
-
-function glbJson(bytes: Uint8Array): Record<string, unknown> | string {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const header = glbHeaderProblem(view);
-  if (header !== null) return header;
-  const chunkLength = view.getUint32(12, true);
-  const structure = glbStructureProblem(view, chunkLength);
-  if (structure !== null) return structure;
-  try {
-    const parsed: unknown = JSON.parse(
-      new TextDecoder().decode(bytes.subarray(20, 20 + chunkLength))
-    );
-    return typeof parsed === 'object' &&
-      parsed !== null &&
-      !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : 'its JSON chunk is not an object';
-  } catch {
-    return 'its JSON chunk does not parse';
-  }
-}
-
-/**
  * Whether a `.glb` is self-contained and inert: glTF 2.0 binary of exactly
- * one JSON chunk, an optional binary chunk and nothing else, every
+ * one JSON chunk, an optional binary chunk and nothing else (the shared
+ * chunk reader, `utils/glb-chunks`, which also refuses the later chunks
+ * three.js would read), every
  * buffer and image either in the file's own binary chunk or a `data:` URI
  * (never a relative path or an http URL the page would fetch), and no
  * extension that needs a decoder from outside. The reason is plain words.
@@ -218,22 +157,20 @@ export function checkGlbInert(
   bytes: Uint8Array,
   options: { readonly maxImagePixels?: number } = {}
 ): GlbCheck {
-  const json = glbJson(bytes);
-  if (typeof json === 'string') return { ok: false, reason: json };
+  const chunks = readGlbChunks(bytes);
+  if (!chunks.ok) return { ok: false, reason: chunks.reason };
+  const { json, bin } = chunks;
   const problem =
     uriProblem('buffer', json['buffers']) ??
     uriProblem('image', json['images']) ??
     extensionProblem(json) ??
-    imagesProblem(bytes, json, options.maxImagePixels ?? TOUR_MAX_IMAGE_PIXELS);
+    imagesProblem(
+      bin,
+      json,
+      options.maxImagePixels ?? TOUR_MAX_IMAGE_PIXELS,
+      bytes.length
+    );
   return problem === null ? { ok: true } : { ok: false, reason: problem };
-}
-
-/** The binary chunk's bytes, or null when the model has none. */
-function binChunk(bytes: Uint8Array): Uint8Array | null {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const at = 20 + view.getUint32(12, true);
-  if (at + 8 > bytes.length) return null;
-  return bytes.subarray(at + 8, at + 8 + view.getUint32(at, true));
 }
 
 /** A strict base64 `data:` URI's bytes, or null. The URI is part of the
@@ -245,7 +182,7 @@ function dataUriBytes(uri: string, fileBytes: number): Uint8Array | null {
 
 /** A buffer view's bytes in the binary chunk (buffer 0), or null. */
 function bufferViewBytes(
-  bytes: Uint8Array,
+  bin: Uint8Array | null,
   json: Record<string, unknown>,
   index: unknown
 ): Uint8Array | null {
@@ -254,7 +191,6 @@ function bufferViewBytes(
   const view = views[index as number] as
     | { buffer?: unknown; byteOffset?: unknown; byteLength?: unknown }
     | undefined;
-  const bin = binChunk(bytes);
   if (bin === null || view?.buffer !== 0) return null;
   const range = rangeIn(view.byteOffset ?? 0, view.byteLength, bin.length);
   return range === null ? null : bin.subarray(range[0], range[1]);
@@ -275,30 +211,35 @@ function rangeIn(
   return start >= 0 && end >= start && end <= size ? [start, end] : null;
 }
 
-/** The bytes of one glTF image: its `data:` URI decoded, or its buffer
- *  view in the binary chunk; null when they cannot be found. */
+/** The bytes of one glTF image: its `data:` URI decoded (capped at the
+ *  file's own length, `fileBytes`), or its buffer view in the binary
+ *  chunk; null when they cannot be found. */
 function imageBytes(
-  bytes: Uint8Array,
+  bin: Uint8Array | null,
   json: Record<string, unknown>,
-  image: unknown
+  image: unknown,
+  fileBytes: number
 ): Uint8Array | null {
   const record = image as { uri?: unknown; bufferView?: unknown } | null;
   return typeof record?.uri === 'string'
-    ? dataUriBytes(record.uri, bytes.length)
-    : bufferViewBytes(bytes, json, record?.bufferView);
+    ? dataUriBytes(record.uri, fileBytes)
+    : bufferViewBytes(bin, json, record?.bufferView);
 }
 
-/** Why one of the model's images may not be decoded, or null. */
+/** Why one of the model's images may not be decoded, or null. The binary
+ *  chunk is `bin` (null when the model has none); the whole file is
+ *  `fileBytes` long, the cap on any image's decoded `data:` URI. */
 function imagesProblem(
-  bytes: Uint8Array,
+  bin: Uint8Array | null,
   json: Record<string, unknown>,
-  maxPixels: number
+  maxPixels: number,
+  fileBytes: number
 ): string | null {
   const images = json['images'];
   if (images === undefined) return null;
   if (!Array.isArray(images)) return '"images" is not a list';
   for (const [i, image] of images.entries()) {
-    const data = imageBytes(bytes, json, image);
+    const data = imageBytes(bin, json, image, fileBytes);
     if (data === null) {
       return `its image ${String(i)} cannot be found in the file`;
     }

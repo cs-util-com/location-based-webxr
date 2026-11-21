@@ -19,7 +19,9 @@ settings) -> { budgetBytes, tooLarge } | null` - the card's memory
   budget for the stretch's photos (`memoryBudgetBytes` of
   `training-budget.ts`) and, in words, why the stretch cannot train on a
   card with `limits` (`photoScale`), or null in `tooLarge` when it fits;
-  null when the sizes cannot be judged. The smallest photo it accepts is
+  null when the limits cannot be read; sizes it cannot judge keep the
+  budget (still sent to the library) and refuse nothing. The budget and
+  the size check are separate steps for that reason. The smallest photo it accepts is
   the larger of the settings' `minShortSidePx` and Splat.js's own floor
   (`SPLAT_JS_MIN_TRAIN_DIM` on the longer side), since the library never
   shrinks a photo below that.
@@ -43,7 +45,8 @@ false`), then one fresh worker per stretch, sent
   its stage and time to the next look; the worker's looks reach it as
   `onPreview`, and a look that arrives after the abort, or after the
   stretch ended, is closed instead (an `ImageBitmap` holds its pixels
-  until closed). Its result is passed
+  until closed; through `closePicture` of `kept-look.ts`, so a close that
+  throws never escapes the message handler). Its result is passed
   on with its `detail` and `retryHelps`. A worker error ends as
   `failed`, "The trainer stopped unexpectedly (...)", with a retry still
   offered.
@@ -53,6 +56,14 @@ false`), then one fresh worker per stretch, sent
   reads as `cancelled`, whatever the worker finished before it heard of
   it. The worker is terminated on every path; no worker starts when the
   stop came first.
+- The card's limits are the adapter's, and they are the device's too:
+  Splat.js (`src/gpu/context.js` at the pinned commit) requests the same
+  `high-performance` adapter and its device with `requiredLimits` of the
+  adapter's `maxStorageBufferBindingSize` and `maxBufferSize`, each
+  capped at 4 GiB. The cap never binds the budget: at the 700e6-byte
+  target a binding above about 467 MB is already past the target. A
+  Splat.js that stopped requesting the limits (the WebGPU defaults are
+  128 MiB per binding) would change this; see `SPLAT_JS_COMMIT`.
 - `judge` (provisional thresholds, `trainer-defaults.ts`): a lost device
   or a failed run is poor; held-out sharpness of at least `goodHeldOutDb`
   is good, of at least `weakHeldOutDb` weak, below that poor; a run that
@@ -78,7 +89,9 @@ worker (probed first or not), one that fits only below the trainer's
 smallest photo size refused and one that fits above it but under a
 320 px shorter side trained (so the floor is on the longer side), one
 that fits the default limits trained with the card's budget (192 MiB for
-a 128 MiB binding) and one on a card of unknown limits sent none,
+a 128 MiB binding), the budget kept when the photo size cannot be judged,
+and one on a card of unknown limits sent none,
 `loading` before the photos are read, looks passed on and a late one
-closed, after the stop and after the end; and the judge's thresholds and
+closed, after the stop and after the end, a late look whose close throws
+passed over; and the judge's thresholds and
 failure words.

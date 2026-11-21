@@ -19,7 +19,10 @@ export const MAKER_STEPS = [
 
 const BACKDROP_IDS = ["meadow", "autumn", "city", "snow"] as const;
 export type BackdropId = (typeof BACKDROP_IDS)[number];
-type TalkChoice = "drawn" | "steady";
+export type TalkChoice = "drawn" | "steady";
+
+export const isBackdropId = (v: unknown): v is BackdropId =>
+  (BACKDROP_IDS as readonly unknown[]).includes(v);
 
 /** The settings "Adjust the cut" offers. */
 export interface CutChoice {
@@ -82,7 +85,8 @@ export function freshDraft(): MakerDraft {
   };
 }
 
-const DESC_MAX = 2000;
+/** The longest description a draft keeps (the box's maxlength too). */
+export const DESC_MAX = 2000;
 const TEXT_MAX = 200;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
@@ -101,7 +105,7 @@ function timeOf(v: unknown): number {
 }
 
 /** The cut choice read back: each slider inside its range, else its default. */
-function cutChoiceOf(v: unknown): CutChoice {
+export function cutChoiceOf(v: unknown): CutChoice {
   const g = isObject(v) ? v : {};
   const d = CUT_CHOICE_DEFAULTS;
   const slider = (k: CutSliderKey): number =>
@@ -121,9 +125,7 @@ export function draftOf(v: unknown): MakerDraft {
   if (!isObject(v)) return f;
   const choice =
     v.choice === "steady" || v.choice === "drawn" ? v.choice : f.choice;
-  const ground = (BACKDROP_IDS as readonly unknown[]).includes(v.ground)
-    ? (v.ground as BackdropId)
-    : f.ground;
+  const ground = isBackdropId(v.ground) ? v.ground : f.ground;
   return {
     step: intIn(v.step, 0, 5, f.step),
     maxStep: intIn(v.maxStep, 0, 3, f.maxStep),
