@@ -85,7 +85,10 @@ import {
   MOVED_CODE_FIT_WINDOW_S,
   type CodeTurnRule,
 } from "./moved-code-rule.js";
-import { alignmentNorthBearingDeg, fitGaussMarkov } from "./gps-noise-fit.js";
+import {
+  alignmentNorthBearingDeg,
+  fitGaussMarkov,
+} from "./test-support/gps-noise-fit.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { throughAlignment, type NuePose } from "./visit-anchoring.js";
 import { isReliable } from "./code-position-rule.js";
@@ -1938,7 +1941,7 @@ function sweepNoiseModel(walks: readonly Walk[]): void {
       .filter((f) => f !== null);
     const pooled = fitGaussMarkov(series);
     emit(
-      `Gauss-Markov fit to device-fix residuals against each walk's final alignment (${series.length} outdoor walks, extent >= ${minExtent} m); a few-minute walk cannot see tau above about a minute (gps-noise-fit.ts.md), so these are lower bounds`,
+      `Gauss-Markov fit to device-fix residuals against each walk's final alignment (${series.length} outdoor walks, extent >= ${minExtent} m); a few-minute walk cannot see tau above about a minute (test-support/gps-noise-fit.ts.md), so these are lower bounds`,
       [
         {
           walkMinutes: summary(
