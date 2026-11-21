@@ -35,23 +35,24 @@ import {
  *  Earth (whose whole view stands thousands of kilometres up). */
 const FRAMED_MAX_M = 20_000;
 
-/** How far a framed point may stand off the line of sight: the view aims
- *  at it exactly, so this is rounding, far under the captures' 10 m. */
-const SIGHT_TOLERANCE_M = 1;
+/** How far over the ground the camera may stand from a framed point: an
+ *  aimed view stands 30 m back from it at 30 degrees down (26 m over the
+ *  ground) for anything as small as two captures 10 m apart; the whole
+ *  Earth is seen from thousands of kilometres away. */
+const AIMED_MAX_M = 100;
 
 /**
- * The distance (m) from point `p` to the line through `a` and `b`.
- * @param {number[]} p @param {number[]} a @param {number[]} b
+ * The distance (m) over the ground between two places, flat over so short
+ * a way.
+ * @param {{ lat: number, lng: number }} a @param {{ lat: number, lng: number }} b
  */
-function offLine(p, a, b) {
-  const d = [0, 1, 2].map((i) => b[i] - a[i]);
-  const v = [0, 1, 2].map((i) => p[i] - a[i]);
-  const cross = [
-    v[1] * d[2] - v[2] * d[1],
-    v[2] * d[0] - v[0] * d[2],
-    v[0] * d[1] - v[1] * d[0],
-  ];
-  return Math.hypot(...cross) / Math.hypot(...d);
+function overGroundM(a, b) {
+  const north = (b.lat - a.lat) * 111_320;
+  const east =
+    (b.lng - a.lng) *
+    111_320 *
+    Math.cos((((a.lat + b.lat) / 2) * Math.PI) / 180);
+  return Math.hypot(north, east);
 }
 
 /**
@@ -451,24 +452,23 @@ test("flies to a recording's camera captures when the tour has nothing positione
       timeout: 90_000,
     })
     .toMatchObject({ captures: 2, shown: true });
-  // Framed, the camera stands over the captures (the whole Earth is seen
-  // from thousands of kilometres up) and its line of sight runs through
-  // their centre: the view is on them, not merely low somewhere.
+  // Framed, the camera stands low (the whole Earth is seen from thousands
+  // of kilometres up) and over the ground beside the captures' centre:
+  // the view is on them, not merely low somewhere else.
   await expect
     .poll(
       async () => {
         const stats = await view3d(page);
         const centre = stats?.globe?.scanCentre;
-        if (!stats || !Array.isArray(centre)) return null;
+        if (!stats || !centre) return null;
         return {
           low: stats.globe.altitudeM < FRAMED_MAX_M,
-          offSightM:
-            offLine(centre, stats.camera, stats.look) < SIGHT_TOLERANCE_M,
+          beside: overGroundM(stats.globe.pose, centre) < AIMED_MAX_M,
         };
       },
       { timeout: 60_000 },
     )
-    .toEqual({ low: true, offSightM: true });
+    .toEqual({ low: true, beside: true });
   expect(await rejections(page)).toEqual([]);
 });
 

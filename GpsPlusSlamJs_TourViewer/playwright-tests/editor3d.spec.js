@@ -171,7 +171,10 @@ test("opening a tour seventeen times keeps the browser's WebGL contexts free", a
       await page.locator(".start-choice:has(#start-example)").click();
       await page.locator("#start-open").click();
     }
-    await expect(page.locator("#open-modal")).toBeHidden();
+    // The start dialog stays, saying "Opening ...", until the tour is
+    // the editor's, which on a slow runner takes longer than the default
+    // wait.
+    await expect(page.locator("#open-modal")).toBeHidden({ timeout: 60_000 });
     await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
       timeout: 60_000,
     });

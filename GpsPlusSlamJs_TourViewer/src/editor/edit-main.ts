@@ -888,8 +888,8 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     editor: () => editor,
     edit: (write) => {
       let kind = "refused";
-      writeInspectorEdit((session) => {
-        const outcome = write(session);
+      writeInspectorEdit((open) => {
+        const outcome = write(open);
         kind = outcome.kind;
         return outcome;
       });
