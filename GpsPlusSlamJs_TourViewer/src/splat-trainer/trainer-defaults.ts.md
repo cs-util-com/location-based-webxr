@@ -55,6 +55,13 @@ it has run.
   size" here mean native size there. Its real photo buffer is smaller (4
   bytes a pixel, checked against `maxStorageBufferBindingSize`), so the
   12 is the trainer's planning rule, not its allocation.
+- `gpuBytesPerPixel` 4: what that real buffer holds a photo pixel in
+  (Splat.js packs its training photos as RGBA8, `src/gs/trainer.js` at
+  the pinned commit). The card's limits are converted with it into the
+  budget's 12-byte count (`training-budget.ts`): half a 128 MiB binding
+  is a 192 MiB budget, not 64 MiB. Not a tuning value but a fact of the
+  pinned library; a Splat.js that stored float targets (16 bytes) would
+  change it, and with it which stretches a small card refuses.
 - `minShortSidePx` 128 (64 / 128 / 256): the smallest photo side a window
   may be scaled to before it is refused as too large. Usable splats at
   64 px would lower it; unusable ones at 128 would raise it.
@@ -82,7 +89,7 @@ synthetic scene's acceptance run and await field recordings.
   over 300 s on a real card would raise it.
 - `goodHeldOutDb` 20, `weakHeldOutDb` 16: the judge's held-out sharpness
   for good and weak; below weak is poor. Provisional, and laxer than the
-  plan's gate bars (good at 21 dB held out and 27 dB at the camera with
+  stricter bars the trainer aims for (good at 21 dB held out and 27 dB at the camera with
   SSIM 0.70; not good under 19 dB held out or 25 dB at the camera): this
   judge reads held-out sharpness only. A judge measured against people's
   ratings replaces both.

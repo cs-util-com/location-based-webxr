@@ -65,6 +65,10 @@ import {
 } from "./tour-session.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import { documentObjects, selectTourDocument } from "./tour-document.js";
+import {
+  memoryDraftOps,
+  memoryDraftStores,
+} from "./test-support/memory-draft-stores.js";
 import { pngBlob } from "./test-support/png-blob.js";
 import { settle } from "./test-support/settle.js";
 import { stationIdOf, tourOf } from "./test-support/tour-of.js";
@@ -133,58 +137,10 @@ function levelAt(geo: QrGeoPose): string {
   });
 }
 
-/** Every write to any memory store: what `flush` watches. */
-let storeOps = 0;
-
-/** One browser's draft namespaces, in memory: both pages' stores. */
-function memoryStores(): (key: string) => Promise<DraftFileStore> {
-  const spaces = new Map<string, Map<string, Blob | string>>();
-  return (key) => {
-    const files = spaces.get(key) ?? new Map<string, Blob | string>();
-    spaces.set(key, files);
-    return Promise.resolve({
-      put: (k, data) => {
-        storeOps += 1;
-        files.set(k, data as Blob | string);
-        return Promise.resolve(true);
-      },
-      remove: (k) => {
-        storeOps += 1;
-        files.delete(k);
-        return Promise.resolve();
-      },
-      getText: async (k) => {
-        const v = files.get(k);
-        return v === undefined
-          ? undefined
-          : typeof v === "string"
-            ? v
-            : v.text();
-      },
-      getBlob: (k) => {
-        const v = files.get(k);
-        return Promise.resolve(
-          v === undefined
-            ? undefined
-            : typeof v === "string"
-              ? new Blob([v])
-              : v,
-        );
-      },
-      keys: () => Promise.resolve([...files.keys()]),
-      clear: () => {
-        storeOps += 1;
-        files.clear();
-        return Promise.resolve();
-      },
-    });
-  };
-}
-
 /** Until the page's draft writes and its store have stopped changing
  *  (`page` is the phone's store; the desktop awaits its draft itself). */
 function flush(page?: { getState(): unknown }): Promise<void> {
-  return settle(() => [storeOps, page?.getState()]);
+  return settle(() => [memoryDraftOps(), page?.getState()]);
 }
 
 // --- the operations ---------------------------------------------------------
@@ -1248,7 +1204,7 @@ async function outcome(
   records: { objects: string[]; deleted: string[] } | null;
 }> {
   const file = await tourFile();
-  const stores = memoryStores();
+  const stores = memoryDraftStores().open;
   const page = await row.run(await make(file, stores));
   const written = await page.save();
   await flush();
@@ -1420,7 +1376,12 @@ describe("the parity contract: an earlier file carrying debug camera captures", 
     const file = await tourFile();
     const written = await Promise.all(
       [desktopPage, phonePage].map(async (page) => {
-        const p = await page(file, memoryStores(), false, withCaptures);
+        const p = await page(
+          file,
+          memoryDraftStores().open,
+          false,
+          withCaptures,
+        );
         await p.edit("a", "The gate");
         return p.save();
       }),
@@ -1464,10 +1425,10 @@ describe("the parity contract: a save keeps the tour's level files as they are (
 
   it("the desktop's download and the phone's Finish keep qr/q1.json byte for byte", async () => {
     const file = await fileWithLevel();
-    const desktop = await desktopPage(file, memoryStores());
+    const desktop = await desktopPage(file, memoryDraftStores().open);
     await desktop.edit("a", "The gate");
     const downloaded = (await desktop.download()).file;
-    const phone = await phonePage(file, memoryStores());
+    const phone = await phonePage(file, memoryDraftStores().open);
     await phone.edit("a", "The gate");
     await phone.save();
     for (const [page, saved] of [
@@ -1494,7 +1455,7 @@ describe("a draft of a file-opened tour across saves", () => {
     // writes a new one. The file a creator opens next is the one the last
     // Finish made; an edit made after that Finish must be offered there,
     // or it is lost with the page.
-    const stores = memoryStores();
+    const stores = memoryDraftStores().open;
     const page = await phonePage(await tourFile(), stores);
     await page.edit("a", "Before the first Finish");
     await page.save();
@@ -1513,7 +1474,7 @@ describe("a draft of a file-opened tour across saves", () => {
     // leaves the saved file without the draft it should offer: the page
     // must say it keeps no backup rather than promise one (the opened
     // file's draft stays as it was, so it still offers its edits).
-    const stores = memoryStores();
+    const stores = memoryDraftStores().open;
     const refusingTheIdKey = (key: string) =>
       key.includes(":tour:") ? Promise.resolve(undefined) : stores(key);
     const page = await phonePage(await tourFile(), refusingTheIdKey);
@@ -1535,7 +1496,7 @@ describe("a draft of a file-opened tour across saves", () => {
     // offered - which the tour's own id replaced.) The opened file has no
     // id, so it keeps its content key; the files both Finishes made carry
     // the one id its open minted; the draft followed the first of them.
-    const stores = memoryStores();
+    const stores = memoryDraftStores().open;
     const file = await tourFile();
     const page = await phonePage(file, stores);
     const openedKey = page.draftKey();
@@ -1566,7 +1527,7 @@ describe("a draft of a file-opened tour across saves", () => {
     // download. Its first one writes the tour's id, so the file it made
     // opens under the id's key; an edit made after it must be offered
     // there, as on the phone.
-    const stores = memoryStores();
+    const stores = memoryDraftStores().open;
     const page = await desktopPage(await tourFile(), stores);
     await page.edit("a", "Before the first download");
     await page.download();

@@ -64,7 +64,10 @@ interface Fakes {
     setFrameTarget(target: { lat: number; lng: number }): void;
     placeView(pose: Pose): void;
   };
-  controls: null | { release: { mock: { calls: unknown[] } } };
+  controls: null | {
+    release: { mock: { calls: unknown[] }; mockClear(): void };
+    followIntro: { mock: { calls: unknown[] }; mockClear(): void };
+  };
   /** The zoom-out limit the editor gave the controls (`limit`). */
   zoomOutLimit: null | (() => number);
   /** What the renderer drew after the scene, in order: the streaks (with
@@ -87,6 +90,19 @@ interface Fakes {
   /** The scene the editing hands its input (its double-click zoom). */
   inputScene: null | {
     zoomTowards?(pointer: { x: number; y: number }): void;
+    stepCamera?(
+      key: "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown",
+    ): void;
+  };
+  /** Where the stations layer says every item stands (the tour's frame);
+   *  null: no item is known. */
+  itemPoint: THREE.Vector3 | null;
+  /** The viewpoint the stations layer gives every selection (the tour's
+   *  frame); null: none. */
+  viewpoint: null | {
+    at: THREE.Vector3;
+    ahead: THREE.Vector3;
+    hfovDeg: number;
   };
   /** How often the map's coverage was read. */
   coverageCalls: number;
@@ -180,6 +196,8 @@ const fakes = vi.hoisted((): Fakes => ({
   admits: false,
   codeCorners: [],
   settled: true,
+  itemPoint: null,
+  viewpoint: null,
   airOptions: null,
   airSteps: [],
   cloudsOn: [],
@@ -487,7 +505,8 @@ vi.mock("./editor3d-stations.js", async () => {
       stationObjects: () => (fakes.admits ? [] : null),
       pointOf: () => null,
       radiusOf: () => null,
-      itemPointOf: () => null,
+      itemPointOf: () => fakes.itemPoint?.clone() ?? null,
+      viewpointOf: () => fakes.viewpoint,
       codePointOf: () => null,
       codeCorners: () => fakes.codeCorners,
       setHidden() {},
@@ -685,6 +704,8 @@ beforeEach(() => {
   fakes.admits = false;
   fakes.codeCorners = [];
   fakes.settled = true;
+  fakes.itemPoint = null;
+  fakes.viewpoint = null;
   fakes.airOptions = null;
   fakes.airSteps = [];
   fakes.cloudsOn = [];
@@ -2199,5 +2220,221 @@ describe("the globe's debug layer, read from the store", () => {
     thumbs.set(A.image, never());
     frameAt(1000 + 16 * 300);
     expect(reads, "a new picture is tried").toBeGreaterThan(givenUp);
+  });
+});
+
+describe("openGlobeEditor's camera verbs and its stats (characterization)", () => {
+  /** What one verb did: whether it released the controls (the user's
+   *  drag ends), told them to follow the intro (`followIntro`), and kept
+   *  the viewpoint's lens a "Look from" lent the camera. */
+  interface VerbEffect {
+    released: boolean;
+    followed: boolean;
+    lensKept: boolean;
+  }
+
+  type Verb = (view: Editor3dView) => void;
+  const verbs: [string, Verb, VerbEffect][] = [
+    [
+      "setTilt",
+      (v) => {
+        v.setTilt(30);
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "setHeading",
+      (v) => {
+        v.setHeading(90);
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "northUp",
+      (v) => {
+        v.northUp();
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "setTop",
+      (v) => {
+        v.setTop(true);
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "flyTo",
+      (v) => {
+        expect(v.flyTo("pin-1")).toBe(true);
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "frame",
+      (v) => {
+        v.frame("pin-1");
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    [
+      "stepCamera (an arrow key)",
+      () => {
+        fakes.inputScene?.stepCamera?.("ArrowUp");
+      },
+      { released: true, followed: true, lensKept: false },
+    ],
+    // The three zooms move the camera in place and never tell the
+    // controls to follow the intro; the two buttons' zooms do not even
+    // release them. Whether that is meant is an open question; these
+    // rows pin it until it is answered.
+    [
+      "zoomTowards (a double click)",
+      () => {
+        fakes.inputScene?.zoomTowards?.({ x: 0.5, y: 0.5 });
+      },
+      { released: true, followed: false, lensKept: false },
+    ],
+    [
+      "setDistance",
+      (v) => {
+        v.setDistance(1000);
+      },
+      { released: false, followed: false, lensKept: false },
+    ],
+    [
+      "zoom",
+      (v) => {
+        v.zoom(1);
+      },
+      { released: false, followed: false, lensKept: false },
+    ],
+    [
+      "lookFrom",
+      (v) => {
+        expect(v.lookFrom("pin-1")).toBe(true);
+      },
+      { released: true, followed: true, lensKept: true },
+    ],
+  ];
+
+  // Why this test matters: the camera-move sequence (end an approach,
+  // give the lens back, release the controls, place the view, restart
+  // the speed streaks, follow the intro) is written out by hand in each
+  // verb of the 3D view, each with its own subset; a later change makes
+  // it one helper. This pins each verb's subset as it is today, so the
+  // helper can be checked against it, verb by verb.
+  it.each(verbs)("%s", async (_name, run, effect) => {
+    fakes.itemPoint = new THREE.Vector3(0, DRAWN_M, 0);
+    fakes.viewpoint = {
+      at: new THREE.Vector3(0, DRAWN_M + 2, 30),
+      ahead: new THREE.Vector3(0, DRAWN_M + 2, 0),
+      hfovDeg: 20,
+    };
+    const view = await openAt(DRAWN_M);
+    const controls = fakes.controls;
+    if (controls === null) throw new Error("no controls");
+    const ownFovDeg = view.stats().fovDeg;
+    // A "Look from" first lends the camera the viewpoint's lens; the
+    // camera is then put back where every verb starts from (the fake
+    // view's own placing, which leaves the lens lent): 400 m over the
+    // ground, looking 30 degrees down at it.
+    expect(view.lookFrom("pin-1")).toBe(true);
+    const lentFovDeg = view.stats().fovDeg;
+    expect(lentFovDeg).not.toBeCloseTo(ownFovDeg, 3);
+    placeCamera(400, -30, DRAWN_M, 700);
+    controls.release.mockClear();
+    controls.followIntro.mockClear();
+    run(view);
+    expect({
+      released: controls.release.mock.calls.length > 0,
+      followed: controls.followIntro.mock.calls.length > 0,
+      lensKept: Math.abs(view.stats().fovDeg - lentFovDeg) < 1e-6,
+    }).toEqual(effect);
+  });
+
+  // Why this test matters: `stats()` is what the page's checks and the
+  // end-to-end tests read of the 3D view, and it is assembled from every
+  // part of it in one place; a later change moves those parts into their
+  // own modules, each giving its own share. This pins the keys it hands
+  // out today (the stations layer's own, faked empty here, aside), so a
+  // move that drops or renames one is seen here rather than in a browser.
+  it("hands out these stats keys", async () => {
+    const view = await openAt(0);
+    const stats = view.stats();
+    expect(Object.keys(stats).sort()).toEqual(
+      [
+        "camera",
+        "city",
+        "codePx",
+        "distanceM",
+        "far",
+        "flying",
+        "fovDeg",
+        "frames",
+        "globe",
+        "ground",
+        "look",
+        "mapLoad",
+        "near",
+        "osm",
+        "standing",
+        "target",
+        "tiltDeg",
+        "top",
+      ].sort(),
+    );
+    expect(Object.keys(stats.globe as object).sort()).toEqual(
+      [
+        "air",
+        "altitudeM",
+        "approach",
+        "carrier",
+        "centreM",
+        "clock",
+        "clouds",
+        "debug",
+        "drawCalls",
+        "dust",
+        "fitM",
+        "frameChanges",
+        "frameTarget",
+        "frameTimesMs",
+        "grade",
+        "groundUnderCameraM",
+        "hiddenCodes",
+        "hiddenStations",
+        "marks",
+        "pose",
+        "recentres",
+        "relief",
+        "scanCentre",
+        "startCentreM",
+        "surface",
+        "uploads",
+      ].sort(),
+    );
+  });
+
+  // Why this test matters: the read-out of the view's corner (tilt,
+  // heading, frame times, the map's load) is the other reading of the
+  // view's parts, next to `stats()`; it moves with them.
+  it("hands out these read-out keys", async () => {
+    const view = await openAt(0);
+    expect(Object.keys(view.readout()).sort()).toEqual(
+      [
+        "drawCalls",
+        "frameCount",
+        "frameMs",
+        "headingDeg",
+        "mapLoad",
+        "recentFrameMs",
+        "slowFrames",
+        "tiltDeg",
+        "top",
+        "triangles",
+        "worstFrameMs",
+      ].sort(),
+    );
   });
 });

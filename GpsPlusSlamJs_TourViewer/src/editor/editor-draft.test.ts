@@ -27,7 +27,6 @@ import {
   type TourPin,
   tourObjectRecord,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import { META_KEY, objectKey, readDraft } from "../draft-persistence.js";
 import {
   createEditorDraft,
@@ -37,118 +36,14 @@ import {
   type NoBackupReason,
 } from "./editor-draft.js";
 import type { EditorLock } from "./save-target.js";
+import {
+  memoryDraftStores,
+  type MemoryDraftStores,
+} from "../test-support/memory-draft-stores.js";
 import { captionOf, tourOf } from "../test-support/tour-of.js";
 import { hostedObjects } from "../authoring-draft.js";
 import { parseSettingsRecord, SETTINGS_KEY } from "../tour-document-draft.js";
 import { stationContent, storyOf } from "../test-support/station-content.js";
-
-/** One browser's draft directories: namespace -> files. `failIn` makes
- *  one namespace's writes refuse; `holdPuts` holds every write until
- *  `releasePuts` (`holdPutsOf` only the keys it matches); `holdOpenOf` holds a namespace's open until
- *  `releaseOpens` - the order a key move's writes land in; `failMetaPuts`
- *  refuses that many of the next meta writes; `failRemoveOf` makes a
- *  removal of those keys throw (a store breaking its never-throws
- *  contract: the one way a removal can be seen not to land). */
-function browser(): {
-  spaces: Map<string, Map<string, Blob | string>>;
-  open: (key: string) => Promise<DraftFileStore | undefined>;
-  failWrites: boolean;
-  failIn: Set<string>;
-  holdPuts: boolean;
-  holdPutsOf: RegExp | null;
-  releasePuts: (ok?: boolean) => void;
-  holdOpenOf: Set<string>;
-  releaseOpens: () => void;
-  failMetaPuts: number;
-  failRemoveOf: Set<string>;
-} {
-  const spaces = new Map<string, Map<string, Blob | string>>();
-  const heldPuts: ((ok: boolean) => void)[] = [];
-  const heldOpens: (() => void)[] = [];
-  const state = {
-    spaces,
-    failWrites: false,
-    failIn: new Set<string>(),
-    holdPuts: false,
-    holdPutsOf: null as RegExp | null,
-    releasePuts: (ok = true) => {
-      state.holdPuts = false;
-      state.holdPutsOf = null;
-      for (const land of heldPuts.splice(0)) land(ok);
-    },
-    failMetaPuts: 0,
-    failRemoveOf: new Set<string>(),
-    holdOpenOf: new Set<string>(),
-    releaseOpens: () => {
-      state.holdOpenOf.clear();
-      for (const land of heldOpens.splice(0)) land();
-    },
-    open: (key: string): Promise<DraftFileStore | undefined> => {
-      const files = spaces.get(key) ?? new Map<string, Blob | string>();
-      spaces.set(key, files);
-      const store: DraftFileStore = {
-        put: (k, data) => {
-          if (state.failWrites || state.failIn.has(key)) {
-            return Promise.resolve(false);
-          }
-          if (k === META_KEY && state.failMetaPuts > 0) {
-            state.failMetaPuts -= 1;
-            return Promise.resolve(false);
-          }
-          if (state.holdPuts || state.holdPutsOf?.test(k) === true) {
-            return new Promise((resolve) => {
-              heldPuts.push((ok) => {
-                if (ok) files.set(k, data as Blob | string);
-                resolve(ok);
-              });
-            });
-          }
-          files.set(k, data as Blob | string);
-          return Promise.resolve(true);
-        },
-        remove: (k) => {
-          if (state.failRemoveOf.has(k)) {
-            return Promise.reject(new Error("the removal failed"));
-          }
-          files.delete(k);
-          return Promise.resolve();
-        },
-        getText: async (k) => {
-          const v = files.get(k);
-          return v === undefined
-            ? undefined
-            : typeof v === "string"
-              ? v
-              : v.text();
-        },
-        getBlob: (k) => {
-          const v = files.get(k);
-          return Promise.resolve(
-            v === undefined
-              ? undefined
-              : typeof v === "string"
-                ? new Blob([v])
-                : v,
-          );
-        },
-        keys: () => Promise.resolve([...files.keys()]),
-        clear: () => {
-          files.clear();
-          return Promise.resolve();
-        },
-      };
-      if (state.holdOpenOf.has(key)) {
-        return new Promise((resolve) => {
-          heldOpens.push(() => {
-            resolve(store);
-          });
-        });
-      }
-      return Promise.resolve(store);
-    },
-  };
-  return state;
-}
 
 /** A lock manager for one browser: one holder per key. */
 function locks(): (key: string) => Promise<EditorLock> {
@@ -173,7 +68,7 @@ function locks(): (key: string) => Promise<EditorLock> {
 }
 
 function draftIn(
-  b: ReturnType<typeof browser>,
+  b: MemoryDraftStores,
   holdLock = locks(),
 ): EditorDraft & { said: NoBackupReason[]; unread: () => number } {
   const said: NoBackupReason[] = [];
@@ -240,8 +135,8 @@ describe("a draft of an older format when its file opens", () => {
   // draft holds records of a shape nothing reads any more: offered, it
   // would restore half a tour.
   it("is gone before anything is offered, and the open starts a new one", async () => {
-    const b = browser();
-    const store = (await b.open(editorDraftKey(K1)))!;
+    const b = memoryDraftStores();
+    const store = await b.open(editorDraftKey(K1));
     await store.put(META_KEY, JSON.stringify({ format: 4, tourUrl: K1 }));
     await store.put(objectKey("old"), JSON.stringify({ id: "old" }));
     await store.put(SETTINGS_KEY, JSON.stringify({ stations: [] }));
@@ -259,14 +154,14 @@ describe("a refused older file's draft", () => {
   // shared by every tour on the same recording (see the last test).
   const T1 = "local-file:tour:OlderTour1";
   const T2 = "local-file:tour:OlderTour2";
-  async function seed(b: ReturnType<typeof browser>, fileKey: string) {
-    const store = (await b.open(editorDraftKey(fileKey)))!;
+  async function seed(b: MemoryDraftStores, fileKey: string) {
+    const store = await b.open(editorDraftKey(fileKey));
     await store.put(META_KEY, "{}");
     await store.put(objectKey("a"), "{}");
   }
 
   it("is deleted, another file's is left, and whether one was there is said", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await seed(b, T1);
     await seed(b, T2);
     const draft = draftIn(b);
@@ -283,8 +178,8 @@ describe("a refused older file's draft", () => {
   // older version may go - a record this version reads is the newer
   // copy's unsaved work, and a draft that says nothing either way stays.
   it("is kept when it holds a record this version reads (the newer copy's work)", async () => {
-    const b = browser();
-    const store = (await b.open(editorDraftKey(T1)))!;
+    const b = memoryDraftStores();
+    const store = await b.open(editorDraftKey(T1));
     await store.put(META_KEY, "{}");
     await store.put(objectKey("a"), JSON.stringify(tourObjectRecord(pin("a"))));
     await expect(draftIn(b).forget(T1)).resolves.toBe(false);
@@ -292,15 +187,15 @@ describe("a refused older file's draft", () => {
   });
 
   it("is kept when nothing in it says which version wrote it", async () => {
-    const b = browser();
-    const store = (await b.open(editorDraftKey(T1)))!;
+    const b = memoryDraftStores();
+    const store = await b.open(editorDraftKey(T1));
     await store.put(META_KEY, "{}");
     await expect(draftIn(b).forget(T1)).resolves.toBe(false);
     expect(b.spaces.get(editorDraftKey(T1))?.size).toBe(1);
   });
 
   it("is kept while another tab holds it", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await seed(b, T1);
     const held = locks();
     const tab = draftIn(b, held);
@@ -324,7 +219,7 @@ describe("a refused older file's draft", () => {
   // tour built on the same recording may keep its draft under it.
   // Deleting by such a key could empty that tour's unsaved work.
   it("is kept when the refused file is known only by its content key", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await seed(b, K1);
     await expect(draftIn(b).forget(K1)).resolves.toBe(false);
     expect(b.spaces.get(editorDraftKey(K1))?.size).toBe(2);
@@ -335,14 +230,14 @@ describe("createEditorDraft", () => {
   it("backs an edit up under the editor's own namespace, with the opened version as seen", async () => {
     // Why (review #3): the phone keys a file-opened tour by the same file
     // key; the editor's records must never land in that namespace.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     expect((await draft.open(K1, opened)).backedUp).toBe(true);
     expect(await draft.saveObject(pin("a", "edited"))).toBe(true);
     await draft.idle();
     expect(b.spaces.has(K1)).toBe(false);
-    const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
+    const stored = await readDraft(await b.open(editorDraftKey(K1)));
     expect(stored?.draft.objects.map((o) => o.id)).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toEqual({
       // The opened version as the file holds it (in its station).
@@ -352,7 +247,7 @@ describe("createEditorDraft", () => {
   });
 
   it("a later open offers the changes and the deletions, named apart, and nothing else", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"), pin("c"));
     await first.open(K1, opened);
@@ -368,11 +263,11 @@ describe("createEditorDraft", () => {
   });
 
   it("a deletion has no base", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveDeletion("a");
-    const stored = await readDraft((await b.open(editorDraftKey(K1)))!);
+    const stored = await readDraft(await b.open(editorDraftKey(K1)));
     expect(stored?.draft.deleted).toEqual(["a"]);
     expect(stored?.draft.bases?.get("a")).toBeUndefined();
   });
@@ -380,7 +275,7 @@ describe("createEditorDraft", () => {
   it("a download clears nothing: the original reopened still offers, the downloaded copy put in place does not", async () => {
     // Why (review #2): a download only STARTED; the draft is cleared by a
     // file that is seen to carry the content, never by a download.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -404,7 +299,7 @@ describe("createEditorDraft", () => {
     // Why (review #1, E2p re-review #1): with one base per object, the
     // base still named the version before the save, so the file's own
     // saved version read as "edited elsewhere" and the edit was dropped.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "first"));
@@ -420,7 +315,7 @@ describe("createEditorDraft", () => {
   });
 
   it("a save built but never put in place: both the original and the built copy offer the later edit", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -438,7 +333,7 @@ describe("createEditorDraft", () => {
   });
 
   it("an object changed elsewhere since is not offered back, is said once, and its record goes", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a"), pin("b")));
     void first.saveObject(pin("a", "mine"));
@@ -459,7 +354,7 @@ describe("createEditorDraft", () => {
   });
 
   it("an in-place write that landed clears what it wrote and keeps an edit made while it ran", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a"), pin("b")));
     void draft.saveObject(pin("a", "saved"));
@@ -477,7 +372,7 @@ describe("createEditorDraft", () => {
   it("the key moves after an in-place write of a tour of notes alone: the later edit is offered under the new key, the old namespace is emptied", async () => {
     // Why (review #5): a hand-built tour's key changes with every save;
     // a draft left under the old key is one no file opens as again.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a"), pin("b")));
     void draft.saveObject(pin("a", "saved"));
@@ -503,7 +398,7 @@ describe("createEditorDraft", () => {
     // an edit made after the download is lost to the file the creator
     // opens next. A download clears nothing (as since E2c): the
     // original opened again still offers the edit made before it.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"), pin("b"));
     await draft.open(K1, original);
@@ -525,7 +420,7 @@ describe("createEditorDraft", () => {
     // file anyone opens - the creator may never use it. So the move takes
     // every record along as it is; only an open of a file that carries an
     // edit spends it.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"), pin("b"));
     await draft.open(K1, original);
@@ -545,7 +440,7 @@ describe("createEditorDraft", () => {
   it("a download to the key the draft has already moves nothing", async () => {
     // Why: every save after the first carries the same id, so most
     // downloads land on the draft's own key - and must leave it be.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "saved"));
@@ -561,7 +456,7 @@ describe("createEditorDraft", () => {
     // Why (review #5, #7): the edit's write was queued in the OLD
     // namespace; the offer's records were never this page's - both must
     // reach the new key.
-    const b = browser();
+    const b = memoryDraftStores();
     const earlier = draftIn(b);
     const original = tour(pin("a"), pin("b"), pin("c"));
     await earlier.open(K1, original);
@@ -592,7 +487,7 @@ describe("createEditorDraft", () => {
     // of the same tour edited there earlier. The carried record must take
     // it away, as every live record does (`writeDraftLiveRecord`), or the
     // next open offers to delete the note just edited.
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"), pin("b"));
     const earlier = draftIn(b);
     await earlier.open(K2, original);
@@ -617,7 +512,7 @@ describe("createEditorDraft", () => {
   it("Delete it takes the offer's records, never one edited since the open, and a later edit of a deleted one is kept", async () => {
     // Why (review #7): live edits win over an unanswered offer, and a
     // rejection must not hide a change made after it.
-    const b = browser();
+    const b = memoryDraftStores();
     const earlier = draftIn(b);
     const original = tour(pin("a"), pin("b"), pin("c"));
     await earlier.open(K1, original);
@@ -645,7 +540,7 @@ describe("createEditorDraft", () => {
   // offered to delete the note just edited. A live record takes its id's
   // tombstone away, as on the phone (`writeDraftLiveRecord`).
   it("a note edited over an offered deletion is offered as the edit, never as deleted", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const earlier = draftIn(b);
     const original = tour(pin("a"), pin("b"));
     await earlier.open(K1, original);
@@ -663,7 +558,7 @@ describe("createEditorDraft", () => {
   });
 
   it("a rejected id whose files are gone is dropped from the meta at the next open, so a later edit of it is not hidden", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -692,7 +587,7 @@ describe("createEditorDraft", () => {
   // still rejected the id, the edit was not claimed, and the next read hid
   // it. The phone claims against the meta on disk too (`rejectedOnDisk`).
   it("an edit of a rejected id is claimed against the meta on disk when the pruning write did not land", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -724,7 +619,7 @@ describe("createEditorDraft", () => {
   // after it let the hold go while it was still being written, and another
   // tab could read the draft before the rejection.
   it("a close right after Delete it lets the hold go only after the meta write landed", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const hold = locks();
     const original = tour(pin("a"));
     const earlier = draftIn(b, hold);
@@ -754,7 +649,7 @@ describe("createEditorDraft", () => {
   });
 
   it("an undo of a delete of an edited note writes the record again", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "edited"));
@@ -772,7 +667,7 @@ describe("createEditorDraft", () => {
   it("another tab holding the draft: this tab writes nothing and says so once", async () => {
     // Why (review #6): two tabs writing one draft would each sweep the
     // other's records.
-    const b = browser();
+    const b = memoryDraftStores();
     const hold = locks();
     const first = draftIn(b, hold);
     await first.open(K1, tour(pin("a")));
@@ -806,10 +701,10 @@ describe("createEditorDraft", () => {
     expect((await none.open(K1, tour(pin("a")))).backedUp).toBe(false);
     expect(await none.saveObject(pin("a", "x"))).toBe(false);
     expect(said).toEqual(["storage"]);
-    const b = browser();
+    const b = memoryDraftStores();
     const failing = draftIn(b);
     await failing.open(K1, tour(pin("a")));
-    b.failWrites = true;
+    b.failPutsOf = /^/;
     expect(await failing.saveObject(pin("a", "x"))).toBe(false);
     expect(await failing.saveDeletion("a")).toBe(false);
     expect(failing.said).toEqual(["storage"]);
@@ -817,7 +712,7 @@ describe("createEditorDraft", () => {
   });
 
   it("the same tour opened again in the same tab is not another tab", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     expect((await draft.open(K1, tour(pin("a")))).backedUp).toBe(true);
@@ -830,7 +725,7 @@ describe("createEditorDraft", () => {
   // record without its bytes, so a moved photo note was neither offered
   // nor counted as replaced, and the open then removed it.
   it("keeps a moved photo note, and the undo of a delete of one, without its bytes", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const opened = tour(photo("p"), photo("q"));
     const first = draftIn(b);
     await first.open(K1, opened);
@@ -854,7 +749,7 @@ describe("createEditorDraft", () => {
   // namespace now goes only after every carried record and the new meta
   // landed.
   it("empties the old namespace only once the carried records have landed", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"), pin("c"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -878,7 +773,7 @@ describe("createEditorDraft", () => {
   });
 
   it("keeps the old namespace when the carried records do not land", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"), pin("c"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -899,7 +794,7 @@ describe("createEditorDraft", () => {
   // Why (review #5): a carried record queued behind the move would CLAIM
   // an id "Delete it" had just rejected, and bring the deleted record back.
   it("Delete it right after a key move does not bring the offer back", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"), pin("c"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -920,7 +815,7 @@ describe("createEditorDraft", () => {
   // editor was still live, so a late write of the old tour landed in the
   // new tour's namespace with the new tour's seen version.
   it("drops a write of a tour that is no longer open", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     const old = draft.writes();
@@ -940,7 +835,7 @@ describe("createEditorDraft", () => {
   // then moved the NEW tour's draft to the old file's key, emptied it, and
   // made the old file the source of the new tour's seen versions.
   it("a save of the old tour that lands while the next tour opens changes nothing of it", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const K3 = "local-file:00000000000000000000000000000003";
     const second = tour(pin("b"));
     const earlier = draftIn(b);
@@ -983,7 +878,7 @@ describe("createEditorDraft", () => {
   // queued writes landed, so another tab could take the draft while they
   // were still being written.
   it("lets the hold go only after the closed tour's queued writes landed", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const hold = locks();
     const first = draftIn(b, hold);
     await first.open(K1, tour(pin("a")));
@@ -1006,7 +901,7 @@ describe("createEditorDraft", () => {
   // once-per-tour line, so the NEXT tour's real storage failure was never
   // said.
   it("a closed tour's late failure does not use up the next tour's no-backup line", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     b.holdPuts = true;
@@ -1042,7 +937,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("a changed setting survives a closed tab and is offered as a change", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"));
     await first.open(K1, opened);
@@ -1056,7 +951,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("is counted with the notes' changes in the offer's words", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"));
     await first.open(K1, opened);
@@ -1069,7 +964,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("a setting put back to the file's own value leaves nothing to offer", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = flagged(pin("a"));
     await first.open(K1, opened);
@@ -1082,7 +977,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("turning a flagged tour's setting off is kept too", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = flagged(pin("a"));
     await first.open(K1, opened);
@@ -1097,7 +992,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   it("a file that carries the setting spends the record: a downloaded copy put in place", async () => {
     // Why (review #2's rule): a download clears nothing - the original
     // reopened still offers - but a file seen to carry the value does.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -1119,7 +1014,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     // as a download, turned off again - back at the opened file's value,
     // but the built copy carries "on", and putting it in place must not
     // lose the creator's last choice.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -1139,7 +1034,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("an in-place write that landed clears it, and a change after it is pending against the written file", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveSettings({ needsNoGps: true });
@@ -1159,7 +1054,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("an in-place write keeps a setting changed while it ran", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "saved"));
@@ -1172,7 +1067,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("a key move carries the setting, and empties the old namespace", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     void draft.saveObject(pin("a", "saved"));
@@ -1190,7 +1085,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("a key move carries an offered setting not yet answered", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const earlier = draftIn(b);
     const original = tour(pin("a"));
     await earlier.open(K1, original);
@@ -1213,7 +1108,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("Delete it throws an offered setting away, never one changed since the open", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"));
     for (const changedSince of [false, true]) {
       const earlier = draftIn(b);
@@ -1241,7 +1136,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("drops a settings write of a tour that is no longer open", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     const old = draft.writes();
@@ -1256,7 +1151,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
 
   it("an unreadable settings record is no offer, and goes", async () => {
     // Why: a record that does not read costs itself (the draft's rule).
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a")));
     await first.idle();
@@ -1273,7 +1168,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     // Why: its story names a picture the file no longer holds. Removing the
     // record said nothing and took the station for good, though it reads
     // again the moment a file with that picture is opened.
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a")));
     await first.idle();
@@ -1321,7 +1216,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
     // Why (the r875 milestone review #1): the poses are parsed as the
     // format parses a pose; one that does not read costs the record, as
     // any unreadable record does.
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a")));
     await first.idle();
@@ -1342,7 +1237,7 @@ describe("createEditorDraft, the tour's settings (QR-first M1b-2)", () => {
   });
 
   it("a settings write that does not land is said once", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     b.failIn.add(editorDraftKey(K1));
@@ -1373,7 +1268,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     // re-decided it: the file said on, the session off, and a closed tab
     // lost "off".
     for (const path of ["in place", "key move", "download"] as const) {
-      const b = browser();
+      const b = memoryDraftStores();
       const draft = draftIn(b);
       const original = tour(pin("a"));
       await draft.open(K1, original);
@@ -1398,7 +1293,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
   });
 
   it("the download's original, reopened, carries the value turned back to: spent there", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -1413,7 +1308,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
   it("the offer names the setting and its value, alone and beside notes", async () => {
     // Why (#3): "1 change" alone did not say the change is the setting, so
     // Restore could put back a value a colleague changed since, unknowingly.
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, tour(pin("a")));
     void first.saveSettings({ needsNoGps: true });
@@ -1426,7 +1321,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     await alone.idle();
     alone.close();
 
-    const c = browser();
+    const c = memoryDraftStores();
     const second = draftIn(c);
     await second.open(K1, flagged(pin("a")));
     void second.saveObject(pin("a", "edited"));
@@ -1441,7 +1336,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
   it("Delete it has removed an offered setting by the time it says it is done", async () => {
     // Why (#4): the removal ran outside the commit point, fire-and-forget,
     // so "deleted" was said before the record went.
-    const b = browser();
+    const b = memoryDraftStores();
     const earlier = draftIn(b);
     await earlier.open(K1, tour(pin("a")));
     void earlier.saveSettings({ needsNoGps: true });
@@ -1456,7 +1351,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
   it("a removal of the offered setting that does not land fails Delete it, and everything is offered again", async () => {
     // Why (#4): a failed removal was ignored, so the page said the earlier
     // changes were deleted while the setting stayed - and the notes went.
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -1479,7 +1374,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
   it("a Delete it that did not land re-arms the offer: a key move still carries it", async () => {
     // Why (#4, "re-arm the offer"): "offered again next time" must hold
     // even when an in-place save moves the key before that next time.
-    const b = browser();
+    const b = memoryDraftStores();
     const original = tour(pin("a"), pin("b"));
     const earlier = draftIn(b);
     await earlier.open(K1, original);
@@ -1557,7 +1452,7 @@ describe("restoredLine (M1b-2 milestone review #6)", () => {
  */
 describe("createEditorDraft, the PR #626 bot findings", () => {
   it("a first meta write that does not land is said, and the backup is no longer claimed", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     b.failMetaPuts = 1;
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
@@ -1567,7 +1462,7 @@ describe("createEditorDraft, the PR #626 bot findings", () => {
   });
 
   it("after a key move, the pre-save file reopened in this tab waits for the old hold, never 'another tab'", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const original = tour(pin("a"));
     await draft.open(K1, original);
@@ -1601,7 +1496,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("changed details survive a closed tab, and the offer names them", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
@@ -1621,7 +1516,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("details put back to the file's own leave nothing to offer", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
@@ -1633,7 +1528,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("a file that carries the details spends the record", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     await first.open(K1, named("Old", pin("a")));
     void first.saveSettings({ needsNoGps: false, details: { title: "New" } });
@@ -1645,7 +1540,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("a record from before the details offers only its setting, whatever the file's name", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
@@ -1659,7 +1554,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("both at once are named together", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
@@ -1678,7 +1573,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
     // so the file written without it never spent the record, and every
     // later open offered "the tour's details (cover)" - a change no save
     // can make, whose Restore then said nothing was restored.
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const withPhoto: TourManifest = {
       ...named("Old", photo("f"), photo("g")),
@@ -1717,7 +1612,7 @@ describe("createEditorDraft, the tour's details (W2)", () => {
   });
 
   it("an unreadable details part makes the record unreadable: no offer", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = named("Old", pin("a"));
     await first.open(K1, opened);
@@ -1759,7 +1654,7 @@ describe("createEditorDraft, the stations the page created", () => {
     // a writer that stored the frame as the page holds it would store a
     // record the reader drops without a word, and the station's story
     // would be gone on the next open.
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     const story = {
@@ -1788,7 +1683,7 @@ describe("createEditorDraft, the stations the page created", () => {
   });
 
   it("a record holding only created stations is kept, and offered with the note that names them", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
@@ -1810,7 +1705,7 @@ describe("createEditorDraft, the stations the page created", () => {
   });
 
   it("a created station moved since keeps its moved pose", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
@@ -1830,7 +1725,7 @@ describe("createEditorDraft, the stations the page created", () => {
   });
 
   it("a file that carries the created station spends the record", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
@@ -1852,7 +1747,7 @@ describe("createEditorDraft, the stations the page created", () => {
   });
 
   it("created stations with no note left to offer are no offer, and go", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const first = draftIn(b);
     const opened = tour(pin("a"), pin("b"));
     await first.open(K1, opened);
@@ -1895,7 +1790,7 @@ describe("the files a draft keeps", () => {
   };
   const ASSET = `asset:${STATUE.id}`;
 
-  async function keptModel(b: ReturnType<typeof browser>): Promise<void> {
+  async function keptModel(b: MemoryDraftStores): Promise<void> {
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(true);
@@ -1909,7 +1804,7 @@ describe("the files a draft keeps", () => {
   }
 
   it("offers the file and the record naming it on the next open", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await keptModel(b);
     const again = draftIn(b);
     const { offer } = await again.open(K1, tour(pin("a")));
@@ -1923,7 +1818,7 @@ describe("the files a draft keeps", () => {
   // cleared from storage but the record was not; offered, every save of
   // the tour would fail with the parser's words.
   it("leaves out a record whose file is gone, and says the draft did not read whole", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await keptModel(b);
     b.spaces.get(editorDraftKey(K1))?.delete(ASSET);
     const again = draftIn(b);
@@ -1954,7 +1849,7 @@ describe("the files a draft keeps", () => {
       createdAtIso: "2026-11-07T00:00:00.000Z",
       geo: { lat: 48.5, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] },
     };
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveAsset(VOICE, new Blob(["voice"]));
@@ -1971,16 +1866,16 @@ describe("the files a draft keeps", () => {
   });
 
   it("says a file that did not land, as any write that did not", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
-    b.failWrites = true;
+    b.failPutsOf = /^/;
     expect(await draft.saveAsset(STATUE, new Blob(["x"]))).toBe(false);
     expect(draft.said).toEqual(["storage"]);
   });
 
   it("drops a file once a save landed with it, and offers none the opened file lists", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
@@ -1997,7 +1892,7 @@ describe("the files a draft keeps", () => {
   });
 
   it("carries its files when a download moves the key", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
@@ -2043,7 +1938,7 @@ describe("the files a draft keeps", () => {
         ]),
       ]),
     };
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     const opened = tour(pin("a"));
     await draft.open(K1, opened);
@@ -2067,7 +1962,7 @@ describe("the files a draft keeps", () => {
   // tab closed mid-move, a record naming a file the new key lacks: the
   // reopen drops that record whole. The records wait for the files.
   it("a key move writes a record only after the files it may name", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
@@ -2077,7 +1972,7 @@ describe("the files a draft keeps", () => {
     draft.writes().moved(K2);
     await new Promise((resolve) => setTimeout(resolve, 0));
     // The tab closes here: what the new key holds is all a reopen finds.
-    const closed = browser();
+    const closed = memoryDraftStores();
     closed.spaces.set(
       editorDraftKey(K2),
       new Map(b.spaces.get(editorDraftKey(K2))),
@@ -2100,16 +1995,16 @@ describe("the files a draft keeps", () => {
   // carried by a key move, are held, and a record naming them written
   // without its narration loses it after a reload.
   it("forgets a file not kept when the draft closes, and once a key move carried it", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await keptModel(b);
     const draft = draftIn(b);
     await draft.open(K2, tour(pin("a")));
-    b.failWrites = true;
+    b.failPutsOf = /^/;
     expect(await draft.saveAsset(STATUE, new Blob(["glTF-statue"]))).toBe(
       false,
     );
     expect(draft.holdsFile(STATUE.id)).toBe(false);
-    b.failWrites = false;
+    b.failPutsOf = null;
     draft.close();
     const { offer } = await draft.open(K1, tour(pin("a")));
     expect(offer?.files?.map((f) => f.asset.id)).toEqual([STATUE.id]);
@@ -2118,9 +2013,9 @@ describe("the files a draft keeps", () => {
 
     const moving = draftIn(b);
     await moving.open(K2, tour(pin("a")));
-    b.failWrites = true;
+    b.failPutsOf = /^/;
     await moving.saveAsset(STATUE, new Blob(["glTF-statue"]));
-    b.failWrites = false;
+    b.failPutsOf = null;
     moving.writes().moved(K1);
     await moving.idle();
     expect(moving.holdsFile(STATUE.id)).toBe(true);
@@ -2131,7 +2026,7 @@ describe("the files a draft keeps", () => {
   // tab closed while a large file is still being written keeps it only in
   // the old key, which only the old file reaches.
   it("a key move writes a record naming no file without waiting for the files", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     const draft = draftIn(b);
     await draft.open(K1, tour(pin("a")));
     await draft.saveAsset(STATUE, new Blob(["glTF-statue"]));
@@ -2141,7 +2036,7 @@ describe("the files a draft keeps", () => {
     b.holdPutsOf = /^asset:/;
     draft.writes().moved(K2);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    const closed = browser();
+    const closed = memoryDraftStores();
     closed.spaces.set(
       editorDraftKey(K2),
       new Map(b.spaces.get(editorDraftKey(K2))),
@@ -2153,7 +2048,7 @@ describe("the files a draft keeps", () => {
   });
 
   it("drops the offered files a discard turns down", async () => {
-    const b = browser();
+    const b = memoryDraftStores();
     await keptModel(b);
     const again = draftIn(b);
     await again.open(K1, tour(pin("a")));

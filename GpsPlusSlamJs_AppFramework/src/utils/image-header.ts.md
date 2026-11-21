@@ -43,6 +43,11 @@ it against one pixel cap (`ar/tour-media.ts` `TOUR_MAX_IMAGE_PIXELS`).
   by its source path and refuses an imagery tile whose WebP header states
   no alpha (the tiles carry their water mask in it); the Globe's own copy
   was removed.
+- **Imports nothing**: the Globe's fetch script loads this file under
+  plain node, which does not resolve the framework's `./x.js` import
+  spellings to their `.ts` sources, and the script runs only by hand, so
+  an import would break it with every gate green. A test in
+  `image-header.test.ts` fails on any import or re-export in the file.
 
 ## Examples
 
@@ -60,8 +65,10 @@ if (info === null || info.width * info.height > TOUR_MAX_IMAGE_PIXELS) {
   WebP, a truncated one, an unknown chunk), GIF and AVIF headers; an AVIF grid's largest item; an HEIF
   that is not AVIF; truncated headers, zero sizes, SVG text, empty bytes;
   `imageInfoOfBlob` from a large Blob's first bytes, and a JPEG frame past
-  a small probe read as unknown.
+  a small probe read as unknown; the source file holds no import. Its
+  exact `toEqual` results pin that only a WebP result carries `alpha`.
 - `image-header.property.test.ts` - every 16-bit JPEG and GIF size,
   every PNG size, and every extended (24-bit) and lossless (14-bit) WebP
-  size with its alpha read back; only a WebP result carries alpha; random bytes never throw and never yield a
+  size with its alpha read back, the extended one under every value of
+  the other VP8X flag bits; random bytes never throw and never yield a
   size unless they start like an image.

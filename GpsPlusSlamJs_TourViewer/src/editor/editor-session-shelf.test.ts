@@ -18,7 +18,7 @@ import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  freeDraftLocks,
+  freeLocks,
   memoryDraftStores,
 } from "../test-support/memory-draft-stores.js";
 import { tourOf } from "../test-support/tour-of.js";
@@ -252,7 +252,7 @@ describe('the creator\'s "use the original" across a reload', () => {
       const session = await openedTour();
       const draft = createEditorDraft({
         openStore: stores.open,
-        holdLock: freeDraftLocks,
+        holdLock: freeLocks,
         noBackup: () => undefined,
       });
       const { offer } = await draft.open(K, MANIFEST);
@@ -332,7 +332,7 @@ describe("a made model's level of detail across a reload", () => {
       const session = await openedTour();
       const draft = createEditorDraft({
         openStore: stores.open,
-        holdLock: freeDraftLocks,
+        holdLock: freeLocks,
         noBackup: () => undefined,
       });
       const { offer } = await draft.open(K, MANIFEST);

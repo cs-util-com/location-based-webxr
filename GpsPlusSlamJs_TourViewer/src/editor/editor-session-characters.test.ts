@@ -34,7 +34,7 @@ import { tourOf } from "../test-support/tour-of.js";
 import { createEditorSession } from "./editor-session.js";
 import { createEditorDraft } from "./editor-draft.js";
 import {
-  freeDraftLocks,
+  freeLocks,
   memoryDraftStores,
 } from "../test-support/memory-draft-stores.js";
 
@@ -401,7 +401,7 @@ describe("a character's pictures and the asset shelf", () => {
       );
       const draft = createEditorDraft({
         openStore: stores.open,
-        holdLock: freeDraftLocks,
+        holdLock: freeLocks,
         noBackup: () => undefined,
       });
       const { offer } = await draft.open(K, MANIFEST);

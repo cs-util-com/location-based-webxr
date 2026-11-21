@@ -2,22 +2,20 @@
 
 ## Purpose
 
-The rule that makes a returning device open at the setup instead of the
-landing. The page applies it in a classic inline script, `#landing-skip`,
-placed right after the stage's markup in `index.html`; this module is the
-rule's tested statement, and `landing-skip.test.ts` runs the inline copy
-against it.
+Keeps a page that skipped the landing at the setup while its layout
+settles. The skip itself, the rule that makes a returning device open at
+the setup instead of the landing, lives only in a classic inline script,
+`#landing-skip`, placed right after the stage's markup in `index.html`
+(a module would run after the first paint); `landing-skip.test.ts` runs
+that script and holds it to the rule (`skipRule` there): a returning
+device is one with a non-empty `tour-viewer.wizard.host` (the storage
+choice, `tour-host.ts`; a deselected tile stores "" and makes it a first
+visit again) or `tour-viewer.wizard.last-url` (the last link opened,
+`wizard.ts`), and it skips only for `body[data-mode="creator"]`, an empty
+hash and the navigation type `"navigate"`.
 
 ## Public API
 
-- `RETURNING_KEYS` - the two `localStorage` keys whose non-empty value makes
-  a device a returning one: `tour-viewer.wizard.host` (the storage choice,
-  `tour-host.ts`; a deselected tile stores "" and makes it a first visit
-  again) and `tour-viewer.wizard.last-url` (the last link opened,
-  `wizard.ts`).
-- `skipsLanding({ mode, stored, hash, navigationType }): boolean` - true
-  only for `mode === "creator"`, a non-empty stored value, an empty hash
-  and the navigation type `"navigate"`.
 - `reassertLandingSkip(document)` - scrolls `#setup-stage` to the top,
   instantly, while `<html data-landing-skip="applied">`.
 - `holdLandingSkip(document, { until?, graceMs?, Observer?, view? })` -
@@ -64,20 +62,17 @@ against it.
 ## Examples
 
 ```ts
-skipsLanding({
-  mode: "creator",
-  stored: [localStorage.getItem(RETURNING_KEYS[0]), null],
-  hash: location.hash,
-  navigationType: performance.getEntriesByType("navigation")[0]?.type,
-});
+const landing = mountLanding(/* ... */);
+holdLandingSkip(document, { until: landing.ready });
 ```
 
 ## Tests
 
-- `landing-skip.test.ts` - the rule's cases (first visit, deselected tile,
-  reload, back/forward, hash, visitor), the inline script's place right
-  after the stage, its instant scroll and its marks, blocked storage, a
-  property that the inline copy agrees with `skipsLanding` on any input,
+- `landing-skip.test.ts` - the inline script run against a stand-in page:
+  the rule's cases (first visit, deselected tile, reload, back/forward,
+  hash, visitor), its place right after the stage, its instant scroll and
+  its marks, the keys it reads against their owners, blocked storage, a
+  property that it agrees with the rule on any input,
   and the re-assertion and the hold (a resize puts the stage back until
   the reader moved the page).
 - `playwright-tests/landing.spec.js` - in a browser: the stage at the top
