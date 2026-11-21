@@ -18,6 +18,14 @@
  * - `snapshotBlobs` hands out a Blob the way the OPFS store does
  *   (`handle.getFile()`, a snapshot of the entry): its reads fail once the
  *   entry is removed or written again.
+ * - `crashAfter` closes the tab after that many more changes have landed:
+ *   every later write refuses and every later removal or clear changes
+ *   nothing, until it is set back to null (the next page load). What
+ *   landed before stays, as a crash leaves it.
+ *
+ * `log` lists every change that landed, in order (`put <key>`,
+ * `remove <key>`, `clear`), so a test can see which file a page wrote
+ * first.
  *
  * `memoryDraftOps()` counts every open, write, removal and clear of every
  * memory store of the test file, so a `settle` can wait until they stop.
@@ -60,6 +68,11 @@ export interface MemoryDraftStores {
   beforePut: ((key: string) => Promise<void>) | null;
   /** Blobs read back fail once their entry is removed or replaced. */
   snapshotBlobs: boolean;
+  /** The tab closes after this many more changes landed (null: never). */
+  crashAfter: number | null;
+  /** Every change that landed, in order: `put <key>`, `remove <key>`,
+   *  `clear`. */
+  readonly log: string[];
 }
 
 /** Every open, write, removal and clear so far, of every memory store. */
@@ -117,7 +130,18 @@ function storeOver(
 ): DraftFileStore {
   const read = (k: string): Blob | string | undefined =>
     browser.unreadable.has(k) ? undefined : files.get(k);
+  /** Whether a change may still land (the tab has not crashed); one that
+   *  may counts toward the crash and is logged. */
+  const changes = (entry: string): boolean => {
+    if (browser.crashAfter !== null) {
+      if (browser.crashAfter <= 0) return false;
+      browser.crashAfter -= 1;
+    }
+    browser.log.push(entry);
+    return true;
+  };
   const land = (k: string, data: Blob | string): boolean => {
+    if (!changes(`put ${k}`)) return false;
     files.set(k, data);
     opsSoFar += 1;
     return true;
@@ -151,7 +175,7 @@ function storeOver(
         return Promise.reject(new Error("the removal failed"));
       }
       opsSoFar += 1;
-      files.delete(k);
+      if (changes(`remove ${k}`)) files.delete(k);
       return Promise.resolve();
     },
     getText: async (k) => {
@@ -171,7 +195,7 @@ function storeOver(
     keys: () => Promise.resolve([...files.keys()]),
     clear: () => {
       opsSoFar += 1;
-      files.clear();
+      if (changes("clear")) files.clear();
       return Promise.resolve();
     },
   };
@@ -204,6 +228,8 @@ export function memoryDraftStores(): MemoryDraftStores {
     unreadable: new Set(),
     beforePut: null,
     snapshotBlobs: false,
+    crashAfter: null,
+    log: [],
     open: (key) => {
       opsSoFar += 1;
       browser.opened.push(key);
