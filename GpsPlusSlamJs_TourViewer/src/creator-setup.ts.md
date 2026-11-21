@@ -288,6 +288,12 @@ were here. What stays is the Finish's side:
   clamped AR line with a short lead while the tour.json loads or is
   broken, and only there" and "still says on the page after AR ends that
   nothing placed is kept".
+  Placing is locked in all three cases, and the live line says why
+  whether or not work is held (the short lead speaks only with work):
+  `NO_TOUR_PLACING_LOCKED`, `TOUR_LOADING_PLACING_LOCKED` and
+  `TOUR_BROKEN_PLACING_LOCKED` (`qr-author-mode.ts`). Test:
+  `creator-setup.test.ts` "says why placing stays locked after the tour's
+  file did not read, with no work held".
 - **Editing placed objects (authoring plan 2026-09-28-0953 §3.4, M4)**,
   through `object-editing.ts`:
   - **The hosted zip's objects are rendered in author mode**, keyed by id,

@@ -69,6 +69,13 @@ codeSeen, dismissed })` - the AR visit's first hint, on the creator's
   then too, since only the manifest's settle opens the tour document.
   `creator-setup.ts` leads with it while `ctx.tourManifestStatus` is
   `pending`.
+- `TOUR_BROKEN_PLACING_LOCKED` - the third sibling, once the open tour's
+  `tour.json` did not read (`ctx.tourManifestStatus` `broken`): "Your
+  tour's file did not read, so placing stays locked. Open the tour
+  again." Placing stays locked then, and `finishBlockedLead` is silent
+  while no work is held (`finishReadiness` says `not-measured` first), so
+  without it the creator saw greyed buttons and no reason.
+  `creator-setup.test.ts` pins it with no work held.
 - `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
   line that says a code correction was refused (M2c review #2): "Code seen
   N m from its saved position" (or "turned N°" when only the yaw broke the

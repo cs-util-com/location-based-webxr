@@ -71,7 +71,8 @@ troubleshooting recording's record of each placement. Split out of
     (`archive-open.ts`). A pin placed in between landed in the "no tour"
     document and the settle's `open` dropped it. While it loads the line
     says so (`TOUR_LOADING_PLACING_LOCKED`); a manifest that reads
-    `broken` keeps placing locked (no draft, and the finish refuses).
+    `broken` keeps placing locked (no draft, and the finish refuses), and
+    the line says so too (`TOUR_BROKEN_PLACING_LOCKED`).
     Tests: `creator-setup.test.ts`, "placing is locked while no tour is
     open".
   - **Or a stored code's votes:** in a visit with no device fix a code the

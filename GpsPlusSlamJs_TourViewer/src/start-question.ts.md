@@ -70,6 +70,10 @@ phone.
   placed since would be lost without a question, and each try would save
   another empty `tour.zip`; so the start button does nothing while a tour
   is open (`already-open`), a second tap after its own open included.
+  An open still in flight counts as open: the page's `tourOpen` reads
+  `archive.isOpening()` besides the session, which is set only once the
+  open finished; a tap during a link open would otherwise save the empty
+  starter and open it over the tour being opened (`superseded`).
 - **Save before open.** A dismissed save opens nothing: a tour opened from
   a file the creator did not keep would hold their work only in the page's
   backup. The save runs after a short await (packing an empty zip takes
@@ -94,7 +98,7 @@ const start = wireStartQuestion({
     pack: () => packNewTour(),
     save: (blob, name) => seams.downloadZip(blob, name),
     open: (file) => archive.openFile(file, "measure-step"),
-    tourOpen: () => ctx.session !== null,
+    tourOpen: () => ctx.session !== null || archive.isOpening(),
   },
 });
 ```

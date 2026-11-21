@@ -53,6 +53,7 @@ import {
 import type { ObjectListHandlers } from "./object-list.js";
 import {
   finishBlockedLead,
+  TOUR_BROKEN_PLACING_LOCKED,
   TOUR_LOADING_PLACING_LOCKED,
 } from "./qr-author-mode.js";
 import {
@@ -1267,6 +1268,29 @@ describe("placing is locked while no tour is open", () => {
     expect(dom.pinButton.disabled).toBe(false);
     expect(dom.status.textContent).not.toContain(TOUR_LOADING_PLACING_LOCKED);
     expect(ctx.tourDocument.entries()).toHaveLength(1);
+  });
+
+  it("says why placing stays locked after the tour's file did not read, with no work held", async () => {
+    // Why this test matters: a broken manifest locks placing for good, but
+    // the finish's blocked lead speaks only once there is work
+    // (`finishReadiness` says "not-measured" first), so with nothing held
+    // the creator saw greyed buttons and no reason. The line names it.
+    const { store } = memoryStore();
+    const { ctx, dom, setup } = wire(store, { placeable: true });
+    // No work held: no code in hand, nothing placed.
+    setup.codes.clearInHand();
+    ctx.tourManifestStatus = "broken";
+    setup.renderAuthorReadout();
+    await settle();
+    expect(dom.pinButton.disabled).toBe(true);
+    expect(dom.photoButton.disabled).toBe(true);
+    expect(dom.newStationButton.disabled).toBe(true);
+    expect(
+      dom.status.textContent,
+      "the finish lead stays silent",
+    ).not.toContain(finishBlockedLead("manifest-broken"));
+    expect(dom.status.textContent).toContain(TOUR_BROKEN_PLACING_LOCKED);
+    expect(dom.status.textContent).not.toContain(TOUR_LOADING_PLACING_LOCKED);
   });
 });
 
