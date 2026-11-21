@@ -694,14 +694,19 @@ function isPlainPerspective(e: readonly number[]): boolean {
   );
 }
 
-/** The side tangent turned outward by `delta` radians, clamped below 90 deg. */
+/**
+ * The side tangent turned outward by `delta` radians, clamped below 90 deg.
+ * A side already past the clamp stays where it is: widening never turns a
+ * side plane inward.
+ */
 function widenedTangent(tangent: number, delta: number): number {
   const angle = THREE.MathUtils.clamp(
     Math.atan(tangent) + delta,
     -MAX_SIDE_ANGLE_RAD,
     MAX_SIDE_ANGLE_RAD
   );
-  return Math.tan(angle);
+  const widened = Math.tan(angle);
+  return delta >= 0 ? Math.max(tangent, widened) : Math.min(tangent, widened);
 }
 
 // ---------------------------------------------------------------------------
@@ -742,7 +747,7 @@ function buildBounds(
   const keptRoots = new Map<THREE.Object3D, MergeRootSphere>();
   const bind: BindLookup = { previous: cache.bindData, kept: new Map() };
   const visit = (object: THREE.Object3D): void => {
-    if (object !== anchor && object.userData[FLAG_KEY] === FLAG_MERGE) {
+    if (object.userData[FLAG_KEY] === FLAG_MERGE) {
       const sphere = cache.mergeRoots.get(object) ?? mergeRootSphere(object);
       keptRoots.set(object, sphere);
       for (const sprite of sphere.loose) {
@@ -786,7 +791,9 @@ function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
   if (r.isSkinnedMesh) {
     const mesh = object as THREE.SkinnedMesh;
     const bound = skinBound(mesh, bind);
-    return bound ? [{ kind: 'skinned', mesh, bound }] : [];
+    if (bound) return [{ kind: 'skinned', mesh, bound }];
+    // No usable skin data (unbound, missing attributes, zero weights): still
+    // drawn, so bounded like a plain mesh rather than dropped.
   }
   const morphed = morphBound(r, bind);
   if (morphed) {
@@ -1017,13 +1024,14 @@ function sphereInRoot(
   if (r.isSkinnedMesh) {
     const mesh = r as unknown as THREE.SkinnedMesh;
     const bound = skinBound(mesh, null);
-    if (!bound) return null;
-    const centre = new THREE.Vector3();
-    skinnedWorldSphere(mesh, bound, centre);
-    return new THREE.Sphere(
-      centre.applyMatrix4(invRoot),
-      scratchRadius * maxStretch(invRoot)
-    );
+    if (bound) {
+      const centre = new THREE.Vector3();
+      skinnedWorldSphere(mesh, bound, centre);
+      return new THREE.Sphere(
+        centre.applyMatrix4(invRoot),
+        scratchRadius * maxStretch(invRoot)
+      );
+    }
   }
   const rel = new THREE.Matrix4().multiplyMatrices(invRoot, r.matrixWorld);
   const morphed = morphBound(r, null);
@@ -1079,10 +1087,12 @@ interface Cluster {
 }
 
 /**
- * Keep at most ANCHOR_SPHERE_CAP entries: repeatedly merge the two clusters
+ * Merge down to ANCHOR_SPHERE_CAP entries: repeatedly merge the two clusters
  * whose centres are nearest (O(n^2), run on a cache build only). Skinned and
- * morphed entries and constant-screen-size sprites follow live inputs and are never merged; they still count toward
- * the cap. Unmerged node entries stay live.
+ * morphed entries and constant-screen-size sprites follow live inputs and are
+ * never merged; they still count toward the cap, so with more of them than
+ * the cap allows the result holds them all plus one merged sphere. Unmerged
+ * node entries stay live.
  */
 function capEntries(
   entries: BoundEntry[],

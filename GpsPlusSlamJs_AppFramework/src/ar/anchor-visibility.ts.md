@@ -33,6 +33,8 @@ through the `ar` barrel.
     root's frame, built once and kept across fresh traversals until
     `markAnchorBoundsChanged`. For a loaded model with many parts and no inner
     motion. Constant-screen-size sprites under it stay their own entries.
+    The anchor itself may be the root: its sphere then follows the target
+    pose (`atLocal`) like any other entry.
     A merge root is one entry; when the cap merges it with other entries, the
     merged sphere no longer follows the root either (see below).
 - **Views, filled once per frame**
@@ -145,13 +147,17 @@ through the `ar` barrel.
     `[min, max]` scale it about the origin of `matrixWorld * bindMatrixInverse`,
     which is then applied. Assumes non-negative weights (as glTF requires); a
     negative weight is clamped to 0. A weight on a bone index outside the
-    skeleton adds nothing to the weight sum, as it moves no vertex.
+    skeleton adds nothing to the weight sum, as it moves no vertex. A skinned
+    mesh with no usable skin data (no skeleton, no `skinIndex` or
+    `skinWeight`, or no positive weight) is still drawn, so it is bounded as a
+    plain mesh instead.
 - **Stretch.** The largest scale of a matrix is bounded by the square root of
   the Gershgorin bound of its Gram matrix, an upper bound on the spectral norm
   that stays safe under shear (`getMaxScaleOnAxis` underestimates it there).
 - **Margin.** Only the x/y rows of the projection change, via the side
-  tangents, so near, far and the depth convention stay. A side angle is
-  clamped at 89.5 deg. Orthographic and skewed projections are not widened.
+  tangents, so near, far and the depth convention stay. A widened side angle
+  is clamped at 89.5 deg, and a side already past that stays as it is, so a
+  larger margin is never narrower. Orthographic and skewed projections are not widened.
 - **Layers.** A sphere counts for a view only when its layer mask meets the
   view's; a merged sphere carries the OR of its members that are counted.
 - **Cost.** A cached test does at most `ANCHOR_SPHERE_CAP` sphere tests per
@@ -243,7 +249,9 @@ renderer.setAnimationLoop((time) => {
   validation, each side of an off-axis projection widened by the margin, a
   cache reused for another anchor, a bone index outside the skeleton, sheared
   instances of an instanced and a batched mesh, the kept bind data (reused,
-  then recomputed after an edit in place, an interleaved edit and a rebind),
+  then recomputed after an edit in place, an interleaved edit and a rebind), a
+  skinned mesh without usable skin data, a view wider than the angle clamp,
+  the anchor as its own merge root,
   and a premise test that drives a real `WebXRManager` frame loop.
 - `anchor-visibility.property.test.ts`: never a false "out" against an
   exact oracle (every drawn triangle and sprite quad clipped against each exact
@@ -258,7 +266,7 @@ renderer.setAnimationLoop((time) => {
   so these properties are a safety net; the edge cases are pinned by the unit
   tests.
 - `anchor-visibility.perf.test.ts`: operation counts (no traversal on a
-  cached call, at most the cap per view) and generous wall-clock ceilings for
+  cached call, at most the cap per view for plain parts) and generous wall-clock ceilings for
   the cached test, a fresh traversal of 400 parts, and a 64-bone skinned part.
   Measured on a desktop under about 75 % CPU load (best of 15): cached
   0.006-0.008 ms, fresh 400 parts in two views 4.1-4.4 ms, cached with a

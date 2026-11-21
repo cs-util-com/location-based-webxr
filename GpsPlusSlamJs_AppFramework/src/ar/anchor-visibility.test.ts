@@ -794,6 +794,64 @@ describe('anchor-visibility: what is in view', () => {
     expect(inView(rig, { fresh: true })).toBe(true);
   });
 
+  it('a skinned mesh with no usable skin data is still bounded by its geometry', () => {
+    // An unbound skeleton, missing skin attributes or all-zero weights give
+    // no skinned bound, yet the mesh is still drawn (zero weights collapse
+    // it onto its origin). Dropping it would be a false "out"; its plain
+    // geometry sphere about its origin is the safe side.
+    const unbound = skinnedBox(1).mesh;
+    const noWeights = skinnedBox(1);
+    noWeights.geometry.deleteAttribute('skinWeight');
+    noWeights.mesh.add(noWeights.bone);
+    noWeights.mesh.bind(new THREE.Skeleton([noWeights.bone]));
+    const zeroWeights = skinnedBox(0);
+    zeroWeights.mesh.add(zeroWeights.bone);
+    zeroWeights.mesh.bind(new THREE.Skeleton([zeroWeights.bone]));
+    for (const mesh of [unbound, noWeights.mesh, zeroWeights.mesh]) {
+      const rig = makeRig();
+      mesh.position.set(0, 0, -10);
+      rig.anchor.add(mesh);
+      expect(inView(rig)).toBe(true);
+      const root = new THREE.Group();
+      mergeForAnchorBounds(root);
+      root.add(mesh);
+      rig.anchor.add(root);
+      expect(inView(rig, { fresh: true })).toBe(true);
+    }
+  });
+
+  it('a wider margin never narrows a view whose sides are past the angle clamp', () => {
+    // At a 179.5 deg field of view each side sits at 89.75 deg, beyond the
+    // 89.5 deg clamp that keeps a widened tangent finite. Clamping the
+    // widened angle there would turn the side plane inward, so a larger
+    // margin would be less conservative than none.
+    const rig = makeRig();
+    rig.camera.fov = 179.5;
+    rig.camera.updateProjectionMatrix();
+    rig.anchor.add(tinyMesh(atAngle(89.6, 50)));
+    expect(inView(rig, { marginDeg: 0 })).toBe(true);
+    expect(inView(rig, { marginDeg: ANCHOR_VIEW_MARGIN_DEG })).toBe(true);
+    expect(inView(rig, { marginDeg: 30 })).toBe(true);
+  });
+
+  it('the anchor itself can be a merge root', () => {
+    // A loaded model is often added as the anchor itself; marking it must
+    // not be silently ignored. Its one sphere follows the target pose and
+    // keeps the inner layout of the build.
+    const rig = makeRig();
+    const part = tinyMesh(new THREE.Vector3(0, 0, -10));
+    rig.anchor.add(part);
+    mergeForAnchorBounds(rig.anchor);
+    expect(inView(rig)).toBe(true);
+    expect(rig.cache.entries).toHaveLength(1);
+    const away = new THREE.Matrix4().makeTranslation(100, 0, 0);
+    expect(inView(rig, { atLocal: away })).toBe(false);
+    part.position.set(100, 0, -10); // inner motion: not followed, even fresh
+    expect(inView(rig, { fresh: true })).toBe(true);
+    markAnchorBoundsChanged(rig.cache);
+    expect(inView(rig)).toBe(false);
+  });
+
   it('an interleaved position edited in place is read again by a fresh traversal', () => {
     // Loaded models often carry interleaved vertex data, whose version lives
     // on the shared buffer, not on the attribute: the kept bind data must
