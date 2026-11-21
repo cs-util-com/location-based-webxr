@@ -340,6 +340,15 @@ export function wirePrintPanel(deps: {
       matching === null ? PDF_LABELS.idle : PDF_LABELS.matching;
   }
 
+  /** Whether a PDF of the shown tour was saved (or opened in a tab): the
+   *  page's CSS makes the download the step's filled button until then,
+   *  and Next after. A mark on the panel, as the button's busy state is:
+   *  only this panel's own look reads it. */
+  function markPdfSaved(saved: boolean): void {
+    if (saved) dom.panel.dataset["pdfSaved"] = "true";
+    else delete dom.panel.dataset["pdfSaved"];
+  }
+
   /** The measured codes the warning may speak of: none while matching. */
   const settledCodeIds = (): readonly string[] =>
     matching === null ? measuredCodeIds() : [];
@@ -469,6 +478,9 @@ export function wirePrintPanel(deps: {
     // replaces the field, and the PDF is the one the creator tapped for
     // (PR #585 review).
     const request = printRequest(dom, printLink(), posterFields());
+    // The tour the PDF is for: one opened while the save sheet was up has
+    // printed nothing, so its mark and numbering stay as they are.
+    const tappedFor = presentedUrl;
     dom.pdfButton.disabled = true;
     dom.pdfButton.textContent = PDF_LABELS.busy;
     recheckUnverified()
@@ -482,7 +494,9 @@ export function wirePrintPanel(deps: {
           const typedMeanwhile =
             codeIndexFromInput(dom.codeInput.value).codeIndex !==
             request.startIndex;
-          if (!printed || typedMeanwhile) {
+          const sameTour = presentedUrl === tappedFor;
+          if (printed && sameTour) markPdfSaved(true);
+          if (!printed || typedMeanwhile || !sameTour) {
             writeInfo(outcome);
             return;
           }
@@ -555,6 +569,7 @@ export function wirePrintPanel(deps: {
   return {
     presentNoTour: () => {
       // The code on screen belonged to the tour that just went away.
+      markPdfSaved(false);
       unverifiedUrl = null;
       recordLink = null;
       presentedUrl = null;
@@ -614,6 +629,7 @@ export function wirePrintPanel(deps: {
         });
     },
     presentTour: (url, options) => {
+      markPdfSaved(false);
       unverifiedUrl = options?.verified === false ? url : null;
       recordLink = null;
       presentedUrl = url;

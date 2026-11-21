@@ -56,6 +56,19 @@ codeSeen, dismissed })` - the AR visit's first hint, on the creator's
   visit's notes are corrected through the code only when the code was seen
   in that visit, so it is a hint, not a rule. Tests: examples and a
   property over all four inputs in `qr-author-mode.test.ts`.
+- `NO_TOUR_PLACING_LOCKED` - what the AR line leads with while no tour is
+  open: "Point at your hung code: it opens your tour. You can place once it
+  is open, so nothing is lost." There placing IS locked
+  (`creator-placement.ts`: only an open tour keeps a draft on this phone),
+  and the line names the reason and the move that unlocks it.
+  `creator-setup.ts` puts it in the line's lead whenever `ctx.session` is
+  null; `creator-setup.test.ts` pins that wiring.
+- `TOUR_LOADING_PLACING_LOCKED` - its sibling while a tour is opening (a
+  session, its `tour.json` still loading): "Your tour is still opening.
+  You can place once it is open, so nothing is lost." Placing is locked
+  then too, since only the manifest's settle opens the tour document.
+  `creator-setup.ts` leads with it while `ctx.tourManifestStatus` is
+  `pending`.
 - `correctionRefusedLine({ horizontalM, yawDeg, maxHorizontalM })` - the one
   line that says a code correction was refused (M2c review #2): "Code seen
   N m from its saved position" (or "turned N°" when only the yaw broke the
@@ -165,8 +178,11 @@ codeSeen, dismissed })` - the AR visit's first hint, on the creator's
   existing file". With the save automatic, this check is the only guard
   against a repeat download's name (the warning that once came before the
   tap has no moment left to be read).
-- `finishSaveStatus(delivered, filename, drive)` - the status line after a
-  save: where it went, or that nothing was saved and which button saves it.
+- `finishSaveStatus(delivered, filename, drive, fromFile = false)` - the
+  status line after a save: where it went, or that nothing was saved and
+  which button saves it. A tour opened from a file (`fromFile`) has no
+  hosted zip, so its line (`savedHere`) leads to making its code instead of
+  replacing a hosted file.
 - `buildAuthorControllerConfig` wires `onError` too — a throwing detector
   must surface, not leave the panel saying "point the camera" forever.
 

@@ -109,8 +109,55 @@
         box-shadow: var(--shadow-pressed);
         color: var(--accent);
       }
-      /* A button that reads as a link (polish round M2, A5): the device
-         open is the fallback, so it stops looking like a main action. */
+      /* The start question's answers (setup flow round 2): one card per
+         line, large enough to read as the four ways in. The column is as
+         wide as its longest answer and every answer takes that width, so
+         the cards line up and end where their words do, never stretched
+         across a wide card. */
+      .start-answers {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: var(--space-3);
+        /* As wide as the longest answer, but never wider than the room
+           beside the map sticker: a grid is a box of its own, and a
+           max-content box too wide for that room drops below the sticker
+           whole. Where the room is short the words wrap instead. */
+        width: fit-content;
+        max-width: 100%;
+        margin: var(--space-3) 0 0;
+      }
+      /* Two by two on a wide card, so the four sit beside the map. */
+      @media (width >= 900px) {
+        .start-answers {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          column-gap: var(--space-2);
+        }
+      }
+      .btn.start-answer {
+        justify-content: flex-start;
+        min-height: 3.25rem;
+        text-align: start;
+      }
+      .start-back {
+        margin-block-start: var(--space-3);
+      }
+      .make-code {
+        margin-block: var(--space-3);
+      }
+      .make-code h3 {
+        margin: 0 0 var(--space-2);
+        font-size: 1.2rem;
+        font-weight: 600;
+      }
+      #start-code-hangs {
+        margin-block-start: var(--space-3);
+      }
+      /* A tour with no link yet: no file at a link to replace. */
+      #step-done[data-hosted="false"] :is(#replace-help, #upload-ask) {
+        display: none;
+      }
+      /* A button that reads as a link (polish round M2, A5): a secondary
+         way, so it stops looking like a main action. */
       .link-button {
         appearance: none;
         background: none;
@@ -130,19 +177,27 @@
         padding: var(--space-3);
         font-variant-numeric: tabular-nums;
       }
-      #storage-panel {
-        margin: var(--space-4) 0;
+      /* The card's one "Settings", above Back and
+         Next: the print defaults on the print step, the cache wherever a
+         cache store exists. */
+      .setup-settings {
+        margin: var(--space-4) 0 0;
       }
-      /* Step 3's "Settings" (r820 feedback R7). */
-      #print-settings > summary {
+      .setup-settings > summary {
         cursor: pointer;
         font-weight: 600;
       }
-      #storage-panel summary {
-        cursor: pointer;
-      }
       #storage-panel p {
         margin: var(--space-2) 0;
+      }
+      /* Not on the print step: its defaults belong to that step. */
+      #setup-card:not(:has(#print-panel[open])) #print-settings {
+        display: none;
+      }
+      /* Nothing left to set on this step: no disclosure at all. */
+      #setup-card:not(:has(#print-panel[open]))
+        #setup-settings:has(> #storage-panel[hidden]) {
+        display: none;
       }
       /* The error line wears the sheet's failure family, but the STATE is
          derived from the content rather than mirrored into a data
@@ -501,18 +556,40 @@
         font-size: 0.62rem;
         color: #5b6570;
       }
-      .poster-text {
+      /* A field: its label, a hint line that stays while typing, the
+         control. A grid of its own per field, so beside the map sticker
+         only the fields there narrow. */
+      .field {
         display: grid;
-        gap: var(--space-2);
-        margin: 0;
-        padding: 0;
-        border: 0;
-        min-width: 0;
+        gap: var(--space-1);
       }
-      .poster-text legend {
-        padding: 0;
-        margin-bottom: var(--space-1);
+      .field > label,
+      #print-count-label {
         font-weight: 600;
+      }
+      .field-hint {
+        margin: 0;
+      }
+      /* A placeholder is an example, never a value: dimmed and slanted,
+         so a prefilled default (plain ink) reads apart from it. Not faded
+         further: an example is still read, so it keeps 4.5:1. */
+      #setup-card .input::placeholder {
+        color: var(--ink-dim);
+        font-style: italic;
+        opacity: 1;
+      }
+      /* A group of fields: a heading in the headings' face, and the
+         fields set in behind a rule that marks them as its. */
+      .field-group-heading {
+        margin: 0 0 var(--space-2);
+        font: 600 1.2rem/1.2 var(--map-serif);
+      }
+      .field-group-body {
+        padding-inline-start: var(--space-3);
+        border-inline-start: 2px solid var(--map-line);
+      }
+      .field-group-body > * + * {
+        margin-block-start: var(--gap-item, var(--space-3));
       }
       /* The poster count: big -/+ either side of a short number. */
       .print-count-row {
@@ -549,6 +626,10 @@
         grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
         gap: var(--space-2);
         margin-top: var(--space-2);
+      }
+      .print-settings-grid label {
+        display: grid;
+        gap: var(--space-1);
       }
       .print-settings-grid .input,
       .print-settings-grid .select {
@@ -1562,10 +1643,51 @@
         }
       }
 
-      /* The stage: the map beside the card (wide) or above it (phone). */
+      /* The stage: the step card, with the map as a sticker on its corner. */
+      /* Its top padding is the room for the map sticker's poke over the
+         card's edge, so a scroll to the stage shows the whole sticker (a
+         scroll to the card itself keeps the same room: its scroll margin). */
       body[data-mode="creator"] .setup-stage {
+        /* The map sticker's sizes: its width follows the screen's,
+           bounded by a floor, a cap and the screen's height. One is the
+           page's; a ?mapSize= URL parameter picks another to compare
+           (map-size.ts). */
+        --sticker-s: min(clamp(7.5rem, 25vw, 16.5rem), 46svh);
+        --sticker-m: min(clamp(9.5rem, 31vw, 20rem), 52svh);
+        --sticker-l: min(clamp(11.5rem, 37vw, 23.5rem), 58svh);
+        --sticker-xl: min(clamp(13.5rem, 43vw, 27rem), 64svh);
+        --sticker: var(--sticker-l);
+
         max-width: 90rem;
         margin: 0 auto;
+        padding-top: calc(var(--space-4) + var(--space-3));
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="s"] {
+        --sticker: var(--sticker-s);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="m"] {
+        --sticker: var(--sticker-m);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="l"] {
+        --sticker: var(--sticker-l);
+      }
+      body[data-mode="creator"] .setup-stage[data-map-size="xl"] {
+        --sticker: var(--sticker-xl);
+      }
+      /* The size knob, shown only with ?mapSize= (map-size.ts). */
+      .map-size-knob {
+        position: fixed;
+        left: var(--space-2);
+        bottom: var(--space-2);
+        z-index: 10;
+        display: flex;
+        gap: var(--space-1);
+        align-items: center;
+        padding: var(--space-1) var(--space-2);
+        background: #fff;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius-small);
+        font-size: 0.75rem;
       }
       /* At least a view tall on a page that skipped the landing: it is
          scrolled to the stage's top before the rest of the page is parsed
@@ -1591,14 +1713,55 @@
         display: block;
         color: var(--ink-dim);
       }
-      .setup-map {
-        padding: var(--space-3) var(--space-2) var(--space-2);
-        border-bottom: 1px solid var(--map-line);
+      /* The map: a sticker on the card's top-right corner, a little over
+         its edge. A float, so the card's first lines (the step row, the
+         heading) wrap beside it and nothing can sit under it; below it
+         the step runs the card's full width. Its size follows the screen:
+         small on a phone held upright, larger in landscape and on wide
+         screens, capped by the screen's height. The page's size (l, about
+         37 % of the screen's width) takes up to about a third of the
+         card's width, more on a phone held upright. */
+      body[data-mode="creator"] .setup-map {
+        --poke-up: 14px;
+        --poke-out: 6px;
+        /* The room the step row needs beside it: its six dots in one line
+           (six 22 px buttons, 2 px apart), past the sticker's left margin,
+           less its poke over the card's edge. On a narrow phone the
+           sticker gives way to that room, or it would lie over the dots. */
+        --row-room: calc(
+          6 * 22px + 5 * 2px + var(--space-4) - var(--card-pad) - 1.5px -
+            var(--poke-out)
+        );
+
+        position: relative;
+        z-index: 1;
+        float: right;
+        display: flex;
+        flex-direction: column-reverse;
+        width: min(var(--sticker), 100% - var(--row-room));
+        /* The card's padding and border, then the poke past its edge; the
+           step's lines keep a group's distance from it. */
+        margin: calc(-1 * (var(--card-pad) + 1.5px + var(--poke-up)))
+          calc(-1 * (var(--card-pad) + 1.5px + var(--poke-out))) var(--space-4)
+          var(--space-4);
+        padding: 5px 5px 0;
+        background: #fff;
+        border-radius: 14px;
+        box-shadow:
+          0 1px 2px rgb(42 40 36 / 18%),
+          0 8px 18px -6px rgb(42 40 36 / 32%);
+        transform: rotate(2.5deg);
+        /* Its own size decides how much of the map it shows (below). */
+        container-type: inline-size;
       }
       .setup-map-title {
-        font: 600 0.75rem/1.2 var(--map-serif);
+        display: block;
+        padding: 5px 2px 6px;
+        font: 600 0.625rem/1.2 var(--map-serif);
         letter-spacing: 0.14em;
+        text-align: center;
         text-transform: uppercase;
+        white-space: nowrap;
       }
       .setup-map-title i {
         font-weight: 400;
@@ -1607,34 +1770,78 @@
         color: var(--ink-dim);
       }
       .setup-map-frame {
-        position: relative;
         overflow: hidden;
-        border: 1.5px solid var(--ink);
-        outline: 1px solid var(--ink);
-        outline-offset: 3px;
-        margin: var(--space-1);
+        border: 1px solid var(--ink);
+        border-radius: 9px;
       }
       .setup-map-frame svg {
         display: block;
         width: 100%;
         height: auto;
-        max-height: 42svh;
       }
 
-      @media (orientation: landscape) and (width >= 640px), (width >= 1024px) {
-        body[data-mode="creator"] .setup-stage {
-          display: grid;
-          grid-template-columns: minmax(0, 1.42fr) minmax(300px, 1fr);
-          align-items: start;
-          gap: var(--space-3);
+      /* The tap target over a small sticker: it shows the map larger, with
+         its labels, and a second tap puts it back. */
+      .setup-map-zoom {
+        display: none;
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        padding: 0;
+        border: 0;
+        border-radius: inherit;
+        background: none;
+        cursor: zoom-in;
+      }
+      .setup-map-zoom:focus-visible {
+        outline: 2px solid var(--map-route);
+        outline-offset: 3px;
+      }
+      /* Shown larger it leaves the corner: a block above the step, as
+         wide as the card allows, or the step row would be squeezed into
+         a sliver beside it. */
+      body[data-mode="creator"] .setup-map[data-zoomed="true"] {
+        --sticker: min(24rem, 100%);
+
+        width: var(--sticker);
+        float: none;
+        margin-inline: auto;
+        margin-bottom: var(--space-3);
+      }
+      .setup-map[data-zoomed="true"] .setup-map-zoom {
+        display: block;
+        cursor: zoom-out;
+      }
+
+      /* A small sticker (a phone held upright) keeps what says where the
+         flow is: the route and the numbered stations, drawn larger; the
+         map's small print would only be specks at this size. */
+      @container (width < 11rem) {
+        .setup-map-title i,
+        .setup-station-label,
+        .setup-map-frame .lbl-place,
+        .setup-map-frame .lbl-caps,
+        .setup-map-frame .lbl-road,
+        #map-start .lbl-start {
+          display: none;
         }
-        .setup-map {
-          position: sticky;
-          top: 0;
-          border-bottom: 0;
+        .setup-map-zoom {
+          display: block;
         }
-        .setup-map-frame svg {
-          max-height: 85svh;
+        #map-trees {
+          opacity: 0.45;
+        }
+        .setup-station circle {
+          transform: scale(2.5);
+          transform-box: fill-box;
+          transform-origin: center;
+        }
+        .setup-station-num {
+          font-size: 22px;
+        }
+        #map-route {
+          stroke-width: 7px;
+          stroke-dasharray: none;
         }
       }
       .setup-station {
@@ -1748,51 +1955,95 @@
         color: var(--ink);
       }
 
-      /* The card: ONE step at a time. */
+      /* The card: ONE step at a time, across the width. A formatting
+         context of its own, so it always holds the map sticker. */
+      /* Its spacing scale (4, 8, 12, 16, 24 px): 8 between a heading and
+         its line, 12 between the items of one group (answers, tiles, a
+         field and its button, also where they wrap), 16 between groups,
+         24 before the footer; its padding 16, 24 on a wide card. */
       body[data-mode="creator"] .setup-card {
+        --card-pad: var(--space-4);
+        --gap-item: var(--space-3);
+        --gap-group: var(--space-4);
+
         position: relative;
+        display: flow-root;
         background: var(--map-card);
         border: 1.5px solid var(--ink);
         border-radius: 6px;
         box-shadow: 4px 4px 0 var(--map-paper-3);
-        padding: var(--space-3);
-        margin: var(--space-3) var(--space-3) var(--space-4);
+        padding: var(--card-pad);
+        margin: 0 var(--space-3) var(--space-4);
+        scroll-margin-top: calc(var(--space-4) + var(--space-3));
+      }
+
+      @media (width >= 600px) {
+        body[data-mode="creator"] .setup-card {
+          --card-pad: calc(var(--space-4) + var(--space-2));
+        }
+      }
+      /* Outside an AR session the open step is a stack: its why line
+         close under the heading, then a group's distance between blocks.
+         (In AR, step 5's content is the overlay and keeps its own
+         placement.) */
+      body[data-mode="creator"]:not([data-ar-active="true"])
+        #setup-card
+        .step[open]
+        > :not(summary) {
+        margin-block: var(--gap-group) 0;
+      }
+      body[data-mode="creator"]:not([data-ar-active="true"])
+        #setup-card
+        .step[open]
+        > summary
+        + .step-copy {
+        margin-block-start: var(--space-2);
+      }
+      body[data-mode="creator"] #setup-card .step-body {
+        gap: var(--gap-item);
+      }
+      /* The panels and the buttons inside a step: at the end of this
+         sheet (their selectors outrank later AR-session rules). */
+      /* A body whose every control is hidden (the starter zip before a
+         host is chosen) takes no room: its margin would double a gap. */
+      body[data-mode="creator"]
+        #setup-card
+        .step-body:not(:has(> :not([hidden]))) {
+        display: none;
+      }
+      body[data-mode="creator"] #setup-card :is(.host-tiles, .start-answers) {
+        row-gap: var(--gap-item);
+      }
+      body[data-mode="creator"] #setup-card form {
+        gap: var(--gap-item) var(--space-2);
       }
 
       /* On a wide screen the stage stands on the landing's centred column
-         (--landing-wide, 1128 px, and its 16 px gutters): the map's frame
-         and the card's edges on the column's edges, and the step card in
-         view beside the map while the map is (not during AR, whose panel
-         lives inside the card). */
+         (--landing-wide, 1128 px, and its 16 px gutters): the card's edges
+         on the column's edges, the sticker poking a little further. */
       @media (width >= 900px) and (height > 560px) {
         body[data-mode="creator"] .setup-stage {
           max-width: calc(var(--landing-wide) + 32px);
           padding-inline: 16px;
         }
 
-        body[data-mode="creator"] .setup-map {
-          padding-inline: 0;
-        }
-
-        /* Its outline sits 4 px outside it (1 px line, 3 px offset). */
-        body[data-mode="creator"] .setup-map-frame {
-          margin-inline: 4px;
-        }
-
         body[data-mode="creator"] .setup-card {
           margin-inline: 0;
         }
 
-        body[data-mode="creator"]:not([data-ar-active="true"]) .setup-card {
-          position: sticky;
-          top: 16px;
+        body[data-mode="creator"] .setup-map {
+          --poke-up: 18px;
+          --poke-out: 6px;
         }
       }
+      /* The step row wraps beside a small sticker: the dots go under the
+         step's name rather than squeezing it. */
       .setup-card-top {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: var(--space-2);
-        margin-bottom: var(--space-2);
+        gap: var(--space-1) var(--space-2);
+        margin-bottom: var(--space-3);
       }
       /* The map and the card's step line are static markup: shown by CSS
          for a creator from the first paint, so a page that opens at the
@@ -1813,7 +2064,10 @@
         font-weight: 700;
         flex: none;
       }
+      /* It takes the row's room, so the dots sit at its end, or at the
+         start of the next line where the row wraps. */
       .setup-of {
+        flex: 1 1 auto;
         font-weight: 600;
         font-size: 0.75rem;
         letter-spacing: 0.12em;
@@ -1821,7 +2075,6 @@
         color: var(--ink-dim);
       }
       .setup-dots {
-        margin-left: auto;
         display: flex;
         gap: 2px;
       }
@@ -1861,6 +2114,10 @@
         box-shadow: none;
         padding: 0;
         margin: 0;
+        /* Not clipped: the step's lines flow around the map sticker,
+           which a step of its own formatting context would sit beside as
+           a whole column. */
+        overflow: visible;
       }
       body[data-mode="creator"] #setup-card .step:not([open]),
       body[data-mode="creator"] #wizard > li:has(> .step:not([open])) {
@@ -1871,7 +2128,7 @@
         cursor: default;
         text-transform: none;
         letter-spacing: normal;
-        margin-bottom: var(--space-2);
+        margin: 0;
       }
       body[data-mode="creator"]
         #setup-card
@@ -1892,8 +2149,8 @@
         display: flex;
         gap: var(--space-2);
         justify-content: space-between;
-        margin-top: var(--space-4);
-        padding-top: var(--space-3);
+        margin-top: calc(var(--space-4) + var(--space-2));
+        padding-top: var(--space-4);
         border-top: 1px dashed var(--map-line);
       }
       .setup-nav[hidden] {
@@ -4421,6 +4678,84 @@
           max-width: 620px;
         }
       }
+      /* The setup card's panels and step buttons (see the open-step
+         stack above), last so no less specific rule follows them. */
+      /* The panels inside a step stack the same way. Block flow, not a
+         grid: a grid is a box of its own and would stand beside the map
+         as a whole column, leaving an empty strip under it. */
+      body[data-mode="creator"] #setup-card :is(#start-host, #link-field) > * {
+        margin-block: 0;
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(#start-host, #link-field)
+        > :not([hidden])
+        ~ :not([hidden]) {
+        margin-block-start: var(--gap-group);
+      }
+      /* A step's body in block flow, not a grid: a grid is one box beside
+         the map sticker and narrows over its whole height, which kept the
+         print step's fields at about 60 % of the card down to its foot.
+         In block flow each field is a box of its own, so the ones below
+         the sticker take the card's full width. The same for step 5's
+         line on a device without AR. */
+      body[data-mode="creator"]
+        #setup-card
+        .step-body:not([hidden], :where(#ar-root *)):has(> :not([hidden])),
+      body[data-mode="creator"]:has(#enter-ar[data-ar-state="unsupported"])
+        #setup-card
+        .measure-desktop {
+        display: block;
+        max-width: none;
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop):not(#ar-root *)
+        > :not([hidden])
+        ~ :not([hidden]) {
+        margin-block-start: var(--gap-item);
+      }
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop)
+        > :is(p, .field-group) {
+        margin-block-end: 0;
+      }
+      /* A button is as wide as its words, as the start answers are: a
+         stretched pill reads as a field. */
+      body[data-mode="creator"]
+        #setup-card
+        :is(.step-body, .measure-desktop)
+        > .btn:not([hidden], #ar-root *) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: fit-content;
+      }
+      /* A link on a line of its own keeps the stack's gap: an inline box
+         takes no block margin. */
+      body[data-mode="creator"] #setup-card .step-body > a:not([hidden], .btn) {
+        display: block;
+        width: fit-content;
+      }
+      /* The print step's main action is the download until a PDF was saved
+         (print-panel.ts sets data-pdf-saved), then Next is; Next stays
+         usable throughout. */
+      body[data-mode="creator"]
+        main
+        #print-panel:not([data-pdf-saved="true"])
+        .btn#print-pdf:not(#ar-root *, [disabled]) {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: var(--paper);
+      }
+      body[data-mode="creator"]
+        main
+        #setup-card:has(#print-panel[open]:not([data-pdf-saved="true"]))
+        .btn.setup-ink:not(#ar-root *) {
+        background: #fff;
+        color: var(--ink);
+      }
     </style>
   </head>
   <body class="page">
@@ -4970,561 +5305,611 @@
           }
         </script>
       </section>
-      <!-- The setup stage (polish round M2b, the L5 look): the map of six
-           stations beside (wide) or above (phone) the step card. The card
-           shows ONE step; setup-stage.ts draws the stations and the
-           back/next, and every move goes through wizard.ts. -->
+      <!-- The setup stage (polish round M2b, the L5 look): the step card
+           across the width, the map of six stations a sticker on its
+           top-right corner. The card shows ONE step; setup-stage.ts draws
+           the stations and the back/next, and every move goes through
+           wizard.ts. -->
       <div id="setup-stage" class="setup-stage" data-testid="setup-stage">
-        <div
-          id="setup-map"
-          class="creator-only setup-map"
-          data-testid="setup-map"
-        >
-          <div class="setup-map-head">
-            <span class="setup-map-title"
-              >Mill Park <i>an example route</i></span
-            >
-          </div>
-          <div class="setup-map-frame">
-            <svg
-              id="map-map"
-              viewBox="0 0 400 300"
-              preserveAspectRatio="xMidYMid meet"
-              role="img"
-              data-testid="setup-map-svg"
-              aria-label="Illustrated map of a park with a tour route and six stations"
-            >
-              <defs>
-                <pattern
-                  id="map-grid"
-                  width="25"
-                  height="25"
-                  patternUnits="userSpaceOnUse"
+        <div id="setup-card" class="setup-card" data-testid="setup-card">
+          <div
+            id="setup-map"
+            class="creator-only setup-map"
+            data-testid="setup-map"
+          >
+            <div class="setup-map-head">
+              <span class="setup-map-title"
+                >Mill Park <i>an example route</i></span
+              >
+            </div>
+            <div class="setup-map-frame">
+              <svg
+                id="map-map"
+                viewBox="0 0 400 300"
+                preserveAspectRatio="xMidYMid meet"
+                role="img"
+                data-testid="setup-map-svg"
+                aria-label="Illustrated map of a park with a tour route and six stations"
+              >
+                <defs>
+                  <pattern
+                    id="map-grid"
+                    width="25"
+                    height="25"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <path
+                      d="M25 0 H0 V25"
+                      fill="none"
+                      stroke="#c9bea3"
+                      stroke-width=".45"
+                      opacity=".7"
+                    />
+                  </pattern>
+                  <pattern
+                    id="map-hatch"
+                    width="4"
+                    height="4"
+                    patternUnits="userSpaceOnUse"
+                    patternTransform="rotate(45)"
+                  >
+                    <line
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="4"
+                      stroke="#57534a"
+                      stroke-width=".7"
+                      opacity=".55"
+                    />
+                  </pattern>
+                  <pattern
+                    id="map-paving"
+                    width="9"
+                    height="9"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <rect
+                      x=".6"
+                      y=".6"
+                      width="7.8"
+                      height="7.8"
+                      fill="none"
+                      stroke="#c9bea3"
+                      stroke-width=".6"
+                    />
+                  </pattern>
+                  <g id="map-tree">
+                    <circle
+                      r="7"
+                      fill="#ddd2b6"
+                      stroke="#57534a"
+                      stroke-width=".75"
+                    />
+                    <path
+                      d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6"
+                      fill="none"
+                      stroke="#57534a"
+                      stroke-width=".55"
+                    />
+                    <circle r=".9" fill="#57534a" />
+                  </g>
+                  <mask
+                    id="map-route-mask"
+                    maskUnits="userSpaceOnUse"
+                    x="-50"
+                    y="-50"
+                    width="500"
+                    height="400"
+                  >
+                    <path
+                      id="map-route-reveal"
+                      d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                      fill="none"
+                      stroke="#fff"
+                      stroke-width="10"
+                      stroke-linecap="round"
+                    />
+                  </mask>
+                </defs>
+
+                <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
+                <rect
+                  x="-400"
+                  y="-300"
+                  width="1200"
+                  height="900"
+                  fill="#f4eedf"
+                />
+                <rect
+                  x="-400"
+                  y="-300"
+                  width="1200"
+                  height="900"
+                  fill="url(#map-grid)"
+                />
+
+                <!-- stream -->
+                <path
+                  d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                  fill="none"
+                  stroke="#8c8577"
+                  stroke-width="8.5"
+                />
+                <path
+                  d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                  fill="none"
+                  stroke="#ebe3cf"
+                  stroke-width="6.6"
+                />
+                <path
+                  d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
+                  fill="none"
+                  stroke="#8c8577"
+                  stroke-width=".5"
+                  stroke-dasharray="5 7"
+                />
+                <text
+                  class="lbl-place"
+                  transform="translate(5 228) rotate(-82)"
                 >
+                  Mill Stream
+                </text>
+
+                <!-- road -->
+                <path
+                  id="map-lane"
+                  d="M-60 286 C 120 274 280 292 460 268"
+                  fill="none"
+                  stroke="#57534a"
+                  stroke-width="22"
+                />
+                <path
+                  d="M-60 286 C 120 274 280 292 460 268"
+                  fill="none"
+                  stroke="#ebe3cf"
+                  stroke-width="20"
+                />
+                <text class="lbl-road">
+                  <textPath href="#map-lane" startOffset="47%">
+                    MILL LANE
+                  </textPath>
+                </text>
+
+                <!-- footpaths (cased) -->
+                <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+                  <g stroke="#8c8577" stroke-width="10">
+                    <path
+                      d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                    />
+                    <path d="M58 262 L58 284" />
+                    <path d="M226 212 C 232 240 240 258 246 284" />
+                    <path d="M286 46 C 292 26 298 10 302 -20" />
+                    <path d="M222 132 C 222 160 226 190 226 212" />
+                    <path d="M150 106 L162 106" />
+                  </g>
+                  <g stroke="#f4eedf" stroke-width="8.2">
+                    <path
+                      d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                    />
+                    <path d="M58 262 L58 284" />
+                    <path d="M226 212 C 232 240 240 258 246 284" />
+                    <path d="M286 46 C 292 26 298 10 302 -20" />
+                    <path d="M222 132 C 222 160 226 190 226 212" />
+                    <path d="M150 106 L162 106" />
+                  </g>
+                </g>
+
+                <!-- old mill building -->
+                <rect x="22" y="26" width="128" height="94" fill="#ddd2b6" />
+                <rect
+                  x="22"
+                  y="26"
+                  width="128"
+                  height="94"
+                  fill="url(#map-hatch)"
+                  stroke="#2a2824"
+                  stroke-width="1.3"
+                />
+                <rect
+                  x="30"
+                  y="34"
+                  width="112"
+                  height="78"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width=".5"
+                />
+                <text class="lbl-caps" x="86" y="76" text-anchor="middle">
+                  OLD MILL
+                </text>
+                <g transform="translate(16 74)">
+                  <circle
+                    r="10"
+                    fill="#f4eedf"
+                    stroke="#2a2824"
+                    stroke-width="1.1"
+                  />
                   <path
-                    d="M25 0 H0 V25"
-                    fill="none"
-                    stroke="#c9bea3"
-                    stroke-width=".45"
-                    opacity=".7"
-                  />
-                </pattern>
-                <pattern
-                  id="map-hatch"
-                  width="4"
-                  height="4"
-                  patternUnits="userSpaceOnUse"
-                  patternTransform="rotate(45)"
-                >
-                  <line
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="4"
-                    stroke="#57534a"
-                    stroke-width=".7"
-                    opacity=".55"
-                  />
-                </pattern>
-                <pattern
-                  id="map-paving"
-                  width="9"
-                  height="9"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <rect
-                    x=".6"
-                    y=".6"
-                    width="7.8"
-                    height="7.8"
-                    fill="none"
-                    stroke="#c9bea3"
+                    d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7"
+                    stroke="#2a2824"
                     stroke-width=".6"
                   />
-                </pattern>
-                <g id="map-tree">
-                  <circle
-                    r="7"
-                    fill="#ddd2b6"
-                    stroke="#57534a"
-                    stroke-width=".75"
-                  />
-                  <path
-                    d="M-3.6 -1.5 A4.2 4.2 0 0 1 1.5 -4.2 M-1 3 A3 3 0 0 0 3.6 0.6"
-                    fill="none"
-                    stroke="#57534a"
-                    stroke-width=".55"
-                  />
-                  <circle r=".9" fill="#57534a" />
+                  <circle r="2" fill="#2a2824" />
                 </g>
-                <mask
-                  id="map-route-mask"
-                  maskUnits="userSpaceOnUse"
-                  x="-50"
-                  y="-50"
-                  width="500"
-                  height="400"
-                >
-                  <path
-                    id="map-route-reveal"
-                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
-                    fill="none"
-                    stroke="#fff"
-                    stroke-width="10"
-                    stroke-linecap="round"
-                  />
-                </mask>
-              </defs>
 
-              <!-- paper, extended beyond the viewBox so letterboxing still looks like map -->
-              <rect
-                x="-400"
-                y="-300"
-                width="1200"
-                height="900"
-                fill="#f4eedf"
-              />
-              <rect
-                x="-400"
-                y="-300"
-                width="1200"
-                height="900"
-                fill="url(#map-grid)"
-              />
-
-              <!-- stream -->
-              <path
-                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
-                fill="none"
-                stroke="#8c8577"
-                stroke-width="8.5"
-              />
-              <path
-                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
-                fill="none"
-                stroke="#ebe3cf"
-                stroke-width="6.6"
-              />
-              <path
-                d="M10 -40 C 18 50 2 120 14 190 C 22 240 6 290 12 360"
-                fill="none"
-                stroke="#8c8577"
-                stroke-width=".5"
-                stroke-dasharray="5 7"
-              />
-              <text class="lbl-place" transform="translate(5 228) rotate(-82)">
-                Mill Stream
-              </text>
-
-              <!-- road -->
-              <path
-                id="map-lane"
-                d="M-60 286 C 120 274 280 292 460 268"
-                fill="none"
-                stroke="#57534a"
-                stroke-width="22"
-              />
-              <path
-                d="M-60 286 C 120 274 280 292 460 268"
-                fill="none"
-                stroke="#ebe3cf"
-                stroke-width="20"
-              />
-              <text class="lbl-road">
-                <textPath href="#map-lane" startOffset="47%">
-                  MILL LANE
-                </textPath>
-              </text>
-
-              <!-- footpaths (cased) -->
-              <g fill="none" stroke-linecap="round" stroke-linejoin="round">
-                <g stroke="#8c8577" stroke-width="10">
-                  <path
-                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
-                  />
-                  <path d="M58 262 L58 284" />
-                  <path d="M226 212 C 232 240 240 258 246 284" />
-                  <path d="M286 46 C 292 26 298 10 302 -20" />
-                  <path d="M222 132 C 222 160 226 190 226 212" />
-                  <path d="M150 106 L162 106" />
-                </g>
-                <g stroke="#f4eedf" stroke-width="8.2">
-                  <path
-                    d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
-                  />
-                  <path d="M58 262 L58 284" />
-                  <path d="M226 212 C 232 240 240 258 246 284" />
-                  <path d="M286 46 C 292 26 298 10 302 -20" />
-                  <path d="M222 132 C 222 160 226 190 226 212" />
-                  <path d="M150 106 L162 106" />
-                </g>
-              </g>
-
-              <!-- old mill building -->
-              <rect x="22" y="26" width="128" height="94" fill="#ddd2b6" />
-              <rect
-                x="22"
-                y="26"
-                width="128"
-                height="94"
-                fill="url(#map-hatch)"
-                stroke="#2a2824"
-                stroke-width="1.3"
-              />
-              <rect
-                x="30"
-                y="34"
-                width="112"
-                height="78"
-                fill="none"
-                stroke="#2a2824"
-                stroke-width=".5"
-              />
-              <text class="lbl-caps" x="86" y="76" text-anchor="middle">
-                OLD MILL
-              </text>
-              <g transform="translate(16 74)">
+                <!-- courtyard -->
+                <rect x="172" y="40" width="100" height="92" fill="#ebe3cf" />
+                <rect
+                  x="172"
+                  y="40"
+                  width="100"
+                  height="92"
+                  fill="url(#map-paving)"
+                  stroke="#57534a"
+                  stroke-width=".9"
+                  stroke-dasharray="4 2"
+                />
                 <circle
-                  r="10"
+                  cx="216"
+                  cy="104"
+                  r="9.5"
                   fill="#f4eedf"
                   stroke="#2a2824"
-                  stroke-width="1.1"
+                  stroke-width="1"
                 />
-                <path
-                  d="M0 -10 V10 M-10 0 H10 M-7 -7 L7 7 M7 -7 L-7 7"
-                  stroke="#2a2824"
-                  stroke-width=".6"
-                />
-                <circle r="2" fill="#2a2824" />
-              </g>
-
-              <!-- courtyard -->
-              <rect x="172" y="40" width="100" height="92" fill="#ebe3cf" />
-              <rect
-                x="172"
-                y="40"
-                width="100"
-                height="92"
-                fill="url(#map-paving)"
-                stroke="#57534a"
-                stroke-width=".9"
-                stroke-dasharray="4 2"
-              />
-              <circle
-                cx="216"
-                cy="104"
-                r="9.5"
-                fill="#f4eedf"
-                stroke="#2a2824"
-                stroke-width="1"
-              />
-              <circle
-                cx="216"
-                cy="104"
-                r="4"
-                fill="none"
-                stroke="#2a2824"
-                stroke-width=".7"
-              />
-              <circle cx="216" cy="104" r="1.2" fill="#2a2824" />
-              <rect
-                x="248"
-                y="112"
-                width="12"
-                height="12"
-                fill="#ddd2b6"
-                stroke="#57534a"
-                stroke-width=".6"
-              />
-              <rect
-                x="184"
-                y="112"
-                width="12"
-                height="12"
-                fill="#ddd2b6"
-                stroke="#57534a"
-                stroke-width=".6"
-              />
-              <text class="lbl-place" x="216" y="127" text-anchor="middle">
-                Courtyard
-              </text>
-
-              <!-- pond -->
-              <ellipse
-                cx="316"
-                cy="140"
-                rx="21"
-                ry="12.5"
-                fill="#ebe3cf"
-                stroke="#57534a"
-                stroke-width=".9"
-              />
-              <path
-                d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0"
-                fill="none"
-                stroke="#8c8577"
-                stroke-width=".6"
-              />
-              <text class="lbl-place" x="312" y="178" text-anchor="middle">
-                Mill Park
-              </text>
-
-              <!-- trees -->
-              <g id="map-trees">
-                <use href="#map-tree" transform="translate(300 72) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(322 66) scale(0.85)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(344 82) scale(1.05)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(300 98) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(282 122) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(296 168) scale(0.8)"
-                />
-                <use href="#map-tree" transform="translate(270 160) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(250 180) scale(0.85)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(270 190) scale(0.7)"
-                />
-                <use href="#map-tree" transform="translate(190 18) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(214 14) scale(0.85)"
-                />
-                <use href="#map-tree" transform="translate(240 22) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(262 12) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(318 18) scale(1.05)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(340 24) scale(0.8)"
-                />
-                <use href="#map-tree" transform="translate(362 16) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(386 34) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(392 64) scale(0.8)"
-                />
-                <use href="#map-tree" transform="translate(390 122) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(394 152) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(386 190) scale(0.9)"
-                />
-                <use href="#map-tree" transform="translate(368 214) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(392 210) scale(0.7)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(300 242) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(320 234) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(276 246) scale(0.75)"
-                />
-                <use href="#map-tree" transform="translate(190 242) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(166 250) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(140 240) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(100 242) scale(0.85)"
-                />
-                <use href="#map-tree" transform="translate(36 146) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(60 160) scale(0.85)"
-                />
-                <use href="#map-tree" transform="translate(90 150) scale(1)" />
-                <use
-                  href="#map-tree"
-                  transform="translate(120 160) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(48 186) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(80 182) scale(0.8)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(184 156) scale(0.9)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(196 180) scale(0.75)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(158 140) scale(0.7)"
-                />
-                <use
-                  href="#map-tree"
-                  transform="translate(150 174) scale(0.85)"
-                />
-              </g>
-
-              <!-- benches -->
-              <g fill="#57534a">
-                <rect
-                  x="246"
-                  y="199"
-                  width="9"
-                  height="2.4"
-                  transform="rotate(-6 250 200)"
-                />
-                <rect x="374" y="96" width="2.4" height="9" />
-                <rect
-                  x="140"
-                  y="222"
-                  width="9"
-                  height="2.4"
-                  transform="rotate(8 144 223)"
-                />
-              </g>
-
-              <!-- viewpoint -->
-              <g transform="translate(38 246)">
-                <path
-                  d="M0 -6 L5.5 4 H-5.5 Z"
+                <circle
+                  cx="216"
+                  cy="104"
+                  r="4"
                   fill="none"
                   stroke="#2a2824"
+                  stroke-width=".7"
+                />
+                <circle cx="216" cy="104" r="1.2" fill="#2a2824" />
+                <rect
+                  x="248"
+                  y="112"
+                  width="12"
+                  height="12"
+                  fill="#ddd2b6"
+                  stroke="#57534a"
+                  stroke-width=".6"
+                />
+                <rect
+                  x="184"
+                  y="112"
+                  width="12"
+                  height="12"
+                  fill="#ddd2b6"
+                  stroke="#57534a"
+                  stroke-width=".6"
+                />
+                <text class="lbl-place" x="216" y="127" text-anchor="middle">
+                  Courtyard
+                </text>
+
+                <!-- pond -->
+                <ellipse
+                  cx="316"
+                  cy="140"
+                  rx="21"
+                  ry="12.5"
+                  fill="#ebe3cf"
+                  stroke="#57534a"
                   stroke-width=".9"
                 />
-                <text class="lbl-place" x="0" y="-9" text-anchor="middle">
-                  Viewpoint
-                </text>
-              </g>
-
-              <!-- compass -->
-              <g transform="translate(382 236)">
-                <circle r="9" fill="none" stroke="#8c8577" stroke-width=".6" />
-                <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824" />
                 <path
-                  d="M0 12 L3 0 L0 2 L-3 0 Z"
+                  d="M304 137 q4 -2 8 0 t8 0 M310 144 q4 -2 8 0 t8 0"
                   fill="none"
-                  stroke="#2a2824"
+                  stroke="#8c8577"
                   stroke-width=".6"
                 />
-                <text
-                  x="0"
-                  y="-14.5"
-                  text-anchor="middle"
-                  font-family="Georgia,serif"
-                  font-size="6.5"
-                  font-weight="700"
-                  fill="#2a2824"
-                >
-                  N
+                <text class="lbl-place" x="312" y="178" text-anchor="middle">
+                  Mill Park
                 </text>
-              </g>
 
-              <!-- the tour route: faint plan + dotted line revealed by the mask -->
-              <path
-                id="map-route-ghost"
-                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
-                fill="none"
-                stroke="#2a2824"
-                stroke-width="1.8"
-                stroke-linecap="round"
-                stroke-dasharray="0.1 7"
-                opacity=".22"
-              />
-              <path
-                id="map-route"
-                d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
-                fill="none"
-                stroke="#cf4428"
-                stroke-width="3.6"
-                stroke-linecap="round"
-                stroke-dasharray="0.1 7"
-                mask="url(#map-route-mask)"
-              />
-
-              <!-- start point: the poster -->
-              <g id="map-start" transform="translate(157 92)">
-                <circle class="halo" cx="0" cy="0" r="11" />
-                <rect
-                  class="empty"
-                  x="-7"
-                  y="-8.5"
-                  width="14"
-                  height="17"
-                  rx="1"
-                />
-
-                <g class="tack">
-                  <circle
-                    cx="0"
-                    cy="-8.5"
-                    r="2.4"
-                    fill="#cf4428"
-                    stroke="#fff"
-                    stroke-width=".7"
+                <!-- trees -->
+                <g id="map-trees">
+                  <use
+                    href="#map-tree"
+                    transform="translate(300 72) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(322 66) scale(0.85)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(344 82) scale(1.05)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(300 98) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(282 122) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(296 168) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(270 160) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(250 180) scale(0.85)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(270 190) scale(0.7)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(190 18) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(214 14) scale(0.85)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(240 22) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(262 12) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(318 18) scale(1.05)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(340 24) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(362 16) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(386 34) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(392 64) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(390 122) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(394 152) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(386 190) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(368 214) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(392 210) scale(0.7)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(300 242) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(320 234) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(276 246) scale(0.75)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(190 242) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(166 250) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(140 240) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(100 242) scale(0.85)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(36 146) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(60 160) scale(0.85)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(90 150) scale(1)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(120 160) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(48 186) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(80 182) scale(0.8)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(184 156) scale(0.9)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(196 180) scale(0.75)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(158 140) scale(0.7)"
+                  />
+                  <use
+                    href="#map-tree"
+                    transform="translate(150 174) scale(0.85)"
                   />
                 </g>
-                <text
-                  class="lbl-start"
-                  x="0"
-                  y="-14"
-                  text-anchor="middle"
-                  id="map-start-label"
-                >
-                  Start: your poster
-                </text>
-              </g>
 
-              <!-- end flag -->
-              <g id="map-end-flag">
-                <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1" />
-                <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428" />
-              </g>
+                <!-- benches -->
+                <g fill="#57534a">
+                  <rect
+                    x="246"
+                    y="199"
+                    width="9"
+                    height="2.4"
+                    transform="rotate(-6 250 200)"
+                  />
+                  <rect x="374" y="96" width="2.4" height="9" />
+                  <rect
+                    x="140"
+                    y="222"
+                    width="9"
+                    height="2.4"
+                    transform="rotate(8 144 223)"
+                  />
+                </g>
 
-              <!-- station markers -->
-              <g id="map-stations"></g>
-            </svg>
+                <!-- viewpoint -->
+                <g transform="translate(38 246)">
+                  <path
+                    d="M0 -6 L5.5 4 H-5.5 Z"
+                    fill="none"
+                    stroke="#2a2824"
+                    stroke-width=".9"
+                  />
+                  <text class="lbl-place" x="0" y="-9" text-anchor="middle">
+                    Viewpoint
+                  </text>
+                </g>
+
+                <!-- compass -->
+                <g transform="translate(382 236)">
+                  <circle
+                    r="9"
+                    fill="none"
+                    stroke="#8c8577"
+                    stroke-width=".6"
+                  />
+                  <path d="M0 -12 L3 0 L0 -2 L-3 0 Z" fill="#2a2824" />
+                  <path
+                    d="M0 12 L3 0 L0 2 L-3 0 Z"
+                    fill="none"
+                    stroke="#2a2824"
+                    stroke-width=".6"
+                  />
+                  <text
+                    x="0"
+                    y="-14.5"
+                    text-anchor="middle"
+                    font-family="Georgia,serif"
+                    font-size="6.5"
+                    font-weight="700"
+                    fill="#2a2824"
+                  >
+                    N
+                  </text>
+                </g>
+
+                <!-- the tour route: faint plan + dotted line revealed by the mask -->
+                <path
+                  id="map-route-ghost"
+                  d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  fill="none"
+                  stroke="#2a2824"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-dasharray="0.1 7"
+                  opacity=".22"
+                />
+                <path
+                  id="map-route"
+                  d="M160 106 C 182 106 198 76 222 74 C 246 72 256 50 286 46 C 322 41 366 60 368 100 C 370 140 346 165 331 190 C 316 214 262 220 226 212 C 188 204 152 221 120 214 C 86 207 62 232 58 262"
+                  fill="none"
+                  stroke="#cf4428"
+                  stroke-width="3.6"
+                  stroke-linecap="round"
+                  stroke-dasharray="0.1 7"
+                  mask="url(#map-route-mask)"
+                />
+
+                <!-- start point: the poster -->
+                <g id="map-start" transform="translate(157 92)">
+                  <circle class="halo" cx="0" cy="0" r="11" />
+                  <rect
+                    class="empty"
+                    x="-7"
+                    y="-8.5"
+                    width="14"
+                    height="17"
+                    rx="1"
+                  />
+
+                  <g class="tack">
+                    <circle
+                      cx="0"
+                      cy="-8.5"
+                      r="2.4"
+                      fill="#cf4428"
+                      stroke="#fff"
+                      stroke-width=".7"
+                    />
+                  </g>
+                  <text
+                    class="lbl-start"
+                    x="0"
+                    y="-14"
+                    text-anchor="middle"
+                    id="map-start-label"
+                  >
+                    Start: your poster
+                  </text>
+                </g>
+
+                <!-- end flag -->
+                <g id="map-end-flag">
+                  <path d="M0 0 V-18" stroke="#2a2824" stroke-width="1.1" />
+                  <path d="M0 -18 L11 -14 L0 -10 Z" fill="#cf4428" />
+                </g>
+
+                <!-- station markers -->
+                <g id="map-stations"></g>
+              </svg>
+            </div>
+            <!-- A small sticker shows larger on a tap (setup-stage.ts);
+                 shown only while the sticker is small or shown larger. -->
+            <button
+              type="button"
+              id="setup-map-zoom"
+              class="setup-map-zoom"
+              data-testid="setup-map-zoom"
+              aria-controls="setup-map"
+              aria-expanded="false"
+              aria-label="Show the example map larger"
+            ></button>
           </div>
-        </div>
-        <div id="setup-card" class="setup-card" data-testid="setup-card">
           <div class="creator-only setup-card-top">
             <span class="setup-badge" id="setup-badge" data-testid="setup-badge"
               >1</span
@@ -5544,10 +5929,10 @@
           </p>
           <ol id="wizard" class="creator-only" data-testid="wizard" hidden>
             <li>
-              <!-- Step 1: where the tour lives (polish round M2, A6/A7). The
-               host tiles are the context every later step uses
-               (tour-host.ts); the starter zip shows only for a host that
-               needs a file before it gives a link. -->
+              <!-- Step 1: how the creator wants to start (creator setup flow,
+               round 2, the "conversation" variant). One question, four
+               answers; a tap only routes to step 2, which shows that
+               answer's panel (start-question.ts). -->
               <details id="step-host" class="step" data-testid="step-host">
                 <summary>
                   <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -5560,69 +5945,59 @@
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <h2>Where your tour file is stored</h2>
+                  <h2>How do you want to start?</h2>
                 </summary>
                 <p class="step-copy hint--dim">
-                  Your tour is one small zip file in your own storage. Visitors'
-                  phones load it from there; once it has loaded, it keeps
-                  working without signal.
+                  Nothing is made yet, so nothing can be lost.
                 </p>
                 <div
-                  id="host-tiles"
-                  class="host-tiles"
+                  class="start-answers"
                   role="group"
-                  aria-label="Where your tour file is stored"
-                  data-testid="host-tiles"
-                ></div>
-                <ol
-                  id="host-steps"
-                  class="substeps"
-                  data-testid="host-steps"
-                  hidden
-                ></ol>
-                <div class="step-body">
+                  aria-label="How do you want to start?"
+                  data-testid="start-answers"
+                >
                   <button
                     type="button"
-                    id="starter-zip"
-                    class="btn btn--prose"
-                    data-testid="starter-zip"
-                    hidden
+                    id="start-answer-new"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-new"
                   >
-                    Download the empty starter tour
+                    New tour - I want to share it now
                   </button>
                   <button
                     type="button"
-                    id="host-continue"
-                    class="btn"
-                    data-testid="host-continue"
-                    hidden
+                    id="start-answer-link"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-link"
                   >
-                    Continue
+                    I have my tour's link
+                  </button>
+                  <button
+                    type="button"
+                    id="start-answer-file"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-file"
+                  >
+                    The tour file is on this phone
+                  </button>
+                  <button
+                    type="button"
+                    id="start-answer-later"
+                    class="btn btn--prose start-answer"
+                    data-testid="start-answer-later"
+                  >
+                    Start on this phone now, share later
                   </button>
                 </div>
-                <!-- "Open a file" (tour kit plan K0): a zip on this device,
-                 for a host that does not let browsers read its files.
-                 The picker is #file-input, outside the wizard, which
-                 the visitor's advice button uses too. A small link since
-                 polish round M2 (A5): the hosts above are the main way. -->
-                <p class="step-copy hint--dim">
-                  Already have a tour zip on this device?
-                  <button
-                    type="button"
-                    id="open-file"
-                    class="link-button"
-                    data-testid="open-file-button"
-                  >
-                    Open it from this device
-                  </button>
-                </p>
               </details>
             </li>
             <li>
-              <!-- Step 2: the link, given once (polish round M2, A13/A16). It is
-               checked by itself on paste; the print step carries it, also
-               while it is not reachable yet (an own server's link can come
-               before its file). -->
+              <!-- Step 2: the start question's answer (creator setup flow,
+               round 2): a heading and a why per answer, and that answer's
+               blocks (start-question.ts). The link is given once (polish
+               round M2, A13/A16): checked by itself on paste; the print
+               step carries it, also while it is not reachable yet (an own
+               server's link can come before its file). -->
               <details id="step-link" class="step" data-testid="step-link">
                 <summary>
                   <svg class="step-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -5635,62 +6010,176 @@
                       stroke-linejoin="round"
                     />
                   </svg>
-                  <h2>Paste your tour's share link</h2>
+                  <h2 id="link-heading" data-testid="link-heading">
+                    Paste your tour's link
+                  </h2>
                 </summary>
-                <p class="step-copy hint--dim">
-                  Paste the share link to your tour zip. Keep the file where it
-                  is: your printed codes point to it.
-                </p>
-                <form id="open-form">
-                  <input
-                    id="link"
-                    name="link"
-                    class="input"
-                    type="text"
-                    placeholder="https://… link to the .zip"
-                    autocomplete="off"
-                    data-testid="link-input"
-                  />
-                  <button
-                    type="submit"
-                    class="btn"
-                    id="open"
-                    data-testid="open-button"
-                  >
-                    Check link
-                  </button>
-                </form>
                 <p
-                  id="link-status"
+                  id="link-why"
                   class="step-copy hint--dim"
-                  data-testid="link-status"
-                  role="status"
-                  aria-live="polite"
-                  hidden
-                ></p>
-                <!-- What the codes carry (r820 feedback R6): the pasted link
+                  data-testid="link-why"
+                >
+                  The link opens your tour file where you stored it. Keep the
+                  file there: your printed codes point to it.
+                </p>
+                <!-- New tour, share now: where it lives, the host's own
+                 steps and the starter zip (host-picker.ts), the link field
+                 right below. -->
+                <div id="start-host" data-testid="start-host" hidden>
+                  <div
+                    id="host-tiles"
+                    class="host-tiles"
+                    role="group"
+                    aria-label="Where your tour file is stored"
+                    data-testid="host-tiles"
+                  ></div>
+                  <ol
+                    id="host-steps"
+                    class="substeps"
+                    data-testid="host-steps"
+                    hidden
+                  ></ol>
+                  <div class="step-body">
+                    <button
+                      type="button"
+                      id="starter-zip"
+                      class="btn btn--prose"
+                      data-testid="starter-zip"
+                      hidden
+                    >
+                      Download the empty starter tour
+                    </button>
+                  </div>
+                </div>
+                <div id="link-field" data-testid="link-field">
+                  <!-- A field says what it is for in a line under its label
+                   that stays while typing; its placeholder is only an
+                   example (.field, below in the sheet). -->
+                  <div class="field">
+                    <label for="link">Link to your tour file</label>
+                    <p id="link-hint" class="field-hint hint--dim">
+                      The share link your storage gives for the .zip file.
+                    </p>
+                    <form id="open-form">
+                      <input
+                        id="link"
+                        name="link"
+                        class="input"
+                        type="text"
+                        placeholder="e.g. https://www.dropbox.com/s/…/tour.zip"
+                        autocomplete="off"
+                        aria-describedby="link-hint"
+                        data-testid="link-input"
+                      />
+                      <button
+                        type="submit"
+                        class="btn"
+                        id="open"
+                        data-testid="open-button"
+                      >
+                        Check link
+                      </button>
+                    </form>
+                  </div>
+                  <p
+                    id="link-status"
+                    class="step-copy hint--dim"
+                    data-testid="link-status"
+                    role="status"
+                    aria-live="polite"
+                    hidden
+                  ></p>
+                  <!-- What the codes carry: the pasted link
                  wrapped into the launch link a scan opens. Written by
                  print-panel.ts once the first poster's code is planned;
                  hidden while empty. -->
-                <div id="link-launch" class="link-launch">
+                  <div id="link-launch" class="link-launch">
+                    <p class="step-copy hint--dim">
+                      Your posters' codes carry this link, with your link
+                      wrapped inside - it is what a phone opens when it scans a
+                      poster:
+                    </p>
+                    <a
+                      id="print-url-out"
+                      data-testid="print-url-out"
+                      target="_blank"
+                      rel="noopener"
+                    ></a>
+                  </div>
                   <p class="step-copy hint--dim">
-                    Your posters' codes carry this link, with your link wrapped
-                    inside - it is what a phone opens when it scans a poster:
+                    A shortened link makes the printed code coarser and easier
+                    to scan from afar. Not every shortener works: some, bit.ly
+                    among them, open for you but stop the tour loading for
+                    visitors, so opening the short link yourself proves nothing.
+                    Paste the short link here and wait for the tour to be found
+                    before you print.
                   </p>
-                  <a
-                    id="print-url-out"
-                    data-testid="print-url-out"
-                    target="_blank"
-                    rel="noopener"
-                  ></a>
                 </div>
-                <p class="step-copy hint--dim">
-                  A shortened link makes the printed code coarser and easier to
-                  scan from afar. Not every shortener works: some, bit.ly among
-                  them, open for you but stop the tour loading for visitors, so
-                  opening the short link yourself proves nothing. Paste the
-                  short link here and wait for the tour to be found before you
-                  print.
+                <!-- Scan-to-open's one case: the code already hangs. -->
+                <p
+                  id="start-code-hangs"
+                  class="step-copy"
+                  data-testid="start-code-hangs"
+                  hidden
+                >
+                  Your code already hangs at the tour's start?
+                  <button
+                    type="button"
+                    id="code-hangs"
+                    class="link-button"
+                    data-testid="code-hangs-button"
+                  >
+                    Start at the code
+                  </button>
+                </p>
+                <!-- The tour file is on this phone. The picker is
+                 #file-input, outside the wizard, which the visitor's advice
+                 button uses too (tour kit plan K0). -->
+                <div
+                  id="start-file"
+                  class="step-body"
+                  data-testid="start-file"
+                  hidden
+                >
+                  <button
+                    type="button"
+                    id="open-file"
+                    class="btn"
+                    data-testid="open-file-button"
+                  >
+                    Open it from this device
+                  </button>
+                </div>
+                <!-- Start on this phone now, share later: one tap saves the
+                 empty starter and opens it as the tour, before AR. -->
+                <div
+                  id="start-later"
+                  class="step-body"
+                  data-testid="start-later"
+                  hidden
+                >
+                  <button
+                    type="button"
+                    id="start-here"
+                    class="btn"
+                    data-testid="start-here"
+                  >
+                    Save the tour file and start
+                  </button>
+                  <p class="step-copy hint--dim">
+                    Placing needs a GPS fix, so start outdoors: a new tour has
+                    no measured code yet, and indoors the pin buttons stay
+                    locked.
+                  </p>
+                </div>
+                <p class="step-copy start-back">
+                  <button
+                    type="button"
+                    class="link-button start-back-button"
+                    data-testid="start-back"
+                  >
+                    Back to the question
+                  </button>
                 </p>
               </details>
             </li>
@@ -5726,17 +6215,26 @@
                    which is what keeps printing BEFORE hosting possible
                    (flows plan DEC-F2 rejected removing that). One link
                    either way: the two are never both live. -->
-                  <label id="print-url-ask" data-testid="print-url-ask">
-                    The link the code will carry
+                  <div
+                    class="field"
+                    id="print-url-ask"
+                    data-testid="print-url-ask"
+                  >
+                    <label for="print-url">Link in the QR code</label>
+                    <p id="print-url-hint" class="field-hint hint--dim">
+                      The link to your tour file: a phone that scans a poster
+                      opens it.
+                    </p>
                     <input
                       id="print-url"
                       class="input"
                       data-testid="print-url"
                       type="text"
                       autocomplete="off"
-                      placeholder="https://… link to the tour .zip"
+                      aria-describedby="print-url-hint"
+                      placeholder="e.g. https://www.dropbox.com/s/…/tour.zip"
                     />
-                  </label>
+                  </div>
                   <div
                     id="print-url-shown"
                     data-testid="print-url-shown"
@@ -5749,17 +6247,21 @@
                    title (tour-name-field.ts). No maxlength: it counts UTF-16
                    units, the format counts characters - the check says
                    when a name is too long (plan §23 #8). -->
-                  <label class="tour-name-ask" id="tour-name-ask"
-                    >Tour name
+                  <div class="field tour-name-ask" id="tour-name-ask">
+                    <label for="tour-name-input">Tour name</label>
+                    <p id="tour-name-hint" class="field-hint hint--dim">
+                      Visitors see it when they open the tour.
+                    </p>
                     <input
                       id="tour-name-input"
                       class="input"
                       data-testid="tour-name-input"
                       type="text"
                       autocomplete="off"
-                      placeholder="Visitors see it when they open the tour"
+                      aria-describedby="tour-name-hint"
+                      placeholder="e.g. Old town walk"
                     />
-                  </label>
+                  </div>
                   <p
                     id="tour-name-error"
                     class="step-copy"
@@ -5770,44 +6272,76 @@
                   <!-- The poster text (polish round D-P7, r820 feedback R8):
                    printed with every code so a sheet can be hung as it
                    comes out of the printer. Filled in; an emptied field is
-                   left off; remembered per tour (poster-text.ts). -->
-                  <fieldset class="poster-text" data-testid="poster-text">
-                    <legend>On the poster</legend>
-                    <label
-                      >Title
-                      <input
-                        id="poster-title"
-                        class="input"
-                        data-testid="poster-title"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                        placeholder="The poster's headline"
-                      />
-                    </label>
-                    <label
-                      >Explanation
-                      <input
-                        id="poster-explanation"
-                        class="input"
-                        data-testid="poster-explanation"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                      />
-                    </label>
-                    <label
-                      >Call to action
-                      <input
-                        id="poster-cta"
-                        class="input"
-                        data-testid="poster-cta"
-                        type="text"
-                        maxlength="80"
-                        autocomplete="off"
-                      />
-                    </label>
-                  </fieldset>
+                   left off; remembered per tour (poster-text.ts). A group
+                   with a heading of its own, not a fieldset: a fieldset is
+                   one box beside the map sticker and would narrow its
+                   fields over its whole height. -->
+                  <div
+                    class="poster-text field-group"
+                    role="group"
+                    aria-labelledby="poster-text-heading"
+                    aria-describedby="poster-text-hint"
+                    data-testid="poster-text"
+                  >
+                    <h3 id="poster-text-heading" class="field-group-heading">
+                      On the poster
+                    </h3>
+                    <div class="field-group-body">
+                      <p id="poster-text-hint" class="field-hint hint--dim">
+                        Printed around every code, so a sheet can hang as it
+                        comes out of the printer. An emptied line is left off.
+                      </p>
+                      <div class="field">
+                        <label for="poster-title">Title</label>
+                        <p id="poster-title-hint" class="field-hint hint--dim">
+                          The largest line, at the top.
+                        </p>
+                        <input
+                          id="poster-title"
+                          class="input"
+                          data-testid="poster-title"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-title-hint"
+                          placeholder="e.g. Old town walk"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="poster-explanation">Explanation</label>
+                        <p
+                          id="poster-explanation-hint"
+                          class="field-hint hint--dim"
+                        >
+                          A short line under the title.
+                        </p>
+                        <input
+                          id="poster-explanation"
+                          class="input"
+                          data-testid="poster-explanation"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-explanation-hint"
+                        />
+                      </div>
+                      <div class="field">
+                        <label for="poster-cta">Call to action</label>
+                        <p id="poster-cta-hint" class="field-hint hint--dim">
+                          Under the code: what a visitor should do.
+                        </p>
+                        <input
+                          id="poster-cta"
+                          class="input"
+                          data-testid="poster-cta"
+                          type="text"
+                          maxlength="80"
+                          autocomplete="off"
+                          aria-describedby="poster-cta-hint"
+                        />
+                      </div>
+                    </div>
+                  </div>
                   <!-- How many posters: the one number a creator decides
                    here, so it stays in view with big -/+ (r820 feedback
                    R7). Each poster gets its own number, hence its own
@@ -5851,55 +6385,6 @@
                       </button>
                     </div>
                   </div>
-                  <!-- The defaults nobody needs to touch (r820 feedback R7):
-                   18 cm, A4, numbering continued from the tour's codes.
-                   PDF only since polish round M0b (A10): the browser's
-                   print dialog owns a "fit to page" that rescales the
-                   code, and a rescaled code measures the world wrong. -->
-                  <details
-                    id="print-settings"
-                    class="print-settings"
-                    data-testid="print-settings"
-                  >
-                    <summary>Settings</summary>
-                    <div class="print-settings-grid">
-                      <label
-                        >Size (cm)
-                        <input
-                          id="author-size"
-                          class="input"
-                          data-testid="author-size"
-                          type="number"
-                          step="0.1"
-                          min="1"
-                          value="18"
-                        />
-                      </label>
-                      <label
-                        >Paper
-                        <select
-                          id="print-paper"
-                          class="select"
-                          data-testid="print-paper"
-                        >
-                          <option value="a4">A4</option>
-                          <option value="letter">Letter</option>
-                        </select>
-                      </label>
-                      <label
-                        >First code number
-                        <input
-                          id="author-c"
-                          class="input"
-                          data-testid="author-c"
-                          type="number"
-                          step="1"
-                          min="1"
-                          value="1"
-                        />
-                      </label>
-                    </div>
-                  </details>
                   <button
                     type="button"
                     id="print-pdf"
@@ -7217,6 +7702,42 @@
               >
                 Save the tour zip again
               </button>
+              <!-- A tour started on this phone has no link yet: Done leads to
+               making its code (start-question.ts). The replace steps and the
+               "uploaded?" question below speak of a link, so the page's CSS
+               hides them while #step-done says data-hosted="false". -->
+              <section
+                id="make-code"
+                class="make-code"
+                data-testid="make-code"
+                hidden
+              >
+                <h3>Make your code now</h3>
+                <ol class="substeps">
+                  <li>
+                    Put the tour zip this phone just saved in your own storage,
+                    and copy its share link.
+                  </li>
+                  <li>Paste the link: your tour opens from it.</li>
+                  <li>Print the code and hang it where the tour starts.</li>
+                  <li>
+                    At your next visit, start at the code: it opens the tour,
+                    and the code is measured into it.
+                  </li>
+                </ol>
+                <p class="step-copy hint--dim">
+                  Pins you placed by GPS alone may shift a little once the code
+                  is measured on that later visit. That step is not tested yet.
+                </p>
+                <button
+                  type="button"
+                  id="make-code-start"
+                  class="btn"
+                  data-testid="make-code-start"
+                >
+                  Put it online and paste the link
+                </button>
+              </section>
               <!-- The debug data the Finish left out of the tour file
                (debug-captures plan M2, E2): saved apart on a tap, above the
                replace steps, from the bytes the Finish read
@@ -7345,8 +7866,92 @@
               data-testid="done-pending"
             >
               This step opens by itself when you finish in step 5: your saved
-              tour file, and how to put it in place of the one at your link.
+              tour file, and how to put it in place - at your link, or, for a
+              tour started on this phone, behind a new code.
             </p>
+          </details>
+          <!-- One settings disclosure for the card, above Back and Next:
+           the print step's defaults while that step is open (the CSS hides
+           them on the other steps), and the cache wherever a cache store
+           exists. Hidden by the CSS on a step with nothing in it.
+           The print defaults nobody needs to touch:
+           18 cm, A4, numbering continued from the tour's codes. PDF only
+           since polish round M0b (A10): the browser's print dialog owns a
+           "fit to page" that rescales the code, and a rescaled code
+           measures the world wrong.
+           The cache: a transport-demo control,
+           outside the steps (a collapsed step would hide it), with the one
+           sentence that says what the cache is; hidden without a cache
+           store (?nocache=1, no Cache API). -->
+          <details
+            id="setup-settings"
+            class="creator-only setup-settings"
+            data-testid="setup-settings"
+            hidden
+          >
+            <summary>Settings</summary>
+            <div
+              id="print-settings"
+              class="print-settings-grid"
+              data-testid="print-settings"
+            >
+              <label
+                >Size (cm)
+                <input
+                  id="author-size"
+                  class="input"
+                  data-testid="author-size"
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  value="18"
+                />
+              </label>
+              <label
+                >Paper
+                <select
+                  id="print-paper"
+                  class="select"
+                  data-testid="print-paper"
+                >
+                  <option value="a4">A4</option>
+                  <option value="letter">Letter</option>
+                </select>
+              </label>
+              <label
+                >First code number
+                <input
+                  id="author-c"
+                  class="input"
+                  data-testid="author-c"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value="1"
+                />
+              </label>
+            </div>
+            <div
+              id="storage-panel"
+              class="creator-only hint--dim"
+              data-testid="storage-panel"
+              hidden
+            >
+              <p>
+                Opened tours are kept on this device (up to five, oldest
+                dropped) so a revisit opens faster. A changed file on the host
+                is picked up automatically; clearing is only needed to free
+                space.
+              </p>
+              <button
+                type="button"
+                class="btn"
+                id="clear-cache"
+                data-testid="clear-cache"
+              >
+                Clear cache
+              </button>
+            </div>
           </details>
           <div
             id="setup-nav"
@@ -7371,32 +7976,6 @@
               Next
             </button>
           </div>
-          <!-- Storage (flows plan M2, DEC-F1): a transport-demo control, below
-           the steps rather than inside one (a collapsed step would hide it),
-           collapsed with the one sentence that says what the cache is.
-           Hidden entirely without a cache store (?nocache=1, no Cache
-           API). -->
-          <details
-            id="storage-panel"
-            class="creator-only hint--dim"
-            data-testid="storage-panel"
-            hidden
-          >
-            <summary>Other settings</summary>
-            <p>
-              Opened tours are kept on this device (up to five, oldest dropped)
-              so a revisit opens faster. A changed file on the host is picked up
-              automatically; clearing is only needed to free space.
-            </p>
-            <button
-              type="button"
-              class="btn"
-              id="clear-cache"
-              data-testid="clear-cache"
-            >
-              Clear cache
-            </button>
-          </details>
           <div id="stats" class="plate" hidden data-testid="stats">
             <div id="stats-headline" class="prose"></div>
             <div id="stats-detail" class="prose"></div>

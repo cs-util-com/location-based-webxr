@@ -114,6 +114,18 @@ the print stylesheet, `--print-side`, the `beforeprint` listener and the
   and the tiles come after it: a count typed and the button then tapped
   redraws both, and when they sat above the button they pushed it down
   under the finger (found by the PDF e2e, M0b).
+- **The panel says when a PDF was saved** (`data-pdf-saved="true"` on
+  `dom.panel`): set when a tap's save reports `printed` (a dismissed save
+  sets nothing), cleared by `presentTour` and `presentNoTour`, so the next
+  tour starts without it. A save that ends after another tour was opened
+  neither sets it nor moves that tour's first code number on: the PDF was
+  the earlier tour's. The page's CSS reads it to make "Download PDF to
+  print" the filled main action until then and "Next" afterwards. It is a
+  look flag only this panel's CSS reads, beside the button's busy state,
+  and it resets per tour, so it stays out of the store
+  (`print-panel.wiring.test.ts` pins set, not set, cleared and the tour
+  switch during a save;
+  `setup-flow.spec.js` the colours).
 - **Every input redraws** (`change`: the size, the code number, the count,
   the paper, the typed link); nothing is drawn while there is no link.
   Async-UI rule: while the tiles redraw the info line is marked

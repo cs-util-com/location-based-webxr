@@ -28,12 +28,14 @@ async function tourFile(request) {
   };
 }
 
-/** Step 1 holds the device open (polish round M2, A5); the suite's
- *  creator has a stored host, so the page starts at step 2.
+/** The start question's "the tour file is on this phone" answer holds the
+ *  device open (setup flow round 2); the suite's creator has a stored host,
+ *  so the page starts at step 2 and goes back to the question first.
  *  @param {import("@playwright/test").Page} page */
 async function openHostStep(page) {
   await page.getByTestId("station-host").click();
-  await expect(page.getByTestId("step-host")).toHaveAttribute("open", "");
+  await page.getByTestId("start-answer-file").click();
+  await expect(page.getByTestId("start-file")).toBeVisible();
 }
 
 test("opens a tour zip from the device through the file chooser @pr", async ({

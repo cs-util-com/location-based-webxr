@@ -176,10 +176,22 @@ export function wireCreatorPlacement(deps: {
    * hand is never asked for: a tour builder with no codes places by GPS
    * and tracking alone (field test 2, F5; a print size adopted mid-walk
    * used to grey the buttons for the rest of the loop).
+   *
+   * And a tour open on this page: only an open tour keeps a draft on this
+   * phone, so work placed with none would live in memory alone, and a
+   * reload or a crash would lose it. The camera opens the tour from its
+   * printed code, which is what the locked panel asks for (`NO_TOUR_PLACING_LOCKED`).
+   * The tour is open once its manifest settled, not at the session: only
+   * the settle opens the tour document, and work placed before it would
+   * land in no tour and be dropped (`TOUR_LOADING_PLACING_LOCKED`). A
+   * manifest that cannot be read keeps placing locked for good: that tour
+   * keeps no draft and its finish refuses.
    */
   function placementAllowed(): boolean {
     const alignment = deps.alignmentInfo();
     return (
+      ctx.session !== null &&
+      ctx.tourManifestStatus === "settled" &&
       alignment.hasMatrix &&
       (alignment.sampleCount >= MIN_ALIGNMENT_SAMPLES ||
         deps.codeVoted?.() === true) &&

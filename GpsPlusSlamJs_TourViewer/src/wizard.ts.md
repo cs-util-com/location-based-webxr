@@ -32,6 +32,19 @@ chosen opens `host`, a stored choice opens `link`.
     the print step. A tour opened while an AR session runs is remembered
     as reached in step 4 even though the page does not change
     (scan-to-open plan §9 #12).
+  - `Wizard.presentLocalTour(step)` - a tour opened from a file: no link,
+    so the launch link hides, no step is remembered, `hosted()` turns
+    false, and (creator only) `step` opens - `measure` for the start
+    question's "start on this phone" and a step-5 open, else `print`.
+  - `Wizard.presentNoTour()` - the open tour closed: `hosted()` false,
+    the launch link hidden.
+  - `Wizard.hosted()` - whether the open tour came from a link. The map
+    (`setup-stations.ts`) marks printing and hanging done only then, and
+    step 6 offers "Make your code now" (`start-question.ts`) when not.
+  - `Wizard.onTourChange(listener)` - `listener` runs after every change
+    of the open tour (a creator's `presentTour`, `presentLocalTour`,
+    `presentNoTour`), so a reader of `hosted()` redraws even when no step
+    toggles (a close changes no step).
   - `Wizard.presentLaunchUrl(launchUrl)` re-points the link at the PRINTED
     payload once a code is generated (`launchHrefFromPrintedUrl`: the
     printed URL's query on the viewer's origin), so the tester decodes what

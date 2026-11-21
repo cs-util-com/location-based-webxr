@@ -10,7 +10,7 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
 
 ## Public API
 
-- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion? }): SetupStage`
+- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion?, hosted?, onTourChange? }): SetupStage`
   - `dom.steps` - the six step `<details>` (their `toggle` re-renders);
     `dom.summaries` - their `<summary>`s, whose click is cancelled so a tap
     on the open step's heading cannot collapse it;
@@ -28,12 +28,27 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
     flag at its end (positioned at the route's end, `data-on` at the last
     step). Drawn only where the browser can measure the route
     (`getTotalLength`, `getPointAtLength`).
+  - `hosted` (optional, `wizard.hosted`) - whether the open tour has a
+    link; without one printing and hanging stay `todo` on the map and the
+    poster stays down (`stationView`). Absent reads as hosted.
+  - `onTourChange` (optional, `wizard.onTourChange`) - subscribes the
+    redraw to every change of the open tour: a tour that opens or closes
+    may leave the same step open, so no `toggle` fires, and the map would
+    keep the last tour's ticks and its poster up. Absent: no such
+    redraw.
   - **The map shows the OPEN STEP's position, not progress** (PR #585
     review): `stationView` marks every step after the open one `todo`, so
     going back to step 1 shortens the drawn route and takes the poster down
     although the creator did hang it. `setup-stations.test.ts` pins that as
     intended - the map is a "you are here", and nothing on the page tracks
     what was done.
+  - `dom.mapZoom` (optional) - `{ button, sticker }`: the tap target
+    over the map sticker (`#setup-map-zoom`, shown by CSS only while the
+    sticker is small or shown larger) and the sticker (`#setup-map`). A
+    click flips `sticker.dataset.zoomed` (`"true"`/`"false"`, set to
+    `"false"` when wired) and the button's `aria-expanded` with it; the CSS
+    shows the map larger above the step. It opens no step. Transient view
+    state, so it lives on the element, not in a store.
 - `SetupStage.render()` - redraw from the steps' open state.
 - Dots carry `data-testid="station-<step>"`, map stations
   `data-testid="map-station-<step>"`; both open their step.
@@ -64,7 +79,10 @@ wireSetupStage<HTMLButtonElement>({
 - `setup-stage.test.ts` - a dot per step and the open step's number, a dot
   and Back/Next opening steps through the wizard, the row's rules on steps
   1, 5 and 6, the heading that cannot collapse its step, a re-render when
-  the wizard opens a step by itself, and every "Make your tour" button's
-  scroll (instant under reduced motion) and focus on the open step.
+  the wizard opens a step by itself, a re-render on a change of the open
+  tour alone (Print and Hang no longer done, the poster down), and every "Make your tour" button's
+  scroll (instant under reduced motion) and focus on the open step, and
+  the map sticker's tap that shows it larger and puts it back.
 - `playwright-tests/setup-flow.spec.js` - the page in a browser (the map's
-  stations, the one-step card, the widths).
+  stations, the one-step card, the widths, the sticker covering nothing
+  on a phone and its tap to show it larger).

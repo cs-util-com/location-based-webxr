@@ -18,8 +18,8 @@ import { WIZARD_STEPS, type WizardStep } from "./wizard.js";
 
 /** Each step's name on its dot and its map station (provisional copy). */
 const STATION_NAMES: Readonly<Record<WizardStep, string>> = {
-  host: "Storage",
-  link: "Link",
+  host: "Start",
+  link: "Your file",
   print: "Print",
   hang: "Hang",
   measure: "Create",
@@ -81,6 +81,12 @@ export interface SetupStageDom<T> {
   /** The landing's "Make your tour" buttons. */
   begins: readonly Listening[];
   stage: { scrollIntoView(options?: ScrollIntoViewOptions): void };
+  /** The map sticker's tap target (shown only while the sticker is
+   *  small) and the sticker: a tap shows it larger or puts it back. */
+  mapZoom?: {
+    button: Listening & { setAttribute(name: string, value: string): void };
+    sticker: { readonly dataset: Record<string, string | undefined> };
+  };
 }
 
 /** The map's live parts, where a browser can measure the route. */
@@ -110,6 +116,14 @@ export function wireSetupStage<T extends DotNode>(deps: {
   /** Whether the reader asked for reduced motion: the scroll is then
    *  instant. Read on each tap. */
   reducedMotion?: () => boolean;
+  /** Whether the open tour has a link (`wizard.hosted`): without one,
+   *  printing and hanging stay to do on the map. Read on each render;
+   *  absent reads as hosted. */
+  hosted?: () => boolean;
+  /** Subscribes to changes of the open tour (`wizard.onTourChange`): a
+   *  tour that opens or closes may leave the same step open, so no
+   *  `toggle` redraws what `hosted` decides. Absent: never. */
+  onTourChange?: (listener: () => void) => void;
 }): SetupStage {
   const { dom, openStep } = deps;
 
@@ -136,7 +150,7 @@ export function wireSetupStage<T extends DotNode>(deps: {
   }
 
   function render(): void {
-    const view = stationView(openNow());
+    const view = stationView(openNow(), { hosted: deps.hosted?.() ?? true });
     dom.badge.textContent = String(view.number);
     dom.of.textContent = `Step ${String(view.number)} of ${String(view.total)}`;
     WIZARD_STEPS.forEach((_, i) => {
@@ -190,6 +204,20 @@ export function wireSetupStage<T extends DotNode>(deps: {
     });
   }
 
+  // The map sticker: larger on a tap, back on the next. Only its size
+  // changes; the step stays.
+  const zoom = dom.mapZoom;
+  if (zoom !== undefined) {
+    const show = (larger: boolean): void => {
+      zoom.sticker.dataset.zoomed = String(larger);
+      zoom.button.setAttribute("aria-expanded", String(larger));
+    };
+    show(false);
+    zoom.button.addEventListener("click", () => {
+      show(zoom.sticker.dataset.zoomed !== "true");
+    });
+  }
+
   /** The six stations along the route, each opening its step. */
   function drawStations(map: SetupMapDom): SVGGElement[] {
     const length = map.route.getTotalLength();
@@ -229,6 +257,7 @@ export function wireSetupStage<T extends DotNode>(deps: {
     });
   }
 
+  deps.onTourChange?.(render);
   render();
   return { render };
 }

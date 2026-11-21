@@ -157,6 +157,7 @@ export const SPECS = {
   "splat-scene-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "splat-trainer-gpu.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "splat-trainer.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "start-later.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "stations.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "story-blocks-frame-time.spec.js": {
     project: "webgl",

@@ -205,7 +205,14 @@ export function wireCreatorHandoff(deps: {
           }
           dom.downloadButton.disabled = false;
           dom.downloadButton.textContent = FINISH_LABELS.saveAgain;
-          showStatus(finishSaveStatus(delivered, rebuilt.filename, drive()));
+          showStatus(
+            finishSaveStatus(
+              delivered,
+              rebuilt.filename,
+              drive(),
+              ctx.session?.fromFile === true,
+            ),
+          );
           // REVEAL-ONLY: the replace instructions are earned by a save that
           // delivered, and a later save that did not takes nothing back -
           // they are the flow's last instruction (PR #439 review #3). Only

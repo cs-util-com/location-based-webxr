@@ -74,3 +74,26 @@ add after a surprise.
   pass in well under a second alone. Each such red was attributed by
   running the named files alone with `--testTimeout=120000`; a timeout
   that also fails there is a real red.
+
+## Two colour eases of one length do not arrive in the same frame
+
+- A test polled until the download pill had its ink, then read Next as
+  the "before" colour. Both pills ease their background over the same
+  250 ms, but the download moved little or not at all while Next crossed
+  from ink to white, so in about a quarter of local runs Next was still
+  easing (226 to 254) when the poll ended, and the later settled read
+  (255) no longer matched. A full CI run caught it as 254 against 255.
+- Rule: a colour read after a state change waits until the element's
+  `getAnimations()` are finished, for every element it reads; never
+  loosen the expected colour.
+
+## A float sized from the window covers what must fit beside it
+
+- The map sticker's chosen size has a 184 px floor; on a 320 px phone
+  that left 86 px beside it for a station row of six 22 px dots (142 px),
+  and a flex row cannot shrink below its content, so the last two dots ran
+  under the sticker and its zoom button took their taps. The card layout
+  test never ran below 390 px.
+- Rule: a float's width is capped by the room its neighbours need
+  (`min(size, 100% - room)`), and the layout test runs at the narrowest
+  phone the page supports.

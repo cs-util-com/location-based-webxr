@@ -65,6 +65,28 @@ describe("tour hosts", () => {
     expect(steps).toMatch(/before the file exists/i);
   });
 
+  // Why: the link field sits right below the steps in the same panel,
+  // and the share-later route uploads the tour this phone saved at Done,
+  // never an empty starter that would put nothing behind the printed code.
+  it("starts a cloud host's steps from the zip saved at Done when sharing later", () => {
+    for (const h of TOUR_HOSTS) {
+      const fresh = hostSteps(h.id);
+      const saved = hostSteps(h.id, { saved: true });
+      expect(saved.at(-1), h.id).toBe("Paste that link below.");
+      expect(saved.slice(1), h.id).toEqual(fresh.slice(1));
+    }
+    const cloud = TOUR_HOSTS.filter((h) => h.id !== "own");
+    expect(
+      cloud.filter((h) => !/empty starter/.test(hostSteps(h.id)[0] ?? "")),
+      "every cloud host starts from the empty starter",
+    ).toEqual([]);
+    expect(cloud.map((h) => hostSteps(h.id, { saved: true })[0])).toEqual(
+      cloud.map(() => "Find the tour zip this phone saved at Done (tour.zip)."),
+    );
+    // An own server's link comes before its file: nothing to replace.
+    expect(hostSteps("own", { saved: true })).toEqual(hostSteps("own"));
+  });
+
   it("asks for the starter zip only where the host needs a file to give a link", () => {
     expect(needsStarterZip("drive")).toBe(true);
     expect(needsStarterZip("dropbox")).toBe(true);

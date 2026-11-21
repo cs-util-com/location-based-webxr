@@ -412,6 +412,7 @@ function authoring(
   /** The creator's variant of the scan card. */
   const scanCard = { root: el(), title: el(), line: el(), close: el() };
   const ctx = createTourViewerSession();
+  ctx.session = openTourWithNothingRead();
   const real = createTourViewerStore();
   const gps: {
     alignment: number[];
@@ -724,6 +725,19 @@ function authoring(
       gps.accuracyM = accuracyM;
     },
   };
+}
+
+/** A tour open on the page, as placing needs (only an open tour keeps a
+ *  draft on this phone): its zip holds no codes and nothing is read from
+ *  it. A test that needs the hosted file opens one over it. */
+function openTourWithNothingRead(): never {
+  return {
+    archive: { url: "https://example.test/tour.zip", size: 0 },
+    hostedFileName: () => null,
+    entries: [],
+    loadEntryText: () => Promise.reject(new Error("no such entry")),
+    readWholeArchive: () => Promise.reject(new Error("not read here")),
+  } as never;
 }
 
 describe(

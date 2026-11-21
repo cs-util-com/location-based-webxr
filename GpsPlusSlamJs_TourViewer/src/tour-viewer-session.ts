@@ -51,6 +51,7 @@ import { visitorGuideReducer } from "./visitor-guide-slice.js";
 import { visitorWalkReducer } from "./visitor-walk-slice.js";
 import { visitorPrefsReducer } from "./visitor-prefs-slice.js";
 import { narrationBoxReducer } from "./narration-box-slice.js";
+import { startQuestionReducer } from "./start-question-slice.js";
 
 import type {
   HitTestReticleHandle,
@@ -116,6 +117,9 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * (`creator-codes-slice.ts`, debug-captures plan M3a), not written into
  * the recording either.
  *
+ * `startQuestion` is the setup's start answer (`start-question-slice.ts`),
+ * read by step 2 and the host tiles; not recorded either.
+ *
  * `pageReducers` are one page's own slices beside these (the desktop
  * editor's `editorView`): only the page that passes them has them, so the
  * phone's store never names an editor slice. A key one of the store's own
@@ -143,6 +147,7 @@ export function createTourViewerStore<
     creatorCodes: creatorCodesReducer,
     visitorPrefs: visitorPrefsReducer,
     narrationBox: narrationBoxReducer,
+    startQuestion: startQuestionReducer,
   };
   const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
   if (clash.length > 0) {

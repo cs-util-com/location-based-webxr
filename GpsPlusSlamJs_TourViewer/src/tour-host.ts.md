@@ -18,13 +18,16 @@ offered). Plan:
   OneDrive, GitHub, by hostname - share pages and their raw forms), or
   null for any other link. Step 2 judges a missing file by it (M0c
   review): a stored tile outlives the tour it was picked for.
-- `hostStepParts(host)` - the same steps as runs of text, the host's name
+- `hostStepParts(host, { saved? })` - the same steps as runs of text, the host's name
   in the step that sends the creator there as `{ text, href }` to the
   host's site (r820 feedback R2): drive.google.com, dropbox.com/home,
   onedrive.live.com, github.com; an own server has none. The words are
   exactly `hostSteps`' (tested).
-- `hostSteps(host)` - the host's numbered steps, the last one pointing at the
-  link step. The own server's names the two headers a browser needs
+- `hostSteps(host, { saved? })` - the host's numbered steps, the last one
+  pointing at the link field right below them ("Paste that link below.").
+  A cloud host's first step downloads the empty starter; with `saved`
+  (the share-later route) it is "Find the tour zip this phone saved at
+  Done (tour.zip)." instead. An own server's steps are the same either way. The own server's names the two headers a browser needs
   (`Access-Control-Allow-Origin: *`, `Accept-Ranges: bytes`; the site's
   `/api` proxy fronts Google Drive only) and that its link can be pasted
   before the file exists.

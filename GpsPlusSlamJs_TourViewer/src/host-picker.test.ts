@@ -4,7 +4,7 @@
  * Why these tests matter: the host is the context every later step reads,
  * so the tiles must store the choice, show that host's own steps, offer
  * the starter zip only where a host needs a file before it gives a link,
- * and hand over to step 2 with one tap. A stored choice must come back
+ * and never when the zip to upload is one this phone already saved. A stored choice must come back
  * selected after a reload; a store that throws must not break the tiles.
  */
 import { describe, expect, it } from "vitest";
@@ -67,24 +67,22 @@ function setup(store?: ReturnType<typeof memoryStore>) {
     tiles: new FakeNode("div"),
     steps: new FakeNode("ol"),
     starter: new FakeNode("button"),
-    continueButton: new FakeNode("button"),
   };
   dom.steps.hidden = true;
   dom.starter.hidden = true;
-  dom.continueButton.hidden = true;
-  const continued: string[] = [];
-  wireHostPicker({
+  const route = { saved: false };
+  const picker = wireHostPicker({
     dom,
     store,
     createElement: (tag) => new FakeNode(tag),
-    onContinue: (host) => continued.push(host),
+    saved: () => route.saved,
   });
   const tile = (id: string) => {
     const found = dom.tiles.children.find((t) => t.dataset.host === id);
     if (found === undefined) throw new Error(`no tile ${id}`);
     return found;
   };
-  return { dom, continued, tile };
+  return { dom, tile, route, picker };
 }
 
 describe("wireHostPicker", () => {
@@ -105,7 +103,6 @@ describe("wireHostPicker", () => {
     }
     expect(dom.steps.hidden).toBe(true);
     expect(dom.starter.hidden).toBe(true);
-    expect(dom.continueButton.hidden).toBe(true);
   });
 
   it("a tap stores the host, checks only that tile and lists its own steps", () => {
@@ -118,7 +115,6 @@ describe("wireHostPicker", () => {
     ).toEqual(["false", "true", "false", "false", "false"]);
     expect(dom.steps.hidden).toBe(false);
     expect(dom.steps.children.map(textOf)).toEqual([...hostSteps("dropbox")]);
-    expect(dom.continueButton.hidden).toBe(false);
   });
 
   it("offers the starter zip for a cloud host and not for an own server", () => {
@@ -134,20 +130,22 @@ describe("wireHostPicker", () => {
     const { dom, tile } = setup(store);
     expect(tile("github").getAttribute("aria-pressed")).toBe("true");
     expect(dom.steps.children).toHaveLength(hostSteps("github").length);
-    expect(dom.continueButton.hidden).toBe(false);
   });
 
-  it("Continue hands the chosen host to the next step", () => {
-    const { dom, continued, tile } = setup(memoryStore());
-    tile("onedrive").fire("click");
-    dom.continueButton.fire("click");
-    expect(continued).toEqual(["onedrive"]);
-  });
-
-  it("Continue without a choice does nothing", () => {
-    const { dom, continued } = setup(memoryStore());
-    dom.continueButton.fire("click");
-    expect(continued).toEqual([]);
+  // Why: a creator who made the tour first and shares it from Done
+  // uploads the zip this phone saved, not an empty starter. Offering the
+  // starter there would put an empty tour behind the printed code.
+  it("starts from the zip saved at Done and offers no starter on the share-later route", () => {
+    const { dom, tile, route, picker } = setup(memoryStore());
+    tile("drive").fire("click");
+    expect(dom.starter.hidden).toBe(false);
+    route.saved = true;
+    picker.render();
+    expect(dom.starter.hidden).toBe(true);
+    expect(dom.steps.children.map(textOf)).toEqual([
+      ...hostSteps("drive", { saved: true }),
+    ]);
+    expect(textOf(dom.steps.children[0]!)).toMatch(/saved at Done/);
   });
 
   it("works without a store, and with one that throws: the choice holds for the page", () => {
@@ -161,11 +159,10 @@ describe("wireHostPicker", () => {
       },
     };
     for (const store of [undefined, throwing]) {
-      const { dom, continued, tile } = setup(store);
+      const { dom, tile } = setup(store);
       tile("drive").fire("click");
       expect(dom.steps.hidden).toBe(false);
-      dom.continueButton.fire("click");
-      expect(continued).toEqual(["drive"]);
+      expect(dom.starter.hidden).toBe(false);
     }
   });
 });
@@ -184,7 +181,6 @@ describe("a second tap deselects (prototype verdict P6)", () => {
     ).toEqual(["false", "false", "false", "false", "false"]);
     expect(dom.steps.hidden).toBe(true);
     expect(dom.starter.hidden).toBe(true);
-    expect(dom.continueButton.hidden).toBe(true);
     expect(readTourHost(store)).toBeNull();
   });
 

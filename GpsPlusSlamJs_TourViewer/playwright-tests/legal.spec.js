@@ -82,11 +82,12 @@ test("the setup page's footer links the legal notice and the privacy page, and i
   for (const said of [
     page.getByTestId("landing"),
     page.getByTestId("step-host"),
+    page.getByTestId("step-link"),
     page.getByTestId("storage-panel"),
   ]) {
     await expect(said).not.toContainText(/offline/i);
   }
-  await expect(page.getByTestId("step-host")).toContainText(
+  await expect(page.getByTestId("link-why")).toContainText(
     "once it has loaded, it keeps working without signal",
   );
   await expect(page.getByTestId("storage-panel")).toContainText(

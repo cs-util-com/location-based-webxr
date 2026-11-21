@@ -136,6 +136,18 @@ describe("the hand-off's status line", () => {
     await flush();
     expect(dom.finishStatus.textContent).toBe(FINISH_LABELS.saved("tour.zip"));
   });
+
+  // Why (setup flow round 2): a tour opened from a file has no hosted zip
+  // to replace; its line must lead to making the code instead.
+  it("leads a tour opened from a file to making its code", async () => {
+    const { ctx, dom, handoff } = wired({ delivered: true });
+    ctx.session = { ...ctx.session, fromFile: true } as never;
+    handoff.save();
+    await flush();
+    expect(dom.finishStatus.textContent).toBe(
+      FINISH_LABELS.savedHere("tour.zip"),
+    );
+  });
 });
 
 describe("the replace steps follow the chosen host (polish round M2, step 6)", () => {

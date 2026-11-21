@@ -59,21 +59,49 @@ describe("stationView", () => {
     expect(stationView("measure").routeFraction).toBeLessThan(1);
   });
 
+  // Why: a tour started on this phone has no link yet, so no code was
+  // printed or hung for it. Ticking those stations because the creator
+  // walked past them would tell them the opposite of the truth.
+  it("leaves printing and hanging to do while the open tour has no link", () => {
+    expect(stationView("done", { hosted: false }).states).toEqual([
+      "done",
+      "done",
+      "todo",
+      "todo",
+      "done",
+      "current",
+    ]);
+    expect(stationView("done", { hosted: true }).states).toEqual(
+      stationView("done").states,
+    );
+  });
+
   it("has one route fraction per step", () => {
     expect(STATION_ROUTE_FRACTIONS).toHaveLength(WIZARD_STEPS.length);
   });
 
   it("is consistent for every step (property)", () => {
-    // Exactly one current station, the ones before it done, the ones after
-    // it to do; back and next are the neighbours (where offered); the
+    // Exactly one current station, the ones before it done (printing and
+    // hanging only with a link), the ones after it to do; back and next are the neighbours (where offered); the
     // route only grows with the step.
     const step = fc.constantFrom<WizardStep>(...WIZARD_STEPS);
     fc.assert(
-      fc.property(step, step, (a, b) => {
-        const va = stationView(a);
+      fc.property(step, step, fc.boolean(), (a, b, hosted) => {
+        const va = stationView(a, { hosted });
         const ia = WIZARD_STEPS.indexOf(a);
         expect(va.states.filter((s) => s === "current")).toHaveLength(1);
-        expect(va.states.slice(0, ia).every((s) => s === "done")).toBe(true);
+        // Before it: done, except printing and hanging with no link.
+        expect(
+          va.states
+            .slice(0, ia)
+            .every(
+              (s, i) =>
+                s ===
+                (!hosted && ["print", "hang"].includes(WIZARD_STEPS[i]!)
+                  ? "todo"
+                  : "done"),
+            ),
+        ).toBe(true);
         expect(va.states.slice(ia + 1).every((s) => s === "todo")).toBe(true);
         expect(
           va.back === null || WIZARD_STEPS.indexOf(va.back) === ia - 1,

@@ -57,12 +57,22 @@ file once more; a file moved or deleted since is said, and forgotten.
 
 ## The creator's setup, step by step
 
-1. **Where your tour file is stored** - choose Google Drive, Dropbox,
-   OneDrive or GitHub; the step shows how to upload a tour zip there (the
-   empty starter zip the page offers, or a tour saved before) and share it.
-2. **Paste your tour's share link** - paste the share link, press Open.
-   The link is the tour's identity: the printed code encodes it, and
-   replacing the file behind it later keeps the code valid.
+1. **How do you want to start?** - four answers, and a tap only routes:
+   a new tour to share now, a tour whose link you have, a tour file on
+   this phone, or "start on this phone now, share later".
+2. **That answer's panel** - a new tour: choose Google Drive, Dropbox,
+   OneDrive, GitHub or your own server; the panel shows how to upload a
+   tour zip there (the empty starter zip the page offers, or a tour saved
+   before) and share it, then paste the share link. The link is the tour's
+   identity: the printed code encodes it, and replacing the file behind it
+   later keeps the code valid. A link: paste it (or, when its code already
+   hangs, start at the code). A file: open it. Start here: one tap saves
+   the empty starter tour on this phone and opens it, then placing runs on
+   GPS alone (outdoors; indoors the pin buttons stay locked), and Done
+   leads to making the code: upload the saved zip, paste its link, print
+   and hang the code, and measure it at the next visit. Pins placed by GPS
+   alone may shift a little when the code is measured then; that step is
+   not tested yet.
 3. **Print your posters** - the print panel is prefilled with the link;
    generate, print at true size (the declared size is what the AR
    measurement solves against).

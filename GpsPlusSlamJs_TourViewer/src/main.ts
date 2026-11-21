@@ -70,7 +70,10 @@ import type { ScanOpen } from "./scan-open.js";
 import { meshCursorFromSearch, viewerModeFromSearch } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
 import { wireHostPicker } from "./host-picker.js";
+import { wireStartQuestion } from "./start-question.js";
+import { selectStartPanel } from "./start-question-slice.js";
 import { wireSetupStage } from "./setup-stage.js";
+import { mountMapSizeKnob, wireMapSize } from "./map-size.js";
 import { mountLanding, watchArStarting } from "./landing/landing-mount.js";
 import { holdLandingSkip } from "./landing/landing-skip.js";
 import { readTourHost } from "./tour-host.js";
@@ -411,26 +414,24 @@ const wizard = wireWizard({
     status.hidden = false;
   }
 }
-// Step 1's host tiles (polish round M2, A6/A7): the choice is stored with
-// the wizard's other state, and Continue moves on to the link.
-if (mode === "creator") {
-  wireHostPicker<
-    HTMLButtonElement | HTMLLIElement | HTMLSpanElement | HTMLAnchorElement
-  >({
-    dom: {
-      tiles: element("host-tiles"),
-      steps: element("host-steps"),
-      starter: element("starter-zip"),
-      continueButton: element("host-continue"),
-    },
-    store: stepStore,
-    createElement: (tag) => document.createElement(tag),
-    onContinue: () => {
-      wizard.openStep("link");
-      element<HTMLInputElement>("link").focus();
-    },
-  });
-}
+// Step 2's host tiles for "new tour" and "share" (polish round M2,
+// A6/A7): the choice is stored with the wizard's other state.
+const hostPicker =
+  mode === "creator"
+    ? wireHostPicker<
+        HTMLButtonElement | HTMLLIElement | HTMLSpanElement | HTMLAnchorElement
+      >({
+        dom: {
+          tiles: element("host-tiles"),
+          steps: element("host-steps"),
+          starter: element("starter-zip"),
+        },
+        store: stepStore,
+        createElement: (tag) => document.createElement(tag),
+        // The start answer is store state (`start-question-slice.ts`).
+        saved: () => selectStartPanel(arStore.getState()) === "share",
+      })
+    : null;
 hooks.presentTourForPrint = (url, origin) => {
   print.presentTour(url);
   // An open started from step 4 keeps the creator there (M3 review #1):
@@ -459,8 +460,7 @@ hooks.presentTourCodes = () => {
 
 hooks.presentLocalTour = (origin) => {
   print.presentNoTour();
-  if (mode !== "creator") return;
-  wizard.openStep(origin === "measure-step" ? "measure" : "print");
+  wizard.presentLocalTour(origin === "measure-step" ? "measure" : "print");
 };
 
 const visitor = wireVisitorScreen({
@@ -581,8 +581,16 @@ if (mode === "creator") {
         document.querySelectorAll<HTMLButtonElement>(".landing-begin"),
       ),
       stage: element("setup-stage"),
+      mapZoom: {
+        button: element("setup-map-zoom"),
+        sticker: element("setup-map"),
+      },
     },
     reducedMotion,
+    hosted: () => wizard.hosted(),
+    onTourChange: (listener) => {
+      wizard.onTourChange(listener);
+    },
     openStep: (step) => {
       wizard.openStep(step);
     },
@@ -598,6 +606,15 @@ if (mode === "creator") {
             ...(endFlag === undefined ? {} : { endFlag }),
           },
         }),
+  });
+  // The map sticker's size knob: only with ?mapSize= (map-size.ts).
+  wireMapSize({
+    stage: element("setup-stage"),
+    search: location.search,
+    mountKnob: (sizes, current) => mountMapSizeKnob(document, sizes, current),
+    replaceSearch: (search) => {
+      history.replaceState(history.state, "", search + location.hash);
+    },
   });
 }
 
@@ -725,7 +742,7 @@ const setup = wireCreatorSetup({
     uploadYes: element<HTMLButtonElement>("upload-yes"),
     uploadNo: element<HTMLButtonElement>("upload-no"),
     sizeInput,
-    printSettings: element<HTMLDetailsElement>("print-settings"),
+    printSettings: element<HTMLDetailsElement>("setup-settings"),
     printPanel,
     status: element("setup-status"),
     finishButton: element("setup-finish"),
@@ -791,6 +808,7 @@ hooks.selectInView = setup.selectInView;
 hooks.finishFromAr = () => setup.finishNow();
 hooks.presentNoTour = () => {
   print.presentNoTour();
+  wizard.presentNoTour();
 };
 hooks.presentDraftForTour = setup.presentDraftForTour;
 hooks.forgetRefusedDraft = setup.forgetRefusedDraft;
@@ -1462,6 +1480,56 @@ const archive = wireArchiveOpen({
   hooks,
 });
 scanOpen = archive.scanOpen;
+
+// Step 1's question and step 2's panels (setup flow round 2): a tap only
+// routes; "start on this phone" saves the starter and opens that file.
+if (mode === "creator") {
+  wireStartQuestion({
+    store: arStore,
+    dom: {
+      answers: {
+        new: element("start-answer-new"),
+        link: element("start-answer-link"),
+        file: element("start-answer-file"),
+        later: element("start-answer-later"),
+      },
+      heading: element("link-heading"),
+      why: element("link-why"),
+      blocks: {
+        host: element("start-host"),
+        linkField: element("link-field"),
+        codeHangs: element("start-code-hangs"),
+        file: element("start-file"),
+        later: element("start-later"),
+      },
+      backs: Array.from(
+        document.querySelectorAll<HTMLButtonElement>(".start-back-button"),
+      ),
+      codeHangsButton: element("code-hangs"),
+      startButton: element<HTMLButtonElement>("start-here"),
+      makeCode: element("make-code"),
+      makeCodeButton: element("make-code-start"),
+      doneStep: element<HTMLDetailsElement>("step-done"),
+    },
+    // A returning creator with a stored host lands on step 2 (the
+    // wizard's first step for them), so its panel is "new".
+    initial: readTourHost(stepStore) === null ? null : "new",
+    openStep: (step) => {
+      wizard.openStep(step);
+    },
+    hosted: () => wizard.hosted(),
+    onTourChange: (listener) => {
+      wizard.onTourChange(listener);
+    },
+    onPanel: () => hostPicker?.render(),
+    start: {
+      pack: () => packNewTour(),
+      save: (blob, name) => seams.downloadZip(blob, name),
+      open: (file) => archive.openFile(file, "measure-step"),
+      tourOpen: () => ctx.session !== null,
+    },
+  });
+}
 
 // "You already have a tour?" below the steps (tour editor plan
 // 2026-10-17-1816, W1): a phone opens a tour through the page's one open

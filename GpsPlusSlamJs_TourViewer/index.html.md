@@ -21,10 +21,57 @@ result or a shared link shows).
   **The L5 look since polish round M2b** (the owner's prototype verdict,
   D-P1): on the creator page the landing (`#landing`, see "The landing"
   below; it replaced the intro, `#setup-intro`, on 2026-10-26), then the stage
-  (`#setup-stage`): the illustrated map (`#setup-map`, an example route
-  with six stations drawn by `setup-stage.ts`; ids prefixed `map-`)
-  beside the step card (`#setup-card`) on a wide or landscape screen, above
-  it on a phone. The card shows ONE step - the open `<details>`; closed
+  (`#setup-stage`): the step card (`#setup-card`) across the width, and
+  in it the illustrated map (`#setup-map`, an example route with six
+  stations drawn by `setup-stage.ts`; ids prefixed `map-`) as a sticker
+  on the card's top-right corner (creator setup layout round, the "sticker"
+  direction): floated right, turned 2.5 degrees, over the card's top and
+  right edges, so the station row and the heading wrap beside it and the
+  rest of the step runs the card's full width. A float, so no line or
+  control can lie under it (each `.step` drops the design system's
+  `overflow: hidden` in the card, which would make it a column beside the
+  sticker). Its width is `--sticker` on the stage, one of four sizes
+  (`--sticker-s` to `--sticker-xl`, each `min(clamp(floor, share of vw,
+cap), share of svh)`); the page uses `l`,
+  `min(clamp(11.5rem, 37vw, 23.5rem), 58svh)`: about half of a phone held
+  upright, a third of a wide card, held down by a short landscape screen
+  (chosen from four; `s` is the earlier size). Whatever the size, the
+  sticker gives way to `--row-room`, the room the station row's six dots
+  need in one line beside it: below about 375 px of window width (320 and
+  360 px phones) it is narrower than `l`, or it lay over the last dots and
+  took their taps (`setup-flow.spec.js` "the setup card at 320x640" and
+  "360x640").
+  `?mapSize=s|m|l|xl` picks another and shows a size select
+  (`src/map-size.ts`). Below 11rem (a container query on the sticker
+  itself) it shows only the route and the numbered stations, drawn larger,
+  and `#setup-map-zoom` lies over it: a tap shows the whole map above the
+  step (`data-zoomed`, no longer floated), the next puts it back. From
+  900 px wide the four start answers sit two by two; the answers, and a
+  step body's buttons, are as wide as their words (the answers all as wide
+  as the longest), never stretched across the card. The card's spacing
+  scale: 8 px between a heading and its why line, 12 between the
+  items of one group (answers, tiles, a field and its button, also where
+  they wrap), 16 between groups (the open step and its panels
+  `#start-host` and `#link-field` are stacks in block flow, not grids, so
+  their lines still flow around the sticker), 16 from the sticker to the
+  text beside and under it, 24 before the footer, the card's padding 16
+  (24 from 600 px wide); a step body whose controls are all hidden takes no
+  room. In the creator card every shown step body, and the computer's
+  `#measure-desktop`, is in BLOCK flow, not a grid: a grid, like a
+  fieldset, is a block formatting context, and one beside the floated map
+  sticker narrows over its WHOLE height, so the fields under the sticker
+  stopped short of the card's edge. In block flow each `.field` (label,
+  hint line, control; a small grid of its own) narrows only while it
+  stands beside the sticker; the gap between items is `--gap-item` as
+  margin, buttons stay as wide as their words, links get their own line.
+  Labels are bold, a `.field-hint` under the label says what the field is
+  for (the input names it in `aria-describedby`), and a placeholder is
+  only ever an example ("e.g. ...", dimmed italic), so a prefilled default
+  in upright ink never reads as one. One creator-only `#setup-settings`
+  disclosure ("Settings") sits directly above `#setup-nav` on every step
+  that has something in it: the print settings while the print step is
+  open, the storage block (`#storage-panel`) whenever the page has a
+  cache; with neither it is hidden by CSS (`:has()`). The card shows ONE step - the open `<details>`; closed
   steps are hidden by CSS - under its station row (`#setup-badge`,
   `#setup-of`, `#setup-dots`) and over `#setup-nav` (Back/Next; none on
   step 6, no Next on step 5). The paper palette is set on the design
@@ -32,17 +79,26 @@ result or a shared link shows).
   no AR session runs (`body[data-ar-active]`), so `#ar-root` over the
   camera keeps the sheet's tokens; L5's own tokens are `--map-*`. The
   header (`<h1>Tour Viewer</h1>`) shows for a visitor only. The steps:
-  1. **Where the tour lives** (`#step-host`): the host tiles
-     (`#host-tiles`, a radiogroup filled by `host-picker.ts`), the chosen
-     host's steps (`#host-steps`), the starter zip (`#starter-zip`, only
-     for a host that needs a file before it gives a link), Continue
-     (`#host-continue`), and a small link to open a tour zip from the
-     device (`#open-file`, "Open it from this device", tour kit plan K0;
-     a file has no link, so its code is printed once the zip is hosted).
-  2. **The link** (`#step-link`): `#open-form` with the button "Check
-     link" - the check also runs by itself on paste and when the field is
-     left - and `#link-status`, the line saying what the check found
-     (`link-check.ts`). The shortener advice and its bit.ly warning live
+  1. **The start question** (`#step-host`, setup flow round 2): "How do
+     you want to start?" with four answer cards (`.start-answers`,
+     `#start-answer-new`, `-link`, `-file`, `-later`); a tap only routes
+     to step 2 (`start-question.ts`).
+  2. **The answer's panel** (`#step-link`): `#link-heading` and
+     `#link-why` are written per answer, and one block per answer shows:
+     `#start-host` (new tour, or "share" from Done: the host tiles
+     `#host-tiles` filled by `host-picker.ts`, the chosen host's steps
+     `#host-steps`, the starter zip `#starter-zip` only for a host that
+     needs a file before it gives a link and not after Done saved one),
+     `#link-field` (new tour, share, link), `#start-code-hangs` ("Start at
+     the code", the link answer's way to step 5 for a code that already
+     hangs), `#start-file` (`#open-file`, "Open it from this device", tour
+     kit plan K0; a file has no link, so its code is printed once the zip is
+     hosted) and `#start-later` (`#start-here`, "Save the tour file and
+     start", with the indoor limit); every panel ends in "Back to the
+     question" (`.start-back-button`). `#link-field` holds `#open-form`
+     with the button "Check link" - the check also runs by itself on paste
+     and when the field is left - and `#link-status`, the line saying what
+     the check found (`link-check.ts`). The shortener advice and its bit.ly warning live
      here, where the check that counts runs. The picker itself (`#file-input`) and the line naming a
      file-opened tour (`#file-status`) and the open tour's signature lines
      (`#tour-trust`, tour kit plan K1: who signed it or that nobody did,
@@ -51,7 +107,8 @@ result or a shared link shows).
      wizard, so a visitor reaches them too - with `#file-advice`, the
      "Open the downloaded file" button shown under a "host blocks
      browsers" error.
-  3. **Print** (`#print-panel`): the tour's own name first (`#tour-name-input`,
+  3. **Print** (`#print-panel`): the link in the codes ("Link in the QR
+     code", `#print-url-ask`, only while no tour is open), then the tour's own name (`#tour-name-input`,
      W2 of the tour editor plan 2026-10-17-1816: apart from the poster's
      title, it shows the open tour's title, and a changed one renames the
      tour, saved by the next Finish - an emptied one removes the title,
@@ -61,15 +118,24 @@ result or a shared link shows).
      PDF of N numbered posters (`#print-count` between the big - and +
      `#print-count-down` / `#print-count-up`, three by default), each
      carrying the poster text of `#poster-title`, `#poster-explanation`
-     and `#poster-cta` (polish round D-P7, r820 feedback R8), previewed as
+     and `#poster-cta` (polish round D-P7), grouped under
+     the serif heading "On the poster" (`.field-group`, `role=group`
+     labelled by `#poster-text-heading`, an indented rule on the left; not
+     a fieldset, whose legend reads as one more label and whose box
+     narrowed beside the sticker), previewed as
      one small poster per code (`#print-tiles`). The defaults nobody needs
-     to touch sit in the closed `#print-settings` (r820 feedback R7): the
+     to touch sit in `#print-settings` inside the closed `#setup-settings`
+     above the navigation: the
      side length in centimetres (`#author-size`, 18 by default; a size
      refusal at AR start opens the block), `#print-paper` and the first
      code number (`#author-c`). The launch link the codes carry
      (`#print-url-out`) is shown in step 2 since the r820 feedback (R6). The print dialog's "fit to page" silently rescales, and a
      rescaled code measures the world wrong, so the page has no print
-     stylesheet and no print button. The link is SHOWN
+     stylesheet and no print button. "Download PDF to print" is the filled
+     main action and "Next" outlined until a PDF was saved
+     (`#print-panel[data-pdf-saved]`, set by `print-panel.ts`; a dismissed
+     save sets nothing), then Next is filled again; Next stays usable
+     throughout. The link is SHOWN
      (`#print-url-shown`), not asked for, whenever a tour is open, and the
      code renders without a button press; `#print-url-ask` returns only
      when nothing is open, which is what keeps printing before hosting
@@ -84,7 +150,11 @@ result or a shared link shows).
      tour (scan-to-open plan §2).
   6. **Done** (`#step-done`): `#finish-block` (the rebuilt zip's status,
      the save, the summary and `#replace-help`), opened by the Finish
-     (polish round M2, B9). Until then `.done-pending` says what the step
+     (polish round M2, B9). For a tour with no link (started on this
+     phone) `#make-code` ("Make your code now": upload, link, print, measure
+     the code at the next visit, and the untested re-basing of GPS-placed
+     pins) shows, and `#step-done[data-hosted="false"]` hides
+     `#replace-help` and `#upload-ask` (`start-question.ts`). Until then `.done-pending` says what the step
      is for; page CSS hides it once the block shows.
 
 - The visitor's start page in the owner's V4 look (polish round M4a,
@@ -161,7 +231,7 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   fix re-review #3) "Keeps working without signal once a tour has loaded":
   the tour is cached, the page is not (no service worker), so nothing on
   the page promises an offline revisit - the host step says the same, and
-  "Other settings" says the kept tours open faster (`legal.spec.js`).
+  "Settings" says the kept tours open faster (`legal.spec.js`).
 - **Step 5 on a computer** (W1, plan review #9): `#measure-desktop` says
   the step runs on site on an Android phone with Chrome and links the
   editor; the same AR check shows it, and on the creator page an
@@ -172,8 +242,9 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   Android phones with Chrome; the visitor's no-AR sentence
   (`visitor-status.ts`) and the poster's default call to action
   (`poster-text.ts`) say it too.
-- Below the steps, creator-only: the Storage section (`#storage-panel`,
-  summary "Other settings" - something you normally do not open, F9).
+- Creator-only, inside `#setup-settings` above the navigation: the
+  Storage section (`#storage-panel`, something you normally do not open,
+  F9).
 - Shared: `#error`, and under it `#error-contact` (W2, D15: "Questions
   about this tour? Contact its maker:" and the tour's contact as a link,
   `#error-contact-link`, shown for a visitor while an error shows and the
@@ -470,14 +541,11 @@ its chunk fails, the hero shows its last moment as a drawing).
     cards read as running together.
   - From 900 px wide and taller than 560 px the setup stage stands on the
     landing's column (`--landing-wide`, 1128 px, set on `body` so both the
-    landing and the stage read it, and its 16 px gutters): the map's title and
-    its frame's outer line on the column's left edge, the step card's right
-    edge on its right. The card is sticky (16 px from the top) beside the
-    map while the map is in view, except during AR, whose panel lives in
-    the card. Its travel is only as long as the map runs on below it
-    (about 100 px at 1280x720), and on a first visit the page ends about
-    where the stage does. "You already have a tour?" below it keeps its own
-    narrower centred column.
+    landing and the stage read it, and its 16 px gutters): the step card's
+    edges on the column's edges, the map sticker poking 18 px over its top
+    and 6 px past its right edge (more, and its turned corner would leave
+    the 16 px gutter at 1000-1024 px wide). "You already have a tour?" below it
+    keeps its own narrower centred column.
 - **Its moving parts** are mounted by `src/landing/landing-mount.ts`
   (dynamic imports, a creator only; see its sidecar): the cards' pictures
   (`landing-cards.ts`, which play by `card-play.ts`), the use cases
@@ -513,18 +581,20 @@ blocking="render">` holds the first paint until the script is parsed, so
 ## Public API
 
 The `data-testid` contract the e2e suite drives: `wizard`, `step-host`
-(owns `host-tiles`, `host-steps`, `host-continue`), `landing` (owns
+(owns `start-answers` and `start-answer-<new|link|file|later>`), `landing` (owns
 `landing-way`, `landing-needs`, `landing-begin-top`, `landing-film` with
 `landing-still`, `landing-story`, `landing-cards` with five
 `landing-card`, `landing-make` with `setup-begin`, `landing-uses`),
-`setup-stage`, `setup-map` (owns `setup-map-svg` and the
-drawn `map-station-<step>`), `setup-card` (owns `setup-loading`, `setup-badge`, `setup-of`,
+`setup-stage`, `setup-card` (owns `setup-map` with `setup-map-svg`, the
+drawn `map-station-<step>` and `setup-map-zoom`, `setup-loading`, `setup-badge`, `setup-of`,
 `setup-dots` with `station-<step>`, `setup-nav`, `setup-back`,
-`setup-next`), `step-link` (owns
-`link-status` and `print-url-out`, the launch link in `#link-launch`),
+`setup-next`), `step-link` (owns `link-heading`, `link-why`,
+`start-host` with `host-tiles` and `host-steps`, `link-field`,
+`start-code-hangs` with `code-hangs-button`, `start-file`, `start-later`
+with `start-here`, `start-back`, `link-status` and `print-url-out`, the launch link in `#link-launch`),
 `starter-zip`, `link-input`, `open-button`, `open-file-button`,
 `file-input`, `file-status`, `tour-trust`, `file-advice`, `open-file-advice`,
-`storage-panel`,
+`setup-settings` (owns `print-settings` and `storage-panel`),
 `clear-cache`, `print-panel` (owns `print-url-ask`, `print-url`,
 `print-url-shown`, `tour-name-input`, `poster-text` (`poster-title`, `poster-explanation`,
 `poster-cta`), `print-count-down`, `print-count`, `print-count-up`,
@@ -543,7 +613,7 @@ setup page in a new tab, polish round A8), `visitor-safety`, `visitor-privacy`,
 `have-tour-link`, `have-tour-open`, `have-tour-status`, `have-tour-ask`,
 `have-tour-play`, `have-tour-continue`),
 `step-done` (owns `done-pending`, `finish-block`,
-`finish-status`, `finish-download`, `debug-save` ("Save the debug data"
+`finish-status`, `finish-download`, `make-code` (owns `make-code-start`), `debug-save` ("Save the debug data"
 after a Finish that left the walk out, above the replace steps:
 `debug-save-text`, `debug-save-btn`, `debug-save-status`;
 `creator-debug-save.ts`), `summary` (the summary after Finish,

@@ -85,7 +85,9 @@ import {
   codeTourLine,
   creatorScanCardShown,
   CREATOR_SCAN_CARD,
+  NO_TOUR_PLACING_LOCKED,
   setupHint,
+  TOUR_LOADING_PLACING_LOCKED,
 } from "./qr-author-mode.js";
 
 import { createPrintSizeCheck } from "./print-size-check.js";
@@ -763,6 +765,12 @@ export function wireCreatorSetup(deps: {
       blockedLead +
       (doneWaits && measuring.inFlight()
         ? `${DONE_WAITS_FOR_MEASURING} · `
+        : "") +
+      // With no tour open placing is locked: say why and what unlocks it.
+      (ctx.session === null ? `${NO_TOUR_PLACING_LOCKED} · ` : "") +
+      // Nor while its content list is still loading (`creator-placement.ts`).
+      (ctx.session !== null && ctx.tourManifestStatus === "pending"
+        ? `${TOUR_LOADING_PLACING_LOCKED} · `
         : "") +
       // A stored code ignored as moved: its votes are withdrawn, so a visit
       // it lined up waits for GPS again - say why, as the visitor is told.

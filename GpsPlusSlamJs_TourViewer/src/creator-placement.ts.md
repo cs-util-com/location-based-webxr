@@ -54,10 +54,26 @@ troubleshooting recording's record of each placement. Split out of
 
 - A new pin's text is taken in NFC (`inputText`) before it is trimmed
   and counted (B2a review 6).
-- **The gate:** allowed only under THIS session's GPS alignment (a
+- **The gate:** allowed only with a tour open on the page
+  (`ctx.session`), under THIS session's GPS alignment (a
   matrix and at least `MIN_ALIGNMENT_SAMPLES` fixes since the session
   started, M4 review #2), a running session and no rebuild in flight;
   re-checked at every tap.
+  - **The open tour:** only an open tour keeps a draft on this phone, so
+    work placed with none lived in memory alone and a reload or an AR
+    crash lost it silently. Pin, Photo and New station stay locked until
+    the tour opens - from its printed code through the camera
+    (`scan-open.ts`), or from a link or a file - and the panel's first
+    line says so (`NO_TOUR_PLACING_LOCKED` in `qr-author-mode.ts`).
+  - **Open means its manifest settled** (`ctx.tourManifestStatus`), not
+    only the session set: the page sets the session before `tour.json`
+    has arrived, and only the manifest's settle opens the tour document
+    (`archive-open.ts`). A pin placed in between landed in the "no tour"
+    document and the settle's `open` dropped it. While it loads the line
+    says so (`TOUR_LOADING_PLACING_LOCKED`); a manifest that reads
+    `broken` keeps placing locked (no draft, and the finish refuses).
+    Tests: `creator-setup.test.ts`, "placing is locked while no tour is
+    open".
   - **Or a stored code's votes:** in a visit with no device fix a code the
     tour stores lines the session up by its votes (`creator-measuring.ts`),
     and the gate accepts "a stored code voted in this visit" in place of

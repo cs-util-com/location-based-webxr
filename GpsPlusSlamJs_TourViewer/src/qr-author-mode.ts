@@ -304,6 +304,27 @@ export function codeTourLine(status: CodeTourStatus): string {
 }
 
 /**
+ * What the AR line says while no tour is open: placing IS locked then
+ * (`creator-placement.ts`: only an open tour keeps a draft on this phone),
+ * and the line names the reason and the one move that unlocks it - the
+ * camera opens the tour from its hung code. It leads the AR line
+ * (`creator-setup.ts`); the scan card (`creatorScanCardShown`) is a
+ * separate hint about an open tour's printed code.
+ */
+export const NO_TOUR_PLACING_LOCKED =
+  "Point at your hung code: it opens your tour. You can place once it is open, so nothing is lost.";
+
+/**
+ * What the AR line says while a tour is opening: the page has the tour,
+ * but its content list (tour.json) has not arrived, and only that opens
+ * the tour document. Placing IS locked then too (`creator-placement.ts`):
+ * work placed before it would land in no tour and be dropped when the
+ * content list opens.
+ */
+export const TOUR_LOADING_PLACING_LOCKED =
+  "Your tour is still opening. You can place once it is open, so nothing is lost.";
+
+/**
  * The creator's scan card in AR: look at the tour's printed code first,
  * until this visit has seen it. A later visit's notes are corrected through
  * the code only when the code was seen in that visit; nothing is blocked
@@ -532,6 +553,10 @@ export const FINISH_LABELS = {
   saving: "Saving…",
   saved: (filename: string) =>
     `Saved as ${filename}. Now replace the hosted zip (steps below) - the link and the printed code stay the same.`,
+  /** A tour opened from a file on this phone: no hosted zip, no link yet,
+   *  so the next step is making its code (setup flow round 2). */
+  savedHere: (filename: string) =>
+    `Saved as ${filename} on this phone. To share the tour, make its code (below).`,
   /** It cannot know the name the phone gave the file: a repeat download
    *  is saved as "name (1).zip", which Drive treats as a new file - and
    *  with the save automatic, there is no moment before it to warn (F4
@@ -617,14 +642,17 @@ function repeatDownloadName(filename: string): string {
  * decisions D-F4a, D-F4b: always a plain save, never a share): where the
  * file went and what comes next, or that nothing was saved and which
  * button saves it. A Drive tour's names Downloads and the Drive steps
- * (Drive replace plan §5 #5).
+ * (Drive replace plan §5 #5); a tour opened from a file has no hosted zip,
+ * so its line leads to making the code.
  */
 export function finishSaveStatus(
   delivered: boolean,
   filename: string,
   drive: boolean,
+  fromFile = false,
 ): string {
   if (!delivered) return FINISH_LABELS.notSaved;
+  if (fromFile) return FINISH_LABELS.savedHere(filename);
   return drive
     ? FINISH_LABELS.savedToPhone(filename)
     : FINISH_LABELS.saved(filename);
