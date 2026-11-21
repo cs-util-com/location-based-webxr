@@ -296,6 +296,39 @@ describe("what a finished stretch keeps", () => {
     expect(small.close).not.toHaveBeenCalled();
   });
 
+  // Why: a stretch trained again shows its live look in the loupe while
+  // it trains; a sharp copy kept of the first attempt would be decoded and
+  // drawn over it, a look of a model that no longer exists.
+  it("lets go of the sharp copy when the stretch is trained again", async () => {
+    const real = createPracticeTrainer({ timer: manualTimer() });
+    const once = onePicture({}, []);
+    const started = new Set<number>();
+    const adapter: TrainerAdapter = {
+      ...real,
+      // Each stretch's first attempt ends at once; a second one keeps
+      // training, so the test looks while it runs.
+      trainWindow: (request, events, signal) => {
+        if (started.has(request.window.index)) return new Promise(() => {});
+        started.add(request.window.index);
+        return once.trainWindow(request, events, signal);
+      },
+      // Blurry, so training again is offered.
+      judge: () => ({ verdict: "poor", reasons: ["blurry"], say: "Blurry." }),
+    };
+    const keepLook = vi.fn(() =>
+      Promise.resolve({
+        small: { close: vi.fn() } as unknown as CanvasImageSource,
+        sharp: new Blob(["jpeg"]),
+      }),
+    );
+    const h = await run(adapter, { keepLook });
+    expect(h.c.sides.sharpLooks.has("w0")).toBe(true);
+    h.c.store.dispatch(A.trainAgainAsked({ id: "w0" }));
+    await h.settled();
+    expect(h.c.store.getState().windows[0]?.status).toBe("training");
+    expect(h.c.sides.sharpLooks.has("w0")).toBe(false);
+  });
+
   // Why: a copy that cannot be made must not keep the big picture either.
   it("lets go of the look when no small copy can be made", async () => {
     const pictures: { close: ReturnType<typeof vi.fn> }[] = [];
