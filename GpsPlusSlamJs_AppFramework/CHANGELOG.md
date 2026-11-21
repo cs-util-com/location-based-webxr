@@ -22,7 +22,6 @@
   own copies, so every reader refuses the same malformed files.
   - **`utils/glb-chunks`** (deep import): `readGlbChunks`, `GLB_MAGIC`,
     `GLB_CHUNK_JSON`, `GLB_CHUNK_BIN`.
-
 - **`storage/zip-reader`** (deep import): one capped open of a zip Blob,
   and the shared entry-name rules. `withCappedZipEntries` opens an
   untrusted zip Blob under the directory and entry caps,
