@@ -24,10 +24,6 @@ width, is exact in whatever face the page is set in.
   storage (this tab, across reloads; a new tab starts from the CSS bound).
 - `encodeUsesHeight(width, height): string`: the stored form,
   `{"width":390,"height":2391.5}`.
-- `keptUsesHeight(stored, width): number | null`: the height to reserve at
-  window width `width`, or null for nothing stored, another width,
-  unreadable JSON, a width or height that is not a number, or a height
-  that is not above 0 and below 20 000 px.
 - `keepUsesHeight(host, { storage, width, onWindowResize }): () => void`:
   called by `landing-mount.ts` once the use cases mounted (it comes in
   their chunk, re-exported by `use-cases.ts`; where they fail to mount,
@@ -48,10 +44,13 @@ width, is exact in whatever face the page is set in.
 
 - The page's classic inline script `#landing-uses-height`, right after the
   use cases' host and before the setup stage (so before the first paint,
-  which `#landing-skip` holds), applies the same rule as `keptUsesHeight`
-  as the host's inline `min-height`. A classic script cannot import, so the
-  rule exists twice; `uses-height.test.ts` runs the inline copy against
-  generated stored values and holds it to `keptUsesHeight`.
+  which `#landing-skip` holds), reads the kept value and sets it as the
+  host's inline `min-height`: the height kept at this window width, or
+  nothing for nothing stored, another width, unreadable JSON, a width or
+  height that is not a number, or a height that is not above 0 and below
+  20 000 px. A classic script cannot import, so that reading rule lives
+  only there; `uses-height.test.ts` runs the script against generated
+  stored values and holds it to the rule.
 - Keyed by `window.innerWidth`: a rotated phone or a resized window reads
   no kept height and falls back to the CSS bound.
 - The inline reservation is dropped before the first measurement, so a
@@ -69,21 +68,21 @@ const unkeep = keepUsesHeight(dom.uses, {
     return () => window.removeEventListener("resize", listener);
   },
 });
-keptUsesHeight(sessionStorage.getItem(USES_HEIGHT_KEY), innerWidth); // 2391.5
 ```
 
 ## Tests
 
-- `uses-height.test.ts`: the rule (same width, other width, malformed
-  values, a round-trip property), the keeper (drops the inline reservation,
-  stores the height, stores it again at the new width after a window
+- `uses-height.test.ts`, all through the inline script run against a
+  stand-in page: the kept height (same width, other width, malformed
+  values, a round-trip property with `encodeUsesHeight`), the keeper
+  (drops the inline reservation, stores the height, stores it again at the new width after a window
   resize that left the section's size alone, survives a throwing or
   missing storage, and its unwatch lets go of both the window's resize
   and the `ResizeObserver` where there is one), and the inline script
   held to the rule (two properties: every height valid by
   construction is reserved height for height, and any other stored value,
   near misses and the exact 0 and 20 000 px edges included, gets the same
-  answer as `keptUsesHeight`; and its place in the page).
+  answer as the rule; and its place in the page).
 - `playwright-tests/landing.spec.js`, "a returning device": the reload
   comes back to the stage within 24 px when the use cases arrive late, in
   the system face, the wide face and a wider one, also under reduced

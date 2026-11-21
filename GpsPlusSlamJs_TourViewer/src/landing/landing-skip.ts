@@ -1,50 +1,13 @@
 /**
- * Whether a page load opens at the setup instead of the landing: a device
- * that used the setup before (a stored storage choice or a stored last
- * link) skips the landing it has already read. The page applies this in a
+ * Keeps a page that skipped the landing at the setup. Whether a load skips
+ * (a returning device opens at the setup it used before) is decided by a
  * classic inline script right after the stage's markup (`index.html`,
  * `#landing-skip`), before the first paint, since a module would run too
- * late; `landing-skip.test.ts` holds that copy to this rule.
+ * late; `landing-skip.test.ts` runs that script and holds it to the rule.
+ * This module only holds the page there while its layout settles.
  *
  * @see landing-skip.ts.md
  */
-import { HOST_KEY } from "../tour-host.js";
-import { WIZARD_LAST_URL_KEY } from "../wizard.js";
-
-/** The stored values that make a device a returning one: the storage
- *  choice (`tour-host.ts`; a deselected tile stores "") and the last link
- *  opened (`wizard.ts`). */
-export const RETURNING_KEYS = [HOST_KEY, WIZARD_LAST_URL_KEY] as const;
-
-export interface LandingSkipInput {
-  /** `body[data-mode]`, as the first-paint script set it. */
-  readonly mode: string | undefined;
-  /** The stored values of `RETURNING_KEYS`, null where nothing is stored. */
-  readonly stored: readonly (string | null)[];
-  /** `location.hash`: a link to a place in the page goes there instead. */
-  readonly hash: string;
-  /** The navigation entry's `type`; undefined where the browser has none. */
-  readonly navigationType: string | undefined;
-}
-
-/**
- * True when the page should open scrolled to the setup: a creator's page,
- * a returning device, no hash, and a plain navigation. On a reload or
- * back/forward the browser restores its own scroll position instead, and a
- * browser that reports no navigation type opens at the top (a first visit's
- * view is the safe one to be wrong with).
- */
-export function skipsLanding(input: LandingSkipInput): boolean {
-  const returning = input.stored.some(
-    (value) => typeof value === "string" && value !== "",
-  );
-  return (
-    input.mode === "creator" &&
-    returning &&
-    input.hash === "" &&
-    input.navigationType === "navigate"
-  );
-}
 
 /**
  * Puts the stage back at the top after the page's own scripts changed the

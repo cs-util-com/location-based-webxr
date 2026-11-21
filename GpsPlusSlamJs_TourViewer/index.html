@@ -5280,9 +5280,9 @@
           // The height this tab measured the mounted use cases at, at this
           // width, reserved before the first paint: the browser restores a
           // reload's scroll before their chunk arrives, and the CSS lower
-          // bound in the page's styles is measured in one face only. The
-          // same rule as keptUsesHeight (src/landing/uses-height.ts), held
-          // to it by uses-height.test.ts.
+          // bound in the page's styles is measured in one face only. It
+          // reads what keepUsesHeight (src/landing/uses-height.ts) writes;
+          // uses-height.test.ts holds it to its rule.
           try {
             const kept = JSON.parse(
               sessionStorage.getItem("tour-viewer.landing.uses-height") ??
@@ -7988,10 +7988,10 @@
       </div>
       <!-- /setup-stage -->
       <script id="landing-skip">
-        // A device that used the setup before opens at the setup: the same
-        // rule as skipsLanding (src/landing/landing-skip.ts), held to it by
-        // landing-skip.test.ts. It runs here, right after the stage's
-        // markup and before the first paint, with an instant scroll; on a
+        // A device that used the setup before opens at the setup, a rule
+        // landing-skip.test.ts holds this script to. It runs here, right
+        // after the stage's markup and before the first paint, with an
+        // instant scroll; on a
         // reload or back/forward the browser restores its own position,
         // and a hash goes where it points.
         try {

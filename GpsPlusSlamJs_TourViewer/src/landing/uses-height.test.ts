@@ -6,11 +6,12 @@
  * section's height measured in one face; in a wider face (the CI's Linux
  * one, or a phone's own) the section mounts taller and pushed the setup
  * down by the difference. The height this tab measured itself is exact in
- * any face, so it is kept and reserved on the next load. The rule exists
- * twice: here and in `index.html`'s `#landing-uses-height`, a classic
- * script that must run before the first paint; these tests hold the copy
- * to the rule. A kept height must never come from another width, and
- * storage that throws must not break the page.
+ * any face, so it is kept and reserved on the next load. The reading rule
+ * lives only in `index.html`'s `#landing-uses-height`, a classic script
+ * that must run before the first paint; these tests run that script, hold
+ * it to the rule stated here (`keptRule`), and read back what the keeper
+ * writes through it. A kept height must never come from another width,
+ * and storage that throws must not break the page.
  */
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -22,18 +23,81 @@ import { describe, expect, it } from "vitest";
 import {
   encodeUsesHeight,
   keepUsesHeight,
-  keptUsesHeight,
   USES_HEIGHT_KEY,
 } from "./uses-height.js";
 
-describe("keptUsesHeight", () => {
+const packageRoot = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+);
+const html = readFileSync(resolve(packageRoot, "index.html"), "utf8");
+const match = /<script id="landing-uses-height">([\s\S]*?)<\/script>/.exec(
+  html,
+);
+
+/** Runs the inline script against a stand-in page; the host's min-height. */
+function runInline(
+  stored: string | null,
+  width: number,
+  storageThrows = false,
+): string {
+  const host = { style: { minHeight: "" } };
+  const document = {
+    getElementById: (id: string) => (id === "landing-uses" ? host : null),
+  };
+  const sessionStorage = {
+    getItem: (key: string) => {
+      if (storageThrows) throw new Error("blocked");
+      return key === USES_HEIGHT_KEY ? stored : null;
+    },
+  };
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  const run = new Function(
+    "document",
+    "sessionStorage",
+    "window",
+    match?.[1] ?? "",
+  ) as (...args: unknown[]) => void;
+  run(document, sessionStorage, { innerWidth: width });
+  return host.style.minHeight;
+}
+
+/**
+ * The rule the inline script is held to: the height to reserve at window
+ * width `width` from the stored value, or null for nothing stored, another
+ * width, unreadable JSON, a width or height that is not a number, or a
+ * height that is not above 0 and below 20 000 px.
+ */
+function keptRule(stored: string | null, width: number): number | null {
+  if (stored === null) return null;
+  let kept: unknown;
+  try {
+    kept = JSON.parse(stored);
+  } catch {
+    return null;
+  }
+  if (typeof kept !== "object" || kept === null) return null;
+  const { width: w, height: h } = kept as { width?: unknown; height?: unknown };
+  if (w !== width || typeof h !== "number") return null;
+  return h > 0 && h < 20000 ? h : null;
+}
+
+/** The height the inline script reserves for `stored` at `width`, as a
+ *  number; null where it reserves nothing. */
+function reserved(stored: string | null, width: number): number | null {
+  const minHeight = runInline(stored, width);
+  return minHeight === "" ? null : Number(minHeight.replace(/px$/, ""));
+}
+
+describe("the kept height, as the inline script reads it", () => {
   it("reads back a height kept at the same width", () => {
-    expect(keptUsesHeight(encodeUsesHeight(390, 2380.5), 390)).toBe(2380.5);
+    expect(reserved(encodeUsesHeight(390, 2380.5), 390)).toBe(2380.5);
   });
 
   it("ignores a height kept at another width, and nothing kept", () => {
-    expect(keptUsesHeight(encodeUsesHeight(844, 1500), 390)).toBeNull();
-    expect(keptUsesHeight(null, 390)).toBeNull();
+    expect(reserved(encodeUsesHeight(844, 1500), 390)).toBeNull();
+    expect(reserved(null, 390)).toBeNull();
   });
 
   it("ignores what is not a positive height below 20 000 px", () => {
@@ -51,7 +115,7 @@ describe("keptUsesHeight", () => {
       '{"width":390,"height":-5}',
       '{"width":390,"height":20000}',
     ]) {
-      expect(keptUsesHeight(stored, 390), stored).toBeNull();
+      expect(reserved(stored, 390), stored).toBeNull();
     }
   });
 
@@ -61,11 +125,9 @@ describe("keptUsesHeight", () => {
         fc.integer({ min: 1, max: 4000 }),
         fc.double({ min: 0.01, max: 19999, noNaN: true }),
         (width, height) => {
-          expect(keptUsesHeight(encodeUsesHeight(width, height), width)).toBe(
-            height,
-          );
+          expect(reserved(encodeUsesHeight(width, height), width)).toBe(height);
           expect(
-            keptUsesHeight(encodeUsesHeight(width, height), width + 1),
+            reserved(encodeUsesHeight(width, height), width + 1),
           ).toBeNull();
         },
       ),
@@ -91,7 +153,7 @@ describe("keepUsesHeight", () => {
       onWindowResize: noWindowResize,
     });
     expect(host.style.minHeight).toBe("");
-    expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 390)).toBe(2391);
+    expect(reserved(stored.get(USES_HEIGHT_KEY) ?? null, 390)).toBe(2391);
     unwatch();
   });
 
@@ -130,9 +192,9 @@ describe("keepUsesHeight", () => {
       report();
       width = 391;
       report();
-      expect(
-        writes.map((v) => keptUsesHeight(v, width) ?? keptUsesHeight(v, 390)),
-      ).toEqual([2391, 2400, 2400]);
+      expect(writes.map((v) => reserved(v, width) ?? reserved(v, 390))).toEqual(
+        [2391, 2400, 2400],
+      );
       expect(writes).toHaveLength(3);
       unwatch();
     } finally {
@@ -190,9 +252,7 @@ describe("keepUsesHeight", () => {
     });
     width = 1600;
     for (const listener of resized) listener();
-    expect(keptUsesHeight(stored.get(USES_HEIGHT_KEY) ?? null, 1600)).toBe(
-      2391,
-    );
+    expect(reserved(stored.get(USES_HEIGHT_KEY) ?? null, 1600)).toBe(2391);
     unwatch();
     expect(unlistened).toBe(1);
   });
@@ -229,16 +289,6 @@ describe("keepUsesHeight", () => {
 });
 
 describe("the landing-uses-height script in index.html", () => {
-  const packageRoot = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "..",
-    "..",
-  );
-  const html = readFileSync(resolve(packageRoot, "index.html"), "utf8");
-  const match = /<script id="landing-uses-height">([\s\S]*?)<\/script>/.exec(
-    html,
-  );
-
   it("runs right after the use cases' host, before the setup stage", () => {
     expect(match).not.toBeNull();
     const hostAt = html.indexOf('<div id="landing-uses"');
@@ -250,41 +300,14 @@ describe("the landing-uses-height script in index.html", () => {
     expect(match?.[1]).toContain(JSON.stringify(USES_HEIGHT_KEY));
   });
 
-  /** Runs the inline script against a stand-in page; the host's min-height. */
-  function runInline(
-    stored: string | null,
-    width: number,
-    storageThrows = false,
-  ): string {
-    const host = { style: { minHeight: "" } };
-    const document = {
-      getElementById: (id: string) => (id === "landing-uses" ? host : null),
-    };
-    const sessionStorage = {
-      getItem: (key: string) => {
-        if (storageThrows) throw new Error("blocked");
-        return key === USES_HEIGHT_KEY ? stored : null;
-      },
-    };
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const run = new Function(
-      "document",
-      "sessionStorage",
-      "window",
-      match?.[1] ?? "",
-    ) as (...args: unknown[]) => void;
-    run(document, sessionStorage, { innerWidth: width });
-    return host.style.minHeight;
-  }
-
   // The parity is proven in two halves, so neither depends on how often a
   // random draw happens to land in it: every value valid by construction
   // must be reserved, height for height, and every other value (anything
   // at all, and the near misses around each condition, the exact 0 and
-  // 20 000 px edges included) must give the inline copy the same answer as
-  // keptUsesHeight. A single mixed property that counted its reserving
+  // 20 000 px edges included) must give the inline script the same answer
+  // as the rule. A single mixed property that counted its reserving
   // draws was flaky: that count is a random variable, not a proof.
-  it("reserves every height keptUsesHeight keeps, height for height (property)", () => {
+  it("reserves every height kept by construction, height for height (property)", () => {
     const height = fc.oneof(
       fc.integer({ min: 1, max: 19999 }),
       fc.double({
@@ -298,7 +321,7 @@ describe("the landing-uses-height script in index.html", () => {
     fc.assert(
       fc.property(height, (h) => {
         const s = encodeUsesHeight(390, h);
-        expect(keptUsesHeight(s, 390)).toBe(h);
+        expect(keptRule(s, 390)).toBe(h);
         expect(runInline(s, 390)).toBe(`${String(h)}px`);
       }),
       { numRuns: 300 },
@@ -306,7 +329,7 @@ describe("the landing-uses-height script in index.html", () => {
     expect(runInline(encodeUsesHeight(390, 2391.5), 390)).toBe("2391.5px");
   });
 
-  it("answers as keptUsesHeight for any other stored value (property)", () => {
+  it("answers as the rule for any other stored value (property)", () => {
     const stored = fc.oneof(
       fc.constant(null),
       fc.string(),
@@ -329,7 +352,7 @@ describe("the landing-uses-height script in index.html", () => {
     );
     fc.assert(
       fc.property(stored, (s) => {
-        const kept = keptUsesHeight(s, 390);
+        const kept = keptRule(s, 390);
         expect(runInline(s, 390)).toBe(
           kept === null ? "" : `${String(kept)}px`,
         );

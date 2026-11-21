@@ -3,9 +3,10 @@
  * the setup, every other load opens at the top. The page decides this in
  * a classic inline script before its first paint (a module would run after
  * the landing was already shown, and the jump would be seen), so the rule
- * exists twice: here and in `index.html`'s `#landing-skip`. These tests
- * hold the copy to the rule; if the two disagreed, the page would skip for
- * one device and not for another for no visible reason. A reload must
+ * lives only in `index.html`'s `#landing-skip`. These tests run that
+ * script and hold it to the rule stated here (`skipRule`); if it drifted,
+ * the page would skip for one device and not for another for no visible
+ * reason. A reload must
  * never skip: the browser restores where the creator was (the wizard is
  * reloaded mid-setup on purpose).
  */
@@ -18,12 +19,42 @@ import { describe, expect, it } from "vitest";
 
 import { HOST_KEY } from "../tour-host.js";
 import { WIZARD_LAST_URL_KEY } from "../wizard.js";
-import {
-  holdLandingSkip,
-  RETURNING_KEYS,
-  reassertLandingSkip,
-  skipsLanding,
-} from "./landing-skip.js";
+import { holdLandingSkip, reassertLandingSkip } from "./landing-skip.js";
+
+/** The stored values that make a device a returning one: the storage
+ *  choice (`tour-host.ts`; a deselected tile stores "") and the last link
+ *  opened (`wizard.ts`). */
+const RETURNING_KEYS = [HOST_KEY, WIZARD_LAST_URL_KEY] as const;
+
+interface SkipInput {
+  /** `body[data-mode]`, as the first-paint script set it. */
+  readonly mode: string | undefined;
+  /** The stored values of `RETURNING_KEYS`, null where nothing is stored. */
+  readonly stored: readonly (string | null)[];
+  /** `location.hash`: a link to a place in the page goes there instead. */
+  readonly hash: string;
+  /** The navigation entry's `type`; undefined where the browser has none. */
+  readonly navigationType: string | undefined;
+}
+
+/**
+ * The rule the inline script is held to: open scrolled to the setup for a
+ * creator's page, a returning device, no hash, and a plain navigation. On
+ * a reload or back/forward the browser restores its own scroll position
+ * instead, and a browser that reports no navigation type opens at the top
+ * (a first visit's view is the safe one to be wrong with).
+ */
+function skipRule(input: SkipInput): boolean {
+  const returning = input.stored.some(
+    (value) => typeof value === "string" && value !== "",
+  );
+  return (
+    input.mode === "creator" &&
+    returning &&
+    input.hash === "" &&
+    input.navigationType === "navigate"
+  );
+}
 
 const base = {
   mode: "creator",
@@ -31,35 +62,6 @@ const base = {
   hash: "",
   navigationType: "navigate",
 } as const;
-
-describe("skipsLanding", () => {
-  it("skips for a returning creator on a plain navigation", () => {
-    expect(skipsLanding(base)).toBe(true);
-    expect(
-      skipsLanding({ ...base, stored: [null, "https://x.test/t.zip"] }),
-    ).toBe(true);
-  });
-
-  it("opens at the top for a first visit, and after a deselected tile", () => {
-    expect(skipsLanding({ ...base, stored: [null, null] })).toBe(false);
-    expect(skipsLanding({ ...base, stored: ["", null] })).toBe(false);
-    expect(skipsLanding({ ...base, stored: [] })).toBe(false);
-  });
-
-  it("leaves a reload and back/forward to the browser's own restoration", () => {
-    expect(skipsLanding({ ...base, navigationType: "reload" })).toBe(false);
-    expect(skipsLanding({ ...base, navigationType: "back_forward" })).toBe(
-      false,
-    );
-    expect(skipsLanding({ ...base, navigationType: undefined })).toBe(false);
-  });
-
-  it("follows a hash, and never skips for a visitor", () => {
-    expect(skipsLanding({ ...base, hash: "#have-tour" })).toBe(false);
-    expect(skipsLanding({ ...base, mode: "visitor" })).toBe(false);
-    expect(skipsLanding({ ...base, mode: undefined })).toBe(false);
-  });
-});
 
 describe("the landing-skip script in index.html", () => {
   const packageRoot = resolve(
@@ -156,6 +158,41 @@ describe("the landing-skip script in index.html", () => {
     };
   }
 
+  /** Whether the inline script skipped for `input`. */
+  function skips(input: SkipInput): boolean {
+    const [host = null, last = null] = input.stored;
+    const [hostKey, lastKey] = RETURNING_KEYS;
+    return (
+      runInline({ ...input, stored: { [hostKey]: host, [lastKey]: last } })
+        .scrolled.length === 1
+    );
+  }
+
+  it("skips for a returning creator on a plain navigation", () => {
+    expect(skips(base)).toBe(true);
+    expect(skips({ ...base, stored: [null, "https://x.test/t.zip"] })).toBe(
+      true,
+    );
+  });
+
+  it("opens at the top for a first visit, and after a deselected tile", () => {
+    expect(skips({ ...base, stored: [null, null] })).toBe(false);
+    expect(skips({ ...base, stored: ["", null] })).toBe(false);
+    expect(skips({ ...base, stored: [] })).toBe(false);
+  });
+
+  it("leaves a reload and back/forward to the browser's own restoration", () => {
+    expect(skips({ ...base, navigationType: "reload" })).toBe(false);
+    expect(skips({ ...base, navigationType: "back_forward" })).toBe(false);
+    expect(skips({ ...base, navigationType: undefined })).toBe(false);
+  });
+
+  it("follows a hash, and never skips for a visitor", () => {
+    expect(skips({ ...base, hash: "#have-tour" })).toBe(false);
+    expect(skips({ ...base, mode: "visitor" })).toBe(false);
+    expect(skips({ ...base, mode: undefined })).toBe(false);
+  });
+
   it("scrolls the stage to the top, instantly, for a returning device", () => {
     const { scrolled } = runInline({
       mode: "creator",
@@ -213,16 +250,16 @@ describe("the landing-skip script in index.html", () => {
     expect(first.stage.tabIndex).toBe(0);
   });
 
-  // The inline copy types the keys out (a classic script cannot import);
-  // the module takes them from their owners, so a renamed key in either
+  // The inline script types the keys out (a classic script cannot import);
+  // this test takes them from their owners, so a renamed key in either
   // owner would be caught here instead of silently disabling the skip.
   it("reads the same keys the setup writes", () => {
-    expect(RETURNING_KEYS).toEqual([HOST_KEY, WIZARD_LAST_URL_KEY]);
     const listed = /\[\s*("[^"]+"),\s*("[^"]+"),?\s*\]\.some/.exec(
       match?.[1] ?? "",
     );
     expect(listed?.slice(1).map((key) => JSON.parse(key) as string)).toEqual([
-      ...RETURNING_KEYS,
+      HOST_KEY,
+      WIZARD_LAST_URL_KEY,
     ]);
   });
 
@@ -249,7 +286,7 @@ describe("the landing-skip script in index.html", () => {
   });
 
   it(
-    "agrees with skipsLanding on any input (property)",
+    "agrees with the rule on any input (property)",
     { timeout: 30_000 },
     () => {
       const value = fc.option(
@@ -277,7 +314,7 @@ describe("the landing-skip script in index.html", () => {
               navigationType,
             });
             expect(scrolled.length === 1).toBe(
-              skipsLanding({
+              skipRule({
                 mode,
                 stored: [host, last],
                 hash,
