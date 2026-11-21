@@ -152,6 +152,25 @@ describe("the voice focus under the setting", () => {
     expect(calls).toEqual(["hold", "carryOn"]);
     expect(focus.running()).toBe(a);
   });
+
+  it("forgets a voice set aside while off, and frees the channel", () => {
+    // Why: a voice the page set aside (words nobody sees any more) is out
+    // of the channel; sound back on must not carry it on as the quiet one.
+    const setting = createSoundSetting({ storage: memory() });
+    const focus = silencedFocus(createVoiceFocus(), setting);
+    const calls: string[] = [];
+    const a: Voice = {
+      hold: () => calls.push("hold"),
+      carryOn: () => calls.push("carryOn"),
+      stop: () => calls.push("stop"),
+    };
+    focus.selfStart(a);
+    setting.set(false);
+    focus.aside(a);
+    setting.set(true);
+    expect(calls).toEqual(["hold"]);
+    expect(focus.running()).toBeNull();
+  });
 });
 
 describe("the sound while the page is shown", () => {

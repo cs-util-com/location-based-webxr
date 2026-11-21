@@ -154,7 +154,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
    *  voice: another text taking the words over pauses it. */
   let voiced: {
     readonly id: string;
-    readonly voice: Pick<NarrationClock, "pause">;
+    readonly voice: Pick<NarrationClock, "pause" | "aside">;
   } | null = null;
 
   function stopTravel(): void {
@@ -225,8 +225,15 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
    *  back. */
   function hush(shown: TourBlock | null): void {
     if (shown === null || content === null) return;
-    if (voiced !== null && voiced.id !== shown.id) voiced.voice.pause();
+    if (voiced !== null && voiced.id !== shown.id) pauseAside(voiced.voice);
     voiced = { id: shown.id, voice: content.player };
+  }
+
+  /** The page's own pause, not the visitor's: it hands the voice channel
+   *  to no voice held behind it, which would start by itself. */
+  function pauseAside(voice: Pick<NarrationClock, "pause" | "aside">): void {
+    if (voice.aside === undefined) voice.pause();
+    else voice.aside();
   }
 
   /** A voice does not follow the visitor out of its station. */

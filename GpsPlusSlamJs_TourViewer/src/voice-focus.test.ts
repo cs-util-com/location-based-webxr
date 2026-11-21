@@ -390,6 +390,65 @@ describe("a voice behind the running one", () => {
   });
 });
 
+describe("a voice set aside", () => {
+  // Why: a pause nobody asked for (the page silencing a text whose words
+  // nobody sees any more) must not hand the channel to the voice held
+  // behind it: that one would start by itself, with no visitor action. It
+  // keeps waiting and carries on when the next voice that runs ends.
+  it("wakes nothing held behind it, which waits for the next voice", () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const [a, b, c] = ["a", "b", "c"].map((n) => voice(n, log));
+    focus.tapped(a!);
+    focus.tapped(b!);
+    focus.aside(b!);
+    expect(log).toEqual(["a holds"]);
+    expect(focus.running()).toBeNull();
+    expect(focus.selfStart(c!)).toBe(true);
+    focus.ended(c!);
+    expect(log).toEqual(["a holds", "a carries on"]);
+    expect(focus.running()).toBe(a);
+  });
+
+  // Why: a held voice set aside is out of the channel, as one that ended:
+  // it must not carry on after the running one.
+  it("drops a held voice, and leaves the running one alone", () => {
+    const focus = createVoiceFocus();
+    const log: string[] = [];
+    const [a, b, c] = ["a", "b", "c"].map((n) => voice(n, log));
+    focus.tapped(a!);
+    focus.tapped(b!);
+    focus.aside(a!);
+    focus.aside(c!);
+    expect(focus.running()).toBe(b);
+    focus.ended(b!);
+    expect(log).toEqual(["a holds"]);
+    expect(focus.running()).toBeNull();
+  });
+
+  // Why: the player's own pause hands the channel on; its aside pauses
+  // the sound the same way but leaves the voice held behind it silent.
+  it("a player set aside pauses, and the player held behind it stays silent", () => {
+    const focus = createVoiceFocus();
+    const a = player();
+    const b = player();
+    const held = focusedPlayer(a, focus);
+    const shown = focusedPlayer(b, focus);
+    held.play();
+    shown.play();
+    shown.aside();
+    expect(b.calls).toEqual(["play", "pause"]);
+    expect(shown.playing()).toBe(false);
+    expect(shown.wanted()).toBe(false);
+    expect(a.calls).toEqual(["play", "pause"]);
+    expect(held.playing()).toBe(false);
+    expect(held.wanted()).toBe(true);
+    // A tap on it later plays it as ever.
+    held.play();
+    expect(held.playing()).toBe(true);
+  });
+});
+
 describe("a superseded or refused clip", () => {
   // Why: the first clip's AbortError lands tens of ms after the second
   // started; it must not end the voice object the new clip runs on, or the

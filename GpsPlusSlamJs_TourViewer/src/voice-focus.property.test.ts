@@ -6,11 +6,12 @@ import { createVoiceFocus, type Voice } from "./voice-focus.js";
 describe("createVoiceFocus (properties)", () => {
   // Why: the invariant that makes "one audible" true whatever the visitor
   // taps: after any sequence, at most one voice sounds, at most one waits,
-  // a stopped voice is out for good, and a story's voice is never stopped.
+  // a stopped voice is out for good, a story's voice is never stopped, and a
+  // voice set aside wakes nobody.
   it("holds one voice running and one paused through any sequence", () => {
     const event = fc.record({
       who: fc.integer({ min: 0, max: 3 }),
-      what: fc.constantFrom("tapped", "selfStart", "behind", "ended"),
+      what: fc.constantFrom("tapped", "selfStart", "behind", "ended", "aside"),
     });
     fc.assert(
       fc.property(fc.array(event, { maxLength: 40 }), (events) => {
@@ -35,6 +36,9 @@ describe("createVoiceFocus (properties)", () => {
             if (focus.selfStart(v)) sounding.add(who);
           } else if (what === "behind") {
             if (focus.behind(v)) sounding.delete(who);
+          } else if (what === "aside") {
+            focus.aside(v);
+            sounding.delete(who);
           } else {
             focus.ended(v);
             sounding.delete(who);

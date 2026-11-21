@@ -40,6 +40,10 @@ export interface VoiceFocus {
    *  carries on when that ends. False with nothing running or the place
    *  taken: it stays out of the channel. */
   behind(voice: Voice): boolean;
+  /** `voice` pauses without handing the channel on: running, the channel
+   *  is free and the voice held behind it keeps waiting, for the end of
+   *  the next voice that runs; held, it is forgotten. */
+  aside(voice: Voice): void;
   running(): Voice | null;
 }
 
@@ -89,6 +93,10 @@ export function createVoiceFocus(): VoiceFocus {
       paused = voice;
       return true;
     },
+    aside(voice) {
+      if (paused === voice) paused = null;
+      else if (running === voice) running = null;
+    },
     running: () => running,
   };
 }
@@ -107,6 +115,9 @@ export interface FocusedPlayer extends NarrationPlayer {
   carryOn(): boolean;
   /** Off and back to its start, until a tap. */
   stop(): void;
+  /** Pause and leave the channel without waking the voice held behind
+   *  it (`VoiceFocus.aside`): a pause nobody tapped for. */
+  aside(): void;
 }
 
 /**
@@ -172,6 +183,12 @@ export function focusedPlayer(
     stop() {
       voice.stop();
       focus.ended(voice);
+    },
+    // Out of the channel before the pause, whose change would hand it on.
+    aside() {
+      held = false;
+      focus.aside(voice);
+      inner.pause();
     },
     dispose() {
       held = false;
