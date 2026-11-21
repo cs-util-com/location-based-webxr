@@ -2,13 +2,12 @@
   "name": "gps-plus-slam-globe",
   "version": "0.1.0",
   "private": true,
-  "description": "The Globe: an Earth drawn from open imagery with 3d-tiles-renderer, served no-build to the design system's globe lab, and the 3D editor's building blocks, which a Vite app (the Tour Viewer) imports from gps-plus-slam-globe/editor as TypeScript source. Private.",
+  "description": "The Globe: an Earth drawn from open imagery with 3d-tiles-renderer, served no-build to the design system's globe lab, and the 3D editor's building blocks, which a Vite app (the Tour Viewer) imports as TypeScript source from gps-plus-slam-globe/editor and gps-plus-slam-globe/view (and its workers). Private.",
   "type": "module",
   "exports": {
     "./editor": "./src/globe-editor.ts",
     "./view": "./src/globe-view-entry.ts",
     "./city-worker": "./src/globe-city-worker-core.ts",
-    "./cloud-bake-worker": "./src/globe-cloud-bake-worker-core.ts",
     "./test-utils/synthetic-heights": "./src/test-utils/synthetic-heights.ts",
     "./test-utils/view-pose": "./src/test-utils/view-pose.ts"
   },

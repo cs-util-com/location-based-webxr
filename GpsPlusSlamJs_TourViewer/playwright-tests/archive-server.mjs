@@ -334,7 +334,10 @@ async function buildStationsZip({
   );
   await writer.add("content/arch.glb", new Uint8ArrayReader(minimalGlb()));
   const longTextBody = "The gate was built in 1400.\n\nIt was rebuilt later.";
-  if (narrated && longText !== null) {
+  // One gate for everything narrated: the voice's file and timing, its
+  // asset, the text's narration and the circle exist together or not at all.
+  const voiced = narrated && longText !== null;
+  if (voiced) {
     await writer.add(
       "content/voice-wav.wav",
       new Uint8ArrayReader(silentWav(NARRATED_MS)),
@@ -480,7 +483,7 @@ async function buildStationsZip({
             ? [imageAsset("gate-photo", "content/gate-photo.png", 1, 1)]
             : []),
           ...(storyBlocks ? [{ id: "clip", path: "content/clip.webm" }] : []),
-          ...(narrated
+          ...(voiced
             ? [{ id: "voice-wav", path: "content/voice-wav.wav" }]
             : []),
         ],
@@ -579,7 +582,7 @@ async function buildStationsZip({
                       view: "reading",
                       title: longText.title,
                       body: longTextBody,
-                      ...(narrated
+                      ...(voiced
                         ? {
                             narration: {
                               audio: "voice-wav",
@@ -592,8 +595,8 @@ async function buildStationsZip({
                       pose: { position: [-2, 1.5, 1], rotation: [0, 0, 0, 1] },
                     },
                   ]),
-              // A narration circle around the gate (`narrated`).
-              ...(narrated
+              // A narration circle around the gate (`voiced`).
+              ...(voiced
                 ? [
                     {
                       id: "gate-circle",

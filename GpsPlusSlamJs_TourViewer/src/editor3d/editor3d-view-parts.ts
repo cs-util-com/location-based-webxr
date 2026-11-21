@@ -8,7 +8,7 @@
 import * as THREE from "three";
 
 /** What `renderer` drew in its last frame: its draw calls and triangles
- *  (the one place both views read them, for the Performance tab). */
+ *  (the one place the view reads them, for the Performance tab). */
 export function drawnCounts(renderer: THREE.WebGLRenderer): {
   readonly drawCalls: number;
   readonly triangles: number;

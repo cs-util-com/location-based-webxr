@@ -122,8 +122,11 @@ camera, so `installTourViewerArFakes(page)` installs
   a viewer at the last fix's AR pose through `getViewerCamera` (a
   position and a forward look, nothing more), so a narration circle sees
   the visitor inside it and opens its card. It is not a camera: nothing
-  projects through it, and a narrated text's words cannot travel from
-  their sign with it, so a travel smoke stays a phone test. Without the
+  projects through it. A narrated text whose words would travel from its
+  sign (a Reading pick, or the creator's `words: "sign"`) would start a
+  travel that throws on every frame (the travel projects through the
+  camera's matrices), so use the option only with texts whose words show
+  at the bottom; a travel smoke stays a phone test. Without the
   option the seam is absent and the real one gives no camera, as before.
 - The fake controller deps grant every permission and resolve `initAR`
   immediately, so the controller walks `checking → ready → running` — the

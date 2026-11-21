@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 
 import type { SplatJsModule, SplatSessionLike } from "./splat-js.js";
 import type { WindowJob, WindowPhoto } from "./splat-inputs.js";
+import type { RunResult } from "./window-run.js";
 import {
   colourSampler,
+  serveTrainer,
   trainInWorker,
+  type FromWorker,
   type DecodedPhoto,
   type WorkerTrainDeps,
 } from "./worker-train.js";
@@ -68,6 +71,7 @@ function job(photos: WindowPhoto[]): WindowJob {
     shellDistanceM: 40,
     shellGridPx: 48,
     etaMinIterations: 200,
+    prepareCapMs: 300_000,
   };
 }
 
@@ -168,6 +172,8 @@ describe("trainInWorker", () => {
     );
     expect(r).toMatchObject({ outcome: "failed", ply: null });
     expect(r.detail).toMatch(/not the version/);
+    // The same library would be refused on a second try.
+    expect(r.retryHelps).toBe(false);
     expect(d.decoded).toBe(0);
   });
 
@@ -214,6 +220,7 @@ describe("trainInWorker", () => {
     expect(r).toMatchObject({
       outcome: "failed",
       detail: "A photo could not be read (bad JPEG).",
+      retryHelps: false,
     });
   });
 
@@ -287,5 +294,69 @@ describe("trainInWorker", () => {
     expect(r.outcome).toBe("finished");
     // The last look, taken once the stretch is scored.
     expect(posted).toEqual(["a look"]);
+  });
+});
+
+describe("serveTrainer", () => {
+  const msg = {
+    type: "train" as const,
+    job: job([photo("a.jpg")]),
+    photos: [new Blob()],
+  };
+
+  // Why: the worker posted its result only when the training promise
+  // resolved; a rejection posted nothing, so the stretch hung with no
+  // progress and no failure. A rejection now ends as a failed result
+  // that says why.
+  it("posts a failed result with the reason when training rejects", async () => {
+    const posted: FromWorker[] = [];
+    const serve = serveTrainer(
+      (m) => posted.push(m),
+      deps(),
+      () => Promise.reject(new Error("out of memory")),
+    );
+    serve(msg);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(posted).toEqual([
+      {
+        type: "result",
+        result: expect.objectContaining({
+          outcome: "failed",
+          ply: null,
+          detail: "The trainer stopped unexpectedly (out of memory).",
+        }) as RunResult,
+      },
+    ]);
+  });
+
+  // Why: one window per worker; a second message must not start a
+  // second training on the same graphics device.
+  it("trains one window and passes its progress and result on", async () => {
+    const posted: FromWorker[] = [];
+    let runs = 0;
+    const serve = serveTrainer(
+      (m) => posted.push(m),
+      deps(),
+      (_m, onProgress) => {
+        runs++;
+        onProgress({
+          stage: "training",
+          fraction: 0.5,
+          secondsLeft: null,
+          previewEveryS: null,
+        });
+        return Promise.resolve({
+          outcome: "finished",
+          metrics: null,
+          trainingS: 1,
+          ply: null,
+        });
+      },
+    );
+    serve(msg);
+    serve(msg);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(runs).toBe(1);
+    expect(posted.map((m) => m.type)).toEqual(["progress", "result"]);
   });
 });

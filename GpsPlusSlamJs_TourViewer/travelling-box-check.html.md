@@ -25,8 +25,10 @@ still until the hook moves it.
 
 The camera image, the station and its pose chain, and a real voice (the
 hook moves a clocked one). The taps, drags, the flight to the bottom of
-the screen and back, and the hiding are shown and tested here; the app's
-own wiring is tested in the Tour Viewer's AR specs.
+the screen and back, and the hiding are shown and tested here. The app's
+own travel wiring (the follow, the registry, the camera) is a phone test:
+no AR spec travels the words (headless has no camera to project through;
+the AR specs cover the words at the bottom only).
 
 ## Tests
 

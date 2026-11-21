@@ -231,15 +231,18 @@ were here. What stays is the Finish's side:
     `#scan-card` shows the creator's variant (`CREATOR_SCAN_CARD`) while
     `creator-codes.ts` holds no sighting of the code in hand (any code
     while none is in hand); it goes the moment this visit has one, and
-    never locks a control. `renderAuthorReadout` renders it first, before
-    any of its early returns, so it follows every session change. Its x
+    never locks a control. `renderAuthorReadout` renders it right after its
+    creator check, before the readout's own early returns, so it follows
+    every session change. Its x
     (`dom.scanCard.close`, `beforexrselect` cancelled like the panel's)
     closes it at once for the rest of the visit: `scanCardDismissed` is a
     closure flag, not store state, because it is transient UI nothing else
     reads; `endAuthorVisit` clears it, so each visit starts with the card.
     The readout itself no longer carries the sentence (the two-line clamp
     cut it). In a creator's session this file is the card's one writer;
-    `ar-entry.ts` writes it only for a visitor.
+    `ar-entry.ts` writes it only for a visitor. On a visitor page this
+    file neither listens to the card's x nor renders it (the listeners
+    and `renderScanCard` are gated on the creator mode).
 
 - **Mint, automatic measuring, the print-size check:** `creator-measuring.ts`
   (its sidecar holds the rules that were here).

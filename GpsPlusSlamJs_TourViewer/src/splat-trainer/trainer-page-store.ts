@@ -23,11 +23,12 @@ import type {
   SplatInputsRead,
 } from "./recording-reader.js";
 import { buildPackage, packageFileName } from "./save-package.js";
-import type {
-  TrainerAdapter,
-  TrainRequest,
-  WindowJudgement,
-  WindowTrainResult,
+import {
+  failedJudgement,
+  type TrainerAdapter,
+  type TrainRequest,
+  type WindowJudgement,
+  type WindowTrainResult,
 } from "./trainer-adapter.js";
 import {
   attemptTimeScale,
@@ -56,6 +57,14 @@ export interface TrainerPageDeps {
   readonly write: (handle: FileSystemFileHandle, blob: Blob) => Promise<void>;
   /** Saves without a picked handle; false when the person cancelled. */
   readonly download: (blob: Blob, name: string) => Promise<boolean>;
+  /**
+   * A small copy of a finished stretch's last look, kept in place of the
+   * full-size picture for the rest of the session. Absent, the picture is
+   * kept as it is (for pictures that are small already).
+   */
+  readonly thumbnail?: (
+    picture: CanvasImageSource,
+  ) => Promise<CanvasImageSource>;
 }
 
 /** What lives beside the store, keyed by recording or stretch id. */
@@ -68,12 +77,6 @@ export interface TrainerSideTables {
   readonly previews: Map<string, CanvasImageSource>;
   readonly splats: Map<string, Blob>;
 }
-
-const FAILED_JUDGEMENT: WindowJudgement = {
-  verdict: "poor",
-  reasons: ["the trainer stopped"],
-  say: "Training stopped with an error.",
-};
 
 /** What a failed save says of the file the person picked: the browser
  *  empties it as the dialog returns, and a new file and a replaced one
@@ -131,6 +134,28 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
 
   function dropAllPreviews(): void {
     for (const id of [...sides.previews.keys()]) dropPreview(id);
+  }
+
+  /**
+   * Swaps a finished stretch's full-size look for a small copy; a copy
+   * that cannot be made lets go of the look. A look replaced or dropped
+   * meanwhile is left alone, and the copy made of it closed.
+   */
+  async function keepSmallPreview(id: string): Promise<void> {
+    const big = sides.previews.get(id);
+    if (big === undefined || deps.thumbnail === undefined) return;
+    let small: CanvasImageSource | null;
+    try {
+      small = await deps.thumbnail(big);
+    } catch {
+      small = null;
+    }
+    if (sides.previews.get(id) !== big) {
+      if (small !== null && small !== big) closePicture(small);
+      return;
+    }
+    if (small === null) dropPreview(id);
+    else setPreview(id, small);
   }
   let nextRecording = 1;
   let disposed = false;
@@ -285,9 +310,17 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
         },
         ctrl.signal,
       );
-    } catch {
-      result = { outcome: "failed", metrics: null, trainingS: 0, ply: null };
+    } catch (err) {
+      result = {
+        outcome: "failed",
+        metrics: null,
+        trainingS: 0,
+        ply: null,
+        detail: errorText(err),
+      };
     }
+    if (!live()) return;
+    await keepSmallPreview(id);
     if (!live()) return;
     if (job?.ctrl === ctrl) job = null;
     // A cancel nobody asked for (the signal was not aborted) is a trainer
@@ -299,10 +332,10 @@ export function createTrainerPageStore(deps: TrainerPageDeps) {
     try {
       judgement =
         result.outcome === "failed"
-          ? FAILED_JUDGEMENT
+          ? failedJudgement(result)
           : deps.adapter.judge(request, result);
-    } catch {
-      judgement = FAILED_JUDGEMENT;
+    } catch (err) {
+      judgement = failedJudgement({ detail: errorText(err) });
     }
     if (result.ply !== null) sides.splats.set(id, result.ply);
     else sides.splats.delete(id);

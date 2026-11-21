@@ -33,12 +33,9 @@ true ECEF place, so one placed anywhere shows where it is.
 - `openGlobeEditor(deps, knobs): Promise<Editor3dView>`
   - `deps`: the page's `Editor3dDeps` (`editor3d-view.ts`).
   - `knobs`: `hidePx` and `crowdPx` from the link switch (the visibility
-    rule's thresholds), `clouds` (the old clouds by default; `new` draws the
-    experimental near clouds, whose tiles bake in
-    `globe-cloud-bake-worker.ts`), `quality` (the
-    tier's name, which sets the canvas's pixel ratio and the clouds' start;
-    a named tier holds it; with none the device's default holds too, and
-    only the experimental near clouds may step down),
+    rule's thresholds), `quality` (the
+    tier's name, which sets the canvas's pixel ratio; a named tier holds
+    it, and with none the device's default holds too),
     and `grade`, the raw `?grade=` name judged here by
     `resolveGlobeGrade` (the globe's `globe-grade.ts`; an unknown name warns
     and keeps the default). `quality`, the raw `?quality=`, goes through `resolveGlobeQuality` with

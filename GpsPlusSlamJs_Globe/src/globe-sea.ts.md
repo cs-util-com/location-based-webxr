@@ -42,8 +42,8 @@ step, state }`. Throws `RangeError` on a quality the shader cannot draw.
     names, because the haze declares the same functions on the relief's
     programs.
   - **Cloud shadow reaches the sea only through `globeSeaSunShadow`.** The
-    painted shell's shadow is what fills it today. The near clouds fill the
-    same function later; the sea's code then does not change.
+    painted shell's shadow is what fills it today. Any other cloud shadow
+    fills the same function; the sea's code then does not change.
   - The waves' octaves come from the quality (`globe-quality.ts`): the count
     is compiled, so a tier is its own program. Octaves too short to resolve
     at a pixel fade out, and their slopes pass into the rough glint's
@@ -55,7 +55,7 @@ step, state }`. Throws `RangeError` on a quality the shader cannot draw.
     channel of the flat water's above 10 km, and within 8 at 1 km.
   - The sea covers a pixel by `smoothstep( 0.5, 1.0, globeWater )`, less a
     painted cloud and less the drawn street map (`globeMapShare`, written
-    by `globe-osm-overlay.ts`).
+    by the map's fade patch in `globe-osm-fade.ts`).
   - The framework's water (`water-surface-material.ts`, `water-polish.ts`)
     is not reused: it is a local plane of travelling waves on three's
     standard material. This one is a planet's sea in ECEF with a slope

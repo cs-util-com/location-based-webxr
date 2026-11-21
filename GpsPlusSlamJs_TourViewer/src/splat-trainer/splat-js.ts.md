@@ -31,7 +31,7 @@ mirror, never bundled or vendored.
   `SPLAT_JS_URL` with `importer` and checks it; a failed import rejects
   with "The splat trainer library could not be loaded (<detail>)." The
   importer is required: there is no default `import()` here, because one
-  written in a module this site serves would send the site's origin.
+  written in a module this site serves would send this page's address as the Referer.
 
 ## Invariants and decisions
 

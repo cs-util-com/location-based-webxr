@@ -2,17 +2,15 @@
 
 ## Purpose
 
-One table of what `low`, `medium` and `high` set in the sea and the near
-clouds, and the pixel ratio each caps the canvas at, so both are built
-against the same names. Pages pick a name by link (`?quality=<name>`) or
+One table of what `low`, `medium` and `high` set in the sea, and the
+pixel ratio each caps the canvas at, so both are built against the same
+names. Pages pick a name by link (`?quality=<name>`) or
 take the default.
 
 ## Public API
 
-- `GLOBE_QUALITIES`: frozen table, name to `{ pixelRatioCap, sea, clouds }`.
+- `GLOBE_QUALITIES`: frozen table, name to `{ pixelRatioCap, sea }`.
   - `sea`: `waveOctaves`, `shortestWaveM`.
-  - `clouds`: `law` (steps of `distanceKm`, `march`, `pixelsPerCss`, nearest
-    first), `maxPixelsPerCss`, `entrySubSteps`.
 - `GlobeQualityName`, `GLOBE_QUALITY_NAMES` (cheapest first),
   `GLOBE_QUALITY_PARAM` (`"quality"`).
 - `resolveGlobeQuality(name, coarsePointer, warn = console.warn)`: the tier
@@ -28,12 +26,9 @@ fine-pointer tier) and shows it as `view.quality`.
 
 ## The values
 
-- **Sea and cloud steps** are the look prototype's tiers,
+- **Sea steps** are the look prototype's tiers,
   `globe-look-10-living-lod-r2`, unchanged. Its waves end at 1,024 m on every
   tier, so a cheaper tier gives up only the short waves.
-- **The cloud law's `march`** is the prototype's `q`, `pixelsPerCss` its `c`,
-  `maxPixelsPerCss` its `cMax`, `entrySubSteps` its `refDiv`. The march's
-  fixed step counts per `q` belong to the cloud modules.
 - **The pixel ratio caps are this table's own, not the prototype's**
   (0.75, 1, 1.5 there). The prototype's canvas holds only sea, sky and
   clouds; the globe's also holds the imagery, the city and the interface,
@@ -44,16 +39,10 @@ fine-pointer tier) and shows it as `view.quality`.
 
 - **A tier is fixed for a view's life.** The wave count is compiled into the
   sea's shader. A page changes tier by making a new view.
-- **`low` is never a default.** It exists for a choice made by hand and as a
-  last step down.
-- **A choice by hand always wins** over the pointer; an automatic step-down
-  has to respect that.
+- **`low` is never a default.** It exists for a choice made by hand.
+- **A choice by hand always wins** over the pointer.
 - The pointer test is the page's (`matchMedia("(pointer: coarse)")`), so this
   module has no browser dependency.
-
-## The cloud numbers' reader
-
-`tapPixels` is the upsampling tent's reach in cloud pixels, read by the shell's composite.
 
 ## Example
 

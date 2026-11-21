@@ -3,8 +3,7 @@
  * a seeded generator, and the same seed must keep giving the same sky and
  * the same dust. These pins hold the exact outputs, so swapping the
  * generator for another implementation (or changing its arithmetic) shows
- * up here rather than as a sky that quietly moved. The cloud bake's blue
- * noise is pinned the same way in `globe-cloud-bake.test.ts`.
+ * up here rather than as a sky that quietly moved.
  */
 import { createHash } from "node:crypto";
 

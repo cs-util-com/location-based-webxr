@@ -56,8 +56,9 @@ prototype's (`public/prototypes/station-blocks-1-narrated-text/`).
   the block's text; without it the sign takes no tap (the 3D editor's).
   The minutes come from `readMinutes(wordCount(body))` in
   `long-text-sheet.ts`.
-- `mountedReadingSign(blockId, parts = mountedWorldParts())` - the
-  mounted sign standing for the text `blockId`, or null: `main.ts`
+- `mountedReadingSign(blockId)` - the
+  mounted sign standing for the text `blockId`, or null, read from the
+  live mounted set without a copy (it runs several times a frame): `main.ts`
   finds a narrated text's sign by it to start its words' travel and set
   its voice chip (`captions-follow.ts`). Only a part `mountReadingSign`
   made counts (a module `WeakSet`), whatever another part's fields.

@@ -1,6 +1,6 @@
 # globe-full-screen.ts
 
-- Purpose: the scaffolding every full-screen pass of the Globe needs, in
+- Purpose: the scaffolding a full-screen pass of the Globe needs, in
   one place: a triangle covering the viewport in its own scene and camera,
   a half-float colour target and its resize.
 - Public API:
@@ -20,6 +20,8 @@
   - Each pass gets its own scene and camera; nothing is shared between
     passes, so disposing one never touches another.
 - Users: `globe-atmosphere.ts` (the space pass) and `globe-ground-sky.ts`
-  (the ground sky's composite and its sky target).
+  (the ground sky's composite and its sky target). The cloud passes still
+  build their own triangle and targets, so a change here does not reach
+  them.
 - Tests: `globe-full-screen.test.ts` (geometry, culling, camera, resize,
   disposal); `globe-pass-shaders.test.ts` pins the users' shader programs.

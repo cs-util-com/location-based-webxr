@@ -143,7 +143,7 @@ describe("events from the trainer", () => {
         attempt: 1,
         fraction: 0.5,
         secondsLeft: 9,
-        nextPreviewInS: 1,
+        previewEveryS: 1,
         stage: "training",
       }),
     );
@@ -153,7 +153,7 @@ describe("events from the trainer", () => {
         attempt: 2,
         fraction: 0.5,
         secondsLeft: 9,
-        nextPreviewInS: 1,
+        previewEveryS: 1,
         stage: "training",
       }),
     );
@@ -170,7 +170,7 @@ describe("events from the trainer", () => {
           attempt: 1,
           fraction,
           secondsLeft,
-          nextPreviewInS: null,
+          previewEveryS: null,
           stage: "training",
         }),
       );
@@ -212,7 +212,7 @@ describe("stopping and continuing", () => {
         attempt: 1,
         fraction: 0.5,
         secondsLeft: 9,
-        nextPreviewInS: 1,
+        previewEveryS: 1,
         stage: "training",
       }),
     );
@@ -378,7 +378,7 @@ describe("secondsLeftInRun", () => {
         attempt: 1,
         fraction: 0.5,
         secondsLeft: 30,
-        nextPreviewInS: 3,
+        previewEveryS: 3,
         stage: "training",
       }),
     );
@@ -399,7 +399,7 @@ describe("secondsLeftInRun", () => {
         attempt: 1,
         fraction: 0.5,
         secondsLeft: 30,
-        nextPreviewInS: 3,
+        previewEveryS: 3,
         stage: "training",
       }),
     );
@@ -431,7 +431,7 @@ describe("secondsLeftInRun", () => {
         attempt: 1,
         fraction: 1,
         secondsLeft: 5,
-        nextPreviewInS: null,
+        previewEveryS: null,
         stage: "training",
       }),
     );
@@ -494,7 +494,7 @@ describe("what a stretch is doing", () => {
           attempt: 1,
           fraction: 0.5,
           secondsLeft: null,
-          nextPreviewInS: null,
+          previewEveryS: null,
           stage,
         }),
       );

@@ -193,8 +193,8 @@ describe("createGlobeSceneDepth", () => {
   it("draws the relief whole while the band's dither would drop its pixels, and gives the share back", () => {
     // Why: the band's cross-fade drops relief pixels in a fine dither. In the
     // depth those holes read "no ground", so a pass that ends at the depth
-    // alternates between the relief and the sea's sphere pixel by pixel: the
-    // near clouds' shadow came out as a dark stipple over the whole ground
+    // alternates between the relief and the sea's sphere pixel by pixel: a
+    // cloud pass's shadow came out as a dark stipple over the whole ground
     // around 3.5 km. A share left at 1 would blank the globe in the next frame.
     const { renderer, raw } = fakeRenderer();
     const carrierShare = { value: 0.4 };
@@ -239,9 +239,11 @@ describe("createGlobeSceneDepth", () => {
 });
 
 describe("SCENE_DEPTH_GLSL", () => {
-  // Why this test matters: every pass that ends its rays at the relief
-  // reads the depth through this chunk, so its uniforms must be the ones
-  // the passes set, and its reconstruction must invert the depth camera's
+  // Why this test matters: the atmosphere's pass ends its rays at the
+  // relief by reading the depth through this chunk (the cloud passes still
+  // reconstruct it inline, so a change to the math here must be made there
+  // too), so its uniforms must be the ones the pass sets, and its
+  // reconstruction must invert the depth camera's
   // projection under WebGL's conventions (uv and depth in [0, 1], clip
   // coordinates in [-1, 1]). A wrong sign or a missing divide would put
   // every relief point at the wrong distance on every page at once.
@@ -258,7 +260,9 @@ describe("SCENE_DEPTH_GLSL", () => {
       "vec4 v = uSceneInverseProjection * vec4( uv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0 );",
     );
     expect(SCENE_DEPTH_GLSL).toContain("return v.xyz / v.w;");
-    // The same arithmetic in JS, over a camera like the depth's (near 10 m).
+    // Documents the convention only: the same arithmetic in JS through
+    // three's own inverse projection, over a camera like the depth's (near
+    // 10 m). It cannot fail on a GLSL edit; the string pins above can.
     const camera = new THREE.PerspectiveCamera(60, 1.6, 10, 1e7);
     camera.updateProjectionMatrix();
     for (const point of [

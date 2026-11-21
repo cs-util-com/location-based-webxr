@@ -1,6 +1,7 @@
 /**
  * The practice trainer: a scripted stand-in behind the {@link TrainerAdapter}
- * interface, until the GPU trainer lands. It trains nothing. Each stretch
+ * interface, for trying the page without a graphics card that can train
+ * (`trainer-choice.ts`). It trains nothing. Each stretch
  * "trains" for a scripted time on the given timer, reports progress and
  * sharpening practice pictures, and ends with a scripted outcome: by
  * default stretch 3 comes out weak, stretch 5 not good enough and stretch 8
@@ -245,10 +246,7 @@ export function createPracticeTrainer(
             elapsed >= measureMs
               ? Math.max(0, (totalMs - elapsed) / 1000)
               : null,
-          nextPreviewInS:
-            nextPreview < totalMs
-              ? Math.max(0, (nextPreview - elapsed) / 1000)
-              : null,
+          previewEveryS: nextPreview < totalMs ? previewMs / 1000 : null,
         });
         if (losesCard && fraction >= 0.5) {
           end({

@@ -86,7 +86,6 @@ import {
   creditsFor,
   GIBS_ACKNOWLEDGEMENT,
   GLOBE_INTRO,
-  CLOUD_MARCH_LAYER,
   GLOBE_VIEW_CLOUDS,
   globeQualityPixelRatio,
   globeViewClouds,
@@ -342,7 +341,6 @@ export async function openGlobeEditor(
     | "cloudWind"
     | "buildings"
     | "grade"
-    | "clouds"
     | "quality"
   >,
 ): Promise<Editor3dView> {
@@ -447,13 +445,8 @@ export async function openGlobeEditor(
     const coarsePointer =
       window.matchMedia?.("(pointer: coarse)").matches === true;
     const quality = resolveGlobeQuality(knobs.quality, coarsePointer);
-    // The near clouds are experimental (`clouds=new`); the old ones are the
-    // default.
-    const nearClouds = knobs.clouds === "new";
     // Over this height the interface stays under the clouds.
-    const cloudDeckKm = nearClouds
-      ? CLOUD_MARCH_LAYER.topKm
-      : GLOBE_VIEW_CLOUDS.cloudShellKm;
+    const cloudDeckKm = GLOBE_VIEW_CLOUDS.cloudShellKm;
     const view: GlobeView = createGlobeView({
       canvas,
       fovYDeg: GLOBE_EDITOR_LOOK.fovYDeg,
@@ -580,9 +573,7 @@ export async function openGlobeEditor(
 
     const ground = createEditorTerrain({
       renderer,
-      centre: { lat: centre.lat, lng: centre.lng },
       device: reliefDeviceClass(window.innerWidth),
-      placement: "ecef",
       // The globe's own ground and look (as the globe lab's relief), so
       // the ground keeps its colour where the relief takes over.
       imagery: createGlobeImagery(),
@@ -654,19 +645,6 @@ export async function openGlobeEditor(
         shadow: knobs.cloudShadow,
         // The buildings hide the clouds behind them, as the relief does.
         extra: () => editorCity?.extra() ?? [],
-        ...(nearClouds
-          ? {
-              near: {
-                // A tier named by hand is held; only the default steps down.
-                autoQuality: knobs.quality === null,
-                createWorker: () =>
-                  new Worker(
-                    new URL("./globe-cloud-bake-worker.ts", import.meta.url),
-                    { type: "module" },
-                  ),
-              },
-            }
-          : {}),
       }),
     });
     air = mountedAir;

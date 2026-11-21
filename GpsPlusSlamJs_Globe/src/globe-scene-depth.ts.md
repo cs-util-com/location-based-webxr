@@ -35,7 +35,9 @@ out of the globe lab as a pure refactor; the lab imports it as
   `vec3 sceneViewPoint( vec2 uv, float z )`, the view-space point the depth
   `z` read at `uv` (both 0 to 1) stands for. The pass samples the depth
   itself (`texture2D` or `texture`, by its GLSL version) and skips
-  `z >= 1.0`. Included by `globe-atmosphere.ts`.
+  `z >= 1.0`. Included by `globe-atmosphere.ts`, its only user: the cloud
+  passes still reconstruct the depth inline with their own copy of the
+  same math, so a change here does not reach them.
 
 ## Invariants & assumptions
 
@@ -95,6 +97,6 @@ relief at the horizon below the hand-over).
 `createGlobeSceneDepth(renderer, { carrierShare })` takes the band's
 `uCarrierShare` and holds it at 1 while the relief is drawn, so the depth has
 no dither holes; the value is given back before the method returns. Without it
-the near clouds' shadow and their stop at the ground flip between the relief
+a cloud pass's shadow and its stop at the ground flip between the relief
 and the sea's sphere pixel by pixel inside the band (a dark stipple around
 3.5 km). Covered by `globe-scene-depth.test.ts`.
