@@ -574,6 +574,30 @@ describe("createCaptionsFollow", () => {
     expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
   });
 
+  // Why: while the new text's read-along is being read the old voice
+  // speaks on, so its sign must keep saying it plays: painting the old
+  // shown text's "paused" over the loop's "playing" flashes the chip for a
+  // frame. The sign the loop painted this frame is left alone.
+  it("never flashes the old sign paused while its voice speaks on", () => {
+    const { follow, set, give, mount, calls, playing } = make();
+    const b = text("b", { view: "lectern" });
+    mount("b");
+    const signA = mount("a");
+    set({ blocks: [b, text("a")], presentId: "s1", stored: null });
+    give(at(4000, "a", true));
+    playing(true);
+    follow.sync();
+    expect(calls(signA)).toEqual(["playing"]);
+    // b is the shown text now, its read-along still being read.
+    playing(false);
+    give(null);
+    set({ stored: READING });
+    follow.sync();
+    follow.sync();
+    expect(calls(signA)).not.toContain("paused");
+    expect(calls(signA).at(-1)).toBe("playing");
+  });
+
   // Why: pausing a voice hands the voice channel on, so a voice held behind
   // the shown text's (another text's narration, or a story's clip, tapped
   // over by the box's play) would start by itself at the switch, with no
