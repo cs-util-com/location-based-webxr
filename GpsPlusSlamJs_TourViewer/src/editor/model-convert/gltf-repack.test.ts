@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { checkGlbInert } from "gps-plus-slam-app-framework/ar/tour-media";
+import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 
 import {
   type GlbParts,
@@ -138,6 +139,35 @@ describe("repackGltf", () => {
     expect(contentOf(out)).toEqual(contentOf(source));
     expect(JSON.stringify(out.json)).not.toContain("data:");
     expect(await newErrors(original, result.glb)).toEqual([]);
+  });
+
+  // Why this test matters: a model whose buffers are all empty and that
+  // has no pictures has no bytes to carry, so its .glb has no binary chunk
+  // and no buffer, rather than an empty chunk a buffer must then describe.
+  it("writes no binary chunk when every buffer is empty and there are no pictures", () => {
+    const files = new Map([
+      [
+        GLTF,
+        encode(
+          JSON.stringify({
+            asset: { version: "2.0" },
+            buffers: [
+              { uri: "a.bin", byteLength: 0 },
+              { uri: "b.bin", byteLength: 0 },
+            ],
+          }),
+        ),
+      ],
+      ["model/a.bin", new Uint8Array(0)],
+      ["model/b.bin", new Uint8Array(0)],
+    ]);
+    const result = repacked(files);
+    const chunks = readGlbChunks(result.glb);
+    expect(chunks.ok).toBe(true);
+    if (!chunks.ok) return;
+    expect(chunks.bin).toBeNull();
+    expect(chunks.json["buffers"]).toBeUndefined();
+    expect(checkGlbInert(result.glb)).toEqual({ ok: true });
   });
 
   it("finds a percent-encoded name (Box%20With%20Spaces.bin)", async () => {
