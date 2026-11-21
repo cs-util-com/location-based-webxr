@@ -254,6 +254,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.flush()` - writes the typing not yet in the tour (an
   inspector field being typed in, a long text's writer before its
   pause); the page calls it before a save.
+- `EditorShell.dirty()` - whether an inspector field is being typed in
+  (focused, its text not the tour's): the page's leave prompt and its
+  autosave hold read it. A long text's writer is not counted: it writes
+  its typing itself after a pause of `WRITER_SAVE_MS`.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and

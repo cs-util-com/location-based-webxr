@@ -797,15 +797,14 @@ async function savesSettled(): Promise<void> {
   }
 }
 
-/** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
- *  review #3, #7): a delete's undo while its toast offers it, a gesture of
- *  the 3D view. The delete reaches the file only
- *  once its Undo has lapsed (M4a review #2): an undo after the save that
- *  wrote it still works in this tab (the edit stack), but a draft does not
- *  bring the note back after a closed tab (`editor-draft.ts` places
- *  nothing new). */
+/** Edits being made that a save must not cut into: a delete's undo while
+ *  its toast offers it, a gesture of the 3D view, an inspector field being
+ *  typed in (`shell.dirty`). The delete reaches the file only once its
+ *  Undo has lapsed: an undo after the save that wrote it still works in
+ *  this tab (the edit stack), but a draft does not bring the note back
+ *  after a closed tab (`editor-draft.ts` places nothing new). */
 function editing(): boolean {
-  return undoOffer !== null || ui().gesture !== null;
+  return undoOffer !== null || ui().gesture !== null || shell.dirty();
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -2607,9 +2606,15 @@ function showModal(on: boolean): void {
   }
 }
 
-/** Leaving would lose edits: changes not saved, or a save not delivered. */
+/** Leaving would lose edits: changes not saved, a save not delivered, or
+ *  an inspector field being typed in (in no tour and no draft yet). */
 function unsavedWork(): boolean {
-  return saving() || undelivered !== null || (editor?.changeCount() ?? 0) > 0;
+  return (
+    saving() ||
+    undelivered !== null ||
+    (editor?.changeCount() ?? 0) > 0 ||
+    shell.dirty()
+  );
 }
 
 /** Set once the page asked before leaving itself (a reload of the

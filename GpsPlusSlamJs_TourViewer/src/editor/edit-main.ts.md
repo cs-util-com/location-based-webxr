@@ -438,8 +438,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   "large tour: saved when you press Save", adding "your changes are kept in
   this browser meanwhile" only when the draft backs up (E2b-2 milestone
   review #3).
-  - **Held** while a delete's Undo is offered or a 3D gesture runs, a
-    save runs, or the open dialog
+  - **Held** while a delete's Undo is offered, a 3D gesture runs, an
+    inspector field is being typed in, a save runs, or the open dialog
     shows or an open is busy (`editing()`, `saving`, `!modal.hidden`,
     `busy`: an autosave landing in the middle of an open moved the NEW
     tour's draft, E2b-2 milestone review #1); the hold's end pokes it
@@ -744,7 +744,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   new copy
   (W2: it said "a new copy" in every browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
-  File's Open… (`window.confirm`).
+  File's Open… (`window.confirm`). Unsaved work counts an inspector field
+  being typed in (`shell.dirty()`: focused, its text not the tour's),
+  which is in no tour and no draft until it is left; the same typing
+  holds the autosave (`editing()`).
 - **Closing** a tour (another open) closes its session and its 3D view.
 - **The page's store** (`createTourViewerStore()`, built first: the
   library's geo maths - the distance lines - runs only once one exists)
