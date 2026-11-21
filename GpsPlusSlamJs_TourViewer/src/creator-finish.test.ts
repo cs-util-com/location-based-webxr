@@ -28,7 +28,13 @@
  * framework's own packer tests, and the reason is the same: what a visitor
  * gets is the file, not the call.
  */
-import { describe, expect, it } from "vitest";
+import type { TourDocumentState } from "./tour-document.js";
+import {
+  finishErrorLine,
+  finishFailed,
+  finishRunning,
+} from "./finish-status.js";
+import { describe, expect, it, vi } from "vitest";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { existsSync, readFileSync } from "node:fs";
 import {
@@ -390,11 +396,17 @@ async function wireFinishable(options: {
  */
 async function settle(ctx: {
   rebuiltZip: unknown;
-  finishError: unknown;
+  tourDocument: { state(): TourDocumentState };
 }): Promise<void> {
   for (let i = 0; i < 600; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
+    const state = ctx.tourDocument.state();
+    if (
+      !finishRunning(state) &&
+      (ctx.rebuiltZip !== null || finishFailed(state))
+    ) {
+      return;
+    }
   }
 }
 
@@ -422,7 +434,9 @@ describe("the finish rebuilds the open archive under its session's budget (K0 mi
     await settle(ctx);
 
     expect(ctx.rebuiltZip).toBeNull();
-    expect(ctx.finishError).toMatch(/too large once unpacked/);
+    expect(finishErrorLine(ctx.tourDocument.state())).toMatch(
+      /too large once unpacked/,
+    );
   });
 });
 
@@ -479,7 +493,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       });
       dom.finishButton.click();
       await settle(ctx);
-      expect(ctx.finishError).toBeNull();
+      expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
 
       const blob = ctx.rebuiltZip!.blob;
       const names = await entryNamesOf(blob);
@@ -513,7 +527,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     expect(await entryNamesOf(blob)).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
     const next = await openTourFile(
@@ -628,7 +642,7 @@ describe("what the finish actually writes into the published zip", () => {
     await settle(ctx);
 
     expect(
-      ctx.finishError,
+      finishErrorLine(ctx.tourDocument.state()),
       "a duplicate id must not make the finish fail",
     ).toBeNull();
     const rebuilt = ctx.rebuiltZip?.blob;
@@ -705,7 +719,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
     expect(written.objects[1]).toMatchObject({
@@ -728,7 +742,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
     expect(written.objects.map((o) => o.id)).toEqual(["kept"]);
@@ -776,7 +790,7 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
     );
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     // Written, so it left the list of work to write.
     expect(ctx.tourDocument.entries()).toEqual([]);
     setup.beginAuthorVisit();
@@ -834,6 +848,150 @@ describe("a tour closed while the finish ends the AR session", () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     expect(dom.finishBlock.hidden).toBe(true);
+  });
+});
+
+describe("the Finish's status on the panel: running, progress, failure", () => {
+  // Why these tests matter: the Finish's status (running, its progress
+  // line, its failure) is read by the status line, the AR button's Done,
+  // the object list, the placement buttons and the measuring. They pin
+  // what a creator sees through the panel alone, so the status can move
+  // between holders (session fields, the document's save status) with the
+  // same tests green on both sides.
+
+  /** An archive read held until `release`: the Finish waits in "reading". */
+  function heldArchive(blob: () => Blob): {
+    extras: Record<string, unknown>;
+    release: () => void;
+  } {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return {
+      extras: { readWholeArchive: () => held.then(blob) },
+      release: () => {
+        release();
+      },
+    };
+  }
+
+  /** Let the Finish's continuation and its save settle. */
+  async function turns(): Promise<void> {
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+  }
+
+  it("leads the status line with its progress while it runs, through re-renders, and starts no second Finish", async () => {
+    let archive: Blob = new Blob([]);
+    const hold = heldArchive(() => archive);
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: hold.extras,
+    });
+    const size = (ctx.session as unknown as { archive: { size: number } })
+      .archive.size;
+    archive = await hostedArchive([]);
+    dom.finishButton.click();
+    const reading = FINISH_LABELS.reading(size);
+    expect(dom.status.textContent).toBe(reading);
+    expect(dom.finishButton.disabled).toBe(true);
+    // Every store dispatch re-renders the readout: the progress stays.
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(reading);
+    // Done in AR while it runs starts nothing.
+    expect(setup.finishNow()).toBe(false);
+    hold.release();
+    await vi.waitFor(() => {
+      expect(dom.status.textContent).not.toBe(reading);
+    });
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
+  });
+
+  it("keeps a failure that came after the zip was made and handed over, until the next tap", async () => {
+    // The zip a failed Finish made is still saved off AR; that hand-over
+    // must not take the failure back: the failure stays on the panel until
+    // a tap that starts a Finish. The retry button shows only while a
+    // Finish could start: with every change in the zip already, a retry
+    // would have nothing to write.
+    const saves: string[] = [];
+    let failures = 1;
+    const status: { set?: (value: string) => void } = {};
+    const { dom, setup, arStatus } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      onDisable: () => {
+        if (failures === 0) return;
+        failures -= 1;
+        status.set?.("ready"); // the session is down, then the end throws
+        throw new Error("the session would not end cleanly");
+      },
+      seamsExtras: {
+        downloadZip: (_blob: Blob, filename: string) => {
+          saves.push(filename);
+          return Promise.resolve(true);
+        },
+      },
+    });
+    status.set = (value) => {
+      arStatus.value = value;
+    };
+    const failed = FINISH_LABELS.failed("the session would not end cleanly");
+    dom.finishButton.click();
+    await vi.waitFor(() => {
+      expect(saves).toHaveLength(1);
+    });
+    await turns();
+    expect(dom.status.textContent).toBe(failed);
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(failed);
+    // The zip already carries every change: no retry is offered, and the
+    // failure line stands.
+    expect(dom.finishButton.hidden).toBe(true);
+    // A desk edit makes a Finish possible again: the retry comes back, and
+    // the tap that starts it clears the failure.
+    expect(setup.renameTour("Renamed")).toBeNull();
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(failed);
+    expect(dom.finishButton.hidden).toBe(false);
+    expect(dom.finishButton.disabled).toBe(false);
+    dom.finishButton.click();
+    expect(dom.status.textContent).not.toBe(failed);
+    await vi.waitFor(() => {
+      expect(saves).toHaveLength(2);
+    });
+    await turns();
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
+  });
+
+  it("stays running when its tour closes until it ends, and then reports no failure", async () => {
+    let archive: Blob = new Blob([]);
+    const hold = heldArchive(() => archive);
+    const { dom, ctx, setup } = await wireFinishable({
+      hosted: [],
+      placed: [pin("new-one")],
+      sessionExtras: hold.extras,
+    });
+    const size = (ctx.session as unknown as { archive: { size: number } })
+      .archive.size;
+    archive = await hostedArchive([]);
+    dom.finishButton.click();
+    const reading = FINISH_LABELS.reading(size);
+    // The tour closes as `archive-open.ts` closes it: no session, the
+    // document back to no tour.
+    ctx.session = null;
+    ctx.tourDocument.close();
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(reading);
+    expect(setup.finishNow()).toBe(false);
+    hold.release();
+    await vi.waitFor(() => {
+      expect(dom.status.textContent).not.toBe(reading);
+    });
+    await turns();
+    expect(dom.status.textContent).not.toMatch(/Finishing failed/);
   });
 });
 
@@ -1029,7 +1187,7 @@ describe("the finish writes no debug camera captures", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await writtenManifest(ctx);
     expect(written).toMatchObject({ version: 5, minor: 0 });
     expect(written).not.toHaveProperty("captureSpots");
@@ -1112,7 +1270,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     // walk. It starts unticked now, since the walk is saved apart.
     const { ctx, dom } = await wireRecordingTour("default");
     expect(dom.keepScanInput.checked).toBe(false);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     expect(names.filter((n) => WALK.includes(n))).toEqual([]);
     expect(names).toContain(`${WRAP}tour.json`);
@@ -1126,7 +1284,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   it("leaves the whole walk out when the creator unticks the switch, frames and all, and says so", async () => {
     // The page's later renders (the Finish renders too) keep the untick.
     const { ctx, dom } = await wireRecordingTour(false);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     // No frame stays: none is the tour's content.
     expect(names.filter((n) => WALK.includes(n))).toEqual([]);
@@ -1194,7 +1352,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     expect(wired.dom.debugSave.hidden).toBe(true);
     wired.dom.finishButton.click();
     await settle(wired.ctx);
-    expect(wired.ctx.finishError).toBeNull();
+    expect(finishErrorLine(wired.ctx.tourDocument.state())).toBeNull();
     // The tour zip the Finish saved (by itself) leaves the walk out ...
     expect(handed).toHaveLength(1);
     const tourNames = await entryNamesOf(handed[0]!.blob);
@@ -1458,7 +1616,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     dom.finishButton.click();
     await settle(ctx);
     await saved();
-    expect(ctx.finishError).not.toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).not.toBeNull();
     expect(saves).toHaveLength(1);
     expect(dom.finishBlock.hidden).toBe(false);
     expect(dom.downloadButton.disabled).toBe(false);
@@ -1563,7 +1721,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     expect(dom.downloadButton.disabled).toBe(false);
     ctx.tourDocument.place(pin("another-one"), {}, "another pin");
     dom.finishButton.click();
-    expect(ctx.finishing).toBe(true);
+    expect(finishRunning(ctx.tourDocument.state())).toBe(true);
     expect(dom.downloadButton.disabled).toBe(true);
     await settle(ctx);
     await saved();
@@ -1671,7 +1829,7 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     expect(dom.finishButton.disabled).toBe(false);
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
     expect(written.objects[1]).toMatchObject({
@@ -1727,7 +1885,7 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.title).toBe("Harbour Lights");
   });
@@ -1773,7 +1931,7 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.title).toBe("Harbour Lights");
   });

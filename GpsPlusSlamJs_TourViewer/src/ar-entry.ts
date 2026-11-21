@@ -9,6 +9,7 @@
  * granted, the tap requests the position and the NEXT tap starts AR.
  */
 
+import { finishFailed, finishRunning } from "./finish-status.js";
 import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 import type { EnableGpsArState } from "gps-plus-slam-app-framework/ar";
 import type { GpsPosition } from "gps-plus-slam-app-framework/sensors";
@@ -550,8 +551,8 @@ export function wireArEntry(deps: {
       mode,
       location,
       {
-        running: ctx.finishing,
-        failed: ctx.finishError !== null,
+        running: finishRunning(ctx.tourDocument.state()),
+        failed: finishFailed(ctx.tourDocument.state()),
       },
       deps.walk?.progressKept() ?? false,
     );
@@ -969,8 +970,8 @@ export function wireArEntry(deps: {
       // the finish ends the session itself once the zip is written.
       if (
         authorMode &&
-        !ctx.finishing &&
-        ctx.finishError === null &&
+        !finishRunning(ctx.tourDocument.state()) &&
+        !finishFailed(ctx.tourDocument.state()) &&
         hooks.finishFromAr()
       ) {
         renderArState(arController.getState());

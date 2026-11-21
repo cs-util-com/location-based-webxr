@@ -90,6 +90,13 @@ what)` - a draft's work, already filtered by the page, with its
 - The write (the Finish): `saveStarted() -> generation`, `saved({
 generation, written, appliedDeletions, stationsAtStart })`,
   `saveEnded(generation, error?)`.
+- The Finish's status in the save status (`finish-status.ts` reads it):
+  `finishClaimed()` (the page's save slot as `"explicit"`; clears the last
+  failure), `finishProgressed(progress)` (`save.progress`),
+  `finishReleased(error?)` (lets the slot go; `error` is the failure, said
+  until the next claim or the tour's close) and `finishWaits(waits)`
+  (`save.finishWaits`, Done waiting for a measurement). The slot, its
+  progress and the wait survive `open` and `close`.
 - `follow(draft)` - the draft follows the document: `followDocument`
   (`tour-document-draft.ts`) from a listener after each edit, and after
   each change of the codes the draft keeps (`isCodeChange`, plan M3b:

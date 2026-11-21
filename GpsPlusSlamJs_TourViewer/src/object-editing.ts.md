@@ -99,7 +99,9 @@ draft writes and history. Wired by `creator-setup.ts`, drawn by
   ends, when any later note replaces the outcome (single-level undo: it
   undoes what the note says), when the document changed after the delete
   (another open, or any later change: the document's undo takes back the
-  LAST step) or when the visit or tour ends (`reset`). A Finish's write
+  LAST step) or when the visit or tour ends (`reset`). While a Finish
+  runs (`finishRunning`, `finish-status.ts`) the list is locked, the
+  page's Undo is hidden and the actions refuse. A Finish's write
   itself changes no revision, so on the page the Undo outlives it while its
   hold lasts, as on the desktop (the parity row "delete, save, undo the
   delete, save"). In AR a Finish first settles the running visit

@@ -11,6 +11,7 @@
  * fused one does, at the true rotation. A pipeline still on
  * the average fails the stable-pose tests below.
  */
+import { finishRunning } from "./finish-status.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   buildObjectPoints,
@@ -581,7 +582,7 @@ describe("the creator measures and mints with the fused pose", () => {
       // Finish tapped in that window does not start.
       c.dom.finishButton.disabled = false;
       c.dom.finishButton.click();
-      expect(c.ctx.finishing).toBe(false);
+      expect(finishRunning(c.ctx.tourDocument.state())).toBe(false);
       release();
       await vi.waitFor(() => {
         expect(c.codes.inHand()?.id).not.toBe("hosted");

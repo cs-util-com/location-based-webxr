@@ -247,6 +247,36 @@ describe("the creator's document: changes through the slice's guards", () => {
     expect(doc.undo()).toEqual({ kind: "nothing" });
   });
 
+  // Why: the phone's Finish keeps its status in the shared save status
+  // through these four calls alone; the page reads it back through
+  // finish-status.ts, so each must land in the field it names.
+  it("holds the Finish's slot, progress, failure and waiting Done in the save status", () => {
+    const doc = fresh();
+    doc.open(tourOf([pin("a")]));
+    doc.finishWaits(true);
+    expect(doc.state().save.finishWaits).toBe(true);
+    doc.finishWaits(false);
+    doc.finishClaimed();
+    doc.finishProgressed({ kind: "rebuilding", done: 1, total: 4 });
+    expect(doc.state().save).toMatchObject({
+      status: "saving",
+      by: "explicit",
+      progress: { kind: "rebuilding", done: 1, total: 4 },
+      finishWaits: false,
+    });
+    doc.finishReleased("disk full");
+    expect(doc.state().save).toMatchObject({
+      status: "error",
+      by: null,
+      progress: null,
+      error: "disk full",
+    });
+    doc.finishClaimed();
+    expect(doc.state().save.error).toBeNull();
+    doc.finishReleased();
+    expect(doc.state().save).toMatchObject({ status: "idle", error: null });
+  });
+
   it("refuses an undo that brings back a photo whose picture it lacks", () => {
     const doc = fresh();
     const tour = tourOf([photo("f")]);

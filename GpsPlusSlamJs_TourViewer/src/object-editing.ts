@@ -18,6 +18,7 @@
  * @see object-editing.ts.md
  */
 
+import { finishRunning } from "./finish-status.js";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import {
@@ -221,11 +222,14 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
         inAr: deps.sessionLive(),
         selectedId,
         busy,
-        locked: ctx.finishing,
+        locked: finishRunning(ctx.tourDocument.state()),
         note,
         // In AR the strip's persistent Undo is the one Undo: the
         // note says what happened, the strip takes it back.
-        undo: undoable !== null && !ctx.finishing && !deps.sessionLive(),
+        undo:
+          undoable !== null &&
+          !finishRunning(ctx.tourDocument.state()) &&
+          !deps.sessionLive(),
         question: asking?.question ?? null,
       }),
     );
@@ -286,7 +290,7 @@ export function wireObjectEditing(deps: ObjectEditingDeps): ObjectEditing {
   /** The actions refuse while a Finish rebuilds the zip: the rebuild has
    *  read the lists, and a change now would be in neither zip nor list. */
   function refusedDuringFinish(): boolean {
-    if (!ctx.finishing) return false;
+    if (!finishRunning(ctx.tourDocument.state())) return false;
     say("Wait until the zip is rebuilt, then try again.");
     return true;
   }

@@ -14,6 +14,12 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
+import type { TourDocumentState } from "./tour-document.js";
+import {
+  finishErrorLine,
+  finishFailed,
+  finishRunning,
+} from "./finish-status.js";
 import { memoryDraftStore } from "./test-support/memory-draft-stores.js";
 import { stationBlocks } from "./test-support/station-content.js";
 import { isAnyOf } from "@reduxjs/toolkit";
@@ -1424,11 +1430,17 @@ function hostInstead(
  *  rebuild: polled, never a fixed count of turns). */
 async function finished(ctx: {
   rebuiltZip: unknown;
-  finishError: unknown;
+  tourDocument: { state(): TourDocumentState };
 }): Promise<void> {
   for (let i = 0; i < 600; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
+    const state = ctx.tourDocument.state();
+    if (
+      !finishRunning(state) &&
+      (ctx.rebuiltZip !== null || finishFailed(state))
+    ) {
+      return;
+    }
   }
 }
 
@@ -1582,7 +1594,7 @@ describe(
       a.endVisit();
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
 
       a.beginVisit();
       a.seeTheCode();
@@ -1726,8 +1738,7 @@ describe(
       await a.placePin("Gate", [2, 0, -1]);
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).not.toBeNull();
-      a.ctx.finishError = null;
+      expect(finishErrorLine(a.ctx.tourDocument.state())).not.toBeNull();
       await a.placePin("Later", [3, 0, 1]);
       const end = yawAlignment(4, [1.5, 400.2, -1]);
       a.setAlignment(end);
@@ -1753,14 +1764,14 @@ describe(
       expect(a.dom.finishButton.hidden).toBe(true);
       // Nothing measured, nothing placed: no finish can start yet.
       expect(a.setup.finishNow()).toBe(false);
-      expect(a.ctx.finishing).toBe(false);
+      expect(finishRunning(a.ctx.tourDocument.state())).toBe(false);
       await a.mint();
       await a.placePin("Gate", [2, 0, -1]);
       expect(a.setup.finishNow()).toBe(true);
-      expect(a.ctx.finishing).toBe(true);
+      expect(finishRunning(a.ctx.tourDocument.state())).toBe(true);
       tour.releaseArchive();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
     });
 
     it("a Done while a code is being measured keeps the session, says so first, and saves once it is measured (PR #598 review, F17, r837 review)", async () => {
@@ -1794,7 +1805,7 @@ describe(
           expect(idHold.held).toBeGreaterThan(0);
         });
         expect(a.setup.finishNow()).toBe(true);
-        expect(a.ctx.finishing).toBe(false);
+        expect(finishRunning(a.ctx.tourDocument.state())).toBe(false);
         const waits = /^A code is being measured - the tour saves as soon/;
         expect(a.dom.status.textContent).toMatch(waits);
         // `ar-entry.ts` re-renders right after Done (`renderArState`), and
@@ -1813,7 +1824,7 @@ describe(
           expect(a.ctx.rebuiltZip).not.toBeNull();
         });
         await finished(a.ctx);
-        expect(a.ctx.finishError).toBeNull();
+        expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
         expect(a.dom.status.textContent).not.toMatch(waits);
       } finally {
         idHold.gate = null;
@@ -1841,7 +1852,7 @@ describe(
       await flush();
       tour.releaseArchive();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
 
       const written = tourObjects(a.ctx.tourDocument.manifest()!).map((o) =>
         o.kind === "shortText" ? o.caption : o.id,
@@ -2042,7 +2053,7 @@ describe(
       await a.placePin("Later", [3, 0, 1]);
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       const settle = a.settledLogs().at(-1)!.payload;
       expect(settle.basis).toBe("code-corrected");
       expect(settle.referenceLevel).toEqual(hosted);
@@ -3777,7 +3788,7 @@ describe(
         a.ctx.tourManifestStatus = "settled";
         a.dom.finishButton.click();
         await finished(a.ctx);
-        expect(a.ctx.finishError).toBeNull();
+        expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
         return a.dom.finishStatus.textContent;
       };
       // The control: without the tap the line does report it.
@@ -3962,7 +3973,7 @@ describe(
       await openFinishableTour(a);
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       const written = parseTourManifest(
         JSON.parse(serializeTourManifest(a.ctx.tourDocument.manifest()!)),
       );
@@ -4060,7 +4071,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       expect(a.dom.finishStatus.textContent).toMatch(
         // 4 m walked against the 24 m that 5 m accuracy needs.
         /The code's saved position was kept: this visit's walk was about 20 m too short for the GPS accuracy to improve it\./,
@@ -4182,7 +4193,7 @@ describe(
 
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       const model = summary.shown.at(-1);
       expect(model?.tracks).toHaveLength(2);
       expect(model?.codes).toHaveLength(1);
@@ -4502,7 +4513,7 @@ describe(
       b.device.live = false;
       b.dom.finishButton.click();
       await finished(b.ctx);
-      expect(b.ctx.finishError).toBeNull();
+      expect(finishErrorLine(b.ctx.tourDocument.state())).toBeNull();
       expect(summary.shown.at(-1)?.tracks).toHaveLength(1);
       expect(summary.shown.at(-1)?.codes[0]?.verdict.numbers?.visitCount).toBe(
         1,
@@ -4628,7 +4639,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       expect(summary.shown.at(-1)?.codes.map((c) => c.levelId)).toEqual([
         first.id,
         second.id,
@@ -4787,7 +4798,7 @@ describe(
       await a.mint();
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       a.beginVisit();
       for (let i = 0; i < 8; i += 1) {
         captured.configs.at(-1)?.onDetection?.({
@@ -5571,7 +5582,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).not.toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).not.toBeNull();
       expect(spotsOf(a).current).toEqual(original);
       expect(spotsOf(a).copies).toEqual([moved]);
       a.endVisit();
@@ -5607,7 +5618,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).not.toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).not.toBeNull();
       const moved = spotsOf(a);
       expect(moved.previous).toEqual(original);
       a.endVisit();
@@ -5683,7 +5694,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
       a.beginVisit();
       a.setup.renderAuthorReadout();
       expect(a.dom.undoLabel.textContent).toBe("Undo: the code's move");
@@ -5743,7 +5754,7 @@ describe(
       a.ctx.tourManifestStatus = "settled";
       a.dom.finishButton.click();
       await finished(a.ctx);
-      expect(a.ctx.finishError).not.toBeNull();
+      expect(finishErrorLine(a.ctx.tourDocument.state())).not.toBeNull();
       a.setup.renderAuthorReadout();
       expect(a.dom.undoButton.disabled, "withdrawn with the unsettle").toBe(
         true,
