@@ -23,7 +23,7 @@ export const DRAFT_EDIT_WAITS =
 /** The same in AR, where the offer is out of sight (a tour a scan opened
  *  while AR runs: the start of AR asks first otherwise). */
 export const DRAFT_EDIT_WAITS_IN_AR =
-  "Your change waits: unsaved work for this tour is on this device - leave AR to restore it or delete it.";
+  "Your change waits: unsaved work for this tour is on this device. Leave AR to choose - Delete it applies your change, Restore brings the earlier work back and drops what you made in AR.";
 
 /** Said after "Not now" dropped a waiting edit. */
 export const DRAFT_EDIT_NOT_APPLIED = "Your change was not applied.";
@@ -31,6 +31,13 @@ export const DRAFT_EDIT_NOT_APPLIED = "Your change was not applied.";
 /** Said after Restore, when an edit waited: it was dropped. */
 export const DRAFT_EDIT_MAKE_AGAIN =
   "Your last change was not applied - make it again.";
+
+/** `DRAFT_EDIT_MAKE_AGAIN` for `dropped` edits (more than one: plural). */
+export function draftEditsMakeAgain(dropped: number): string {
+  return dropped > 1
+    ? "Your last changes were not applied - make them again."
+    : DRAFT_EDIT_MAKE_AGAIN;
+}
 
 /** "Delete it"'s label while it runs, on both pages. */
 export const DRAFT_DELETING = "Deleting...";

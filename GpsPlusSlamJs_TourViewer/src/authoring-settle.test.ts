@@ -5962,5 +5962,27 @@ describe(
       expect(a.ctx.placementNote).toMatch(/^Capturing failed/);
       expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
     });
+
+    // Why: a placement that waits for the draft question (a tour a scan
+    // opened while AR runs) is not refused - it lands once the draft is
+    // decided, with the station the arm started. Giving the arm back
+    // would let the next item start a second station for one tap, and
+    // the waiting pin would still take the first.
+    it("a placement that waits for the draft question keeps the arm taken", async () => {
+      const a = authoring();
+      await a.mint();
+      const nearby = await stationNearby(a);
+      a.ctx.store.draftGate.hold(() => undefined);
+      a.dom.newStationButton.click();
+      await a.placePin("Waits", [1, 0, 1]);
+      expect(a.ctx.store.draftGate.waiting()).toBe(true);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+      expect(a.ctx.store.draftGate.release()).toBe(1);
+      const waited = a.ctx.tourDocument.entries().at(-1)!.object;
+      expect(waited.kind).toBe("shortText");
+      expect(waited.station).toBeDefined();
+      expect(waited.station).not.toBe(nearby);
+      expect(a.ctx.tourDocument.newStationArmed()).toBe(false);
+    });
   },
 );

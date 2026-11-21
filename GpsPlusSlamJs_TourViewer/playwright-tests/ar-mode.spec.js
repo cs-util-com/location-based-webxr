@@ -3038,20 +3038,17 @@ test("placing after Delete it is still saved: a discard ends the draft, not the 
 test("a pin placed right after Delete it is on disk at once: the discard rejects the old draft, not this session's work", async ({
   page,
 }) => {
-  // Why this test matters. The same data loss as the
-  // sibling above, one tap earlier, and worse because nothing on screen
-  // changed at all: a pin placed while the offer sat there, and then
-  // `store.clear()` emptied the WHOLE namespace - including the `object:`
-  // files just written for this session's pins, which were never part of
-  // the draft being rejected - and only the meta was written back.
+  // Why this test matters: a durability check. After "Delete it" the
+  // namespace holds the meta, the codes and exactly this session's pin, on
+  // disk, not only on screen. A crash before finishing loses pins that are
+  // only on screen silently, because the write SUCCEEDED and the
+  // no-persistence notice only fires on failure.
   //
-  // Changed rule: AR now starts only once the draft is decided, so a pin
-  // can no longer be placed before "Delete it". What this still pins is
-  // the durability the defect broke: after the tap, the namespace holds
-  // the meta, the codes and exactly this session's pin, on disk, not only
-  // on screen. A crash before finishing lost those pins silently, because
-  // the write SUCCEEDED and the no-persistence notice only fires on
-  // failure.
+  // It was written for a defect that can no longer arise this way: a pin
+  // placed while the offer sat there was wiped when `store.clear()`
+  // emptied the WHOLE namespace on "Delete it". AR now starts only once
+  // the draft is decided, so the pin is placed after the tap, and the test
+  // keeps the durability that defect broke.
   //
   // Third time this feature has been the way work is lost. The assertion
   // that matters is the offer's TEXT: visibility alone is satisfied by the

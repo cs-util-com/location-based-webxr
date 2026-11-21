@@ -230,13 +230,19 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   as its follow-up. The codes are not gated (their record re-states the
   waiting draft's, below).
 - **AR starts only once the draft is decided** (`readyForAr`, through the
-  session's `creatorDraftDecided` hook, awaited by `ar-entry.ts` before
-  the author pipeline starts). In AR the offer is out of sight, and an
-  edit there would wait for a question nobody sees, so Start AR waits for
-  a read still running, then, with an offer open, shows it again with
-  `DRAFT_DECIDE_BEFORE_AR` and leaves AR unstarted. A tour a scan opens
-  in the middle of an AR session can still meet an undecided draft there,
-  which is what `DRAFT_EDIT_WAITS_IN_AR` is for.
+  session's `creatorDraftDecided` hook, asked by `ar-entry.ts` before the
+  author pipeline starts). In AR the offer is out of sight, and an edit
+  there would wait for a question nobody sees. `readyForAr` answers at
+  once and never waits (WebXR starts only inside the tap's own user
+  activation): while the read runs (`readRunning`) it says
+  `DRAFT_BEING_READ`, while "Delete it" runs `DRAFT_DELETE_RUNS`, with an
+  offer open it shows it again with `DRAFT_DECIDE_BEFORE_AR`; each keeps
+  AR unstarted, and the next tap asks again. The read's end, a throw and
+  a teardown each clear `DRAFT_BEING_READ`; a stale read's end clears it
+  only when no newer read runs. A tour a scan opens in the middle of an
+  AR session can still meet an undecided draft there, which is what
+  `DRAFT_EDIT_WAITS_IN_AR` is for: it says that Restore drops what was
+  made in AR. Restore's note uses `draftEditsMakeAgain(dropped)`.
 - **"Delete it" shows its progress** (`async-ui-feedback`): the three
   answers are disabled and its label reads `DRAFT_DELETING` from the tap
   until the commit says how it went; a

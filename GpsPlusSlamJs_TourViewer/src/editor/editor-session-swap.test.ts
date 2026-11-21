@@ -19,7 +19,7 @@ import {
 import { describe, expect, it } from "vitest";
 
 import { openTourFile, type TourSession } from "../tour-session.js";
-import { tourDocumentActions } from "../tour-document.js";
+import { selectTourDocument, tourDocumentActions } from "../tour-document.js";
 import { editorStore } from "../test-support/editor-store.js";
 import { tourOf } from "../test-support/tour-of.js";
 import { zipBlobEntryNames } from "../zip-blob.js";
@@ -374,6 +374,90 @@ describe("swapAsset with a draft, and a restore of a swap", () => {
       await editor.swapAsset(id, { blob: new Blob(["OggS"]), path: opus }),
     ).toMatchObject({ kind: "refused" });
     expect(calls).toEqual([opus, wav]);
+    await session.close();
+  });
+
+  /** A session with a draft whose swaps are recorded, on `store`. */
+  function recordingDraft(swaps: string[]): EditorSessionDraft {
+    return {
+      saveObject: () => Promise.resolve(true),
+      saveDeletion: () => Promise.resolve(true),
+      forgetDeletion: () => Promise.resolve(true),
+      forgetObject: () => Promise.resolve(),
+      saveSettings: () => Promise.resolve(true),
+      saveAsset: () => Promise.resolve(true),
+      swapAsset: (asset) => {
+        swaps.push(asset.path);
+        return Promise.resolve(true);
+      },
+    };
+  }
+
+  // Why: a smaller file can finish while a draft offer stands, and its
+  // record then waits for the answer like any edit. Restore drops it, so
+  // the document keeps the original record - and the bytes table and the
+  // draft must agree with it: the smaller file under the original path
+  // and size, or a draft offering the swap again, would each say a
+  // different thing about the same asset. The shelf is told it was not
+  // applied, so the job can run again.
+  it("a swap that waited for the draft question and was dropped is taken back out of the table and the draft", async () => {
+    const session = await openedTour();
+    const store = editorStore();
+    const swaps: string[] = [];
+    const editor = createEditorSession({
+      session,
+      manifest: MANIFEST,
+      levels: new Map(),
+      store,
+      draft: recordingDraft(swaps),
+    });
+    const { id, wav, opus } = await narrated(editor);
+    store.draftGate.hold(() => undefined);
+    const swapping = editor.swapAsset(id, {
+      blob: new Blob(["OggS-small"]),
+      path: opus,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.draftGate.waiting(), "the record waits").toBe(true);
+    expect(store.draftGate.drop()).toBe(1);
+    expect(await swapping).toMatchObject({ kind: "refused" });
+    expect(await editor.contentOf(wav)?.text()).toBe("RIFF-original-voice");
+    expect(
+      selectTourDocument(store.getState()).addedAssets.find((a) => a.id === id)
+        ?.path,
+      "the document keeps the original record",
+    ).toBe(wav);
+    expect(swaps, "the draft got the original record back").toEqual([
+      opus,
+      wav,
+    ]);
+    await session.close();
+  });
+
+  // Why: the same swap let through by a landed "Delete it" is applied: the
+  // table takes the smaller file with the record.
+  it("a swap that waited for the draft question and was let through lands in the table", async () => {
+    const session = await openedTour();
+    const store = editorStore();
+    const swaps: string[] = [];
+    const editor = createEditorSession({
+      session,
+      manifest: MANIFEST,
+      levels: new Map(),
+      store,
+      draft: recordingDraft(swaps),
+    });
+    const { id, opus } = await narrated(editor);
+    store.draftGate.hold(() => undefined);
+    const swapping = editor.swapAsset(id, {
+      blob: new Blob(["OggS-small"]),
+      path: opus,
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store.draftGate.release()).toBe(1);
+    expect(await swapping).toEqual({ kind: "swapped", backedUp: true });
+    expect(await editor.contentOf(opus)?.text()).toBe("OggS-small");
+    expect(swaps).toEqual([opus]);
     await session.close();
   });
 

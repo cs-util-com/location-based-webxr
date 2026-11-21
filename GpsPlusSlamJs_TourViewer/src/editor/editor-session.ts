@@ -757,6 +757,10 @@ const NOT_APPLIED = "That change could not be made to the tour as it is now.";
 const SWAP_REFUSED =
   "That smaller file could not replace the one in the tour: the tour no longer holds that file, or the new file is not of its kind.";
 
+/** A swap whose record waited for the draft question and was dropped. */
+const SWAP_DROPPED =
+  "The smaller file was not applied: it was made before the answer about the unsaved changes.";
+
 /** A station as the undo's words name it. */
 function stationName(frame: { readonly title?: string }): string {
   return frame.title === undefined ? "a station" : `"${frame.title}"`;
@@ -1963,6 +1967,7 @@ export function createEditorSession(input: {
   }
 
   const swapRefused: EditorRefusal = { kind: "refused", reason: SWAP_REFUSED };
+  const swapDropped: EditorRefusal = { kind: "refused", reason: SWAP_DROPPED };
 
   /** `swapAsset`: judged first, so a refused file never reaches the draft
    *  or the table. */
@@ -2005,9 +2010,29 @@ export function createEditorSession(input: {
       }
       return swapRefused;
     }
+    const before = files.get(id);
     files.set(id, file.blob);
-    store.dispatch(final.action);
+    const out = store.dispatch(final.action);
+    if (!isHeldEdit(out)) return { kind: "swapped", backedUp };
+    // The record waits for the draft question (`draft-edit-gate.ts`): the
+    // table keeps the bytes the standing record names meanwhile, and takes
+    // the smaller file only once the record lands.
+    putBack(id, before);
+    if ((await out.landed) === null) {
+      // Dropped (Restore, "Not now"): the draft gets the record that
+      // stands back, so no later open offers the swap again, and the shelf
+      // is told it was not applied.
+      if (was !== undefined) await draft.swapAsset(was, before);
+      return swapDropped;
+    }
+    files.set(id, file.blob);
     return { kind: "swapped", backedUp };
+  }
+
+  /** The bytes of `id` in the table back to `blob`, or none. */
+  function putBack(id: string, blob: Blob | undefined): void {
+    if (blob === undefined) files.delete(id);
+    else files.set(id, blob);
   }
 
   /** The shelf's file `assetId` with its uses as they stand, or why it

@@ -233,10 +233,11 @@ export interface TourViewerHooks {
    *  then start on it (`ar-entry.ts`). */
   creatorCanStartOnCodes(): boolean;
   /** A creator's AR entry asks about the open tour's undecided draft
-   *  first: true once it is decided (or there is none), after a draft
-   *  read still running; false shows the question and keeps AR unstarted
-   *  (`creator-draft.ts`'s `readyForAr`). */
-  creatorDraftDecided(): Promise<boolean>;
+   *  first, at once: true once it is decided (or there is none); false
+   *  says why (a read or a deletion still running, or the question
+   *  shown again) and keeps AR unstarted (`creator-draft.ts`'s
+   *  `readyForAr`). */
+  creatorDraftDecided(): boolean;
   /** Present the open tour's link in the print panel (M3's prefill), and
    *  advance the wizard. `origin` says which form the creator submitted
    *  from: an open started in step 4 must not answer by jumping to step 2
@@ -340,7 +341,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     startViewerPipeline: () => false,
     storedCodeVotes: () => null,
     creatorCanStartOnCodes: () => false,
-    creatorDraftDecided: () => Promise.resolve(true),
+    creatorDraftDecided: () => true,
     presentTourForPrint: () => undefined,
     presentLocalTour: () => undefined,
     presentUnverifiedLink: () => undefined,

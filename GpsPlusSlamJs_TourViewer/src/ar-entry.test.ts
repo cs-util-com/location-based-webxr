@@ -870,7 +870,7 @@ describe("a creator's AR entry asks about unsaved work first", () => {
       return true;
     };
     let answered = false;
-    h.hooks.creatorDraftDecided = () => Promise.resolve(answered);
+    h.hooks.creatorDraftDecided = () => answered;
     await h.enter();
     expect(h.arController.enable).not.toHaveBeenCalled();
     expect(pipelines).toBe(0);
@@ -886,11 +886,32 @@ describe("a creator's AR entry asks about unsaved work first", () => {
     let asked = 0;
     h.hooks.creatorDraftDecided = () => {
       asked += 1;
-      return Promise.resolve(false);
+      return false;
     };
     await h.enter();
     expect(asked).toBe(0);
     expect(h.arController.enable).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: a second tap while a start is still under way
+  // built a second author pipeline over the first and left the session
+  // without its code detector. One start at a time: the tap during a
+  // start does nothing, and once that start ended a tap starts again.
+  it("a second tap during a start builds no second pipeline", async () => {
+    const h = harness({ mode: "creator", enableOk: true });
+    let pipelines = 0;
+    h.hooks.startAuthorPipeline = () => {
+      pipelines += 1;
+      return true;
+    };
+    h.hooks.creatorDraftDecided = () => true;
+    h.dom.enterArButton.click();
+    h.dom.enterArButton.click();
+    await settle();
+    expect(pipelines).toBe(1);
+    expect(h.arController.enable).toHaveBeenCalledTimes(1);
+    await h.enter();
+    expect(pipelines, "the start's end lets the next tap in").toBe(2);
   });
 });
 

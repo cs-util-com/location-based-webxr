@@ -13,7 +13,8 @@ the page knows.
 
 - `type FinishGuardInput` - `{ sessionLive, arAvailable, placedCount,
 deletedCount, tourChanged, codeCount, rebuilt: { delivered } | null,
-draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
+draftPersists, finishFailed, editWaits }`. `editWaits`: an edit waits
+  for the draft question (`draft-edit-gate.ts`), held in memory only. `tourChanged`: the tour's own fields
   (its name, a station's frame) changed since the last Finish - work like
   a placement, so a rename alone can be saved (the parity contract). `codeCount` (code book plan M4c-1): codes measured or
   improved that no Finish has written yet - unsaved work like a placement.
@@ -27,12 +28,15 @@ draftPersists, finishFailed }`. `tourChanged`: the tour's own fields
   action); a desktop keeps it (editing on the page and finishing again is
   its flow, plan review D-8); never after a failed Finish, so its retry
   stays reachable (U2 milestone review #4).
-- `leaveNeedsConfirm(input)` - while a rebuilt file was not saved, and,
+- `leaveNeedsConfirm(input)` - always while an edit waits (`editWaits`),
+  while a rebuilt file was not saved, and,
   when no draft backs them up (`draftPersists` false), while there are
   unfinished changes at all; with the draft they are offered again, so they
   never ask (U2 milestone review #3).
 - `leaveQuestion(input)` - what `main.ts` asks then: it promises "your
-  changes stay on this phone" only while the draft backs them up.
+  changes stay on this phone" only while the draft backs them up; with
+  the draft backing up the rest, a waiting edit gets its own question
+  (it is the one thing lost).
 
 ## Invariants & assumptions
 

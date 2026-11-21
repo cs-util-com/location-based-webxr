@@ -50,10 +50,10 @@ import type { CreatorCodes } from "./creator-codes.js";
 import {
   DRAFT_BEING_READ,
   DRAFT_DELETING,
-  DRAFT_EDIT_MAKE_AGAIN,
   DRAFT_EDIT_NOT_APPLIED,
   DRAFT_EDIT_WAITS as EDIT_WAITS,
   DRAFT_EDIT_WAITS_IN_AR as EDIT_WAITS_IN_AR,
+  draftEditsMakeAgain,
 } from "./draft-edit-gate.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { isTourContentKey } from "./tour-file-key.js";
@@ -89,12 +89,14 @@ export interface CreatorDraft {
   present(tourUrl: string): void;
   /** A tour closed: its offer, namespace, rejections and answers go. */
   reset(): void;
-  /** The start of AR: true once the open tour's draft is decided or there
-   *  is none, after a read still running. False while it is undecided:
-   *  the offer shows again with `DRAFT_DECIDE_BEFORE_AR`, and AR stays
-   *  unstarted (in AR the offer is out of sight, and an edit there would
-   *  wait for it). */
-  readyForAr(): Promise<boolean>;
+  /** The start of AR, answered at once (WebXR starts only inside the
+   *  tap's own user activation, so the start never waits): true once the
+   *  open tour's draft is decided or there is none. False, with a note,
+   *  while its read runs (`DRAFT_BEING_READ`), while "Delete it" runs
+   *  (`DRAFT_DELETE_RUNS`) or while it is undecided (the offer shows again
+   *  with `DRAFT_DECIDE_BEFORE_AR`): in AR the offer is out of sight, and
+   *  an edit there would wait for it. */
+  readyForAr(): boolean;
   /** Rewrite the open tour's meta (tour, printed size, rejections). True
    *  with no tour open: nothing to write. */
   saveMeta(): Promise<boolean>;
@@ -227,6 +229,10 @@ function withStoredCodes(
 /** Said when AR is asked for while the draft is undecided. */
 export const DRAFT_DECIDE_BEFORE_AR =
   "Choose Restore or Delete it for the unsaved work first - AR starts after that.";
+
+/** Said when AR is asked for while "Delete it" runs. */
+export const DRAFT_DELETE_RUNS =
+  "The unsaved work is being deleted - AR can start once that is done.";
 
 /** The note in AR while a draft is offered and nothing waits. */
 const OFFER_IN_AR =
@@ -380,8 +386,8 @@ export function wireCreatorDraft(deps: {
   let discarding = false;
   /** "Delete it"'s own label, put back when it is no longer in progress. */
   const discardLabel = dom.draftDiscard.textContent;
-  /** The open tour's draft read (`present`): the start of AR waits for it. */
-  let reading: Promise<unknown> = Promise.resolve();
+  /** The open tour's draft read (`present`) runs: AR does not start. */
+  let readRunning = false;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
   /** The open tour's draft took the page's earlier work: its `present`
@@ -889,7 +895,8 @@ export function wireCreatorDraft(deps: {
       deleted: restored.deleted,
       visits: visitsBack,
     });
-    ctx.placementNote = dropped > 0 ? `${back} ${DRAFT_EDIT_MAKE_AGAIN}` : back;
+    ctx.placementNote =
+      dropped > 0 ? `${back} ${draftEditsMakeAgain(dropped)}` : back;
     deps.render();
   });
 
@@ -1033,7 +1040,8 @@ export function wireCreatorDraft(deps: {
     // through at the end below.
     editWaits = false;
     gate.hold(askAboutEdit);
-    reading = (async (): Promise<boolean> => {
+    readRunning = true;
+    void (async (): Promise<boolean> => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
       if (stale()) return false;
       // Before this page can write to it: no write of this open goes with
@@ -1280,36 +1288,52 @@ export function wireCreatorDraft(deps: {
       (asked) => {
         // A stale open's end says nothing about the open tour: its gate
         // ended with it (`opened`, `closed`, `reset`).
-        if (stale()) return;
+        if (stale()) {
+          // A teardown's read: nothing reads now unless a newer open does.
+          if (!readRunning) clearBeingRead();
+          return;
+        }
+        readRunning = false;
         caughtUp = true;
         // Nothing to decide: the edits that waited land, into this store,
         // and a note that the page was reading goes.
         if (asked) return;
-        if (ctx.placementNote === DRAFT_BEING_READ) {
-          ctx.placementNote = null;
-          deps.render();
-        }
+        clearBeingRead();
         gate.release();
       },
       () => {
+        if (stale()) {
+          if (!readRunning) clearBeingRead();
+          return;
+        }
+        readRunning = false;
         // A read that threw offers nothing: the waiting edits must not be
-        // stranded behind a question nobody can see.
-        if (!stale()) gate.release();
+        // stranded behind a question nobody can see, nor the note that
+        // said it was reading stand.
+        clearBeingRead();
+        gate.release();
       },
     );
   }
 
-  async function readyForAr(): Promise<boolean> {
-    // The read of the tour open now: a tour opened meanwhile has its own.
-    let read: Promise<unknown>;
-    do {
-      read = reading;
-      await read.catch(() => undefined);
-    } while (read !== reading);
-    const waiting = offered;
-    if (waiting === null) return true;
-    showOffer(waiting);
-    ctx.placementNote = DRAFT_DECIDE_BEFORE_AR;
+  /** The note that a draft is being read goes (its read ended). */
+  function clearBeingRead(): void {
+    if (ctx.placementNote !== DRAFT_BEING_READ) return;
+    ctx.placementNote = null;
+    deps.render();
+  }
+
+  function readyForAr(): boolean {
+    const note = readRunning
+      ? DRAFT_BEING_READ
+      : discarding
+        ? DRAFT_DELETE_RUNS
+        : offered !== null
+          ? DRAFT_DECIDE_BEFORE_AR
+          : null;
+    if (note === null) return true;
+    if (note === DRAFT_DECIDE_BEFORE_AR && offered !== null) showOffer(offered);
+    ctx.placementNote = note;
     deps.render();
     return false;
   }
@@ -1326,6 +1350,7 @@ export function wireCreatorDraft(deps: {
       caughtUp = false;
       // A continuation of the closing tour's `present` ends here.
       presentEpoch += 1;
+      readRunning = false;
       // And its question: what waited for it is dropped with the tour.
       gate.drop();
       gate.release();

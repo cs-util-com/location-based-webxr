@@ -15,7 +15,10 @@ import { describe, expect, it } from "vitest";
 import type { TourPin } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import {
+  DRAFT_EDIT_MAKE_AGAIN,
+  DRAFT_EDIT_WAITS_IN_AR,
   DRAFT_GATE_PASSES,
+  draftEditsMakeAgain,
   isHeldEdit,
   waitsForTheDraft,
 } from "./draft-edit-gate.js";
@@ -318,5 +321,23 @@ describe("draft edit gate", () => {
     );
     expect(selectTourDocument(store.getState())).toEqual(before);
     expect(store.draftGate.drop()).toBe(2);
+  });
+});
+
+describe("the words after an answer dropped waiting edits", () => {
+  // Why: Restore says the dropped work must be made again; with more than
+  // one change dropped, "your last change" undersells the loss.
+  it("says change for one and changes for more", () => {
+    expect(draftEditsMakeAgain(1)).toBe(DRAFT_EDIT_MAKE_AGAIN);
+    expect(draftEditsMakeAgain(3)).toBe(
+      "Your last changes were not applied - make them again.",
+    );
+  });
+
+  // Why: in AR the offer is out of sight, and a creator who leaves AR and
+  // taps Restore loses what was made in AR; the line must say so first.
+  it("tells the creator in AR that Restore drops what was made there", () => {
+    expect(DRAFT_EDIT_WAITS_IN_AR).toMatch(/Restore/);
+    expect(DRAFT_EDIT_WAITS_IN_AR).toMatch(/made in AR/);
   });
 });

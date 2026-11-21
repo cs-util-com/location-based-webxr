@@ -789,7 +789,21 @@ export function wireArEntry(deps: {
     return hooks.creatorCanStartOnCodes() ? "code-can-start" : "no-code";
   }
 
+  /** A start is under way: a second tap meanwhile starts nothing (it
+   *  would build a second pipeline over the first). */
+  let entering = false;
+
   async function enterAr(): Promise<void> {
+    if (entering) return;
+    entering = true;
+    try {
+      await startOnce();
+    } finally {
+      entering = false;
+    }
+  }
+
+  async function startOnce(): Promise<void> {
     // The visitor's location-only tap (DEC-N2): request, re-label, and let
     // the next tap start the session inside its own user activation.
     if (locationGate.pending()) {
@@ -810,8 +824,10 @@ export function wireArEntry(deps: {
     ctx.cameraFrameCount = 0;
     // The open tour's undecided draft is answered before AR, where its
     // offer is out of sight: an edit made in AR would wait for it, and a
-    // Restore would drop that edit. A draft still being read is waited for.
-    if (authorMode && !(await hooks.creatorDraftDecided())) return;
+    // Restore would drop that edit. Answered at once: a draft still being
+    // read says so and this tap starts nothing, so the next one starts
+    // inside its own user activation.
+    if (authorMode && !hooks.creatorDraftDecided()) return;
     // A refused AUTHOR pipeline (bad size, no detector) keeps AR unstarted —
     // the message is already in the author panel, where the author is
     // looking. The viewer pipeline is best-effort: without a detector the

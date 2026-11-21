@@ -51,7 +51,9 @@ is the page's own.
     note).
   - `DRAFT_EDIT_NOT_APPLIED` - after "Not now" dropped a waiting edit.
   - `DRAFT_EDIT_MAKE_AGAIN` - after Restore dropped one, appended to the
-    restore's own line.
+    restore's own line; `draftEditsMakeAgain(dropped)` picks it, or its
+    plural for more than one. `DRAFT_EDIT_WAITS_IN_AR` says that Restore
+    drops what was made in AR, and Delete it applies it.
   - `DRAFT_DELETING` - "Delete it"'s label while it runs.
   - `DRAFT_BEING_READ` - an edit waits while the draft is still being
     read (the phone's note).

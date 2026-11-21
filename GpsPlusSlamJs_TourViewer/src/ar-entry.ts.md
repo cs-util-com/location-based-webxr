@@ -36,9 +36,14 @@ since the flows plan M6.
     pipeline starts before the session is requested, so a start that fails
     (a declined permission prompt) disposes it (`endQrPipeline`): no session
     end would, and a retry built another on top (2026-10-07). Before it,
-    creator mode awaits `hooks.creatorDraftDecided()`: false (the open
-    tour's draft is still undecided, its offer shown again) returns with
-    AR unstarted and no pipeline built.
+    creator mode asks `hooks.creatorDraftDecided()`, answered at once (no
+    await, so the session still starts inside the tap's user activation):
+    false (the draft still being read, being deleted, or undecided with
+    its offer shown again) returns with AR unstarted and no pipeline
+    built; the next tap asks again.
+  - One start at a time: a tap while a start is under way (`entering`,
+    cleared in a `finally`) starts nothing, so a double tap never builds a
+    second pipeline over the first.
   - `locationGate` (from `visitor-screen.ts`, DEC-N2): while `pending()`,
     a tap requests the location and returns without starting a session;
     the button reads "Allow location" through `arButtonView`.

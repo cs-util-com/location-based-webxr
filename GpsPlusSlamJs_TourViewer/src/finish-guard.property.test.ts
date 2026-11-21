@@ -26,6 +26,7 @@ const guardInput: fc.Arbitrary<FinishGuardInput> = fc.record({
   rebuilt: fc.option(fc.record({ delivered: fc.boolean() }), { nil: null }),
   draftPersists: fc.boolean(),
   finishFailed: fc.boolean(),
+  editWaits: fc.boolean(),
 });
 
 const nothingUnsaved = guardInput.map((input): FinishGuardInput => ({
@@ -35,6 +36,7 @@ const nothingUnsaved = guardInput.map((input): FinishGuardInput => ({
   tourChanged: false,
   codeCount: 0,
   rebuilt: input.rebuilt === null ? null : { delivered: true },
+  editWaits: false,
 }));
 
 describe("leaveNeedsConfirm (properties)", () => {
@@ -62,6 +64,7 @@ describe("leaveNeedsConfirm (properties)", () => {
       fc.property(guardInput, (input) => {
         fc.pre(
           input.draftPersists &&
+            !input.editWaits &&
             (input.rebuilt === null || input.rebuilt.delivered),
         );
         expect(leaveNeedsConfirm(input)).toBe(false);
@@ -76,6 +79,18 @@ describe("leaveNeedsConfirm (properties)", () => {
       fc.property(nothingUnsaved, (input) => {
         expect(unsavedWork(input)).toBe(false);
         expect(leaveNeedsConfirm(input)).toBe(false);
+      }),
+    );
+  });
+});
+
+describe("an edit waiting for the draft question (properties)", () => {
+  // Why: such an edit is held in memory only, whatever else the guard
+  // reads; leaving without asking would lose it silently.
+  it("always asks while one waits", () => {
+    fc.assert(
+      fc.property(guardInput, (input) => {
+        expect(leaveNeedsConfirm({ ...input, editWaits: true })).toBe(true);
       }),
     );
   });

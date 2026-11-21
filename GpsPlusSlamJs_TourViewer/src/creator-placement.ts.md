@@ -53,8 +53,10 @@ troubleshooting recording's record of each placement. Split out of
 ## Invariants & assumptions
 
 - A placement that waits for the draft question (`held`,
-  `draft-edit-gate.ts`) returns null with no refusal note: the question
-  on screen says why, and the placement lands after the answer.
+  `draft-edit-gate.ts`) is `"held"` from `placeInTour`, with no refusal
+  note: the question on screen says why, and the placement lands after
+  the answer. It keeps the "New station here" arm it took (it lands with
+  that station), so the arm is not given back.
 - A new pin's text is taken in NFC (`inputText`) before it is trimmed
   and counted (B2a review 6).
 - **The gate:** allowed only with a tour open on the page

@@ -65,11 +65,12 @@ import {
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import {
   DRAFT_BEING_READ,
+  DRAFT_DELETING,
   DRAFT_EDIT_MAKE_AGAIN,
   DRAFT_EDIT_NOT_APPLIED,
   DRAFT_EDIT_WAITS,
 } from "./draft-edit-gate.js";
-import { DRAFT_DECIDE_BEFORE_AR } from "./creator-draft.js";
+import { DRAFT_DECIDE_BEFORE_AR, DRAFT_DELETE_RUNS } from "./creator-draft.js";
 import { manifestToWrite } from "./tour-document.js";
 
 /** One fake element: the properties this module writes, and a click it can
@@ -1564,32 +1565,131 @@ describe("a creator's AR entry asks about the draft first", () => {
     await settle();
     dom.draftDismiss.click();
     expect(dom.draftOffer.hidden).toBe(true);
-    expect(await setup.creatorDraftDecided()).toBe(false);
+    expect(setup.creatorDraftDecided()).toBe(false);
     expect(dom.draftOffer.hidden).toBe(false);
     expect(ctx.placementNote).toBe(DRAFT_DECIDE_BEFORE_AR);
     dom.draftRestore.click();
-    expect(await setup.creatorDraftDecided()).toBe(true);
+    expect(setup.creatorDraftDecided()).toBe(true);
   });
 
-  // Why: a draft still being read at the tap may turn out to hold work;
-  // the start waits for the read instead of letting AR begin over it.
-  it("waits for a draft still being read", async () => {
+  /** A draft store open that waits until the test lets it go. */
+  function gatedOpen() {
     let open: () => void = () => undefined;
-    const openGate = new Promise<void>((resolve) => {
+    let fail: (e: Error) => void = () => undefined;
+    const openGate = new Promise<void>((resolve, reject) => {
       open = resolve;
+      fail = reject;
     });
-    const { dom, setup } = wire(drafted().store, { openGate });
+    return { openGate, open, fail };
+  }
+
+  // Why this test matters: a draft still being read at the tap may turn
+  // out to hold work, yet the start must not wait for it either - WebXR
+  // starts only inside the tap's own user activation, and an await of an
+  // unknown length spends it (a second tap meanwhile built a second
+  // pipeline). So the tap says the read runs and starts nothing; the next
+  // tap, once the read ended, decides on what it found.
+  it("says the draft is being read and starts nothing until the read ends", async () => {
+    const gate = gatedOpen();
+    const { ctx, dom, setup } = wire(drafted().store, {
+      openGate: gate.openGate,
+    });
     setup.presentDraftForTour(TOUR);
-    let answer: boolean | null = null;
-    void setup.creatorDraftDecided().then((a) => {
-      answer = a;
+    expect(setup.creatorDraftDecided(), "still reading").toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    gate.open();
+    await settle();
+    expect(dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_DECIDE_BEFORE_AR);
+  });
+
+  // Why: with no draft the read's end lets AR start, and the note that
+  // said it was reading goes with it - left standing it would claim a
+  // read that is over.
+  it("lets AR start once a read found no draft, and the reading note goes", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(memoryStore().store, {
+      openGate: gate.openGate,
     });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    gate.open();
     await settle();
-    expect(answer, "still reading").toBeNull();
-    open();
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: a read that throws offers nothing; its reading note must go too,
+  // or it stands over a page that is no longer reading anything.
+  it("clears the reading note when the read throws", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(memoryStore().store, {
+      openGate: gate.openGate,
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    gate.fail(new Error("no private file system"));
     await settle();
-    expect(answer).toBe(false);
-    expect(dom.draftOffer.hidden).toBe(false);
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: AR's readiness is the tour open NOW. A tour opened while the
+  // first one's draft was read has its own read: the first one's end
+  // neither clears the note nor lets AR start, and its draft is never
+  // offered for the second tour.
+  it("follows the tour opened during the read, not the one before it", async () => {
+    const gate = gatedOpen();
+    const empty = memoryStore().store;
+    // The second tour's read outlasts the first one's: its store answers
+    // only once the test lets it.
+    const later = gatedOpen();
+    const slow: DraftFileStore = {
+      ...empty,
+      getText: (key) => later.openGate.then(() => empty.getText(key)),
+      keys: () => later.openGate.then(() => empty.keys()),
+    };
+    const { ctx, dom, setup } = wire(drafted().store, {
+      openGate: gate.openGate,
+      storeFor: (key) => (key.includes("other-tour") ? slow : drafted().store),
+    });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    ctx.openGeneration += 1;
+    setup.presentDraftForTour(OTHER_TOUR);
+    gate.open();
+    await settle();
+    // The first tour's read ended; the open tour's still runs, and its
+    // note stands.
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    expect(setup.creatorDraftDecided(), "the open tour still reads").toBe(
+      false,
+    );
+    later.open();
+    await settle();
+    expect(
+      dom.draftOfferText.textContent,
+      "the first tour's draft is not offered",
+    ).toBe("");
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
+  });
+
+  // Why: a tour closed while its draft was read leaves no read running;
+  // the note that said one ran goes when the read ends.
+  it("clears the reading note when the tour closed during the read", async () => {
+    const gate = gatedOpen();
+    const { ctx, setup } = wire(drafted().store, { openGate: gate.openGate });
+    setup.presentDraftForTour(TOUR);
+    expect(setup.creatorDraftDecided()).toBe(false);
+    expect(ctx.placementNote).toBe(DRAFT_BEING_READ);
+    setup.resetFinishStep();
+    gate.open();
+    await settle();
+    expect(ctx.placementNote).toBeNull();
+    expect(setup.creatorDraftDecided()).toBe(true);
   });
 
   // Why: with no draft to decide the start goes on at once.
@@ -1597,7 +1697,7 @@ describe("a creator's AR entry asks about the draft first", () => {
     const { setup } = wire(memoryStore().store);
     setup.presentDraftForTour(TOUR);
     await settle();
-    expect(await setup.creatorDraftDecided()).toBe(true);
+    expect(setup.creatorDraftDecided()).toBe(true);
   });
 });
 
@@ -1692,6 +1792,25 @@ describe("work made before the tour's draft opened reaches it", () => {
       true,
     );
     expect(setup.leaveQuestion()).toContain("holds no backup copy");
+  });
+
+  // Why this test matters: an edit that waits for the draft question is
+  // held in memory only - neither the draft nor a tour file has it - so a
+  // reload or a closed tab must ask first, as it does for any work no
+  // backup holds.
+  it("asks before leaving while an edit waits for the draft question", async () => {
+    const { ctx, setup } = wire(memoryStore().store, { placeable: true });
+    ctx.tourManifestStatus = "settled";
+    setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(setup.leaveNeedsConfirm(), "nothing waits").toBe(false);
+    ctx.store.draftGate.hold(() => undefined);
+    expect(setup.renameTour("Castle walk")).toBeNull();
+    expect(ctx.store.draftGate.waiting()).toBe(true);
+    expect(setup.leaveNeedsConfirm()).toBe(true);
+    expect(setup.leaveQuestion()).toMatch(/waits for your answer/);
+    ctx.store.draftGate.release();
+    expect(setup.leaveNeedsConfirm(), "landed, in the draft").toBe(false);
   });
 
   it("keeps asking before leaving while the settled tour's draft is still opening", async () => {
@@ -3461,9 +3580,16 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     page.ctx.tourDocument.open(PUBLISHED);
     page.setup.presentDraftForTour(TOUR);
     await settle();
+    const label = page.dom.draftDiscard.textContent;
     page.dom.draftDiscard.click();
     await settle();
     expect(page.dom.draftRestore.disabled, "in progress").toBe(true);
+    expect(page.dom.draftDiscard.textContent, "says it runs").toBe(
+      DRAFT_DELETING,
+    );
+    // AR waits for the deletion, and says that is what it waits for.
+    expect(page.setup.creatorDraftDecided()).toBe(false);
+    expect(page.ctx.placementNote).toBe(DRAFT_DELETE_RUNS);
     expect(page.setup.renameTour("Castle walk")).toBeNull();
     await settle();
     for (let i = 0; i < 4; i += 1) {
@@ -3472,6 +3598,8 @@ describe("the draft keeps a moved station's pose (tour editor plan §19 #1)", ()
     }
 
     expect(page.dom.draftOffer.hidden, "decided").toBe(true);
+    expect(page.dom.draftDiscard.textContent, "its label is back").toBe(label);
+    expect(page.setup.creatorDraftDecided()).toBe(true);
     const stored = JSON.parse(String(files.get(SETTINGS_KEY))) as {
       details?: unknown;
       stations?: { id: string; geo: unknown }[];

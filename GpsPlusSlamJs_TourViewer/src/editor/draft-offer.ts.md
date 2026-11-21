@@ -28,7 +28,7 @@ can be tested without a page.
   - `restore()` - hides the offer, drops what waited (each waiting edit
     was built from the document before the draft came back), restores,
     releases the gate and says the restore's line, with
-    `DRAFT_EDIT_MAKE_AGAIN` appended when something was dropped.
+    `draftEditsMakeAgain(dropped)` appended when something was dropped.
   - `notNow()` - hides the offer and drops what waited, saying
     `DRAFT_EDIT_NOT_APPLIED` when something was; the gate keeps holding,
     so the next edit asks again.

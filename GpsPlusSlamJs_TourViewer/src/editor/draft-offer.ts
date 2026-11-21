@@ -7,9 +7,9 @@
  * @see draft-offer.ts.md
  */
 import {
-  DRAFT_EDIT_MAKE_AGAIN,
   DRAFT_EDIT_NOT_APPLIED,
   DRAFT_EDIT_WAITS,
+  draftEditsMakeAgain,
   type DraftEditGate,
 } from "../draft-edit-gate.js";
 
@@ -77,7 +77,7 @@ export function createDraftOffer(deps: {
       const { count, line } = deps.restore();
       deps.gate.release();
       deps.changed(count, true);
-      deps.say(dropped > 0 ? `${line} ${DRAFT_EDIT_MAKE_AGAIN}` : line);
+      deps.say(dropped > 0 ? `${line} ${draftEditsMakeAgain(dropped)}` : line);
     },
     notNow() {
       if (deleting || !visible) return;
