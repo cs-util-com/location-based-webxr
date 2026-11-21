@@ -125,6 +125,35 @@ describe("startCheckPage", () => {
     }
   });
 
+  // Why: every page with a slider guards the whole page, so a vertical
+  // swipe that starts on any range input scrolls instead of moving it; the
+  // check page must too, for every view and the index, before a view starts.
+  it("guards the whole page for the index and before any view starts", async () => {
+    const own = document.implementation.createHTMLDocument("x");
+    vi.mocked(guardSlidersIn).mockClear();
+    await expect(startCheckPage(own, "", hosts(own))).resolves.toBeNull();
+    expect(guardSlidersIn).toHaveBeenCalledWith(own);
+    vi.mocked(guardSlidersIn).mockClear();
+    const view = CHECK_VIEWS.lectern as { start: unknown };
+    const start = view.start;
+    const order: string[] = [];
+    vi.mocked(guardSlidersIn).mockImplementationOnce(() => {
+      order.push("guard");
+      return () => undefined;
+    });
+    view.start = () => {
+      order.push("start");
+      return Promise.resolve();
+    };
+    try {
+      await startCheckPage(own, "?view=lectern", hosts(own));
+      expect(order).toEqual(["guard", "start"]);
+      expect(guardSlidersIn).toHaveBeenCalledWith(own);
+    } finally {
+      view.start = start;
+    }
+  });
+
   // Why: the then-now view builds a range input (the Swipe line), and a
   // vertical swipe that starts on a slider must scroll, not move it, on
   // every page with one; the page-wide guard is what does that.

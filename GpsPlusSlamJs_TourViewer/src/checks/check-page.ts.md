@@ -31,10 +31,11 @@ prototype-parity view, and only that view's module is loaded.
 - The imports are literal, so Vite splits one chunk per view and the e2e
   plan's import scan (`tests/repo-config/tour-viewer-e2e-plan.test.js`)
   follows them from the page to each view's module.
-- The `then-now` view builds a range input (its Swipe line), so its start
-  installs the framework's page-wide slider guard
-  (`guardSlidersIn(document)`) before it loads the view: a vertical swipe
-  that starts on the line scrolls the page instead of moving it.
+- `startCheckPage` installs the framework's page-wide slider guard
+  (`guardSlidersIn(doc)`) first, for the index and every view, as every
+  page with a slider does: a vertical swipe that starts on a range input
+  (the then-now view's Swipe line, say) scrolls the page instead of moving
+  it.
 - The modules are entries of nothing but this registry; knip reaches them
   through it (`knip.json` lists `src/checks/check-page.ts`).
 
@@ -54,6 +55,7 @@ prototype-parity view, and only that view's module is loaded.
 
 - `src/checks/check-page.test.ts` - the names, the parse (with two
   property tests over arbitrary queries), the index, a failing start and
-  the then-now view's slider guard.
+  the page-wide slider guard (for the index, before any view starts, and
+  for the then-now view).
 - Each view's own spec opens it through this page (listed in
   `check.html.md`).
