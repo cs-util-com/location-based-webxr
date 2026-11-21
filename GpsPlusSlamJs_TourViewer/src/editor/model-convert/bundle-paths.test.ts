@@ -3,10 +3,12 @@
  * relative path, and the text is untrusted. The resolver is the only code
  * that turns such a name into one of the files the creator gave, so it
  * must never answer with a file outside that set (a `../` escape is
- * refused, not guessed), never treat a URL as a file (only `data:` is
- * read; nothing is ever fetched), and still find the files real exporters
- * name sloppily: URL-encoded spaces, backslashes, the wrong case, an
- * absolute path from the artist's own disk.
+ * refused, not guessed, however it is encoded), never treat a URL as a
+ * file (only `data:` is read; nothing is ever fetched), still find the
+ * files real exporters name sloppily (URL-encoded spaces, backslashes,
+ * the wrong case, a macOS name in another Unicode form, a path on the
+ * artist's own computer), and say when it guessed, so the creator can be
+ * told which file stood in for a name.
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
@@ -45,39 +47,101 @@ describe("resolveReference", () => {
     expect(resolve("textures/stone.jpg")).toEqual({
       kind: "file",
       path: "model/textures/stone.jpg",
+      match: "exact",
     });
-    expect(resolve("../top.bin")).toEqual({ kind: "file", path: "top.bin" });
+    expect(resolve("../top.bin")).toEqual({
+      kind: "file",
+      path: "top.bin",
+      match: "exact",
+    });
   });
 
   it("percent-decodes the name (Box%20With%20Spaces.bin)", () => {
     expect(resolve("Box%20With%20Spaces.bin")).toEqual({
       kind: "file",
       path: "model/Box With Spaces.bin",
+      match: "exact",
     });
+  });
+
+  it("matches a macOS (NFD) file name to its percent-encoded NFC spelling, and the other way round", () => {
+    const nfd = "model/Cafe\u0301.bin";
+    expect(resolveReference("Caf%C3%A9.bin", "model/m.gltf", [nfd])).toEqual({
+      kind: "file",
+      path: nfd,
+      match: "exact",
+    });
+    expect(
+      resolveReference("Cafe%CC%81.bin", "model/m.gltf", [
+        "model/Caf\u00e9.bin",
+      ]),
+    ).toEqual({ kind: "file", path: "model/Caf\u00e9.bin", match: "exact" });
   });
 
   it("keeps a name whose percent signs are no escape as it is", () => {
     expect(resolveReference("100%.bin", "a.gltf", ["100%.bin"])).toEqual({
       kind: "file",
       path: "100%.bin",
+      match: "exact",
     });
   });
 
-  it("matches the wrong case when only one file matches", () => {
+  it("matches the wrong case when only one file matches, and says so", () => {
     expect(resolve("TEXTURES/wood.png")).toEqual({
       kind: "file",
       path: "model/textures/Wood.PNG",
+      match: "case",
     });
   });
 
-  it("falls back to a basename that names exactly one file, e.g. an artist's absolute path", () => {
-    expect(resolve("C:\\Users\\artist\\tex\\wood.png")).toEqual({
-      kind: "file",
-      path: "model/textures/Wood.PNG",
-    });
+  it("falls back to a basename that names exactly one file, e.g. a path on the artist's computer, and says so", () => {
+    for (const uri of [
+      "C:\\Users\\artist\\tex\\wood.png",
+      "C:wood.png",
+      "file:///C:/Users/artist/tex/wood.png",
+      "//server/share/wood.png",
+    ]) {
+      expect(resolve(uri), uri).toEqual({
+        kind: "file",
+        path: "model/textures/Wood.PNG",
+        match: "basename",
+      });
+    }
     expect(resolve("maps/Box With Spaces.bin")).toEqual({
       kind: "file",
       path: "model/Box With Spaces.bin",
+      match: "basename",
+    });
+  });
+
+  it("without the basename fallback, a path on another computer is elsewhere and a wrong folder is missing", () => {
+    const strict = (uri: string) =>
+      resolveReference(uri, "model/scene.gltf", FILES, { byBasename: false });
+    expect(strict("C:\\Users\\artist\\top.bin")).toEqual({
+      kind: "elsewhere",
+      name: "top.bin",
+    });
+    expect(strict("file:///C:/data/top.bin")).toEqual({
+      kind: "elsewhere",
+      name: "top.bin",
+    });
+    expect(strict("maps/Box With Spaces.bin")).toEqual({
+      kind: "missing",
+      name: "Box With Spaces.bin",
+    });
+    // The case-insensitive match stays: it cannot pick a file from
+    // another folder.
+    expect(strict("box with spaces.BIN")).toEqual({
+      kind: "file",
+      path: "model/Box With Spaces.bin",
+      match: "case",
+    });
+  });
+
+  it("a path on another computer that no file stands in for is elsewhere, not missing", () => {
+    expect(resolve("D:\\renders\\gone.png")).toEqual({
+      kind: "elsewhere",
+      name: "gone.png",
     });
   });
 
@@ -85,6 +149,7 @@ describe("resolveReference", () => {
     expect(resolve("textures/stone.jpg")).toEqual({
       kind: "file",
       path: "model/textures/stone.jpg",
+      match: "exact",
     });
     expect(resolve("elsewhere/stone.jpg")).toEqual({
       kind: "missing",
@@ -92,11 +157,15 @@ describe("resolveReference", () => {
     });
   });
 
-  it("refuses a '../' escape out of the files given, even when the basename exists", () => {
-    expect(resolve("../../top.bin")).toEqual({
-      kind: "outside",
-      name: "top.bin",
-    });
+  it("refuses a '../' escape out of the files given, even when the basename exists, however it is encoded", () => {
+    for (const uri of [
+      "../../top.bin",
+      "%2e%2e/%2e%2e/top.bin",
+      "..%5c..%5ctop.bin",
+      "..\\..\\top.bin",
+    ]) {
+      expect(resolve(uri), uri).toEqual({ kind: "outside", name: "top.bin" });
+    }
   });
 
   it("answers missing with the decoded file name for the words", () => {
@@ -121,11 +190,11 @@ describe("resolveReference", () => {
       for (const uri of [
         "https://example.invalid/top.bin",
         "http://example.invalid/top.bin",
-        "file:///C:/top.bin",
         "blob:https://example.invalid/1234",
       ]) {
         expect(resolve(uri).kind, uri).toBe("scheme");
       }
+      expect(resolve("file:///C:/top.bin").kind).toBe("file");
     } finally {
       globalThis.fetch = original;
     }
@@ -136,6 +205,7 @@ describe("resolveReference", () => {
     expect(resolve("textures/stone.jpg?v=2#x")).toEqual({
       kind: "file",
       path: "model/textures/stone.jpg",
+      match: "exact",
     });
   });
 
@@ -144,6 +214,7 @@ describe("resolveReference", () => {
     expect(resolveReference("__proto__", "x.gltf", files)).toEqual({
       kind: "file",
       path: "__proto__",
+      match: "exact",
     });
     expect(resolveReference("hasOwnProperty", "x.gltf", files)).toEqual({
       kind: "missing",
@@ -152,6 +223,7 @@ describe("resolveReference", () => {
     expect(resolveReference("TOSTRING", "x.gltf", files)).toEqual({
       kind: "file",
       path: "a/toString",
+      match: "basename",
     });
   });
 });
@@ -169,14 +241,17 @@ const pathPart = fc.constantFrom(
   "X.BIN",
   "t.png",
   "%20",
+  "%2e%2e",
   "c d",
+  "e\u0301",
+  "\u00e9",
   "__proto__",
 );
 const pathish = fc
   .array(pathPart, { minLength: 1, maxLength: 5 })
   .chain((parts) =>
     fc
-      .array(fc.constantFrom("/", "\\"), {
+      .array(fc.constantFrom("/", "\\", "%5c"), {
         minLength: parts.length - 1,
         maxLength: parts.length - 1,
       })
@@ -189,6 +264,8 @@ const anyReference = fc.oneof(
     "data:;base64,AAE=",
     "https://h/x.bin",
     "C:\\x\\t.png",
+    "C:t.png",
+    "file:///C:/x/t.png",
     "//server/x.bin",
   ),
 );
@@ -200,8 +277,9 @@ describe("resolveReference, properties", () => {
         anyReference,
         pathish,
         fc.array(pathish, { maxLength: 8 }),
-        (uri, from, files) => {
-          const result = resolveReference(uri, from, files);
+        fc.boolean(),
+        (uri, from, files, byBasename) => {
+          const result = resolveReference(uri, from, files, { byBasename });
           expect(result.kind !== "file" || files.includes(result.path)).toBe(
             true,
           );
@@ -210,7 +288,25 @@ describe("resolveReference, properties", () => {
     );
   });
 
-  it("only a data: URI resolves as data, and every other scheme is refused", () => {
+  it("without the basename fallback, every file found is in the folder the path names", () => {
+    fc.assert(
+      fc.property(
+        pathish,
+        pathish,
+        fc.array(pathish, { maxLength: 8 }),
+        (uri, from, files) => {
+          const result = resolveReference(uri, from, files, {
+            byBasename: false,
+          });
+          expect(result.kind === "file" ? result.match : "exact").not.toBe(
+            "basename",
+          );
+        },
+      ),
+    );
+  });
+
+  it("only a data: URI resolves as data, file: is a path, and every other scheme is refused", () => {
     fc.assert(
       fc.property(
         fc.stringMatching(/^[a-z][a-z0-9+.-]{1,8}$/),
@@ -219,7 +315,13 @@ describe("resolveReference, properties", () => {
           const result = resolveReference(`${scheme}:${rest}`, "a.gltf", [
             `${scheme}:${rest}`,
           ]);
-          expect(result.kind).toBe(scheme === "data" ? "data" : "scheme");
+          const expected =
+            scheme === "data"
+              ? ["data"]
+              : scheme === "file"
+                ? ["file", "elsewhere"]
+                : ["scheme"];
+          expect(expected).toContain(result.kind);
         },
       ),
     );
@@ -237,6 +339,7 @@ describe("resolveReference, properties", () => {
           expect(resolveReference(name, `${dirA}/m.gltf`, files)).toEqual({
             kind: "file",
             path: `${dirA}/${name}`,
+            match: "exact",
           });
         },
       ),
