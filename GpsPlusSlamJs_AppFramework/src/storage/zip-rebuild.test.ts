@@ -19,7 +19,7 @@ import {
   ZipReader,
   ZipWriter,
 } from '@zip.js/zip.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ArchiveLimitError } from './archive-limits';
 import { DecompressionBudget } from './capped-zip-entries';
@@ -492,6 +492,35 @@ describe('rebuildZipWithEntries', () => {
         { path: 'tour.json', data: '{}' },
       ])
     ).rejects.toBeInstanceOf(ZipPackagingError);
+  });
+
+  it('words a non-zip input as a failed read, with zip.js error as its cause, and closes its reader', async () => {
+    // Why: pins the rebuild's error contract and its close, so moving the
+    // open into the shared capped open changes neither.
+    const close = vi.spyOn(ZipReader.prototype, 'close');
+    try {
+      const err = await rebuildZipWithEntries(new Blob(['not a zip at all']), [
+        { path: 'tour.json', data: '{}' },
+      ]).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ZipPackagingError);
+      expect((err as Error).message).toMatch(
+        /^rebuildZipWithEntries: reading the archive failed: /
+      );
+      expect((err as Error).cause).toBeInstanceOf(Error);
+      expect((err as Error).cause).not.toBeInstanceOf(ZipPackagingError);
+      expect(close).toHaveBeenCalledTimes(1);
+      // A refusal of the call's own entries is not re-wrapped.
+      const input = await recordingLikeZip();
+      close.mockClear();
+      const own = await rebuildZipWithEntries(input, [
+        { path: '../evil', data: 'x' },
+      ]).catch((e: unknown) => e);
+      expect(own).toBeInstanceOf(ZipPackagingError);
+      expect((own as Error).message).not.toMatch(/reading the archive failed/);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      close.mockRestore();
+    }
   });
 });
 

@@ -7,6 +7,8 @@
  * fixtures; the JPEG and PNG builders follow the Globe's reader tests.
  */
 
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import { imageInfo, imageInfoOfBlob } from './image-header';
@@ -286,5 +288,21 @@ describe('imageInfoOfBlob', () => {
       width: 10,
       height: 10,
     });
+  });
+});
+
+describe('image-header.ts imports nothing', () => {
+  // Why: the Globe's fetch script loads this file under plain node, which
+  // does not map the framework's `./x.js` import spellings to `x.ts`. That
+  // script runs only by hand, so an import here would pass every gate and
+  // break the next run with ERR_MODULE_NOT_FOUND.
+  it('has no import or re-export statement', () => {
+    const source = readFileSync(
+      new URL('./image-header.ts', import.meta.url),
+      'utf8'
+    );
+    expect(source).not.toMatch(/^\s*import[\s{(*'"]/m);
+    expect(source).not.toMatch(/^\s*export\s[^;]*\sfrom\s/m);
+    expect(source).not.toMatch(/\bimport\s*\(/);
   });
 });

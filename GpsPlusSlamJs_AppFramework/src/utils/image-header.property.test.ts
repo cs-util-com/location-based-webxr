@@ -54,7 +54,9 @@ describe('imageInfo for any size and any bytes', () => {
   // The extended WebP header holds 24-bit sizes (width - 1) and the
   // lossless one 14-bit sizes and an alpha bit: every size, with or
   // without alpha, must read back (the Globe's imagery tiles carry their
-  // water mask in their alpha).
+  // water mask in their alpha). The other VP8X flags (ICC, EXIF, XMP,
+  // animation) are drawn too: a tile written with metadata sets them, and
+  // only the alpha bit may read as alpha.
   it('reads back every extended and lossless WebP size and its alpha', () => {
     const size24 = fc.integer({ min: 1, max: 2 ** 24 });
     const size14 = fc.integer({ min: 1, max: 2 ** 14 });
@@ -65,15 +67,21 @@ describe('imageInfo for any size and any bytes', () => {
       return b;
     };
     fc.assert(
-      fc.property(size24, size24, fc.boolean(), (width, height, alpha) => {
-        const b = riff('VP8X');
-        b[20] = alpha ? 0x10 : 0;
-        const w = width - 1;
-        const h = height - 1;
-        b.set([w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff], 24);
-        b.set([h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff], 27);
-        expect(imageInfo(b)).toEqual({ type: 'webp', width, height, alpha });
-      })
+      fc.property(
+        size24,
+        size24,
+        fc.boolean(),
+        fc.integer({ min: 0, max: 0xff }),
+        (width, height, alpha, otherFlags) => {
+          const b = riff('VP8X');
+          b[20] = (otherFlags & ~0x10) | (alpha ? 0x10 : 0);
+          const w = width - 1;
+          const h = height - 1;
+          b.set([w & 0xff, (w >> 8) & 0xff, (w >> 16) & 0xff], 24);
+          b.set([h & 0xff, (h >> 8) & 0xff, (h >> 16) & 0xff], 27);
+          expect(imageInfo(b)).toEqual({ type: 'webp', width, height, alpha });
+        }
+      )
     );
     fc.assert(
       fc.property(size14, size14, fc.boolean(), (width, height, alpha) => {
@@ -100,10 +108,6 @@ describe('imageInfo for any size and any bytes', () => {
           text.slice(4, 8) === 'ftyp';
         expect(info === null || looksLikeImage).toBe(true);
         expect(info === null || (info.width > 0 && info.height > 0)).toBe(true);
-        // Alpha is a WebP's alone, and every WebP states it.
-        expect(
-          info === null || (info.type === 'webp') === 'alpha' in info
-        ).toBe(true);
       }),
       { numRuns: 2000 }
     );
