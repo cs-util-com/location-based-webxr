@@ -4,6 +4,18 @@
 
 ### Added
 
+- **One capped open of a zip Blob, and the shared entry-name rules**
+  (`storage/zip-reader`, deep import): `withCappedZipEntries` opens an
+  untrusted zip Blob under the directory and entry caps,
+  hands its entries to `use` and closes the reader once `use` settles;
+  `isActionEntryName` is the parser's own rule for which entries are
+  replayed as actions, and `isMacOsMetadataName` the rule for what a macOS
+  re-zip adds (`__MACOSX/`, `._` files). `rebuildZipWithEntries` now opens
+  its input through `withCappedZipEntries`; its errors are unchanged.
+- **`utils/image-header`** (deep import): a WebP's result carries `alpha`,
+  whether its header says the image has alpha (the VP8X alpha flag or the
+  VP8L alpha bit; a simple lossy VP8 never has it).
+
 - **PINHOLE intrinsics from a projection matrix, shared**: moved here from
   the Recorder's COLMAP export, so the export and the Tour Viewer's splat
   trainer reader read a recording's lens through one implementation (the
@@ -166,6 +178,11 @@
 
 ### Changed
 
+- `ImageHeaderInfo` (`utils/image-header`) is a union on `type` rather
+  than one interface: only its `webp` member has `alpha`, and it is
+  required there. Code that builds a `{ type: 'webp', width, height }`
+  value as an `ImageHeaderInfo` must add `alpha`; code that only reads
+  `type`, `width` and `height` is unaffected.
 - `TourPin` (`ar/tour-manifest`) is a short text in any of its world
   views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
   it; it was typed as `pin` alone.

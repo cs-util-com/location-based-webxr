@@ -41,15 +41,10 @@
  * caller passes it, so a Finish shares the tour's total.
  */
 
-import { ZipReader, type FileEntry } from '@zip.js/zip.js';
+import type { Entry, FileEntry } from '@zip.js/zip.js';
 
 import { DEFAULT_ARCHIVE_LIMITS } from './archive-limits.js';
-import {
-  DecompressionBudget,
-  listZipEntriesCapped,
-  readZipEntryBlob,
-} from './capped-zip-entries.js';
-import { LocalCacheByteSource } from './local-cache-byte-source.js';
+import { DecompressionBudget, readZipEntryBlob } from './capped-zip-entries.js';
 import {
   assertSafeNewZipPaths,
   assertWritableZipData,
@@ -57,7 +52,7 @@ import {
   ZipPackagingError,
   type ZipEntryInput,
 } from './pack-files-as-zip.js';
-import { ByteSourceReader } from './zip-byte-source-reader.js';
+import { withCappedZipEntries } from './zip-reader.js';
 
 /**
  * The prefix some zip tools put on every entry. An archive written that way
@@ -159,117 +154,16 @@ export async function rebuildZipWithEntries(
   entries: readonly ZipEntryInput[],
   options: RebuildZipOptions = {}
 ): Promise<Blob> {
-  const reader = new ZipReader(
-    new ByteSourceReader(
-      new LocalCacheByteSource(zip),
-      DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes
-    )
-  );
   const budget = options.budget ?? DecompressionBudget.forArchive(zip.size);
   try {
-    const all = lastOccurrences(
-      (await listZipEntriesCapped(reader, options.maxEntries)).filter(
-        (e): e is FileEntry => !e.directory
-      )
+    return await withCappedZipEntries(
+      zip,
+      (listed) => rebuildFromListed(listed, entries, options, budget),
+      {
+        maxDirectoryBytes: DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes,
+        maxEntries: options.maxEntries ?? DEFAULT_ARCHIVE_LIMITS.maxEntries,
+      }
     );
-    // Validate only the names this call INVENTS. A caller replacing an
-    // existing entry has to name it, and the only name that works is the
-    // archive's own - so validating that name applied the module's own rule
-    // backwards and refused to write back a name it had just read. The live
-    // case was the coverage backfill: it finds `session.json` by suffix, so
-    // it tolerates `./session.json`, and then could not re-emit it - the
-    // recording was skipped with a log line and no other trace (PR #438
-    // review). Re-emitting a name the input already carried is no new
-    // hazard; inventing one is, and that is still refused.
-    const archiveNameList = all.map((e) => e.filename);
-    const dotSlash = archiveUsesDotSlash(archiveNameList);
-    const allDotSlash = archiveIsAllDotSlash(archiveNameList);
-    // Which archive entry each name REFERS to, keyed on the normalised
-    // form. One map rather than a bare name set, because every downstream
-    // question is the same question - "does the archive already hold this
-    // file?" - and asking it three different ways is what let `./x` and
-    // `x` both be written (PR #439 review #1).
-    const archiveByName = new Map(
-      all.map((e) => [underArchiveConvention(e.filename, dotSlash), e.filename])
-    );
-    // Every new entry lands under the archive's convention, and the rule is
-    // applied to ALL of them rather than only to the ones the archive
-    // already holds (PR #440 review): a caller that names an existing file
-    // either way replaces rather than duplicates, and a genuinely new file
-    // goes in prefixed like its neighbours instead of leaving a flat name
-    // in an otherwise `./`-written archive - the mixed archive this
-    // module's own suffix-based finders exist to cope with.
-    //
-    // Moving a new name requires EVERY existing entry to carry the prefix,
-    // not merely one of them. An archive that is already mixed has no
-    // convention to follow, so nothing is guessed there and the name is
-    // written as the caller spelled it. An existing test of exactly that
-    // shape is what caught the wider rule.
-    const targeted = entries.map((e) => {
-      const key = underArchiveConvention(e.path, dotSlash);
-      const existing = archiveByName.get(key);
-      if (existing !== undefined) return { ...e, path: existing };
-      // A genuinely new name. Under a uniformly `./`-written archive it
-      // joins its neighbours; anywhere else it is written EXACTLY as the
-      // caller spelled it - `e.path`, not `key`, which is the caller's
-      // path with the prefix already stripped off by the lookup above.
-      // Writing `key` in a mixed archive silently un-prefixed a path the
-      // caller had supplied, and that is a live route: the Tour Viewer
-      // builds each photo's path from the prefix it found the manifest at,
-      // and the reader looks it up by exact name (PR #441 review).
-      return {
-        ...e,
-        path: allDotSlash ? DOT_SLASH + key : e.path,
-      };
-    });
-    assertSafeNewZipPaths(
-      targeted
-        .filter(
-          (e) => !archiveByName.has(underArchiveConvention(e.path, dotSlash))
-        )
-        // ...checked under the archive's own convention, because the Tour
-        // Viewer's finish builds each new photo's path from the prefix it
-        // found the manifest at. In a `./`-written zip that prefix is
-        // `./`, so `./content/<id>.jpg` is a path this call INVENTS, is
-        // refused for its `.` segment, and dead-ends the creator's setup
-        // at the moment they have finished walking. Replacing an existing
-        // entry was fixed first (PR #438); this is the other half.
-        .map((e) => ({
-          ...e,
-          path: underArchiveConvention(e.path, dotSlash),
-        })),
-      'rebuildZipWithEntries'
-    );
-    // The relaxation above is about the SHAPE of a name and nothing else.
-    // Duplicates among the new entries, and payloads that cannot be
-    // written, still apply to every one of them - a name the archive
-    // happens to carry says nothing about the bytes behind it.
-    assertNoDuplicateNewPaths(entries, dotSlash);
-    assertWritableZipData(entries, 'rebuildZipWithEntries');
-    const removed = removedArchiveNames(
-      options.remove ?? [],
-      entries,
-      archiveByName
-    );
-    const replaced = new Set(targeted.map((e) => e.path));
-    const existing = all.filter(
-      (e) => !replaced.has(e.filename) && !removed.has(e.filename)
-    );
-    const total = existing.length + targeted.length;
-    const carried: ZipEntryInput[] = [];
-    for (const entry of existing) {
-      carried.push({
-        path: entry.filename,
-        data: await readZipEntryBlob(entry, budget, ''),
-      });
-      options.onProgress?.(carried.length, total);
-    }
-    const out = await writeStoreZip(
-      [...carried, ...targeted],
-      'rebuildZipWithEntries'
-    );
-    options.onProgress?.(total, total);
-    return out;
   } catch (err) {
     if (err instanceof ZipPackagingError) throw err;
     throw new ZipPackagingError(
@@ -278,9 +172,118 @@ export async function rebuildZipWithEntries(
       }`,
       { cause: err }
     );
-  } finally {
-    await reader.close();
   }
+}
+
+/** The rebuild over the input's listed entries, read while its reader is
+ *  open (`withCappedZipEntries` closes it once this settles). */
+async function rebuildFromListed(
+  listed: readonly Entry[],
+  entries: readonly ZipEntryInput[],
+  options: RebuildZipOptions,
+  budget: DecompressionBudget
+): Promise<Blob> {
+  const all = lastOccurrences(
+    listed.filter((e): e is FileEntry => !e.directory)
+  );
+  // Validate only the names this call INVENTS. A caller replacing an
+  // existing entry has to name it, and the only name that works is the
+  // archive's own - so validating that name applied the module's own rule
+  // backwards and refused to write back a name it had just read. The live
+  // case was the coverage backfill: it finds `session.json` by suffix, so
+  // it tolerates `./session.json`, and then could not re-emit it - the
+  // recording was skipped with a log line and no other trace (PR #438
+  // review). Re-emitting a name the input already carried is no new
+  // hazard; inventing one is, and that is still refused.
+  const archiveNameList = all.map((e) => e.filename);
+  const dotSlash = archiveUsesDotSlash(archiveNameList);
+  const allDotSlash = archiveIsAllDotSlash(archiveNameList);
+  // Which archive entry each name REFERS to, keyed on the normalised
+  // form. One map rather than a bare name set, because every downstream
+  // question is the same question - "does the archive already hold this
+  // file?" - and asking it three different ways is what let `./x` and
+  // `x` both be written (PR #439 review #1).
+  const archiveByName = new Map(
+    all.map((e) => [underArchiveConvention(e.filename, dotSlash), e.filename])
+  );
+  // Every new entry lands under the archive's convention, and the rule is
+  // applied to ALL of them rather than only to the ones the archive
+  // already holds (PR #440 review): a caller that names an existing file
+  // either way replaces rather than duplicates, and a genuinely new file
+  // goes in prefixed like its neighbours instead of leaving a flat name
+  // in an otherwise `./`-written archive - the mixed archive this
+  // module's own suffix-based finders exist to cope with.
+  //
+  // Moving a new name requires EVERY existing entry to carry the prefix,
+  // not merely one of them. An archive that is already mixed has no
+  // convention to follow, so nothing is guessed there and the name is
+  // written as the caller spelled it. An existing test of exactly that
+  // shape is what caught the wider rule.
+  const targeted = entries.map((e) => {
+    const key = underArchiveConvention(e.path, dotSlash);
+    const existing = archiveByName.get(key);
+    if (existing !== undefined) return { ...e, path: existing };
+    // A genuinely new name. Under a uniformly `./`-written archive it
+    // joins its neighbours; anywhere else it is written EXACTLY as the
+    // caller spelled it - `e.path`, not `key`, which is the caller's
+    // path with the prefix already stripped off by the lookup above.
+    // Writing `key` in a mixed archive silently un-prefixed a path the
+    // caller had supplied, and that is a live route: the Tour Viewer
+    // builds each photo's path from the prefix it found the manifest at,
+    // and the reader looks it up by exact name (PR #441 review).
+    return {
+      ...e,
+      path: allDotSlash ? DOT_SLASH + key : e.path,
+    };
+  });
+  assertSafeNewZipPaths(
+    targeted
+      .filter(
+        (e) => !archiveByName.has(underArchiveConvention(e.path, dotSlash))
+      )
+      // ...checked under the archive's own convention, because the Tour
+      // Viewer's finish builds each new photo's path from the prefix it
+      // found the manifest at. In a `./`-written zip that prefix is
+      // `./`, so `./content/<id>.jpg` is a path this call INVENTS, is
+      // refused for its `.` segment, and dead-ends the creator's setup
+      // at the moment they have finished walking. Replacing an existing
+      // entry was fixed first (PR #438); this is the other half.
+      .map((e) => ({
+        ...e,
+        path: underArchiveConvention(e.path, dotSlash),
+      })),
+    'rebuildZipWithEntries'
+  );
+  // The relaxation above is about the SHAPE of a name and nothing else.
+  // Duplicates among the new entries, and payloads that cannot be
+  // written, still apply to every one of them - a name the archive
+  // happens to carry says nothing about the bytes behind it.
+  assertNoDuplicateNewPaths(entries, dotSlash);
+  assertWritableZipData(entries, 'rebuildZipWithEntries');
+  const removed = removedArchiveNames(
+    options.remove ?? [],
+    entries,
+    archiveByName
+  );
+  const replaced = new Set(targeted.map((e) => e.path));
+  const existing = all.filter(
+    (e) => !replaced.has(e.filename) && !removed.has(e.filename)
+  );
+  const total = existing.length + targeted.length;
+  const carried: ZipEntryInput[] = [];
+  for (const entry of existing) {
+    carried.push({
+      path: entry.filename,
+      data: await readZipEntryBlob(entry, budget, ''),
+    });
+    options.onProgress?.(carried.length, total);
+  }
+  const out = await writeStoreZip(
+    [...carried, ...targeted],
+    'rebuildZipWithEntries'
+  );
+  options.onProgress?.(total, total);
+  return out;
 }
 
 /**
