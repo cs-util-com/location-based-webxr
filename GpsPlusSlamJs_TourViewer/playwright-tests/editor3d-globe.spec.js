@@ -388,6 +388,11 @@ test("draws a recording added as debug data on the globe: its captures' thumbnai
   await expect(page.locator("#debug-status")).toHaveText(
     "Scan walk.zip: shown while you edit. It is not part of the tour visitors get, and it is not saved into the tour file. It is a recording from the Recorder app. Debug data: 2 camera captures shown.",
   );
+  await expect(page.locator("#debug-status")).toBeVisible();
+  // With the view shown its status line answers: no toast repeats it.
+  await expect(
+    page.locator(".toast", { hasText: "as debug data: it shows once" }),
+  ).toHaveCount(0);
   await expect
     .poll(async () => (await debug())?.uploads, { timeout: 60_000 })
     .toBeGreaterThan(0);
