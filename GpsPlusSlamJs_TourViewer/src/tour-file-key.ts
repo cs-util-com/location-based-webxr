@@ -41,6 +41,7 @@
  * save that writes the id moves the draft to the id's key once.
  */
 
+import { isMacOsMetadataName } from "gps-plus-slam-app-framework/storage/zip-reader";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 
 /** The fields of a zip entry the key reads (zip.js `Entry` has them). */
@@ -49,16 +50,6 @@ export interface TourFileKeyEntry {
   readonly directory?: boolean;
   readonly uncompressedSize: number;
   readonly crc32?: number;
-}
-
-/** What a macOS re-zip adds: a `__MACOSX/` folder mirroring the tree and
- *  a `._<name>` resource-fork file per entry. */
-const MACOS_METADATA = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
-
-/** True for an entry a macOS re-zip adds, which is never part of a tour
- *  or a recording. */
-export function isMacOsMetadataName(name: string): boolean {
-  return MACOS_METADATA.test(name);
 }
 
 /** Every file-opened tour's key starts with this; a link never does. */

@@ -54,6 +54,10 @@ export interface TrainerSettings {
   /** Bytes per photo pixel the memory budget counts: Splat.js counts 12
    *  (three float32 channels) against its budget. */
   readonly bytesPerPixel: number;
+  /** Bytes per photo pixel the graphics card holds: Splat.js packs its
+   *  training photos as RGBA8, one 32-bit word a pixel, in one buffer the
+   *  card's binding and buffer limits apply to. */
+  readonly gpuBytesPerPixel: number;
   /** Shortest photo side the trainer may scale down to (px); below it a
    *  window is refused as too large instead. Swept 64 / 128 / 256. */
   readonly minShortSidePx: number;
@@ -90,7 +94,7 @@ export interface TrainerSettings {
   /** Held-out sharpness (dB) from which a stretch is good, and from which
    *  it is at least weak. Picked, not swept: they stand until the stretch
    *  judge is measured against people's ratings. Provisional and laxer
-   *  than the plan's gate bars (good at 21 dB held out and 27 dB at the
+   *  than the stricter bars the trainer aims for (good at 21 dB held out and 27 dB at the
    *  camera with SSIM 0.70; not good under 19 dB held out or 25 dB at the
    *  camera): this judge reads held-out sharpness only, with no SSIM and
    *  no camera bar, until a measured judge replaces both. */
@@ -114,6 +118,7 @@ export const TRAINER_DEFAULTS: TrainerSettings = Object.freeze({
   maxIterations: 30000,
   targetMemoryBytes: 700e6,
   bytesPerPixel: 12,
+  gpuBytesPerPixel: 4,
   minShortSidePx: 128,
   etaMinIterations: 200,
   depthMaxDtMs: 200,

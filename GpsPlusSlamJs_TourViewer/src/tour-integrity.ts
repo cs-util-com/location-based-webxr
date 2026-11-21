@@ -22,7 +22,7 @@
  * tour made before K1): it opens as before, with nothing to check.
  */
 
-import { ZipReader, type Entry, type FileEntry } from "@zip.js/zip.js";
+import type { Entry, FileEntry } from "@zip.js/zip.js";
 import {
   verifyManifestSignature,
   type SignatureVerdict,
@@ -38,13 +38,11 @@ import {
   type TourFileRecord,
 } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 import {
-  ByteSourceReader,
   DecompressionBudget,
-  listZipEntriesCapped,
-  LocalCacheByteSource,
   readZipEntryBlob,
   type ArchiveLimits,
 } from "gps-plus-slam-app-framework/storage";
+import { withCappedZipEntries } from "gps-plus-slam-app-framework/storage/zip-reader";
 import { sha256Hex } from "gps-plus-slam-app-framework/utils/sha256-hex";
 
 /** What tier 1 established about an open archive. */
@@ -246,33 +244,36 @@ async function checkWholeArchive(
   blob: Blob,
   limits: ArchiveLimits,
 ): Promise<TourIntegrity> {
-  const reader = new ZipReader(
-    new ByteSourceReader(
-      new LocalCacheByteSource(blob),
-      limits.maxDirectoryBytes,
-    ),
-  );
-  try {
-    const entries = await listZipEntriesCapped(reader, limits.maxEntries);
-    const budget = DecompressionBudget.forArchive(blob.size, limits);
-    const read = async (entry: FileEntry, cap?: number): Promise<Uint8Array> =>
-      new Uint8Array(
-        await (
-          await readZipEntryBlob(entry, budget, "application/octet-stream", cap)
-        ).arrayBuffer(),
+  return withCappedZipEntries(
+    blob,
+    async (entries) => {
+      const budget = DecompressionBudget.forArchive(blob.size, limits);
+      const read = async (
+        entry: FileEntry,
+        cap?: number,
+      ): Promise<Uint8Array> =>
+        new Uint8Array(
+          await (
+            await readZipEntryBlob(
+              entry,
+              budget,
+              "application/octet-stream",
+              cap,
+            )
+          ).arrayBuffer(),
+        );
+      const integrity = await openTourIntegrity(entries, (e) =>
+        read(e, limits.maxTextEntryBytes),
       );
-    const integrity = await openTourIntegrity(entries, (e) =>
-      read(e, limits.maxTextEntryBytes),
-    );
-    if (integrity.kind === "none") return integrity;
-    for (const entry of entries.filter(isFileEntry)) {
-      if (!integrity.records.has(entry.filename)) continue;
-      await checkEntryBytes(integrity, entry.filename, await read(entry));
-    }
-    return integrity;
-  } finally {
-    await reader.close();
-  }
+      if (integrity.kind === "none") return integrity;
+      for (const entry of entries.filter(isFileEntry)) {
+        if (!integrity.records.has(entry.filename)) continue;
+        await checkEntryBytes(integrity, entry.filename, await read(entry));
+      }
+      return integrity;
+    },
+    limits,
+  );
 }
 
 /**

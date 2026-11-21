@@ -31,8 +31,10 @@ cold-review G3: "open a file" needs its own cache and draft key).
 - `isTourContentKey(key)` - true for the bare content key only (neither
   `series:` nor `tour:`). It names the recording, not the tour, so a
   refusal never deletes a draft by it (B2a review 4).
-- `isMacOsMetadataName(name)` - true for an entry a macOS re-zip adds
-  (`__MACOSX/` or a `._` resource-fork file); `tour-read-set.ts` reads it.
+- macOS metadata (`__MACOSX/` or a `._` resource-fork file) is left out
+  of the content key by `isMacOsMetadataName`, imported from the
+  framework's `storage/zip-reader`: the same rule its `isActionEntryName`
+  applies to actions, so the key never counts an entry the parser skips.
 - The prefix (`"local-file:"`) is module-private; `isTourFileKey` reads it.
 - `interface TourFileKeyEntry { filename; directory?; uncompressedSize; crc32? }`
   (zip.js `Entry` satisfies it).

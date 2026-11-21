@@ -13,9 +13,11 @@ thing it keeps itself is which dialog is open.
 
 - `mountSplatTrainerPage(root, controller, env) -> { dispose }`
   - `controller`: `PageController` - the store (`getState`, `dispatch`,
-    `subscribe`), `sides.previews`, `chooseRecording`, `save`;
-    `createTrainerPageStore` provides it.
-  - `env`: `{ win, isPhone }`; on a phone the page refuses at once.
+    `subscribe`), `sides.previews` and `sides.sharpLooks`,
+    `chooseRecording`, `save`; `createTrainerPageStore` provides it.
+  - `env`: `{ win, isPhone, decode? }`; on a phone the page refuses at
+    once. `decode(blob)` turns a sharp copy back into a picture for the
+    loupe; without it the loupe shows the tile's small picture.
 - Pure text helpers, exported for tests: `minutesText`, `barText`,
   `loupeWord`. The rest (`censusLeadHtml`, `sayFor`, `actionsFor`,
   `saveContentsLine`, `stopDialogText`, `showable`, `liveText` and
@@ -56,6 +58,13 @@ refusals (phone, no WebGPU, a recording without depth by the reader's
   on a waiting print do nothing, Previous and Next skip waiting stretches,
   and a stretch queued to train again reads "Waiting", never "Still
   training".
+- **The loupe shows a finished stretch sharp, and holds that only while
+  open.** It shows the small picture at once and decodes the stretch's
+  sharp copy (`sides.sharpLooks`); the decoded picture replaces it when
+  it lands. Only the open loupe holds it: it is closed when the loupe
+  closes, moves to another stretch, another dialog opens, the copy is
+  replaced, or the page is disposed, and a decode that lands after that
+  is closed at once. A failed decode leaves the small picture.
 - **Dialogs keep the keyboard in and give it back.** While a dialog is
   open the page behind it is `inert`; when it closes (by any path,
   including closing itself because its stretch is gone) the focus returns
@@ -91,7 +100,8 @@ button from the first frame to the census or the refusal, each print's
 stage, percent and time left, a failed start ended in words, the
 practice note on every print, the phone refusal, focus after a decision and across
 a progress tick, the stop dialog's live text and target, Keep training
-starting the held stretch, the closer look skipping waiting stretches, and
+starting the held stretch, the closer look skipping waiting stretches,
+showing the sharp copy and closing it (also when the decode lands late), and
 the bar texts, refusals by code, the save lock and its failure text,
 `inert` and focus return, focus across a phase change, Check again, and
 the root class. `trainer-page-css.test.ts` checks that every outer rule

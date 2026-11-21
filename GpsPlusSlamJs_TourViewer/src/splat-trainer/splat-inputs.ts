@@ -63,6 +63,9 @@ export interface WindowJob {
   readonly deadlineMs: number;
   /** Time allowed to prepare the graphics card before the run fails (ms). */
   readonly prepareCapMs: number;
+  /** The card's photo memory budget (bytes), which the library shrinks
+   *  the photos to; absent when the card's limits are unknown. */
+  readonly photoBudgetBytes?: number;
   /** The shell crop keeps splats within this distance of a training
    *  camera (m). */
   readonly keepM: number;

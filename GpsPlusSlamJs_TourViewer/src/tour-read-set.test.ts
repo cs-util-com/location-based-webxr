@@ -3,12 +3,12 @@ import type {
   TourManifest,
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { isActionEntryName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { tourOf } from "./test-support/tour-of.js";
 
 import {
   entriesForVisitor,
-  isActionEntryName,
   recordingEntryNames,
   recordingFolderOf,
   recordingFoldersOf,

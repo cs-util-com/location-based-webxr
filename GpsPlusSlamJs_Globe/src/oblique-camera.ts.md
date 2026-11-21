@@ -21,6 +21,14 @@ quaternion }`: the camera at the ground point's surface radius plus the
   along the camera's own geocentric ray (not the geodetic normal; the
   difference is a fraction of a metre at these heights). No validation: the
   callers pass finite poses and altitudes; a zero direction yields NaN.
+  The camera-back angle is clamped (`Math.min(1, ...)` inside the
+  `asin`): when the ground point lies beyond the horizon at the asked
+  depression (`(rs + altitudeM) / rs * cos(pitch) > 1`, a low pitch from
+  high up), the camera is placed on the ground point's horizon plane, so it
+  still looks at the ground point, at a shallower depression than asked,
+  instead of yielding NaN. It stays a clamp, not a `RangeError`, because
+  the flight paths and the replan pass pitches from their own laws at any
+  height and no audit shows that none of them reaches this case.
   `orbitQuaternion` and `obliqueCamera` share one scratch matrix, so they
   are not re-entrant (they never call each other mid-use).
 - Example:

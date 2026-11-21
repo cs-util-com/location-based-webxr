@@ -53,39 +53,7 @@ import { createTourViewerStore } from "./tour-viewer-session.js";
 import type { VisitLogEntry } from "./visit-log.js";
 import { objectContentKey } from "./authoring-draft.js";
 import { withCaption } from "./test-support/tour-of.js";
-
-/** An in-memory store with the same contract as the OPFS one. */
-function memoryStore(): DraftFileStore & { files: Map<string, Blob | string> } {
-  const files = new Map<string, Blob | string>();
-  return {
-    files,
-    put: (key, data) => {
-      files.set(key, data as Blob | string);
-      return Promise.resolve(true);
-    },
-    remove: (key) => {
-      files.delete(key);
-      return Promise.resolve();
-    },
-    getText: async (key) => {
-      const value = files.get(key);
-      if (value === undefined) return undefined;
-      return typeof value === "string" ? value : value.text();
-    },
-    getBlob: (key) => {
-      const value = files.get(key);
-      if (value === undefined) return Promise.resolve(undefined);
-      return Promise.resolve(
-        typeof value === "string" ? new Blob([value]) : value,
-      );
-    },
-    keys: () => Promise.resolve([...files.keys()]),
-    clear: () => {
-      files.clear();
-      return Promise.resolve();
-    },
-  };
-}
+import { memoryDraftStore } from "./test-support/memory-draft-stores.js";
 
 function pin(
   id: string,
@@ -127,7 +95,7 @@ const META = { tourUrl: "https://h/t.zip", sizeM: 0.16 };
 
 describe("readDraft", () => {
   it("round-trips the meta and every placed object", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, { ...META, sizeM: 0.2 });
     await writeDraftObject(store, pin("a"));
     await writeDraftObject(store, photo("b"), new Blob([new Uint8Array([9])]));
@@ -144,7 +112,7 @@ describe("readDraft", () => {
   it("gives nothing at all without a meta file", async () => {
     // A directory of objects with no meta cannot say which tour it belongs
     // to, and guessing is how a draft is appended to the wrong zip.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftObject(store, pin("a"));
     expect(await readDraft(store)).toBeUndefined();
   });
@@ -152,7 +120,7 @@ describe("readDraft", () => {
   it("drops one corrupt record and keeps the rest", async () => {
     // The whole reason each object has its own file. A truncated write, or
     // a record from an older version of the app, must cost itself.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("good"));
     await store.put(objectKey("broken"), "{ not json");
@@ -165,7 +133,7 @@ describe("readDraft", () => {
     // A photo record without its bytes names a `content/<id>.jpg` the
     // rebuilt zip does not contain - the exact shape of the PR #435 bug,
     // and worse here because it would be introduced by the safety net.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, photo("p"), new Blob(["x"]));
     store.files.delete(photoKey("p"));
@@ -178,7 +146,7 @@ describe("readDraft", () => {
     // very entry, which made every later save fail. A snapshot that does
     // not read at all is a missing photo, never a record the save cannot
     // build.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     const snapshot = new Blob(["bytes of p"]);
     await writeDraftObject(store, photo("p"), snapshot);
@@ -209,7 +177,7 @@ describe("readDraft", () => {
           maxLength: 8,
         }),
         async (seconds) => {
-          const store = memoryStore();
+          const store = memoryDraftStore();
           await writeDraftMeta(store, META);
           for (const s of seconds) {
             const at = `2026-09-09T00:00:${String(s).padStart(2, "0")}.000Z`;
@@ -293,7 +261,7 @@ describe("the meta's own validation", () => {
       { id: "a/b", json: "{}" },
       { id: "", json: "{}" },
     ]) {
-      const store = memoryStore();
+      const store = memoryDraftStore();
       store.files.set("meta", JSON.stringify(META));
       store.files.set(CODES_KEY, JSON.stringify({ level }));
       await writeDraftObject(store, pin("a"));
@@ -305,7 +273,7 @@ describe("the meta's own validation", () => {
   });
 
   it("accepts the two shapes a level really has", async () => {
-    const withLevel = memoryStore();
+    const withLevel = memoryDraftStore();
     await writeDraftMeta(withLevel, META);
     await writeDraftCodes(withLevel, {
       level: { id: "abc", json: "{}" },
@@ -315,7 +283,7 @@ describe("the meta's own validation", () => {
       id: "abc",
       json: "{}",
     });
-    const withoutLevel = memoryStore();
+    const withoutLevel = memoryDraftStore();
     await writeDraftMeta(withoutLevel, META);
     expect((await readDraft(withoutLevel))?.draft.level).toBeNull();
   });
@@ -332,7 +300,7 @@ describe("the codes an older meta carried are not read (debug-captures plan M3b,
     '{"tourUrl":"https://h/t.zip","sizeM":0.2,"level":{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"},"levels":[{"id":"a1b2c3d4e5f6","json":"{\\"version\\":1}"}]}';
 
   it("reads its size, and no codes", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await store.put("meta", BEFORE_M3B);
     await writeDraftObject(store, pin("a"));
     const read = await readDraft(store);
@@ -348,7 +316,7 @@ describe("several codes in the draft (code book plan M4c-1)", () => {
   // page. `levels` keeps them all, and `level` the code in hand. Kept in
   // the draft's codes record since plan M3b (`CODES_KEY`).
   it("keeps every code, and the code in hand", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     const a = { id: "aaaaaaaaaaa1", json: '{"a":1}' };
     const b = { id: "bbbbbbbbbbb2", json: '{"b":1}' };
     await writeDraftMeta(store, META);
@@ -359,7 +327,7 @@ describe("several codes in the draft (code book plan M4c-1)", () => {
   });
 
   it("drops a code that does not read and keeps the others", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     const a = { id: "aaaaaaaaaaa1", json: "{}" };
     store.files.set("meta", JSON.stringify(META));
     store.files.set(
@@ -373,7 +341,7 @@ describe("several codes in the draft (code book plan M4c-1)", () => {
   });
 
   it("reads no codes from a meta without a level", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     expect((await readDraft(store))?.draft.levels).toEqual([]);
   });
@@ -392,7 +360,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
    */
 
   it("hides an object the meta lists as rejected, though its file is still on disk", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, { ...META, rejected: ["gone"] });
     await writeDraftObject(store, pin("gone"));
     await writeDraftObject(store, pin("kept"));
@@ -409,7 +377,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
     // The photos map is what the finish writes as zip content. A rejected
     // photo whose bytes came back would name an entry the creator threw
     // away, which is the PR #435 failure from the other direction.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, { ...META, rejected: ["shot"] });
     await writeDraftObject(
       store,
@@ -428,7 +396,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
     // prune (everything else drops out) and the sweep list - those are the
     // deletes that did not finish, and nothing else would ever reclaim
     // them now that `clear` has no caller.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, {
       ...META,
       rejected: ["already-swept", "still-there"],
@@ -442,7 +410,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
   it("treats a meta with no rejected list as no rejection", async () => {
     // Every meta file already on a real device is this shape. A
     // compatibility break here would hide a draft nobody rejected.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
 
@@ -457,7 +425,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
     // away - silent data loss, the exact failure this feature has produced
     // four times. Reading it as "nothing is rejected" costs at worst a
     // prompt shown twice. So it fails towards offering.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await store.put(
       "meta",
       JSON.stringify({ ...META, rejected: "not-an-array" }),
@@ -470,7 +438,7 @@ describe("a rejection recorded in the meta is the commit point", () => {
   });
 
   it("ignores a non-string entry without discarding the rest of the list", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await store.put(
       "meta",
       JSON.stringify({ ...META, rejected: ["gone", 7, null] }),
@@ -487,7 +455,7 @@ describe("a meta from before the automatic code spots (code book plan M6)", () =
   // Why: until M6 the meta carried the move prompt's answers. A creator's
   // draft from then must still restore; the answers are simply not read.
   it("reads a meta that still carries the move prompt's answers", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await store.put(
       "meta",
       JSON.stringify({
@@ -521,7 +489,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
    */
 
   it("records the deletion and hides the object's record and bytes, though they were on disk", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, photo("shot"), new Blob(["x"]));
     await writeDraftObject(store, pin("kept"));
@@ -537,7 +505,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
   });
 
   it("removes the object's own files once the tombstone is written", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, photo("shot"), new Blob(["x"]));
     await writeDraftDeletion(store, "shot");
@@ -547,7 +515,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
   });
 
   it("lists a tombstone among the stored ids, so a discard or a spent draft sweeps it", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftDeletion(store, "gone");
     const read = await readDraft(store);
@@ -566,7 +534,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
   // real writer are in `creator-setup.test.ts` ("the order of the draft's
   // writes").
   it("counts a tombstone written after the meta stopped rejecting its id", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, { ...META, rejected: ["gone"] });
     // The claim: the meta stops rejecting the id, then the deletion lands.
     await writeDraftMeta(store, { ...META, rejected: [] });
@@ -576,7 +544,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
 
   it("refuses a tombstone whose id a later meta write rejects", async () => {
     // "Delete it" on a draft holding a deletion throws the deletion away.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftDeletion(store, "gone");
     await writeDraftMeta(store, { ...META, rejected: ["gone"] });
@@ -589,7 +557,7 @@ describe("a deletion is its own file (a tombstone, authoring plan 2026-09-28-095
     // A tombstone that did not land must not be followed by the removal of
     // the record: that would be a delete that is neither on disk as a
     // deletion nor recoverable as an object.
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
     const refusing: typeof store = {
@@ -624,7 +592,7 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
   });
 
   it("comes back after a reload, one file per visit", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     expect(await writeDraftVisit(store, visit("page1-0"))).toBe(true);
     expect(await writeDraftVisit(store, visit("page1-1"))).toBe(true);
@@ -641,7 +609,7 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
   });
 
   it("costs a corrupt visit file only itself", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftVisit(store, visit("good"));
     await store.put(visitKey("broken"), "{ not json");
@@ -652,7 +620,7 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
   });
 
   it("is swept with a rejected draft: hidden by the meta, removed with its id", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftVisit(store, visit("old-0"));
     await writeDraftMeta(store, { ...META, rejected: ["old-0"] });
     const read = await readDraft(store);
@@ -665,7 +633,7 @@ describe("an AR visit's log is its own file (authoring plan 2026-09-28-0953 M3b)
 
   it("names its file apart from an object's, so an object id never reads as a visit", async () => {
     expect(visitKey("a")).not.toBe(objectKey("a"));
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
     expect((await readDraft(store))?.visits).toEqual([]);
@@ -681,7 +649,7 @@ describe("object records of an earlier format", () => {
   // must read as nothing, never as a half-read object the Finish would
   // write wrongly.
   it("reads a record an earlier app wrote as nothing, and the draft's own records as the objects they were", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     store.files.set(
       "meta",
       JSON.stringify({
@@ -762,7 +730,7 @@ describe("isOlderVersionDraft: a meta this version wrote", () => {
   // version's draft: the refusal of the older copy deleted the current
   // copy's work. The meta this version writes says which version wrote it.
   it("is false once this version wrote the meta, whatever its object records", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     store.files.set(
       objectKey("old"),
       JSON.stringify({ id: "old", kind: "pin", label: "The old gate" }),
@@ -785,7 +753,7 @@ describe("discardOlderFormatDraft", () => {
   // restore half: its object records read, its frames are dropped.
   it("empties a draft whose meta is below this format, frames-only among them", async () => {
     for (const format of [3, 4]) {
-      const store = memoryStore();
+      const store = memoryDraftStore();
       store.files.set(META_KEY, JSON.stringify({ ...META, format }));
       store.files.set("settings.json", "{}");
       expect(await discardOlderFormatDraft(store)).toBe(true);
@@ -794,22 +762,22 @@ describe("discardOlderFormatDraft", () => {
   });
 
   it("keeps a draft of this format, an unstamped one, one with no meta and one whose meta does not read", async () => {
-    const stamped = memoryStore();
+    const stamped = memoryDraftStore();
     await writeDraftMeta(stamped, META);
     expect(await discardOlderFormatDraft(stamped)).toBe(false);
     expect(stamped.files.has(META_KEY)).toBe(true);
-    const metaless = memoryStore();
+    const metaless = memoryDraftStore();
     metaless.files.set(objectKey("a"), "{}");
     expect(await discardOlderFormatDraft(metaless)).toBe(false);
     expect(metaless.files.size).toBe(1);
-    const unreadable = memoryStore();
+    const unreadable = memoryDraftStore();
     unreadable.files.set(META_KEY, "not json");
     expect(await discardOlderFormatDraft(unreadable)).toBe(false);
     expect(unreadable.files.size).toBe(1);
   });
 
   it("says no when the store fails", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     store.files.set(META_KEY, JSON.stringify(META));
     store.clear = () => Promise.reject(new Error("quota"));
     expect(await discardOlderFormatDraft(store)).toBe(false);
@@ -822,7 +790,7 @@ describe("the bases of a draft's objects (M6 E2p)", () => {
   // a reload, go with its object, and be absent - not empty - in a draft
   // from before E2p, which then behaves as before.
   it("round-trips a base beside its object, and drops it with the object", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
     expect(await addDraftBaseKey(store, "a", "seen", "the-hosted-key")).toBe(
@@ -841,7 +809,7 @@ describe("the bases of a draft's objects (M6 E2p)", () => {
   });
 
   it("has no bases at all in a draft from before E2p", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, pin("a"));
     expect((await readDraft(store))?.draft.bases).toBeUndefined();
@@ -853,7 +821,7 @@ describe("writeDraftEdit (M6 E2p)", () => {
   // seen; the list only grows, so two edits in one load or across loads
   // can never forget a version this device knew (re-review #1, #2).
   it("adds the given seen version, keeps the earlier ones, and adds none on undefined", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     const hosted = pin("a");
     const later = { ...hosted, caption: "a later version" };
@@ -888,7 +856,7 @@ describe("writeDraftEdit (M6 E2p)", () => {
   // Why (review #6): the result is the record's write. A base that did not
   // land must not report the edit itself as lost.
   it("reports the record's write, not the base's", async () => {
-    const inner = memoryStore();
+    const inner = memoryDraftStore();
     const store: DraftFileStore = {
       ...inner,
       put: (key, data) =>
@@ -906,7 +874,7 @@ describe("writeDraftLiveRecord", () => {
   // landed: removed after a refused record, the read would see neither,
   // and an earlier deletion would be lost without the edit replacing it.
   it("takes the id's tombstone away once the record landed", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftDeletion(store, "a");
     expect(
@@ -919,7 +887,7 @@ describe("writeDraftLiveRecord", () => {
   });
 
   it("keeps the tombstone when the record does not land", async () => {
-    const inner = memoryStore();
+    const inner = memoryDraftStore();
     const store: DraftFileStore = {
       ...inner,
       put: (key, data) =>
@@ -939,7 +907,7 @@ describe("addDraftBaseKey (M6 E2p, third review #2)", () => {
   // own work "replaced" and remove it; a base that could not be updated is
   // removed instead, and no base is never superseded.
   it("removes the base when its update does not land", async () => {
-    const inner = memoryStore();
+    const inner = memoryDraftStore();
     await writeDraftMeta(inner, META);
     await addDraftBaseKey(inner, "a", "seen", "v0");
     const store: DraftFileStore = {
@@ -982,7 +950,7 @@ describe("readDraft for the desktop editor (M6 E2c review #1)", () => {
   // its bytes is dropped) silently lost a moved photo note. The editor
   // reads with the rule off; the phone's read is unchanged.
   it("keeps a photo record without bytes when asked, and drops it otherwise", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftObject(store, photo("p"));
     expect((await readDraft(store))?.draft.objects).toEqual([]);
@@ -998,7 +966,7 @@ describe("writeDraftBase (M6 E2c)", () => {
   // its known versions would read every later file version as "made
   // elsewhere" - or, worse, lose its seen list and stop being protected.
   it("writes a whole base that reads back beside its record", async () => {
-    const store = memoryStore();
+    const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     await writeDraftEdit(store, pin("a"), undefined, undefined);
     expect(

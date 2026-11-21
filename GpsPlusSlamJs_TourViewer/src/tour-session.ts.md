@@ -42,7 +42,10 @@ loading with MIME types, and the poisoned-cache recovery loop.
   editor's draft follows the bytes an in-place save wrote or a download
   made (`editor/editor-draft.ts`), and the phone's the file a Finish
   delivered (`creator-draft.ts` `follow`). Rejects as the open does for a file that is
-  not a readable zip.
+  not a readable zip. Its directory is read by the framework's one capped
+  open (`withCappedZipEntries` of `storage/zip-reader`, under the same
+  `limits`); the session's own open builds its reader itself, because its
+  entries are read lazily for as long as the session lives.
 - `TourSession { entries; archive; fromFile; hasRecording; manifestWrap; budget; stats(); loadEntry(filename); loadEntryText(filename); loadContentEntry(image); close() }`
   - `integrity` (tour kit plan K1, §8 D3) - TIER 1's result
     (`tour-integrity.ts`): `none` for a tour without `manifest.json`,
@@ -74,7 +77,8 @@ not-checked`): a link's complete copies are checked through
     a caller parses itself (the hosted level file, K0 milestone review R10).
     — `hasRecording` is the synchronous `actions/` pre-check
     `loadRecordingActions()` applies: the framework parser's rule
-    (`tour-read-set.ts` `isActionEntryName`: an `actions/` path segment,
+    (`isActionEntryName` of the framework's `storage/zip-reader`, which
+    `tour-read-set.ts` imports: an `actions/` path segment,
     a wrapping folder tolerated, a sibling such as `myactions/` not, ending
     `.json`), exposed for the page's flow copy (`tour-flow.ts`, flows plan
     M1). `loadSessionMeta()` reads the entry the framework's

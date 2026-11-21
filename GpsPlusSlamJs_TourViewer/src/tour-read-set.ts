@@ -18,9 +18,9 @@ import {
   LEGACY_SESSION_IMAGES_DIR,
   SESSION_IMAGES_DIR,
 } from "gps-plus-slam-app-framework/storage/file-system-utils";
+import { isActionEntryName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import type { ViewerMode } from "./mode.js";
-import { isMacOsMetadataName } from "./tour-file-key.js";
 import { tourUnfinished } from "./tour-unfinished.js";
 
 /**
@@ -88,20 +88,15 @@ const RECORDED_FRAME = new RegExp(
   String.raw`(^|/)(${SESSION_IMAGES_DIR}|${LEGACY_SESSION_IMAGES_DIR})/frame-\d+\.[A-Za-z0-9]+$`,
 );
 
-/** The recording's action stream, the walk itself: an `actions/` path
- *  SEGMENT, at the start or after a slash, so a sibling folder whose name
- *  only ends in it (`myactions/`) is not it. The framework's parser
- *  (`zip-reader.ts`) holds the same rule; it does not export it. */
-const ACTIONS_SEGMENT = /(^|\/)actions\//;
-
-/** An action entry the framework's parser replays: under an `actions/`
- *  segment, ending `.json`, and not macOS metadata. */
-export function isActionEntryName(name: string): boolean {
-  return (
-    ACTIONS_SEGMENT.test(name) &&
-    name.endsWith(".json") &&
-    !isMacOsMetadataName(name)
-  );
+/** The folder of an action entry (the framework's `isActionEntryName`:
+ *  under an `actions/` path SEGMENT, at the start or after a slash), with
+ *  its trailing slash: what precedes its first such segment. Only names
+ *  that pass `isActionEntryName` reach it; one without the segment would
+ *  read as flat (`""`), stated rather than left to `indexOf`'s -1. */
+function actionFolderOf(name: string): string {
+  if (name.startsWith("actions/")) return "";
+  const at = name.indexOf("/actions/");
+  return at < 0 ? "" : name.slice(0, at + 1);
 }
 
 /**
@@ -109,7 +104,7 @@ export function isActionEntryName(name: string): boolean {
  * slash (`""` for a flat zip, `"mytour/"` for a recording re-zipped from
  * its folder). A capture's `imageFile` is relative to the recording, so
  * its entry is this folder plus that name. The action entries are found
- * by the same rule as the framework's parser (`isActionEntryName`) and in
+ * by the framework parser's own rule (`isActionEntryName`) and in
  * its order, so this is the folder of exactly the stream that parser
  * replays: a sibling folder whose name only ends in it
  * (`mytour/myactions/`) never gives the folder.
@@ -131,9 +126,7 @@ export function recordingFoldersOf(
   for (const name of entryNames
     .filter(isActionEntryName)
     .sort((a, b) => a.localeCompare(b))) {
-    const at = ACTIONS_SEGMENT.exec(name);
-    if (at !== null)
-      folders.add(name.slice(0, at.index + (at[1] ?? "").length));
+    folders.add(actionFolderOf(name));
   }
   return [...folders];
 }

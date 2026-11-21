@@ -8,8 +8,22 @@
  * @see splat-js.ts.md
  */
 
-/** The Splat.js commit the trainer was measured with. */
+/**
+ * The Splat.js commit the trainer was measured with. Moving the pin means
+ * re-reading, at the new commit, the numbers copied from its source by
+ * hand, since no unit test sees the library (it is loaded at run time
+ * from the CDN, not installed): {@link SPLAT_JS_MIN_TRAIN_DIM} (`adaptiveTrainCap` in
+ * `src/io/frames.js`), and in `trainer-defaults.ts` `targetMemoryBytes`,
+ * `bytesPerPixel` (the same file) and `gpuBytesPerPixel` (the packed
+ * targets in `src/gs/trainer.js`).
+ */
 export const SPLAT_JS_COMMIT = "a84620c05f210a304b2d8de1d5c9f19d3657126f";
+
+/** The smallest longer side (px) Splat.js shrinks a training photo to
+ *  when the photos outgrow its memory budget (`adaptiveTrainCap` at the
+ *  pinned commit); it never enlarges a smaller photo. Copied by hand: see
+ *  {@link SPLAT_JS_COMMIT}. */
+export const SPLAT_JS_MIN_TRAIN_DIM = 320;
 
 /** The one address the trainer loads Splat.js from. */
 export const SPLAT_JS_URL = `https://cdn.jsdelivr.net/gh/arrival-space/splat.js@${SPLAT_JS_COMMIT}/src/index.js`;
@@ -84,7 +98,9 @@ interface SplatSessionOptions {
   readonly holdout: -1;
   readonly evalHoldEvery: number;
   readonly trainer: { readonly camOpt: false; readonly expComp: false };
-  readonly frames?: { readonly trainMaxDim: number };
+  /** Splat.js's frame options: it shrinks the training photos to fit
+   *  `targetBudgetBytes` (its own default 700e6 when absent). */
+  readonly frames?: { readonly targetBudgetBytes?: number };
 }
 
 /** The exports of Splat.js the trainer uses. */
@@ -94,14 +110,21 @@ export interface SplatJsModule {
   readonly TRAIN_MAX_DIM: number;
 }
 
+/** The library arrived but is not the one the trainer knows: a second
+ *  try meets the same module, unlike a download that failed. */
+export class SplatJsMismatchError extends Error {
+  override readonly name = "SplatJsMismatchError";
+}
+
 /**
- * `mod` as the Splat.js the trainer knows, or an Error that says what does
- * not match: a module that is not an object, a missing function, or a
- * `TRAIN_MAX_DIM` that is not a positive number.
+ * `mod` as the Splat.js the trainer knows, or a
+ * {@link SplatJsMismatchError} that says what does not match: a module
+ * that is not an object, a missing function, or a `TRAIN_MAX_DIM` that is
+ * not a positive number.
  */
 export function checkSplatJs(mod: unknown): SplatJsModule {
   const refuse = (what: string): Error =>
-    new Error(
+    new SplatJsMismatchError(
       `The splat trainer library is not the version this page expects (${what}).`,
     );
   if (typeof mod !== "object" || mod === null) throw refuse("no module");
@@ -128,8 +151,8 @@ export const SHIM_IMPORT_KEY = "__splatTrainerImport";
 
 /**
  * Loads Splat.js from {@link SPLAT_JS_URL} with `importer` and checks it.
- * Rejects with a sentence when the network fails or the module is not the
- * expected one.
+ * Rejects with a sentence when the network fails, or with a
+ * {@link SplatJsMismatchError} when the module is not the expected one.
  */
 export async function loadSplatJs(
   importer: ModuleImporter,

@@ -41,7 +41,10 @@
  * with its base `/`), so the landing gets its own guards instead: every
  * demo link must be present in the built HTML (the "demos remain
  * launchable" requirement) and every local asset URL it references must
- * exist in the tree.
+ * exist in the tree. After the Tour Viewer build, `assertSplatPolicyShipped`
+ * (`splat-csp-deploy.mjs`) checks that the splat trainer page ships with
+ * its source's content security policy and that every Splat.js address its
+ * worker names is one that policy lets through.
  *
  * See: GpsPlusSlamJs_Docs/docs/2026-06-01-0424-multi-app-subpath-deployment-plan.md
  * and GpsPlusSlamJs_Docs/docs/2026-07-12-2046-landing-page-3d-scroll-redesign-plan.md
@@ -66,6 +69,7 @@ import {
   copyGlobeAssets,
 } from './globe-assets-deploy.mjs';
 import { assertNoSourceMapsDeployed } from './source-maps-deploy.mjs';
+import { assertSplatPolicyShipped } from './splat-csp-deploy.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const distSite = join(repoRoot, 'dist-site');
@@ -313,6 +317,13 @@ run('pnpm', [
   '--emptyOutDir',
 ]);
 assertNoBareAbsoluteUrlsInDir(join(distSite, 'tour'), '/tour/');
+assertSplatPolicyShipped({
+  siteDir: distSite,
+  sourceHtml: readFileSync(
+    join(repoRoot, 'GpsPlusSlamJs_TourViewer', 'splat', 'index.html'),
+    'utf8'
+  ),
+});
 
 console.log('• Building MinimalExample (base=/minimal/)');
 run('pnpm', ['--filter', 'gps-plus-slam-minimal-example', 'run', 'typecheck']);

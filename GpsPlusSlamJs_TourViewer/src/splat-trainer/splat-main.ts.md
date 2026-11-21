@@ -25,10 +25,15 @@ graphics card.
   comes back alive from there and must keep running.
 - The paper colour for practice pictures is read from the page root, where
   the page's tokens live (`.splat-page`).
+- A finished stretch's look is kept by `lookKeeper(browserLookTools)`
+  (`kept-look.ts`: a 480 px picture for the tile, a 1200 px JPEG for the
+  loupe), and the page decodes that JPEG with `createImageBitmap` when
+  the loupe opens.
 
 ## Tests
 
-No unit test of its own: it only wires tested modules. The e2e
+No unit test of its own: it only wires tested modules (the sizes and the
+browser tools are `kept-look.test.ts`'s). The e2e
 `playwright-tests/splat-trainer.spec.js` loads the page through it in
 every mode; `playwright-tests/splat-trainer-gpu.spec.js` runs the
 default GPU trainer with a stand-in Splat.js.

@@ -9,7 +9,8 @@
  */
 
 import { describe, it, expect, vi, beforeAll } from 'vitest';
-import { Reader } from '@zip.js/zip.js';
+import { Reader, ZipReader } from '@zip.js/zip.js';
+import fc from 'fast-check';
 import {
   readZipEntries,
   loadActionsFromZip,
@@ -18,6 +19,9 @@ import {
   loadSessionMetadataFromBlob,
   loadEntriesFromSubdir,
   toZipReader,
+  isActionEntryName,
+  isMacOsMetadataName,
+  withCappedZipEntries,
   MAX_ACTION_FILE_SIZE,
   type ZipActionEntry,
 } from './zip-reader';
@@ -27,6 +31,7 @@ import {
   packDepthAction,
 } from './depth-sample-codec';
 import { DecompressionBudget } from './capped-zip-entries';
+import { packFilesAsZip } from './pack-files-as-zip';
 import {
   produceTestZip,
   type TestZipResult,
@@ -1283,5 +1288,142 @@ describe('a folder name that only ENDS in a framework folder name', () => {
       { name: 'mysession.json', content: '{"which":"backup"}' },
     ]);
     expect(await loadSessionMetadata(lookAlikeOnly)).toBeNull();
+  });
+});
+
+describe('isActionEntryName: the one rule for which entries are actions', () => {
+  // Why: the Tour Viewer decides whether a zip holds a walk, and which
+  // folder it sits in, by this rule; a rule of its own that drifted from
+  // the parser's would let a check pass a zip the parser then replays
+  // differently.
+  it('takes an actions/ segment at the start or after a slash, ending .json', () => {
+    expect(isActionEntryName('actions/000001.json')).toBe(true);
+    expect(isActionEntryName('rec/actions/000001.json')).toBe(true);
+    expect(isActionEntryName('myactions/000001.json')).toBe(false);
+    expect(isActionEntryName('rec/old-actions/000001.json')).toBe(false);
+    expect(isActionEntryName('actions/000001.txt')).toBe(false);
+    expect(isActionEntryName('actions.json')).toBe(false);
+  });
+
+  it('leaves out the metadata a macOS re-zip adds', () => {
+    expect(isActionEntryName('__MACOSX/rec/actions/._000001.json')).toBe(false);
+    expect(isActionEntryName('__MACOSX/actions/000001.json')).toBe(false);
+    expect(isActionEntryName('rec/actions/._000002.json')).toBe(false);
+  });
+});
+
+describe('isMacOsMetadataName: the one macOS re-zip rule', () => {
+  // Why: the parser's action rule and the Tour Viewer's file key both skip
+  // what a Finder re-zip adds. Were they two rules, a widened one would
+  // let the key count an entry the parser skips, and the same recording
+  // re-zipped would get another key (and lose its draft).
+  it('names the __MACOSX/ tree and ._ resource forks, nothing else', () => {
+    expect(isMacOsMetadataName('__MACOSX/')).toBe(true);
+    expect(isMacOsMetadataName('__MACOSX/walk/session.json')).toBe(true);
+    expect(isMacOsMetadataName('walk/__MACOSX/a.json')).toBe(true);
+    expect(isMacOsMetadataName('._session.json')).toBe(true);
+    expect(isMacOsMetadataName('walk/actions/._000001.json')).toBe(true);
+    expect(isMacOsMetadataName('session.json')).toBe(false);
+    expect(isMacOsMetadataName('walk/a._b.json')).toBe(false);
+    expect(isMacOsMetadataName('walk/._dir/a.json')).toBe(false);
+    expect(isMacOsMetadataName('x__MACOSX/a.json')).toBe(false);
+  });
+
+  it('agrees with the rule the Tour Viewer file key held, for any name', () => {
+    // The Tour Viewer's former private copy, kept as the oracle the shared
+    // rule replaced without a change of behaviour.
+    const tourViewerRule = /(^|\/)(__MACOSX\/|\._[^/]*$)/;
+    const part = fc.constantFrom('__MACOSX', '._', '.', '_', 'a', 'x__MACOSX');
+    const name = fc
+      .array(fc.array(part, { minLength: 1, maxLength: 3 }), {
+        minLength: 1,
+        maxLength: 4,
+      })
+      .chain((segments) =>
+        fc
+          .boolean()
+          .map(
+            (trailingSlash) =>
+              segments.map((s) => s.join('')).join('/') +
+              (trailingSlash ? '/' : '')
+          )
+      );
+    fc.assert(
+      fc.property(fc.oneof(name, fc.string()), (n) => {
+        expect(isMacOsMetadataName(n)).toBe(tourViewerRule.test(n));
+      }),
+      { numRuns: 2000 }
+    );
+  });
+});
+
+describe('withCappedZipEntries: one capped open of a zip Blob', () => {
+  // Why: every reader of an untrusted zip Blob must read its directory
+  // under the directory and entry caps; this is the one place that open
+  // is written, so a caller cannot forget either cap.
+  const zip = (): Promise<Blob> =>
+    packFilesAsZip([
+      { path: 'a.txt', data: 'a' },
+      { path: 'dir/b.txt', data: 'bb' },
+      { path: 'c.txt', data: 'ccc' },
+    ]);
+
+  it('hands the entries to use, and returns what use returns', async () => {
+    const names = await withCappedZipEntries(await zip(), (entries) =>
+      Promise.resolve(entries.map((e) => e.filename))
+    );
+    expect(names).toEqual(['a.txt', 'dir/b.txt', 'c.txt']);
+  });
+
+  it('holds the entry cap and the directory cap', async () => {
+    const blob = await zip();
+    const entryErr = await withCappedZipEntries(
+      blob,
+      () => Promise.resolve(null),
+      { maxEntries: 2, maxDirectoryBytes: 1 << 20 }
+    ).catch((e: unknown) => e);
+    expect((entryErr as ArchiveLimitError).kind).toBe('entry-count');
+    const dirErr = await withCappedZipEntries(
+      blob,
+      () => Promise.resolve(null),
+      { maxEntries: 100, maxDirectoryBytes: 16 }
+    ).catch((e: unknown) => e);
+    expect((dirErr as ArchiveLimitError).kind).toBe('directory-bytes');
+  });
+
+  it('rejects bytes that are no zip without calling use, and passes its rejection on', async () => {
+    const use = vi.fn(() => Promise.resolve(1));
+    await expect(
+      withCappedZipEntries(new Blob(['hello']), use)
+    ).rejects.toThrow();
+    expect(use).not.toHaveBeenCalled();
+    await expect(
+      withCappedZipEntries(await zip(), () =>
+        Promise.reject(new Error('from use'))
+      )
+    ).rejects.toThrow('from use');
+  });
+
+  it('closes the reader once, whether use resolves or rejects, and on a non-zip', async () => {
+    // Why: the caller never sees the reader, so this is the only place
+    // that can close it; each path must close it exactly once.
+    const blob = await zip();
+    const close = vi.spyOn(ZipReader.prototype, 'close');
+    try {
+      await withCappedZipEntries(blob, () => Promise.resolve(1));
+      expect(close).toHaveBeenCalledTimes(1);
+      close.mockClear();
+      await withCappedZipEntries(blob, () =>
+        Promise.reject(new Error('from use'))
+      ).catch(() => undefined);
+      expect(close).toHaveBeenCalledTimes(1);
+      close.mockClear();
+      await withCappedZipEntries(new Blob(['hello']), () =>
+        Promise.resolve(1)
+      ).catch(() => undefined);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      close.mockRestore();
+    }
   });
 });

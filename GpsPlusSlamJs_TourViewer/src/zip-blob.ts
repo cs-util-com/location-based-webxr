@@ -9,39 +9,17 @@
  * @see zip-blob.ts.md
  */
 
-import { ZipReader, type Entry, type FileEntry } from "@zip.js/zip.js";
+import type { FileEntry } from "@zip.js/zip.js";
 import {
-  ByteSourceReader,
   DecompressionBudget,
-  DEFAULT_ARCHIVE_LIMITS,
-  listZipEntriesCapped,
-  LocalCacheByteSource,
   readZipEntryBlob,
 } from "gps-plus-slam-app-framework/storage";
-
-async function withEntries<T>(
-  blob: Blob,
-  use: (entries: readonly Entry[]) => Promise<T>,
-): Promise<T> {
-  const reader = new ZipReader(
-    new ByteSourceReader(
-      new LocalCacheByteSource(blob),
-      DEFAULT_ARCHIVE_LIMITS.maxDirectoryBytes,
-    ),
-  );
-  try {
-    return await use(
-      await listZipEntriesCapped(reader, DEFAULT_ARCHIVE_LIMITS.maxEntries),
-    );
-  } finally {
-    await reader.close();
-  }
-}
+import { withCappedZipEntries } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 /** The file entries' names, in archive order (directories left out).
  *  Throws for bytes that are not a readable zip, or past the entry cap. */
 export function zipBlobEntryNames(blob: Blob): Promise<string[]> {
-  return withEntries(blob, (entries) =>
+  return withCappedZipEntries(blob, (entries) =>
     Promise.resolve(entries.filter((e) => !e.directory).map((e) => e.filename)),
   );
 }
@@ -73,7 +51,7 @@ export function withZipBlobDirectory<T>(
   blob: Blob,
   use: (directory: ZipBlobDirectory) => Promise<T>,
 ): Promise<T> {
-  return withEntries(blob, (entries) => {
+  return withCappedZipEntries(blob, (entries) => {
     const names: string[] = [];
     const files = new Map<string, FileEntry>();
     for (const e of entries) {
@@ -105,7 +83,7 @@ export function withZipBlobDirectory<T>(
 
 /** The entry `name`'s bytes. Throws, naming it, when the zip lacks it. */
 export function readZipBlobEntry(blob: Blob, name: string): Promise<Blob> {
-  return withEntries(blob, async (entries) => {
+  return withCappedZipEntries(blob, async (entries) => {
     const entry = entries.find(
       (e): e is FileEntry => !e.directory && e.filename === name,
     );

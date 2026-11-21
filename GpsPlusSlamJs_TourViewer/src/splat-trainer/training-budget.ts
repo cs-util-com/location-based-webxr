@@ -31,10 +31,11 @@ export type PhotoScale =
     };
 
 /**
- * The photo memory budget (bytes): the target, at most half the storage
- * binding limit (the photos must share the device with the trainer's own
- * buffers) and at most the largest buffer. Throws a RangeError for limits
- * that are not positive numbers.
+ * The photo memory budget (bytes, counted at `bytesPerPixel`): the target,
+ * and no more than photos the card holds (at `gpuBytesPerPixel`) in half
+ * the storage binding limit (the photos must share the device with the
+ * trainer's own buffers) and in the largest buffer. Throws a RangeError
+ * for limits or costs per pixel that are not positive numbers.
  */
 export function memoryBudgetBytes(
   limits: AdapterLimits,
@@ -46,11 +47,17 @@ export function memoryBudgetBytes(
   );
   requirePositive("maxBufferSize", limits.maxBufferSize);
   requirePositive("targetMemoryBytes", settings.targetMemoryBytes);
+  requirePositive("bytesPerPixel", settings.bytesPerPixel);
+  requirePositive("gpuBytesPerPixel", settings.gpuBytesPerPixel);
+  // Multiplied before dividing, so whole-number limits give the exact
+  // whole-byte budget rather than one rounded a byte short.
+  const inBudgetBytes = (cardBytes: number): number =>
+    (cardBytes * settings.bytesPerPixel) / settings.gpuBytesPerPixel;
   return Math.floor(
     Math.min(
       settings.targetMemoryBytes,
-      limits.maxStorageBufferBindingSize / 2,
-      limits.maxBufferSize,
+      inBudgetBytes(limits.maxStorageBufferBindingSize / 2),
+      inBudgetBytes(limits.maxBufferSize),
     ),
   );
 }
