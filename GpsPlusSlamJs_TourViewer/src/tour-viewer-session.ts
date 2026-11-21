@@ -454,14 +454,6 @@ export interface TourViewerSession {
    *  the visit's sighting of it live in the creator's code module,
    *  `creator-codes.ts`, code book plan M5d-2.) */
   mintGeneration: number;
-  /** The finish step is running (one at a time); the panel shows its
-   *  progress with priority over the measuring readout. */
-  finishing: boolean;
-  /** The finish step's live progress copy while `finishing`. */
-  finishProgress: string;
-  /** The last finish failure, shown with priority until the next tap
-   *  (the readout used to erase it on the next store dispatch, M3 review #1). */
-  finishError: string | null;
   /** The rebuilt zip of the last Finish, saved at the end of step 4 (and
    *  again from its button), with the list its
    *  `manifest.json` carries when the tour has one (K1 milestone review
@@ -705,9 +697,6 @@ export function createTourViewerSession(
     gpsSamplesAtSessionStart: 0,
     frameEpochAtSessionStart: 0,
     mintGeneration: 0,
-    finishing: false,
-    finishProgress: "",
-    finishError: null,
     rebuiltZip: null,
     tourLabel: null,
     arSessionGeneration: 0,

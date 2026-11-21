@@ -281,8 +281,10 @@ largeTour?, cannotSave? })`.
   `creator-document.ts`): it claims the slot as `"explicit"`, reports
   `saveProgressed({ progress })` (`{ kind: "reading", bytes }`, then
   `{ kind: "rebuilding", done, total }`; ignored while nobody holds the
-  slot and for the value already held, so a duplicate final count wakes
-  no subscriber), and releases it. `save.progress` is cleared by every
+  slot and for the value already held: the state stays the same object,
+  though Redux still calls every subscriber on that dispatch - the
+  Finish's whole-percent gate, `createProgressGate` in
+  `finish-status.ts`, is what saves the wake-ups), and releases it. `save.progress` is cleared by every
   claim and by the release, and kept with the slot across `opened` and
   `closed`. `finishWaitsChanged({ waits })` sets `save.finishWaits`, the
   phone's Done waiting for the code being measured: its own field, not

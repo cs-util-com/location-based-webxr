@@ -18,6 +18,7 @@ import {
   type TourDocumentState,
   type TourSaveHolder,
   type TourSaveProgress,
+  type TourSaveStatus,
 } from "./tour-document.js";
 import { tourOf } from "./test-support/tour-of.js";
 
@@ -52,7 +53,9 @@ describe("tour document: the slot holder's progress", () => {
   });
 
   // Why: the rebuild reports its last entry twice (once as an entry, once
-  // as the end); the same value must not wake every subscriber again.
+  // as the end); the same value keeps the same state object, so selectors
+  // and views see no change. (Redux still calls every subscriber on the
+  // dispatch: the Finish's whole-percent gate saves those wake-ups.)
   it("returns the same state for the value already held", () => {
     let state = reduce(open(), act.saveClaimed({ by: "explicit" }));
     state = reduce(state, act.saveProgressed({ progress: HALF }));
@@ -110,8 +113,8 @@ type Step =
   | { kind: "claimed"; by: TourSaveHolder }
   | { kind: "progressed"; progress: TourSaveProgress }
   | { kind: "started"; stale: boolean }
-  | { kind: "ended"; stale: boolean; error?: string }
-  | { kind: "released"; error?: string }
+  | { kind: "ended"; stale: boolean; error: string | undefined }
+  | { kind: "released"; error: string | undefined }
   | { kind: "waits"; waits: boolean }
   | { kind: "opened" }
   | { kind: "closed" };
@@ -194,65 +197,78 @@ describe("tour document: the save status under any mix of the pages' save action
         for (const s of steps) {
           const before = state.save;
           state = apply(state, s);
-          const save = state.save;
-          // The status is derived: saving exactly while the slot is held
-          // or a rebuild is queued or runs, else error while one is said.
-          expect(save.status).toBe(
-            save.by !== null || save.rebuilds > 0
-              ? "saving"
-              : save.error === null
-                ? "idle"
-                : "error",
-          );
-          // A progress line belongs to the slot holder.
-          if (save.by === null) expect(save.progress).toBeNull();
-          if (s.kind === "opened" || s.kind === "closed") {
-            // The slot, its progress and a waiting Done are the page's.
-            expect(save.by).toBe(before.by);
-            expect(save.progress).toEqual(before.progress);
-            expect(save.finishWaits).toBe(before.finishWaits);
-            expect(save.error).toBeNull();
-            expect(save.rebuilds).toBe(0);
-          }
-          if (s.kind === "claimed") {
-            expect(save.by).toBe(s.by);
-            expect(save.progress).toBeNull();
-            // A save of the tour itself starts with no failure said. The
-            // exception: a copy, or a linked tour's write ("open"), writes
-            // another file, so the tour's last error stays said.
-            if (s.by === "copy" || s.by === "open") {
-              expect(save.error).toBe(before.error);
-            } else {
-              expect(save.error).toBeNull();
-            }
-          }
-          if (s.kind === "released") {
-            expect(save.by).toBeNull();
-            expect(save.error).toBe(s.error ?? before.error);
-          }
-          if (s.kind === "waits") {
-            expect(save).toEqual(
-              s.waits === before.finishWaits
-                ? before
-                : { ...before, finishWaits: s.waits },
-            );
-          }
-          if (s.kind === "progressed") {
-            // Progress never changes whether or why the tour is saving.
-            expect(save.status).toBe(before.status);
-            expect(save.error).toBe(before.error);
-          }
-          if (
-            s.kind === "claimed" ||
-            s.kind === "progressed" ||
-            s.kind === "started" ||
-            s.kind === "ended" ||
-            s.kind === "released"
-          ) {
-            expect(save.finishWaits).toBe(before.finishWaits);
-          }
+          expect(broken(s, before, state.save)).toEqual([]);
         }
       }),
     );
   });
 });
+
+/** The invariants one step broke, by name (none: an empty list). */
+function broken(
+  s: Step,
+  before: TourSaveStatus,
+  save: TourSaveStatus,
+): string[] {
+  const out: string[] = [];
+  const check = (name: string, holds: boolean): void => {
+    if (!holds) out.push(name);
+  };
+  // The status is derived: saving exactly while the slot is held or a
+  // rebuild is queued or runs, else error while one is said.
+  check(
+    "status derived",
+    save.status ===
+      (save.by !== null || save.rebuilds > 0
+        ? "saving"
+        : save.error === null
+          ? "idle"
+          : "error"),
+  );
+  // A progress line belongs to the slot holder.
+  check(
+    "no progress without the slot",
+    save.by !== null || save.progress === null,
+  );
+  if (s.kind === "opened" || s.kind === "closed") {
+    // The slot, its progress and a waiting Done are the page's.
+    check("slot kept", save.by === before.by);
+    check("progress kept", save.progress === before.progress);
+    check("wait kept", save.finishWaits === before.finishWaits);
+    check("error reset", save.error === null);
+    check("rebuilds reset", save.rebuilds === 0);
+  }
+  if (s.kind === "claimed") {
+    check("claimed by", save.by === s.by);
+    check("claim clears progress", save.progress === null);
+    // A save of the tour itself starts with no failure said. The
+    // exception: a copy, or a linked tour's write ("open"), writes another
+    // file, so the tour's last error stays said.
+    check(
+      "claim and the error",
+      s.by === "copy" || s.by === "open"
+        ? save.error === before.error
+        : save.error === null,
+    );
+  }
+  if (s.kind === "released") {
+    check("released", save.by === null);
+    check("release error", save.error === (s.error ?? before.error));
+  }
+  if (s.kind === "waits") {
+    check(
+      "waits alone",
+      JSON.stringify(save) ===
+        JSON.stringify({ ...before, finishWaits: s.waits }),
+    );
+  }
+  if (s.kind === "progressed") {
+    // Progress never changes whether or why the tour is saving.
+    check("progress keeps status", save.status === before.status);
+    check("progress keeps error", save.error === before.error);
+  }
+  if (s.kind !== "waits" && s.kind !== "opened" && s.kind !== "closed") {
+    check("wait untouched", save.finishWaits === before.finishWaits);
+  }
+  return out;
+}

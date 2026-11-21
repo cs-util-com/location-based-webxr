@@ -28,6 +28,12 @@
  * framework's own packer tests, and the reason is the same: what a visitor
  * gets is the file, not the call.
  */
+import type { TourDocumentState } from "./tour-document.js";
+import {
+  finishErrorLine,
+  finishFailed,
+  finishRunning,
+} from "./finish-status.js";
 import { describe, expect, it, vi } from "vitest";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 import { existsSync, readFileSync } from "node:fs";
@@ -390,11 +396,17 @@ async function wireFinishable(options: {
  */
 async function settle(ctx: {
   rebuiltZip: unknown;
-  finishError: unknown;
+  tourDocument: { state(): TourDocumentState };
 }): Promise<void> {
   for (let i = 0; i < 600; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
-    if (ctx.rebuiltZip !== null || ctx.finishError !== null) return;
+    const state = ctx.tourDocument.state();
+    if (
+      !finishRunning(state) &&
+      (ctx.rebuiltZip !== null || finishFailed(state))
+    ) {
+      return;
+    }
   }
 }
 
@@ -422,7 +434,9 @@ describe("the finish rebuilds the open archive under its session's budget (K0 mi
     await settle(ctx);
 
     expect(ctx.rebuiltZip).toBeNull();
-    expect(ctx.finishError).toMatch(/too large once unpacked/);
+    expect(finishErrorLine(ctx.tourDocument.state())).toMatch(
+      /too large once unpacked/,
+    );
   });
 });
 
@@ -479,7 +493,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
       });
       dom.finishButton.click();
       await settle(ctx);
-      expect(ctx.finishError).toBeNull();
+      expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
 
       const blob = ctx.rebuiltZip!.blob;
       const names = await entryNamesOf(blob);
@@ -513,7 +527,7 @@ describe("the finish continues a listed tour's series, unsigned (K1 milestone re
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     expect(await entryNamesOf(blob)).toContain(`${WRAP}qr/${LEVEL_ID}.json`);
     const next = await openTourFile(
@@ -628,7 +642,7 @@ describe("what the finish actually writes into the published zip", () => {
     await settle(ctx);
 
     expect(
-      ctx.finishError,
+      finishErrorLine(ctx.tourDocument.state()),
       "a duplicate id must not make the finish fail",
     ).toBeNull();
     const rebuilt = ctx.rebuiltZip?.blob;
@@ -705,7 +719,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.objects.map((o) => o.id)).toEqual(["a", "b", "c"]);
     expect(written.objects[1]).toMatchObject({
@@ -728,7 +742,7 @@ describe("edits and deletions reach the published zip (authoring plan 2026-09-28
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
     expect(written.objects.map((o) => o.id)).toEqual(["kept"]);
@@ -776,7 +790,7 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
     );
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     // Written, so it left the list of work to write.
     expect(ctx.tourDocument.entries()).toEqual([]);
     setup.beginAuthorVisit();
@@ -1169,7 +1183,7 @@ describe("the finish writes no debug camera captures", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await writtenManifest(ctx);
     expect(written).toMatchObject({ version: 5, minor: 0 });
     expect(written).not.toHaveProperty("captureSpots");
@@ -1252,7 +1266,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     // walk. It starts unticked now, since the walk is saved apart.
     const { ctx, dom } = await wireRecordingTour("default");
     expect(dom.keepScanInput.checked).toBe(false);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     expect(names.filter((n) => WALK.includes(n))).toEqual([]);
     expect(names).toContain(`${WRAP}tour.json`);
@@ -1266,7 +1280,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
   it("leaves the whole walk out when the creator unticks the switch, frames and all, and says so", async () => {
     // The page's later renders (the Finish renders too) keep the untick.
     const { ctx, dom } = await wireRecordingTour(false);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const names = await entryNamesOf(ctx.rebuiltZip!.blob);
     // No frame stays: none is the tour's content.
     expect(names.filter((n) => WALK.includes(n))).toEqual([]);
@@ -1334,7 +1348,7 @@ describe("the published copy carries only what visitors need (scan-pass plan S1,
     expect(wired.dom.debugSave.hidden).toBe(true);
     wired.dom.finishButton.click();
     await settle(wired.ctx);
-    expect(wired.ctx.finishError).toBeNull();
+    expect(finishErrorLine(wired.ctx.tourDocument.state())).toBeNull();
     // The tour zip the Finish saved (by itself) leaves the walk out ...
     expect(handed).toHaveLength(1);
     const tourNames = await entryNamesOf(handed[0]!.blob);
@@ -1598,7 +1612,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     dom.finishButton.click();
     await settle(ctx);
     await saved();
-    expect(ctx.finishError).not.toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).not.toBeNull();
     expect(saves).toHaveLength(1);
     expect(dom.finishBlock.hidden).toBe(false);
     expect(dom.downloadButton.disabled).toBe(false);
@@ -1703,7 +1717,7 @@ describe("the save cannot be forgotten (UI round 1, U2)", () => {
     expect(dom.downloadButton.disabled).toBe(false);
     ctx.tourDocument.place(pin("another-one"), {}, "another pin");
     dom.finishButton.click();
-    expect(ctx.finishing).toBe(true);
+    expect(finishRunning(ctx.tourDocument.state())).toBe(true);
     expect(dom.downloadButton.disabled).toBe(true);
     await settle(ctx);
     await saved();
@@ -1811,7 +1825,7 @@ describe("desk edits: a Finish with no AR visit (code book plan M4d, §9 D4)", (
     expect(dom.finishButton.disabled).toBe(false);
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const blob = ctx.rebuiltZip!.blob;
     const written = await publishedManifest(blob);
     expect(written.objects[1]).toMatchObject({
@@ -1867,7 +1881,7 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.title).toBe("Harbour Lights");
   });
@@ -1913,7 +1927,7 @@ describe("the tour's name at the Finish (polish round M4a)", () => {
     });
     dom.finishButton.click();
     await settle(ctx);
-    expect(ctx.finishError).toBeNull();
+    expect(finishErrorLine(ctx.tourDocument.state())).toBeNull();
     const written = await publishedManifest(ctx.rebuiltZip!.blob);
     expect(written.title).toBe("Harbour Lights");
   });

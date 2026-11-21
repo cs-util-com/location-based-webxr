@@ -240,10 +240,8 @@ export function wireArchiveOpen(deps: {
     // creator's code module, code book plan M5d-2); the generation bump
     // makes any mint hash still in flight land on nothing.
     ctx.mintGeneration += 1;
-    // A failed finish is the closing tour's too: it keeps Save off, and only
-    // a finish - which needs a measured level - clears it (scan-to-open
-    // plan §9 #8).
-    ctx.finishError = null;
+    // A failed finish is the closing tour's too: the document's close above
+    // put it away with the tour's save status (`finish-status.ts`).
     step(() => hooks.resetFinishStep());
     // The AR button reads the finish's failure ("Close AR"); it is gone
     // now (scan-to-open in AR opens a tour mid-session - M3 review #3).

@@ -67,7 +67,7 @@ lives here.
     `mintGeneration` (the code in hand, its measurement and the visit's
     sighting of it are the store's `creatorCodes`, written only through
     `creator-codes.ts`),
-    `finishing`, `rebuiltZip` (with the `manifest.json` list it carries,
+    `rebuiltZip` (with the `manifest.json` list it carries,
     for the next Finish, K1 milestone review R7), `tourLabel` (set by
     archive-open); the open
     tour's document `tourDocument` (`creator-document.ts`: the shared

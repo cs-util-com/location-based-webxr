@@ -94,7 +94,7 @@ M4 replaces its one code in hand with the code book.
     no tour ("another anchor");
   - otherwise it is measured, once per visit and code (`autoMeasured`,
     cleared at the visit's end and when a measured print size is
-    adopted), never during a Finish.
+    adopted), never during a Finish (`finishRunning`, `finish-status.ts`).
 
   A measurement that lost the gate is tried again; one the mint or the
   identity refused is not, and its reason becomes the panel's note (the
