@@ -573,23 +573,27 @@ export function wireCreatorSetup(deps: {
 
   /** The creator closed the scan card in this AR visit. Transient UI
    *  that nothing else reads, so it stays outside the store; each visit
-   *  starts with it open again (`endAuthorVisit`). */
+   *  starts with it open again (`endAuthorVisit`). A visitor page's card
+   *  is `ar-entry.ts`'s alone: nothing here listens to it or writes it. */
   let scanCardDismissed = false;
-  dom.scanCard?.close.addEventListener("click", () => {
-    scanCardDismissed = true;
-    renderScanCard();
-  });
-  // A tap on the close button is not also an XR select (see the panel).
-  dom.scanCard?.close.addEventListener("beforexrselect", (event) => {
-    event.preventDefault();
-  });
+  if (creator) {
+    dom.scanCard?.close.addEventListener("click", () => {
+      scanCardDismissed = true;
+      renderScanCard();
+    });
+    // A tap on the close button is not also an XR select (see the panel).
+    dom.scanCard?.close.addEventListener("beforexrselect", (event) => {
+      event.preventDefault();
+    });
+  }
 
   /** The creator's scan card: look at the tour's printed code first, until
    *  this visit has seen the code in hand (or any code, with none in hand),
-   *  only for a tour with a measured code, and closed at once by a tap. */
+   *  only for a tour with a measured code, and closed at once by a tap.
+   *  A creator's page only. */
   function renderScanCard(): void {
     const card = dom.scanCard;
-    if (card === undefined) return;
+    if (!creator || card === undefined) return;
     const sighting = codes.sighting();
     const inHand = codes.inHand();
     const shown = creatorScanCardShown({

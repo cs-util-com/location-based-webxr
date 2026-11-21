@@ -143,16 +143,46 @@ describe("tags that overlap step aside, nearest first", () => {
     expect(ys).toEqual([200, 200]);
   });
 
-  it("keeps a stepped tag inside the screen's insets", () => {
+  it("steps a farther tag in view down when there is no room above", () => {
+    // Why: near the top inset a tag cannot step up; it clamped back onto
+    // the tag it moved away from and the two stayed one over the other.
+    const top = EDGE_HINT.insetTop + 5;
+    const ys = edgeHintStepAside(
+      [tagAt(400, top, 2), tagAt(400, EDGE_HINT.insetTop + 8, 7)],
+      H,
+    );
+    expect(ys[0]).toBe(top);
+    expect(ys[1]).toBe(top + 30 + pad);
+  });
+
+  it("steps a farther tag at the bottom edge up, since none fits below", () => {
+    // Why: a tag at the bottom edge is placed at the lowest top the
+    // insets allow, so its step down always clamped back: two hints
+    // below the view drew their tags exactly on top of each other.
+    const bottom = H - EDGE_HINT.insetBottom - 30;
+    const ys = edgeHintStepAside(
+      [tagAt(400, bottom, 3, true), tagAt(410, bottom, 12, true)],
+      H,
+    );
+    expect(ys[0]).toBe(bottom);
+    expect(ys[1]).toBe(bottom - 30 - pad);
+  });
+
+  it("keeps a stepped tag inside the screen's insets when no side has room", () => {
     // Why: a tag pushed off the screen is as lost as one hidden under
-    // another; at the top it stays at the inset.
+    // another; with no room either way it stays inside the insets.
+    const tiny = EDGE_HINT.insetTop + EDGE_HINT.insetBottom + 40;
     const ys = edgeHintStepAside(
       [
         tagAt(400, EDGE_HINT.insetTop + 5, 2),
         tagAt(400, EDGE_HINT.insetTop + 8, 7),
       ],
-      H,
+      tiny,
     );
+    expect(ys[1]).toBeGreaterThanOrEqual(EDGE_HINT.insetTop);
+    expect(ys[1]).toBeLessThanOrEqual(tiny - EDGE_HINT.insetBottom - 30);
+    // A tag in view steps up first, so with no room either way it keeps
+    // its own side's clamped place: the top inset.
     expect(ys[1]).toBe(EDGE_HINT.insetTop);
   });
 
@@ -162,7 +192,11 @@ describe("tags that overlap step aside, nearest first", () => {
         fc.array(
           fc.record({
             x: fc.integer({ min: 300, max: 500 }),
-            y: fc.integer({ min: 300, max: 400 }),
+            // The whole range a tag is placed in, up to both insets.
+            y: fc.integer({
+              min: EDGE_HINT.insetTop,
+              max: 800 - EDGE_HINT.insetBottom - 30,
+            }),
             distance: fc.double({ min: 0.5, max: 80, noNaN: true }),
             edge: fc.boolean(),
           }),
@@ -189,6 +223,10 @@ describe("tags that overlap step aside, nearest first", () => {
                 ay + a.h > by;
               expect(overlap).toBe(false);
             });
+            expect(ys[i]).toBeGreaterThanOrEqual(EDGE_HINT.insetTop);
+            expect(ys[i]).toBeLessThanOrEqual(
+              800 - EDGE_HINT.insetBottom - a.h,
+            );
           });
         },
       ),
@@ -300,6 +338,50 @@ describe("the hint's part", () => {
     tick(3, [far]);
     tick(4, [far]);
     expect(Math.abs(tagY(far) - nearY) / metresPerPxAtOneM).toBeLessThan(10);
+    far.dispose();
+  });
+
+  it("stops stepping aside from a hint that is not updated for a frame", () => {
+    // Why: a hint whose station hides is no longer updated but never
+    // disposed; its tag of the frame before still counts for one frame,
+    // then must stop pushing the others away from their spots.
+    const scene = new Group();
+    const near = edgeHintPart({ ...block, id: "near" }, env);
+    const far = edgeHintPart({ ...block, id: "far" }, env);
+    scene.add(near.object, far.object);
+    near.object.position.set(0, 0, -6);
+    far.object.position.set(0.05, 0, -6.4);
+    const camera = new PerspectiveCamera(60, W / H, 0.1, 100);
+    camera.position.set(0, 1.6, 0);
+    camera.updateMatrixWorld(true);
+    const metresPerPxAtOneM =
+      2 / ((camera.projectionMatrix.elements[5] ?? 1) * H);
+    type Part = ReturnType<typeof edgeHintPart>;
+    const tick = (seconds: number, parts: readonly Part[]) => {
+      for (const part of parts) {
+        part.update?.({
+          seconds,
+          viewer: [0, 1.6, 0],
+          camera,
+          metresPerPxAtOneM,
+        });
+      }
+      scene.updateMatrixWorld(true);
+    };
+    const tagY = (part: Part) =>
+      (
+        part.object.children
+          .find((c) => c.visible && c.renderOrder === 999)
+          ?.getWorldPosition(new Vector3()) ?? new Vector3()
+      ).y;
+    tick(11, [near, far]);
+    tick(12, [near, far]);
+    const nearY = tagY(near);
+    tick(13, [far]);
+    expect((tagY(far) - nearY) / metresPerPxAtOneM).toBeGreaterThan(25);
+    tick(14, [far]);
+    expect(Math.abs(tagY(far) - nearY) / metresPerPxAtOneM).toBeLessThan(10);
+    near.dispose();
     far.dispose();
   });
 });
