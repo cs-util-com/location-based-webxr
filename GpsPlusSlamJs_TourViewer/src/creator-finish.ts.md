@@ -127,7 +127,11 @@ module's sidecar states them as its contract.
   its progress with priority over the measuring readout, and a failure
   stays on the line until the next tap that starts a Finish
   (`finishProgressLine`, `finishErrorLine`; store dispatches used to
-  erase both). A tap that starts none (nothing left to write) leaves it. The
+  erase both). A tap that starts none leaves it. Off AR the button stays
+  the retry only while a Finish could start (`readiness() === "ready"`):
+  after a failure that came after the zip was written, nothing is left to
+  write, so the button hides and the failure line stays until a change
+  makes a Finish possible again and its tap starts it. The
   continuation re-checks `ctx.session` after every await and ends the AR
   session only if it is still the one it started in
   (`ctx.arSessionGeneration`). An existing level for the same id (also in

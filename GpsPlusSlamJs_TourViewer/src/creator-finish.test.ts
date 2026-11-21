@@ -911,9 +911,11 @@ describe("the Finish's status on the panel: running, progress, failure", () => {
   });
 
   it("keeps a failure that came after the zip was made and handed over, until the next tap", async () => {
-    // The zip a failed Finish made is still saved off AR (F4 milestone
-    // review #1); that hand-over must not take the failure back: Done in
-    // AR stays refused and the retry stays on the panel until a tap.
+    // The zip a failed Finish made is still saved off AR; that hand-over
+    // must not take the failure back: the failure stays on the panel until
+    // a tap that starts a Finish. The retry button shows only while a
+    // Finish could start: with every change in the zip already, a retry
+    // would have nothing to write.
     const saves: string[] = [];
     let failures = 1;
     const status: { set?: (value: string) => void } = {};
@@ -945,14 +947,16 @@ describe("the Finish's status on the panel: running, progress, failure", () => {
     expect(dom.status.textContent).toBe(failed);
     setup.renderAuthorReadout();
     expect(dom.status.textContent).toBe(failed);
+    // The zip already carries every change: no retry is offered, and the
+    // failure line stands.
+    expect(dom.finishButton.hidden).toBe(true);
+    // A desk edit makes a Finish possible again: the retry comes back, and
+    // the tap that starts it clears the failure.
+    expect(setup.renameTour("Renamed")).toBeNull();
+    setup.renderAuthorReadout();
+    expect(dom.status.textContent).toBe(failed);
     expect(dom.finishButton.hidden).toBe(false);
     expect(dom.finishButton.disabled).toBe(false);
-    // A tap that starts no Finish (the zip already carries every change)
-    // leaves it standing.
-    dom.finishButton.click();
-    expect(dom.status.textContent).toBe(failed);
-    // The next tap that starts one (after a desk edit) clears it.
-    expect(setup.renameTour("Renamed")).toBeNull();
     dom.finishButton.click();
     expect(dom.status.textContent).not.toBe(failed);
     await vi.waitFor(() => {

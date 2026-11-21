@@ -55,9 +55,11 @@ else status.textContent = finishErrorLine(state) ?? readout;
 
 ## Tests
 
-- `finish-status.test.ts`: each selector over states the reducers make.
+- `finish-status.test.ts`: each selector over states the reducers make;
+  the progress gate lets exactly 101 reports through for 1,000 entries.
 - `tour-document-save-status.property.test.ts`: the fields themselves
   under any mix of save actions.
 - `creator-finish.test.ts` ("the Finish's status on the panel"): the
-  panel through a whole Finish, a failure after the zip was handed over,
+  panel through a whole Finish, a failure after the zip was handed over
+  (no retry while nothing is left to write),
   and a tour closed mid-Finish.

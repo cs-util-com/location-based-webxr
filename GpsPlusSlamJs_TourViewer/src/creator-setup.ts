@@ -704,8 +704,10 @@ export function wireCreatorSetup(deps: {
     // something to finish: a creator who measured, placed content and then
     // left AR could tap it on the page before this milestone, and F11 asked
     // for the greyed-out AR buttons to go, not for the finish to become
-    // session-only (M3 milestone review #4). A failed finish keeps it too,
-    // or its own "try again" would have nothing to try.
+    // session-only (M3 milestone review #4). After a failed finish it is
+    // the retry, and only while a Finish could start: a failure that came
+    // after the zip was written leaves nothing to write, and a retry there
+    // would do nothing (the failure line stays either way).
     // In a session the AR button's Done is the one way out (polish round
     // M3, Q-Done): the panel's Finish steps aside, and comes back as the
     // retry after a failed finish.
@@ -713,7 +715,7 @@ export function wireCreatorSetup(deps: {
     const finishError = finishErrorLine(tourState);
     dom.finishButton.hidden = sessionLive()
       ? finishError === null
-      : !(finishError !== null || finish.readiness() === "ready");
+      : finish.readiness() !== "ready";
     // The save cannot be forgotten (UI round 1, U2): after AR with changes
     // not finished, Finish says so; while a rebuilt file waits for its
     // save on a phone, Finish steps aside for it.
