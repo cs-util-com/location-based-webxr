@@ -98,6 +98,81 @@ export type GlbCheck = { ok: true } | { ok: false; reason: string };
  */
 export const TOUR_MAX_IMAGE_PIXELS = 4096 * 4096;
 
+/**
+ * The most bytes a model's accessors may ask for together: 64 MiB (one
+ * image decode at the pixel cap), or 8 times the file's length when that
+ * is more. three.js allocates an accessor without a buffer view, and a
+ * sparse one, as a new array of `count` elements, and uploads every
+ * accessor to the GPU. Measured on 48 real models: the most any asked for
+ * was 3.7 MB (17 times under the floor), and the highest ratio to its
+ * file's length 3.69, for a 44 KB model (so at least 2.2 times under the
+ * factor even without the floor). What would reverse it: a real model of
+ * more than 8 MiB whose accessors ask for more than 8 times its length
+ * (overlapping accessors, or many sparse morph targets).
+ */
+const ACCESSOR_BYTES_FLOOR = 64 * 2 ** 20;
+const ACCESSOR_BYTES_PER_FILE_BYTE = 8;
+
+/** Elements per accessor item, by glTF accessor type. */
+const ITEM_SIZES: ReadonlyMap<unknown, number> = new Map([
+  ['SCALAR', 1],
+  ['VEC2', 2],
+  ['VEC3', 3],
+  ['VEC4', 4],
+  ['MAT2', 4],
+  ['MAT3', 9],
+  ['MAT4', 16],
+]);
+
+/** Bytes per element, by glTF accessor component type. */
+const COMPONENT_BYTES: ReadonlyMap<unknown, number> = new Map([
+  [5120, 1],
+  [5121, 1],
+  [5122, 2],
+  [5123, 2],
+  [5125, 4],
+  [5126, 4],
+]);
+
+/** The bytes one accessor asks three.js for (`count` items), or null when
+ *  its count, type or component type cannot be read. */
+function accessorBytes(accessor: unknown): number | null {
+  const record = accessor as {
+    count?: unknown;
+    type?: unknown;
+    componentType?: unknown;
+  } | null;
+  const size = ITEM_SIZES.get(record?.type);
+  const bytes = COMPONENT_BYTES.get(record?.componentType);
+  if (size === undefined || bytes === undefined) return null;
+  return isIndex(record?.count)
+    ? (record!.count as number) * size * bytes
+    : null;
+}
+
+/** Why the model's accessors together ask for more memory than a phone
+ *  should give a file `fileBytes` long, or null. `accessors` is a list
+ *  or undefined. */
+function accessorsProblem(
+  accessors: unknown,
+  fileBytes: number
+): string | null {
+  if (!Array.isArray(accessors)) return null;
+  const cap = Math.max(
+    ACCESSOR_BYTES_FLOOR,
+    ACCESSOR_BYTES_PER_FILE_BYTE * fileBytes
+  );
+  let total = 0;
+  for (const [i, accessor] of accessors.entries()) {
+    const bytes = accessorBytes(accessor);
+    if (bytes === null) return `its accessor ${String(i)} cannot be read`;
+    total += bytes;
+  }
+  if (total <= cap) return null;
+  const mib = (n: number) => String(Math.ceil(n / 2 ** 20));
+  return `its accessors ask for ${mib(total)} MiB, more than a phone can safely hold for this file (${mib(cap)} MiB)`;
+}
+
 /** Whether an image's header states a size within `maxPixels`. An image
  *  whose size cannot be read from its first bytes is refused too: it is
  *  not decoded unmeasured. The reason is plain words. */
@@ -198,6 +273,17 @@ function extensionProblem(json: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Why the model's lists, URIs or buffer names would let three.js reach
+ *  outside the file, or null. */
+function referencesProblem(json: Record<string, unknown>): string | null {
+  return (
+    listsProblem(json) ??
+    uriProblem('buffer', json['buffers']) ??
+    viewsProblem(json['bufferViews']) ??
+    uriProblem('image', json['images'])
+  );
+}
+
 /**
  * Whether a `.glb` is self-contained and inert: glTF 2.0 binary of exactly
  * one JSON chunk, an optional binary chunk and nothing else (the shared
@@ -215,10 +301,8 @@ export function checkGlbInert(
   if (!chunks.ok) return { ok: false, reason: chunks.reason };
   const { json, bin } = chunks;
   const problem =
-    listsProblem(json) ??
-    uriProblem('buffer', json['buffers']) ??
-    viewsProblem(json['bufferViews']) ??
-    uriProblem('image', json['images']) ??
+    referencesProblem(json) ??
+    accessorsProblem(json['accessors'], bytes.length) ??
     extensionProblem(json) ??
     imagesProblem(
       bin,

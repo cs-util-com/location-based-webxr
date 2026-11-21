@@ -250,6 +250,11 @@
   `buffer`, and any of its extensions' `buffer` (meshopt), must be a
   whole number; `"0"` made three.js fetch the page. A `data:` URI needs
   the comma three.js's own test requires, or it is resolved and fetched.
+- **`checkGlbInert` caps the memory a model's accessors ask for**
+  (`ar/tour-media`): at most 64 MiB together, or 8 times the file's
+  length when that is more. One accessor without a buffer view
+  (`count: 100000000`, `VEC4`, float) made three.js allocate 1.6 GB. An
+  accessor whose count, type or component type cannot be read is refused.
 - A creator's draft record of a narrated long text reads again
   (`parseTourObject`).
 

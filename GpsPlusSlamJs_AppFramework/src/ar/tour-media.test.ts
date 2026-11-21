@@ -634,3 +634,118 @@ describe('the pixel cap sweep (R2)', () => {
     ]);
   });
 });
+
+/** A model of one accessor without a buffer view (three.js allocates it
+ *  as zeros) and `binBytes` bytes of binary chunk to set the file length. */
+function zerosGlb(accessor: Record<string, unknown>, binBytes = 0): Uint8Array {
+  const model = glb({
+    asset: { version: '2.0' },
+    ...(binBytes > 0 ? { buffers: [{ byteLength: binBytes }] } : {}),
+    accessors: [accessor],
+  });
+  return binBytes > 0
+    ? withChunks(model, [{ type: BIN_CHUNK, data: new Uint8Array(binBytes) }])
+    : model;
+}
+
+/** A one-byte-per-element accessor asking for `bytes(fileLength)` bytes, in
+ *  a file of about `binBytes` bytes; the count's digits change the file's
+ *  length, so it is rebuilt until the two agree. */
+function scalarGlbAsking(
+  bytes: (fileLength: number) => number,
+  binBytes: number
+): Uint8Array {
+  let model = zerosGlb(
+    { componentType: 5121, count: 1, type: 'SCALAR' },
+    binBytes
+  );
+  for (let i = 0; i < 4; i += 1) {
+    model = zerosGlb(
+      { componentType: 5121, count: bytes(model.length), type: 'SCALAR' },
+      binBytes
+    );
+  }
+  return model;
+}
+
+const MiB = 2 ** 20;
+
+/**
+ * Why these tests matter: three.js's GLTFLoader allocates every accessor
+ * without a buffer view, and every sparse one, as a new array of `count`
+ * elements (`loadAccessor`), and uploads every accessor to the GPU, so a
+ * few bytes of JSON (`count: 100000000`, `VEC4`, float) made a phone
+ * allocate 1.6 GB. The accessors of a model together may ask for 64 MiB,
+ * or 8 times the file's length when that is more. Measured on 48 real
+ * models (this repo's and others on the development machine): the most
+ * any asked for was 3.7 MB, and the highest ratio to its file's length
+ * 3.69 (a 44 KB model, far under the floor); the repo's own LOD
+ * prototypes reach 2.28, from accessors left without a buffer view.
+ */
+describe('checkGlbInert - the memory its accessors ask for', () => {
+  it('refuses an accessor that asks for 1.6 GB of zeros', () => {
+    const check = checkGlbInert(
+      zerosGlb({ componentType: 5126, count: 100_000_000, type: 'VEC4' })
+    );
+    expect(check).toEqual({
+      ok: false,
+      reason: expect.stringMatching(/accessors ask for 1526 MiB/),
+    });
+  });
+
+  it('admits 64 MiB in a small file, and not a byte more', () => {
+    const vec4 = { componentType: 5126, type: 'VEC4' };
+    expect(
+      checkGlbInert(zerosGlb({ ...vec4, count: (64 * MiB) / 16 }))
+    ).toEqual({ ok: true });
+    expect(
+      checkGlbInert(
+        zerosGlb({ componentType: 5121, count: 64 * MiB + 1, type: 'SCALAR' })
+      ).ok
+    ).toBe(false);
+  });
+
+  it('admits 8 times the file length above the floor, and not a byte more', () => {
+    const binBytes = 9 * MiB;
+    expect(checkGlbInert(scalarGlbAsking((n) => 8 * n, binBytes))).toEqual({
+      ok: true,
+    });
+    expect(checkGlbInert(scalarGlbAsking((n) => 8 * n + 1, binBytes)).ok).toBe(
+      false
+    );
+  });
+
+  it('sums every accessor, sparse ones included', () => {
+    const half = { componentType: 5126, count: (40 * MiB) / 4, type: 'SCALAR' };
+    const model = glb({
+      asset: { version: '2.0' },
+      accessors: [half, { ...half, sparse: { count: 1 } }],
+    });
+    expect(checkGlbInert(model).ok).toBe(false);
+    expect(
+      checkGlbInert(glb({ asset: { version: '2.0' }, accessors: [half] }))
+    ).toEqual({ ok: true });
+  });
+
+  it('refuses an accessor whose count, type or component type it cannot read', () => {
+    for (const accessor of [
+      { componentType: 5126, count: '4', type: 'VEC3' },
+      { componentType: 5126, count: -1, type: 'VEC3' },
+      { componentType: 5126, count: 1.5, type: 'VEC3' },
+      { componentType: 5126, type: 'VEC3' },
+      { componentType: 5126, count: 1, type: 'constructor' },
+      { componentType: 5124, count: 1, type: 'VEC3' },
+      null,
+    ]) {
+      expect(
+        checkGlbInert(
+          glb({ asset: { version: '2.0' }, accessors: [accessor] })
+        ),
+        JSON.stringify(accessor)
+      ).toEqual({
+        ok: false,
+        reason: 'its accessor 0 cannot be read',
+      });
+    }
+  });
+});

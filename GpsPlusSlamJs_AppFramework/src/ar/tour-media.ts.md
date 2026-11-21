@@ -20,7 +20,8 @@ tour from any link is the origin that will hold a creator's signing key).
   folded (a recording's `frame.JPG` is a JPEG); `null` without one.
 - `checkGlbInert(bytes, { maxImagePixels? })` - `{ ok: true }` or
   `{ ok: false, reason }` in plain words; every image of the model is also
-  measured from its header against the cap (K4 review R2).
+  measured from its header against the cap, and its accessors' memory
+  against the accessor cap.
 - `TOUR_MAX_IMAGE_PIXELS` (4096 x 4096) and `checkImageWithinCap(bytes,
 maxPixels?)` - the pixel cap every tour image is measured against before
   it is decoded; an image whose size cannot be read is refused too.
@@ -87,6 +88,23 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   by `utils/data-uri.ts` (the decoder the Tour Viewer's glTF import uses
   too; whitespace or missing padding is unreadable), capped at the file's
   own length; an image it cannot find or measure refuses the model.
+- **The accessor memory cap:** three.js allocates an accessor without a
+  buffer view, and a sparse one, as a new array of `count` elements
+  (`loadAccessor`), and uploads every accessor to the GPU, so a few bytes
+  of JSON (`count: 100000000`, `VEC4`, float) made a phone allocate
+  1.6 GB. The sum of `count` x item size x component bytes over every
+  accessor (sparse ones and ones with a buffer view included) may be at
+  most 64 MiB, or 8 times the file's length when that is more; an
+  accessor whose count (a whole number of at least 0), type or component
+  type cannot be read refuses the model. Measured on 48 real models (this
+  repo's and others on the development machine): the most any asked for
+  was 3.7 MB, the highest ratio to its file's length 3.69 (a 44 KB
+  model), the repo's LOD prototypes 2.28 (accessors left without a buffer
+  view). Swept: without a floor, a factor of 1 refuses 3 of them, 2
+  refuses 2, 4 and more none; with a floor of 16 or 64 MiB no factor from
+  1 to 16 refuses any. Reversed by a real model of more than 8 MiB whose
+  accessors ask for more than 8 times its length (overlapping accessors,
+  many sparse morph targets): none was found.
 - `checkGlbInert` never throws, whatever the bytes.
 - Pure: no I/O, no DOM.
 
@@ -114,7 +132,11 @@ three.js reads them (an object in place of `buffers`, `bufferViews`,
 `accessors` or `images` refused; a view whose `buffer`, or whose
 extension's `buffer`, is `"0"`, `"length"`, `"constructor"`, fractional,
 negative or null refused; `data:x` and a line break before or after the
-comma refused for buffers and images); the allowlist's members, that no type able to carry
+comma refused for buffers and images); the accessor memory cap (a
+1.6 GB accessor refused; 64 MiB admitted in a small file and one byte
+more refused; 8 times the length of a 9 MiB file admitted and one byte
+more refused; sparse accessors summed; an unreadable count, type or
+component type refused); the allowlist's members, that no type able to carry
 script or markup is admitted, exact matching, entry names, a never-throws
 property; `.glb` inertness with built binaries (binary chunk and `data:`
 accepted; http, relative and protocol-relative URIs refused for buffers and
