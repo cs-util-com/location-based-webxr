@@ -22,6 +22,7 @@ import type { SheetNarration } from "./long-text-sheet.js";
 import type { NarrationBoxContent, NarrationSpeaker } from "./narration-box.js";
 import {
   createNarrationPlayer,
+  type NarrationClock,
   type NarrationPlayer,
   type NarrationPlayerDeps,
 } from "./narration-player.js";
@@ -81,6 +82,9 @@ export interface NarrationVisitor {
   /** The narration box's content for a text whose read-along fits, or
    *  null - while it is read (the read starts here) or when it does not. */
   captions(block: TourLongTextBlock): NarrationBoxContent | null;
+  /** The voice the sheet or the box already made for `block`, or null:
+   *  never makes one, so a frame may ask for every sign. */
+  voiceOf(block: TourBlock): NarrationClock | null;
   /** Pauses every voice (the visitor left the station, or the AR ended).
    *  With `stationId`, those wanted now carry on at its `carryOn`. */
   pauseAll(stationId?: string): void;
@@ -160,11 +164,15 @@ export function createNarrationVisitor(
     });
   }
 
+  /** A voice's key: a text and its audio. */
+  const voiceKey = (block: TourLongTextBlock, audio: string): string =>
+    `${block.id}\u0000${audio}`;
+
   function playerOf(block: TourLongTextBlock): FocusedPlayer | null {
     const narration = block.narration;
     if (narration === undefined) return null;
     judge();
-    const key = `${block.id}\u0000${narration.audio}`;
+    const key = voiceKey(block, narration.audio);
     const have = players.get(key);
     if (have !== undefined) return have;
     const inner = makePlayer({
@@ -256,6 +264,14 @@ export function createNarrationVisitor(
           ? {}
           : { voiceCredit: narration.voiceCredit }),
       };
+    },
+    voiceOf(block) {
+      if (block.kind !== "longText" || block.narration === undefined) {
+        return null;
+      }
+      // A closed or new tour has let its voices go.
+      judge();
+      return players.get(voiceKey(block, block.narration.audio)) ?? null;
     },
     pauseAll(stationId) {
       const wanted = [...players.values()].filter((p) => p.wanted());

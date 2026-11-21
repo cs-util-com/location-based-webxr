@@ -204,6 +204,28 @@ describe("the visitor's narrated texts", () => {
     expect(visitor.verdictOf(pin)).toBeUndefined();
   });
 
+  // Why: a sign's chip asks for its text's voice on every frame, so the
+  // question must never make a voice (no fetch for a text nobody played),
+  // must give the one the sheet and the box share, and none of a closed
+  // tour.
+  it("gives a text's existing voice without making one, none after the tour", () => {
+    const { visitor, made, close } = make(() => timingFile());
+    const block = text("timing/hall.json");
+    expect(visitor.voiceOf(block)).toBeNull();
+    expect(made).toHaveLength(0);
+    const sheet = visitor.sheetNarration(block)?.player;
+    expect(visitor.voiceOf(block)).toBe(sheet);
+    // The same text with another voice is another player.
+    const recast = {
+      ...block,
+      narration: { ...block.narration, audio: "other" },
+    } as TourLongTextBlock;
+    expect(visitor.voiceOf(recast)).toBeNull();
+    close();
+    expect(visitor.voiceOf(block)).toBeNull();
+    expect(made).toHaveLength(1);
+  });
+
   it("pauses every voice, and lets them go with the tour", () => {
     const { visitor, made, close } = make(() => timingFile());
     visitor.sheetNarration(text());

@@ -12,6 +12,7 @@ The visitor's narrated texts for the open tour: one voice per text, shared by it
   - `revision()` - bumped whenever a read-along settles, so a view drawn by a verdict can tell when to look again (`viewer-placement.ts` redraws a text whose captions turned out stale).
   - `sheetNarration(block)` - the sheet's voice (player, timing promise, credit), its read-along read now; undefined for a silent text.
   - `captions(block)` - the narration box's content (key, title, the speaker, the plain text, the timing, the voice, whether it is synthetic, and its credit when there is one, both shown after the name) for a text whose read-along fits, or null (while it is read - the read starts here - or when it does not fit). The speaker of a long text is "Narrator" in `#f9a8d4`, a colour no character uses.
+  - `voiceOf(block)` - the voice the sheet or the box already made for a text (keyed by its id and its audio), or null; never makes one, so a frame may ask for every sign (`captions-follow.ts` paints a sign's chip from it). Null for a block that is not a narrated long text and once the tour closed.
   - `pauseAll(stationId?)` - pauses every voice; with an id, those wanted now (playing, or held by the voice channel) are kept for `carryOn`.
   - `carryOn(stationId)` - the visitor is back: what that station's leaving paused carries on, as far as the voice channel lets it. The one heard last takes the channel, the next waits behind it and carries on when that one ends or is tapped, any further one stays at its place and a tap takes it up.
   - `reset()`.
@@ -29,4 +30,4 @@ Every text's voice is a `focusedPlayer` in the page's one channel (`voice-focus.
 
 ## Tests
 
-- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, `reset()` letting a real player's audio source and blob URL go, a silent text, a block of another kind, `pauseAll` while a scrub holds the heard voice (both voices paused, the scrubbed one first at the return).
+- `narration-visitor.test.ts` - one player per text, the read on open, live and stale captions, a new tour resetting, `reset()` letting a real player's audio source and blob URL go, a silent text, a block of another kind, `voiceOf` giving the existing voice without making one (none for another audio, none after the tour), `pauseAll` while a scrub holds the heard voice (both voices paused, the scrubbed one first at the return).
