@@ -265,7 +265,7 @@ test("the stencil fill's cost at the hold, on against off (logged)", async ({
 /**
  * Parks, zooms out until the relief has been drained, zooms back in to
  * where it was parked, and returns the height tiles requested on the way
- * back (owner decision 2026-10-04, DEC-N1).
+ * back.
  */
 async function returnIntoBand(page, keepMiB) {
   const errors = await bootGlobe(
