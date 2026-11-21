@@ -119,11 +119,11 @@ sheet.show({
   word only on a word track, play and back 10 s, a tap playing from a
   sentence, previous sentence, following and "Back to the voice", a
   timing for an earlier text ignored.
-- `playwright-tests/narration-check.spec.js` - reading along in a
+- `playwright-tests/long-text-narration.spec.js` - reading along in a
   browser, a stale track plain with no notice, the timing read only on
   open.
 - `long-text-sheet.property.test.ts` - any sequence of presses on any
   text keeps the mark on a sentence and the readout in step.
 - `playwright-tests/long-text-check.spec.js` - the layout against the
   prototype's numbers at three viewports (positions and gaps), and a real
-  tap on a sentence, through `long-text-check.html`.
+  tap on a sentence, through `check.html?view=long-text`.

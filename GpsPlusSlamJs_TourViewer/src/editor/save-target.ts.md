@@ -64,7 +64,8 @@ the move: `GpsPlusSlamJs_Docs/docs/2026-10-27-1850-editor-on-the-full-globe-plan
   one with the save dialog (as it opens from a link or the sample, else at
   its first Save) and then keeps saving into it: wherever both file
   dialogs exist, Android included. Android was held back until a check on
-  a phone (Chrome 155, Android 10, the file-access check page) measured
+  a phone (Chrome 155, Android 10, the file-access check page, removed
+  and in git history) measured
   it: a file saved under a new name, the handle kept across a reload (one
   tap grants the permission again), and a 200 MiB rewrite cut at 185 MiB
   by closing the tab leaving the old file whole. Not measured: a browser

@@ -2,11 +2,11 @@
 /**
  * The relief in the flight (round-5 plan 2026-10-01-0945 §3.5, F1;
  * DEC-GL5-9): with `relief=1` the library's terrain tiles are the surface,
- * exaggerated by altitude, and the pin's dive is the oblique approach.
+ * exaggerated by altitude, and a landing holds the oblique view.
  *
  * Why this file matters: this is what a viewer sees on the way in. The
- * dive must end at the target, held at the hand-over altitude with the
- * pitch law's depression, the relief drawn and exaggerated as the law says
+ * camera held over the target (the lab's park, as a landing there leaves
+ * it) must look at it with the pitch law's depression, the relief drawn and exaggerated as the law says
  * for that altitude, and the ground filling the frame to its top edge
  * (round-5 §3.5's metric); the pitch is swept over the plan's 30-60
  * degrees. Heights are synthetic (generated in the page): nothing leaves
@@ -29,14 +29,23 @@ const TARGET = { latitude: 46.5, longitude: 9.0 };
 // E 1, at which they would pass while testing nothing; the default's own
 // test is the last one in this file.
 const BASE =
-  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&diveMs=6000&reliefNear=3";
+  "spinMs=0&turnMs=0&time=2026-03-20T11:00:00Z&cloudDrift=0&stars=0&milkyWay=0&atmo=0&space=0&relief=1&reliefHeights=synthetic&reliefNear=3";
 
 /**
- * The dives that hold at 150 km, where these checks were written, not at
- * the default 2 km (r790 city plan K4; measured: the oblique dive landed
- * 3.4 km up, the clearance lifting it over the synthetic crest).
+ * The hold of 150 km, where these checks were written, not at 2 km
+ * (measured there: the oblique view stood 3.4 km up, the clearance lifting
+ * it over the synthetic crest).
  */
-const HOLD_150 = "&landKm=150";
+const HOLD_KM = 150;
+
+/**
+ * The fixed dive to the hold, for the two tests that still need its
+ * descent: parked there instead, the detail test's two loads at detail 0
+ * read 5.3 levels apart (0.000 after the dive), and the phone's two caches
+ * held 75.0 MiB against the 72 MiB bound, because a park reaches the hold
+ * without the descent that loaded and released the globe's tiles on the way.
+ */
+const DIVE_150 = "&diveMs=6000&landKm=150";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -48,20 +57,40 @@ const exaggerationAt = (altM, near = 3) => {
   return Math.round((1 + (near - 1) * s) / 0.1) * 0.1;
 };
 
-/** Grants the target as the position, boots, pins, and waits to land. */
-async function diveAndLand(page, context, hash) {
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, hash);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return s.phase === "landed" && s.pin.phase === "idle";
-    },
-    null,
-    { timeout: 120_000 },
+/**
+ * Parks the camera `km` above `place` (the lab's park, as a landing there
+ * leaves it); parked again over the same place, only the camera moves.
+ */
+const parkAt = (page, km, place = TARGET) =>
+  page.evaluate(
+    ([lat, lng, m]) => window.__globeLab.parkAt({ lat, lng }, m),
+    [place.latitude, place.longitude, km * 1000],
   );
+
+/**
+ * Boots, parks `km` over the target (or, with `dive`, the page's context:
+ * grants the target as the position and lands there through the pin's
+ * dive), and waits for the relief to settle.
+ */
+async function parkAndSettle(page, hash, km, dive = null) {
+  if (dive) {
+    await dive.grantPermissions(["geolocation"], { origin: ORIGIN });
+    await dive.setGeolocation(TARGET);
+  }
+  const errors = await bootGlobe(page, dive ? `${hash}${DIVE_150}` : hash);
+  if (dive) {
+    await page.locator("#globe-pin").click();
+    await page.waitForFunction(
+      () => {
+        const s = window.__globeLab.state();
+        return s.phase === "landed" && s.pin.phase === "idle";
+      },
+      null,
+      { timeout: 120_000 },
+    );
+  } else {
+    await parkAt(page, km);
+  }
   const landedAt = Date.now();
   // Let the relief's tiles at the held altitude load and settle (its own
   // queues idle): a frame read while coarse tiles still stand in for fine
@@ -78,7 +107,7 @@ async function diveAndLand(page, context, hash) {
   // The settle's own time, against the 180 s wait (CI runs 1.2-1.5x
   // slower than a local run), so the margin is read, not inferred.
   console.log(
-    `relief settled ${((Date.now() - landedAt) / 1000).toFixed(1)} s after landing (wait 180 s)`,
+    `relief settled ${((Date.now() - landedAt) / 1000).toFixed(1)} s after parking (wait 180 s)`,
   );
   return errors;
 }
@@ -86,19 +115,18 @@ async function diveAndLand(page, context, hash) {
 // WHY (§3.5, F1): the oblique approach holds at 150 km looking at the
 // target 45 degrees down, with the relief at the law's exaggeration for
 // that altitude, and ground filling the frame's top edge.
-test("the dive ends over the target, oblique, with the relief exaggerated by altitude", async ({
+test("the hold over the target is oblique, with the relief exaggerated by altitude", async ({
   page,
-  context,
 }) => {
   test.setTimeout(300_000);
-  const errors = await diveAndLand(page, context, `${BASE}${HOLD_150}`);
+  const errors = await parkAndSettle(page, BASE, HOLD_KM);
   const s = await page.evaluate(() => window.__globeLab.state());
   const [top] = await page.evaluate(() =>
     window.__globeLab.readPixels([[0.5, 0.02]]),
   );
   const altitudeKm = s.altitudeM / 1000;
   console.log(
-    `relief dive: landed ${altitudeKm.toFixed(1)} km up, depression ${s.cameraDepressionDeg.toFixed(2)} deg, centre ${s.centreLatLon?.lat.toFixed(3)},${s.centreLatLon?.lng.toFixed(3)}; relief ${JSON.stringify(s.relief)} (law ${exaggerationAt(s.altitudeM).toFixed(1)}); top-edge pixel ${top.slice(0, 3)}`,
+    `relief hold: ${altitudeKm.toFixed(1)} km up, depression ${s.cameraDepressionDeg.toFixed(2)} deg, centre ${s.centreLatLon?.lat.toFixed(3)},${s.centreLatLon?.lng.toFixed(3)}; relief ${JSON.stringify(s.relief)} (law ${exaggerationAt(s.altitudeM).toFixed(1)}); top-edge pixel ${top.slice(0, 3)}`,
   );
   expect(errors).toEqual([]);
   expect(Math.abs(altitudeKm - 150)).toBeLessThan(1);
@@ -124,7 +152,7 @@ test("the pitch law's low pitch, swept over 30, 45 and 60 degrees", async ({
   for (const pitch of [30, 45, 60]) {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await diveAndLand(page, context, `${BASE}${HOLD_150}&pitchLow=${pitch}`);
+    await parkAndSettle(page, `${BASE}&pitchLow=${pitch}`, HOLD_KM);
     const s = await page.evaluate(() => window.__globeLab.state());
     const [top] = await page.evaluate(() =>
       window.__globeLab.readPixels([[0.5, 0.02]]),
@@ -183,10 +211,11 @@ test("the relief's tiles take the terrain lab's detail under the hold", async ({
     const context = await browser.newContext();
     const page = await context.newPage();
     const weight = detail === "0b" ? 0 : detail;
-    const errors = await diveAndLand(
+    const errors = await parkAndSettle(
       page,
+      `${BASE}&detail=${weight}`,
+      HOLD_KM,
       context,
-      `${BASE}${HOLD_150}&detail=${weight}`,
     );
     if (weight > 0) {
       await page.waitForFunction(
@@ -294,19 +323,9 @@ test("the band's cross-fade between the globe and the relief is continuous, and 
     // band, 19 levels against 6); both have their own smokes
     // (globe-handover, globe-clouds). Red since round 6 until pinned (the
     // full run of 2026-10-05, bisected to d0bb6cbe and the shell).
-    const base = `${BASE}&landKm=${altKm}&detail=0&bandFill=0&cloudShell=0`;
-    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-    await context.setGeolocation(TARGET);
+    const base = `${BASE}&detail=0&bandFill=0&cloudShell=0`;
     const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
-    await page.locator("#globe-pin").click();
-    await page.waitForFunction(
-      () => {
-        const s = window.__globeLab.state();
-        return s.phase === "landed" && s.pin.phase === "idle";
-      },
-      null,
-      { timeout: 120_000 },
-    );
+    await parkAt(page, altKm);
     const natural = await page.evaluate(() => {
       const s = window.__globeLab.state();
       return s.altitudeM;
@@ -381,13 +400,10 @@ for (const [label, lat] of [
 ]) {
   test(`the clearance holds every frame: a 5 km hold ${label}`, async ({
     page,
-    context,
   }) => {
     test.setTimeout(300_000);
-    await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-    await context.setGeolocation({ latitude: lat, longitude: 9.125 });
-    const errors = await bootGlobe(page, `${BASE}&landKm=5`);
-    await page.locator("#globe-pin").click();
+    const errors = await bootGlobe(page, BASE);
+    await parkAt(page, 5, { latitude: lat, longitude: 9.125 });
     await page.waitForFunction(
       () => {
         const st = window.__globeLab.state();
@@ -421,61 +437,26 @@ for (const [label, lat] of [
 
 // WHY (review 2026-10-03-1835 major 3): the dither is a screen pattern, so
 // a moving camera slides the ground under it and the fade could shimmer.
-// The camera is held at 31 dive times through the band (about three real
-// frames apart in altitude), over the same loaded tiles (frozen), three
+// The camera is parked at 31 heights through the band (about three real
+// frames of a descent apart), over the same loaded tiles (frozen), three
 // times: the fade by altitude, the globe alone (share 0) and the relief
 // alone (share 1). The fade's worst frame-to-frame change may exceed the
 // worse of the two carriers' own by at most a mean 1 level (reported at
 // x0.5 and x2); more is the dither shimmering.
 test("the band's fade does not shimmer under a moving camera", async ({
   page,
-  context,
 }) => {
   test.setTimeout(900_000);
   const grid = groundGrid();
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const base = `${BASE}&landKm=1100&detail=0`;
+  const base = `${BASE}&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return s.phase === "landed" && s.pin.phase === "idle";
-    },
-    null,
-    { timeout: 120_000 },
-  );
   // Both carriers load at the band's middle, then the tiles are frozen.
-  const mid = await page.evaluate(() => {
-    let lo = 0;
-    let hi = 60_000;
-    for (let i = 0; i < 40; i++) {
-      const m = (lo + hi) / 2;
-      if (window.__globeLab.diveAltitudeAt(m) > 1_550_000) lo = m;
-      else hi = m;
-    }
-    return lo;
-  });
-  await page.evaluate((ms) => window.__globeLab.holdDiveAt(ms), mid);
+  await parkAt(page, 1_550);
   await settleBoth(page, "moving camera, both at 0.5");
-  const times = await page.evaluate(() => {
-    const at = (km) => {
-      let lo = 0;
-      let hi = 60_000;
-      for (let i = 0; i < 40; i++) {
-        const m = (lo + hi) / 2;
-        if (window.__globeLab.diveAltitudeAt(m) > km * 1000) lo = m;
-        else hi = m;
-      }
-      return lo;
-    };
-    const out = [];
-    for (let i = 0; i <= 30; i++) {
-      out.push(at(2_050 * (1_150 / 2_050) ** (i / 30)));
-    }
-    return out;
-  });
+  const heightsKm = [];
+  for (let i = 0; i <= 30; i++) {
+    heightsKm.push(2_050 * (1_150 / 2_050) ** (i / 30));
+  }
   const rows = {};
   for (const [label, extra] of [
     ["fade", ""],
@@ -486,8 +467,8 @@ test("the band's fade does not shimmer under a moving camera", async ({
       location.hash = h;
     }, `${base}${extra}&bandFreeze=1`);
     const frames = [];
-    for (const ms of times) {
-      await page.evaluate((t) => window.__globeLab.holdDiveAt(t), ms);
+    for (const km of heightsKm) {
+      await parkAt(page, km);
       frames.push(
         await page.evaluate((g) => window.__globeLab.readPixels(g), grid),
       );
@@ -534,7 +515,8 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
   const page = await context.newPage();
   await context.grantPermissions(["geolocation"], { origin: ORIGIN });
   await context.setGeolocation(TARGET);
-  const errors = await bootGlobe(page, `${BASE}${HOLD_150}`);
+  // The dive's descent, not a park (`DIVE_150` says why).
+  const errors = await bootGlobe(page, `${BASE}${DIVE_150}`);
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
     null,
@@ -594,7 +576,6 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
 // levels, left within 0.5; reported at x0.5 and x2).
 test("a planted detail grid lands where it is placed: east of the target brightens, west does not", async ({
   page,
-  context,
 }) => {
   test.setTimeout(300_000);
   // The placement alone: round 6's sharp takeover and the cloud shell
@@ -602,10 +583,10 @@ test("a planted detail grid lands where it is placed: east of the target brighte
   // shell's clouds and shadow over the relief), which drifted the west half
   // by 4.3 and then 22 levels with nothing planted there (bisected
   // 2026-10-05: fb27d790, then the shell). Their own smokes cover them.
-  const errors = await diveAndLand(
+  const errors = await parkAndSettle(
     page,
-    context,
-    `${BASE}${HOLD_150}&detail=0&bandSharp=0&cloudShell=0`,
+    `${BASE}&detail=0&bandSharp=0&cloudShell=0`,
+    HOLD_KM,
   );
   const half = (left) => {
     const g = [];
@@ -652,22 +633,11 @@ test("a planted detail grid lands where it is placed: east of the target brighte
 // dispose burst, which is logged here for the frame-hitch plan (H4).
 test("a carrier's cache is released only after it stays out of the band", async ({
   page,
-  context,
 }) => {
   test.setTimeout(900_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  const base = `${BASE}&landKm=1550&detail=0`;
+  const base = `${BASE}&detail=0`;
   const errors = await bootGlobe(page, `${base}&bandShare=0.5`);
-  await page.locator("#globe-pin").click();
-  await page.waitForFunction(
-    () => {
-      const s = window.__globeLab.state();
-      return s.phase === "landed" && s.pin.phase === "idle";
-    },
-    null,
-    { timeout: 120_000 },
-  );
+  await parkAt(page, 1_550);
   await settleBoth(page, "release hold, both at 0.5");
   const releasedGlobe = () =>
     page.evaluate(() => window.__globeLab.state().relief.releasedBytes.globe);
@@ -741,16 +711,10 @@ test("a carrier's cache is released only after it stays out of the band", async 
 // synthetic heights themselves (the crest's 1.6-2.2 km, not 4.8-6.6 km).
 test("the default relief is drawn at true heights near the ground", async ({
   page,
-  context,
 }) => {
   test.setTimeout(600_000);
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation({ latitude: 46.545, longitude: 9.125 });
-  const errors = await bootGlobe(
-    page,
-    `${BASE.replace("&reliefNear=3", "")}&landKm=5`,
-  );
-  await page.locator("#globe-pin").click();
+  const errors = await bootGlobe(page, BASE.replace("&reliefNear=3", ""));
+  await parkAt(page, 5, { latitude: 46.545, longitude: 9.125 });
   await page.waitForFunction(
     () => {
       const st = window.__globeLab.state();

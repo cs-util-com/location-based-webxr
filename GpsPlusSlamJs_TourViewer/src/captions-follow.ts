@@ -108,7 +108,7 @@ export interface CaptionsFollowDeps {
   readonly box: Pick<NarrationBox, "show" | "hide">;
   readonly narration: Pick<
     NarrationVisitor,
-    "verdictOf" | "captions" | "pauseAll" | "carryOn"
+    "verdictOf" | "captions" | "voiceOf" | "pauseAll" | "carryOn"
   >;
   /** The present station's placed free blocks (none outside a station),
    *  its id, and the stored preference. */
@@ -150,9 +150,12 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
     readonly sign: ReadingSignHandle;
     readonly voice: Pick<NarrationClock, "nowMs" | "durationMs">;
   } | null = null;
-  /** The voice of every text shown in this session, by its id: a sign
-   *  whose text is not the shown one says where that voice stopped. */
-  const heard = new Map<string, Pick<NarrationClock, "nowMs" | "durationMs">>();
+  /** The last shown text of the present station with words, and its
+   *  voice: another text taking the words over pauses it. */
+  let voiced: {
+    readonly id: string;
+    readonly voice: Pick<NarrationClock, "pause">;
+  } | null = null;
 
   function stopTravel(): void {
     const running = travel;
@@ -178,26 +181,26 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
   }
 
   /** Every fitting narrated sign's chip: the shown text's follows its
-   *  voice; another text's says where its voice stopped (paused or
-   *  ended), or idle when it was not heard. The sign whose text stops
-   *  being the shown one (the visitor left, or another text shows) says
-   *  so outside the station's blocks too, wherever it still stands; a
-   *  sign gone is left alone. */
+   *  voice and the page's store; another text's follows the voice the
+   *  visitor already has for it (heard before, in this session or an
+   *  earlier one, or played in the reading sheet), idle without one. The
+   *  sign whose text stops being the shown one (the visitor left, or
+   *  another text shows) says so outside the station's blocks too,
+   *  wherever it still stands; a sign gone is left alone. */
   function chips(blocks: readonly TourBlock[], shown: TourBlock | null): void {
     const shownSign =
       shown === null || content === null ? null : deps.signOf(shown.id);
-    if (shown !== null && content !== null) heard.set(shown.id, content.player);
     for (const block of blocks) {
       if (!readsAlong(block, deps.narration.verdictOf(block))) continue;
       const sign = deps.signOf(block.id);
       if (sign === null) continue;
-      const voice = heard.get(block.id);
+      if (block === shown && content !== null) {
+        sign.setVoiceState(chipOf(content.player, deps.playing(block.id)));
+        continue;
+      }
+      const voice = deps.narration.voiceOf(block);
       sign.setVoiceState(
-        block === shown && content !== null
-          ? chipOf(content.player, deps.playing(block.id))
-          : voice === undefined
-            ? "idle"
-            : chipOf(voice, false),
+        voice === null ? "idle" : chipOf(voice, voice.playing()),
       );
     }
     if (
@@ -213,9 +216,24 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
         : { id: shown.id, sign: shownSign, voice: content.player };
   }
 
+  /** A voice speaks only for words someone sees: another text of the
+   *  station shown pauses the old text's voice. A move between stations
+   *  is the station's own pause (`arrive`), which keeps it for the return;
+   *  a frame with no text shown keeps the voice. */
+  function hush(shown: TourBlock | null): void {
+    if (shown !== null && voiced !== null && voiced.id !== shown.id) {
+      voiced.voice.pause();
+      voiced = null;
+    }
+    if (shown !== null && content !== null) {
+      voiced = { id: shown.id, voice: content.player };
+    }
+  }
+
   /** A voice does not follow the visitor out of its station. */
   function arrive(presentId: string | null): void {
     if (presentId === presentSeen) return;
+    voiced = null;
     if (presentSeen !== null) deps.narration.pauseAll(presentSeen);
     presentSeen = presentId;
     if (presentId !== null) deps.narration.carryOn(presentId);
@@ -239,6 +257,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
           ? null
           : narratedShown(blocks, stored, (b) => deps.narration.verdictOf(b));
       content = shown === null ? null : deps.narration.captions(shown.block);
+      hush(shown?.block ?? null);
       const travelId =
         shown?.mode === "travel" && content !== null ? shown.block.id : null;
       steer(travelId, travelId === null ? null : deps.signOf(travelId));
@@ -249,7 +268,7 @@ export function createCaptionsFollow(deps: CaptionsFollowDeps): CaptionsFollow {
       presentSeen = null;
       content = null;
       chipped = null;
-      heard.clear();
+      voiced = null;
       stopTravel();
       deps.box.hide();
       deps.narration.pauseAll();

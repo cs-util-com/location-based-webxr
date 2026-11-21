@@ -194,9 +194,8 @@ const state = {
   // M2).
   city: 100000,
   pitch: 20,
-  // The pond's wave set (W6): "C0" is the original six built-in waves, the
-  // others the candidates the owner rated (water-candidates.js); P50 rated
-  // best (round-2 plan 2026-09-26-2055 M2).
+  // The pond's wave set (W6): "C0" is the original six built-in waves, P50
+  // the chosen set (water-candidates.js; round-2 plan 2026-09-26-2055 M2).
   water: "P50",
   // The material catalog (W5 plan 2026-09-26-0549 M1): on by default since
   // round 3 (DEC-FB3-5); the smoke boot pins it off, so the page's other

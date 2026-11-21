@@ -163,17 +163,43 @@ async function freeBoxPoints(page, b) {
 }
 
 /**
- * What a tap on the box leaves at once, read without waiting: the tap's
- * play or pause sign (in the page for most of a second: it goes at the
- * end of its 0.75 s animation) and the store's playing flag, set at once
- * by the tap and kept. `data-speaking` follows the voice and could turn
- * later.
+ * Counts the tap signs added to the page from now on. The sign stays only
+ * for its 0.75 s animation, so a count of additions, unlike a read of the
+ * page, does not depend on how soon after the tap it is read.
+ * @param {import("@playwright/test").Page} page
+ */
+async function countTapSigns(page) {
+  await page.evaluate(() => {
+    const w = /** @type {any} */ (window);
+    w.__tapSignsObserver?.disconnect();
+    w.__tapSigns = 0;
+    const sel = '[data-testid="narration-box-tap"]';
+    w.__tapSignsObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue;
+          w.__tapSigns +=
+            (node.matches(sel) ? 1 : 0) + node.querySelectorAll(sel).length;
+        }
+      }
+    });
+    w.__tapSignsObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
+  });
+}
+
+/**
+ * What a tap on the box leaves: the tap signs added since
+ * `countTapSigns` (a play or pause sign per tap) and the store's playing
+ * flag, set at once by the tap and kept. `data-speaking` follows the
+ * voice and could turn later.
  * @param {import("@playwright/test").Page} page
  */
 async function tapTrace(page) {
   return page.evaluate(() => ({
-    signs: document.querySelectorAll('[data-testid="narration-box-tap"]')
-      .length,
+    signs: /** @type {any} */ (window).__tapSigns,
     playing: /** @type {any} */ (
       window
     ).__tourViewerTest.alignmentStore?.getState?.()?.narrationBox?.playing,
@@ -227,6 +253,7 @@ for (const viewport of [
     const onCard = shared.find((_, i) => sharedTop[i]?.button === false);
     if (onCard === undefined) throw new Error("no plain card point");
     await expect(box).toHaveAttribute("data-speaking", "no");
+    await countTapSigns(page);
     await page.mouse.click(onCard.x, onCard.y);
     // A tap the box took would show its sign and set the store at once.
     expect(await tapTrace(page)).toEqual({ signs: 0, playing: false });
@@ -241,13 +268,12 @@ for (const viewport of [
     // The box's own part, which the card leaves free, plays and pauses.
     const [at] = free;
     if (at === undefined) throw new Error("no free point on the box");
+    await countTapSigns(page);
     await page.mouse.click(at.x, at.y);
-    // The trace the card tap was checked for does show for a box tap:
-    // the store first, which does not depend on the sign's animation, so
-    // a slow read that misses the sign still shows the tap was taken.
+    // The trace the card tap was checked for does show for a box tap.
     const trace = await tapTrace(page);
     expect(trace.playing, "the box took the tap").toBe(true);
-    expect(trace.signs, "the tap's sign, read within its animation").toBe(1);
+    expect(trace.signs, "the tap's sign was added").toBe(1);
     await expectSpeaking(page, box, "yes");
     await page.mouse.click(at.x, at.y);
     await expectSpeaking(page, box, "no");

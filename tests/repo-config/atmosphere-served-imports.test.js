@@ -211,11 +211,6 @@ function variantPages(dir) {
 
 const CARRIER_LABS = [
   {
-    lab: "globe-terrain",
-    pages: [join(LABS, "globe-terrain", "index.html")],
-    reaches: ["globe-surface.ts", "globe-terrain.ts"],
-  },
-  {
     lab: "terrain",
     pages: [join(LABS, "terrain", "index.html")],
     reaches: ["globe-clock.ts", "globe-sources.ts", "sky-level.ts"],

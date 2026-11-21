@@ -45,4 +45,4 @@ look.tick(1.5);
 
 ## Tests
 
-`narration-look.test.ts`: the parts and their bounded count, the warm palette, a tick that writes uniforms only, the pace per state and still in the editor, a property that the rise never runs back or jumps, the states reaching both shaders, the plate's lines and repaint-on-change, facing, and disposal. `spot.test.ts` and `spot-card.test.ts` cover the circle around it. The look itself is checked side by side with the prototype on the check page.
+`narration-look.test.ts`: the parts and their bounded count, the warm palette, a tick that writes uniforms only, the pace per state and still in the editor, a property that the rise never runs back or jumps, the states reaching both shaders, the plate's lines and repaint-on-change, facing, and disposal. `spot.test.ts` and `spot-card.test.ts` cover the circle around it. The look was once checked side by side with the prototype on its own check page; that page was removed and is in git history.

@@ -65,7 +65,7 @@ pose, with orbit limits from `freeOrbitLimits`. `views.html` lists such links pe
 ## Invariants and assumptions
 
 - Today's side builds with `inventedRoofs: false`: it is the baseline the variants were
-  judged against, and V2 and V3, which invent their own roofs, build with it off as well,
+  judged against, and V2, which invents its own roofs, builds with it off as well,
   so no library roof stacks on a variant's. `?roofs=library` (the "Today's roofs" row,
   which reloads) draws the library's invented roofs on today's side, for comparing a
   variant with the library at one pose and in one light.

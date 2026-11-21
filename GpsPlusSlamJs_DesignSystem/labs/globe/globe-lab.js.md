@@ -279,7 +279,7 @@
   §3.1, DEC-GL5-1..3: `/globe/globe-intro.js`):
   - `spin`: while it waits for a target, the camera turns from over the
     sub-solar point (the longitude falling 3°/s; `spinDirection`) at the
-    zoom-out limit, at the variant's starting field of view;
+    zoom-out limit;
   - `turning` is the FLY-IN, over `turnMs`: from the zoom-out limit (below)
     to the fitted distance, the direction turning to the target from the
     sun side (the target turned towards the sub-solar point by at most
@@ -288,16 +288,12 @@
     it blends there from the spin's direction over 1.5 s. So a GPS fix
     that arrives after the spin began starts on the sun side within the
     cap, as a link does (review 2026-10-01-2124 Major 2: before, it started
-    wherever the spin was). In the `intro=`
-    variant: `narrow` (the default: the field of view
-    narrows from 80°), `distance` (at 50°), `fov` (the field of view
-    narrows far out, then a short fly), `dolly` (widens from 50°: with an
-    end of 50° it is `distance`). Every variant ends at the target, the
-    fitted distance and `fovY`, which is 50° by default (DEC-GL5-2);
+    wherever the spin was). The fly-in moves by distance only, at the
+    lab's `fovY` throughout (50° by default), and ends at the
+    target and the fitted distance;
   - `arrived`: the target held at the centre, north up.
   - The fitted distance is computed at `fovY` (the disc filling 90 % of
-    the narrower side), not at the camera's field of view, which the
-    fly-in varies.
+    the narrower side).
   - A view: `#view=<lat>,<lng>,<altitude km>,<heading>,<pitch>` (the Debug
     export's `link`; volume-cloud plan §16) opens at that pose: the frame
     moved under it, the intro skipped, the camera handed to the controls
@@ -318,7 +314,7 @@
     27,400, fit 16,482); a 390x844 portrait gets 67,004 km (library 59,201,
     fit 33,502; a fixed 50,000 km had cut the library's own limit there);
     at fovY 20 on that portrait, 174,423 km. A change of `at`, `spinMs`,
-    `turnMs`, `intro`, `maxKm` or `turnCap`, and the "Replay the turn"
+    `turnMs`, `maxKm` or `turnCap`, and the "Replay the turn"
     button, start the sequence again.
   - To check on a phone (review 2026-10-01-2124 Minor 8): far out, the
     library nudges the camera to centre the Earth and turn north up, in
@@ -329,18 +325,11 @@
     at 40,000-55,000 km (nothing nearer than 29,600 km either way). Check
     that a far-out drag still settles centred and north up.
   - `user`: the user has taken the camera (below); the intro stands still
-    until the replay button or a new key above restarts it. A field of view
-    the fly-in left wider or narrower than `fovY` (a press during
-    `narrow`, say) eases back to it over 0.5 s (`FOV_RETURN_MS`); so it
-    does when the pin's dive interrupts the fly-in. The test hook
-    `__globeLab.fovReturnAt(fraction)` returns the last such ease
-    (`{ from, to, ms, at, lastFrameAt, fov }`, `fov` at `fraction` x `ms`),
-    computed by the same function the frame loop uses, so a smoke reads
-    the ease by time, and checks each drawn frame's field of view against
-    it at `lastFrameAt` (review 2026-10-01-2124 Minor 5).
-  - `state()` reports `intro`, `fixState` (`fix`, `none` or `waiting`),
-    `fovY` (the lab's) and `cameraFov` (the camera's, which the fly-in
-    varies), `zoomOutLimitM`, `cameraDirection` (unit, ECEF), and for the
+    until the replay button or a new key above restarts it. The field of
+    view is `fovY` throughout, so a press mid-flight leaves nothing to
+    ease back.
+  - `state()` reports `fixState` (`fix`, `none` or `waiting`),
+    `fovY` (the lab's) and `cameraFov` (the camera's), `zoomOutLimitM`, `cameraDirection` (unit, ECEF), and for the
     fly-in `flyInStart` (its start now, null before a target), `firstTurn`
     (the camera's direction on its first frame), `firstTurnDistanceM` (the
     camera's distance from the centre on that frame, as the frame loop
@@ -530,7 +519,16 @@ register = true)` (a red sphere ahead, which the near plane follows
     the relief draws, the camera is raised to the clearance over the drawn
     ground under it (`clearedAltitudeM` of the plugin's
     `sampleCartographicElevation`), whoever owns the camera.
-  - Test hooks on `__globeLab`: `holdDiveAt(ms)` holds the camera at a
+  - Test hooks on `__globeLab`: `parkAt(place, altitudeM)` parks the
+    camera that high over the place (never below the clearance), at the
+    flight's pitch law, with what a landing there sets (the place located,
+    its detail and city data asked for, the world frame moved), held as
+    landed by the approach (the smokes' held views). It does nothing unless
+    the pin is idle, and it does not reset the speed dust as a flight's
+    placement does, so with `dust=1` the jump reads as speed for a frame.
+    Parked again over the place it already holds, only the camera moves
+    (no new detail or city request), so a smoke can step through heights;
+    `holdDiveAt(ms)` holds the camera at a
     dive time (null runs on) and `diveAltitudeAt(ms)` reads the dive's
     altitude without moving it (the moving-camera band smoke);
     `plantDetail(eastFactor)` plants a detail grid east of the target (the
@@ -588,8 +586,8 @@ globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` i
   - Where it lives: the Globe package's `globe-approach.ts` holds these
     states (`createGlobeApproach`, the lab's `flight`, and
     `approachRestartKey`, what restarts it), `globe-approach-camera.ts`
-    places each frame on the camera and eases the field of view back
-    (`createApproachDrive`, `createFovReturn`, the `fovReturnAt` hook),
+    places each frame on the camera
+    (`createApproachDrive`),
     `globe-arrival-prefetch.ts` the pin's arrival prefetch (the city load
     the dive waits for and its status line, `createArrivalPrefetch`), and
     `globe-landing-flight.ts` the pin's dive and continuous flight from

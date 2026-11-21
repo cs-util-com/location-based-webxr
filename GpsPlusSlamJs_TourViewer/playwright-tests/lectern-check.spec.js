@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
  * port can draw a stand of the wrong size, at the wrong height or facing
  * away and still pass a test that asks only whether something is drawn.
  * These pin where the page lands on a phone, a phone held sideways and a
- * desktop, through the check page `lectern-check.html`, against values
+ * desktop, through the check page `check.html?view=lectern`, against values
  * worked out here from the prototype's numbers (not from the code under
  * test), and that a tap on the page - and only on the page - turns it.
  *
@@ -70,7 +70,7 @@ async function open(page, viewport) {
     width: viewport.width,
     height: viewport.height,
   });
-  await page.goto("/lectern-check.html");
+  await page.goto("/check.html?view=lectern");
   await page.waitForFunction(() => window.__lecternCheck?.state() != null);
   return errors;
 }

@@ -132,7 +132,11 @@ describe("createCaptionsFollow", () => {
   function make() {
     const box = { show: vi.fn(), hide: vi.fn() };
     let content: NarrationBoxContent | null = null;
+    // The players the visitor made, by text id: what the box was given,
+    // and what the sheet played.
+    const voices = new Map<string, NarrationBoxContent["player"]>();
     const narration = {
+      voiceOf: vi.fn((b: TourBlock) => voices.get(b.id) ?? null),
       verdictOf: vi.fn((): NarrationVerdict => "live"),
       captions: vi.fn(() => content),
       pauseAll: vi.fn(),
@@ -164,7 +168,8 @@ describe("createCaptionsFollow", () => {
       },
       signOf: (id) => signs.get(id) ?? null,
       sheetOpen: () => sheet,
-      playing: () => speaking,
+      // The store's flag is for the shown text only, as the box's slice.
+      playing: (key) => speaking && key === content?.key,
     });
     return {
       box,
@@ -179,6 +184,11 @@ describe("createCaptionsFollow", () => {
       },
       give: (c: NarrationBoxContent | null) => {
         content = c;
+        if (c?.player !== undefined) voices.set(c.key, c.player);
+      },
+      /** A voice the reading sheet made and played, never shown. */
+      voice: (id: string, player: NarrationBoxContent["player"]) => {
+        voices.set(id, player);
       },
       mount: (id: string) => {
         const calls: (ReadingSignVoice | null)[] = [];
@@ -207,11 +217,22 @@ describe("createCaptionsFollow", () => {
     };
   }
 
-  const at = (nowMs: number) =>
-    ({
-      key: "a",
-      player: { nowMs: () => nowMs, durationMs: () => 9000 },
-    }) as unknown as NarrationBoxContent;
+  /** A text's box content whose voice stands at `nowMs`; `on` is whether
+   *  that voice plays, and its `pause` stops it. */
+  const at = (nowMs: number, key = "a", on = false) => {
+    const player = {
+      on,
+      nowMs: () => nowMs,
+      durationMs: () => 9000,
+      playing: () => player.on,
+      pause: vi.fn(() => {
+        player.on = false;
+      }),
+    };
+    return { key, player } as unknown as NarrationBoxContent & {
+      player: typeof player;
+    };
+  };
 
   // Why: walking away pauses a voice and it carries on at return, so each
   // station's voices must be named on the way out and on the way back, and a
@@ -466,6 +487,7 @@ describe("createCaptionsFollow", () => {
     // Straight into the next station, its own text shown: the old sign
     // says paused.
     mount("b");
+    give(at(4000, "b"));
     set({ blocks: [text("b")], presentId: "s2" });
     follow.sync();
     expect(chips.get("a")).toBe("paused");
@@ -480,24 +502,31 @@ describe("createCaptionsFollow", () => {
 
   // Why: another text of the same station can take the words over (here
   // the visitor's Reading pick turns the station's first text, a lectern
-  // till then, into a sign that reads along). The old text's voice
-  // stands mid-way, so its sign must say paused, not idle.
-  it("lets the old sign say paused when another text of the station is shown", () => {
+  // till then, into a sign that reads along). Nobody sees the old text's
+  // words any more, so its voice must not speak on: it pauses at the
+  // switch, and its sign says paused, not idle.
+  it("pauses the old text's voice when another text of the station is shown", () => {
     const { follow, set, give, mount, chips, calls, playing } = make();
     const b = text("b", { view: "lectern" });
     const a = text("a");
     mount("b");
     const signA = mount("a");
     set({ blocks: [b, a], presentId: "s1", stored: null });
-    give(at(4000));
+    const voiceA = at(4000, "a", true);
+    give(voiceA);
     playing(true);
     follow.sync();
     expect(chips.get("a")).toBe("playing");
-    // b's own voice has not started; a's stands at 4 s.
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
+    // a still speaks at the switch; b's own voice has not started.
+    expect(voiceA.player.playing()).toBe(true);
+    // The store follows the box, which now shows b: not playing.
     playing(false);
-    give(at(0));
+    give(at(0, "b"));
     set({ stored: READING });
     follow.sync();
+    expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+    expect(voiceA.player.playing()).toBe(false);
     expect(chips.get("b")).toBe("idle");
     expect(chips.get("a")).toBe("paused");
     // The switch leaves it at paused, not a pause painted over by idle,
@@ -506,5 +535,66 @@ describe("createCaptionsFollow", () => {
     follow.sync();
     expect(calls(signA)).not.toContain("idle");
     expect(chips.get("b")).toBe("idle");
+    expect(voiceA.player.pause).toHaveBeenCalledTimes(1);
+  });
+
+  // Why: a voice outlives an AR session (its end pauses, never resets),
+  // so a sign shown again after a re-entry must still say where its
+  // voice stands, not idle.
+  it("says paused for a text heard before an AR session ended", () => {
+    const { follow, set, give, mount, chips } = make();
+    const b = text("b", { view: "lectern" });
+    const a = text("a");
+    mount("b");
+    mount("a");
+    set({ blocks: [b, a], presentId: "s1", stored: null });
+    give(at(4000, "a", true));
+    follow.sync();
+    give(at(0, "b"));
+    set({ stored: READING });
+    follow.sync();
+    expect(chips.get("a")).toBe("paused");
+    follow.stop();
+    // The session end disposed the signs; the next session mounts new ones.
+    chips.clear();
+    mount("b");
+    mount("a");
+    follow.sync();
+    expect(chips.get("b")).toBe("idle");
+    expect(chips.get("a")).toBe("paused");
+  });
+
+  // Why: the reading sheet plays the same voice as the box, so a text
+  // played only in the sheet, never the shown one, has its sign say so.
+  it("gives a text played only in the reading sheet its voice's chip", () => {
+    const { follow, set, give, mount, chips, voice } = make();
+    mount("a");
+    mount("b");
+    set({ blocks: [text("a"), text("b")], presentId: "s1", stored: null });
+    give(at(0));
+    const sheet = at(3000, "b", true).player;
+    voice("b", sheet);
+    follow.sync();
+    expect(chips.get("a")).toBe("idle");
+    expect(chips.get("b")).toBe("playing");
+    sheet.pause();
+    follow.sync();
+    expect(chips.get("b")).toBe("paused");
+  });
+
+  // Why: leaving the station pauses its voices by name for the return, so
+  // the switch rule must not pause a voice on a move between stations:
+  // paused there it would no longer be wanted, and would not carry on.
+  it("leaves a voice to the station's own pause when the visitor moves on", () => {
+    const { follow, set, give, mount } = make();
+    mount("a");
+    set({ blocks: [text("a")], presentId: "s1", stored: null });
+    const voiceA = at(4000, "a", true);
+    give(voiceA);
+    follow.sync();
+    give(at(0, "b"));
+    set({ blocks: [text("b")], presentId: "s2" });
+    follow.sync();
+    expect(voiceA.player.pause).not.toHaveBeenCalled();
   });
 });

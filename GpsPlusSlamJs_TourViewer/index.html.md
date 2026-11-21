@@ -123,7 +123,7 @@ none`), its `.scan-card-panel` darker than the prototype's, with the
   the words. `ar-mode.spec.js` pins its centring and the skip's place.
   The creator's variant is the same element under
   `body[data-mode="creator"]` (no second card): the animation beside the
-  words, placed under the readout card (a fixed top offset of 90 px: the
+  words, placed under the readout card (a fixed top offset of `calc(90px + env(safe-area-inset-top))`: the
   readout's two clamped lines' 70 px, a 10 px gap and 10 px to spare;
   hidden while the readout is opened by a tap or while the size offer,
   which sits above the readout and pushes it down, shows), off the screen

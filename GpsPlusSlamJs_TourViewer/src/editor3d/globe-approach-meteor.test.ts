@@ -565,3 +565,83 @@ describe("the editor's meteor approach", () => {
     expect(a.driver.bar(Number.NaN)).toBe(0);
   });
 });
+
+/** The pinned samples' fractions of the flight (0: the first frame, 1: the landing frame). */
+const SAMPLE_FRACTIONS = [0, 0.25, 0.5, 0.75, 1] as const;
+
+/** A frame's camera, rounded to the precision the pins hold. */
+function sampleOf(a: Approach) {
+  const p = a.view.camera.position;
+  const q = a.view.camera.quaternion;
+  const r = (v: number, digits: number) => Number(v.toFixed(digits));
+  return {
+    position: [r(p.x, 3), r(p.y, 3), r(p.z, 3)],
+    quaternion: [r(q.x, 9), r(q.y, 9), r(q.z, 9), r(q.w, 9)],
+    fov: a.view.camera.fov,
+  };
+}
+
+/** The default flight to Marienplatz at 60 Hz: its frame count to the landing, and the camera (ECEF m, quaternion) at `SAMPLE_FRACTIONS`. */
+const PINNED_FRAMES = 1181;
+const PINNED_SAMPLES: { position: number[]; quaternion: number[] }[] = [
+  {
+    position: [47321628.407, 9692649.515, -12868041.674],
+    quaternion: [0.523480004, 0.641569791, 0.434416526, 0.354456161],
+  },
+  {
+    position: [13678132.432, 2801622.602, 863784.296],
+    quaternion: [0.523467616, 0.641554608, 0.434438949, 0.354474456],
+  },
+  {
+    position: [4581720.83, 938450.676, 4573811.808],
+    quaternion: [0.523460578, 0.641545982, 0.434451687, 0.354484849],
+  },
+  {
+    position: [4193936.642, 859022.805, 4725381.238],
+    quaternion: [0.49452113, 0.606078199, 0.482699422, 0.393851922],
+  },
+  {
+    position: [4178151.155, 855789.543, 4727498.679],
+    quaternion: [0.414986481, 0.508601642, 0.584511663, 0.476924213],
+  },
+];
+
+describe("the editor's meteor approach, pinned path", () => {
+  // Why: the approach's API is narrowed (the fixed dive, the intro
+  // variants and the field-of-view ease go); these pins hold the camera's
+  // position and attitude at five moments of the default flight to
+  // Marienplatz, so the narrowing is proven to leave the flight itself
+  // unchanged. The field of view stays the page's through every frame,
+  // which is why no ease back to it is needed.
+  it("flies the same path, at the page's field of view throughout", () => {
+    const a = approachOf(DEFAULTS);
+    const samples: ReturnType<typeof sampleOf>[] = [];
+    const fovs = new Set<number>();
+    const frames: { t: number; sample: ReturnType<typeof sampleOf> }[] = [];
+    for (let t = 0; t < 120_000; t += DT) {
+      a.clock.t = t;
+      if (t === 0) a.driver.start(t);
+      const flying = a.driver.drive(t);
+      const sample = sampleOf(a);
+      fovs.add(sample.fov);
+      frames.push({ t, sample });
+      if (!flying) break;
+    }
+    for (const f of SAMPLE_FRACTIONS) {
+      const at = frames[Math.round(f * (frames.length - 1))];
+      if (at) samples.push(at.sample);
+    }
+    expect([...fovs]).toEqual([50]);
+    expect(frames.length).toBe(PINNED_FRAMES);
+    for (const [i, want] of PINNED_SAMPLES.entries()) {
+      const got = samples[i];
+      expect(got).toBeDefined();
+      for (const [k, v] of want.position.entries()) {
+        expect(got?.position[k]).toBeCloseTo(v, 2);
+      }
+      for (const [k, v] of want.quaternion.entries()) {
+        expect(got?.quaternion[k]).toBeCloseTo(v, 8);
+      }
+    }
+  });
+});

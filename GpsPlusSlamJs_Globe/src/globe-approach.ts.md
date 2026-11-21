@@ -13,7 +13,7 @@
   - `SPIN_DEG_PER_S` (-3): the spin's rate while it waits for a target; the
     view's longitude falls, so the surface moves west to east.
   - `approachRestartKey(params)`: a string that changes with the link's
-    target (`url`), `spinMs`, `turnMs`, `intro`, `maxKm` and `turnCap`, and
+    target (`url`), `spinMs`, `turnMs`, `maxKm` and `turnCap`, and
     with nothing else; the lab restarts the approach when it changes.
   - `poseToward([x, y, z])`: a north-up `OrbitPose` for a direction from
     the centre (looking along the pole: up is +x).
@@ -30,18 +30,23 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
     - `dive(now, target, fromPose, { durationMs, toAltitudeM, clock? })`:
       the fixed dive (`planDive`, at `params.pitchLow`) on `clock` (the
       arrival prefetch's; default as it is); drops any pin flight;
+    - `park(now, target, camera)`: the camera held at `camera` (an ECEF
+      `{ position, quaternion }`, copied; every frame returns a fresh
+      copy) as `landed` over `target` until a touch or a restart; drops any
+      dive or pin flight. The lab's smokes measure held views this way;
     - `flyPin(now, pin, place?)`, `aimPin(place)`, `updatePin(now, apply)`,
       `pinFlight`: the continuous flight (`/globe/pin-flight.ts`);
     - `holdDiveAt(ms | null)`, `diveAltitudeAt(ms)`: the smokes' hold and
       read (null without a dive; the pin flight's own clock when one runs);
-    - `pose(now)`: an `ApproachOrbitStep` `{ pose, distanceM, fovDeg }`
-      (`distanceM` null: the fitted distance) or, in the dive and the pin
+    - `pose(now)`: an `ApproachOrbitStep` `{ pose, distanceM }`
+      (`distanceM` null: the fitted distance; the field of view is the
+      page's throughout, never the approach's) or, in the dive and the pin
       flight, an `ApproachPlacedStep` `{ position, quaternion, ... }`;
     - `cameraPlaced(distanceM)`: the frame loop's placement of the fly-in's
       first frame (kept once, for the smokes);
     - `state()`: `phase`, `target`, `source`, `history` (each phase or
       source change with `atMs` since the start), `runs`, `spinMs`,
-      `turnMs`, `intro`, `fixState` (`fix`, `none`, `waiting`),
+      `turnMs`, `fixState` (`fix`, `none`, `waiting`),
       `flyInStart` (null before a target and in the dive), `firstTurn`,
       `firstTurnDistanceM`, `flyInBlendMs` and `flyInSettled`.
 - Invariants & assumptions:
@@ -50,7 +55,7 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
     (then `user`, or `diving` and `landed`); `landed` is noted once.
   - The fly-in starts at `zoomOutM()` and ends at `fitDistance()`; its
     distance never grows; from `turnMs` on the pose IS the target's
-    `orbitPose`, at the fitted distance and `fovY`. The end test is the
+    `orbitPose`, at the fitted distance. The end test is the
     lab's `!(t < 1)`, so a frame time that is not a number ends the fly-in
     at the target rather than asking the intro for a pose at NaN.
   - A target that arrives after a shown spin frame blends from the spin
@@ -75,7 +80,8 @@ now? })` returns a `GlobeApproach`. `sunEcef`, `fitDistance` and
   the fallback, a position while spinning and over the fallback, the
   fly-in's first frame and its arrival (also on a NaN frame time), the
   user, the dive with its clock
-  and hold, the pin flight and its cancel, the restart key, the pole case
+  and hold, a park held exactly (copies both ways) until a touch or a
+  restart, the pin flight and its cancel, the restart key, the pole case
   of `poseToward`); `globe-approach.property.test.ts` (forward-only
   phases, a non-growing fly-in between the fit and the zoom-out limit,
   the exact hold from `turnMs`, a dive that lands exactly once at its

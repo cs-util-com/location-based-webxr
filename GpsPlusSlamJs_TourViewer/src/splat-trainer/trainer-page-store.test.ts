@@ -7,7 +7,7 @@
  * that reports success when nothing was written.
  */
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { manualTimer } from "../test-support/manual-timer.js";
 import { settle } from "../test-support/settle.js";
@@ -37,21 +37,54 @@ function setup(over: Partial<TrainerPageDeps> = {}, adapter?: TrainerAdapter) {
   };
   const c = createTrainerPageStore(deps);
   const settled = () => settle(() => [c.store.getState()]);
-  return { c, deps, timer, settled };
+  /**
+   * Chooses `file` and waits for its read to end, read or refused. The
+   * read inflates the zip and hashes on the thread pool, steps the
+   * settle's fingerprint cannot see and its quiet window covers only
+   * while the machine is idle, so the read is awaited by its result.
+   */
+  const read = async (file: File): Promise<void> => {
+    c.chooseRecording(file);
+    await new Promise<void>((resolve) => {
+      const ended = () => c.store.getState().phase !== "reading";
+      if (ended()) {
+        resolve();
+        return;
+      }
+      const unsubscribe = c.store.subscribe(() => {
+        if (!ended()) return;
+        unsubscribe();
+        resolve();
+      });
+    });
+    await settled();
+  };
+  return { c, deps, timer, settled, read };
 }
 
-async function atCensus(frames = 60, over: Partial<TrainerPageDeps> = {}) {
-  const h = setup(over);
+/** The 60-photo, 71 m test walk, built once for the file: a read never
+ *  changes a File, and building it is most of a test's setup. */
+let walk: File;
+beforeAll(async () => {
+  ({ file: walk } = await buildSyntheticRecording({
+    frames: 60,
+    spacingM: 1.2,
+  }));
+});
+
+async function atCensus(
+  over: Partial<TrainerPageDeps> = {},
+  adapter?: TrainerAdapter,
+) {
+  const h = setup(over, adapter);
   await h.c.probe();
-  const { file } = await buildSyntheticRecording({ frames, spacingM: 1.2 });
-  h.c.chooseRecording(file);
-  await h.settled();
+  await h.read(walk);
   return h;
 }
 
 describe("reading", () => {
   it("reads a recording through the real reader and plans its stretches", async () => {
-    const { c } = await atCensus(60);
+    const { c } = await atCensus();
     const s = c.store.getState();
     expect(s.phase).toBe("census");
     expect(s.recording?.census?.frames).toBe(60);
@@ -66,16 +99,14 @@ describe("reading", () => {
     const h = setup();
     await h.c.probe();
     const { file } = await buildSyntheticRecording({ era: 3 });
-    h.c.chooseRecording(file);
-    await h.settled();
+    await h.read(file);
     expect(h.c.store.getState().refusal?.kind).toBe("recording");
     expect(h.c.store.getState().refusal?.reason).toBeTruthy();
   });
 
   it("refuses when the reader itself throws", async () => {
     const h = setup({ read: () => Promise.reject(new Error("disk gone")) });
-    h.c.chooseRecording(new File(["x"], "a.zip"));
-    await h.settled();
+    await h.read(new File(["x"], "a.zip"));
     expect(h.c.store.getState().refusal).toEqual({
       kind: "recording",
       reason: "disk gone",
@@ -92,8 +123,7 @@ describe("reading", () => {
     });
     await h.c.probe();
     const { file } = await buildSyntheticRecording({ frames: 60 });
-    h.c.chooseRecording(file);
-    await h.settled();
+    await h.read(file);
     expect(h.c.store.getState().refusal?.reason).toBe(
       "The walk cannot be split into stretches.",
     );
@@ -104,15 +134,14 @@ describe("reading", () => {
     const h = setup();
     await h.c.probe();
     const { file } = await buildSyntheticRecording({ depth: false });
-    h.c.chooseRecording(file);
-    await h.settled();
+    await h.read(file);
     expect(h.c.store.getState().refusal?.code).toBe("no-depth");
   });
 });
 
 describe("training", () => {
   it("trains every stretch in turn with the practice trainer", async () => {
-    const { c, timer } = await atCensus(60);
+    const { c, timer } = await atCensus();
     c.store.dispatch(A.trainingStarted());
     for (let i = 0; i < WINDOWS; i++) {
       timer.advance(PRACTICE_STRETCH_MS);
@@ -124,7 +153,7 @@ describe("training", () => {
   });
 
   it("aborts the trainer on stop: no progress after it, a fresh run on continue", async () => {
-    const { c, timer } = await atCensus(60);
+    const { c, timer } = await atCensus();
     c.store.dispatch(A.trainingStarted());
     timer.advance(5000);
     await settleAll(c);
@@ -147,14 +176,7 @@ describe("training", () => {
       ...real,
       trainWindow: () => Promise.reject(new Error("device lost")),
     };
-    const h = setup({}, broken);
-    await h.c.probe();
-    const { file } = await buildSyntheticRecording({
-      frames: 60,
-      spacingM: 1.2,
-    });
-    h.c.chooseRecording(file);
-    await h.settled();
+    const h = await atCensus({}, broken);
     h.c.store.dispatch(A.trainingStarted());
     await h.settled();
     const s = h.c.store.getState();
@@ -182,14 +204,7 @@ describe("a run that ends on its own", () => {
             })
           : real.trainWindow(request, events, signal),
     };
-    const h = setup({}, quits);
-    await h.c.probe();
-    const { file } = await buildSyntheticRecording({
-      frames: 60,
-      spacingM: 1.2,
-    });
-    h.c.chooseRecording(file);
-    await h.settled();
+    const h = await atCensus({}, quits);
     h.c.store.dispatch(A.trainingStarted());
     await h.settled();
     expect(h.c.store.getState().windows[0]?.judgement?.reasons).toEqual([
@@ -214,14 +229,7 @@ describe("a run that ends on its own", () => {
         return p as unknown as CanvasImageSource;
       },
     });
-    const h = setup({}, real);
-    await h.c.probe();
-    const { file } = await buildSyntheticRecording({
-      frames: 60,
-      spacingM: 1.2,
-    });
-    h.c.chooseRecording(file);
-    await h.settled();
+    const h = await atCensus({}, real);
     h.c.store.dispatch(A.trainingStarted());
     timer.advance(9000);
     await h.settled();
@@ -262,14 +270,7 @@ describe("what a finished stretch keeps", () => {
   }
 
   async function run(adapter: TrainerAdapter, over: Partial<TrainerPageDeps>) {
-    const h = setup(over, adapter);
-    await h.c.probe();
-    const { file } = await buildSyntheticRecording({
-      frames: 60,
-      spacingM: 1.2,
-    });
-    h.c.chooseRecording(file);
-    await h.settled();
+    const h = await atCensus(over, adapter);
     h.c.store.dispatch(A.trainingStarted());
     await h.settled();
     return h;
@@ -328,7 +329,7 @@ async function settleAll(c: ReturnType<typeof setup>["c"]) {
 }
 
 async function doneRun() {
-  const h = await atCensus(60);
+  const h = await atCensus();
   h.c.store.dispatch(A.trainingStarted());
   for (let i = 0; i < WINDOWS; i++) {
     h.timer.advance(PRACTICE_STRETCH_MS);
@@ -383,10 +384,10 @@ describe("saving", () => {
       "synthetic-recording-splat.zip",
     );
     expect(h.c.store.getState().save.status).toBe("saved");
-    const g = await doneRun();
-    (g.deps.download as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
-    await g.c.save(Promise.resolve({ kind: "unavailable" }));
-    expect(g.c.store.getState().save.status).toBe("idle");
+    // The same run saved again, its download cancelled this time.
+    (h.deps.download as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await h.c.save(Promise.resolve({ kind: "unavailable" }));
+    expect(h.c.store.getState().save.status).toBe("idle");
   });
 
   it("names what became of a picked file that a failed save did not write", async () => {

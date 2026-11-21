@@ -139,7 +139,6 @@ export const SPECS = {
   },
   "editor3d.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "feature-match-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
-  "file-access-check.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "item-lab.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing-film.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "landing.spec.js": { project: "webgl", area: "viewer", lane: 4 },
@@ -147,8 +146,8 @@ export const SPECS = {
   "lectern-check.spec.js": { project: "webgl", area: "viewer", lane: 4 },
   "legal.spec.js": { project: "webgl", area: "both", lane: 4 },
   "long-text-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
+  "long-text-narration.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "model-views.spec.js": { project: "webgl", area: "viewer", lane: 4 },
-  "narration-check.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "narration-stacking.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "object-editing.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "older-format.spec.js": { project: "webgl", area: "both", lane: 4 },
@@ -253,7 +252,13 @@ export const EDITOR_PAGES = Object.freeze([
 ]);
 
 /** Package paths only the editor reaches (a file, or a folder's contents). */
-const EDITOR_ONLY = [...EDITOR_PAGES, "src/editor", "src/editor3d"];
+const EDITOR_ONLY = [
+  ...EDITOR_PAGES,
+  // The optimizer check page's own module, which only that page loads.
+  "src/checks/asset-optimizer-check-page.ts",
+  "src/editor",
+  "src/editor3d",
+];
 
 /**
  * Shared modules under an area's folder: the editor imports them too

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The code of `travelling-box-check.html` (`travelling-box-check.html.md`):
+The code of `check.html?view=travelling-box` (`check.html.md`):
 a narrated long text's reading sign in the reading stand's square
 (`lectern-check.ts` `buildSquare`), its words painted on the plate under
 the sign from the narration box's invisible ghost at the bottom of the
