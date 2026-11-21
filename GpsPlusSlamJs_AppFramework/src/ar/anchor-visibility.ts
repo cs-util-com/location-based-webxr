@@ -1139,14 +1139,16 @@ function capEntries(
 
 /**
  * Merge the two alive clusters whose centres are nearest until `target`
- * remain. Each cluster keeps its nearest alive neighbour; after a merge only
- * the new cluster and the clusters whose neighbour was merged are scanned
- * again, so the whole run is O(n^2) time and O(n) memory.
+ * remain. Each cluster keeps its nearest alive neighbour. A cluster whose
+ * neighbour was merged is only marked stale (its recorded distance is then
+ * a lower bound) and rescanned when it is picked, so a merge costs O(n)
+ * even when many clusters share one neighbour, as coincident centres do:
+ * the whole run is O(n^2) time and O(n) memory.
  */
 function mergeNearestPairs(clusters: Cluster[], target: number): void {
   let alive = clusters.length;
   if (alive <= target) return;
-  const near: NearestTable = { index: [], dist: [] };
+  const near: NearestTable = { index: [], dist: [], stale: [] };
   for (let i = 0; i < clusters.length; i += 1) scanNearest(clusters, near, i);
   while (alive > target) {
     const i = closestCluster(clusters, near);
@@ -1166,10 +1168,15 @@ function mergeNearestPairs(clusters: Cluster[], target: number): void {
   }
 }
 
-/** Per cluster: index of and squared distance to its nearest alive neighbour. */
+/**
+ * Per cluster: index of and squared distance to its nearest alive neighbour,
+ * and whether that neighbour has merged since (the distance is then a lower
+ * bound: the alive set only lost members, and newer clusters were compared).
+ */
 interface NearestTable {
   readonly index: number[];
   readonly dist: number[];
+  readonly stale: boolean[];
 }
 
 function scanNearest(
@@ -1190,25 +1197,33 @@ function scanNearest(
   }
   near.index[i] = best;
   near.dist[i] = bestDist;
+  near.stale[i] = false;
 }
 
-/** The alive cluster with the nearest neighbour, or -1. */
+/**
+ * The alive cluster with the nearest neighbour, or -1. A stale pick is
+ * rescanned and the choice made again: its distance can only have grown,
+ * and every other recorded distance is exact or a lower bound.
+ */
 function closestCluster(
   clusters: readonly Cluster[],
   near: NearestTable
 ): number {
-  let i = -1;
-  let bestDist = Infinity;
-  for (let m = 0; m < clusters.length; m += 1) {
-    if (clusters[m]!.alive && near.dist[m]! < bestDist) {
-      bestDist = near.dist[m]!;
-      i = m;
+  for (;;) {
+    let i = -1;
+    let bestDist = Infinity;
+    for (let m = 0; m < clusters.length; m += 1) {
+      if (clusters[m]!.alive && near.dist[m]! < bestDist) {
+        bestDist = near.dist[m]!;
+        i = m;
+      }
     }
+    if (i < 0 || !near.stale[i]) return i;
+    scanNearest(clusters, near, i);
   }
-  return i;
 }
 
-/** After clusters `i` and `j` merged into the last cluster: rescan what pointed at them. */
+/** After clusters `i` and `j` merged into the last cluster: mark what pointed at them stale. */
 function updateNearest(
   clusters: readonly Cluster[],
   near: NearestTable,
@@ -1220,14 +1235,13 @@ function updateNearest(
   const centre = clusters[index]!.sphere.center;
   for (let m = 0; m < index; m += 1) {
     if (!clusters[m]!.alive) continue;
-    if (near.index[m] === i || near.index[m] === j) {
-      scanNearest(clusters, near, m);
-      continue;
-    }
+    if (near.index[m] === i || near.index[m] === j) near.stale[m] = true;
     const d = centre.distanceToSquared(clusters[m]!.sphere.center);
+    // Nearer than a lower bound of every other alive cluster: exact again.
     if (d < near.dist[m]!) {
       near.dist[m] = d;
       near.index[m] = index;
+      near.stale[m] = false;
     }
   }
 }

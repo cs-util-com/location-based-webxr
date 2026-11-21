@@ -164,8 +164,15 @@ through the `ar` barrel.
   view (plus one per never-merged entry past the cap), plus the bone pass of
   each skinned part. A fresh traversal reuses the kept bind data. A cache build is linear in
   the subtree, plus the merge, which is O(n^2) time and O(n) memory in the
-  number of renderables above the cap (each cluster keeps its nearest
-  neighbour). A large flat subtree should use `mergeForAnchorBounds`.
+  number of renderables above the cap: each cluster keeps its nearest
+  neighbour, and a cluster whose neighbour merged is only marked stale and
+  rescanned when it is picked, so each merge costs O(n) however many
+  clusters shared that neighbour. Coincident centres (the parts of a model
+  whose meshes are flat children with baked positions, each bounded about
+  its own origin) are the case this matters for: with an eager rescan of
+  every such cluster per merge the build was O(n^3), about 30x the grid case
+  for 400 parts and about 2 s for 1000. A large flat subtree should still use
+  `mergeForAnchorBounds`.
 
 ## Parameters
 
@@ -185,8 +192,8 @@ not tightness).
   the cap trades only delay, never safety.
 - **Merge rule, nearest centres first.** Greedy: the two clusters whose
   centres are nearest merge into the smallest sphere around both; each cluster
-  keeps its nearest alive neighbour, rescanned only when that neighbour
-  merged. Skinned parts, morphed parts and constant-screen-size sprites are
+  keeps its nearest alive neighbour; when that neighbour merged, the
+  cluster is rescanned the next time it is picked as the closest. Skinned parts, morphed parts and constant-screen-size sprites are
   never merged but count toward the cap. Not compared against other rules.
 - **Refresh age, 1000 ms** (`ANCHOR_BOUNDS_REFRESH_MS`). How long a stale "in"
   can hold a re-placement back. Not swept.
@@ -267,7 +274,10 @@ renderer.setAnimationLoop((time) => {
   tests.
 - `anchor-visibility.perf.test.ts`: operation counts (no traversal on a
   cached call, at most the cap per view for plain parts) and generous wall-clock ceilings for
-  the cached test, a fresh traversal of 400 parts, and a 64-bone skinned part.
+  the cached test, a fresh traversal of 400 parts, and a 64-bone skinned part;
+  400 parts at one and at four shared origins must cost under 4x the grid
+  case timed in the same test (eager rescans measured 31x and 9x; the lazy
+  rescan 1.0-1.5x, and 0.8-1.0x for 1 to 200 shared origins).
   Measured on a desktop under about 75 % CPU load (best of 15): cached
   0.006-0.008 ms, fresh 400 parts in two views 4.1-4.4 ms, cached with a
   64-bone skinned part 0.013-0.016 ms. A phone is several times slower, so a
