@@ -90,8 +90,19 @@ test("saves the starter tour, opens it here, and Done leads to making the code @
     "Put your tour online, then paste its link",
   );
   await expect(page.getByTestId("start-host")).toBeVisible();
-  // The zip was saved at Done: no starter offered a second time.
+  // The zip was saved at Done: no starter offered a second time. A host
+  // is chosen first, since with none chosen the starter is hidden anyway;
+  // Dropbox is one that offers the starter on a new tour.
+  await page
+    .getByTestId("host-tiles")
+    .getByRole("button")
+    .filter({ hasText: "Dropbox" })
+    .click();
+  await expect(page.getByTestId("host-steps")).toBeVisible();
   await expect(page.getByTestId("starter-zip")).toBeHidden();
+  await expect(
+    page.getByTestId("host-steps").locator("li").first(),
+  ).toContainText("Find the tour zip this phone saved at Done");
 });
 
 test("a dismissed save opens nothing and says so", async ({ page }) => {
