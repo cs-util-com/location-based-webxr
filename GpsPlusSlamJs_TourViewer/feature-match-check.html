@@ -244,6 +244,24 @@
               <span class="num">1</span> Take photo A
               <span class="step-mark"></span>
             </h2>
+            <p class="hint">Pick the pair, then take photo A.</p>
+            <div class="row">
+              <label
+                >Pair
+                <select id="pair"></select>
+              </label>
+              <label
+                >Spot
+                <input
+                  id="spot"
+                  type="number"
+                  min="1"
+                  max="3"
+                  value="1"
+                  size="2"
+              /></label>
+            </div>
+            <p id="pair-state" class="hint" aria-live="polite"></p>
             <div class="row">
               <button id="capture-a" type="button">Start camera</button>
               <span id="state-a" aria-live="polite">not taken</span>
@@ -255,8 +273,8 @@
               <span class="step-mark"></span>
             </h2>
             <p class="hint">
-              Hold the phone the same way as for A, step about 1 m to the side,
-              and keep most of what A shows in view.
+              Change only what the pair names (the light, the turn, the distance
+              or the side step), and keep most of what A shows in view.
             </p>
             <div class="row">
               <button id="capture-b" type="button" disabled>
@@ -295,13 +313,14 @@
             </div>
             <p id="save-links" class="row"></p>
             <p class="hint">
-              Offers one zip holding everything, this page's log and report
-              included, and each file on its own, to save on this device only:
-              the two photos as PNG, a JSON of their sizes, grey values and this
-              device's browser, OS version, model, cores, memory, screen and
-              GPU, and a JSON of every method's keypoints and matches. The
-              photos carry pixels only, no location, time or EXIF data. Nothing
-              is uploaded.
+              Every file is named by its running number and pair, and after
+              Download all the pair moves on to the next one. Offers one zip
+              holding everything, this page's log and report included, and each
+              file on its own, to save on this device only: the two photos as
+              PNG, a JSON of their sizes, grey values and this device's browser,
+              OS version, model, cores, memory, screen and GPU, and a JSON of
+              every method's keypoints and matches. The photos carry pixels
+              only, no location, time or EXIF data. Nothing is uploaded.
             </p>
           </li>
         </ol>

@@ -22,6 +22,109 @@ export const FRAME_FILES = {
   all: "feature-match-all.zip",
 } as const;
 
+/** The photo pairs of the test protocol, in the order they are taken. */
+export const PAIRS = [
+  { key: "1a", label: "light: control (same light)" },
+  { key: "1b", label: "light: dimmed" },
+  { key: "1c", label: "light: dark, not black" },
+  { key: "2a", label: "rotation: control (both upright)" },
+  { key: "2b", label: "rotation: 90 deg" },
+  { key: "2c", label: "rotation: 180 deg" },
+  { key: "2d", label: "rotation: tilted 30-45 deg" },
+  { key: "3a", label: "distance: control (both 1.5 m)" },
+  { key: "3b", label: "distance: 1.5 m to 3 m" },
+  { key: "3c", label: "distance: 1 m to 3 m" },
+  { key: "4a", label: "side step, flat: control" },
+  { key: "4b", label: "side step, flat: 1 m" },
+  { key: "4c", label: "side step, deep: control" },
+  { key: "4d", label: "side step, deep: 1 m" },
+  { key: "x", label: "other" },
+] as const;
+
+/** Spots the light pairs are repeated at. */
+const SPOTS = 3;
+
+/** Which pair a capture belongs to; fixed when photo A is taken. */
+export interface PairTag {
+  readonly pair: string;
+  readonly pairLabel: string;
+  /** 1 to SPOTS. */
+  readonly spot: number;
+  /** Running number of the pair in this page session, from 1. */
+  readonly sequence: number;
+}
+
+/**
+ * @throws Error on an unknown key, a spot that is not an integer 1-3 or a
+ *   sequence that is not an integer of at least 1.
+ */
+export function pairTag(key: string, spot: number, sequence: number): PairTag {
+  const p = PAIRS.find((q) => q.key === key);
+  if (!p) {
+    throw new Error(`unknown pair ${key}`);
+  }
+  if (!Number.isInteger(spot) || spot < 1 || spot > SPOTS) {
+    throw new Error(`spot must be 1 to ${String(SPOTS)}, got ${String(spot)}`);
+  }
+  if (!Number.isInteger(sequence) || sequence < 1) {
+    throw new Error(`sequence must be 1 or more, got ${String(sequence)}`);
+  }
+  return { pair: p.key, pairLabel: p.label, spot, sequence };
+}
+
+/** The spot field's value; anything but 1, 2 or 3 reads as 1. */
+export function parseSpot(text: string): number {
+  const n = Number(text.trim());
+  return Number.isInteger(n) && n >= 1 && n <= SPOTS && text.trim() !== ""
+    ? n
+    : 1;
+}
+
+/**
+ * The pair after `key` at `spot`: the next in PAIRS. The light pairs run
+ * through every spot first (1c at spot 1 or 2 goes on to 1a at the next
+ * spot), the pairs after them start at spot 1, and "other" stays.
+ */
+export function nextPair(
+  key: string,
+  spot: number,
+): { key: string; spot: number } {
+  if (key === "1c" && spot < SPOTS) {
+    return { key: "1a", spot: spot + 1 };
+  }
+  const i = PAIRS.findIndex((p) => p.key === key);
+  if (i < 0 || i === PAIRS.length - 1) {
+    return { key, spot };
+  }
+  return { key: PAIRS[i + 1]!.key, spot: key === "1c" ? 1 : spot };
+}
+
+/** The downloaded names of one pair's files. */
+export type PairFileNames = Readonly<
+  Record<"all" | "A" | "B" | "info" | "matches", string>
+>;
+
+/**
+ * The names one pair's files are offered under, e.g.
+ * `feature-match-03-1b-s2-light-dimmed.zip`: running number (two digits at
+ * least), key, spot and the label in lower-case ASCII. Entries inside the
+ * zip keep the fixed FRAME_FILES names.
+ */
+export function pairFileNames(tag: PairTag): PairFileNames {
+  const slug = tag.pairLabel
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const stem = `feature-match-${String(tag.sequence).padStart(2, "0")}-${tag.pair}-s${String(tag.spot)}-${slug}`;
+  return {
+    all: `${stem}.zip`,
+    A: `${stem}-frame-a.png`,
+    B: `${stem}-frame-b.png`,
+    info: `${stem}-frames.json`,
+    matches: `${stem}-matches.json`,
+  };
+}
+
 /** A captured frame and the camera size it was taken from. */
 export interface SavedFrame {
   readonly name: "A" | "B";
@@ -169,17 +272,22 @@ export function matchesInfo(
 }
 
 /**
- * The JSON saved with the frames: a fixed list of fields (sizes, grey
- * values, the device), no time and no place.
+ * The JSON saved with the frames: a fixed list of fields (the pair, sizes,
+ * grey values, the device), no time and no place.
  */
 export function framesInfo(
   frames: readonly SavedFrame[],
   device: DeviceInfo,
   captureMaxLongEdge: number,
+  tag: PairTag,
 ): string {
   return `${JSON.stringify(
     {
       format: "feature-match-frames/1",
+      pair: tag.pair,
+      pairLabel: tag.pairLabel,
+      spot: tag.spot,
+      sequence: tag.sequence,
       captureMaxLongEdge,
       frames: frames.map((f) => {
         const g = greyStats(f.frame);

@@ -13,6 +13,12 @@ import {
   FRAME_FILES,
   framesInfo,
   matchesInfo,
+  nextPair,
+  PAIRS,
+  pairFileNames,
+  pairTag,
+  parseSpot,
+  type PairTag,
   type SavedFrame,
 } from "./bench-export";
 import {
@@ -71,6 +77,9 @@ interface Ui {
   readonly steps: readonly HTMLElement[];
   readonly cameraBox: HTMLElement;
   readonly video: HTMLVideoElement;
+  readonly pair: HTMLSelectElement;
+  readonly spot: HTMLInputElement;
+  readonly pairState: HTMLElement;
   readonly captureA: HTMLButtonElement;
   readonly captureB: HTMLButtonElement;
   readonly stateA: HTMLElement;
@@ -95,6 +104,9 @@ function findUi(root: ParentNode): Ui {
     steps: [1, 2, 3, 4].map((n) => $(root, `#step-${String(n)}`)),
     cameraBox: $(root, "#camera-box"),
     video: $(root, "#video"),
+    pair: $(root, "#pair"),
+    spot: $(root, "#spot"),
+    pairState: $(root, "#pair-state"),
     captureA: $(root, "#capture-a"),
     captureB: $(root, "#capture-b"),
     stateA: $(root, "#state-a"),
@@ -291,6 +303,21 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   let starting: Promise<CameraStart> | null = null;
   /** Raised by every stop, so a start still pending learns it was stopped. */
   let cameraGeneration = 0;
+  /** Pairs started in this page session; the newest one's number. */
+  let sequence = 0;
+  /** The pair of the current photos, fixed at photo A. */
+  let pairInProgress: PairTag | null = null;
+  /** The newest pair whose Download all moved the selector on. */
+  let advancedFor = 0;
+
+  ui.pair.replaceChildren(
+    ...PAIRS.map((p) => {
+      const option = document.createElement("option");
+      option.value = p.key;
+      option.textContent = `${p.key} ${p.label}`;
+      return option;
+    }),
+  );
 
   const log = (line: string): void => {
     const t = (performance.now() / 1000).toFixed(1);
@@ -475,6 +502,17 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     cameraResults = [];
     clearSaved("after the run");
     if (which === "a") {
+      sequence++;
+      pairInProgress = pairTag(
+        ui.pair.value,
+        parseSpot(ui.spot.value),
+        sequence,
+      );
+      const t = pairInProgress;
+      ui.pairState.textContent = `now: pair ${String(t.sequence)}, ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`;
+      log(
+        `pair ${String(t.sequence)}: ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`,
+      );
       captures.b = null;
       ui.stateB.textContent = "not taken";
       ui.runState.textContent = "waiting for photo B";
@@ -487,27 +525,45 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   const saveFiles = async (): Promise<void> => {
     const { a, b } = captures;
-    if (!a || !b) {
+    const tag = pairInProgress;
+    if (!a || !b || !tag) {
       return;
     }
-    const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX);
+    const names = pairFileNames(tag);
+    const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX, tag);
     const matches = matchesInfo(cameraResults, { a: a.frame, b: b.frame });
     const json = (text: string) =>
       new Blob([text], { type: "application/json" });
-    const files: [string, string, Blob][] = [
-      [FRAME_FILES.A, "frame A (PNG)", await framePng(a.frame, "frame A")],
-      [FRAME_FILES.B, "frame B (PNG)", await framePng(b.frame, "frame B")],
-      [FRAME_FILES.info, "sizes and device (JSON)", json(info)],
-      [FRAME_FILES.matches, "keypoints and matches (JSON)", json(matches)],
+    // [download name, name inside the zip, link text, bytes]
+    const files: [string, string, string, Blob][] = [
+      [
+        names.A,
+        FRAME_FILES.A,
+        "frame A (PNG)",
+        await framePng(a.frame, "frame A"),
+      ],
+      [
+        names.B,
+        FRAME_FILES.B,
+        "frame B (PNG)",
+        await framePng(b.frame, "frame B"),
+      ],
+      [names.info, FRAME_FILES.info, "sizes and device (JSON)", json(info)],
+      [
+        names.matches,
+        FRAME_FILES.matches,
+        "keypoints and matches (JSON)",
+        json(matches),
+      ],
     ];
     // The zip comes first: one tap saves everything, the log included.
     const zip = await allFilesZip(
-      files.map(([name, , blob]) => ({ name, blob })),
+      files.map(([, name, , blob]) => ({ name, blob })),
       { log: ui.log.textContent ?? "", report: ui.report.value },
     );
-    files.unshift([FRAME_FILES.all, "Download all (zip)", zip]);
+    files.unshift([names.all, FRAME_FILES.all, "Download all (zip)", zip]);
     ui.saveLinks.replaceChildren(
-      ...files.map(([file, text, blob]) => {
+      ...files.map(([file, , text, blob]) => {
         const url = URL.createObjectURL(blob);
         savedUrls.push(url);
         const link = document.createElement("a");
@@ -517,6 +573,25 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         return link;
       }),
     );
+    ui.saveLinks.firstElementChild?.addEventListener("click", () => {
+      advancePair(tag);
+    });
+  };
+
+  /**
+   * After the pair's Download all, the selector moves on to the next pair
+   * (once per pair; a second tap saves again but moves nothing).
+   */
+  const advancePair = (tag: PairTag): void => {
+    if (tag.sequence <= advancedFor) {
+      return;
+    }
+    advancedFor = tag.sequence;
+    const next = nextPair(tag.pair, tag.spot);
+    ui.pair.value = next.key;
+    ui.spot.value = String(next.spot);
+    ui.pairState.textContent = `saved pair ${String(tag.sequence)}; next: ${next.key}, spot ${String(next.spot)}`;
+    log(`next pair: ${next.key}, spot ${String(next.spot)}`);
   };
   ui.saveFrames.addEventListener("click", () => {
     if (busy !== "idle") {

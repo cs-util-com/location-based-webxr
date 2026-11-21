@@ -4,10 +4,15 @@ import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
   FRAME_FILES,
+  PAIRS,
   allFilesZip,
   assertPlainPng,
   framesInfo,
   matchesInfo,
+  nextPair,
+  pairFileNames,
+  pairTag,
+  parseSpot,
   pngChunkTypes,
 } from "./bench-export";
 import { makeFrame, toFramePoint } from "./bench-image";
@@ -115,6 +120,8 @@ const DEVICE: DeviceInfo = {
   webgpu: "qualcomm adreno",
 };
 
+const TAG = pairTag("1b", 2, 3);
+
 // Why these tests matter: the JSON travels with the frames, so its fields
 // are a fixed list: sizes, brightness and the device, and no time, place
 // or anything else a later change might add by accident.
@@ -133,16 +140,38 @@ describe("framesInfo", () => {
       ],
       DEVICE,
       1280,
+      TAG,
     ),
   ) as Record<string, unknown>;
 
   it("holds exactly the listed fields", () => {
     expect(Object.keys(info).sort()).toEqual(
-      ["captureMaxLongEdge", "device", "format", "frames"].sort(),
+      [
+        "captureMaxLongEdge",
+        "device",
+        "format",
+        "frames",
+        "pair",
+        "pairLabel",
+        "spot",
+        "sequence",
+      ].sort(),
     );
     expect(info.format).toBe("feature-match-frames/1");
     expect(info.captureMaxLongEdge).toBe(1280);
     expect(info.device).toEqual(DEVICE);
+  });
+
+  // Why this test matters: the photos are scored offline per pair, and
+  // nobody writes down the order they were taken in; the JSON inside each
+  // zip is what says which pair it holds.
+  it("names the pair, its label, the spot and the running number", () => {
+    expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
+      "1b",
+      "light: dimmed",
+      2,
+      3,
+    ]);
   });
 
   it("describes each frame by file, size, camera size and grey values", () => {
@@ -175,6 +204,7 @@ describe("framesInfo", () => {
       [{ name: "A", frame: a, source: { width: 2, height: 1 } }],
       DEVICE,
       1280,
+      TAG,
     );
     const keys: string[] = [];
     const walk = (v: unknown): void => {
@@ -421,5 +451,133 @@ describe("allFilesZip", () => {
     const names = Object.values(FRAME_FILES);
     expect(new Set(names).size).toBe(names.length);
     expect(FRAME_FILES.all.endsWith(".zip")).toBe(true);
+  });
+});
+
+// Why these tests matter: the photos of one evening are taken pair after
+// pair with no written list of the order, so the saved files themselves
+// must say which pair they hold, and two pairs must never share a name
+// (a browser would then rename one and the pair would be lost).
+describe("pairs", () => {
+  it("lists the protocol's pairs in order, keys unique", () => {
+    expect(PAIRS.map((p) => p.key)).toEqual([
+      "1a",
+      "1b",
+      "1c",
+      "2a",
+      "2b",
+      "2c",
+      "2d",
+      "3a",
+      "3b",
+      "3c",
+      "4a",
+      "4b",
+      "4c",
+      "4d",
+      "x",
+    ]);
+    expect(PAIRS[1]).toEqual({ key: "1b", label: "light: dimmed" });
+    expect(PAIRS.at(-1)).toEqual({ key: "x", label: "other" });
+  });
+
+  it("names every file by running number, pair key, spot and label", () => {
+    expect(pairFileNames(pairTag("1b", 2, 3))).toEqual({
+      all: "feature-match-03-1b-s2-light-dimmed.zip",
+      A: "feature-match-03-1b-s2-light-dimmed-frame-a.png",
+      B: "feature-match-03-1b-s2-light-dimmed-frame-b.png",
+      info: "feature-match-03-1b-s2-light-dimmed-frames.json",
+      matches: "feature-match-03-1b-s2-light-dimmed-matches.json",
+    });
+    expect(pairFileNames(pairTag("3b", 1, 12)).all).toBe(
+      "feature-match-12-3b-s1-distance-1-5-m-to-3-m.zip",
+    );
+    expect(pairFileNames(pairTag("2d", 1, 140)).all).toBe(
+      "feature-match-140-2d-s1-rotation-tilted-30-45-deg.zip",
+    );
+  });
+
+  it("gives ASCII names without spaces, unique across running numbers", () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 1, max: 9999 }), {
+          minLength: 2,
+          maxLength: 20,
+        }),
+        fc.constantFrom(...PAIRS.map((p) => p.key)),
+        fc.integer({ min: 1, max: 3 }),
+        (sequences, key, spot) => {
+          const all = sequences.flatMap((n) =>
+            Object.values(pairFileNames(pairTag(key, spot, n))),
+          );
+          expect(new Set(all).size).toBe(all.length);
+          for (const name of all) {
+            expect(name).toMatch(/^feature-match-[a-z0-9.-]+$/);
+            expect(name).not.toMatch(/--/);
+          }
+        },
+      ),
+    );
+  });
+
+  // Why this test matters: inside the zip the entries keep their fixed
+  // names, so a tool reading any zip finds the same entries; the pair's
+  // own download names must never clash with them.
+  it("keeps the pair's names apart from the names inside the zip", () => {
+    const own = Object.values(pairFileNames(pairTag("1a", 1, 1)));
+    for (const inner of Object.values(FRAME_FILES)) {
+      expect(own).not.toContain(inner);
+    }
+  });
+
+  it("refuses an unknown key, a spot outside 1-3 and a bad running number", () => {
+    expect(() => pairTag("9z", 1, 1)).toThrow("unknown pair 9z");
+    expect(() => pairTag("1a", 4, 1)).toThrow("spot");
+    expect(() => pairTag("1a", 1.5, 1)).toThrow("spot");
+    expect(() => pairTag("1a", 1, 0)).toThrow("sequence");
+  });
+
+  it("reads the spot field, any bad value as spot 1", () => {
+    expect(parseSpot("2")).toBe(2);
+    expect(parseSpot("3")).toBe(3);
+    for (const bad of ["", "0", "4", "1.5", "x", "-1"]) {
+      expect(parseSpot(bad)).toBe(1);
+    }
+  });
+
+  // Why this test matters: the selector moves on by itself after each
+  // save, so the next pair is ready without a tap; the light pairs are
+  // repeated at three spots before the rotation pairs start.
+  it("moves on to the next pair; light runs through spots 1-3 first", () => {
+    expect(nextPair("1a", 1)).toEqual({ key: "1b", spot: 1 });
+    expect(nextPair("1c", 1)).toEqual({ key: "1a", spot: 2 });
+    expect(nextPair("1c", 2)).toEqual({ key: "1a", spot: 3 });
+    expect(nextPair("1c", 3)).toEqual({ key: "2a", spot: 1 });
+    expect(nextPair("2d", 1)).toEqual({ key: "3a", spot: 1 });
+    expect(nextPair("4d", 1)).toEqual({ key: "x", spot: 1 });
+    expect(nextPair("x", 2)).toEqual({ key: "x", spot: 2 });
+  });
+
+  it("walks the whole list from 1a spot 1 in 20 steps to other", () => {
+    let at = { key: "1a", spot: 1 };
+    const seen: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      seen.push(`${at.key}-s${String(at.spot)}`);
+      at = nextPair(at.key, at.spot);
+    }
+    expect(seen.slice(0, 10)).toEqual([
+      "1a-s1",
+      "1b-s1",
+      "1c-s1",
+      "1a-s2",
+      "1b-s2",
+      "1c-s2",
+      "1a-s3",
+      "1b-s3",
+      "1c-s3",
+      "2a-s1",
+    ]);
+    expect(seen.at(-1)).toBe("x-s1");
+    expect(new Set(seen).size).toBe(21);
   });
 });

@@ -123,8 +123,9 @@ async function fakeCamera(page, mode = "ok") {
  * then B (which starts the run by itself).
  *
  * @param {import("@playwright/test").Page} page
+ * @param {() => Promise<void>} [afterA] runs between photo A and photo B
  */
-async function takePhotos(page) {
+async function takePhotos(page, afterA = async () => undefined) {
   await expect(page.locator("#capture-a")).toHaveText("Start camera");
   await page.locator("#capture-a").click();
   await expect(page.locator("#capture-a")).toHaveText("Take photo A");
@@ -137,6 +138,7 @@ async function takePhotos(page) {
     "data-state",
     "current",
   );
+  await afterA();
   await page.locator("#capture-b").click();
 }
 
@@ -270,7 +272,9 @@ async function readDownload(download) {
  * is off, and the result picture appears. The saved files are handed over
  * to be checked offline, so they must be exactly the captured pixels,
  * carry nothing but pixels (no EXIF, text or time chunk), and the
- * keypoints and matches must be in the saved frames' own pixels. Nothing
+ * keypoints and matches must be in the saved frames' own pixels. Every
+ * saved file is named by the pair picked before photo A (no written list
+ * of the order is kept), and Download all moves the picker on. Nothing
  * is uploaded: every request leaving the machine is refused.
  */
 test("the feature matching benchmark guides photo A, photo B, an automatic run and the save", async ({
@@ -297,8 +301,17 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   // A second size whose computed frame (480x360) differs from the captured
   // one (320x240), so the saved coordinates show the mapping between them.
   await page.locator('input[name="size"][value="480"]').check();
+  // The pair is picked before photo A and fixed there: changing the
+  // selector between A and B must not relabel the pair in progress.
+  await page.locator("#pair").selectOption("1b");
+  await page.locator("#spot").fill("2");
 
-  await takePhotos(page);
+  await takePhotos(page, async () => {
+    await expect(page.locator("#pair-state")).toHaveText(
+      "now: pair 1, 1b light: dimmed, spot 2",
+    );
+    await page.locator("#pair").selectOption("3a");
+  });
   // The run starts by itself; while it lasts nothing else can start.
   await expect(page.locator("#run")).toHaveText("Running...");
   expect(await stepStates(page)).toEqual(["done", "done", "current", "todo"]);
@@ -352,7 +365,8 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   // One tap saves everything: the zip holds each offered file and the
   // page log, so nothing has to be copied out by hand.
   const zipLink = page.locator("#save-links a").first();
-  await expect(zipLink).toHaveAttribute("download", "feature-match-all.zip");
+  const stem = "feature-match-01-1b-s2-light-dimmed";
+  await expect(zipLink).toHaveAttribute("download", `${stem}.zip`);
   await expect(zipLink).toContainText("Download all (zip)");
   const [zipFile] = await Promise.all([
     page.waitForEvent("download"),
@@ -384,11 +398,12 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "SIFT (plain JS)",
   );
   await reader.close();
+  // After Download all the selector moves on to the next pair, from the
+  // pair in progress (1b), not from what the selector was changed to.
+  await expect(page.locator("#pair")).toHaveValue("1c");
+  await expect(page.locator("#spot")).toHaveValue("2");
 
-  for (const name of [
-    "feature-match-frame-a.png",
-    "feature-match-frame-b.png",
-  ]) {
+  for (const name of [`${stem}-frame-a.png`, `${stem}-frame-b.png`]) {
     const [download] = await Promise.all([
       page.waitForEvent("download"),
       page.locator(`#save-links a[download="${name}"]`).click(),
@@ -412,7 +427,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
 
   const [json] = await Promise.all([
     page.waitForEvent("download"),
-    page.locator('#save-links a[download="feature-match-frames.json"]').click(),
+    page.locator(`#save-links a[download="${stem}-frames.json"]`).click(),
   ]);
   const info = JSON.parse((await readDownload(json)).toString("utf8"));
   expect(Object.keys(info).sort()).toEqual([
@@ -420,6 +435,16 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "device",
     "format",
     "frames",
+    "pair",
+    "pairLabel",
+    "sequence",
+    "spot",
+  ]);
+  expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
+    "1b",
+    "light: dimmed",
+    2,
+    1,
   ]);
   expect(
     info.frames.map((/** @type {{ width: number }} */ f) => f.width),
@@ -427,9 +452,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
 
   const [matchesFile] = await Promise.all([
     page.waitForEvent("download"),
-    page
-      .locator('#save-links a[download="feature-match-matches.json"]')
-      .click(),
+    page.locator(`#save-links a[download="${stem}-matches.json"]`).click(),
   ]);
   const matches = JSON.parse(
     (await readDownload(matchesFile)).toString("utf8"),
