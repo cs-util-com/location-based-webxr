@@ -510,9 +510,7 @@ async function fileKeyOf(file: File, limits: ArchiveLimits): Promise<string> {
         const seriesId = await seriesIdOf(entries, file.size, limits);
         if (seriesId !== null) return tourSeriesFileKey(seriesId);
         const tourId = await tourIdOf(entries, file.size, limits);
-        return tourId === null
-          ? await tourFileKey(entries)
-          : tourIdFileKey(tourId);
+        return tourId === null ? tourFileKey(entries) : tourIdFileKey(tourId);
       },
       limits,
     );
