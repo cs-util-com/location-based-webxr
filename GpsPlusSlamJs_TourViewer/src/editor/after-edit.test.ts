@@ -116,16 +116,16 @@ describe("writeTypedEdit: the steps around one typed edit", () => {
               : ({ kind, reason } as { kind: "refused"; reason: string });
           const result = writeTypedEdit(steps, loggedWrite(log, outcome));
           const head = ["endUndo", "write", "refresh"];
-          if (reason !== undefined) {
-            expect(result).toBe("refused");
-            expect(log).toEqual([...head, `say ${reason}`]);
-          } else if (kind === "unchanged") {
-            expect(result).toBe("written");
-            expect(log).toEqual(head);
-          } else {
-            expect(result).toBe("written");
-            expect(log).toEqual([...head, "changed"]);
-          }
+          const tail =
+            reason !== undefined
+              ? [`say ${reason}`]
+              : kind === "unchanged"
+                ? []
+                : ["changed"];
+          expect({ result, log }).toEqual({
+            result: reason === undefined ? "written" : "refused",
+            log: [...head, ...tail],
+          });
         },
       ),
     );
