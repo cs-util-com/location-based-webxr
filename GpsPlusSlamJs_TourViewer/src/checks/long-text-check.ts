@@ -1,5 +1,5 @@
 /**
- * The reading sheet's check page (`long-text-check.html`): one long text
+ * The reading sheet's check page (`check.html?view=long-text`): one long text
  * open in the production reading sheet (`long-text-sheet.ts`), with no
  * AR session, so the sheet can be put side by side with the narrated-text
  * prototype's sheet and the layout e2e can pin where its parts land.
@@ -14,7 +14,7 @@
  * it, `?voice=stale` one made for other words; both go through the
  * visitor's own narration (`narration-visitor.ts`), with a stand-in clock
  * the page moves by `at(ms)` in place of a sound, and a timing made in
- * the page the way the prototype makes its own. `?view=captions` shows
+ * the page the way the prototype makes its own. `?look=captions` shows
  * the narration box (`narration-box.ts`, through `captions-follow.ts`,
  * with a store of its own slice) in place of the sheet; `?open=0` opens
  * nothing until `show()` (or `follow()` for the box).
@@ -142,7 +142,7 @@ interface LongTextCheck {
   /** The links the sheet opened (only ever after a yes in AR). */
   opened(): readonly string[];
   /** Starts the narration box following the visitor's rule
-   *  (`?view=captions` only; at once unless `?open=0`). */
+   *  (`?look=captions` only; at once unless `?open=0`). */
   follow(): void;
   /** Moves the stand-in clock to `ms` and lets the views follow. */
   at(ms: number): void;
@@ -219,7 +219,7 @@ export function longTextCheckOptions(search: string): LongTextCheckOptions {
     rich: query.get("text") === "rich",
     ar: query.get("ar") === "1",
     voice: voice === "timed" || voice === "stale" ? voice : null,
-    view: query.get("view") === "captions" ? "captions" : "reading",
+    view: query.get("look") === "captions" ? "captions" : "reading",
     open: query.get("open") !== "0",
   };
 }

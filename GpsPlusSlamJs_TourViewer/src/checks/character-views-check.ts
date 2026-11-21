@@ -1,5 +1,5 @@
 /**
- * The character views' check page (`character-views-check.html`): one
+ * The character views' check page (`check.html?view=character-views`): one
  * tour character (the station-blocks-7 prototype's knight) standing in a
  * plain daylight scene like the prototype's, in one of his world views,
  * seen from the visitor's eye. Linked from nothing. For a person, a demo

@@ -325,7 +325,7 @@ const LANDING_STATIC = [
 const LANDING_BUDGET_KB = 74;
 
 /** The visitor's pages (the editor's page is the creator's). */
-const VISITOR_PAGES = ["main", "writeProbe"];
+const VISITOR_PAGES = ["main"];
 
 /** Every module a page can load: its entry chunk and every chunk it
  *  imports, statically or by import(), transitively. */
@@ -372,7 +372,7 @@ function chunkOf(chunks: readonly BuiltChunk[], module: string): BuiltChunk {
 
 /** The pages with a script of their own (`legal.html` has none: it loads
  *  no module at all). */
-const PAGES = ["main", "edit", "writeProbe"];
+const PAGES = ["main", "edit"];
 
 describe("the 3D view's code in the app's bundle", () => {
   let chunks: BuiltChunk[];

@@ -1,5 +1,5 @@
 /**
- * The model views' check page (`model-views-check.html`): one tour model
+ * The model views' check page (`check.html?view=model-views`): one tour model
  * in one world view, with the visitor's notes, card and toy, in a plain
  * daylight scene. Linked from nothing. Two modes, read from the URL
  * (`checkPageMode`): for a person, a demo (the stand-in with its notes,
