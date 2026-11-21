@@ -1,15 +1,14 @@
 /**
- * The desktop editor's page (`/tour/edit.html`, M6 E1, E2a): the
- * composition root. Opens a tour (a file chosen or dropped, or the
- * sample), shows it in the 3D view on the globe - the editor itself
- * (`view3d-opener.ts`; the 3D view's code, `src/editor3d/`, is a dynamic
- * import made only then) - and edits it: undo and redo of every edit
- * (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y; W2), and a Save that downloads the tour
- * to put in place of the old file - or, where the browser allows it
- * (Chromium's file picker, M6 E2b-1), writes the opened file in place - by
- * itself too, a few seconds after a change (M6 E2b-2, `autosave.ts`). The
- * tour's name in the top bar opens its details (W2 of the tour editor
- * plan, `details-dialog.ts`). The top bar's File menu opens, saves, saves
+ * The desktop editor's page (`/tour/edit.html`): the composition root.
+ * Opens a tour (a file chosen or dropped, or the sample), shows it in the
+ * 3D view on the globe - the editor itself (`view3d-opener.ts`; the 3D
+ * view's code, `src/editor3d/`, is a dynamic import made only then) - and
+ * edits it: undo and redo of every edit (Ctrl+Z, Ctrl+Shift+Z, Ctrl+Y),
+ * and a Save that downloads the tour to put in place of the old file - or,
+ * where the browser allows it (Chromium's file picker), writes the opened
+ * file in place - by itself too, a few seconds after a change
+ * (`autosave.ts`). The tour's name in the top bar opens its details
+ * (`details-dialog.ts`). The top bar's File menu opens, saves, saves
  * a copy, adds debug data and "Share and publish…" (it says where the
  * changes are and what is left to do, and moves the walk out,
  * `done-dialog.ts`); its View menu holds the 3D view's commands
@@ -609,10 +608,10 @@ createMenuButton({
   button: element<HTMLButtonElement>("view-menu-btn"),
   menu: element("view-menu"),
 });
-/** The tour's "needs no GPS" setting in Tour details (QR-first M1b-2),
- *  and its warnings' live region: never hidden (an empty one is
- *  zero-height), and its lines replaced only when their words change, so
- *  a refresh does not announce the same warning again. */
+/** The tour's "needs no GPS" setting in Tour details, and its warnings'
+ *  live region: never hidden (an empty one is zero-height), and its lines
+ *  replaced only when their words change, so a refresh does not announce
+ *  the same warning again. */
 const detailsNoGpsInput = element<HTMLInputElement>("details-no-gps");
 const detailsNoGpsLines = createStatusLines(
   element("details-no-gps-warnings"),
@@ -797,15 +796,14 @@ async function savesSettled(): Promise<void> {
   }
 }
 
-/** Edits being made that a save must not cut into (M6 E2b-2, the E2b plan
- *  review #3, #7): a delete's undo while its toast offers it, a gesture of
- *  the 3D view. The delete reaches the file only
- *  once its Undo has lapsed (M4a review #2): an undo after the save that
- *  wrote it still works in this tab (the edit stack), but a draft does not
- *  bring the note back after a closed tab (`editor-draft.ts` places
- *  nothing new). */
+/** Edits being made that a save must not cut into: a delete's undo while
+ *  its toast offers it, a gesture of the 3D view, an inspector field being
+ *  typed in (`shell.dirty`). The delete reaches the file only once its
+ *  Undo has lapsed: an undo after the save that wrote it still works in
+ *  this tab (the edit stack), but a draft does not bring the note back
+ *  after a closed tab (`editor-draft.ts` places nothing new). */
 function editing(): boolean {
-  return undoOffer !== null || ui().gesture !== null;
+  return undoOffer !== null || ui().gesture !== null || shell.dirty();
 }
 
 /** The page saves by itself, a few seconds after a committed change, while
@@ -836,7 +834,8 @@ document.body.dataset["autosave"] = autosave.state();
  * session's outcome kind. `edited()` only follows edits the e2e already
  * made (an async one, or several at once): the refresh and the autosave
  * told, with no Undo offer ended, so it is for setup with no delete toast
- * up, where the two paths do the same. Inert in
+ * up, where the two paths do the same: with one up it throws rather than
+ * diverge from the page. Inert in
  * a production build: `import.meta.env.DEV` is statically false there, so
  * the hook is stripped (`seams.ts`'s guarantee).
  */
@@ -896,6 +895,11 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
       return kind;
     },
     edited: () => {
+      if (undoOffer !== null) {
+        throw new Error(
+          "edited() skips the Undo offer's end: use edit() while a delete toast is up",
+        );
+      }
       refresh();
       tourChanged();
     },
@@ -2607,9 +2611,15 @@ function showModal(on: boolean): void {
   }
 }
 
-/** Leaving would lose edits: changes not saved, or a save not delivered. */
+/** Leaving would lose edits: changes not saved, a save not delivered, or
+ *  an inspector field being typed in (in no tour and no draft yet). */
 function unsavedWork(): boolean {
-  return saving() || undelivered !== null || (editor?.changeCount() ?? 0) > 0;
+  return (
+    saving() ||
+    undelivered !== null ||
+    (editor?.changeCount() ?? 0) > 0 ||
+    shell.dirty()
+  );
 }
 
 /** Set once the page asked before leaving itself (a reload of the
@@ -2789,7 +2799,7 @@ function debugSource(): {
   return {
     source: walk,
     // From the copy the page reads now: the opened file stops reading
-    // once a save rewrote it (as the tour's photos, E2b plan review #2).
+    // once a save rewrote it, as the tour's photos do.
     loadPicture: (image) => (photos.current() ?? walk).loadEntry(image),
     line: null,
   };
@@ -2982,14 +2992,24 @@ const SCAN_NOT_STARTED = "another scan was being added at the same time.";
  * One add of a scan as every caller starts it: refused in words while
  * another add runs, a throw said as a refusal (`addScanSafely`). Null -
  * no tour, or another tour opened meanwhile - says nothing: the scan was
- * never that tour's.
+ * never that tour's. The debug panel's status line stands in the 3D view,
+ * hidden while the view loads or cannot open: an add that lands then is
+ * said in a toast instead.
  */
-function addScan(file: File): Promise<AddScanOutcome | null> {
+async function addScan(file: File): Promise<AddScanOutcome | null> {
   if (debugAdd.busy()) {
-    return Promise.resolve({ kind: "refused", reason: SCAN_NOT_STARTED });
+    return { kind: "refused", reason: SCAN_NOT_STARTED };
   }
-  return addScanSafely(() => addDebugData(file));
+  const outcome = await addScanSafely(() => addDebugData(file));
+  if (outcome?.kind === "added" && !ui().view3dShown) {
+    fileToasts.push(toast(addedOffViewLine(file.name)));
+  }
+  return outcome;
 }
+
+/** What an add says when the 3D view, which draws it, does not show. */
+const addedOffViewLine = (name: string): string =>
+  `Added ${name} as debug data: it shows once the 3D view opens.`;
 
 /** {@link addScan} from its own button or panel: a refusal said in a
  *  toast. */

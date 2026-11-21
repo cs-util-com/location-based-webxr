@@ -18,7 +18,6 @@ import type {
 import {
   authoringObjects,
   deleteObject,
-  moveObjectTo,
   pinTextEdit,
   upsertPlaced,
 } from "./object-edits.js";
@@ -150,44 +149,6 @@ describe("deleteObject", () => {
         },
       ),
     );
-  });
-});
-
-describe("moveObjectTo", () => {
-  it("moves a pin and a photo on the map, keeping height and facing", () => {
-    expect(moveObjectTo(pin("a"), 47.6, 8.8).geo).toEqual({
-      lat: 47.6,
-      lon: 8.8,
-      alt: 400,
-      headingDeg: 30,
-    });
-    // A photo's rotation is a world-frame quaternion: a move of a few
-    // metres keeps its facing (E2 plan review #8).
-    expect(moveObjectTo(photo("p"), 47.6, 8.8).geo).toEqual({
-      lat: 47.6,
-      lon: 8.8,
-      alt: 400,
-      rotation: [0, 0.6, 0, 0.8],
-    });
-  });
-
-  it("refuses a position nobody can draw", () => {
-    expect(() => moveObjectTo(pin("a"), 123, 8.8)).toThrow(/latitude/i);
-    expect(() => moveObjectTo(pin("a"), 47.5, Number.NaN)).toThrow(
-      /longitude/i,
-    );
-    expect(() => moveObjectTo(pin("a"), 47.5, Infinity)).toThrow(/longitude/i);
-  });
-
-  // Why (PR #611 review): the map can pan onto a world copy, where a drag
-  // reports a longitude past 180; that is an ordinary place on the globe,
-  // so it is folded back, not refused.
-  it("folds a longitude from a world copy back onto the globe", () => {
-    expect(moveObjectTo(pin("a"), 47.5, 183.5).geo.lon).toBeCloseTo(-176.5, 9);
-    expect(moveObjectTo(pin("a"), 47.5, -190).geo.lon).toBeCloseTo(170, 9);
-    expect(moveObjectTo(pin("a"), 47.5, 541).geo.lon).toBeCloseTo(-179, 9);
-    expect(moveObjectTo(pin("a"), 47.5, 180).geo.lon).toBe(180);
-    expect(moveObjectTo(pin("a"), 47.5, -180).geo.lon).toBe(-180);
   });
 });
 

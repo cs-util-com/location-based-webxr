@@ -382,6 +382,11 @@ export interface EditorShell {
    *  typed in, a long text's writer before its pause): the page calls it
    *  before a save, which writes the tour as the store holds it. */
   flush(): void;
+  /** Whether an inspector field is being typed in now: it has the focus
+   *  and its text differs from the tour's. Such typing is in no tour and
+   *  no draft until it is left, so the page asks before it is closed and
+   *  holds its autosave while it lasts. */
+  dirty(): boolean;
   /** The scene's ground menu at `point` (px on the 3D canvas), for the
    *  ground's `place` there (null: none has loaded). */
   groundMenu(point: { x: number; y: number }, place: GroundPlace | null): void;
@@ -2853,6 +2858,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       if (pending !== null) commitField(pending, lastSelected);
       panels.flush();
     },
+    dirty: () => typedField() !== null,
     frame(id) {
       flyToSelection(id);
     },

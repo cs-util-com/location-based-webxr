@@ -294,7 +294,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   start card's scan path says it its own way), the layer kept. Every add
   goes through `addScan`: refused in words while another add runs (a file
   dropped on the panel then is said, never dropped silently), and a throw
-  said as a refusal (`addScanSafely`), never an unhandled rejection.
+  said as a refusal (`addScanSafely`), never an unhandled rejection. An
+  add that lands while the 3D view does not show (it loads, or cannot
+  open: the panel and its status line stand in the view and are hidden)
+  is said in a toast, "Added <file> as debug data: it shows once the 3D
+  view opens.", so the creator gets an answer on the cannot-open page too.
   The button reads "Adding the debug data…" and is disabled meanwhile,
   and is idle and enabled again however the add ends
   (`createAddDebugButton`). File's "Add debug data…" (`#file-debug-add`)
@@ -438,8 +442,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   "large tour: saved when you press Save", adding "your changes are kept in
   this browser meanwhile" only when the draft backs up (E2b-2 milestone
   review #3).
-  - **Held** while a delete's Undo is offered or a 3D gesture runs, a
-    save runs, or the open dialog
+  - **Held** while a delete's Undo is offered, a 3D gesture runs, an
+    inspector field is being typed in, a save runs, or the open dialog
     shows or an open is busy (`editing()`, `saving`, `!modal.hidden`,
     `busy`: an autosave landing in the middle of an open moved the NEW
     tour's draft, E2b-2 milestone review #1); the hold's end pokes it
@@ -744,7 +748,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   new copy
   (W2: it said "a new copy" in every browser).
 - **Leaving** with unsaved work asks first (`beforeunload`), and so does
-  File's Open… (`window.confirm`).
+  File's Open… (`window.confirm`). Unsaved work counts an inspector field
+  being typed in (`shell.dirty()`: focused, its text not the tour's),
+  which is in no tour and no draft until it is left; the same typing
+  holds the autosave (`editing()`).
 - **Closing** a tour (another open) closes its session and its 3D view.
 - **The page's store** (`createTourViewerStore()`, built first: the
   library's geo maths - the distance lines - runs only once one exists)
@@ -882,7 +889,8 @@ view3dGizmoSizes(), view3dFolderOutlines(), manifest(), selected(), dropTour(rea
   refresh, a refusal toasted, the autosave told) and answers the session's
   outcome kind; `edited()` only follows edits the e2e made itself (async
   ones, or several at once) with the refresh and the autosave told, and
-  ends no Undo offer, so it is for setup with no delete toast up;
+  ends no Undo offer, so it is for setup with no delete toast up (with
+  one up it throws rather than diverge from the page);
   `view3d()` is the shown 3D view's
   `stats()` (null while it does not show), `view3dTilt(deg)` tilts its camera,
   `view3dDistance(m)` moves it in or out, `view3dHeading(deg)` turns it

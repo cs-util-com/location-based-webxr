@@ -1455,6 +1455,45 @@ describe("drawInspector", () => {
     expect(dock.head.querySelector(".ttl")?.textContent).toBe("Look up");
   });
 
+  // Why: an item's place on site comes from aligning the phone's GPS,
+  // not from a measurement; the creator moving it to the centimetre must
+  // be told how far off a visitor may see it, near a code and away from
+  // one, or they trust a precision the tour cannot give.
+  it("says how precise an item's place is in its position section", () => {
+    const pinAt = (positionOpen: boolean) =>
+      drawInspector(
+        dock,
+        buildInspector({
+          selected: "pin-x",
+          stations: [
+            {
+              ...STATIONS[1],
+              ...stationContent([
+                {
+                  id: "pin-x",
+                  kind: "shortText",
+                  view: "pin",
+                  caption: "Look up",
+                  createdAtIso: AT,
+                  pose: { position: [1, 0, 1], rotation: [0, 0, 0, 1] },
+                },
+              ]),
+            } as unknown as TourStation,
+          ],
+          assets: [],
+          codes: [],
+        }),
+        { folded: false, positionOpen },
+        pictures,
+      );
+    const line =
+      "Placed from GPS alignment: about 0.1-0.7 m near a code, 1-3 m further away.";
+    pinAt(true);
+    expect(dock.body.querySelector(".pos")?.textContent ?? "").toContain(line);
+    pinAt(false);
+    expect(dock.root.textContent ?? "").not.toContain(line);
+  });
+
   // Why: a pin's text is a short text's caption, which the tour file caps
   // at 40 characters; the inspector refuses a longer one at Enter, so the
   // count is shown while typing, tied to the field for a screen reader.

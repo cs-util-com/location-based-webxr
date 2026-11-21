@@ -40,7 +40,6 @@ import {
   manifestNow,
   manifestToWrite,
   objectFits,
-  objectMoveChange,
   picturesNeeded,
   pinTextChange,
   TOUR_HISTORY_LIMIT,
@@ -1390,24 +1389,6 @@ describe("tour document: what an edit would change", () => {
     // A photo has no text to edit.
     expect(pinTextChange(state, "f", "x")).toEqual({ kind: "unchanged" });
     expect(pinTextChange(state, "gone", "x")).toEqual({ kind: "missing" });
-  });
-
-  it("a move on the map: height and facing kept, never too far (the station rule seats it), an unknown id missing", () => {
-    const state = open();
-    const a = objectOf(state, "a");
-    expect(objectMoveChange(state, "a", 48.5205, 9.051)).toEqual({
-      kind: "moved",
-      before: a,
-      after: { ...a, geo: { ...a.geo, lat: 48.5205, lon: 9.051 } },
-    });
-    const far = (TOUR_ITEM_MAX_OFFSET_M * 2) / 111_320;
-    expect(objectMoveChange(state, "a", a.geo.lat + far, 9.05)).toMatchObject({
-      kind: "moved",
-    });
-    expect(objectMoveChange(state, "gone", 48.52, 9.05)).toEqual({
-      kind: "missing",
-    });
-    expect(() => objectMoveChange(state, "a", 91, 9.05)).toThrow(RangeError);
   });
 });
 

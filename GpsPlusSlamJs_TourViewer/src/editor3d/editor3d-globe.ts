@@ -829,6 +829,10 @@ export async function openGlobeEditor(
      *  once per set (a camera the person moved away is not pulled back each
      *  frame, and a tour with stations is not looked at again each frame). */
     let debugFlownTo: DebugLayerState["captures"] | undefined;
+    /** Set by the creator's first press or wheel on the canvas: from then
+     *  on no capture set flies the view, which would take them away from
+     *  what they moved to (a scan still reading, a second add). */
+    let viewMovedByUser = false;
     /** A shown scan's points when the tour has nothing positioned (no
      *  station, no code; a new tour), else none: what the view frames in
      *  the tour's stead. */
@@ -864,7 +868,7 @@ export async function openGlobeEditor(
         debugPoints.length > 0
       ) {
         debugFlownTo = captures;
-        if (scanToFrame().length > 0) frameView(null);
+        if (!viewMovedByUser && scanToFrame().length > 0) frameView(null);
       }
       debugLayer.show(slice?.shown === true);
       if (captures !== null) debugThumbsIn(captures);
@@ -1571,8 +1575,10 @@ export async function openGlobeEditor(
       dust.reset();
     }
     controls.followIntro();
-    /** An input in the 3D view takes the camera where it is. */
+    /** An input in the 3D view takes the camera where it is, and keeps
+     *  capture sets from flying it (`viewMovedByUser`). */
     const takeOver = () => {
+      viewMovedByUser = true;
       approach?.takeOver(performance.now());
     };
     canvas.addEventListener("pointerdown", takeOver, { capture: true });

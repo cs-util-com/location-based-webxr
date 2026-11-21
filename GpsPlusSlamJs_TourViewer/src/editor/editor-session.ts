@@ -100,7 +100,6 @@ import {
   objectAssetsHeld,
   objectFits,
   nextStep,
-  objectMoveChange,
   picturesNeeded,
   folderChains,
   pinTextChange,
@@ -936,17 +935,6 @@ export interface EditorSession {
     id: string,
     shown: boolean,
   ): { kind: "edited" | "unchanged" } | EditorRefusal;
-  /** Move a note on the map (its height and facing kept): it keeps its
-   *  station, in or out of the circle, or changes to `joinStation`, the
-   *  creator's answer (`move-question.ts`). Refused for an id the tour no
-   *  longer carries and a spot its station cannot carry. Throws for a
-   *  position nobody can draw (`moveObjectTo`). */
-  move(
-    id: string,
-    lat: number,
-    lon: number,
-    options?: { readonly joinStation?: string },
-  ): { kind: "moved" } | EditorRefusal;
   /** Delete (undone by `undo`, also after a save wrote it: a photo's
    *  picture is kept for that). Refused, deleting nothing, for an id the
    *  tour no longer carries. */
@@ -2777,23 +2765,6 @@ export function createEditorSession(input: {
         ),
       );
       return applied ? { kind: "edited" } : notApplied;
-    },
-    move(id, lat, lon, { joinStation } = {}) {
-      const state = mine();
-      if (state === null) return notInTour;
-      const change = objectMoveChange(state, id, lat, lon);
-      if (change.kind === "missing") return notInTour;
-      if (!fitsAnswer(state, change.after, joinStation)) {
-        return { kind: "refused", reason: TOO_FAR_FROM_STATION };
-      }
-      store.dispatch(
-        tourDocumentActions.moved({
-          object: change.after,
-          what: `the move of ${objectName(change.before)}`,
-          ...(joinStation === undefined ? {} : { joinStation }),
-        }),
-      );
-      return { kind: "moved" };
     },
     place(object) {
       const state = mine();

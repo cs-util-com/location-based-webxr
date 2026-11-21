@@ -1,6 +1,6 @@
 /**
- * What the desktop editor shows of a tour (M6 E1), page-free: the rail's
- * groups (codes, pins, photos) and the map's marks, built on the summary's
+ * What the desktop editor shows of a tour, page-free: its items (codes,
+ * pins, photos, stations) with their positions, built on the summary's
  * model (`summary-model.ts` `buildSummaryModel`: positions, the codes'
  * labels in the phone's numbering, readable coordinates only) and the one
  * naming rule (`object-describe.ts`). Pure.
@@ -28,8 +28,8 @@ import {
 
 type EditorItemKind = "code" | "pin" | "photo" | "station";
 
-/** One row in the rail and, with a position, one mark on the map. */
-export interface EditorItem {
+/** One item of the tour: a code, a pin, a photo or a station. */
+interface EditorItem {
   readonly id: string;
   readonly kind: EditorItemKind;
   /** "Code 1" / an object's name (`objectTitle`). Text, never
@@ -124,8 +124,9 @@ export function buildEditorModel(input: {
   // list without a mark, so it can still be found (E1 review #9). The
   // summary keeps only the drawable ones.
   const drawable = new Map(summary.objects.map((s) => [s.id, s]));
-  // Pins and photos only: this 2D editor lists no other free block rather
-  // than a mislabelled note; the tour keeps them untouched.
+  // Pins and photos only: this model lists no other free block rather
+  // than a mislabelled note; the tour keeps them untouched (the tree
+  // lists every block).
   const notes: EditorItem[] = objects.flatMap((object): EditorItem[] => {
     if (object.kind !== "shortText" && object.kind !== "picture") return [];
     const mark = drawable.get(object.id);
@@ -185,16 +186,6 @@ export function buildEditorModel(input: {
   };
 }
 
-/** The words a search finds an item by besides its own lines: a pin's
- *  and a photo's are their kind's row's (`KIND_EDIT` `searchWords`, the
- *  3D tree's too: "note", the search box's word for either, among them). */
-const KIND_SEARCH_WORDS = {
-  code: "",
-  pin: KIND_EDIT.shortText.searchWords,
-  photo: KIND_EDIT.picture.searchWords,
-  station: "",
-} as const satisfies { readonly [K in EditorItemKind]: string };
-
 /** A text folded for the search: one Unicode form (NFC), lower case. */
 export function foldForSearch(text: string): string {
   return text.normalize("NFC").toLowerCase();
@@ -202,31 +193,11 @@ export function foldForSearch(text: string): string {
 
 /** Whether `query` (trimmed; case-insensitive and blind to the Unicode
  *  form, so a combining accent matches a precomposed one) is in one of
- *  `texts`; an empty query is in everything. The 2D rail's search, and
- *  the 3D tree's (`editor-shell/tree-model.ts`). */
+ *  `texts`; an empty query is in everything. The tree's search
+ *  (`editor-shell/tree-model.ts`). */
 export function matchesQuery(query: string, texts: readonly string[]): boolean {
   const q = foldForSearch(query.trim());
   return q === "" || texts.some((text) => foldForSearch(text).includes(q));
-}
-
-/** The rail's rows for a search: every item whose title, second line or
- *  kind's words (`KIND_SEARCH_WORDS`) contain `query` (case-insensitive,
- *  trimmed); all for an empty query. */
-export function filterItems(
-  items: readonly EditorItem[],
-  query: string,
-): EditorItem[] {
-  return items.filter((i) =>
-    matchesQuery(query, [i.title, i.meta, KIND_SEARCH_WORDS[i.kind]]),
-  );
-}
-
-/** Where a photo item's bytes are (E1 review #1): its image, a content
- *  path inside the tour's folder (`TourSession.loadContentEntry`); null
- *  without a photo. */
-export function photoSource(item: EditorItem): string | null {
-  if (item.kind !== "photo" || item.image === undefined) return null;
-  return item.image;
 }
 
 /**

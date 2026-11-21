@@ -739,11 +739,7 @@ hosted` for a Finish, `hosted` for the draft), `hostedLevelTexts(state)`
   payload: `edited` with the object to dispatch, `unchanged` (the same
   text, or not a pin), `refused` with the phone's sentence, or `missing`
   for an id the tour does not carry.
-- `objectMoveChange(state, id, lat, lon)` - a move on the map
-  (`moveObjectTo`, height and facing kept): `moved` with the object
-  `before` and `after` (however far: the `moved` action seats it by the
-  station rule), or `missing`; throws for a position nobody can draw.
-  These two (with `detailsChange`) are why a page imports no rule of
+  This (with `detailsChange`) is why a page imports no rule of
   `object-edits.ts` itself (`config/.dependency-cruiser.cjs`).
 - `tourFieldChanges(state)` - `changeCount` less the objects': the moved
   frames, the setting and the detail fields not written yet.
@@ -930,7 +926,7 @@ store.dispatch(tourDocumentActions.undone());
   staying pending, a late save of another open ignored, the rules the
   reducers keep (each confirmed to fail with its guard turned off), a note
   pending after its station moved and it moved back, and what a pin's text
-  and a move on the map would change (`pinTextChange`, `objectMoveChange`).
+  would change (`pinTextChange`).
   "Every object belongs to a station": the found radius itself inside (and
   a micrometre beyond it outside), a station's own radius (5 m and 40 m),
   a tie to the earlier station and two that hold to the nearer, the new

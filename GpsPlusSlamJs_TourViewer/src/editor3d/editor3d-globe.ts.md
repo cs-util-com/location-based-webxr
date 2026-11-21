@@ -330,7 +330,9 @@ The view disposes the run once the arrival is over.
   view to them (`frameView(null)`: their bounding sphere, `aimAt`),
   once per capture set, so a person who looks elsewhere is not pulled
   back each frame (the tour is checked once per shown set too, not each
-  frame). `frame(null)` (the whole tour) fits the scan the same way while
+  frame), and never once the creator pressed or wheeled on the canvas
+  (`viewMovedByUser`, per open): a scan still reading, or a second add,
+  must not fly them away from where they moved. `frame(null)` (the whole tour) fits the scan the same way while
   the tour has nothing positioned (no station, no code); a tour with stations keeps
   framing them. A scan far from the tour frame's centre keeps its place
   on screen (`globe-debug-layer.ts.md`, "Precision").
@@ -434,8 +436,10 @@ see-through), null without buildings.
   drawing drawn again, the line only for added debug data, the switch,
   a clear, thumbnails decoded before the view opened, and a failed copy
   tried again on a later frame and given up after a few; the view flying to a shown scan beside a
-  tour with nothing positioned, once per scan, and `frame(null)` fitting
-  it, while a tour with stations keeps its own framing.
+  tour with nothing positioned, once per scan and never after the
+  creator took the view (a wheel step, then a second add,
+  `editor3d-globe.spec.js`), and `frame(null)` fitting it, while a tour
+  with stations keeps its own framing.
 - `editor3d-globe.test.ts` (jsdom, the wiring): the view core, the
   controls, the relief, the stations layer and the input are fakes; the
   fake view places its camera through the globe's own `viewPoseEcef`, and

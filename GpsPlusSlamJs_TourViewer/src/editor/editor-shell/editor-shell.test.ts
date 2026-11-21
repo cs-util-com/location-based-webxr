@@ -1906,6 +1906,20 @@ describe("a save while typing", () => {
     shell.hide();
   });
 
+  it("says a field is being typed in only while its text differs from the tour's", () => {
+    // Why: the page asks before the tab closes and holds its autosave on
+    // `dirty`; a field merely focused, or typed back to the tour's text,
+    // must not hold a save or ask, and one being typed in must.
+    const { select, shell } = setUp();
+    select("station:a");
+    expect(shell.dirty()).toBe(false);
+    const input = typeInto("description", "By the fountain");
+    expect(shell.dirty()).toBe(true);
+    input.value = input.defaultValue;
+    expect(shell.dirty()).toBe(false);
+    shell.hide();
+  });
+
   it("writes a long text's typing that has not paused yet when the page flushes", () => {
     const { store, select, edits, shell } = setUp();
     store.dispatch(

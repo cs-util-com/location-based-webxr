@@ -22,6 +22,7 @@ import {
   gotoEditor,
 } from "./editor3d-fixture.js";
 import { save } from "./editor-menus.js";
+import { offerOpfsFile, readOpfsTour } from "./editor-tours.js";
 import { useWideFont } from "./wide-font.js";
 import { stationBlocks } from "./tour-fixture.mjs";
 
@@ -313,6 +314,95 @@ test("a station's name, description and radius typed in the inspector are one st
   );
   await act(next, "position").click();
   await expect(field(next, "radius")).toHaveValue("3.5");
+});
+
+/**
+ * Whether the page asks before it is left now: the page's own
+ * `beforeunload` listener run on a cancellable event, without leaving.
+ * @param {import("@playwright/test").Page} page
+ */
+function asksBeforeLeaving(page) {
+  return page.evaluate(() => {
+    const event = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+}
+
+test("typing not yet left in an inspector field asks before the tab closes and holds the autosave", async ({
+  page,
+}) => {
+  // Why: the 3D inspector is the editor's only place to type, and a field
+  // being typed in is in no tour and no draft until it is left. Closing
+  // the tab mid-typing, with no other change, lost the words without a
+  // question; and an autosave falling due mid-typing wrote the tour
+  // without them and said it was saved.
+  test.slow();
+  // A long delay, so the typing below surely starts before the save is
+  // due, however slow the runner.
+  await page.addInitScript(() => {
+    /** @type {any} */ (window).__tourEditorAutosave = {
+      delayMs: 10_000,
+      maxWaitMs: 3_600_000,
+    };
+  });
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await gotoEditor(page);
+  await expect(page.locator("body")).toHaveAttribute("data-editor", "ready");
+  await offerOpfsFile(page, await twoPinTour(), "two-pins.zip");
+  await page.locator(".start-choice:has(#start-tour)").click();
+  await page.locator("#choose-btn").click();
+  await page.locator("#start-open").click();
+  await expect(page.locator("body")).toHaveAttribute("data-view", "3d", {
+    timeout: 60_000,
+  });
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "idle");
+  await selectStation(page, "a");
+  const start = await revision(page);
+
+  // Typing alone, nothing committed: leaving asks. Escape puts the
+  // tour's value back, and then nothing is left to lose.
+  expect(await asksBeforeLeaving(page)).toBe(false);
+  await field(page, "title").fill("Market gate");
+  expect(await asksBeforeLeaving(page)).toBe(true);
+  expect(await revision(page)).toBe(start);
+  await field(page, "title").press("Escape");
+  expect(await asksBeforeLeaving(page)).toBe(false);
+
+  // A committed name, then a description being typed when the save falls
+  // due: the save waits for it.
+  await field(page, "title").fill("Market gate");
+  await field(page, "title").press("Enter");
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-autosave",
+    "waiting",
+  );
+  await field(page, "description").fill("Where the market");
+  await expect(page.locator("body")).toHaveAttribute("data-autosave", "held", {
+    timeout: 30_000,
+  });
+  expect((await readOpfsTour(page, "two-pins.zip"))["tour.json"]).not.toContain(
+    "Market gate",
+  );
+  // Leaving the field ends the hold: one save writes both.
+  await field(page, "description").press("Tab");
+  await expect(page.locator("#save-status")).toHaveText(
+    "Saved to two-pins.zip",
+    { timeout: 30_000 },
+  );
+  const saved = (await readOpfsTour(page, "two-pins.zip"))["tour.json"];
+  expect(saved).toContain("Market gate");
+  expect(saved).toContain("Where the market");
+
+  // The real close, mid-typing with everything else saved: the browser
+  // asks.
+  await field(page, "title").fill("Not left yet");
+  const asked = page.waitForEvent("dialog");
+  await page.close({ runBeforeUnload: true });
+  const dialog = await asked;
+  expect(dialog.type()).toBe("beforeunload");
+  await dialog.accept();
 });
 
 test("a station's Name and Description are labelled fields: the description grows, each is its own undo step and change, kept over a reload by the draft, saved and opened again", async ({

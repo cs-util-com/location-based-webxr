@@ -186,6 +186,11 @@ function headingText(deg: number | null): string {
   return deg === null ? "-" : fixed(deg, 1);
 }
 
+/** How far off a visitor may see an item: its place on site comes from
+ *  aligning the phone's GPS, both figures. */
+const PRECISION_LINE =
+  "Placed from GPS alignment: about 0.1-0.7 m near a code, 1-3 m further away.";
+
 /** The folded position's one-line summary. */
 function positionSummary(p: InspectorPosition): string {
   const heading =
@@ -1245,6 +1250,7 @@ function itemParts(
             ? "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor; the heading relative to the station."
             : "Metres east / north of its station's anchor, in the station's frame; the height up from the anchor. It faces the visitor, so it has no heading.",
         ),
+        el("div", "note", PRECISION_LINE),
       ],
     ),
   );

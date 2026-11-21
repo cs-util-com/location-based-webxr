@@ -14,11 +14,10 @@ a line naming the selection's handles (`inspectorHint`); for a selected
 folder a line over the 3D view (`#shell-scene-hint`, `sceneHint`) names
 it and says its items move, turn and scale together. The panel takes
 its keys from the shell's key handler (Ctrl+J, Ctrl+Shift+M, Escape inside
-it), its Escape going no further. The page's own controls (the File menu, the
-view switch, Show debug data, the save status and the unsaved mark) stay
-the page's and keep their logic; the shell's stylesheet
-(`editor-shell.css`) dresses the menus in both views and the rest while
-the 3D view shows.
+it), its Escape going no further. The page's own controls (the File menu, Show
+debug data, the save status and the unsaved mark) stay the page's and
+keep their logic; the shell's stylesheet (`editor-shell.css`) dresses
+the menus always and the rest while the 3D view shows.
 
 The tree's head holds a search field (`#tree-search`, the page's, never
 redrawn: each letter typed draws the tree again for it, Escape empties it
@@ -254,6 +253,10 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
 - `EditorShell.flush()` - writes the typing not yet in the tour (an
   inspector field being typed in, a long text's writer before its
   pause); the page calls it before a save.
+- `EditorShell.dirty()` - whether an inspector field is being typed in
+  (focused, its text not the tour's): the page's leave prompt and its
+  autosave hold read it. A long text's writer is not counted: it writes
+  its typing itself after a pause of `WRITER_SAVE_MS`.
 - `ShellView` - the 3D view's commands it drives (`flyTo`, `frame`,
   `setTop`, `zoom`, `northUp`, `readout`, `setLayers`, `centre` for "+",
   `turn` for Align to station and a typed heading, `groundAt` and
@@ -566,7 +569,7 @@ const shell = createEditorShell({
   },
   say: (text) => toast(text),
 });
-// the view switch's onShown:
+// the 3D view opener's onShown (view3d-opener.ts):
 if (on && shown3d !== null) shell.show(shown3d);
 else shell.hide();
 ```
