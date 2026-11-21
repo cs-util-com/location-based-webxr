@@ -448,12 +448,16 @@ describe('the pixel cap measures what three.js loads', () => {
     });
   });
 
+  // The binary chunk holds a readable 4 x 4 header at the same range, so
+  // a check that fell back to the chunk for an unreadable URI would pass.
   it('refuses an image in a data: buffer that does not decode strictly', () => {
     const uri = bufferUri(pngHeader(4, 4));
     const comma = uri.indexOf(',') + 1;
     const spaced = uri.slice(0, comma + 8) + ' ' + uri.slice(comma + 8);
+    const decoy = new Uint8Array(24);
+    decoy.set(pngHeader(4, 4));
     expect(
-      checkGlbInert(viewImageGlb([{ byteLength: 24, uri: spaced }], 0, null))
+      checkGlbInert(viewImageGlb([{ byteLength: 24, uri: spaced }], 0, decoy))
     ).toEqual({
       ok: false,
       reason: expect.stringMatching(/image 0 cannot be found/),
@@ -489,6 +493,108 @@ describe('the pixel cap measures what three.js loads', () => {
       ok: false,
       reason: 'a buffer points outside the file',
     });
+  });
+});
+
+/** A model whose one mesh draws from buffer view 0, with `fields` laid
+ *  over its JSON. */
+function meshGlb(fields: Record<string, unknown>): Uint8Array {
+  return withChunks(
+    glb({
+      asset: { version: '2.0' },
+      buffers: [{ byteLength: 12 }],
+      bufferViews: [{ buffer: 0, byteOffset: 0, byteLength: 12 }],
+      accessors: [
+        { bufferView: 0, componentType: 5126, count: 1, type: 'VEC3' },
+      ],
+      meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }],
+      ...fields,
+    }),
+    [{ type: BIN_CHUNK, data: new Uint8Array(12) }]
+  );
+}
+
+/**
+ * Why these tests matter: three.js's GLTFLoader reads `json.buffers[i]`,
+ * `json.bufferViews[i]` and the like by key, whatever their type, and
+ * loads a buffer for any key a view names. An object in place of a list,
+ * or a view naming its buffer by a string, so reached a buffer the check
+ * never looked at: a `buffers` object holding an http URI made every open
+ * of the tour fetch it, and `buffer: "0"` (which is not buffer 0 to
+ * three's `=== 0`) made it fetch the page.
+ */
+describe('checkGlbInert - lists and references as three.js reads them', () => {
+  it('accepts the plain model these tests vary', () => {
+    expect(checkGlbInert(meshGlb({}))).toEqual({ ok: true });
+  });
+
+  it('refuses a buffer, view, accessor or image list that is not a list', () => {
+    const beacon = {
+      0: { uri: 'https://beacon.example/x', byteLength: 12 },
+    };
+    expect(checkGlbInert(meshGlb({ buffers: beacon }))).toEqual({
+      ok: false,
+      reason: '"buffers" is not a list',
+    });
+    for (const key of ['bufferViews', 'accessors', 'images']) {
+      expect(checkGlbInert(meshGlb({ [key]: { 0: {} } })), key).toEqual({
+        ok: false,
+        reason: `"${key}" is not a list`,
+      });
+    }
+  });
+
+  it('refuses a view whose buffer is not a whole number', () => {
+    for (const buffer of ['0', 'length', 'constructor', 0.5, -1, null]) {
+      const check = checkGlbInert(
+        meshGlb({ bufferViews: [{ buffer, byteOffset: 0, byteLength: 12 }] })
+      );
+      expect(check, String(buffer)).toEqual({
+        ok: false,
+        reason: 'a buffer view names no buffer of the file',
+      });
+    }
+  });
+
+  // three.js's meshopt plugin loads the buffer its extension names before
+  // it looks for a decoder, and whether or not the extension is declared.
+  it('refuses a view extension naming a buffer by anything but a whole number', () => {
+    const viewWith = (buffer: unknown) =>
+      meshGlb({
+        bufferViews: [
+          {
+            buffer: 0,
+            byteOffset: 0,
+            byteLength: 12,
+            extensions: { KHR_meshopt_compression: { buffer } },
+          },
+        ],
+      });
+    expect(checkGlbInert(viewWith(0))).toEqual({ ok: true });
+    for (const buffer of ['0', 'length', null]) {
+      expect(checkGlbInert(viewWith(buffer)), String(buffer)).toEqual({
+        ok: false,
+        reason: 'a buffer view names no buffer of the file',
+      });
+    }
+  });
+
+  // three.js takes a URI as data only when it matches /^data:.*,.*$/; any
+  // other is resolved against the loader's path and fetched.
+  it('refuses a data: URI three.js would not read as data', () => {
+    for (const uri of ['data:x', 'data:\n,AAAA', 'data:;base64,AA\nAA']) {
+      expect(
+        checkGlbInert(glb({ asset: { version: '2.0' }, buffers: [{ uri }] })),
+        JSON.stringify(uri)
+      ).toEqual({ ok: false, reason: 'a buffer points outside the file' });
+      expect(
+        checkGlbInert(glb({ asset: { version: '2.0' }, images: [{ uri }] })),
+        JSON.stringify(uri)
+      ).toEqual({
+        ok: false,
+        reason: expect.stringMatching(/image points outside the file/),
+      });
+    }
   });
 });
 

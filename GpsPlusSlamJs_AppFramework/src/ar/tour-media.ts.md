@@ -40,13 +40,25 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 ## Invariants
 
 - A `.glb` is inert when it is glTF 2.0 binary, every `buffers[].uri` and
-  `images[].uri` is absent or a `data:` URI - never a relative path or an
-  http URL the page would fetch - and it uses none of
+  `images[].uri` is absent or a `data:` URI three.js reads as data (it
+  must match `/^data:.*,.*$/`, three's own test: a comma, no line break;
+  any other is resolved against the loader's path and fetched) - never a
+  relative path or an http URL the page would fetch - and it uses none of
   the extensions that need a decoder from outside (`KHR_draco_mesh_compression`,
   `EXT_meshopt_compression`, `KHR_meshopt_compression`, `KHR_texture_basisu`).
   Only buffer 0 may leave out its `uri` (it is then the binary chunk):
   three.js resolves a later buffer without one to the empty URL and
   fetches the page itself, so such a buffer is refused.
+- **Lists and references are read as three.js reads them.** three reads
+  `json.buffers[i]`, `json.bufferViews[i]` and the like by key, so
+  `buffers`, `bufferViews`, `accessors` and `images` must each be a list
+  when present: an object `buffers` with an http URI under key `0` passed
+  the check and made every open of the tour fetch it. Every buffer view's
+  `buffer`, and the `buffer` of any of its extensions, must be a whole
+  number of at least 0: `"0"` is not buffer 0 to three's `=== 0`, so it
+  is fetched as the page itself, and the meshopt plugin loads the buffer
+  its extension names before it looks for a decoder, declared or not.
+  Behaviour checked in three 0.170.0, 0.180.0 and 0.185.1.
 - **The chunk structure is exactly what the format allows** (K0 milestone
   review R8): one JSON chunk, an optional binary chunk, then the end, with
   the header's length equal to the data's. three.js's loader walks EVERY
@@ -91,12 +103,18 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 
 `tour-media.test.ts`: the pixel cap and its sweep, a model's images in
 the binary chunk and as `data:` URIs, an unmeasurable or unfindable image,
-a set cap (R2); an image `data:` URI read as strict base64 only (spaced
+a set cap; an image `data:` URI read as strict base64 only (spaced
 or unpadded refused); the pixel cap measuring what three.js loads (buffer
 0 from its `data:` URI rather than the binary chunk, an image in a later
 `data:` buffer, a buffer that does not decode strictly, a `bufferView`
 preferred over a `uri` beside it, a later buffer without a `uri`
-refused); the allowlist's members, that no type able to carry
+refused; the binary chunk holding a readable header beside an unreadable
+`data:` buffer, so no fallback to the chunk); lists and references as
+three.js reads them (an object in place of `buffers`, `bufferViews`,
+`accessors` or `images` refused; a view whose `buffer`, or whose
+extension's `buffer`, is `"0"`, `"length"`, `"constructor"`, fractional,
+negative or null refused; `data:x` and a line break before or after the
+comma refused for buffers and images); the allowlist's members, that no type able to carry
 script or markup is admitted, exact matching, entry names, a never-throws
 property; `.glb` inertness with built binaries (binary chunk and `data:`
 accepted; http, relative and protocol-relative URIs refused for buffers and

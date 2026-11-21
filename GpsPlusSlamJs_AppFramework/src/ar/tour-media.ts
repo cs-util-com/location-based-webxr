@@ -118,20 +118,70 @@ export function checkImageWithinCap(
   return { ok: true };
 }
 
+/** The URIs three.js reads as data rather than resolving them against
+ *  its path and fetching them (`LoaderUtils.resolveURL`, three 0.170 to
+ *  0.185): a comma is required and `.` matches no line break. */
+const DATA_URI = /^data:.*,.*$/;
+
+/** Why one of the lists three.js reads by key is not a list, or null.
+ *  three reads `json.buffers[0]` from an object as readily as from an
+ *  array, so an object would hide its entries from every check here. */
+function listsProblem(json: Record<string, unknown>): string | null {
+  for (const key of ['buffers', 'bufferViews', 'accessors', 'images']) {
+    const value = json[key];
+    if (value !== undefined && !Array.isArray(value)) {
+      return `"${key}" is not a list`;
+    }
+  }
+  return null;
+}
+
 /** Why a buffer or image would make three.js fetch from outside the file,
  *  or null. Only buffer 0 may leave out its `uri` (it is then the binary
  *  chunk); three.js resolves a later buffer without one to the empty URL
- *  and fetches the page itself. */
+ *  and fetches the page itself. `value` is a list or undefined. */
 function uriProblem(owner: string, value: unknown): string | null {
   if (!Array.isArray(value)) return null;
   for (const [i, item] of value.entries()) {
     const uri = (item as { uri?: unknown } | null)?.uri;
     if (uri === undefined && (owner === 'image' || i === 0)) continue;
-    if (typeof uri !== 'string' || !uri.startsWith('data:')) {
+    if (typeof uri !== 'string' || !DATA_URI.test(uri)) {
       return `a ${owner} points outside the file`;
     }
   }
   return null;
+}
+
+const isIndex = (value: unknown): boolean =>
+  Number.isSafeInteger(value) && (value as number) >= 0;
+
+/** Why a buffer view would make three.js load a buffer by a key that is no
+ *  index (`"0"` is not buffer 0 to its `=== 0`, so it fetches the page),
+ *  or null. Its `buffer` and every extension's `buffer` are checked: the
+ *  meshopt plugin loads the buffer its extension names before it looks
+ *  for a decoder, declared or not. */
+function viewsProblem(views: unknown): string | null {
+  if (!Array.isArray(views)) return null;
+  for (const item of views) {
+    const view = item as { buffer?: unknown; extensions?: unknown } | null;
+    if (![view?.buffer, ...extensionBuffers(view?.extensions)].every(isIndex)) {
+      return 'a buffer view names no buffer of the file';
+    }
+  }
+  return null;
+}
+
+/** The `buffer` of every extension object in `extensions` that has one. */
+function extensionBuffers(extensions: unknown): unknown[] {
+  if (typeof extensions !== 'object' || extensions === null) return [];
+  return Object.values(extensions)
+    .filter(
+      (extension): extension is { buffer?: unknown } =>
+        typeof extension === 'object' &&
+        extension !== null &&
+        'buffer' in extension
+    )
+    .map((extension) => extension.buffer);
 }
 
 function extensionProblem(json: Record<string, unknown>): string | null {
@@ -165,7 +215,9 @@ export function checkGlbInert(
   if (!chunks.ok) return { ok: false, reason: chunks.reason };
   const { json, bin } = chunks;
   const problem =
+    listsProblem(json) ??
     uriProblem('buffer', json['buffers']) ??
+    viewsProblem(json['bufferViews']) ??
     uriProblem('image', json['images']) ??
     extensionProblem(json) ??
     imagesProblem(

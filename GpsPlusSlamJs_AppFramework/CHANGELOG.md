@@ -243,6 +243,13 @@
   that the phone then decoded (about 1 GiB), past the pixel cap. A buffer
   after the first without a `uri` is now refused: three.js fetches the
   page itself for it.
+- **`checkGlbInert` reads a model's lists and buffer names as three.js
+  does** (`ar/tour-media`). `buffers`, `bufferViews`, `accessors` and
+  `images` must be lists: an object `buffers` holding an http URI under
+  key `0` passed, and three.js fetched it on every open. A buffer view's
+  `buffer`, and any of its extensions' `buffer` (meshopt), must be a
+  whole number; `"0"` made three.js fetch the page. A `data:` URI needs
+  the comma three.js's own test requires, or it is resolved and fetched.
 - A creator's draft record of a narrated long text reads again
   (`parseTourObject`).
 
