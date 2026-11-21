@@ -136,6 +136,11 @@ export interface ArchiveOpen {
     file: File,
     origin?: "host-step" | "measure-step",
   ) => Promise<OpenOutcome>;
+  /** True while an open runs, from its first step until it settles.
+   *  `ctx.session` stays null across the open's awaits, so "is a tour
+   *  open?" reads this too: "start on this phone" must not open the empty
+   *  starter over a tour being opened. */
+  isOpening: () => boolean;
 }
 
 export function wireArchiveOpen(deps: {
@@ -826,6 +831,7 @@ export function wireArchiveOpen(deps: {
       return outcome;
     },
     openFile: (file, origin) => openTour({ kind: "file", file }, origin),
+    isOpening: () => opening,
     boot: async () => {
       const payload = new URLSearchParams(location.search).get("qr");
       if (payload === null) return;

@@ -1526,7 +1526,8 @@ if (mode === "creator") {
       pack: () => packNewTour(),
       save: (blob, name) => seams.downloadZip(blob, name),
       open: (file) => archive.openFile(file, "measure-step"),
-      tourOpen: () => ctx.session !== null,
+      // An open in flight counts: its session is set only once it opened.
+      tourOpen: () => ctx.session !== null || archive.isOpening(),
     },
   });
 }

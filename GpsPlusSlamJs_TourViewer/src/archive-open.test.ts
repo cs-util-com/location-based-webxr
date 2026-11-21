@@ -354,3 +354,49 @@ describe("opening another tour asks first while the creator's file is unsaved (U
     expect(dom.openButton.disabled).toBe(false);
   });
 });
+
+describe("isOpening reports an open still in flight", () => {
+  // Why: `ctx.session` stays null across an open's teardown and session
+  // awaits, so "is a tour open?" read from the session alone misses an
+  // open in flight. "Start on this phone now" tapped then would save the
+  // empty starter and open it over the tour being opened, which returns
+  // superseded: the creator lands on the empty tour. The surface's
+  // `isOpening` is what the start question reads besides the session.
+  it("is true from the open's start until it settles, while no session is set", async () => {
+    const ctx = createTourViewerSession();
+    const dom = {
+      form: el(),
+      linkInput: el(),
+      openButton: el(),
+      openFileButton: el(),
+      fileInput: el(),
+      fileAdvice: el(),
+      openFileAdviceButton: el(),
+      fileStatus: el(),
+      tourTrust: el(),
+      statsPanel: el(),
+      statsHeadline: el(),
+      statsDetail: el(),
+      errorBox: el(),
+      linkStatus: el(),
+      gallery: el(),
+      storagePanel: el(),
+      clearCacheButton: el(),
+    };
+    const archive = wireArchiveOpen({
+      ctx,
+      dom: dom as unknown as ArchiveOpenDom,
+      cacheStore: undefined,
+      corsProxyBaseUrl: "https://proxy.test",
+      hooks: createUnwiredHooks(),
+      mode: "creator",
+    });
+    expect(archive.isOpening()).toBe(false);
+    const open = archive.openLink("https://example.com/a-tour.zip");
+    expect(ctx.session).toBeNull();
+    expect(archive.isOpening()).toBe(true);
+    // The mocked `openTourSession` rejects: the open settles as failed.
+    expect((await open).kind).toBe("failed");
+    expect(archive.isOpening()).toBe(false);
+  });
+});

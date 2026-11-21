@@ -86,6 +86,12 @@ DOM glue, its own module since the flows plan M6.
       saved through it too, with `origin` `measure-step` so the creator goes
       on in step 5 (`start-question.ts`). Both resolve the `OpenOutcome`, so the box can ask its question
       only once the tour is really open.
+  - `ArchiveOpen.isOpening()` - true while an open runs, from its first
+    step until it settles (the same flag scan-to-open reads). `ctx.session`
+    stays null across an open's awaits, so the start question's
+    `tourOpen` reads both: "start on this phone" tapped during a link open
+    would otherwise open the empty starter over it
+    (`archive-open.test.ts`, "isOpening reports an open still in flight").
   - `ArchiveOpen.scanOpen` - step 4's scan-to-open (`scan-open.ts`)
     over this open path: it writes the link of record, opens with origin
     `measure-step`, and re-renders the creator panel when it settles.
