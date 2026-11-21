@@ -250,7 +250,7 @@ describe("mountGlobeViewAir", () => {
   // nearly half its light between 80 and 40 km (measured on the editor,
   // luma 60 to 35): with the depth of the clouds its rays end at the relief
   // and it stays, as in the lab.
-  it("fades the veil with its sky on the old clouds, as they always did", () => {
+  it("fades the veil with its sky under the clouds, as it always did", () => {
     const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
     const air = mountGlobeViewAir(fakeView(2), {
       coarsePointer: false,
@@ -260,59 +260,11 @@ describe("mountGlobeViewAir", () => {
           step: () => undefined,
           render: () => undefined,
           sceneDepth: () => null,
-          nearLive: () => false,
-          nearAir: () => 0,
         }) as unknown as GlobeViewClouds,
     });
     air.step();
     air.afterScene();
     expect(fakes.renders[0]).toMatchObject({ groundShare: 0 });
-  });
-
-  it("keeps the veil over the ground, ending at the clouds' depth", () => {
-    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
-    const depth = { fresh: true } as unknown as GlobeSceneDepth;
-    const air = mountGlobeViewAir(fakeView(2), {
-      coarsePointer: false,
-      drawers: () => fakes.drawers,
-      clouds: () =>
-        ({
-          step: () => undefined,
-          render: () => undefined,
-          sceneDepth: () => depth,
-          nearLive: () => true,
-          nearAir: () => 0,
-        }) as unknown as GlobeViewClouds,
-    });
-    air.step();
-    air.afterScene();
-    expect(fakes.renders[0]).toMatchObject({
-      skyShare: 0,
-      groundShare: 1,
-      sceneDepth: depth,
-      sceneDepthWeight: 1,
-    });
-  });
-
-  // Why this test matters: the near clouds' air stands in for the veil, by
-  // the share they drew: told nothing, the air is counted twice.
-  it("tells the air the near clouds' share", () => {
-    const fakes = fakeDrawers({ weight: 1, exposure: 3.5 });
-    const air = mountGlobeViewAir(fakeView(2), {
-      coarsePointer: false,
-      drawers: () => fakes.drawers,
-      clouds: () =>
-        ({
-          step: () => undefined,
-          render: () => undefined,
-          sceneDepth: () => null,
-          nearLive: () => true,
-          nearAir: () => 0.5,
-        }) as unknown as GlobeViewClouds,
-    });
-    air.step();
-    air.afterScene();
-    expect(fakes.renders[0]).toMatchObject({ groundShare: 0.5 });
   });
 
   // Why: the space pass's march is the expensive part; a touch screen gets
@@ -406,15 +358,12 @@ describe("mountGlobeViewAir", () => {
           render: ({ weight }) => fakes.log.push("clouds " + String(weight)),
           sceneDepth: () => ({ fresh: false }) as unknown as GlobeSceneDepth,
           setOn: (on) => fakes.log.push(on ? "clouds on" : "clouds off"),
-          nearLive: () => false,
-          nearAir: () => 0,
           state: () => ({
             on: true,
             flat: 0.25,
             shellOn: true,
             shellShadow: 0.3,
             surfaceShadow: 0,
-            near: null,
           }),
           shell: () => ({ drawn: 1, share: 1, weight: 0, slabWeight: 1 }),
           dispose: () => fakes.log.push("dispose clouds"),
@@ -442,7 +391,6 @@ describe("mountGlobeViewAir", () => {
     // The plan and the shell's counters are the clouds' own, handed on.
     expect(air.state().clouds).toEqual({
       on: true,
-      near: null,
       flat: 0.25,
       shellOn: true,
       shellShadow: 0.3,

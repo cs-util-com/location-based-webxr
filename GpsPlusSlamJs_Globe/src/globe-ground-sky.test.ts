@@ -66,7 +66,7 @@ const FRAME = {
   widthKm: 40,
   stepPct: 5,
   spaceExposure: 5,
-  nearLook: true,
+  groundLook: true,
 };
 
 describe("createGlobeGroundSky", () => {
@@ -227,15 +227,15 @@ describe("createGlobeGroundSky", () => {
     expect(sky.sunOnGround().scale).toBeGreaterThan(before);
   });
 
-  // Why this test matters: the old clouds are the editor's default look
-  // (the near clouds are experimental, `?clouds=new`), so neither the
-  // light nor the camera may change under them.
-  it("leaves the old clouds' sun and camera as they were", () => {
+  // Why this test matters: the default clouds are the editor's look (the
+  // ground look is only the lab's `atmoGround` knob), so neither the light
+  // nor the camera may change under them.
+  it("leaves the sun and camera as they were without the ground look", () => {
     const r = (3 * Math.PI) / 180;
     const sky = createGlobeGroundSky(fakeRenderer(true).renderer);
     sky.update({
       ...FRAME,
-      nearLook: false,
+      groundLook: false,
       altitudeKm: 10,
       sunWorld: new THREE.Vector3(Math.cos(r), Math.sin(r), 0),
     });
