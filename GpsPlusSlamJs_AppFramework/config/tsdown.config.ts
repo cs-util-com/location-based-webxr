@@ -20,6 +20,9 @@ const entryFiles = [
   // ar/
   'src/ar/index.ts',
   'src/ar/ar-crash-isolation.ts',
+  // Subtree visibility predicate for content anchors - deep-imported by the
+  // anchor layer's consumers, so it must be built per-file.
+  'src/ar/anchor-visibility.ts',
   // Shared scene-graph builder for live AR and replay. Both `webxr-session.ts`
   // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`
   // exports wildcard advertises the subpath, so it must be built per-file.
