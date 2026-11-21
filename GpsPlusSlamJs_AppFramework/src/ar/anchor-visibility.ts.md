@@ -219,3 +219,4 @@ renderer.setAnimationLoop((time) => {
   0.006-0.008 ms, fresh 400 parts in two views 4.1-4.4 ms, cached with a
   64-bone skinned part 0.013-0.016 ms. A phone is several times slower, so a
   fresh traversal of a large subtree belongs at the 1 s refresh, not per frame.
+  A CI runner measured the fresh traversal at 28.7 ms.

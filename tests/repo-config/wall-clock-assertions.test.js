@@ -71,7 +71,7 @@ const ALLOWLIST = new Map([
   ],
   [
     'GpsPlusSlamJs_AppFramework/src/ar/anchor-visibility.perf.test.ts',
-    'Best-of-15 ceilings, measured under about 75 % CPU load: cached test 1 ms vs 0.006-0.008 ms and a 64-bone skinned part 2 ms vs 0.013-0.016 ms (>100x); a fresh 400-part traversal 20 ms vs 4.1-4.4 ms (~4.5x, the thinnest). Minimum-of-N is load-robust, and the operation counts are asserted without a clock.',
+    'Best-of-15 ceilings, measured under about 75 % CPU load: cached test 1 ms vs 0.006-0.008 ms and a 64-bone skinned part 2 ms vs 0.013-0.016 ms (>100x); a fresh 400-part traversal 150 ms vs 28.7 ms on a CI runner (~5x, the thinnest; 4.1-4.4 ms on the desktop). Minimum-of-N is load-robust, and the operation counts are asserted without a clock.',
   ],
   [
     'GpsPlusSlamJs_AppFramework/src/ar/occupancy-grid.perf.test.ts',
