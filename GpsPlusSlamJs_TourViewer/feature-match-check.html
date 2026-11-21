@@ -217,6 +217,18 @@
       textarea {
         height: 30vh;
       }
+      .pick {
+        flex: 1 1 12rem;
+        min-width: 0;
+        max-width: 100%;
+        margin-right: 0;
+      }
+      .pick select {
+        flex: 1;
+        min-width: 0;
+        max-width: 100%;
+        min-height: 44px;
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -246,7 +258,7 @@
             </h2>
             <p class="hint">Pick the pair, then take photo A.</p>
             <div class="row">
-              <label
+              <label class="pick"
                 >Pair
                 <select id="pair"></select>
               </label>
