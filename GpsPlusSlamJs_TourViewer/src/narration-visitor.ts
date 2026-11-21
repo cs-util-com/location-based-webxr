@@ -22,6 +22,7 @@ import type { SheetNarration } from "./long-text-sheet.js";
 import type { NarrationBoxContent, NarrationSpeaker } from "./narration-box.js";
 import {
   createNarrationPlayer,
+  type NarrationClock,
   type NarrationPlayer,
   type NarrationPlayerDeps,
 } from "./narration-player.js";
@@ -83,7 +84,7 @@ export interface NarrationVisitor {
   captions(block: TourLongTextBlock): NarrationBoxContent | null;
   /** The voice the sheet or the box already made for `block`, or null:
    *  never makes one, so a frame may ask for every sign. */
-  voiceOf(block: TourBlock): FocusedPlayer | null;
+  voiceOf(block: TourBlock): NarrationClock | null;
   /** Pauses every voice (the visitor left the station, or the AR ended).
    *  With `stationId`, those wanted now carry on at its `carryOn`. */
   pauseAll(stationId?: string): void;
