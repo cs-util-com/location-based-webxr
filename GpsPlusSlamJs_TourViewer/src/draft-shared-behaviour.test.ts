@@ -41,7 +41,8 @@ import { objectContentKey } from "./authoring-draft.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
 import { createEditorDraft } from "./editor/editor-draft.js";
 import { createEditorSession } from "./editor/editor-session.js";
-import type { ObjectListHandlers } from "./object-list.js";
+import { NOT_BACKED_UP } from "./object-editing.js";
+import type { ObjectListHandlers, ObjectListModel } from "./object-list.js";
 import { openTourFile } from "./tour-session.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import {
@@ -332,14 +333,19 @@ function phoneElement() {
     bind(bound: ObjectListHandlers) {
       this.listHandlers = bound;
     },
-    render: () => undefined,
+    /** The object list's last note: a row's outcome. */
+    note: "",
+    render(model: ObjectListModel) {
+      this.note = model.note;
+    },
   };
 }
 
-/** The phone's words for a device keeping no backup copy. */
-/** The phone's words for a write that did not land: no backup copy kept,
- *  or a "Delete it" that did not delete. */
+/** The phone's words for a write that did not land: a row's outcome
+ *  (`NOT_BACKED_UP`), the page's backup warning, or a "Delete it" that
+ *  did not delete. */
 const PHONE_NOT_KEPT = [
+  NOT_BACKED_UP,
   "not saving a backup copy",
   "Could not delete the saved draft",
 ];
@@ -388,11 +394,24 @@ const openPhone: OpenPage = async (browser) => {
     },
   });
   let warned = false;
-  /** The page's note is overwritten by later lines; remember the warning. */
+  /** The page's notes are overwritten by later lines; remember the
+   *  warning. The phone says a refused write where the creator acted: the
+   *  object list's row note, or the page's line. */
   const idle = async () => {
     await flush(store);
-    const note = ctx.placementNote ?? "";
-    if (PHONE_NOT_KEPT.some((words) => note.includes(words))) warned = true;
+    const notes = [ctx.placementNote ?? "", dom.objectList.note];
+    if (PHONE_NOT_KEPT.some((w) => notes.some((n) => n.includes(w)))) {
+      warned = true;
+    }
+  };
+  /** A change this adapter takes on the document itself, said as the
+   *  phone's caller of it says it: the undo (`creator-undo.ts`), the
+   *  placement (`creator-placement.ts`) and the settle
+   *  (`creator-settle.ts`) each warn on a `backedUp` false. */
+  const sayUnlanded = (change: { backedUp: Promise<boolean> } | null) => {
+    void change?.backedUp.then((ok) => {
+      if (!ok) warned = true;
+    });
   };
   setup.presentDraftForTour(session.archive.url);
   await idle();
@@ -418,12 +437,13 @@ const openPhone: OpenPage = async (browser) => {
       await idle();
     },
     undo: async () => {
-      ctx.tourDocument.undo();
+      const undone = ctx.tourDocument.undo();
+      sayUnlanded(undone.kind === "undone" ? undone : null);
       await idle();
     },
     place: async (object) => {
       // As `creator-placement.ts` places after a tap in AR.
-      ctx.tourDocument.place(object, {}, "a pin");
+      sayUnlanded(ctx.tourDocument.place(object, {}, "a pin"));
       await idle();
     },
     placePhoto: async (id) => {
@@ -435,10 +455,12 @@ const openPhone: OpenPage = async (browser) => {
         width: 4,
         height: 3,
       };
-      ctx.tourDocument.place(
-        photo(id, asset),
-        { blob: pngBlob(4, 3) },
-        "a photo",
+      sayUnlanded(
+        ctx.tourDocument.place(
+          photo(id, asset),
+          { blob: pngBlob(4, 3) },
+          "a photo",
+        ),
       );
       await idle();
     },
@@ -447,10 +469,12 @@ const openPhone: OpenPage = async (browser) => {
       // re-measured: the move and the code's new text as one step.
       const batch = ctx.tourDocument.settleBatch();
       batch.moveStation(stationId, geo);
-      setup.codes.applySettle(
-        batch,
-        [{ id: `code-${stationId}`, json: levelAt(geo) }],
-        "the settle of this visit",
+      sayUnlanded(
+        setup.codes.applySettle(
+          batch,
+          [{ id: `code-${stationId}`, json: levelAt(geo) }],
+          "the settle of this visit",
+        ),
       );
       await idle();
     },
@@ -688,6 +712,33 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(next.shape()).toEqual(opened);
   }, 60_000);
 
+  // Why: the parts of one change land one file at a time. When an
+  // object's record is refused but its station's move lands, the reopen
+  // brings the move back and the object follows its station, with the
+  // text the file had: the same on both pages, and said as no backup.
+  it("a refused edit beside a landed station move: the station moves, the text stays the file's", async () => {
+    const { browser, page } = await freshPage(open);
+    browser.failPutsOf = /^object:/;
+    await page.edit("a", "The gate");
+    await page.moveStation("st-a", MOVED);
+    browser.failPutsOf = null;
+    expect(page.saidNotKept()).toBe(true);
+    const next = await reopen(open, browser);
+    expect(next.offer()).not.toBe("");
+    await next.restore();
+    const restored = next.shape();
+    expect(restored.stations).toContain(
+      JSON.stringify({ id: "st-a", geo: MOVED }),
+    );
+    const a = restored.objects
+      .map(
+        (o) => JSON.parse(o) as { id: string; caption: string; geo: QrGeoPose },
+      )
+      .find((o) => o.id === "a");
+    expect(a?.caption).toBe("pin a");
+    expect([a?.geo.lat, a?.geo.lon]).toEqual([MOVED.lat, MOVED.lon]);
+  }, 60_000);
+
   it("a photo and its picture are offered at the next open and restored", async () => {
     const next = await restoresWhatWasLeft(open, (p) => p.placePhoto("q"));
     expect(holds(next, "q")).toBe(true);
@@ -791,12 +842,14 @@ async function apply(page: DraftPage, op: Op): Promise<void> {
   }
 }
 
-/** An object's content as the creator sees it: without its station id. */
+/** An object's content apart from where it stands: without its station
+ *  id and its place, which follow its station. */
 function seenOf(content: string): string {
-  const { station: _station, ...shown } = JSON.parse(content) as Record<
-    string,
-    unknown
-  >;
+  const {
+    station: _station,
+    geo: _geo,
+    ...shown
+  } = JSON.parse(content) as Record<string, unknown>;
   return JSON.stringify(shown);
 }
 
@@ -804,18 +857,20 @@ function seenOf(content: string): string {
 const RUNS = 25;
 
 describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
-  it("for random edits with faults, a reopen restores the document the page held, or the page said a write did not land; it never restores a version the page never held", async () => {
+  it("for random edits with faults, a reopen restores the document the page held, or the page said a write did not land; it never restores a text the page never held", async () => {
     // Why this test matters: the rows pin each behaviour alone; the
     // composed sequences (an undo after a refused write, a delete over a
     // moved station, a place after a refused meta) are where two drafts'
     // rules drift. What must hold on both pages after ANY sequence: a
     // closed tab and a Restore bring back exactly what the page held -
     // unless a write did not land, which the page must then have said -
-    // and never a version of an object the creator never saw. "Saw" is
-    // what an object shows (`seenOf`): a station id is not shown, and
-    // after a refused settings write the phone seats a new pin in a
-    // station minted again under another id, at the same spot - said to
-    // the creator as no backup, so not a version they never saw.
+    // and never a text or kind of an object the creator never saw
+    // (`seenOf`). Where an object stands is left out of that: after a
+    // refused write an object may stand where its moved station put it
+    // with the text the file had (the row "a refused edit beside a
+    // landed station move"), and after a refused settings write the phone
+    // seats a new pin in a station minted again under another id; both
+    // are said to the creator as no backup.
     await fc.assert(
       fc.asyncProperty(
         fc.array(fc.tuple(opArb, faultArb), { minLength: 1, maxLength: 6 }),
