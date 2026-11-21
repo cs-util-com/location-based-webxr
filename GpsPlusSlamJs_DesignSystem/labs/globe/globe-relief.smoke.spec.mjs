@@ -21,7 +21,6 @@ import { expect, test } from "@playwright/test";
 
 import { RELIEF_SETTLE_MS, bootGlobe } from "./globe-smoke-helpers.mjs";
 
-const ORIGIN = `http://127.0.0.1:${process.env.DS_E2E_PORT ?? "5198"}`;
 const TARGET = { latitude: 46.5, longitude: 9.0 };
 // `reliefNear=3`: these tests are about the exaggerated relief (its law, the
 // band, the clearance over a ridge drawn three times as high). Since the
@@ -37,15 +36,6 @@ const BASE =
  * it over the synthetic crest).
  */
 const HOLD_KM = 150;
-
-/**
- * The fixed dive to the hold, for the phone's caches, the one test that
- * still needs its descent: parked there instead, the two caches held 75.0
- * MiB against the 72 MiB bound, the globe's own 4.0 MiB of it, so the
- * excess is the relief's, and waiting for the globe's tiles (`settleGlobe`)
- * left it at 75.0.
- */
-const DIVE_150 = "&diveMs=6000&landKm=150";
 
 /** The exaggeration law (globe-flight.ts), for the expected value. */
 const exaggerationAt = (altM, near = 3) => {
@@ -522,7 +512,11 @@ test("the band's fade does not shimmer under a moving camera", async ({
 // drain keeps the globe's coarsest tiles on purpose: they are the stencil
 // fill behind the relief (plan 2026-10-04-1050 G6-1). Kept: more than
 // nothing (the fill needs them) and at most 8 MiB, the same eighth of the
-// globe's 64 MB budget (4.0 MiB measured on 2026-10-05).
+// globe's 64 MB budget (4.0 MiB measured on 2026-10-05). The relief's
+// device class is pinned to the phone: read from the input, a headless
+// browser is a desktop, whose relief budget is 256 MiB (parked or dived,
+// 75 to 99 MiB measured there), so the bound would test a budget the
+// phone never has.
 test("outside the band the other carrier fetches nothing and holds no memory, on a phone", async ({
   browser,
 }) => {
@@ -532,17 +526,14 @@ test("outside the band the other carrier fetches nothing and holds no memory, on
     deviceScaleFactor: 2,
   });
   const page = await context.newPage();
-  await context.grantPermissions(["geolocation"], { origin: ORIGIN });
-  await context.setGeolocation(TARGET);
-  // The dive's descent, not a park (`DIVE_150` says why).
-  const errors = await bootGlobe(page, `${BASE}${DIVE_150}`);
+  const errors = await bootGlobe(page, `${BASE}&reliefDevice=phone`);
   await page.waitForFunction(
     () => window.__globeLab.state().pendingTiles === 0,
     null,
     { timeout: 120_000 },
   );
   const above = await page.evaluate(() => window.__globeLab.state());
-  await page.locator("#globe-pin").click();
+  await parkAt(page, HOLD_KM);
   await page.waitForFunction(
     () => {
       const s = window.__globeLab.state();
