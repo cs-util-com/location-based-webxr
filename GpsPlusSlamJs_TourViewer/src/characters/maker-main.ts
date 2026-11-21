@@ -23,14 +23,9 @@ import type { CharacterRecord } from "./character-record.js";
 import { cropThumb, whenMade } from "./character-thumb.js";
 import { CutFailed, type CutWorker, createCutClient } from "./cut-client.js";
 import {
-  type BackdropId,
-  CUT_CHOICE_DEFAULTS,
   CUT_SLIDERS,
-  type CutChoice,
   type CutSliderKey,
   cutSettingsFor,
-  draftOf,
-  freshDraft,
   hasDraft,
   MAKER_STEPS,
   type MakerDraft,
@@ -56,6 +51,13 @@ import {
   PROMPT_HEAD,
   promptText,
 } from "./maker-prompt.js";
+import {
+  asksForPictureAgain,
+  createMakerStore,
+  hasCut,
+  isCutting,
+  makerActions as A,
+} from "./maker-slice.js";
 import { busy, offerUndo } from "./maker-ui.js";
 import { LibraryUnavailable, opfsLibraryStore } from "./opfs-library-store.js";
 import type { RgbaImage } from "./rgba-image.js";
@@ -105,34 +107,36 @@ const undoBox = $("#undoBox");
 
 // ------------------------------------------------------------ state
 
-type Mutable<T> = { -readonly [K in keyof T]: T[K] };
-type Draft = Omit<Mutable<MakerDraft>, "cut"> & { cut: Mutable<CutChoice> };
-
-function loadDraft(): Draft {
-  let raw: unknown = null;
+function storedDraft(): unknown {
   try {
     const text = localStorage.getItem(DRAFT_KEY);
-    raw = text ? JSON.parse(text) : null;
+    return text ? JSON.parse(text) : null;
   } catch {
-    // private mode, or a broken entry: start fresh
-  }
-  const d = draftOf(raw);
-  return { ...d, cut: { ...d.cut } };
-}
-function freshFor(ground: BackdropId): Draft {
-  const d = freshDraft();
-  return { ...d, cut: { ...d.cut }, ground };
-}
-
-let S: Draft = loadDraft();
-function persist(): void {
-  try {
-    localStorage.setItem(DRAFT_KEY, JSON.stringify(S));
-  } catch {
-    // private mode: the page works without memory
+    return null; // private mode, or a broken entry: start fresh
   }
 }
+const stored = storedDraft();
+// The draft, the step and the cut status live in the store (maker-slice.ts);
+// its listener keeps the draft in local storage.
+const makerStore = createMakerStore({
+  stored,
+  save: (d) => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+    } catch {
+      // private mode: the page works without memory
+    }
+  },
+});
+const page = () => makerStore.getState().characterMaker;
+/** The draft as the store holds it now: read it again after a dispatch. */
+const draft = (): MakerDraft => page().draft;
 
+/**
+ * The cut picture: canvases and pixel data, kept beside the store. The
+ * store's cut status is `ready` exactly while this holds a cut, so every
+ * place that sets it dispatches too.
+ */
 interface CutResult {
   readonly raw: readonly RgbaImage[];
   readonly rawSteady: readonly RgbaImage[];
@@ -141,15 +145,12 @@ interface CutResult {
   readonly check: FrameCheck;
 }
 let R: CutResult | null = null;
-let cutting = false;
-/** Bumped on every new cut or choice, so the previews redraw. */
-let version = 0;
 const justMade = new Set<string>();
 
 const chosenFrames = (): HTMLCanvasElement[] | null =>
-  R ? (S.choice === "steady" ? R.steady : R.frames) : null;
+  R ? (draft().choice === "steady" ? R.steady : R.frames) : null;
 const chosenRaw = (): readonly RgbaImage[] | null =>
-  R ? (S.choice === "steady" ? R.rawSteady : R.raw) : null;
+  R ? (draft().choice === "steady" ? R.rawSteady : R.raw) : null;
 
 // ------------------------------------------------------------ services
 
@@ -260,25 +261,22 @@ async function renderHome(): Promise<void> {
 
 function renderDraftRow(): void {
   const dr = $("#draftRow");
-  dr.hidden = !hasDraft(S);
-  if (!hasDraft(S)) return;
-  const d = S.desc.trim();
-  const said = d
-    ? `&ldquo;${esc(d.length > 60 ? `${d.slice(0, 58)}...` : d)}&rdquo; - `
+  dr.hidden = !hasDraft(draft());
+  if (!hasDraft(draft())) return;
+  const t = draft().desc.trim();
+  const said = t
+    ? `&ldquo;${esc(t.length > 60 ? `${t.slice(0, 58)}...` : t)}&rdquo; - `
     : "";
-  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${S.step + 1} of 6: ${esc((MAKER_STEPS[S.step] ?? "").toLowerCase())}.</p></div><div class="row"><button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard>Discard</button></div>`;
+  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${draft().step + 1} of 6: ${esc((MAKER_STEPS[draft().step] ?? "").toLowerCase())}.</p></div><div class="row"><button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard>Discard</button></div>`;
   $("[data-continue]", dr).addEventListener("click", () => setView("steps"));
   $("[data-discard]", dr).addEventListener("click", () => {
-    const before = S;
+    const before = draft();
     const beforeR = R;
-    S = freshFor(S.ground);
+    makerStore.dispatch(A.startedAnother());
     R = null;
-    persist();
     void renderHome();
     offerUndo(undoBox, "Unfinished character discarded", () => {
-      S = before;
-      R = beforeR;
-      persist();
+      restore(before, beforeR);
       void renderHome();
     });
   });
@@ -403,7 +401,7 @@ async function giveFile(
 }
 
 $("#makeBtn").addEventListener("click", () => {
-  if (S.savedId) startAnother();
+  if (draft().savedId) startAnother();
   setView("steps");
 });
 const importBtn = $<HTMLButtonElement>("#importBtn");
@@ -454,11 +452,11 @@ async function importIntoLibrary(file: File): Promise<void> {
 // ------------------------------------------------------------ the prompt
 
 function promptHtml(): string {
-  const d = S.desc.trim();
+  const t = draft().desc.trim();
   return (
     esc(PROMPT_HEAD) +
-    (d
-      ? `<mark>${esc(d)}</mark>`
+    (t
+      ? `<mark>${esc(t)}</mark>`
       : `<mark class="empty">${esc(PROMPT_EMPTY)}</mark>`) +
     esc(PROMPT_BODY)
   );
@@ -494,10 +492,10 @@ function loop(t: number): void {
     const fr = a.frames();
     if (!fr) continue;
     const idx = a.kind === "talk" ? talkIndex(t) : beckonIndex(t);
-    const key = `${idx}|${S.ground}|${version}`;
+    const key = `${idx}|${draft().ground}|${page().version}`;
     if (key === a.key) continue;
     a.key = key;
-    a.draw(a.canvas, fr[idx] ?? null, S.ground);
+    a.draw(a.canvas, fr[idx] ?? null, draft().ground);
   }
   requestAnimationFrame(loop);
 }
@@ -505,11 +503,12 @@ function loop(t: number): void {
 // ------------------------------------------------------------ stepper
 
 function renderSteps(): void {
-  const hasCut = R !== null;
+  const S = draft();
+  const cut = hasCut(page());
   const ol = $("#steps");
   ol.replaceChildren();
   MAKER_STEPS.forEach((label, i) => {
-    const info = stepInfo(S, i, hasCut);
+    const info = stepInfo(S, i, cut);
     const li = document.createElement("li");
     li.dataset.state = info.state;
     if (i === S.step) li.classList.add("current");
@@ -519,11 +518,11 @@ function renderSteps(): void {
         : info.state === "failed"
           ? "!"
           : String(i + 1);
-    li.innerHTML = `<button type="button" ${reachable(S, i, hasCut) ? "" : "disabled"} aria-current="${i === S.step ? "step" : "false"}" aria-label="Step ${i + 1}: ${esc(label)}. ${esc(info.sub)}"><span class="dot">${mark}</span><span class="txt"><span class="lbl">${esc(label)}</span><span class="sub">${esc(info.sub)}</span></span></button>`;
+    li.innerHTML = `<button type="button" ${reachable(S, i, cut) ? "" : "disabled"} aria-current="${i === S.step ? "step" : "false"}" aria-label="Step ${i + 1}: ${esc(label)}. ${esc(info.sub)}"><span class="dot">${mark}</span><span class="txt"><span class="lbl">${esc(label)}</span><span class="sub">${esc(info.sub)}</span></span></button>`;
     $("button", li).addEventListener("click", () => go(i));
     ol.append(li);
   });
-  const cur = stepInfo(S, S.step, hasCut);
+  const cur = stepInfo(S, S.step, cut);
   $("#where").innerHTML =
     `Step ${S.step + 1} of 6: <b>${esc(MAKER_STEPS[S.step] ?? "")}</b>` +
     (cur.state === "failed"
@@ -539,11 +538,18 @@ landscape.addEventListener("change", placeRail);
 
 // ------------------------------------------------------------ navigation
 
+/** A tap on a step: an open one is shown (the current one again, from the top). */
 function go(i: number): void {
-  if (!reachable(S, i, R !== null)) return;
-  S.step = i;
-  S.maxStep = Math.max(S.maxStep, Math.min(i, 3));
-  persist();
+  if (!reachable(draft(), i, hasCut(page()))) return;
+  makerStore.dispatch(A.went(i));
+  showStep();
+}
+/** Next, or back from the image AI: opens step `i`, then shows it. */
+function reach(i: number): void {
+  makerStore.dispatch(A.reached(i));
+  showStep();
+}
+function showStep(): void {
   if (document.body.dataset.view !== "steps") setView("steps");
   else render();
   $("#body").scrollTop = 0;
@@ -551,10 +557,14 @@ function go(i: number): void {
 const backBtn = $<HTMLButtonElement>("#backBtn");
 const nextBtn = $<HTMLButtonElement>("#nextBtn");
 function render(): void {
+  const S = draft();
+  const cutting = isCutting(page());
   renderSteps();
   for (const p of $$("[data-panel]"))
     p.hidden = Number(p.dataset.panel) !== S.step;
   renderGreet();
+  // The box shows the draft's text: a new start or an Undo changes it.
+  if (desc.value !== S.desc) desc.value = S.desc;
   backBtn.hidden = S.step === 0 || (S.step === 5 && !!S.savedId);
   if (S.step === 1) {
     $("#prompt").innerHTML = promptHtml();
@@ -567,29 +577,25 @@ function render(): void {
   if (S.step === 4) renderCheck();
   if (S.step === 5) renderSave();
   if (nextBtn.getAttribute("aria-busy") !== "true") {
-    const next = nextLabel(S, R !== null, cutting);
+    const next = nextLabel(S, hasCut(page()), cutting);
     nextBtn.textContent = next.label;
     nextBtn.disabled = next.disabled;
   }
 }
-backBtn.addEventListener("click", () => go(Math.max(0, S.step - 1)));
+backBtn.addEventListener("click", () => go(Math.max(0, draft().step - 1)));
 nextBtn.addEventListener("click", () => {
+  const S = draft();
   if (S.step === 0) {
     if (S.desc.trim().length < 3) {
       $("#descMsg").hidden = false;
       $("#desc").focus();
       return;
     }
-    S.maxStep = Math.max(S.maxStep, 1);
-    go(1);
-  } else if (S.step === 1) {
-    S.maxStep = Math.max(S.maxStep, 2);
-    go(2);
-  } else if (S.step === 2) {
-    S.maxStep = Math.max(S.maxStep, 3);
-    go(3);
-  } else if (S.step === 3) {
-    if (R && !S.failure) go(4);
+    reach(1);
+  } else if (S.step === 1) reach(2);
+  else if (S.step === 2) reach(3);
+  else if (S.step === 3) {
+    if (hasCut(page()) && !S.failure) go(4);
     else picFile.click();
   } else if (S.step === 4) go(5);
   else if (S.savedId) {
@@ -608,7 +614,8 @@ function greet(html: string): void {
 function renderGreet(): void {
   for (const g of $$("[data-greet]")) {
     const panel = g.closest<HTMLElement>("[data-panel]");
-    const show = greetHtml !== "" && Number(panel?.dataset.panel) === S.step;
+    const show =
+      greetHtml !== "" && Number(panel?.dataset.panel) === draft().step;
     g.hidden = !show;
     if (show) {
       g.innerHTML = `<p>${greetHtml}</p><button class="x" type="button" aria-label="Dismiss">&times;</button>`;
@@ -632,18 +639,15 @@ for (const t of IDEAS) {
   $("#ideas").append(b);
 }
 function onDesc(): void {
-  if (desc.value !== S.desc) {
-    S.desc = desc.value;
-    S.copiedAt = 0;
-  }
+  makerStore.dispatch(A.descChanged(desc.value));
   $("#descMsg").hidden = true;
-  persist();
   renderSteps();
 }
 desc.addEventListener("input", onDesc);
 
 const copyBtn = $<HTMLButtonElement>("#copyBtn");
 function renderCopy(): void {
+  const S = draft();
   const m = $("#copyMsg");
   copyBtn.classList.toggle("done", !!S.copiedAt);
   if (copyBtn.getAttribute("aria-busy") !== "true") {
@@ -662,8 +666,8 @@ copyBtn.addEventListener(
     void busy(copyBtn, "Copying...", async () => {
       const m = $("#copyMsg");
       try {
-        await navigator.clipboard.writeText(promptText(S.desc));
-        S.copiedAt = Date.now();
+        await navigator.clipboard.writeText(promptText(draft().desc));
+        makerStore.dispatch(A.copied(Date.now()));
         m.classList.remove("bad");
         toast("Prompt copied");
       } catch {
@@ -673,13 +677,12 @@ copyBtn.addEventListener(
         range.selectNodeContents($("#prompt"));
         sel?.removeAllRanges();
         sel?.addRange(range);
-        S.copiedAt = 0;
+        makerStore.dispatch(A.copyRefused());
         m.className = "copy-msg bad";
         m.textContent =
           "Your browser did not let this page copy. The text is selected: press Ctrl+C, or on a phone tap Copy.";
         toast("Could not copy by itself - the text is selected for you", true);
       }
-      persist();
     }).then(() => {
       renderCopy();
       renderSteps();
@@ -739,16 +742,13 @@ const isAbort = (e: unknown): boolean =>
   e instanceof DOMException && e.name === "AbortError";
 
 async function runImport(blob: Blob): Promise<void> {
-  if (cutting) return;
-  cutting = true;
-  S.failure = "";
+  if (isCutting(page())) return;
+  // An Undo of a new start would put the old picture over this one.
+  undoBox.replaceChildren();
   R = null;
-  S.choice = "drawn";
-  S.savedId = "";
+  makerStore.dispatch(A.cutStarted());
   $("#cutErr").hidden = true;
   greet("");
-  S.step = 3;
-  S.maxStep = Math.max(S.maxStep, 3);
   if (document.body.dataset.view !== "steps") setView("steps");
   const states: Partial<Record<string, PhaseState>> = {};
   renderPhases(states);
@@ -756,33 +756,37 @@ async function runImport(blob: Blob): Promise<void> {
   try {
     const r = await cutClient.cut(
       blob,
-      cutSettingsFor(S.cut),
+      cutSettingsFor(draft().cut),
       (phase, state) => {
         states[phase] = state;
         renderPhases(states);
       },
     );
     R = resultOf(r);
-    version++;
-    persist();
+    makerStore.dispatch(A.cutFinished());
     toast("Four poses found");
-    cutting = false;
     await sleep(400);
     go(4);
   } catch (e) {
-    if (isAbort(e)) return;
+    if (isAbort(e)) {
+      // A newer request replaced this cut.
+      makerStore.dispatch(A.cutAborted());
+      return;
+    }
     const known = e instanceof CutFailed;
-    S.failure = known ? e.message : "Something went wrong";
+    makerStore.dispatch(
+      A.cutFailed(known ? e.message : "Something went wrong"),
+    );
     if (!known) console.error(e);
     const card = $("#cutErr");
     card.innerHTML = `<h3>This picture did not work - and here is what to do</h3><p>${esc((known && EXPLAIN[e.code]) || (known ? e.message : "Something unexpected went wrong while cutting the picture."))}</p><div class="row"><button class="btn primary small" type="button" data-again>Choose another picture</button><button class="btn small" type="button" data-go-prompt>See the prompt again</button></div>`;
     card.hidden = false;
     $("[data-again]", card).addEventListener("click", () => picFile.click());
     $("[data-go-prompt]", card).addEventListener("click", () => go(1));
-    toast(`The picture did not work: ${S.failure}`, true);
-    persist();
+    toast(`The picture did not work: ${draft().failure}`, true);
   } finally {
-    cutting = false;
+    // No status change here: after a result the page waits a moment, and a
+    // picture brought in meanwhile has started a cut of its own.
     if (document.body.dataset.view === "steps") render();
   }
 }
@@ -843,7 +847,7 @@ const app = $("#app");
 for (const ev of ["dragenter", "dragover"]) {
   app.addEventListener(ev, (e) => {
     e.preventDefault();
-    if (S.step === 3) drop.classList.add("over");
+    if (draft().step === 3) drop.classList.add("over");
   });
 }
 for (const ev of ["dragleave", "drop"]) {
@@ -867,7 +871,7 @@ document.addEventListener("paste", (e) => {
   if (f) {
     e.preventDefault();
     void runImport(f);
-  } else if (S.step === 3 && document.body.dataset.view === "steps") {
+  } else if (draft().step === 3 && document.body.dataset.view === "steps") {
     toast(
       "That was text, not a picture. Copy the picture itself, then paste again.",
       true,
@@ -883,15 +887,14 @@ for (const b of BACKDROPS) {
   btn.dataset.ground = b.id;
   btn.innerHTML = `<i style="background:${b.css}"></i>${esc(b.label)}`;
   btn.addEventListener("click", () => {
-    S.ground = b.id;
-    persist();
+    makerStore.dispatch(A.groundChosen(b.id));
     markGround();
   });
   $("#groundSeg").append(btn);
 }
 function markGround(): void {
   for (const x of $$("#groundSeg button")) {
-    x.setAttribute("aria-pressed", String(x.dataset.ground === S.ground));
+    x.setAttribute("aria-pressed", String(x.dataset.ground === draft().ground));
   }
 }
 
@@ -905,8 +908,8 @@ function renderCheck(): void {
     (c.jitter
       ? '<span class="pill info">Lively body while talking</span>'
       : '<span class="pill">&#10003; The body stays still while talking</span>');
-  if (styleVersion !== version) {
-    styleVersion = version;
+  if (styleVersion !== page().version) {
+    styleVersion = page().version;
     const pct = Math.round(c.bodyDiff * 100);
     $("#talkStyle").innerHTML = `<h3>How it talks</h3>
       <div class="choices" role="radiogroup" aria-label="How it talks">
@@ -920,10 +923,10 @@ function renderCheck(): void {
       }</p>`;
     for (const r of $$<HTMLInputElement>('input[name="style"]')) {
       r.addEventListener("change", () => {
-        S.choice = r.value === "steady" ? "steady" : "drawn";
-        persist();
-        version++;
-        styleVersion = version;
+        makerStore.dispatch(
+          A.talkChosen(r.value === "steady" ? "steady" : "drawn"),
+        );
+        styleVersion = page().version;
         renderSteps();
         renderFrameStrip();
         toast(r.value === "steady" ? "Steady body chosen" : "As drawn chosen");
@@ -933,7 +936,7 @@ function renderCheck(): void {
     anim($<HTMLCanvasElement>("#pvSteady"), "talk", () => R?.steady ?? null);
   }
   for (const r of $$<HTMLInputElement>('input[name="style"]'))
-    r.checked = r.value === S.choice;
+    r.checked = r.value === draft().choice;
   renderCutControls();
   renderFrameStrip();
 }
@@ -974,13 +977,14 @@ for (const [r, , k] of CUT_INPUTS) {
 }
 const shadowBox = $<HTMLInputElement>("#cShadow");
 function renderCutControls(): void {
+  const cut = draft().cut;
   for (const [r, o, k, f] of CUT_INPUTS) {
-    $<HTMLInputElement>(`#${r}`).value = String(S.cut[k]);
-    $(`#${o}`).textContent = f(S.cut[k]);
+    $<HTMLInputElement>(`#${r}`).value = String(cut[k]);
+    $(`#${o}`).textContent = f(cut[k]);
   }
-  shadowBox.checked = S.cut.shadowOn;
-  $("#floorRow").classList.toggle("off", !S.cut.shadowOn);
-  $<HTMLInputElement>("#rFloor").disabled = !S.cut.shadowOn;
+  shadowBox.checked = cut.shadowOn;
+  $("#floorRow").classList.toggle("off", !cut.shadowOn);
+  $<HTMLInputElement>("#rFloor").disabled = !cut.shadowOn;
 }
 let recutTimer: ReturnType<typeof setTimeout> | undefined;
 function cutStatus(kind: "ok" | "bad" | "busy", text: string): void {
@@ -989,10 +993,15 @@ function cutStatus(kind: "ok" | "bad" | "busy", text: string): void {
   s.textContent = text;
 }
 function onCutChange(): void {
-  for (const [r, , k] of CUT_INPUTS)
-    S.cut[k] = Number($<HTMLInputElement>(`#${r}`).value);
-  S.cut.shadowOn = shadowBox.checked;
-  persist();
+  const sliders = Object.fromEntries(
+    CUT_INPUTS.map(([r, , k]) => [
+      k,
+      Number($<HTMLInputElement>(`#${r}`).value),
+    ]),
+  ) as Record<CutSliderKey, number>;
+  makerStore.dispatch(
+    A.cutChanged({ ...sliders, shadowOn: shadowBox.checked }),
+  );
   renderCutControls();
   cutStatus("busy", "Cutting again...");
   $("#stage").classList.add("recutting");
@@ -1002,34 +1011,44 @@ function onCutChange(): void {
 for (const [r] of CUT_INPUTS) $(`#${r}`).addEventListener("input", onCutChange);
 shadowBox.addEventListener("change", onCutChange);
 $("#cutReset").addEventListener("click", () => {
-  S.cut = { ...CUT_CHOICE_DEFAULTS };
+  makerStore.dispatch(A.cutReset());
   renderCutControls();
   onCutChange();
 });
 async function recut(): Promise<void> {
-  if (!R) return;
-  try {
-    // null: the worker cuts the picture it already holds again. A newer
-    // change replaces this request, which then ends as an AbortError.
-    const r = await cutClient.cut(null, cutSettingsFor(S.cut));
-    R = resultOf(r);
-    version++;
-    cutStatus(
-      "ok",
-      !S.cut.islandMin
-        ? "Updated. Cleaning small specks is off."
-        : r.specks
-          ? `Updated. ${r.specks} small speck${r.specks === 1 ? "" : "s"} cleaned away.`
-          : "Updated. No small specks found.",
-    );
-    renderCheck();
-  } catch (e) {
-    if (isAbort(e)) return;
-    cutStatus(
-      "bad",
-      `With these settings the picture cannot be cut: ${e instanceof Error ? e.message : "it did not work."} The last good cut is still shown.`,
-    );
+  // Start over, Make another or Discard can drop the cut before this runs
+  // or while the worker cuts: then there is no cut to replace, the answer
+  // is dropped and the line claims nothing.
+  let line: readonly ["ok" | "bad", string] = ["ok", ""];
+  if (hasCut(page())) {
+    try {
+      // null: the worker cuts the picture it already holds again. A newer
+      // change replaces this request, which then ends as an AbortError.
+      const r = await cutClient.cut(null, cutSettingsFor(draft().cut));
+      if (hasCut(page())) {
+        R = resultOf(r);
+        makerStore.dispatch(A.cutReplaced());
+        line = [
+          "ok",
+          !draft().cut.islandMin
+            ? "Updated. Cleaning small specks is off."
+            : r.specks
+              ? `Updated. ${r.specks} small speck${r.specks === 1 ? "" : "s"} cleaned away.`
+              : "Updated. No small specks found.",
+        ];
+        renderCheck();
+      }
+    } catch (e) {
+      if (isAbort(e)) return;
+      if (hasCut(page())) {
+        line = [
+          "bad",
+          `With these settings the picture cannot be cut: ${e instanceof Error ? e.message : "it did not work."} The last good cut is still shown.`,
+        ];
+      }
+    }
   }
+  cutStatus(...line);
   $("#stage").classList.remove("recutting");
 }
 
@@ -1038,6 +1057,7 @@ async function recut(): Promise<void> {
 const charName = $<HTMLInputElement>("#charName");
 function renderSave(): void {
   if (!R) return;
+  const S = draft();
   charName.value = S.name;
   $("#facts").innerHTML =
     `<li><b>4 poses</b>: resting, two talking, pointing</li>
@@ -1059,37 +1079,41 @@ function renderSave(): void {
   });
 }
 charName.addEventListener("input", () => {
-  S.name = charName.value;
-  persist();
+  makerStore.dispatch(A.named(charName.value));
 });
 function startAnother(): void {
-  S = freshFor(S.ground);
+  makerStore.dispatch(A.startedAnother());
   R = null;
-  desc.value = "";
   $("#phases").hidden = true;
   $("#cutErr").hidden = true;
-  persist();
+}
+/** Undo of a new start: the draft back, and its cut unless another one runs. */
+function restore(before: MakerDraft, beforeR: CutResult | null): void {
+  makerStore.dispatch(A.restored({ draft: before, hadCut: beforeR !== null }));
+  if (!isCutting(page())) R = beforeR;
 }
 async function save(): Promise<void> {
   const raw = chosenRaw();
   if (!raw) return;
+  // The talk style goes with the frames chosen here.
+  const steady = draft().choice === "steady";
   await busy(nextBtn, "Saving...", async () => {
     try {
       const frames = await pngOf(canvasOf(composeSheet(raw)));
       const image = await pngOf(canvasOf(raw[0]!));
-      const rec = await (
-        await library()
-      ).save({
+      const lib = await library();
+      // Read now: a name typed while the pictures were written is the one
+      // the author sees.
+      const S = draft();
+      const rec = await lib.save({
         name: S.name,
-        steady: S.choice === "steady",
+        steady,
         describedAs: S.desc.trim(),
         frames,
         image,
       });
-      S.savedId = rec.libraryId;
-      S.savedName = rec.name;
+      makerStore.dispatch(A.saved({ id: rec.libraryId, name: rec.name }));
       justMade.add(rec.libraryId);
-      persist();
       toast(`Saved on this device: ${rec.name}`);
     } catch (e) {
       toast(
@@ -1101,16 +1125,13 @@ async function save(): Promise<void> {
   render();
 }
 $("#restart").addEventListener("click", () => {
-  const before = S;
+  const before = draft();
   const beforeR = R;
   startAnother();
   greet("");
   render();
   offerUndo(undoBox, "Started over", () => {
-    S = before;
-    R = beforeR;
-    desc.value = S.desc;
-    persist();
+    restore(before, beforeR);
     render();
   });
 });
@@ -1119,22 +1140,21 @@ $("#restart").addEventListener("click", () => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") {
-    S.leftAt = Date.now();
-    persist();
+    makerStore.dispatch(A.left(Date.now()));
     return;
   }
   if (document.body.dataset.view === "home") {
     void renderHome(); // another tab may have changed the library
     return;
   }
+  const S = draft();
   const away = Date.now() - (S.leftAt || Date.now());
   if (
     away > 1500 &&
     ((S.step === 1 && S.copiedAt) || S.step === 2) &&
-    !cutting
+    !isCutting(page())
   ) {
-    S.maxStep = Math.max(S.maxStep, 3);
-    go(3);
+    reach(3);
     greet(
       "<b>Welcome back.</b> Did your image AI make the picture? Paste it or choose it below.",
     );
@@ -1154,12 +1174,10 @@ anim($<HTMLCanvasElement>("#pvCutTalk"), "talk", chosen);
 anim($<HTMLCanvasElement>("#pvFeet"), "talk", chosen, drawFeet);
 requestAnimationFrame(loop);
 
-desc.value = S.desc;
 placeRail();
-if (S.savedId) startAnother();
-// The cut picture is not kept over a reload: ask for it again, calmly.
-if (S.step >= 4 && !R) {
-  S.step = 3;
+// The cut picture is not kept over a reload: the store starts such a draft
+// at step 4 (a saved one as a new character), and the page asks again, calmly.
+if (asksForPictureAgain(stored)) {
   greet(
     "<b>Welcome back.</b> Bring the picture in once more: this page does not keep it when it is reloaded.",
   );

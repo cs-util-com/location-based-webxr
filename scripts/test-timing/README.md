@@ -47,6 +47,8 @@ every gate changed them, and any merge put open pull requests into conflict.
     in such a run the Playwright stages print the `list` reporter, so the log
     names every test, and the JSON that gives the counts is kept as the
     package's `test-results/results.json`, which the job uploads.
+  - A newer push to `main` cancels the older push's run (`ci.yml`, `concurrency`),
+    and a cancelled run uploads no tables, so not every commit on `main` has them.
   - An artifact holds one run. The runner's machine can differ between runs, so
     compare medians of several, and read older numbers from the git history.
 - **The budget alarm** runs on local gates only, against a stage's ceiling, so a

@@ -47,7 +47,10 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
   arrived by then ends as `failed`, "The splat trainer library did not
   arrive within <duration>.", with a retry on offer; the cap's timer is
   cleared on every path. An abort before training ends as `cancelled`.
-  The job's `prepareCapMs` and `photoBudgetBytes` reach the run.
+  The job's `prepareCapMs` and `photoBudgetBytes` reach the run, with
+  the call's start as `prepareStartedAt`: download, seed decoding and
+  preparation share one cap, so a stuck stretch fails at most
+  `prepareCapMs` after it began, not twice that.
 - The first progress, before the library is asked for, is `loading`.
 - Only photos with depth samples or a shell flag are decoded; depth seeds
   are thinned by `seedVoxelM`, shell seeds by `shellVoxelM`.
@@ -58,7 +61,8 @@ picture: ImageBitmap }` or `{ type: "result", result }`.
 library before any decode (no retry), a library that could not be
 downloaded (retry offered), a library that does not arrive within the
 cap, only seeding photos decoded and their seeds
-thinned, a decode failure in words, a mismatched photo list, a cancel
+thinned, the run handed the call's start so both caps fall due at one moment,
+a decode failure in words, a mismatched photo list, a cancel
 while seeding, `loading` said before the library arrives, and the
 preview passed on to the run; `serveTrainer` posting a failed result for
 a rejected training and training only the first message.

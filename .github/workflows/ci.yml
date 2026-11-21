@@ -40,10 +40,12 @@ permissions:
   contents: read
 
 # A newer push to a pull request's branch cancels its superseded run. Pushes to
-# `main` are releases and every one of them runs to the end, so each gets a
-# group of its own (its run id), as do a dispatch and the nightly run: GitHub
-# keeps only one PENDING run per group, and with one group for `main` the
-# middle of three quick merges would lose its run.
+# `main` share one group too, and a newer push cancels the older run, running
+# or pending: on `main` the tier compares against nothing, so the newer run
+# tests everything the older one would, and a red `main` is bisected with one
+# dispatch run instead. A cancelled run on `main` uploads no timing tables.
+# A dispatch and the nightly run each get a group of their own (their run id)
+# and are never cancelled: GitHub keeps only one PENDING run per group.
 #
 # A pull request's group has a fixed prefix, not `github.workflow`: in the
 # full-ci label's call (ci-full-label.yml) that names the calling workflow,
@@ -76,8 +78,8 @@ permissions:
 # evaluating that `if`. It reads the label, not the event's action, so this
 # file names no label event (ci-jobs.test.js).
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.event_name == 'push' && github.ref == 'refs/heads/main' && 'push-main' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'pull_request' && github.event.action != 'opened' && (!github.event.label || github.event.label.name == 'full-ci') }}
 
 jobs:
   deadcode:
