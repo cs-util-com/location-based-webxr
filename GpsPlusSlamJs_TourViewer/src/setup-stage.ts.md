@@ -10,7 +10,7 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
 
 ## Public API
 
-- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion?, hosted? }): SetupStage`
+- `wireSetupStage<T>({ dom, openStep, createElement, map?, reducedMotion?, hosted?, onTourChange? }): SetupStage`
   - `dom.steps` - the six step `<details>` (their `toggle` re-renders);
     `dom.summaries` - their `<summary>`s, whose click is cancelled so a tap
     on the open step's heading cannot collapse it;
@@ -31,6 +31,11 @@ through `wizard.openStep`. Plan: polish-round plan, "M2b - the L5 look".
   - `hosted` (optional, `wizard.hosted`) - whether the open tour has a
     link; without one printing and hanging stay `todo` on the map and the
     poster stays down (`stationView`). Absent reads as hosted.
+  - `onTourChange` (optional, `wizard.onTourChange`) - subscribes the
+    redraw to every change of the open tour: a tour that opens or closes
+    may leave the same step open, so no `toggle` fires, and the map would
+    keep the last tour's ticks and its poster up. Absent: no such
+    redraw.
   - **The map shows the OPEN STEP's position, not progress** (PR #585
     review): `stationView` marks every step after the open one `todo`, so
     going back to step 1 shortens the drawn route and takes the poster down
@@ -74,7 +79,8 @@ wireSetupStage<HTMLButtonElement>({
 - `setup-stage.test.ts` - a dot per step and the open step's number, a dot
   and Back/Next opening steps through the wizard, the row's rules on steps
   1, 5 and 6, the heading that cannot collapse its step, a re-render when
-  the wizard opens a step by itself, and every "Make your tour" button's
+  the wizard opens a step by itself, a re-render on a change of the open
+  tour alone (Print and Hang no longer done, the poster down), and every "Make your tour" button's
   scroll (instant under reduced motion) and focus on the open step, and
   the map sticker's tap that shows it larger and puts it back.
 - `playwright-tests/setup-flow.spec.js` - the page in a browser (the map's

@@ -588,6 +588,9 @@ if (mode === "creator") {
     },
     reducedMotion,
     hosted: () => wizard.hosted(),
+    onTourChange: (listener) => {
+      wizard.onTourChange(listener);
+    },
     openStep: (step) => {
       wizard.openStep(step);
     },

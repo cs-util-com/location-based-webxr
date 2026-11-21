@@ -163,6 +163,66 @@ describe("wireSetupStage", () => {
     expect(dom.nav.hidden).toBe(true);
   });
 
+  it("re-renders on a change of the open tour alone, with no step toggled", () => {
+    // Why: whether the tour has a link decides if Print and Hang read as
+    // done, and a tour that closes (or opens) may leave the same step
+    // open, so no `toggle` fires. Without its own subscription the map
+    // kept the closed tour's ticks and its hung code at the start.
+    const steps = Object.fromEntries(
+      WIZARD_STEPS.map((s) => [s, new FakeNode("details")]),
+    ) as Record<WizardStep, FakeNode>;
+    steps.measure.open = true;
+    const dom = {
+      steps,
+      summaries: {},
+      badge: new FakeNode("span"),
+      of: new FakeNode("span"),
+      dots: new FakeNode("nav"),
+      nav: new FakeNode("div"),
+      back: new FakeNode("button"),
+      next: new FakeNode("button"),
+      begins: [],
+      stage: new FakeNode("div"),
+    };
+    const start = new FakeNode("g");
+    const map = {
+      route: {
+        getTotalLength: () => 100,
+        getPointAtLength: () => ({ x: 0, y: 0 }),
+      },
+      reveal: { style: {} },
+      stations: Object.assign(new FakeNode("g"), {
+        ownerDocument: {
+          createElementNS: (_ns: string, tag: string) => new FakeNode(tag),
+        },
+      }),
+      start,
+    };
+    let hosted = true;
+    const tourListeners: (() => void)[] = [];
+    wireSetupStage({
+      dom,
+      openStep: () => undefined,
+      createElement: (tag) => new FakeNode(tag),
+      map: map as never,
+      hosted: () => hosted,
+      onTourChange: (listener) => {
+        tourListeners.push(listener);
+      },
+    });
+    const stateOf = (step: WizardStep) =>
+      dom.dots.children.find((d) => d.dataset.step === step)?.dataset.state;
+    expect(stateOf("print")).toBe("done");
+    expect(stateOf("hang")).toBe("done");
+    expect(start.getAttribute("data-hung")).toBe("true");
+
+    hosted = false;
+    for (const listener of tourListeners) listener();
+    expect(stateOf("print")).not.toBe("done");
+    expect(stateOf("hang")).not.toBe("done");
+    expect(start.getAttribute("data-hung")).toBe("false");
+  });
+
   // The landing has a "Make your tour" near the top and one after the
   // cards: each must bring the setup into view and put the keyboard on the
   // open step's heading, else a keyboard or screen-reader user is left at

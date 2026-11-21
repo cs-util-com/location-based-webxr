@@ -120,6 +120,10 @@ export function wireSetupStage<T extends DotNode>(deps: {
    *  printing and hanging stay to do on the map. Read on each render;
    *  absent reads as hosted. */
   hosted?: () => boolean;
+  /** Subscribes to changes of the open tour (`wizard.onTourChange`): a
+   *  tour that opens or closes may leave the same step open, so no
+   *  `toggle` redraws what `hosted` decides. Absent: never. */
+  onTourChange?: (listener: () => void) => void;
 }): SetupStage {
   const { dom, openStep } = deps;
 
@@ -253,6 +257,7 @@ export function wireSetupStage<T extends DotNode>(deps: {
     });
   }
 
+  deps.onTourChange?.(render);
   render();
   return { render };
 }
