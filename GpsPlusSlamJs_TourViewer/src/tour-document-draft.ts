@@ -361,6 +361,46 @@ export function withUndecidedPoses<R extends TourSettingsRecord>(
   return sameJson(stations, record.stations) ? record : { ...record, stations };
 }
 
+/** What a stored record holds that nobody decided on yet, against the
+ *  opened tour's stations (`opened`): its station poses while one differs
+ *  from the opened tour's (`poses`, the whole list as the record holds
+ *  it), and its created stations the opened tour lacks (`created`); null
+ *  for none. Both pages hold these per open (`withUndecidedPoses`,
+ *  `withCreated`) until Restore or a landed "Delete it" decides them. */
+export function undecidedOf(
+  record: Pick<TourSettingsRecord, "stations" | "createdStations"> | undefined,
+  opened: readonly StationPose[],
+): {
+  poses: readonly StationPose[] | null;
+  created: readonly StationFrame[] | null;
+} {
+  const poses =
+    record?.stations !== undefined &&
+    changedStations(record.stations, opened).length > 0
+      ? record.stations
+      : null;
+  const carried = new Set(opened.map((p) => p.id));
+  const created = (record?.createdStations ?? []).filter(
+    (f) => !carried.has(f.id),
+  );
+  return { poses, created: created.length === 0 ? null : created };
+}
+
+/** The offered station poses a Restore puts back: each that differs from
+ *  the station's pose in `against` (a station it lacks is skipped), unless
+ *  the station moved here since the open (`moved`): that pose is live
+ *  work and wins, station by station, never the whole offer at once. */
+export function posesToRestore(
+  offered: readonly StationPose[] | undefined,
+  against: readonly StationPose[],
+  moved: readonly string[],
+): StationPose[] {
+  const changed = new Set(changedStations(offered, against));
+  return (offered ?? []).filter(
+    (p) => changed.has(p.id) && !moved.includes(p.id),
+  );
+}
+
 /** `record` with the stored created stations whose ids it lacks
  *  (`stored`: a draft's not yet decided on): the record's own frame of an
  *  id wins (this page's, newer). A live record names only the page's own

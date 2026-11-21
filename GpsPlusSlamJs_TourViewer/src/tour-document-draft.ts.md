@@ -98,6 +98,17 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   their moved records, and Restore brought them back off their station.
   Tests: `tour-document-draft.test.ts`, `tour-document-draft.property.test.ts`,
   and the "after Not now" row of `draft-shared-behaviour.test.ts`.
+- `undecidedOf(record, opened)` - what a stored record holds that nobody
+  decided on yet against the opened tour's stations: its station poses
+  while one differs (`poses`, the whole list) and its created stations the
+  opened tour lacks (`created`), null for none. Both drafts fill their
+  holders with it at the open.
+- `posesToRestore(offered, against, moved)` - the offered poses a Restore
+  puts back, and the phone's open counts as waiting: each that differs
+  from `against`, but a station in `moved` (moved here since the open,
+  live work). Station by station: a move of one station once dropped
+  every offered pose on both pages, so Restore put the others' objects
+  back off their stations.
 - `withCreated(record, stored)` - `record` with the undecided created
   stations `stored` whose ids it lacks, the record's own frame of an id
   winning; both drafts add them to every record written before the

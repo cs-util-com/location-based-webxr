@@ -128,6 +128,7 @@ import {
   SETTINGS_KEY,
   withCreated,
   withFiledNarration,
+  undecidedOf,
   withUndecidedPoses,
 } from "../tour-document-draft.js";
 
@@ -1747,16 +1748,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
             (notes > 0 && addsStations(storedSettings, file)))
             ? storedSettings
             : undefined;
-        undecidedPoses =
-          settings?.stations !== undefined &&
-          changedStations(settings.stations, file.stations).length > 0
-            ? settings.stations
-            : null;
-        const carried = new Set(manifest.stations.map((st) => st.id));
-        const created = (settings?.createdStations ?? []).filter(
-          (f) => !carried.has(f.id),
-        );
-        undecidedCreated = created.length === 0 ? null : created;
+        const undecided = undecidedOf(settings, file.stations ?? []);
+        undecidedPoses = undecided.poses;
+        undecidedCreated = undecided.created;
         if (
           settingsText !== undefined &&
           settings === undefined &&
@@ -1983,6 +1977,13 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       offer = null;
       undecidedPoses = null;
       undecidedCreated = null;
+      // Decided: a record written before with them is written again as the
+      // page set it (the phone clears its holder before the restore's own
+      // write, to the same end).
+      const s = space;
+      if (s !== null && redecideSettings()) {
+        void writeSettingsIn(s, settingsPending);
+      }
     },
 
     async discard() {
@@ -2008,10 +2009,6 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         return false;
       };
       if (!(await writeMeta(s))) return fail();
-      // Committed: the undecided poses are rejected with the draft, so no
-      // later record carries them.
-      undecidedPoses = null;
-      undecidedCreated = null;
       // The offered settings record goes too, unless changed since the
       // open (live work): awaited, inside the namespace's work, so "Delete
       // it" is done only once it went, and a removal that did not land
@@ -2023,6 +2020,11 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       ) {
         return fail();
       }
+      // Committed: the undecided poses are rejected with the draft, so no
+      // later record carries them. Not before the removal above: a refused
+      // one arms the offer again, its undecided poses with it.
+      undecidedPoses = null;
+      undecidedCreated = null;
       // Changed since the open: the record is that live work's, written
       // again without the rejected poses it carried.
       if (settingsWanted !== null && s === space && redecideSettings()) {

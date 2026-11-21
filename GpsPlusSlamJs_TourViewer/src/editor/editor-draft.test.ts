@@ -1744,6 +1744,70 @@ describe("createEditorDraft, the stations the page created", () => {
     expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.5)]);
   });
 
+  /** A draft whose settings record holds st-b moved, opened again: the
+   *  offer stands, st-b's pose undecided. */
+  async function offeredStB(b: ReturnType<typeof memoryDraftStores>) {
+    const opened = tour(pin("a"), pin("b"));
+    const at = (id: string, lat: number) => ({
+      id,
+      geo: { lat, lon: 9.0, alt: 340, rotation: [0, 0, 0, 1] as const },
+    });
+    const first = draftIn(b);
+    await first.open(K1, opened);
+    void first.saveSettings(
+      { needsNoGps: false, stations: [at("st-a", 48.5), at("st-b", 48.504)] },
+      ["st-b"],
+    );
+    await first.idle();
+    first.close();
+    const second = draftIn(b);
+    const { offer } = await second.open(K1, opened);
+    expect(offer?.settings?.stations).toEqual([
+      at("st-a", 48.5),
+      at("st-b", 48.504),
+    ]);
+    const stored = (): unknown =>
+      parseSettingsRecord(
+        b.spaces.get(editorDraftKey(K1))?.get(SETTINGS) as string,
+      )?.stations;
+    return { second, at, stored };
+  }
+
+  // Why: "Delete it" commits with the meta, then removes the offered
+  // record. When that removal does not land the offer is armed again, and
+  // the undecided poses must stay with it: without them the next record
+  // this page writes (another station's move) loses the declined move.
+  it("a Delete it whose record removal is refused keeps the undecided poses for the next write", async () => {
+    const b = memoryDraftStores();
+    const { second, at, stored } = await offeredStB(b);
+    b.failRemoveOf.add(SETTINGS);
+    expect(await second.discard()).toBe(false);
+    b.failRemoveOf.clear();
+    void second.saveSettings(
+      { needsNoGps: false, stations: [at("st-a", 48.503), at("st-b", 48.5)] },
+      ["st-a"],
+    );
+    await second.idle();
+    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.504)]);
+  });
+
+  // Why: Restore decides the offer, as on the phone: from then on the
+  // record holds what the page set, not the poses the offer carried. A
+  // record written before Restore with them is written again without.
+  it("Restore writes the record again as the page set it, without the undecided poses", async () => {
+    const b = memoryDraftStores();
+    const { second, at, stored } = await offeredStB(b);
+    void second.saveSettings(
+      { needsNoGps: false, stations: [at("st-a", 48.503), at("st-b", 48.5)] },
+      ["st-a"],
+    );
+    await second.idle();
+    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.504)]);
+    second.restored();
+    await second.idle();
+    expect(stored()).toEqual([at("st-a", 48.503), at("st-b", 48.5)]);
+  });
+
   it("a record holding only created stations is kept, and offered with the note that names them", async () => {
     const b = memoryDraftStores();
     const first = draftIn(b);

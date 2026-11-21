@@ -129,7 +129,7 @@ import {
   STATION_RADIUS_MAX_M,
   STATION_RADIUS_MIN_M,
 } from "../station-geometry.js";
-import { followDocument } from "../tour-document-draft.js";
+import { followDocument, posesToRestore } from "../tour-document-draft.js";
 import { blockFileKind, withBlockFile } from "../block-file.js";
 import { sameJson } from "../same-json.js";
 import { newTourId } from "../tour-file-key.js";
@@ -3634,19 +3634,14 @@ export function createEditorSession(input: {
       ]);
       const settings = work.settings;
       // The draft's station poses (D17; the r875 milestone review #1) -
-      // unless a frame was moved here meanwhile: live work wins. Only a
-      // station the tour carries, at a pose other than its own.
-      const stations = (
-        settings?.stations === undefined || state.touched.stations
-          ? []
-          : settings.stations
-      ).filter((pose) => {
-        const frame = state.stations.find((s) => s.id === pose.id);
-        return (
-          frame !== undefined &&
-          JSON.stringify(frame.geo) !== JSON.stringify(pose.geo)
-        );
-      });
+      // each but a station moved here meanwhile: live work wins, station by
+      // station. Only a station the tour carries, at a pose other than its
+      // own.
+      const stations = posesToRestore(
+        settings?.stations,
+        state.stations,
+        state.touched.movedStations,
+      );
       // An object its station cannot carry (the station is gone, or an
       // older draft) is seated by the rule as the restore puts it back
       // (`restored`), never skipped. One the tour

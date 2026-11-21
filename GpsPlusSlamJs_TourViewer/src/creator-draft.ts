@@ -56,9 +56,9 @@ import {
   type StationPose,
 } from "./tour-document.js";
 import {
-  changedStations,
   DRAFT_PART_UNREAD,
   parseSettingsRecord,
+  posesToRestore,
   settingsRecord,
   settingsRecordText,
   withCreated,
@@ -66,6 +66,7 @@ import {
   SETTINGS_KEY,
   type TourCodesRecord,
   type TourSettingsRecord,
+  undecidedOf,
 } from "./tour-document-draft.js";
 import type { TourSession } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
@@ -828,11 +829,15 @@ export function wireCreatorDraft(deps: {
     // an object's.
     const live = liveObjectIds();
     const objects = waiting.objects.filter((o) => !live.has(o.id));
-    // The frames before the objects, whose records stand in them - unless
-    // a frame was moved here meanwhile: live work wins (as on the desktop).
-    const stations = ctx.tourDocument.state().touched.stations
-      ? []
-      : waiting.stations;
+    // The frames before the objects, whose records stand in them - each
+    // but a frame moved here meanwhile: live work wins, station by
+    // station (as on the desktop).
+    const now = ctx.tourDocument.state();
+    const stations = posesToRestore(
+      waiting.stations,
+      now.stations,
+      now.touched.movedStations,
+    );
     // The deletions come back as the tombstones they are (plan §3.4).
     const deleted = waiting.deleted.filter((id) => !live.has(id));
     ctx.tourDocument.restore(
@@ -1149,20 +1154,9 @@ export function wireCreatorDraft(deps: {
             },
           );
           // Into this open's own holder: only its writes read it.
-          const openedPoses = (opened?.stations ?? []).map(({ id, geo }) => ({
-            id,
-            geo,
-          }));
-          held.poses =
-            read?.stations !== undefined &&
-            changedStations(read.stations, openedPoses).length > 0
-              ? read.stations
-              : null;
-          const openedIds = new Set(openedPoses.map((p) => p.id));
-          const created = (read?.createdStations ?? []).filter(
-            (f) => !openedIds.has(f.id),
-          );
-          held.created = created.length === 0 ? null : created;
+          const offered = undecidedOf(read, opened?.stations ?? []);
+          held.poses = offered.poses;
+          held.created = offered.created;
           return read;
         },
       );
@@ -1277,19 +1271,12 @@ export function wireCreatorDraft(deps: {
       // The station poses the record holds that the opened tour does not
       // (D17): work like any other, so the draft is not spent while one
       // is waiting. Read whatever else this page changed (a name is a
-      // settings change too); only a station moved here outranks them.
-      const settings = ctx.tourDocument.state().touched.stations
-        ? undefined
-        : storedSettings;
-      const openedStations = (opened?.stations ?? []).map(({ id, geo }) => ({
-        id,
-        geo,
-      }));
-      const moved = new Set(
-        changedStations(settings?.stations, openedStations),
-      );
-      const waitingStations = (settings?.stations ?? []).filter((p) =>
-        moved.has(p.id),
+      // settings change too); only a station moved here outranks its own
+      // pose, never the others'.
+      const waitingStations = posesToRestore(
+        storedSettings?.stations,
+        opened?.stations ?? [],
+        ctx.tourDocument.state().touched.movedStations,
       );
       // What the hosted zip stores for each of the draft's codes (M4c-1):
       // the content, read one by one like the one level was.

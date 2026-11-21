@@ -878,8 +878,11 @@ type Op =
   | { readonly kind: "undo" }
   | { readonly kind: "place"; readonly at: number }
   | { readonly kind: "moveStation"; readonly id: "st-a" | "st-b" }
-  /** The tab closed and the tour opened again, its offer answered. */
-  | { readonly kind: "reopen"; readonly answer: Answer };
+  /** The tab closed and the tour opened again, its offer answered - or,
+   *  `later`, left standing while the steps after it work on the page. */
+  | { readonly kind: "reopen"; readonly answer: Answer | "later" }
+  /** A standing offer answered (nothing, when none stands). */
+  | { readonly kind: "answer"; readonly answer: Answer };
 
 /** A fault set for one step: a refused write of one record family, the
  *  next meta write refused (a Restore and a "Delete it" write the meta),
@@ -911,6 +914,15 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
   }),
   fc.record({
     kind: fc.constant("reopen" as const),
+    answer: fc.constantFrom<Answer | "later">(
+      "restore",
+      "decline",
+      "discard",
+      "later",
+    ),
+  }),
+  fc.record({
+    kind: fc.constant("answer" as const),
     answer: fc.constantFrom<Answer>("restore", "decline", "discard"),
   }),
 );
@@ -954,7 +966,8 @@ const stepArb: fc.Arbitrary<Step> = opArb.chain((op) =>
  *  written by a Restore or a "Delete it"; and the sequences that once
  *  found a gap: a declined station move (or a placement's new station)
  *  lost by a later write, a refused tombstone of a station's last object,
- *  an edit at a declined station, a crash inside a station move. */
+ *  an edit at a declined station, a crash inside a station move, a station
+ *  moved while the offer stands and then Restore. */
 const SEEDED: Step[][] = [
   [
     [
@@ -1025,11 +1038,17 @@ const SEEDED: Step[][] = [
     [{ kind: "edit", id: "b", text: "The gate" }, { kind: "none" }],
     [{ kind: "moveStation", id: "st-a" }, { kind: "none" }],
   ],
+  [
+    [{ kind: "moveStation", id: "st-b" }, { kind: "none" }],
+    [{ kind: "reopen", answer: "later" }, { kind: "none" }],
+    [{ kind: "moveStation", id: "st-a" }, { kind: "none" }],
+    [{ kind: "answer", answer: "restore" }, { kind: "none" }],
+  ],
 ];
 
 async function apply(
   page: DraftPage,
-  op: Exclude<Op, { kind: "reopen" }>,
+  op: Exclude<Op, { kind: "reopen" | "answer" }>,
 ): Promise<void> {
   switch (op.kind) {
     case "edit":
@@ -1372,6 +1391,17 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     page = await reopen(open, browser, page);
     return page;
   };
+  /** The stations the draft holds at a pose the page does not show:
+   *  undecided while the offer stands, and after "Not now", until a
+   *  Restore or a landed "Delete it". */
+  const undecidedIn = (shape: DocumentShape) => {
+    const shown = entriesOf(shape);
+    for (const [key, pose] of expected.entries) {
+      if (isStation(key) && shown.has(key) && shown.get(key) !== pose) {
+        expected.undecided.add(key);
+      }
+    }
+  };
   for (const [op, fault] of steps) {
     // A reopen's own load comes first; the fault is set for its answer.
     if (op.kind === "reopen") {
@@ -1385,14 +1415,26 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
         );
         continue;
       }
+      if (op.answer === "later") {
+        undecidedIn(loaded.shape());
+        continue;
+      }
     }
+    if (op.kind === "answer" && page.offer() === "") continue;
+    // "later" went on above: a reopen here is answered.
+    const answer: Answer | null =
+      op.kind === "answer"
+        ? op.answer
+        : op.kind === "reopen" && op.answer !== "later"
+          ? op.answer
+          : null;
     const before = page.shape();
     const refusedBefore = browser.refused.length;
     browser.failPutsOf = fault.kind === "refuse" ? fault.keys : null;
     browser.failMetaPuts = fault.kind === "meta" ? 1 : 0;
     browser.crashAfter = fault.kind === "crash" ? fault.after : null;
-    if (op.kind === "reopen") {
-      await page[op.answer]();
+    if (op.kind === "reopen" || op.kind === "answer") {
+      if (answer !== null) await page[answer]();
     } else {
       await apply(page, op);
     }
@@ -1415,12 +1457,12 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
       expected = { ...expected, entries: entriesOf(restored) };
       continue;
     }
-    if (op.kind !== "reopen") {
+    if (answer === null) {
       follow(expected, before, after, lostWrite);
       continue;
     }
     said ||= page.saidNotKept();
-    if (op.answer === "restore") {
+    if (answer === "restore") {
       holdsExpected(expected, after, said, "a Restore");
       // A refused meta leaves the work as it was to be offered again.
       expected = {
@@ -1432,17 +1474,10 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     }
     // "Not now": the stations the draft holds at a pose the page does not
     // show stay undecided until a Restore or a landed "Delete it".
-    if (op.answer === "decline") {
-      const shown = entriesOf(after);
-      for (const [key, pose] of expected.entries) {
-        if (isStation(key) && shown.has(key) && shown.get(key) !== pose) {
-          expected.undecided.add(key);
-        }
-      }
-    }
+    if (answer === "decline") undecidedIn(after);
     // A "Delete it" that landed leaves the file; one that did not is
     // said, and the work stays to be offered again. "Not now" keeps it.
-    if (op.answer === "discard" && !page.saidNotKept()) {
+    if (answer === "discard" && !page.saidNotKept()) {
       expected = expectedOf(after);
     }
   }
@@ -1515,6 +1550,25 @@ describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
     expect(objectsById(next.shape()).get(added[0]!)).toBe(
       objectsById(placed).get(added[0]!),
     );
+  }, 60_000);
+
+  // Why: the offer stands until it is answered, and the creator may move
+  // a station meanwhile. Restore then puts back every offered pose but
+  // that station's: the moved one is live work and wins, every other is
+  // the draft's, its objects at their offsets from it.
+  it("while the offer stands, a station move and then Restore keep the other station's offered move", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.moveStation("st-b", { ...MOVED, lat: NORTH + 0.004 });
+    const moved = page.shape();
+    const offered = await reopen(open, browser, page);
+    expect(offered.offer()).not.toBe("");
+    await offered.moveStation("st-a", { ...MOVED, lat: NORTH + 0.003 });
+    await offered.restore();
+    const shape = offered.shape();
+    expect(stationsByKey(shape).get("station:st-b")).toBe(
+      stationsByKey(moved).get("station:st-b"),
+    );
+    expect(objectsById(shape).get("b")).toBe(objectsById(moved).get("b"));
   }, 60_000);
 
   // Why: "Not now" keeps a moved station undecided, and an object of that
