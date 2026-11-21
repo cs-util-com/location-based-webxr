@@ -1092,16 +1092,27 @@ function restore(before: MakerDraft, beforeR: CutResult | null): void {
   makerStore.dispatch(A.restored({ draft: before, hadCut: beforeR !== null }));
   if (!isCutting(page())) R = beforeR;
 }
+const restartBtn = $<HTMLButtonElement>("#restart");
 async function save(): Promise<void> {
   const raw = chosenRaw();
   if (!raw) return;
-  // The talk style goes with the frames chosen here.
+  // The talk style goes with the frames chosen here, and the save with
+  // this draft: Discard or a new picture can put another in its place.
   const steady = draft().choice === "steady";
+  const generation = page().generation;
+  // Start over waits; the generation guards the other ways regardless.
+  restartBtn.disabled = true;
   await busy(nextBtn, "Saving...", async () => {
     try {
       const frames = await pngOf(canvasOf(composeSheet(raw)));
       const image = await pngOf(canvasOf(raw[0]!));
       const lib = await library();
+      if (page().generation !== generation) {
+        toast(
+          "The character was not saved, because a new one was started meanwhile.",
+        );
+        return;
+      }
       // Read now: a name typed while the pictures were written is the one
       // the author sees.
       const S = draft();
@@ -1112,7 +1123,9 @@ async function save(): Promise<void> {
         frames,
         image,
       });
-      makerStore.dispatch(A.saved({ id: rec.libraryId, name: rec.name }));
+      makerStore.dispatch(
+        A.saved({ id: rec.libraryId, name: rec.name, generation }),
+      );
       justMade.add(rec.libraryId);
       toast(`Saved on this device: ${rec.name}`);
     } catch (e) {
@@ -1120,11 +1133,13 @@ async function save(): Promise<void> {
         `Saving did not work: ${reason(e)}. Your character is still here - try again.`,
         true,
       );
+    } finally {
+      restartBtn.disabled = false;
     }
   });
   render();
 }
-$("#restart").addEventListener("click", () => {
+restartBtn.addEventListener("click", () => {
   const before = draft();
   const beforeR = R;
   startAnother();

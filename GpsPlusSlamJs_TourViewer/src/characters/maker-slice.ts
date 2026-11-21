@@ -30,6 +30,7 @@ import {
   type MakerDraft,
   reachable,
   type TalkChoice,
+  TEXT_MAX,
 } from "./maker-draft.js";
 
 /** `cutting` while a picture is cut, `ready` while a cut is shown. */
@@ -40,6 +41,12 @@ export interface MakerState {
   readonly cut: CutStatus;
   /** Moves on every new cut and talk style, so the previews redraw. */
   readonly version: number;
+  /**
+   * Moves whenever another draft takes this one's place (a new start, an
+   * Undo of one, a new picture), so a save started from an earlier draft
+   * does not land on it. Not stored: it counts within one page session.
+   */
+  readonly generation: number;
 }
 
 const isStep = (i: unknown): i is number =>
@@ -63,7 +70,7 @@ export function makerStateFrom(stored: unknown): MakerState {
     : d.step >= 4
       ? { ...d, step: 3 }
       : d;
-  return { draft, cut: "none", version: 0 };
+  return { draft, cut: "none", version: 0, generation: 0 };
 }
 
 /** Whether a stored draft comes back without the picture it was at. */
@@ -113,6 +120,7 @@ const makerSlice = createSlice({
     cutStarted(s) {
       if (s.cut === "cutting") return;
       s.cut = "cutting";
+      s.generation += 1;
       s.draft.failure = "";
       s.draft.choice = "drawn";
       s.draft.savedId = "";
@@ -153,12 +161,24 @@ const makerSlice = createSlice({
     cutReset(s) {
       s.draft.cut = { ...CUT_CHOICE_DEFAULTS };
     },
+    /** Kept to `TEXT_MAX` characters, as a stored draft is read back. */
     named(s, a: PayloadAction<string>) {
-      if (typeof a.payload === "string") s.draft.name = a.payload;
+      if (typeof a.payload === "string")
+        s.draft.name = a.payload.slice(0, TEXT_MAX);
     },
-    saved(s, a: PayloadAction<{ id: string; name: string }>) {
-      s.draft.savedId = a.payload.id;
-      s.draft.savedName = a.payload.name;
+    /**
+     * The library saved the draft of `generation`; ignored when another
+     * draft has taken its place since. Id and name kept to `TEXT_MAX`.
+     */
+    saved(
+      s,
+      a: PayloadAction<{ id: string; name: string; generation: number }>,
+    ) {
+      const { id, name, generation } = a.payload;
+      if (generation !== s.generation) return;
+      if (typeof id !== "string" || typeof name !== "string") return;
+      s.draft.savedId = id.slice(0, TEXT_MAX);
+      s.draft.savedName = name.slice(0, TEXT_MAX);
     },
     /** The page was hidden at `at` (ms), for the welcome-back offer. */
     left(s, a: PayloadAction<number>) {
@@ -170,11 +190,13 @@ const makerSlice = createSlice({
      */
     startedAnother(s) {
       s.draft = freshFor(s.draft.ground);
+      s.generation += 1;
       if (s.cut === "ready") s.cut = "none";
     },
     /** Undo of `startedAnother`: the draft back (read field by field), with its cut. */
     restored(s, a: PayloadAction<{ draft: MakerDraft; hadCut: boolean }>) {
       s.draft = draftOf(a.payload.draft);
+      s.generation += 1;
       if (s.cut !== "cutting") s.cut = a.payload.hadCut ? "ready" : "none";
     },
   },

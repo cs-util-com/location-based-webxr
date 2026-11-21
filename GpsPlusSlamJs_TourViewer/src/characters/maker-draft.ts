@@ -87,7 +87,8 @@ export function freshDraft(): MakerDraft {
 
 /** The longest description a draft keeps (the box's maxlength too). */
 export const DESC_MAX = 2000;
-const TEXT_MAX = 200;
+/** The longest name, saved id, saved name and failure a draft keeps. */
+export const TEXT_MAX = 200;
 
 const isObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
