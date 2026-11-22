@@ -499,6 +499,8 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     const arWorldGroup = new Group();
     const s = await visitorSession(8, true, {}, arWorldGroup);
     s.scene.add(arWorldGroup);
+    const tickModelViews = vi.fn();
+    s.hooks.tickModelViews = tickModelViews;
     enableArWorldGroupAlignment({
       store: s.arStore,
       arWorldGroup,
@@ -516,6 +518,10 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
       expect(
         s.getViewerCamera,
         "the commit re-ticked against the viewer camera",
+      ).toHaveBeenCalled();
+      expect(
+        tickModelViews,
+        "the commit re-ticked the models' views",
       ).toHaveBeenCalled();
       // One frame: the binding puts the group on T, the station holds T^-1.
       runFrameUpdates(0.05, 1);
