@@ -6,21 +6,31 @@
  * follow the focus and go without one; the station guide says when
  * (`onFocusCue`: a focus, a heading, and a distance shown).
  *
- * At the scene root in the session's GPS-world NUE, like the breadcrumbs
- * and the content. The ground is the phone's height less `EYE_HEIGHT_M`,
- * as the breadcrumbs read it.
+ * In the session's GPS-world NUE. On the scene root, or, given an anchor
+ * parent (the AR world group), both in one pose-free wrapper standing in
+ * their focus station's deferred-anchor key (`station:<id>`, as the story
+ * figure, `anchor-root.ts`): they share that station's matrix, so they
+ * hold and land with its content and never stand apart from it; a beacon
+ * in view holds its station's content too. A focus change stands them in
+ * the new station's key, at its matrix; a null cue only hides them, kept
+ * in their key, so a short gap is no new placement. The ground is the
+ * phone's height less `EYE_HEIGHT_M`, as the breadcrumbs read it.
  *
  * @see walk-focus-cues.ts.md
  */
 
 import {
   CylinderGeometry,
+  Group,
   Mesh,
   MeshBasicMaterial,
+  Vector3,
   type Object3D,
 } from "three";
 
+import { anchorRoot, type AnchoredRoot } from "./anchor-root.js";
 import { EYE_HEIGHT_M } from "./breadcrumbs.js";
+import { stationAnchorKey } from "./station-content.js";
 import { createStationRing, type StationRing } from "./station-ring.js";
 import { WALK_RADAR_COLOURS } from "./walk-radar.js";
 
@@ -73,9 +83,14 @@ export function walkBeaconRadiusM(distanceM: number): number {
 }
 
 export interface WalkFocusCues {
-  /** Show the cues for `cue`, or take them away (null). Cheap per frame:
+  /** Show the cues for `cue`, or hide them (null; anchored, they stay in
+   *  their key; on the scene, they leave it). Cheap per frame:
    *  it only moves and scales the meshes it keeps. */
   update(cue: WalkFocusCue | null): void;
+  /** Where a scene-root NUE point stands as the cues show it: through
+   *  their anchor's correction still waiting in view (the breadcrumbs aim
+   *  at it); `nue` itself while they stand on the scene, or none shows. */
+  shownAt(nue: Nue): Nue;
 }
 
 /**
@@ -85,6 +100,10 @@ export interface WalkFocusCues {
  */
 export function createWalkFocusCues(deps: {
   getScene(): Object3D | null;
+  /** Where they stand in their focus station's deferred-anchor key (the
+   *  AR world group);
+   *  read on each update. Absent or null: on the scene. */
+  getAnchorParent?(): Object3D | null;
 }): WalkFocusCues {
   const ring: StationRing = createStationRing({
     colour: WALK_RADAR_COLOURS.accent,
@@ -107,41 +126,100 @@ export function createWalkFocusCues(deps: {
   /** What the beacon was added to: removed through it (the e2e fakes'
    *  scene keeps no `parent` link). */
   let holder: Object3D | null = null;
+  /** Their wrapper while they stand as an anchor, and the focus whose
+   *  station key it stands in. */
+  let anchored: AnchoredRoot | null = null;
+  let anchoredId: string | null = null;
+  /** The anchor parent that refused them: not asked again (each update
+   *  would log) until they are taken away. */
+  let refused: Object3D | null = null;
+  /** The radius the anchor's bounds were last read for. */
+  let boundsFoundM = 0;
 
   function takeAway(): void {
     ring.hide();
     holder?.remove(beacon);
     beacon.removeFromParent();
     holder = null;
+    anchored?.release();
+    anchored = null;
+    anchoredId = null;
+    refused = null;
+  }
+
+  /** Stand both in `into`, at the cue. */
+  function place(into: Object3D, cue: WalkFocusCue): void {
+    const ground = cue.eye[1] - EYE_HEIGHT_M;
+    ring.show(into, [cue.at[0], ground, cue.at[2]], cue.foundM);
+    if (holder !== into) {
+      holder?.remove(beacon);
+      beacon.removeFromParent();
+      into.add(beacon);
+      holder = into;
+    }
+    const r = walkBeaconRadiusM(cue.distanceM);
+    beacon.scale.set(r, 1, r);
+    beacon.position.set(
+      cue.at[0],
+      ground + WALK_BEACON_FROM_M + height / 2,
+      cue.at[2],
+    );
   }
 
   return {
+    shownAt(nue) {
+      const scene = deps.getScene();
+      if (anchored === null || scene === null) return nue;
+      const p = new Vector3(nue[0], nue[1], nue[2]);
+      anchored.root.updateWorldMatrix(true, false);
+      anchored.root.localToWorld(p);
+      scene.updateWorldMatrix(true, false);
+      scene.worldToLocal(p);
+      return [p.x, p.y, p.z];
+    },
     update(cue) {
-      const scene = cue === null ? null : deps.getScene();
-      if (
-        cue === null ||
-        scene === null ||
-        !cue.at.every(Number.isFinite) ||
-        !cue.eye.every(Number.isFinite)
-      ) {
-        takeAway();
+      const scene = deps.getScene();
+      const valid =
+        cue !== null &&
+        cue.at.every(Number.isFinite) &&
+        cue.eye.every(Number.isFinite);
+      if (scene === null || !valid) {
+        // Anchored: hidden, its key kept. Hidden counts as out of view,
+        // so a correction lands unseen unless the station's content holds
+        // the key in view.
+        if (scene !== null && anchored !== null) anchored.root.visible = false;
+        else takeAway();
         return;
       }
-      const ground = cue.eye[1] - EYE_HEIGHT_M;
-      ring.show(scene, [cue.at[0], ground, cue.at[2]], cue.foundM);
-      if (holder !== scene) {
-        holder?.remove(beacon);
-        beacon.removeFromParent();
-        scene.add(beacon);
-        holder = scene;
+      const parent = deps.getAnchorParent?.() ?? null;
+      if (
+        anchored !== null &&
+        (anchored.parent !== parent || anchoredId !== cue.id)
+      ) {
+        takeAway();
       }
-      const r = walkBeaconRadiusM(cue.distanceM);
-      beacon.scale.set(r, 1, r);
-      beacon.position.set(
-        cue.at[0],
-        ground + WALK_BEACON_FROM_M + height / 2,
-        cue.at[2],
-      );
+      if (anchored !== null) {
+        anchored.root.visible = true;
+        place(anchored.root, cue);
+        // A new ring mesh.
+        if (cue.foundM !== boundsFoundM) anchored.boundsChanged();
+        boundsFoundM = cue.foundM;
+        return;
+      }
+      if (parent !== null && parent !== refused) {
+        // Placed in the wrapper first: the anchor's first bounds see both.
+        const wrapper = new Group();
+        wrapper.name = "walk-focus-anchor";
+        place(wrapper, cue);
+        anchored = anchorRoot(parent, stationAnchorKey(cue.id), wrapper);
+        if (anchored !== null) {
+          anchoredId = cue.id;
+          boundsFoundM = cue.foundM;
+          return;
+        }
+        refused = parent;
+      }
+      place(scene, cue);
     },
   };
 }

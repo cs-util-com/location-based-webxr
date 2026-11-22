@@ -37,12 +37,16 @@ import {
 import { pictureProblem } from "./image-cap.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { createBreadcrumbTrail } from "./breadcrumbs.js";
-import { createWalkFocusCues } from "./walk-focus-cues.js";
+import { createWalkFocusCues, type WalkFocusCue } from "./walk-focus-cues.js";
 import { startWalkHuds } from "./walk-hud.js";
 import { gateAllowsPlacement } from "./scan-gate.js";
 import { createFreeItems } from "./free-items.js";
 import { createSceneAudio } from "./scene-audio.js";
-import { createSceneStage, type SceneStage } from "./scene-stage.js";
+import {
+  createSceneStage,
+  type SceneStage,
+  type SceneStageDeps,
+} from "./scene-stage.js";
 import {
   createSceneView,
   type SceneView,
@@ -59,6 +63,7 @@ import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characte
 import {
   wireStationGuide,
   type GuideView,
+  type StationGuideDeps,
   type StationGuideDom,
   type StationTour,
 } from "./station-guide.js";
@@ -240,6 +245,7 @@ export function wireVisitorStations(deps: {
   seams: Pick<
     TourViewerSeams,
     | "getScene"
+    | "getStationAnchorParent"
     | "getArPose"
     | "createWayfindingHud"
     | "createAudioElement"
@@ -331,17 +337,14 @@ export function wireVisitorStations(deps: {
   const decodes = createKeyedChain();
   // A figure coming back stands from his first painting (`figure-memo.ts`).
   const figures = createFigureMemo();
-  const breadcrumbs = createBreadcrumbTrail({
-    getScene: () => seams.getScene(),
-  });
-  // The focus's beacon and ring, in the scene beside the breadcrumbs.
-  const focusCues = createWalkFocusCues({ getScene: () => seams.getScene() });
+  // The breadcrumbs, the focus's beacon and ring, and where figures stand.
+  const marks = wireSceneMarks(seams);
   // The guide is created below; the stage reads its poses late. The
   // figure's pose waits for a heading (`figurePoseOf`): the stage parks the figure and the story says so.
   let poseOf: (id: string) => ReturnType<typeof guide.poseOf> = () => null;
   const makeStage = (): SceneStage =>
     createSceneStage({
-      getScene: () => seams.getScene(),
+      ...marks.stageScene,
       poseOf: (id) => poseOf(id),
       // The figure measured from its own header, and the
       // decoder holds the same cap again.
@@ -508,12 +511,8 @@ export function wireVisitorStations(deps: {
       stage.faceVisitor(nue);
       free.faceVisitor(nue);
     },
-    onGuide: (visitor, target) => {
-      breadcrumbs.update(visitor, target);
-    },
-    onFocusCue: (cue) => {
-      focusCues.update(cue);
-    },
+    onGuide: marks.onGuide,
+    onFocusCue: marks.onFocusCue,
   });
   poseOf = (id) => guide.figurePoseOf(id);
 
@@ -855,6 +854,47 @@ export function wireVisitorStations(deps: {
       ...view.debugLines(),
     ],
     characterTapped: (tap) => storyCharacterTapped(tap) || free.tapped(tap),
+  };
+}
+
+/**
+ * The visitor's station-tied marks in the scene, wired to the page's
+ * seams: the breadcrumbs, the focus's beacon and ring
+ * (`walk-focus-cues.ts`), and where a story's figure stands
+ * (`stageScene`, spread into every scene stage). In an AR visit the
+ * beacon and ring stand as a deferred anchor of their own, and a figure
+ * shares its station's, under the station anchor parent (the AR world
+ * group; null in the e2e fakes, which keep all of them on the scene root).
+ * The breadcrumbs stay on the scene root and are laid towards the focus as
+ * its beacon stands (`WalkFocusCues.shownAt`), so they never lead past a
+ * beacon that holds its place in view.
+ */
+export function wireSceneMarks(
+  seams: Pick<TourViewerSeams, "getScene" | "getStationAnchorParent">,
+): {
+  readonly stageScene: Pick<SceneStageDeps, "getScene" | "getAnchorParent">;
+  onGuide: NonNullable<StationGuideDeps["onGuide"]>;
+  onFocusCue: (cue: WalkFocusCue | null) => void;
+} {
+  const stageScene = {
+    getScene: () => seams.getScene(),
+    getAnchorParent: () => seams.getStationAnchorParent(),
+  };
+  const breadcrumbs = createBreadcrumbTrail({ getScene: stageScene.getScene });
+  const focusCues = createWalkFocusCues(stageScene);
+  return {
+    stageScene,
+    onGuide: (visitor, target) => {
+      breadcrumbs.update(
+        visitor,
+        target === null
+          ? null
+          : { ...target, to: focusCues.shownAt(target.to) },
+      );
+    },
+    onFocusCue: (cue) => {
+      focusCues.update(cue);
+    },
   };
 }
 

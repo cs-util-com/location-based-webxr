@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Stations as deferred anchors, end to end in real three: the station
  * side table (`station-content.ts`) under a real AR world group, bound by
@@ -30,6 +31,7 @@ import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
 import { qrCodeId } from "gps-plus-slam-app-framework/utils/qr-payload/qr-code-id";
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state/subscribe-to-selector";
 
 import { edgeHintPart } from "./kinds/short-text/edge-hint.js";
@@ -40,6 +42,22 @@ import {
 import { createStationContent, type ContentPart } from "./station-content.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { tickWorldParts, worldEnv, type WorldPart } from "./world-part.js";
+import { createSceneStage, type StageCharacterLook } from "./scene-stage.js";
+import { tappablePins } from "./pin-sheet.js";
+import { wireSceneMarks } from "./visitor-stations.js";
+import { stationCommitRetick } from "./viewer-placement.js";
+import {
+  mountModelView,
+  type ModelViewHandle,
+  type TourModelBlock,
+} from "./model-views.js";
+import {
+  createModelVisitor,
+  mountModelVisitorDom,
+  type ModelVisitor,
+} from "./model-visitor.js";
+import { WALK_BEACON_NAME, WALK_FOCUS_RING_NAME } from "./walk-focus-cues.js";
+import { fakeCharacterPainters } from "./test-support/fake-character-painters.js";
 
 // The vote builder's geodesy is licence-gated; the store's construction
 // activates it, as main.ts does at boot.
@@ -109,12 +127,27 @@ const block = {
   caption: "Toilets",
 } as Parameters<typeof edgeHintPart>[0];
 
+/** A model with one note facing the camera, 6 m ahead. */
+const NOTED_MODEL: TourModelBlock = {
+  id: "bell",
+  kind: "model",
+  view: "hotspots",
+  asset: "bell",
+  sizeM: 1,
+  createdAtIso: "2026-10-28T12:00:00.000Z",
+  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  annotations: [{ position: [0, 0, 0.5], normal: [0, 0, 1], title: "One" }],
+};
+
 /** A station of a ring 10 m ahead and, with `hint`, an edge hint far to
- *  the side, entered as an anchor under the world group. */
+ *  the side, with `model` a model with a note, entered as an anchor under
+ *  the world group. A station's commit re-ticks through the page's
+ *  `stationCommitRetick`. */
 async function world({
   extentM = 40,
   hint = false,
-}: { extentM?: number; hint?: boolean } = {}) {
+  model = false,
+}: { extentM?: number; hint?: boolean; model?: boolean } = {}) {
   const store = makeStore(extentM);
   const scene = new THREE.Scene();
   const group = new THREE.Group();
@@ -135,6 +168,32 @@ async function world({
   const tick = (root: THREE.Object3D | null) => {
     tickWorldParts(root, camera, nowMs, hintParts, 800);
   };
+  let models: ModelVisitor | null = null;
+  let notesLayer: HTMLElement | null = null;
+  const modelHandles: ModelViewHandle[] = [];
+  if (model) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const dom = mountModelVisitorDom(host);
+    for (const el of [dom.layer, dom.gestures]) {
+      Object.defineProperty(el, "clientWidth", { value: 400 });
+      Object.defineProperty(el, "clientHeight", { value: 800 });
+    }
+    notesLayer = dom.layer;
+    models = createModelVisitor({
+      dom,
+      scene: () => scene,
+      camera: () => camera,
+      pick: () => null,
+    });
+  }
+  const retick = stationCommitRetick({
+    camera: () => camera,
+    tickModels: (t) => models?.tick(t),
+    nowMs: () => nowMs,
+    viewHeightPx: () => 800,
+    parts: () => hintParts,
+  });
   const part: ContentPart = {
     render(parent) {
       parent.add(ring);
@@ -143,6 +202,14 @@ async function world({
         p.object.position.copy(HINT_NUE);
         parent.add(p.object);
         hintParts.push(p);
+      }
+      if (model) {
+        const m = new THREE.Group();
+        m.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+        m.position.set(0, 0, -6);
+        m.userData["objectId"] = NOTED_MODEL.id;
+        parent.add(m);
+        modelHandles.push(mountModelView(m, NOTED_MODEL, 1));
       }
       return Promise.resolve({ count: 1, skipped: [], dispose: () => {} });
     },
@@ -154,7 +221,7 @@ async function world({
     anchorParent: () => group,
     onAnchorCommit: (root) => {
       commits.push(root);
-      tick(root);
+      retick(root);
     },
   });
   // One pass at the identity: the group and camera hold their matrices.
@@ -184,6 +251,15 @@ async function world({
     hintParts,
     station,
     pass,
+    models,
+    modelHandles,
+    /** The note's disc as last drawn (its CSS transform), or null. */
+    noteDisc(): string | null {
+      const disc = notesLayer?.querySelector("button");
+      return disc === null || disc === undefined || disc.hidden
+        ? null
+        : disc.style.transform;
+    },
     /** One frame as the page runs it: the page's own tick of the world
      *  parts (the store subscription), the frame loop (binding step and
      *  anchor pass, with any commit's re-tick), then the render's matrix
@@ -191,6 +267,7 @@ async function world({
     frame() {
       scene.updateMatrixWorld();
       tick(scene);
+      models?.tick(nowMs);
       const counts = pass();
       scene.updateMatrixWorld();
       return counts;
@@ -211,6 +288,95 @@ async function world({
       camera.rotation.set(0, dir === "in" ? 0 : Math.PI, 0);
     },
   };
+}
+
+type World = Awaited<ReturnType<typeof world>>;
+
+/** The visitor's wiring of station-tied marks (`wireSceneMarks`) over the
+ *  seams the page passes: the scene and the station anchor parent, here
+ *  the bound world group. A wiring that dropped the anchor parent stands
+ *  everything on the scene root, which every case below can see. */
+function marksOf(w: World) {
+  return wireSceneMarks({
+    getScene: () => w.scene,
+    getStationAnchorParent: () => w.group,
+  });
+}
+
+/** The station's pose as the guide gives it: GPS-world NUE, no alignment. */
+const FIGURE_POSE = {
+  positionNue: RING_NUE.toArray(),
+  rotationNue: [0, 0, 0, 1] as [number, number, number, number],
+};
+
+/** A story figure at `stationId` through the visitor's wiring. */
+async function standFigure(
+  w: World,
+  {
+    stationId = "s",
+    pose,
+  }: { stationId?: string; pose?: StageCharacterLook["pose"] } = {},
+) {
+  let nowMs = 0;
+  let cameraReads = 0;
+  const texture = new THREE.Texture();
+  texture.image = { width: 100, height: 200 };
+  const stage = createSceneStage({
+    ...marksOf(w).stageScene,
+    poseOf: () => FIGURE_POSE,
+    decodeTexture: () => Promise.resolve(texture),
+    lookPainters: fakeCharacterPainters().painters,
+    getCamera: () => {
+      cameraReads += 1;
+      return w.camera;
+    },
+    now: () => nowMs,
+    fadeMs: 1,
+  });
+  await stage.showCharacter(stationId, new Blob(["png"]), undefined, {
+    view: "speak",
+    name: "Ann",
+    line: "Hello.",
+    ...(pose === undefined ? {} : { pose }),
+  });
+  const holder = w.scene.getObjectByName(`station-stage:${stationId}`);
+  if (holder === undefined) throw new Error("the figure did not stand");
+  return {
+    stage,
+    holder,
+    /** The pose-free root the figure stands in (it changes on a re-entry). */
+    root: () => holder.parent!,
+    /** How often the look read the camera (each of its ticks does). */
+    cameraReads: () => cameraReads,
+    /** Follow the station's presence until the fade settled. */
+    follow(shown: boolean) {
+      stage.follow(() => shown);
+      nowMs += 10;
+      stage.follow(() => shown);
+    },
+    /** The figure's world position's distance from where its pose says. */
+    error(expected = RING_NUE): number {
+      w.scene.updateMatrixWorld();
+      return holder.getWorldPosition(new THREE.Vector3()).distanceTo(expected);
+    },
+    inCamera(): THREE.Vector3 {
+      w.scene.updateMatrixWorld();
+      return holder
+        .getWorldPosition(new THREE.Vector3())
+        .applyMatrix4(w.camera.matrixWorld.clone().invert());
+    },
+  };
+}
+
+/** Frames until the station commits (at most `max`); the count of frames. */
+function framesUntilCommit(w: World, max = 6): number {
+  const before = w.commits.length;
+  let n = 0;
+  while (n < max && w.commits.length === before) {
+    w.frame();
+    n += 1;
+  }
+  return w.commits.length > before ? n : -1;
 }
 
 afterEach(() => {
@@ -372,6 +538,327 @@ describe("the edge hint on an anchored station", () => {
   });
 });
 
+describe("a story figure shares its station's anchor", () => {
+  // Why these tests matter: the figure stands in his station. A figure on
+  // the scene root slides with every alignment change while his station
+  // holds its place in view, so he would walk off his own spot; and a
+  // figure that held his station in view must hold it as its content does.
+
+  it("stands under the world group and moves with its station in the same pass", async () => {
+    const w = await world();
+    const f = await standFigure(w);
+    expect(f.root().parent).toBe(w.group);
+    expect(w.scene.children).not.toContain(f.holder);
+    const same = () => f.root().matrix.equals(w.station.matrix);
+    expect(same()).toBe(true);
+    expect(f.error()).toBeLessThan(TOL);
+    const before = f.inCamera();
+    w.store.setNorth(2, 3);
+    for (let i = 0; i < 30; i += 1) {
+      w.frame();
+      expect(same()).toBe(true);
+      expect(f.inCamera().distanceTo(before)).toBeLessThan(TOL);
+    }
+    expect(f.error()).toBeGreaterThan(1);
+    w.look("out");
+    expect(framesUntilCommit(w)).toBeGreaterThan(0);
+    // In the frame of the commit, not a later one.
+    expect(same()).toBe(true);
+    expect(f.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  it("holds its station while the figure is in view and the station is not", async () => {
+    const w = await world();
+    // 20 m behind the station's spot: in view when the camera turns round.
+    const f = await standFigure(w, {
+      pose: { position: [0, 0, 20], rotation: [0, 0, 0, 1] },
+    });
+    const figureNue = RING_NUE.clone().add(new THREE.Vector3(0, 0, 20));
+    expect(f.error(figureNue)).toBeLessThan(TOL);
+    w.look("out");
+    w.frame();
+    w.frame();
+    w.store.setNorth(2);
+    expect(framesUntilCommit(w, 10)).toBe(-1);
+    expect(w.ringError()).toBeGreaterThan(1);
+    // Both out of view: they land together.
+    w.camera.rotation.set(0, Math.PI / 2, 0);
+    expect(framesUntilCommit(w)).toBeGreaterThan(0);
+    expect(w.ringError()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+    expect(f.error(figureNue)).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  it("is its key's only root at a station with no content, deferring in view and landing out of view", async () => {
+    const w = await world();
+    const f = await standFigure(w, { stationId: "t" });
+    expect(f.root().parent).toBe(w.group);
+    const before = f.inCamera();
+    w.store.setNorth(2);
+    for (let i = 0; i < 10; i += 1) {
+      w.frame();
+      expect(f.inCamera().distanceTo(before)).toBeLessThan(TOL);
+    }
+    w.look("out");
+    w.frame();
+    w.frame();
+    w.frame();
+    expect(f.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  it("takes a tap at the place it landed, not at the one it left", async () => {
+    const w = await world();
+    const f = await standFigure(w, { stationId: "t" });
+    expect(f.root().parent).toBe(w.group);
+    w.store.setNorth(2);
+    w.frame();
+    w.look("out");
+    w.frame();
+    w.frame();
+    w.frame();
+    expect(f.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+    const targets = f.stage.characterTapTargets();
+    expect(targets.length).toBeGreaterThan(0);
+    const centre = new THREE.Box3()
+      .setFromObject(f.holder)
+      .getCenter(new THREE.Vector3());
+    const eye = w.camera.getWorldPosition(new THREE.Vector3());
+    const hits = (at: THREE.Vector3) =>
+      new THREE.Raycaster(
+        eye,
+        at.clone().sub(eye).normalize(),
+      ).intersectObjects(targets, false).length;
+    expect(hits(centre)).toBeGreaterThan(0);
+    expect(hits(centre.clone().add(new THREE.Vector3(-2, 0, 0)))).toBe(0);
+  });
+
+  it("is no pin a tap opens, even with an object id", async () => {
+    const w = await world();
+    const f = await standFigure(w);
+    f.holder.children[0]!.userData["objectId"] = "knight";
+    const blocks = new Map<string, TourBlock>([
+      [
+        "knight",
+        {
+          id: "knight",
+          kind: "shortText",
+          view: "pin",
+          caption: "Knight",
+          description: "More.",
+          pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      ],
+    ]);
+    expect([...tappablePins(w.scene, blocks).keys()]).toEqual([]);
+  });
+
+  it("leaves the anchor with its station's presence and comes back at the key's matrix", async () => {
+    const w = await world();
+    const f = await standFigure(w);
+    const first = f.root();
+    f.follow(false);
+    expect(first.parent).toBeNull();
+    expect(w.group.children).not.toContain(first);
+    w.store.setNorth(2);
+    w.frame();
+    // The station waits in view; the figure comes back where it stands.
+    const stationInCamera = w.ringInCamera();
+    f.follow(true);
+    expect(f.root().parent).toBe(w.group);
+    expect(f.root().matrix.equals(w.station.matrix)).toBe(true);
+    expect(f.inCamera().distanceTo(stationInCamera)).toBeLessThan(TOL);
+  });
+});
+
+describe("the walk's focus beacon and ring", () => {
+  // Why these tests matter: the beacon stands over the station the walk is
+  // about. On the scene root it would slide against a station that holds
+  // its place in view; in its station's key it holds and lands with it,
+  // and a focus change stands it on the new station's matrix, never on a
+  // correction an earlier focus held back.
+  const CUE = {
+    id: "s",
+    at: [0, 0, -30] as [number, number, number],
+    eye: [0, 1.5, 0] as [number, number, number],
+    foundM: 5,
+    distanceM: 30,
+  };
+
+  function cues(w: World) {
+    const marks = marksOf(w);
+    marks.onFocusCue(CUE);
+    const beacon = w.scene.getObjectByName(WALK_BEACON_NAME)!;
+    const ring = w.scene.getObjectByName(WALK_FOCUS_RING_NAME)!;
+    return {
+      marks,
+      beacon,
+      ring,
+      inCamera(o: THREE.Object3D = beacon): THREE.Vector3 {
+        w.scene.updateMatrixWorld();
+        return o
+          .getWorldPosition(new THREE.Vector3())
+          .applyMatrix4(w.camera.matrixWorld.clone().invert());
+      },
+      /** Distance of the beacon's world position from its NUE place. */
+      error(): number {
+        w.scene.updateMatrixWorld();
+        return beacon
+          .getWorldPosition(new THREE.Vector3())
+          .distanceTo(beacon.position);
+      },
+    };
+  }
+
+  it("stand under the world group in one root, defer in view and land out of view", async () => {
+    const w = await world();
+    const c = cues(w);
+    expect(c.beacon.parent).toBe(c.ring.parent);
+    expect(c.beacon.parent!.parent).toBe(w.group);
+    expect(c.error()).toBeLessThan(TOL);
+    const before = c.inCamera();
+    const ringBefore = c.inCamera(c.ring);
+    w.store.setNorth(2, -3);
+    for (let i = 0; i < 30; i += 1) {
+      c.marks.onFocusCue(CUE);
+      w.frame();
+      expect(c.inCamera().distanceTo(before)).toBeLessThan(TOL);
+      expect(c.inCamera(c.ring).distanceTo(ringBefore)).toBeLessThan(TOL);
+    }
+    expect(c.error()).toBeGreaterThan(1);
+    w.look("out");
+    const root = c.beacon.parent!;
+    const held = root.matrix.clone();
+    let n = 0;
+    while (n < 6 && root.matrix.equals(held)) {
+      c.marks.onFocusCue(CUE);
+      w.frame();
+      n += 1;
+    }
+    // The frame it lands in.
+    expect(c.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  /** A focus with no content of its own, behind the station: in view
+   *  while the camera looks "out", when the station is not. */
+  const BEHIND = {
+    ...CUE,
+    id: "a",
+    at: [0, 0, 30] as [number, number, number],
+  };
+
+  /** Look out at A's beacon, correct, and run frames until the station
+   *  landed out of view while A's beacon holds in view. */
+  function holdA(w: World, c: ReturnType<typeof cues>) {
+    w.look("out");
+    c.marks.onFocusCue(BEHIND);
+    w.frame();
+    const root = c.beacon.parent!;
+    expect(root.parent).toBe(w.group);
+    const placed = root.matrix.clone();
+    const stationBefore = w.station.matrix.clone();
+    w.store.setNorth(2, -3);
+    for (let i = 0; i < 10 && w.station.matrix.equals(stationBefore); i += 1) {
+      c.marks.onFocusCue(BEHIND);
+      w.frame();
+    }
+    expect(w.station.matrix.equals(stationBefore)).toBe(false);
+    expect(root.matrix.equals(placed)).toBe(true);
+    return { root, placed };
+  }
+
+  it("stand on the new focus's station matrix on a focus change, in that frame", async () => {
+    const w = await world();
+    const c = cues(w);
+    const { root } = holdA(w, c);
+    expect(root.matrix.equals(w.station.matrix)).toBe(false);
+    c.marks.onFocusCue(CUE);
+    // The frame of the change: before any pass.
+    const now = c.beacon.parent!;
+    expect(now.parent).toBe(w.group);
+    expect(c.ring.parent).toBe(now);
+    expect(now.matrix.equals(w.station.matrix)).toBe(true);
+    w.frame();
+    expect(c.beacon.parent!.matrix.equals(w.station.matrix)).toBe(true);
+  });
+
+  it("stay in their key through a null cue, hidden, and land while hidden", async () => {
+    // Why: the guide sends no cue whenever it shows no distance for a
+    // moment. Taken out of its key, the beacon would come back as a new
+    // placement; kept in it hidden, it counts as out of view, so the
+    // correction lands unseen, and it reappears at its station's place.
+    const w = await world();
+    const c = cues(w);
+    const { root, placed } = holdA(w, c);
+    c.marks.onFocusCue(null);
+    expect(root.visible).toBe(false);
+    expect(root.parent).toBe(w.group);
+    w.frame();
+    expect(root.matrix.equals(placed)).toBe(false);
+    c.marks.onFocusCue(BEHIND);
+    expect(c.beacon.parent).toBe(root);
+    expect(root.visible).toBe(true);
+    expect(c.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  it("keep their place through a null cue while their station's content holds in view", async () => {
+    // Why: a short gap must not move a beacon that stands with content the
+    // visitor sees: in that station's key the content holds the key.
+    const w = await world();
+    const c = cues(w);
+    w.look("in");
+    c.marks.onFocusCue(CUE);
+    w.frame();
+    const root = c.beacon.parent!;
+    const held = root.matrix.clone();
+    w.store.setNorth(2, -3);
+    w.frame();
+    c.marks.onFocusCue(null);
+    w.frame();
+    w.frame();
+    expect(root.matrix.equals(held)).toBe(true);
+    c.marks.onFocusCue(CUE);
+    expect(c.beacon.parent).toBe(root);
+    w.frame();
+    expect(root.matrix.equals(held)).toBe(true);
+    expect(root.matrix.equals(w.station.matrix)).toBe(true);
+  });
+
+  it("lead the breadcrumbs to the beacon as it stands, and again once it landed", async () => {
+    // Why: the dots are laid on the scene root from the visitor. Laid
+    // towards the station's corrected spot while the beacon still holds
+    // its old one in view, they would lead past what the visitor sees.
+    const w = await world();
+    const c = cues(w);
+    w.store.setNorth(2);
+    c.marks.onFocusCue(CUE);
+    w.frame();
+    expect(c.error()).toBeGreaterThan(1);
+    const visitor: [number, number, number] = [0, 1.5, 0];
+    const target = { id: "s", to: CUE.at, stopM: 5 };
+    const bearing = (x: number, z: number) => Math.atan2(z, x);
+    const dotBearings = () => {
+      const dots = w.scene.getObjectByName("station-breadcrumbs")!.children;
+      expect(dots.length).toBeGreaterThan(0);
+      return dots.map((d) => bearing(d.position.x, d.position.z));
+    };
+    c.marks.onGuide(visitor, target);
+    w.scene.updateMatrixWorld();
+    const shown = c.beacon.getWorldPosition(new THREE.Vector3());
+    for (const b of dotBearings()) {
+      expect(b).toBeCloseTo(bearing(shown.x, shown.z), 9);
+      expect(Math.abs(b - bearing(CUE.at[0], CUE.at[2]))).toBeGreaterThan(0.01);
+    }
+    w.look("out");
+    w.frame();
+    w.frame();
+    w.frame();
+    expect(c.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+    c.marks.onGuide(visitor, target);
+    for (const b of dotBearings()) {
+      expect(b).toBeCloseTo(bearing(CUE.at[0], CUE.at[2]), 2);
+    }
+  });
+});
+
 describe("a code lock through the viewer's pipeline", () => {
   const TEXT = "https://example.test/tour/?qr=anchor";
   const LEVEL: QrLevel = {
@@ -462,6 +949,58 @@ describe("a code lock through the viewer's pipeline", () => {
     expect(casts).toBeGreaterThan(0);
     w.frame();
     expect(w.ringError()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+    p.dispose();
+  });
+
+  it("draws a model's note against the station the code placed, in that frame", async () => {
+    // Why: a note's disc is laid out on the screen from its model's world
+    // matrix by the page's tick, which runs before the anchor pass; a
+    // station the code snaps in view would leave the disc, for that frame,
+    // where the model stood before. The page's commit re-tick runs the
+    // models' tick again (`stationCommitRetick`); compared with a fresh
+    // tick after the render's matrix update.
+    const w = await world({ model: true });
+    try {
+      w.store.setNorth(2);
+      w.frame();
+      const held = w.noteDisc();
+      expect(held).not.toBeNull();
+      const p = pipeline(() => {
+        w.store.setNorth(3);
+      });
+      await p.lock();
+      const commitsBefore = w.commits.length;
+      w.frame();
+      expect(w.commits.length).toBeGreaterThan(commitsBefore);
+      const drawn = w.noteDisc();
+      expect(drawn).not.toBe(held);
+      w.models!.tick(Number.NaN);
+      expect(w.noteDisc()).toBe(drawn);
+      p.dispose();
+    } finally {
+      for (const h of w.modelHandles) h.dispose();
+    }
+  });
+
+  it("snaps the figure in view with its station, placed by the code", async () => {
+    // Why: a code's correction is exact; the figure must take it in the
+    // same pass as his station, at his pose plus the code's correction.
+    const w = await world();
+    const f = await standFigure(w);
+    w.store.setNorth(2);
+    w.frame();
+    expect(f.error()).toBeGreaterThan(1);
+    const p = pipeline(() => {
+      w.store.setNorth(3);
+    });
+    await p.lock();
+    // The look ticked in the commit's pass, against the placed figure: the
+    // page's tick earlier in that frame saw the figure's old place.
+    const reads = f.cameraReads();
+    w.frame();
+    expect(f.cameraReads()).toBeGreaterThan(reads);
+    expect(f.root().matrix.equals(w.station.matrix)).toBe(true);
+    expect(f.error()).toBeLessThan(TOL);
     p.dispose();
   });
 

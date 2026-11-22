@@ -7,7 +7,13 @@ cues): a thin orange
 beacon standing over the station the walk is about, so it can be told
 from afar between roofs and trees, and a ring on the ground at its found
 radius, so the visitor sees where it will be found. Both follow the focus
-and go without one.
+and go without one. Given an anchor parent (the AR world group), both
+stand in one pose-free wrapper in their focus station's deferred-anchor
+key (`station:<id>`, `stationAnchorKey`, as the story figure,
+`anchor-root.ts`): they share that station's matrix, so they hold and
+land with its content and never stand apart from it. The accepted
+trade-off: a beacon in view holds its station's content's correction
+too. Without a parent, or when it refuses, on the scene root.
 
 ## Public API
 
@@ -24,21 +30,40 @@ and go without one.
 - `type WalkFocusCue = { id, at, eye, foundM, distanceM }` - the station's
   spot (NUE; its up part ignored), the camera now (NUE), the found
   radius, the horizontal distance.
-- `createWalkFocusCues({ getScene }) => { update(cue | null) }` - shows
-  the cues for `cue`, or takes them away.
+- Their deferred-anchor key is the focus station's, `station:<id>`.
+- `createWalkFocusCues({ getScene, getAnchorParent? }) => { update(cue |
+null), shownAt(nue) }`
+  - `update` shows the cues for `cue`, or hides them for null:
+    anchored, the wrapper stays in its key, hidden (so a short gap is no
+    new placement); on the scene root they leave it. `getAnchorParent`
+    is read on each update; a new parent or a new focus id releases the
+    wrapper and stands it in the new key, at that key's matrix.
+  - `shownAt(nue)` - where a scene-root NUE point stands as the cues
+    show it, through their anchor's correction still waiting in view
+    (the breadcrumbs aim at it, `visitor-stations.ts` `wireSceneMarks`);
+    `nue` itself without an anchor.
 
 ## Invariants & assumptions
 
 - In the scene root's GPS-world NUE, like the breadcrumbs: x north, y up,
   z east. The ground is the camera's height less `EYE_HEIGHT_M`
   (`breadcrumbs.ts`), not the station's own height.
-- Defensive: a null cue, no scene, or an `at` or `eye` that is not finite
-  takes both meshes away; a new scene moves them there (removed from the
+- Defensive: no scene takes both meshes away; a null cue, or an `at` or
+  `eye` that is not finite, hides the anchored wrapper (a hidden root
+  counts as out of view, so a correction lands unseen unless the
+  station's content holds the key in view) and takes the meshes off the
+  scene root otherwise; a new scene moves them there (removed from the
   old one first).
 - Removed through the object they were added to as well as by
   `removeFromParent`: the e2e fakes' scene keeps no `parent` link.
 - One beacon and one ring for the page's life, like the creator's ring:
-  `update` only moves and scales them, so it is cheap per frame.
+  `update` only moves and scales them, so it is cheap per frame. A focus
+  change stands them in the new station's key, at its matrix, never on a
+  correction an earlier focus held back; the anchor's bounds are read
+  again only when the radius changed (the anchor reads matrices live). `shownAt` costs two
+  world-matrix updates and two matrix-vector products per guide render.
+- A parent that refused (no alignment binding yet) is not asked again,
+  so the refusal is logged once, until the cues are taken away.
 - Never a tap target: the beacon's `raycast` is a no-op, and the ring is
   `station-ring.ts`'s, which takes no taps either.
 - The look (the colour `WALK_RADAR_COLOURS.accent`, opacity 0.28 for the
@@ -70,6 +95,14 @@ cues.update(null); // both gone
   the focus, going without one and coming back as the same meshes; no
   scene, input that is no number, and a scene change; a scene that keeps
   no parent link; never taking a tap; the radius's bounds and the
-  property that it never shrinks with the distance.
+  property that it never shrinks with the distance; a parent without a
+  binding (on the scene, one warning, `shownAt` the identity).
+- `station-anchor.integration.test.ts` "the walk's focus beacon and
+  ring" - one root under a bound world group, deferred in view and landed
+  out of view (checked in the commit frame); a focus change standing them
+  on the new station's matrix in the frame of the change; a null cue
+  keeping them in their key, hidden, landing unseen, and holding while
+  their station's content is in view; the breadcrumbs led to the
+  beacon's shown place.
 - `playwright-tests/visitor-walk-radar.spec.js` - the cues stand at the
   focus, move to the next one when it is found, and go with the session.

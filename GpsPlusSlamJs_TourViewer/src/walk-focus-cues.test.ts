@@ -7,7 +7,7 @@ import {
   type MeshBasicMaterial,
   type Object3D,
 } from "three";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { EYE_HEIGHT_M } from "./breadcrumbs";
 import {
@@ -174,5 +174,33 @@ describe("walkBeaconRadiusM", () => {
         },
       ),
     );
+  });
+});
+
+describe("the cues without a usable anchor parent", () => {
+  // Why: the AR world group can exist before its alignment binding does;
+  // the cues must still show (on the scene, as before anchors) and the
+  // refusal must be logged once, not on every frame the guide renders.
+  it("stand on the scene when the parent has no binding, and say so once", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const scene = new Group();
+      const parent = new Group();
+      const cues = createWalkFocusCues({
+        getScene: () => scene,
+        getAnchorParent: () => parent,
+      });
+      cues.update(CUE);
+      cues.update({ ...CUE, distanceM: 40 });
+      expect(named(scene, WALK_BEACON_NAME)).toBeDefined();
+      expect(named(scene, WALK_FOCUS_RING_NAME)).toBeDefined();
+      expect(parent.children).toHaveLength(0);
+      const refusals = warn.mock.calls.filter((c) => c[0] === "[AnchorRoot]");
+      expect(refusals).toHaveLength(1);
+      // Without an anchor, a point stands where it is.
+      expect(cues.shownAt([1, 2, 3])).toEqual([1, 2, 3]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

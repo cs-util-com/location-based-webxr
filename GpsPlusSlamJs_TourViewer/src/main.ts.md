@@ -44,7 +44,8 @@ listed in `index.html.md`. The concerns and their modules:
   `#ar-root` for the overlay's own taps (`cancelsXrSelect`).
 - `model-visitor.ts` - a model's notes, its card and a toy in hand:
   `main.ts` mounts its DOM under `#ar-root` (`mountModelVisitorDom`, styles
-  in `model-visitor.css`), ticks it in `hooks.tickStations`, gives
+  in `model-visitor.css`), binds `hooks.tickModelViews` to its `tick`
+  (run in `hooks.tickStations`, and on a station's commit), gives
   `hooks.visitorTap` to it after the story's character (in
   `visitor-stations.ts` `routeVisitorTap`'s order)
   (`visitor-stations.ts` `characterTapped`: a tap on his figure, bubble or

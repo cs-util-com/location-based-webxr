@@ -1172,7 +1172,7 @@ hooks.tickStations = () => {
   longTextSheet.tick();
   captionsFollow?.sync();
   // A model's view, its notes and its card.
-  modelVisitor.tick(performance.now());
+  hooks.tickModelViews(performance.now());
   // The free items' parts in the world: a sound's distance, a circle's
   // inside, a hint's tag on the screen (the view fills the window).
   tickWorldParts(
@@ -1211,6 +1211,9 @@ const modelVisitor = createModelVisitor({
   camera: () => seams.getViewerCamera(),
   pick: (targets, tap) => seams.pickObjectInView(targets, tap),
 });
+hooks.tickModelViews = (nowMs) => {
+  modelVisitor.tick(nowMs);
+};
 // A long text's whole text, opened by a tap on its reading sign. Its
 // pictures are read through the stations' prefetch cache, by the asset's
 // path in the open tour.

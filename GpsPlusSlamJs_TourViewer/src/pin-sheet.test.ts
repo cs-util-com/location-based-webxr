@@ -149,6 +149,28 @@ describe("the pin sheet", () => {
     expect([...tappablePins(scene, blocks).keys()]).toEqual([]);
   });
 
+  it("finds a station's pins however deep its group hangs", () => {
+    // Why this matters: a finder that reads a fixed depth (the scene's
+    // children and one level below) encodes today's hierarchy; anything
+    // put between the world group and a station group (a wrapper, a
+    // second parent) would make every pin untappable on the phone while
+    // the e2e, with stations on the scene root, stayed green.
+    const blocks = new Map([["told", pin("told", "More.")]]);
+    for (const depth of [0, 1, 2, 3, 5]) {
+      const scene = new Group();
+      let parent: Object3D = scene;
+      for (let i = 0; i < depth; i += 1) {
+        const level = new Group();
+        parent.add(level);
+        parent = level;
+      }
+      parent.add(sceneWith([{ id: "told", group: "station-content:gate" }]));
+      expect([...tappablePins(scene, blocks).keys()], `depth ${depth}`).toEqual(
+        ["told"],
+      );
+    }
+  });
+
   it("offers only shown pins with a description under a station's content", () => {
     const scene = sceneWith([
       { id: "told", group: "station-content:gate" },
