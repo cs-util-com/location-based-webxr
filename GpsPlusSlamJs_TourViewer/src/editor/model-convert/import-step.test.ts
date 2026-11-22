@@ -99,11 +99,14 @@ describe("convertImport", () => {
   // diffuse.png. Taking one of them would give the model the wrong
   // picture without a word; a zip of the folder keeps both apart.
   it("refuses two loose files of the same name, as the zip reader does", async () => {
-    const payload = loose(await model());
+    const payload = loose(await model()) as Extract<
+      ImportPayload,
+      { format: "gltf" }
+    >;
     const twice: ImportPayload = {
       ...payload,
       files: [
-        ...(payload.format === "gltf" ? payload.files : []),
+        ...payload.files,
         { path: "diffuse.png", blob: blobOf(new Uint8Array(4)) },
         { path: "diffuse.png", blob: blobOf(new Uint8Array(8)) },
       ],

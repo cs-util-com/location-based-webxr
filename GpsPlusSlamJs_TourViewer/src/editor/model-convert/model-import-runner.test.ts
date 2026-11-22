@@ -249,8 +249,9 @@ describe("the model import runner", () => {
       );
       const [id] = t.drop([file("set.zip")]);
       await t.settle();
-      if (how === "remove") expect(t.runner.remove(id!)).toBe(true);
-      else t.runner.close();
+      const stopped = how === "remove" ? t.runner.remove(id!) : true;
+      if (how === "close") t.runner.close();
+      expect(stopped).toBe(true);
       listed(["a/a.gltf", "b/b.glb"]);
       await t.settle();
       expect(t.runs).toEqual([]);
