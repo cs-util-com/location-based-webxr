@@ -1,6 +1,6 @@
 /**
  * Why this test matters: the travelling box's tuning (threshold, keep
- * factor, holds, lock, angle, flight time, growth) can be changed from the
+ * factor, holds, lock, angle, flight time) can be changed from the
  * address for a field sweep, but only behind `?debug=1` and only to the
  * values the sweep compares; a visitor's address must never change how the
  * words behave, and a typo must fall back to the default rather than to a
@@ -49,7 +49,8 @@ describe("travellingBoxKnobs", () => {
       lock: 0,
       angle: 45,
       fly: 0.35,
-      grow: false,
+      // The growth is the replay's to decide, never the address's.
+      grow: true,
     });
   });
 

@@ -47,7 +47,6 @@ export function travellingBoxKnobs(
     metricRaw === "min" || metricRaw === "h"
       ? metricRaw
       : TRAVELLING_BOX_DEFAULTS.metric;
-  const growRaw = params.get("tb.grow");
   return {
     thr: numeric("thr"),
     metric,
@@ -57,11 +56,7 @@ export function travellingBoxKnobs(
     lock: numeric("lock"),
     angle: numeric("angle"),
     fly: numeric("fly"),
-    grow:
-      growRaw === "on"
-        ? true
-        : growRaw === "off"
-          ? false
-          : TRAVELLING_BOX_DEFAULTS.grow,
+    // Growth is not walked: the field log replays it both ways.
+    grow: TRAVELLING_BOX_DEFAULTS.grow,
   };
 }
