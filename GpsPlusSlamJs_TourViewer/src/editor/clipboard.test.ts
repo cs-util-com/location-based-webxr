@@ -26,6 +26,8 @@ import {
 import {
   COPIED_GONE,
   copyOf,
+  FOLDER_SCALE_TOO_FAR,
+  NOTE_IN_RESIZED_FOLDER,
   NOTHING_COPIED,
   NOTHING_SELECTED,
   ONLY_NOTES_AND_FOLDERS,
@@ -46,8 +48,8 @@ function pin(id: string) {
 }
 
 /** Station a: note n, folder f (note m in it, folder g in it with note k),
- *  story t; station b: note e. */
-function opened() {
+ *  story t; station b: note e. `scales` resize f and g. */
+function opened(scales: { readonly f?: number; readonly g?: number } = {}) {
   const wire = tourOf([], {
     stations: ["a", "b"].map((id, i) => ({
       id,
@@ -70,6 +72,7 @@ function opened() {
                 kind: "folder",
                 title: "F",
                 pose: { position: [3, 0, 3], rotation: [0, 0, 0, 1] },
+                ...(scales.f === undefined ? {} : { scale: scales.f }),
                 children: [
                   pin("m"),
                   {
@@ -77,6 +80,7 @@ function opened() {
                     kind: "folder",
                     title: "G",
                     pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
+                    ...(scales.g === undefined ? {} : { scale: scales.g }),
                     children: [pin("k")],
                   },
                 ],
@@ -175,12 +179,59 @@ describe("what Paste pastes", () => {
     ).toMatchObject({ kind: "paste", toStationId: "a" });
   });
 
-  it("refuses a selection that names no station", () => {
-    for (const selected of [null, "nope"]) {
+  // A story and its entries are not where a note or a folder can go, so a
+  // paste with one selected is refused rather than landing in the story's
+  // station unasked; a code (its selection is its level id, which no
+  // station holds) names no station at all.
+  it("refuses a selection that names no station to paste into", () => {
+    for (const selected of [null, "nope", "story:t", "t-card", "level-1"]) {
       expect(
         pasteOf(doc, view(selected, { clipboard: copied(["n"]) })),
       ).toEqual({ kind: "refused", reason: SELECT_A_TARGET });
     }
+  });
+
+  // Why: a note in a resized folder is drawn at that folder's scale, so in
+  // another station, out of any folder, it would change size; a folder the
+  // folders around it resize past the format's limits cannot carry that
+  // scale. The reducer refuses both; the reason is said here.
+  it("refuses, into another station, what would not keep its size there", () => {
+    const resized = opened({ f: 2 });
+    for (const id of ["m", "k"]) {
+      expect(
+        pasteOf(resized, view("station:b", { clipboard: copied([id]) })),
+      ).toEqual({ kind: "refused", reason: NOTE_IN_RESIZED_FOLDER });
+      expect(
+        pasteOf(resized, view("station:a", { clipboard: copied([id]) })),
+      ).toMatchObject({ kind: "paste", toStationId: "a" });
+    }
+    expect(
+      pasteOf(resized, view("station:b", { clipboard: copied(["folder:g"]) })),
+    ).toMatchObject({ kind: "paste", toStationId: "b" });
+    // Folders that cancel out leave the note its own size.
+    const even = opened({ f: 2, g: 0.5 });
+    expect(
+      pasteOf(even, view("station:b", { clipboard: copied(["k"]) })),
+    ).toMatchObject({ kind: "paste" });
+    // 10 x 2 = 20 is past the format's 10 (and 0.1 x 0.5 below its 0.1).
+    for (const scales of [
+      { f: 10, g: 2 },
+      { f: 0.1, g: 0.5 },
+    ]) {
+      expect(
+        pasteOf(
+          opened(scales),
+          view("station:b", { clipboard: copied(["folder:g"]) }),
+        ),
+      ).toEqual({ kind: "refused", reason: FOLDER_SCALE_TOO_FAR });
+    }
+    // At exactly a limit, it is pasted.
+    expect(
+      pasteOf(
+        opened({ f: 5, g: 2 }),
+        view("station:b", { clipboard: copied(["folder:g"]) }),
+      ),
+    ).toMatchObject({ kind: "paste" });
   });
 
   it("refuses what the tour no longer holds", () => {

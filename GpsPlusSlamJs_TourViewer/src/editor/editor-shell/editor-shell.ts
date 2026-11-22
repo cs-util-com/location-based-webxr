@@ -420,8 +420,12 @@ export interface EditorShell {
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
   duplicate: "dup",
   align: "align",
-  copyPosition: "copy",
+  copyPosition: "crosshair",
 };
+
+/** Said on the Edit menu's Paste and Duplicate while a paste or a
+ *  duplicate still reads its pictures: another one would make nothing. */
+export const EDIT_STILL_RUNNING = "A paste or a duplicate is still running";
 
 /** An inspector field to type in: a line (an input) or prose (a text
  *  area). */
@@ -1125,8 +1129,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   /** The Edit menu's Copy, Paste, Duplicate and Delete for the selection:
    *  each disabled the menu pattern's way where its command could not act
    *  (`clipboard.ts` for Copy and Paste, the bar's Duplicate, everything
-   *  but a code for Delete), its title saying what it would do or why
-   *  not. */
+   *  but a code for Delete; Paste and Duplicate while one of them still
+   *  runs), its title saying what it would do or why not. */
   const drawEditItems = (
     doc: TourDocumentState,
     ui: EditorViewState,
@@ -1137,19 +1141,23 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     top.editCopy.title =
       copy.kind === "refused" ? copy.reason : "Copy (Ctrl+C)";
     const paste = pasteOf(doc, ui);
-    setItemDisabled(top.editPaste, paste.kind === "refused");
+    const running = ui.duplicating;
+    setItemDisabled(top.editPaste, running || paste.kind === "refused");
     const into = manifest()?.stations.find(
       (s) => paste.kind === "paste" && s.id === paste.toStationId,
     );
-    top.editPaste.title =
-      paste.kind === "refused"
+    top.editPaste.title = running
+      ? EDIT_STILL_RUNNING
+      : paste.kind === "refused"
         ? paste.reason
         : `Paste into ${into?.title ?? "the station"} (Ctrl+V)`;
     const duplicable = barActions(model).some((a) => a.action === "duplicate");
-    setItemDisabled(top.editDuplicate, !duplicable);
-    top.editDuplicate.title = duplicable
-      ? "Duplicate the selection (Ctrl+D)"
-      : "Select something to duplicate it";
+    setItemDisabled(top.editDuplicate, running || !duplicable);
+    top.editDuplicate.title = running
+      ? EDIT_STILL_RUNNING
+      : duplicable
+        ? "Duplicate the selection (Ctrl+D)"
+        : "Select something to duplicate it";
     const deletable = model !== null && model.kind !== "code";
     setItemDisabled(top.editDelete, !deletable);
     top.editDelete.title = deletable

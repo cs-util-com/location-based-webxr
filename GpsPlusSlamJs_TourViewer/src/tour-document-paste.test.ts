@@ -69,8 +69,16 @@ function note(id: string, position: [number, number, number], turn = 0) {
 /** Station "well": a story with entry m1, free notes p and q, and folder
  *  "outer" (turned `folderYaw`) holding note a and folder "inner"
  *  (tilted) holding note b. Station "gate", `northM` north, facing
- *  `gateYaw`: note g. */
-function tour(gateYaw = 90, northM = 100, folderYaw = 30): TourManifest {
+ *  `gateYaw`: note g. `scales` resize outer and inner. */
+function tour(
+  gateYaw = 90,
+  northM = 100,
+  folderYaw = 30,
+  scales: {
+    readonly outer?: number | undefined;
+    readonly inner?: number | undefined;
+  } = {},
+): TourManifest {
   const wire = tourOf([], {
     stations: [
       {
@@ -97,11 +105,13 @@ function tour(gateYaw = 90, northM = 100, folderYaw = 30): TourManifest {
             kind: "folder",
             title: "Courtyard",
             pose: { position: [6, 1, 3], rotation: yaw(folderYaw) },
+            ...(scales.outer === undefined ? {} : { scale: scales.outer }),
             children: [
               note("a", [2, 0, 0], 10),
               {
                 id: "inner",
                 kind: "folder",
+                ...(scales.inner === undefined ? {} : { scale: scales.inner }),
                 pose: {
                   position: [0, 0.5, -4],
                   rotation: [Math.SQRT1_2, 0, 0, Math.SQRT1_2],
@@ -280,6 +290,32 @@ describe("pasting a note into another station", () => {
     );
   });
 
+  // Why: a note in a resized folder is drawn at that folder's scale; out
+  // of any folder in another station it would come out larger or smaller
+  // than the creator sees it, so that paste is refused (its folder can be
+  // copied instead). In its own station it is Duplicate's copy, still in
+  // its folder.
+  it("refuses a note whose folders resize it, into another station only", () => {
+    const start = opened(tour(90, 100, 30, { outer: 2 }));
+    expect(reduce(start, paste({ objects: [{ id: "a", newId: "a2" }] }))).toBe(
+      start,
+    );
+    expect(reduce(start, paste({ objects: [{ id: "b", newId: "b2" }] }))).toBe(
+      start,
+    );
+    expect(
+      reduce(
+        start,
+        paste({ toStationId: "well", objects: [{ id: "a", newId: "a2" }] }),
+      ),
+    ).not.toBe(start);
+    // Folders that cancel out (2 x 0.5) draw it at its own size.
+    const even = opened(tour(90, 100, 30, { outer: 2, inner: 0.5 }));
+    expect(
+      reduce(even, paste({ objects: [{ id: "b", newId: "b2" }] })),
+    ).not.toBe(even);
+  });
+
   it("into its own station makes the copy Duplicate makes", () => {
     // Why: Paste with the source's station selected must not stack the
     // copy on its original; it is the same copy, beside it, as Duplicate.
@@ -366,6 +402,59 @@ describe("pasting a folder into another station", () => {
       { id: "b2", station: "gate" },
       { id: "b", station: "well" },
     );
+  });
+
+  // Why: a folder inside a resized folder draws what it holds at the
+  // product of the scales around it. Pasted alone into another station it
+  // has no folder around it, so it must take that product as its own
+  // scale, or every item in it moves and changes size.
+  it("gives a nested folder the scale of the folders around it, so what it holds keeps its place and size", () => {
+    for (const outer of [0.5, 2]) {
+      for (const inner of [undefined, 1.5]) {
+        const start = opened(tour(90, 100, 30, { outer, inner }));
+        const after = reduce(
+          start,
+          paste({
+            folders: [
+              {
+                stationId: "well",
+                folderId: "inner",
+                newIds: { inner: "inner2", b: "b2" },
+              },
+            ],
+          }),
+        );
+        expect(after).not.toBe(start);
+        expect(folderIn(saved(after), "gate", "inner2")?.scale).toBeCloseTo(
+          outer * (inner ?? 1),
+          12,
+        );
+        expectSameLocal(
+          after,
+          { id: "b2", station: "gate" },
+          { id: "b", station: "well" },
+        );
+      }
+    }
+  });
+
+  it("refuses a nested folder whose folders around it make a scale the format does not allow", () => {
+    // 10 x 2 = 20, past the format's 10.
+    const start = opened(tour(90, 100, 30, { outer: 10, inner: 2 }));
+    expect(
+      reduce(
+        start,
+        paste({
+          folders: [
+            {
+              stationId: "well",
+              folderId: "inner",
+              newIds: { inner: "inner2", b: "b2" },
+            },
+          ],
+        }),
+      ),
+    ).toBe(start);
   });
 
   it("into its own station makes the copy Duplicate makes", () => {

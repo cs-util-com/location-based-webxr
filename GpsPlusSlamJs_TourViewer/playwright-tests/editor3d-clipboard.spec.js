@@ -10,8 +10,9 @@ import { answerHosts, openSampleIn3d } from "./editor3d-fixture.js";
  * real page shows that the keys reach the editor from the tree, that a
  * paste lands in the station selected, is one undo step and can be
  * repeated, that the menu offers only what the selection allows, and
- * that the keys stay the browser's while the creator has text selected
- * (or text would stop copying as text).
+ * that the keys stay the browser's while the creator has text selected,
+ * types in a field, has a menu open or works in a dialog (or text would
+ * stop copying and pasting as text).
  */
 
 // One after another: software-drawn 3D views share the CPU badly.
@@ -106,7 +107,11 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await expect.poll(() => childCount(page, to.id)).toBe(was + 2);
 
   // With text selected on the page the keys are the browser's: nothing is
-  // pasted into the tour.
+  // pasted into the tour, and nothing copied (no "Copied" toast, which is
+  // why the earlier ones must be gone first).
+  await expect(page.locator(".toast", { hasText: "Copied" })).toHaveCount(0, {
+    timeout: 20_000,
+  });
   await page.evaluate(() => {
     const text = document.getElementById("tour-name-text");
     if (text === null) throw new Error("no tour name");
@@ -124,4 +129,70 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
     () => new Promise((done) => requestAnimationFrame(() => done(null))),
   );
   expect(await childCount(page, to.id)).toBe(was + 2);
+  await expect(page.locator(".toast", { hasText: "Copied" })).toHaveCount(0);
+});
+
+test("Ctrl+V stays the browser's in a field, with a menu open and in a dialog, and Cmd+V pastes", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const stations = /** @type {any[]} */ ((await tour(page)).stations);
+  const [from, to] = stations;
+  const note = /** @type {any} */ (from.children).find(
+    (/** @type {any} */ c) => c.kind !== "folder",
+  );
+  if (from === undefined || to === undefined || note === undefined) {
+    throw new Error("the sample has no note in its first station");
+  }
+  await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
+  await page.locator(`#tree-body [data-select="${note.id}"]`).click();
+  await page.locator("#edit-menu-btn").click();
+  await page.locator("#edit-copy").click();
+  await expect(page.locator(".toast", { hasText: "Copied" })).not.toHaveCount(
+    0,
+  );
+  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
+  const was = await childCount(page, to.id);
+  const oneFrame = () =>
+    page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => done(null))),
+    );
+
+  // In the tree's search field.
+  await page.locator("#tree-search").focus();
+  await page.keyboard.press("Control+v");
+  await oneFrame();
+  expect(await childCount(page, to.id)).toBe(was);
+  await page.locator("#tree-search").blur();
+
+  // With the Edit menu open.
+  await page.locator("#edit-menu-btn").click();
+  await expect(page.locator("#edit-menu")).toBeVisible();
+  await page.keyboard.press("Control+v");
+  await oneFrame();
+  expect(await childCount(page, to.id)).toBe(was);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#edit-menu")).toBeHidden();
+
+  // In a dialog (Tour details).
+  await page.locator("#tour-name").click();
+  await expect(page.locator("#details-modal")).toBeVisible();
+  await page.keyboard.press("Control+v");
+  await oneFrame();
+  expect(await childCount(page, to.id)).toBe(was);
+  await page.locator("#details-cancel").click();
+  await expect(page.locator("#details-modal")).toBeHidden();
+
+  // Cmd+V is the page's paste too, into the station still selected (a
+  // click on it again would take the selection away).
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.selected(),
+    ),
+  ).toBe(`station:${to.id}`);
+  await page.keyboard.press("Meta+v");
+  await expect.poll(() => childCount(page, to.id)).toBe(was + 1);
 });

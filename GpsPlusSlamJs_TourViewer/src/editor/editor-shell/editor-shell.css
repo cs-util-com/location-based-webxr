@@ -3466,11 +3466,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * 40 and 20 px; `editor3d-shell.spec.js`, FOLD_STEPS). The Edit menu
  * stands at every width, and the steps above 420 px stand where its
  * button left them: the bar's least width, measured with every button
- * inside the window, is 832 px unfolded, 772 after the first step and 601
- * after the second; each step stands 8 px above it.
+ * inside the window, is 832 px unfolded, 772 after the 840 px step and
+ * 601 after the 720 px one; each fold stands 8 or 9 px above the least
+ * width it follows (840 = 832 + 8, 780 = 772 + 8, 610 = 601 + 9).
  * - 840 px: the unsaved mark keeps its dot (its words are its title, and
  *   the save status a screen reader hears);
  * - 780 px: the buttons drop their icons, keeping words;
+ * - 720 px: the tour's name may narrow further (its floor lowered);
  * - 610 px: Undo, Redo and Add are the Edit menu's alone;
  * - 420 px: the menus' carets go and the groups close up. */
 #edit-menu-wrap {

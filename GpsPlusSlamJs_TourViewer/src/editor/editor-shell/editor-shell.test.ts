@@ -35,6 +35,7 @@ import type { DockHost, mountDockHost } from "./dock-host.js";
 import type { DockPanelId } from "./dock-layout.js";
 import {
   createEditorShell,
+  EDIT_STILL_RUNNING,
   type EditorShellDeps,
   type TypedEditOutcome,
 } from "./editor-shell.js";
@@ -3125,6 +3126,83 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(item("edit-paste").title).toBe("Paste into Station b (Ctrl+V)");
     item("edit-paste").click();
     expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    shell.hide();
+  });
+
+  // Why: Ctrl+D copies a plain folder and a story whole, so the menu's
+  // Duplicate must offer the same for them, not only for a station or a
+  // note.
+  it("offers Duplicate for a plain folder and a story, as Ctrl+D does", () => {
+    const { shell, store, select, deps } = setUp();
+    store.dispatch(
+      tourDocumentActions.opened({
+        manifest: {
+          ...createEmptyTourManifest(),
+          stations: [
+            {
+              ...station("a", 0),
+              ...stationContent([
+                storyOf(
+                  "legend",
+                  [
+                    {
+                      id: "l1",
+                      kind: "longText",
+                      view: "card",
+                      title: "The siege",
+                      body: "In 1632",
+                      pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                      advance: { mode: "tap" },
+                    },
+                  ],
+                  "The legend",
+                ),
+              ]),
+            },
+            station("b", 0.0008),
+          ],
+        },
+      }),
+    );
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["pb"],
+        what: "group",
+      }),
+    );
+    for (const id of ["folder:grp", "story:legend"]) {
+      select(id);
+      expect(disabled("edit-duplicate")).toBe(false);
+      expect(item("edit-duplicate").title).toBe(
+        "Duplicate the selection (Ctrl+D)",
+      );
+      item("edit-duplicate").click();
+      expect(deps.stations.duplicate).toHaveBeenLastCalledWith(id);
+    }
+    shell.hide();
+  });
+
+  // Why: a second Paste or Duplicate while one still reads its pictures
+  // makes nothing (the page's `duplicating` flag), so the menu shows both
+  // disabled meanwhile and says why, rather than offering a click that
+  // does nothing.
+  it("disables Paste and Duplicate while a paste or a duplicate runs, saying so", () => {
+    const { shell, store, select } = setUp();
+    store.dispatch(editorViewActions.copied({ ids: ["pa"] }));
+    select("station:b");
+    expect(disabled("edit-paste")).toBe(false);
+    store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
+    for (const id of ["edit-paste", "edit-duplicate"]) {
+      expect(disabled(id)).toBe(true);
+      expect(item(id).title).toBe(EDIT_STILL_RUNNING);
+    }
+    store.dispatch(
+      editorViewActions.duplicatingChanged({ duplicating: false }),
+    );
+    expect(disabled("edit-paste")).toBe(false);
+    expect(disabled("edit-duplicate")).toBe(false);
     shell.hide();
   });
 });

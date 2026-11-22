@@ -5,7 +5,9 @@
 The 3D view's studio shell: the top bar's studio controls
 (Undo, Redo, Help), the Edit menu (Undo and Redo, where
 those fold at a phone's width; Copy, Paste, Duplicate and Delete, drawn
-for the selection by `drawEditItems`), the View menu's Top view and Frame, the tree
+for the selection by `drawEditItems`, Paste and Duplicate disabled
+with `EDIT_STILL_RUNNING`, "A paste or a duplicate is still running",
+while one of them reads its pictures: the store's `duplicating`), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, the bottom bar's toggles and the
 bottom panel they open (`bottom-panel.ts`: the tour's problems from
@@ -585,7 +587,9 @@ else shell.hide();
   `editor-shell.test.ts`: each item disabled with the refusal as its
   title until the selection allows it, Paste's title naming the target
   station, and a click calling the clipboard, the station commands or
-  the delete; the fold steps at every band in
+  the delete; Duplicate offered for a plain folder and a story, as
+  Ctrl+D copies them; Paste and Duplicate disabled with
+  `EDIT_STILL_RUNNING` while the store's `duplicating` is set; the fold steps at every band in
   `playwright-tests/editor3d-shell.spec.js`.
 - "the tree's plain folders" in `editor-shell.test.ts`: Ctrl+click and
   Ctrl+G make a folder whose name field takes the focus with the proposed

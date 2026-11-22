@@ -1362,6 +1362,84 @@ describe("the editor session's paste", () => {
     await session.close();
   });
 
+  // Why: the station pasted into may go during the picture read too. The
+  // document refuses a paste into a station it lacks, and that must be
+  // said as the tour having changed, not as a copy going too far.
+  it("refuses, saying the tour changed, when the target station goes during the picture read", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const pasting = editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: [],
+      folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+    });
+    store.dispatch(
+      tourDocumentActions.stationDeleted({
+        stationId: stationIdOf("a"),
+        what: "the station",
+      }),
+    );
+    const was = steps();
+    expect(await pasting).toEqual({
+      kind: "refused",
+      reason: "That change could not be made to the tour as it is now.",
+    });
+    expect(steps()).toBe(was);
+    await session.close();
+  });
+
+  // Why: while a draft is undecided, an edit waits for the creator's answer
+  // (`draft-edit-gate.ts`). A paste that waits is not made yet, so it must
+  // not be reported as made: the page would say "Pasted" and select copies
+  // the tour may never hold. It is reported held, and what lands says.
+  it("reports a paste that waits for the draft question as held, and what it made only once it lands", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    store.draftGate.hold(() => undefined);
+    const plan = {
+      toStationId: stationIdOf("a"),
+      objects: ["b"],
+      folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+    };
+    const dropped = await editor.paste(plan);
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    expect(steps()).toBe(was);
+
+    store.draftGate.hold(() => undefined);
+    const kept = await editor.paste(plan);
+    if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
+    store.draftGate.release();
+    const landed = await kept.landed;
+    if (landed === null) throw new Error("not landed");
+    expect(steps()).toBe(was + 1);
+    const tour = manifestToWrite(store.getState().tourDocument);
+    const [note] = landed.objects;
+    expect(
+      tour === null ? undefined : tourObjects(tour).find((o) => o.id === note),
+    ).toBeDefined();
+    await session.close();
+  });
+
+  // Why: Duplicate of a folder reads its pictures and writes the same way,
+  // so it waits for the draft question the same way.
+  it("reports a folder duplicate that waits for the draft question as held, null when it is dropped", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    store.draftGate.hold(() => undefined);
+    const dropped = await editor.duplicateFolder("grp");
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    store.draftGate.hold(() => undefined);
+    const kept = await editor.duplicateFolder("grp");
+    if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
+    store.draftGate.release();
+    expect(await kept.landed).toMatchObject({ kind: "duplicated" });
+    expect(steps()).toBe(was + 1);
+    await session.close();
+  });
+
   // Why: a photo whose picture cannot be read is not copied, and saying so
   // leaves the tour and its steps as they were; an id the tour lacks is
   // refused before anything is read.

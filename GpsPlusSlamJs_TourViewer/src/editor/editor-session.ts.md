@@ -274,7 +274,13 @@ never state). Design:
       photo added meanwhile has no picture read), and a copy taking an
       item beyond its station's reach (`FOLDER_TOO_FAR`); the held
       pictures are dropped then. Its step, like `deleteFolder`'s, names
-      the folder in quotes (`the copy of "Shots"`).
+      the folder in quotes (`the copy of "Shots"`). While a draft is
+      undecided the edit waits for the draft question
+      (`draft-edit-gate.ts`): the result is then
+      `{ kind: "held", landed }` (`EditorHeld`), `landed` giving the
+      `duplicated` result once the copy is in the tour, or null when the
+      edit was dropped or the tour refused it by then (its held pictures
+      dropped too, `heldUntilLanded`).
     - `paste(plan)` (async) - the clipboard's notes and plain folders
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the
@@ -282,11 +288,15 @@ never state). Design:
       its station, so it lands where its source sat in its own; every
       copied folder and item gets a new id; each photo's picture is read
       first and held under its copy's id, as `duplicateFolder` does, and
-      the step re-checks after that read that every source is still
-      there (`NOT_APPLIED` otherwise). Refused for an id the tour lacks, a
-      picture that cannot be read, and a copy beyond the station's reach
-      (`FOLDER_TOO_FAR` when folders are pasted, else
-      `TOO_FAR_FROM_STATION`); the held pictures are dropped then. Its
+      the step re-checks after that read that every source and the
+      target station are still there (`NOT_APPLIED` otherwise). Refused
+      for an id or a target station the tour lacks, a picture that cannot
+      be read, and a copy the document refuses (`FOLDER_TOO_FAR` when
+      folders are pasted, else `TOO_FAR_FROM_STATION`: past the reach;
+      the scale rules `clipboard.ts` says first); the held pictures are
+      dropped then. Held by the draft gate it returns
+      `{ kind: "held", landed }` as `duplicateFolder` does, `landed`
+      giving the `pasted` result once every copy is in the tour. Its
       step is `the copy of "<name>"` for one folder, `the copy of` and
       the note's name for one note, else `the paste of <n> copies`.
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10

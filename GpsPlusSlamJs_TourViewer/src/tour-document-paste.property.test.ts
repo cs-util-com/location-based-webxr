@@ -4,12 +4,15 @@
  * paste a copy of the copy. Over any such sequence every id must stay
  * unique (a copy that reused one would make two items one), every item
  * must name only folders its station holds, each paste must be exactly
- * one undo step, and undoing them all must give back the tour as opened.
+ * one undo step, every copy pasted into another station must stand there
+ * as its original stands in its own (a folder's resize kept with it), and
+ * undoing them all must give back the tour as opened.
  * Example tests (`tour-document-paste.test.ts`) pin single cases; these
  * run random sequences over random station headings and folder turns.
  *
- * Swept: station headings and folder yaw 0-359 degrees, sequences of up
- * to 6 pastes of up to 3 sources each, 40 runs.
+ * Swept: station headings and folder yaw 0-359 degrees, the folder's
+ * scale none, 0.5 or 2, sequences of up to 6 pastes of up to 3 sources
+ * each, 40 runs.
  */
 import fc from "fast-check";
 import {
@@ -17,7 +20,11 @@ import {
   serializeTourManifest,
   type TourManifest,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { composedTourFolderScale } from "gps-plus-slam-app-framework/ar/tour-folder-pose";
+import {
+  localPoseOf,
+  tourObjects,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import {
   isTourFolder,
   type TourStationChild,
@@ -26,6 +33,7 @@ import { describe, expect, it } from "vitest";
 
 import { stationContent } from "./test-support/station-content.js";
 import { tourOf } from "./test-support/tour-of.js";
+import { folderChainOf, folderChains } from "./tour-content.js";
 import {
   documentFrames,
   documentObjects,
@@ -55,8 +63,13 @@ function pinAt(id: string, x: number, z: number) {
 }
 
 /** Three stations along the east, headings `heads`; station s0 holds
- *  note n0 and folder f0 (turned `folderDeg`) with note n1 in it. */
-function threeStations(heads: readonly number[], folderDeg: number) {
+ *  note n0 and folder f0 (turned `folderDeg`, resized by `scale`) with
+ *  note n1 in it. */
+function threeStations(
+  heads: readonly number[],
+  folderDeg: number,
+  scale: number | undefined,
+) {
   const wire = tourOf([], {
     stations: heads.map((head, i) => ({
       id: `s${String(i)}`,
@@ -79,6 +92,7 @@ function threeStations(heads: readonly number[], folderDeg: number) {
                 kind: "folder",
                 title: "Benches",
                 pose: { position: [4, 0, 4], rotation: turn(folderDeg) },
+                ...(scale === undefined ? {} : { scale }),
                 children: [pinAt("n1", 1, 1)],
               },
             ]
@@ -118,6 +132,28 @@ function expectWellFormed(state: TourDocumentState): void {
   }
 }
 
+/** Where note `id` stands in its station's frame. */
+function localOf(state: TourDocumentState, id: string) {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  const frame = documentFrames(state).find(
+    (f) => f.id === found?.object.station,
+  );
+  if (found === undefined || frame === undefined) throw new Error(id);
+  return localPoseOf(found.object.geo, frame.geo);
+}
+
+/** The scale note `id`'s folders draw it at. */
+function scaleOf(state: TourDocumentState, id: string): number {
+  const found = documentObjects(state).find((o) => o.object.id === id);
+  const frame = documentFrames(state).find(
+    (f) => f.id === found?.object.station,
+  );
+  if (found === undefined || frame === undefined) throw new Error(id);
+  return composedTourFolderScale(
+    folderChainOf(found.object, folderChains(frame)),
+  );
+}
+
 /** What one paste takes: sources by their index among the tour's notes
  *  and plain folders now, and the station by its index. */
 interface PasteOp {
@@ -142,11 +178,12 @@ describe("any sequence of pastes", () => {
           maxLength: 3,
         }),
         fc.integer({ min: 0, max: 359 }),
+        fc.constantFrom(undefined, 0.5, 2),
         fc.array(pasteOp, { minLength: 1, maxLength: 6 }),
-        (heads, folderDeg, ops) => {
+        (heads, folderDeg, scale, ops) => {
           const start = reduce(
             initialTourDocumentState,
-            act.opened({ manifest: threeStations(heads, folderDeg) }),
+            act.opened({ manifest: threeStations(heads, folderDeg, scale) }),
           );
           let state = start;
           let minted = 0;
@@ -169,11 +206,21 @@ describe("any sequence of pastes", () => {
                 }),
               ).values(),
             ];
+            const to = `s${String(op.to)}`;
+            const stationOf = (id: string) =>
+              notes.find((n) => n.id === id)?.station;
+            const objects = picked.flatMap((s) =>
+              s.kind === "note" ? [{ id: s.id, newId: mint() }] : [],
+            );
+            // A note its folders resize keeps its size only in its station.
+            const refusable = objects.some(
+              (o) =>
+                stationOf(o.id) !== to &&
+                Math.abs(scaleOf(state, o.id) - 1) > 1e-9,
+            );
             const action = act.clipboardPasted({
-              toStationId: `s${String(op.to)}`,
-              objects: picked.flatMap((s) =>
-                s.kind === "note" ? [{ id: s.id, newId: mint() }] : [],
-              ),
+              toStationId: to,
+              objects,
               folders: picked.flatMap((s) => {
                 if (s.kind !== "folder") return [];
                 const frame = documentFrames(state).find(
@@ -200,11 +247,35 @@ describe("any sequence of pastes", () => {
               what: "a paste",
             });
             const next = reduce(state, action);
-            tried += 1;
+            // A refusable op leaves the state as it was.
+            expect(refusable && next !== state).toBe(false);
+            if (!refusable) tried += 1;
             if (next !== state) applied += 1;
             expect(next.past.length - state.past.length).toBe(
               next === state ? 0 : 1,
             );
+            // Every copy into another station: its pose in the station's
+            // frame kept. (Into its own, it is Duplicate's offset copy.)
+            const copies =
+              next === state
+                ? []
+                : [
+                    ...action.payload.objects.map(
+                      (o) => [o.newId, o.id] as const,
+                    ),
+                    ...action.payload.folders.flatMap((f) =>
+                      Object.entries(f.newIds)
+                        .filter(([id]) => notes.some((n) => n.id === id))
+                        .map(([id, newId]) => [newId, id] as const),
+                    ),
+                  ].filter(([, id]) => stationOf(id) !== to);
+            for (const [newId, id] of copies) {
+              const got = localOf(next, newId).position;
+              const want = localOf(state, id).position;
+              got.forEach((v, i) => {
+                expect(Math.abs(v - (want[i] ?? NaN))).toBeLessThan(1e-6);
+              });
+            }
             state = next;
             expectWellFormed(state);
           }
@@ -217,6 +288,7 @@ describe("any sequence of pastes", () => {
       ),
       { numRuns: 40 },
     );
+    // Every paste but the refused resized notes lands.
     expect(applied).toBeGreaterThan(tried * 0.9);
   });
 });

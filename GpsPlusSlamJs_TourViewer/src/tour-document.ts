@@ -75,6 +75,7 @@ import {
   type TourTextRule,
 } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
+  composedTourFolderScale,
   composeTourFolderPath,
   decomposeTourFolderPath,
 } from "gps-plus-slam-app-framework/ar/tour-folder-pose";
@@ -5076,6 +5077,11 @@ function objectPasteInto(
   const target = frameOf(before, payload.toStationId);
   if (source === undefined || target === undefined) return before;
   if (!freeObjectId(before, payload.newId)) return before;
+  // Its folders draw it at their scale; out of them it would change size.
+  const scale = composedTourFolderScale(
+    folderChainOf(found.object, folderChains(source)),
+  );
+  if (Math.abs(scale - 1) > SCALE_EPSILON) return before;
   const copy = inFolders(
     copiedObject(
       found.object,
@@ -5115,17 +5121,42 @@ function folderPasteInto(
   const pose = readPose(
     composeTourFolderPath(chain.slice(0, -1), old.pose ?? NO_FOLDER_POSE),
   );
-  if (pose === null) return before;
+  // Out of the folders around it, it takes their scale as its own, so
+  // what it holds keeps its place and size.
+  const scale = pastedFolderScale(chain);
+  if (pose === null || scale === null) return before;
+  const { scale: _scale, ...unscaled } = folderCopyOf(old, pose, renamed);
+  const copy: TourFolder = scale === 1 ? unscaled : { ...unscaled, scale };
   return withFolderCopy(
     before,
     source,
-    {
-      ...target,
-      children: [...target.children, folderCopyOf(old, pose, renamed)],
-    },
+    { ...target, children: [...target.children, copy] },
     // Its folders from the copied one inward: the ones around it stay.
     (held) => held.slice(held.indexOf(payload.folderId)).map(renamed),
     payload,
+  );
+}
+
+/** How far a composed folder scale may sit from 1 or the format's bounds
+ *  and still count as on them: the product of the scales rounds. */
+const SCALE_EPSILON = 1e-9;
+
+/** The scale a folder at the end of `chain` takes when it is pasted out
+ *  of the folders around it: the product of the chain's scales (1 exactly
+ *  when that rounds to 1), clamped onto the format's bounds when it
+ *  rounds just past one; null when it lies past them. */
+function pastedFolderScale(chain: readonly TourFolder[]): number | null {
+  const scale = composedTourFolderScale(chain);
+  if (Math.abs(scale - 1) <= SCALE_EPSILON) return 1;
+  if (
+    scale < TOUR_FOLDER_MIN_SCALE - SCALE_EPSILON ||
+    scale > TOUR_FOLDER_MAX_SCALE + SCALE_EPSILON
+  ) {
+    return null;
+  }
+  return Math.min(
+    TOUR_FOLDER_MAX_SCALE,
+    Math.max(TOUR_FOLDER_MIN_SCALE, scale),
   );
 }
 

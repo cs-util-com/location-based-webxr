@@ -500,9 +500,15 @@ geo?, what })` - a copy inserted after the original (any station the
       folder, and its items keep their poses in it). A rigid move keeps
       every local offset, so a copy fits the target's bound wherever its
       original fits its own: no fallback place is needed. The new ids
-      follow `folderDuplicated`'s rules. Refused, all or nothing: nothing
-      to paste, an item or a folder named twice, a story's entry, an
-      unknown item, folder or station, any refused copy.
+      follow `folderDuplicated`'s rules. A nested folder pasted out of
+      the folders around it takes the product of their scales and its
+      own as its scale (`pastedFolderScale`), so what it holds keeps its
+      place and size. Refused, all or nothing: nothing to paste, an item
+      or a folder named twice, a story's entry, an unknown item, folder
+      or station, any refused copy; into another station also a note its
+      folders resize (their scales multiply to other than 1: out of them
+      it would change size) and a folder whose scale product lies past
+      0.1 to 10 (`clipboard.ts` says both first, with reasons).
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
     each keeping its world pose. Refused: `objectsFolderRefusal` (an
@@ -1054,14 +1060,20 @@ store.dispatch(tourDocumentActions.undone());
   target's heading 0, 90 and 179 degrees and 100 m and 5 km away), a note
   in a folder lands at the top, a folder (nested or not) lands as the
   station's last folder with its items' paths renamed and their local
-  poses kept (swept over the folder's yaw 0, 30 and 179), into the own
+  poses kept (swept over the folder's yaw 0, 30 and 179), a nested
+  folder under resized folders takes their scale (outer 0.5 and 2, inner
+  none and 1.5) with its note's local pose kept, the scale refusals
+  (a note in a resized folder, a product past 10), into the own
   station it equals Duplicate, a multi paste is one step that undoes and
   redoes whole, and every refusal returns the same state.
   `tour-document-paste.property.test.ts` runs random sequences of up to 6
   pastes over 3 stations of random headings: ids stay unique, every
   folder an item names is its station's, each paste is one step, undoing
-  them all gives back the tour as opened, and at least 90 % of the
-  generated pastes apply (so the property is not passed on refusals).
+  them all gives back the tour as opened, every note copied into
+  another station keeps its pose in the station's frame (the folder's
+  scale random: none, 0.5 or 2), and at least 90 % of the generated
+  pastes apply, those refused for a resized note left out of the count
+  and pinned as refused (so the property is not passed on refusals).
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
