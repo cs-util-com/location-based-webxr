@@ -22,7 +22,8 @@ point (across the `scene`↔`arWorldGroup` frame change) and the floater cube at
 ## Public API
 
 - `ANCHOR_MODE: GpsAnchorMode = 'snap-when-offscreen'` — the required mode; keeps
-  the teaching "jump" out of view (the anchor only corrects while off-screen).
+  the teaching "jump" out of view (the anchor only corrects while out of view,
+  where it is and where it would land).
 - `ANCHOR_SPHERE_RADIUS = 0.15` — radius (m) of the green anchor sphere (modestly
   enlarged from the original 0.1 m so it reads at a few metres).
 - `CUBE_HALF_EXTENT = 0.1` — half the 0.2 m orange floater cube edge.

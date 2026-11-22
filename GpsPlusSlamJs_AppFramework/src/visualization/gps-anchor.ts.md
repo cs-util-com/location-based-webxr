@@ -31,7 +31,10 @@ This file currently implements **sub-steps 2 (bootstrap phase),
 3 (steady-state `'snap-every-tick'` + distance-scaled threshold gate),
 4 (`'snap-when-offscreen'` mode gate, with a one-time initial-placement
 exemption for `skipBootstrap` anchors), and 5 (re-bootstrap on external
-move)** of the port plan. Floor-Y correction (sub-step 6) is not
+move)** of the port plan. Since the anchor-set milestone the
+steady-state commit gate is not its own: the anchor is a position member of
+its `arWorldGroup`'s anchor set ([`ar/deferred-anchors.ts`](../ar/deferred-anchors.ts.md)),
+which decides when its target lands. Floor-Y correction (sub-step 6) is not
 implemented. The `floorY`, `angleThresholdInDegrees` and
 `heightAboveGround` options that used to be accepted for it were never read
 and were removed 2026-09-04 (simplify loop; a MAJOR by semver, shipped in 1.24.0 - a MINOR by
@@ -90,12 +93,28 @@ object as an `@internal` testing seam in lieu of pumping the global
 ## Invariants & assumptions
 
 - **No nested anchors**: a `THREE.Object3D` whose parent chain already
-  contains a `GpsAnchor`-managed object cannot be anchored — the
-  constructor throws. Mirrors the C# invariant. Implementation: a
-  module-level `WeakSet<Object3D>` tracks managed objects.
-- **Self-registers with the frame loop**: the anchor registers via
-  `registerFrameUpdate` at construction time and unregisters in
-  `dispose()`. Callers do not pump it manually.
+  contains a `GpsAnchor`-managed object, or that holds one below it, cannot
+  be anchored — the constructor throws. Mirrors the C# invariant.
+  Implementation: a module-level `WeakSet<Object3D>` tracks managed objects.
+  Nesting with a deferred anchor of the same set is refused in both
+  directions too: `createGpsAnchor` throws for an object inside, or holding,
+  a deferred root, and `deferredAnchor(...).add` throws for a root inside,
+  or holding, a GPS-anchored object. Not checked: nesting across a bound and
+  an unbound set of the same group (see below).
+- **Joins its group's anchor set**: at construction the anchor joins the
+  anchor set of `arWorldGroup` (`joinAnchorSet`) and leaves it in
+  `dispose()`. The set runs it once per frame: inside the alignment
+  binding's pass when `arWorldGroup` has one (`enableArWorldGroupAlignment`
+  called before the anchor was created), else on a frame-loop registration
+  of its own, which ends with its last member. Callers do not pump it
+  manually. An anchor created before the binding stays on the unbound set:
+  it keeps the view gate and the release, but has no frame-switch window and
+  reads its target from `getAlignmentMatrix`.
+- **The target under a binding is the group's own T**: while the set is
+  bound, the local target is `T⁻¹ · nue` with T the binding's target (the
+  alignment times the dev world jump, when one is set), so the object's
+  world position equals its NUE, the same as scene-root content of the same
+  GPS point. Without a binding, `getAlignmentMatrix` is the T.
 - **`elapsed` is monotonic seconds**: tied to `XRFrame.time / 1000`.
   Tests inject controlled values via `__tickForTests`.
 - **Bootstrap median is per-coordinate**: `lat`, `lon`, and (if any
@@ -141,26 +160,41 @@ object as an `@internal` testing seam in lieu of pumping the global
   via `enableArWorldGroupAlignment` (the framework default, which lands each
   alignment in one frame), so the camera and every anchored child shift together
   and each accepted commit here is only a small off-screen residual. The commit
-  **gate** (distance-scaled threshold + `snap-when-offscreen` frustum
-  suppression) decides _when_ a correction lands; the snap decides _how_
+  **gate** (the distance-scaled threshold, then the anchor set's view gate in
+  `snap-when-offscreen`) decides _when_ a correction lands; the snap decides _how_
   (instantly). A previous per-anchor lerp (`lerpCorrections` /
   `correctionLerpRate`, D1′) was removed once the alignment was applied at
   `arWorldGroup` — see
   `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-05-0650-gps-anchor-frame-architecture-bug-and-plan.md`.
-- **`snap-when-offscreen` corrections fire only off-screen — except the first
-  placement**: a correction is suppressed while the object is inside the camera
-  frustum, so the user never sees a jump. The lone exception is the **one-time
+- **`snap-when-offscreen` corrections land only out of view, at a release or
+  in a frame-switch window, and the first placement**: a correction above
+  the threshold is pending while any drawable part of the object (its
+  children included) is in view at its current pose, was in view in the
+  previous frame, or would be in view at its target pose; the anchor set
+  commits it once all three are false, so the user never sees a jump. A
+  code-lock release (`requestAnchorRelease('code-lock')`) commits it at once,
+  in view and below the threshold. A frame switch of a bound set (a new
+  frame epoch, or a camera step above 1 m) opens the set's window, in which
+  an above-threshold correction lands in view. The anchor takes no follow
+  phase: while the alignment is immature it defers like any other time. The
+  lone exception is the **one-time
   initial placement** of a `skipBootstrap` anchor: it is `anchored` from frame
   one but its `object3D` sits at the AR origin ("inside the user") until its
   first commit, which must land even on-screen so the marker can leave the
   origin (the AnchorStarter `?show=` reveal). That exemption is consumed by the
   first committed correction and **never re-armed** (a re-bootstrap moves an
-  already-placed object). The earlier **large-jump bypass** (which overrode the
+  already-placed object). The exemption is consumed only by a commit, so an
+  anchor created at its target keeps it armed until its first real move.
+  The earlier **large-jump bypass** (which overrode the
   frustum gate on a >2°/4 m/20 m alignment-matrix delta) was **removed**: now
   that the whole frame rides one `arWorldGroup.matrix`, a large jump moves the
   whole view together, landing in one frame, so a per-anchor on-screen snap only
   manufactured the AnchorStarter cache-hit hard-jump — see
   `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
+- **`snap-every-tick` is not gated by the view**: it commits every
+  above-threshold correction at once, in view or not, as its name says; the
+  anchor set only runs it. An app that wants no visible jump uses
+  `snap-when-offscreen`.
 
 ## Examples
 
@@ -191,6 +225,15 @@ moves again; fixed through the alignment at creation when already mature;
 `settleNow` through the latest usable alignment and null without one;
 re-opened by an external move; the refused configurations; `'median'`
 unchanged; a property test over random alignment and extent sequences).
+The anchor-set rules are pinned by
+[gps-anchor.anchor-set.test.ts](gps-anchor.anchor-set.test.ts): a child in view
+blocks the commit; the target pose in view blocks it; in, out, in commits
+nothing and two passes out commit; the threshold stays the pending rule;
+`snap-every-tick` is not gated; an immature alignment defers in view; a
+code-lock release commits at once; a frame switch lets an above-threshold
+correction land in view, a smaller one not; under a binding with a dev world
+jump the world position is the NUE; without a binding the caller's alignment
+is used; nesting is refused in both directions.
 Coverage of `gps-anchor.test.ts`:
 
 - Bootstrap (sub-step 2):
@@ -249,10 +292,9 @@ Coverage of `gps-anchor.test.ts`:
 
 - [port plan](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-13-gps-anchor-port-plan.md) —
   full design, sub-step list, test matrix.
-- [`frustum-visibility.ts`](frustum-visibility.ts.md) — supplies
-  `isObjectInCameraFrustum` for the upcoming `'snap-when-offscreen'`
-  steady state.
-- [`ar/frame-loop.ts`](../ar/frame-loop.ts.md) — the registry the
-  anchor self-registers with.
+- [`ar/deferred-anchors.ts`](../ar/deferred-anchors.ts.md) - the anchor set
+  the anchor joins: view gate, release, window, budget and log.
+- [`ar/anchor-visibility.ts`](../ar/anchor-visibility.ts.md) - the view test
+  the set uses (`isAnchorInView`).
 - [`sync-gps-anchored-meshes.ts`](../../../GpsPlusSlamJs_RecorderApp/src/visualization/sync-gps-anchored-meshes.ts.md) —
   the bulk counterpart for many-spheres-one-geometry use cases.

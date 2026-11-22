@@ -419,6 +419,24 @@ describe('deferredAnchor: caches and commits', () => {
     }
     expect(onCommit).toHaveBeenCalledTimes(4); // follow steps
   });
+
+  // A window entry or follow start whose key already sits within epsilon of
+  // its NUE pose writes the matrix all the same; a consumer that re-places
+  // labels on onCommit must hear of it like any other placement.
+  it('fires onCommit for a window entry that moves the key by less than epsilon', () => {
+    const s = session();
+    s.look('out');
+    const root = contentRoot();
+    const onCommit = vi.fn();
+    deferredAnchor(s.group, 'a').add(root, { onCommit });
+    s.store.setT(tOf(2));
+    s.run(3);
+    expect(onCommit).toHaveBeenCalledTimes(2); // first, out of view
+    expectMatrixClose(root.matrix, inv(tOf(2)));
+    s.store.bumpEpoch();
+    expect(s.run().windowOpen).toBe(true);
+    expect(onCommit).toHaveBeenCalledTimes(3); // window entry, sub-epsilon
+  });
 });
 
 describe('deferredAnchor: the immature phase', () => {

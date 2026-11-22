@@ -24,6 +24,12 @@
  *   tracking controller) re-places every anchor once, at once, ends the
  *   follow phase for the session and closes the window.
  *
+ * Position members (`joinAnchorSet`, used by `createGpsAnchor`) share the
+ * set's gate, budget, log, release and window: the member computes its
+ * target position and threshold, the set decides when it lands. They take
+ * no follow phase. A parent without a binding gets a set of its own for
+ * them, with no window (its T is a fixed identity).
+ *
  * Deep import `gps-plus-slam-app-framework/ar/deferred-anchors`. Sidecar:
  * `deferred-anchors.ts.md`.
  */
@@ -37,7 +43,11 @@ import {
   registerReleaseReceiver,
   type AnchorReleaseReason,
 } from './anchor-release';
-import { getArParentBinding, type ArParentBinding } from './ar-parent-target';
+import {
+  getArParentBinding,
+  type ArParentBinding,
+  type ArParentTarget,
+} from './ar-parent-target';
 import {
   ANCHOR_VIEW_MARGIN_DEG,
   anchorBoundsNeedRefresh,
@@ -116,7 +126,85 @@ type CommitKind =
   | 'out-of-view'
   | 'release:code-lock'
   | 'window-entry'
-  | 'follow-start';
+  | 'follow-start'
+  | 'window'
+  | 'every-tick';
+
+/**
+ * @internal A position-only member of a parent's anchor set
+ * (`createGpsAnchor`). The member owns its target; the set owns when the
+ * target lands.
+ */
+export interface AnchorSetMember {
+  /** The object whose `position` the set writes. A descendant of the parent. */
+  readonly object: THREE.Object3D;
+  /** The view when the session has no camera (tests, a page without XR). */
+  readonly camera: THREE.Camera;
+  /**
+   * One frame of the member's own logic. Writes its target local position
+   * into `into` and returns the distance (m) below which a difference is
+   * not worth a commit; null when it has no target this frame. `target` is
+   * the parent's alignment target while the set is bound, else null.
+   */
+  step(
+    dt: number,
+    elapsedS: number,
+    target: ArParentTarget | null,
+    into: THREE.Vector3
+  ): number | null;
+  /**
+   * `'every-tick'`: commits are not gated by the view; `'first'`: the next
+   * commit is the one-time first placement, not gated; null: gated.
+   */
+  ungated(): 'every-tick' | 'first' | null;
+  /** Called after each commit of this member. */
+  placed(): void;
+}
+
+/** @internal A member's place in a set; see {@link joinAnchorSet}. */
+export interface AnchorSetMembership {
+  /** Leave the set; a set without a binding ends with its last member. */
+  leave(): void;
+  /** Test-only: the binding's step (while bound), then one pass of the set. */
+  runPassForTests(
+    view: AnchorView | THREE.Camera,
+    dt: number,
+    elapsedS: number
+  ): DeferredAnchorPassCounts;
+}
+
+interface MemberEntry {
+  readonly member: AnchorSetMember;
+  /** The member's object, under the name the view tests use. */
+  readonly root: THREE.Object3D;
+  readonly cache: AnchorBoundsCache;
+  /** This pass's target local position. */
+  readonly target: THREE.Vector3;
+  pending: boolean;
+  pendingSinceMs: number | null;
+}
+
+type Deferred = KeyEntry | MemberEntry;
+
+function isMember(c: Deferred): c is MemberEntry {
+  return 'member' in c;
+}
+
+/** What the set reads from its parent's target. */
+type TargetReads = Pick<
+  ArParentTarget,
+  'target' | 'version' | 'frameEpoch' | 'isMature' | 'sessionElapsedS'
+>;
+
+const FIXED_IDENTITY = new THREE.Matrix4();
+/** The target of a set without a binding: T stays identity, no epochs. */
+const FIXED_TARGET: TargetReads = {
+  target: () => FIXED_IDENTITY,
+  version: () => 0,
+  frameEpoch: () => 0,
+  isMature: () => true,
+  sessionElapsedS: (elapsedS) => elapsedS,
+};
 
 /** Per-pass operation counts, for the budget tests. */
 export interface DeferredAnchorPassCounts {
@@ -131,16 +219,19 @@ export interface DeferredAnchorPassCounts {
 interface AnchorSet {
   readonly parent: THREE.Object3D;
   handle(key: string): DeferredAnchor;
+  join(member: AnchorSetMember): AnchorSetMembership;
   pass(
     view: AnchorView | THREE.Camera | null,
     dt: number,
     elapsedS: number
   ): DeferredAnchorPassCounts;
-  readonly binding: ArParentBinding;
+  readonly binding: ArParentBinding | null;
   isBound(): boolean;
 }
 
 const sets = new WeakMap<THREE.Object3D, AnchorSet>();
+/** Sets of parents that had no binding when their first member joined. */
+const unboundSets = new WeakMap<THREE.Object3D, AnchorSet>();
 
 /**
  * The anchor for `(parent, key)`, created on first use. `parent` must have
@@ -173,6 +264,33 @@ export function deferredAnchor(
 }
 
 /**
+ * @internal Join `member` to the anchor set of `parent`: the bound set when
+ * `parent` has an alignment binding, else a set of its own without a
+ * window, which self-ticks and ends with its last member. Throws for an
+ * object that is inside, or holds, a root of the set.
+ */
+export function joinAnchorSet(
+  parent: THREE.Object3D,
+  member: AnchorSetMember
+): AnchorSetMembership {
+  let set = sets.get(parent);
+  if (!set) {
+    const binding = getArParentBinding(parent);
+    if (binding) {
+      set = createAnchorSet(parent, binding);
+      sets.set(parent, set);
+    } else {
+      set = unboundSets.get(parent);
+      if (!set) {
+        set = createAnchorSet(parent, null);
+        unboundSets.set(parent, set);
+      }
+    }
+  }
+  return set.join(member);
+}
+
+/**
  * Test-only: run the binding's alignment step and then one pass of
  * `parent`'s set. `view` is a camera (read after that step, as in a frame) or a
  * prepared view. Returns this pass's operation counts.
@@ -193,7 +311,7 @@ export function __runPassForTests(
       followUpdates: 0,
     };
   }
-  if (set.isBound()) set.binding.step(dt, elapsedS);
+  if (set.isBound()) set.binding?.step(dt, elapsedS);
   return set.pass(view, dt, elapsedS);
 }
 
@@ -275,14 +393,15 @@ function copyView(into: AnchorView, from: AnchorView): void {
 
 function createAnchorSet(
   parent: THREE.Object3D,
-  binding: ArParentBinding
+  binding: ArParentBinding | null
 ): AnchorSet {
-  const target = binding.target;
+  const target: TargetReads = binding?.target ?? FIXED_TARGET;
   const keys = new Map<string, KeyEntry>();
   const handles = new Map<string, DeferredAnchor>();
   const keyOfRoot = new Map<THREE.Object3D, KeyEntry>();
+  const members = new Set<MemberEntry>();
   let disposed = false;
-  let bound = true;
+  let bound = binding !== null;
 
   // Views: the set owns two and swaps them after each pass.
   let cur = createAnchorView();
@@ -322,11 +441,20 @@ function createAnchorSet(
     fresh: false,
   };
   const atTarget = { ...atCurrent, atLocal: targetInv };
+  // A member is tested at its target position, keeping its rotation and scale.
+  const atMemberTarget = { ...atCurrent, atLocal: new THREE.Matrix4() };
 
-  function cornersOf(key: KeyEntry): THREE.Vector3[] {
-    const all: THREE.Vector3[] = [];
-    for (const r of key.roots.values()) all.push(...r.corners);
-    return all;
+  /** Largest distance any of the key's corners moves between `a` and `b`. */
+  function keyDisplacement(
+    a: THREE.Matrix4,
+    b: THREE.Matrix4,
+    key: KeyEntry
+  ): number {
+    let max = 0;
+    for (const r of key.roots.values()) {
+      max = Math.max(max, displacement(a, b, r.corners));
+    }
+    return max;
   }
 
   function assign(key: KeyEntry, local: THREE.Matrix4): void {
@@ -355,7 +483,7 @@ function createAnchorSet(
     kind: CommitKind,
     detail = ''
   ): void {
-    const moved = displacement(key.local, local, cornersOf(key));
+    const moved = keyDisplacement(key.local, local, key);
     const waitMs =
       key.pendingSinceMs === null ? 0 : Math.max(0, nowMs - key.pendingSinceMs);
     assign(key, local);
@@ -373,7 +501,7 @@ function createAnchorSet(
 
   function inView(
     view: AnchorView,
-    r: RootEntry,
+    r: { readonly root: THREE.Object3D; readonly cache: AnchorBoundsCache },
     options: typeof atCurrent,
     fresh: boolean
   ): boolean {
@@ -391,6 +519,74 @@ function createAnchorSet(
       if (inView(cur, r, atTarget, false)) return true;
     }
     return false;
+  }
+
+  /** As {@link keyInView}, for a member at its current and its target position. */
+  function memberInView(m: MemberEntry, fresh: boolean): boolean {
+    if (inView(cur, m, atCurrent, fresh)) return true;
+    if (hasPrev && inView(prev, m, atCurrent, false)) return true;
+    const o = m.root;
+    atMemberTarget.atLocal.compose(m.target, o.quaternion, o.scale);
+    return inView(cur, m, atMemberTarget, false);
+  }
+
+  function commitMember(m: MemberEntry, kind: CommitKind): void {
+    const o = m.root;
+    const moved = o.position.distanceTo(m.target);
+    const waitMs =
+      m.pendingSinceMs === null ? 0 : Math.max(0, nowMs - m.pendingSinceMs);
+    o.position.copy(m.target);
+    o.updateWorldMatrix(true, true);
+    m.pending = false;
+    m.pendingSinceMs = null;
+    log.info(
+      `commit ${kind}: ${o.name || 'position member'}, waited ` +
+        `${waitMs.toFixed(0)} ms, moved ${moved.toFixed(3)} m`
+    );
+    m.member.placed();
+  }
+
+  /** The member's own step, isolated: a throw costs this member its frame, not the set. */
+  function memberStep(
+    m: MemberEntry,
+    dt: number,
+    elapsedS: number
+  ): number | null {
+    try {
+      const source = bound && binding ? binding.target : null;
+      return m.member.step(dt, elapsedS, source, m.target);
+    } catch (error) {
+      log.error(`${m.root.name || 'a position member'}: step threw`, error);
+      return null;
+    }
+  }
+
+  /** Members: a release, an ungated or a window commit lands now; else pending. */
+  function stepMembers(dt: number, elapsedS: number, releasing: boolean): void {
+    for (const m of members) {
+      m.pending = false;
+      const threshold = memberStep(m, dt, elapsedS);
+      if (threshold === null) {
+        m.pendingSinceMs = null;
+        continue;
+      }
+      const delta = m.root.position.distanceTo(m.target);
+      const ungated = m.member.ungated();
+      if (releasing && delta > DEFERRED_ANCHOR_EPSILON_M) {
+        commitMember(m, 'release:code-lock');
+      } else if (delta < threshold) {
+        m.pendingSinceMs = null;
+      } else if (ungated !== null) {
+        commitMember(m, ungated);
+      } else if (windowOpen) {
+        commitMember(m, 'window');
+      } else {
+        m.pending = true;
+        m.pendingSinceMs ??= nowMs;
+        // The view tests read its world matrix.
+        m.root.updateWorldMatrix(true, false);
+      }
+    }
   }
 
   /** A root an app moved inside another anchor's root is dropped (it would carry the correction twice). */
@@ -422,7 +618,7 @@ function createAnchorSet(
     } else if (view) {
       copyView(cur, view);
     } else {
-      const camera = getCamera();
+      const camera = getCamera() ?? firstMemberCamera();
       if (camera) {
         const xr = getRenderer()?.xr as XrCameraSource | undefined;
         updateAnchorView(cur, camera, xr ?? null);
@@ -431,6 +627,11 @@ function createAnchorSet(
         cur.setCount = 0;
       }
     }
+  }
+
+  function firstMemberCamera(): THREE.Camera | null {
+    for (const m of members) return m.member.camera;
+    return null;
   }
 
   /** The previous view, carried by the parent's motion since then, so the frusta derived from it sit where they were in the parent frame. */
@@ -452,9 +653,9 @@ function createAnchorSet(
       .applyMatrix4(parentInv);
   }
 
-  /** A pending release: one commit per displaced key, then deferral. */
-  function applyRelease(epoch: number, cam: THREE.Vector3 | null): void {
-    if (!releaseRequested) return;
+  /** A pending release: one commit per displaced key, then deferral. True when one was applied. */
+  function applyRelease(epoch: number, cam: THREE.Vector3 | null): boolean {
+    if (!releaseRequested) return false;
     releaseRequested = false;
     immatureEnded = true;
     windowOpen = false;
@@ -464,8 +665,7 @@ function createAnchorSet(
     lastCam = cam ? cam.clone() : null;
     for (const key of keys.values()) {
       if (
-        displacement(key.local, targetInv, cornersOf(key)) >
-        DEFERRED_ANCHOR_EPSILON_M
+        keyDisplacement(key.local, targetInv, key) > DEFERRED_ANCHOR_EPSILON_M
       ) {
         commit(key, targetInv, 'release:code-lock');
       }
@@ -474,6 +674,7 @@ function createAnchorSet(
         log.info(`follow-end: ${key.key} (release)`);
       }
     }
+    return true;
   }
 
   /** A frame switch since the last pass: a new epoch, or a camera step. */
@@ -497,10 +698,7 @@ function createAnchorSet(
   function targetStep(): number {
     let step = displacement(lastTargetInv, targetInv, ORIGIN_ONLY);
     for (const key of keys.values()) {
-      step = Math.max(
-        step,
-        displacement(lastTargetInv, targetInv, cornersOf(key))
-      );
+      step = Math.max(step, keyDisplacement(lastTargetInv, targetInv, key));
     }
     lastTargetInv.copy(targetInv);
     return step;
@@ -540,8 +738,7 @@ function createAnchorSet(
     key.following = true;
     const kind: CommitKind = windowOpen ? 'window-entry' : 'follow-start';
     if (
-      displacement(key.local, followInv, cornersOf(key)) >
-      DEFERRED_ANCHOR_EPSILON_M
+      keyDisplacement(key.local, followInv, key) > DEFERRED_ANCHOR_EPSILON_M
     ) {
       commit(
         key,
@@ -550,8 +747,10 @@ function createAnchorSet(
         kind === 'window-entry' ? windowTrigger : ''
       );
     } else {
+      // Within epsilon: no move worth a log line, still a placement.
       assign(key, followInv);
       log.info(`follow-start: ${key.key}`);
+      notify(key.roots.values());
     }
   }
 
@@ -564,8 +763,7 @@ function createAnchorSet(
     // After the phase ends, follow on until the key is at T^-1.
     if (
       !followWanted &&
-      displacement(followInv, targetInv, cornersOf(key)) <=
-        DEFERRED_ANCHOR_EPSILON_M
+      keyDisplacement(followInv, targetInv, key) <= DEFERRED_ANCHOR_EPSILON_M
     ) {
       key.following = false;
       log.info(`follow-end: ${key.key}`);
@@ -581,46 +779,73 @@ function createAnchorSet(
     }
   }
 
-  /** Displaced deferred keys by what their cached tests say, in round-robin order. */
-  function classifyDeferred(ordered: KeyEntry[]): {
-    out: KeyEntry[];
-    build: KeyEntry[];
-    stale: KeyEntry[];
+  /** Whether a key or member waits for a commit (a key also tracks since when). */
+  function isDeferredPending(c: Deferred): boolean {
+    if (isMember(c)) return c.pending;
+    if (c.following) return false;
+    if (keyDisplacement(c.local, targetInv, c) <= DEFERRED_ANCHOR_EPSILON_M) {
+      c.pendingSinceMs = null;
+      return false;
+    }
+    c.pendingSinceMs ??= nowMs;
+    return true;
+  }
+
+  function isBuilt(r: {
+    readonly root: THREE.Object3D;
+    readonly cache: AnchorBoundsCache;
+  }): boolean {
+    return r.cache.valid && r.cache.anchor === r.root;
+  }
+
+  function allBuilt(c: Deferred): boolean {
+    if (isMember(c)) return isBuilt(c);
+    for (const r of c.roots.values()) if (!isBuilt(r)) return false;
+    return true;
+  }
+
+  function anyStale(c: Deferred): boolean {
+    if (isMember(c)) return anchorBoundsNeedRefresh(c.cache, nowMs);
+    for (const r of c.roots.values()) {
+      if (anchorBoundsNeedRefresh(r.cache, nowMs)) return true;
+    }
+    return false;
+  }
+
+  function deferredInView(c: Deferred, fresh: boolean): boolean {
+    return isMember(c) ? memberInView(c, fresh) : keyInView(c, fresh);
+  }
+
+  /** Pending keys and members by what their cached tests say, in round-robin order. */
+  function classifyDeferred(ordered: Deferred[]): {
+    out: Deferred[];
+    build: Deferred[];
+    stale: Deferred[];
   } {
-    const out: KeyEntry[] = [];
-    const build: KeyEntry[] = [];
-    const stale: KeyEntry[] = [];
+    const out: Deferred[] = [];
+    const build: Deferred[] = [];
+    const stale: Deferred[] = [];
     for (let i = 0; i < ordered.length; i += 1) {
-      const key = ordered[(i + roundRobin) % ordered.length]!;
-      if (key.following) continue;
-      if (
-        displacement(key.local, targetInv, cornersOf(key)) <=
-        DEFERRED_ANCHOR_EPSILON_M
-      ) {
-        key.pendingSinceMs = null;
-        continue;
-      }
-      key.pendingSinceMs ??= nowMs;
-      if (!hasPrev) continue;
-      const roots = [...key.roots.values()];
-      if (roots.some((r) => !r.cache.valid || r.cache.anchor !== r.root)) {
-        build.push(key);
-      } else if (!keyInView(key, false)) {
-        out.push(key);
-      } else if (roots.some((r) => anchorBoundsNeedRefresh(r.cache, nowMs))) {
-        stale.push(key);
-      }
+      const c = ordered[(i + roundRobin) % ordered.length]!;
+      if (!isDeferredPending(c) || !hasPrev) continue;
+      if (!allBuilt(c)) build.push(c);
+      else if (!deferredInView(c, false)) out.push(c);
+      else if (anyStale(c)) stale.push(c);
     }
     return { out, build, stale };
   }
 
-  /** Deferred keys: cached tests for all, at most one key's traversal. */
+  /** Pending keys and members: cached tests for all, at most one traversal. */
   function commitOneDeferred(): void {
-    const ordered = [...keys.values()];
+    const ordered: Deferred[] = [...keys.values(), ...members];
     const { out, build, stale } = classifyDeferred(ordered);
     const pick = out[0] ?? build[0] ?? stale[0];
     if (!pick) return;
     roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
+    if (isMember(pick)) {
+      if (!memberInView(pick, true)) commitMember(pick, 'out-of-view');
+      return;
+    }
     excludeNested(pick);
     if (keys.get(pick.key) !== pick) return;
     // The fresh traversal renews the bounds; the corners follow it, so a
@@ -640,7 +865,7 @@ function createAnchorSet(
 
   function pass(
     view: AnchorView | THREE.Camera | null,
-    _dt: number,
+    dt: number,
     elapsedS: number
   ): DeferredAnchorPassCounts {
     counters.sphereTests = 0;
@@ -658,13 +883,15 @@ function createAnchorSet(
     readView(view);
     const cam = cameraInParent();
     const epoch = target.frameEpoch();
-    applyRelease(epoch, cam);
-    const trigger = detectTrigger(epoch, cam);
+    const releasing = applyRelease(epoch, cam);
+    // A set without a binding has no frame switch to absorb.
+    const trigger = binding ? detectTrigger(epoch, cam) : null;
     const version = target.version();
     const tStep = version === lastTargetVersion ? 0 : targetStep();
     lastTargetVersion = version;
     stepWindow(trigger, tStep, elapsedS, sessionS);
     followKeys();
+    stepMembers(dt, elapsedS, releasing);
     commitOneDeferred();
     swapViews();
     return { ...counters, windowOpen, followUpdates };
@@ -696,13 +923,66 @@ function createAnchorSet(
     if (root === parent || isAncestorOf(root, parent)) {
       throw new Error('DeferredAnchor.add: root must not hold its parent');
     }
-    for (const other of keyOfRoot.keys()) {
-      if (isAncestorOf(other, root) || isAncestorOf(root, other)) {
-        throw new Error(
-          'DeferredAnchor.add: anchors must not nest; add each root directly'
-        );
+    if (
+      nestsWithAny(root, keyOfRoot.keys()) ||
+      nestsWithAny(root, memberObjects())
+    ) {
+      throw new Error(
+        'DeferredAnchor.add: anchors must not nest; add each root directly'
+      );
+    }
+  }
+
+  function* memberObjects(): Generator<THREE.Object3D> {
+    for (const m of members) yield m.root;
+  }
+
+  /** Whether `object` is, sits inside or holds one of `others`. */
+  function nestsWithAny(
+    object: THREE.Object3D,
+    others: Iterable<THREE.Object3D>
+  ): boolean {
+    for (const other of others) {
+      if (
+        other === object ||
+        isAncestorOf(other, object) ||
+        isAncestorOf(object, other)
+      ) {
+        return true;
       }
     }
+    return false;
+  }
+
+  function join(member: AnchorSetMember): AnchorSetMembership {
+    if (disposed) {
+      throw new Error('joinAnchorSet: the anchor set ended with its session');
+    }
+    if (nestsWithAny(member.object, keyOfRoot.keys())) {
+      throw new Error(
+        'joinAnchorSet: nested anchors are not supported; the object is ' +
+          "inside, or holds, a deferred anchor's root"
+      );
+    }
+    const entry: MemberEntry = {
+      member,
+      root: member.object,
+      cache: createAnchorBoundsCache(),
+      target: new THREE.Vector3(),
+      pending: false,
+      pendingSinceMs: null,
+    };
+    members.add(entry);
+    return {
+      leave() {
+        members.delete(entry);
+        if (!binding && members.size === 0) dispose();
+      },
+      runPassForTests(view, dt, elapsedS) {
+        if (bound) binding?.step(dt, elapsedS);
+        return pass(view, dt, elapsedS);
+      },
+    };
   }
 
   /** A key's first root: following in a follow phase, else at T^-1. */
@@ -780,17 +1060,22 @@ function createAnchorSet(
   const productionPass = (dt: number, elapsedS: number): void => {
     pass(null, dt, elapsedS);
   };
-  let detachPass: (() => void) | null = binding.attachPass(productionPass);
-  let selfTick: (() => void) | null = null;
-  const stopBindingWatch = binding.onDispose(() => {
-    detachPass = null;
-    bound = false;
-    if (!disposed) selfTick = registerFrameUpdate(productionPass);
-  });
+  let detachPass: (() => void) | null =
+    binding?.attachPass(productionPass) ?? null;
+  let selfTick: (() => void) | null = binding
+    ? null
+    : registerFrameUpdate(productionPass);
+  const stopBindingWatch =
+    binding?.onDispose(() => {
+      detachPass = null;
+      bound = false;
+      if (!disposed) selfTick = registerFrameUpdate(productionPass);
+    }) ?? (() => {});
   const stopRelease = registerReleaseReceiver((reason: AnchorReleaseReason) => {
     if (reason === 'code-lock') releaseRequested = true;
   });
-  registerSessionDisposer(() => {
+  function dispose(): void {
+    if (disposed) return;
     disposed = true;
     detachPass?.();
     detachPass = null;
@@ -798,12 +1083,16 @@ function createAnchorSet(
     selfTick = null;
     stopBindingWatch();
     stopRelease();
+    stopSessionWatch();
     if (sets.get(parent) === set) sets.delete(parent);
-  });
+    if (unboundSets.get(parent) === set) unboundSets.delete(parent);
+  }
+  const stopSessionWatch = registerSessionDisposer(dispose);
 
   const set: AnchorSet = {
     parent,
     handle,
+    join,
     pass,
     binding,
     isBound: () => bound,
