@@ -12,6 +12,7 @@ import { errorText } from "./bench-net";
 import { createCameraControl } from "./camera-control";
 import { cockpitVideo, startCockpitView } from "./cockpit-view";
 import { featureMatchActions as A } from "./feature-match-slice";
+import { guidedVideo, startGuidedView } from "./guided-view";
 import { indexedDbKeyValueStore } from "../../key-value-db";
 import {
   createFeatureMatchStore,
@@ -63,7 +64,6 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   window.addEventListener("unhandledrejection", (ev) =>
     fail("page", ev.reason),
   );
-  void fm.restorePhotos();
 
   try {
     performance.setResourceTimingBufferSize(1000);
@@ -73,12 +73,17 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   // The camera stays out of the state: it is a browser resource. It must
   // not run beside the timed runs (it costs the CPU and GPU measured).
-  const camera = createCameraControl(cockpitVideo(root), {
-    getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
-    log,
-    fail,
-    changed: (on) => store.dispatch(A.cameraChanged(on)),
-  });
+  // The view is picked in the page head from `?ui` (guided by default).
+  const guided = document.documentElement.dataset.ui !== "cockpit";
+  const camera = createCameraControl(
+    guided ? guidedVideo(root) : cockpitVideo(root),
+    {
+      getUserMedia: (c) => navigator.mediaDevices.getUserMedia(c),
+      log,
+      fail,
+      changed: (on) => store.dispatch(A.cameraChanged(on)),
+    },
+  );
   const engine = startBenchEngine({
     root,
     fm,
@@ -87,7 +92,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     stamp,
     stopCamera: camera.stop,
   });
-  const view = startCockpitView({ root, fm, engine, camera, log, fail });
+  const viewDeps = { root, fm, engine, camera, log, fail };
+  const view = guided ? startGuidedView(viewDeps) : startCockpitView(viewDeps);
 
   window.addEventListener("pagehide", camera.stop);
   store.subscribe(() => {
@@ -96,5 +102,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   });
   engine.render();
   view();
+  // The restore fills the photo side table without an action: draw again.
+  void fm.restorePhotos().then(view, (e: unknown) => {
+    fail("photo storage", e);
+  });
   log("ready");
 }

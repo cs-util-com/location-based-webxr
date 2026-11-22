@@ -8,7 +8,12 @@ The page as a whole is described below, whichever module implements a rule:
 
 - `camera-control.ts`: the camera start, stop and generation guard.
 - `bench-engine.ts`: Options, Speed test, the runs (camera, synthetic, plan pair), results table, pictures, report, Copy log and log.
-- `cockpit-view.ts`: the four steps, the pair selector, the guide card, the light warning, Save and its links, and the flat target mode.
+- `guided-view.ts`: the default view, one pair of the run plan at a time (intro, step card, viewfinder with countdown, pairs sheet, end screen with Download all and the summary, and the measure sheet holding the measuring block). Its rules are in `guided-view.ts.md`.
+- `cockpit-view.ts` (`?ui=cockpit`): the four steps, the pair selector, the guide card, the light warning, Save and its links, and the flat target mode.
+
+## Picking the view
+
+An inline script in the page head reads `?ui`: `cockpit` sets `<html data-ui="cockpit">`, anything else `data-ui="guided"`, and switches the cockpit `<style id="cockpit-style">` off in the guided view. The flat target rules are a style of their own (`flat-style`), on in both views; the guided rules (`guided-view.css`) are scoped to `data-ui="guided"`. The entry reads `data-ui` and starts the camera on that view's video and that view; the other view's markup stays hidden. The rules below that name steps, the selector, Save and its links are the cockpit view's.
 
 ## Public API
 
@@ -35,7 +40,7 @@ The page as a whole is described below, whichever module implements a rule:
 - Resource timing's buffer is raised to 1000 entries so a long run keeps the download sizes.
 - **State in the store.** The pair flow (numbering, retake rule, the advance after a download, the light check), one action at a time, the run and save status, the status lines, table, report, log and errors, and the options all live in the slice; its reducers hold the rules. The options are mirrored from the controls on every `input`/`change` and read from the state at run time. Log lines are stamped with the page time here and stored finished.
 - **Outside the store**, as browser resources: the camera stream, its start in flight and its generation counter, the result pictures (canvases drawn during a run), and, in the store's side tables keyed by the ids the state holds, the photo frames, the run's results and the offered Blob URLs. A side table entry goes in through the store's `put`, in the same step as the action that names it, since the store drops every entry the state does not name; a run or save starts only when `accepted(...)` says the reducer took its start action, so a second tap is never mistaken for the first.
-- **Run plan photos.** The store gets the IndexedDB `PHOTO_DB` store (`indexedDbKeyValueStore`, null where IndexedDB is missing) and `restorePhotos()` runs once at start; a database failure is an `ERROR photo storage:` line.
+- **Run plan photos.** The store gets the IndexedDB `PHOTO_DB` store (`indexedDbKeyValueStore`, null where IndexedDB is missing) and `restorePhotos()` runs once at start, after the first render; it fills the frames side table without an action, so the view is drawn again when it settles. A database failure is an `ERROR photo storage:` line.
 - **Drawn only when moved:** the selector and the spot field are written only when the state changed them (a field being typed in is never overwritten), and the links, table, report and log only when their part of the state changed.
 
 ## Example

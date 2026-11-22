@@ -229,7 +229,7 @@ test("the feature matching benchmark runs a stubbed SIFT on the synthetic pair",
   page.on("pageerror", (error) => errors.push(error.message));
   await routeNetwork(page, fulfillSift);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   expect(await stepStates(page)).toEqual(["current", "todo", "todo", "todo"]);
   await chooseSiftOnly(page);
@@ -275,7 +275,7 @@ test("the feature matching benchmark reports a method that fails to load", async
   await routeNetwork(page, (route) =>
     route.fulfill({ status: 404, body: "not found" }),
   );
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
 
@@ -350,7 +350,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   });
   await fakeCamera(page);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await expect(page.locator("#save-frames")).toBeDisabled();
   await expect(page.locator("#capture-b")).toBeDisabled();
@@ -580,7 +580,7 @@ test("the feature matching benchmark shows a failed save and a refused camera", 
       void held.then(() => callback(null));
     };
   });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   await takePhotos(page);
@@ -619,7 +619,7 @@ test("the feature matching benchmark names a run that measured nothing", async (
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   // A protocol pair would set the backend itself; "none" uses the Options.
@@ -672,7 +672,7 @@ test("the feature matching benchmark retries a camera start that failed at once"
       value: undefined,
     });
   });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#capture-a").click();
   await expect(page.locator("#state-a")).toHaveText(
@@ -693,7 +693,7 @@ test("the feature matching benchmark says when the camera is refused", async ({
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page, "reject");
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#capture-a").click();
   await expect(page.locator("#state-a")).toHaveText(
@@ -717,7 +717,7 @@ test("the feature matching benchmark keeps the camera off when a run starts duri
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page, "hold");
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   await page.locator("#capture-a").click();
@@ -760,7 +760,7 @@ test("the feature matching benchmark guides each pair and the first visit", asyn
   page.on("pageerror", (error) => errors.push(error.message));
   await routeNetwork(page, fulfillSift);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
 
   await expect(page.locator("#before-start")).toHaveAttribute("open", "");
@@ -859,7 +859,7 @@ for (const gpuCase of /** @type {const} */ ([
       });
     }, gpuCase);
     const gpu = gpuCase === "adapter";
-    await page.goto("/feature-match-check.html");
+    await page.goto("/feature-match-check.html?ui=cockpit");
     await expect(page.locator("#log")).toContainText("ready");
     await page.locator("#pair").selectOption("2a");
     await takePhotos(page);
@@ -893,7 +893,7 @@ test("the feature matching benchmark warns when the light did not change as the 
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   await page.locator("#pair").selectOption("1b");
@@ -982,7 +982,7 @@ test("the feature matching benchmark keeps the running number across a reload", 
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   await page.locator("#pair").selectOption("2a");
@@ -1024,7 +1024,7 @@ test("the feature matching benchmark numbers a retake after a single-file downlo
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await chooseSiftOnly(page);
   await page.locator("#pair").selectOption("2a");
@@ -1073,7 +1073,7 @@ test("the feature matching benchmark tells two runs apart with storage blocked",
   });
   const sessions = [];
   for (let i = 0; i < 2; i++) {
-    await page.goto("/feature-match-check.html");
+    await page.goto("/feature-match-check.html?ui=cockpit");
     await expect(page.locator("#log")).toContainText("ready");
     await chooseSiftOnly(page);
     await takePhotos(page);
@@ -1210,7 +1210,7 @@ test("the feature matching page captures a flat target surface end to end", asyn
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await page.setViewportSize(FLAT_VIEWPORTS[0]);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
 
   await page.locator("#pair").selectOption("flat");
@@ -1452,7 +1452,7 @@ test("the flat target capture keeps the photos when the zip fails, and attaches 
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await page.setViewportSize(FLAT_VIEWPORTS[0]);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#pair").selectOption("flat");
 
@@ -1549,7 +1549,7 @@ test("the flat target capture asks before leaving with only an attached original
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#pair").selectOption("flat");
   await page.locator("#flat-new-file").setInputFiles({
@@ -1626,7 +1626,7 @@ test("the feature matching speed test reports an arm that cannot load", async ({
       },
     });
   });
-  await page.goto("/feature-match-check.html");
+  await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#speed summary").click();
   for (const box of ["#t-xfeat", "#t-dino-int8", "#t-dino-q4f16"]) {
@@ -1679,3 +1679,397 @@ test("the feature matching speed test reports an arm that cannot load", async ({
   );
   expect(errors).toEqual([]);
 });
+
+// ---------------------------------------------------------------------------
+// The guided view (the page's default; the tests above open ?ui=cockpit).
+
+/**
+ * A stand-in save dialog: `window.__saveAnswer` "save" (the default)
+ * keeps the written bytes in `window.__saved` by suggested name, "cancel"
+ * dismisses the dialog as a user would.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function savePicker(page) {
+  await page.addInitScript(() => {
+    const w = /** @type {any} */ (window);
+    w.__saveAnswer = "save";
+    w.__saved = {};
+    w.showSaveFilePicker = async (/** @type {any} */ opts) => {
+      if (w.__saveAnswer === "cancel") {
+        throw new DOMException("The user aborted a request.", "AbortError");
+      }
+      const parts = /** @type {Blob[]} */ ([]);
+      return {
+        createWritable: async () => ({
+          write: async (/** @type {Blob} */ b) => {
+            parts.push(b);
+          },
+          close: async () => {
+            w.__saved[opts.suggestedName] = new Blob(parts);
+          },
+          abort: async () => undefined,
+        }),
+      };
+    };
+  });
+}
+
+/**
+ * The bytes the stand-in save dialog kept under `name`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} name
+ */
+async function savedBytes(page, name) {
+  const b64 = await page.evaluate(async (n) => {
+    const blob = /** @type {any} */ (window).__saved[n];
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    let s = "";
+    for (const x of bytes) {
+      s += String.fromCharCode(x);
+    }
+    return btoa(s);
+  }, name);
+  return Buffer.from(b64, "base64");
+}
+
+/**
+ * The entry names and the text files of a zip.
+ *
+ * @param {Buffer} bytes
+ */
+async function zipContents(bytes) {
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(bytes)));
+  const names = /** @type {string[]} */ ([]);
+  const texts = /** @type {Record<string, string>} */ ({});
+  for (const e of await reader.getEntries()) {
+    names.push(e.filename);
+    if (!e.directory && /\.(txt|json)$/.test(e.filename) && e.getData) {
+      texts[e.filename] = await e.getData(new TextWriter());
+    }
+  }
+  await reader.close();
+  return { names, texts };
+}
+
+/**
+ * Countdown off (the pairs sheet's setting), so each tap shoots at once.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function countdownOff(page) {
+  await page.locator("#g-open-pairs").click();
+  const off = page.locator('#g-sheet-pairs [data-countdown="0"]');
+  await off.click();
+  await expect(off).toHaveAttribute("aria-checked", "true");
+  await page.locator("#g-close-pairs").click();
+}
+
+/**
+ * From the intro: Start, countdown off, then both photos of the first
+ * pair, the camera on by itself.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function guidedFirstPair(page) {
+  await page.locator("#g-intro-start").click();
+  await expect(page.locator("#g-run")).toBeVisible();
+  await expect(page.locator("#g-cam-chip")).toBeHidden();
+  await countdownOff(page);
+  const primary = page.locator("#g-primary-label");
+  await expect(primary).toHaveText("Capture A");
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+  await expect(primary).toHaveText("Capture B");
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-review")).toBeVisible();
+  await expect(primary).toHaveText("Next pair");
+}
+
+/**
+ * Why this test matters: the guided view is what a tester sees by
+ * default, so its whole path must work with nothing but taps: the intro,
+ * the camera starting by itself, a countdown that can be cancelled, both
+ * photos with the ghost of A while B is due, the review and a retake
+ * taken back, the next pair, and the end screen's one download. The zip
+ * is what gets sent back, so it must hold the complete pair under its own
+ * names plus the summary and the log, and a dismissed save dialog must
+ * lose nothing and count no download. Nothing leaves the machine.
+ */
+test("the guided photo test runs from the intro to a saved zip", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await savePicker(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("html")).toHaveAttribute("data-ui", "guided");
+  await expect(page.locator("body > .layout")).toBeHidden();
+  await expect(page.locator("#g-intro")).toBeVisible();
+  await expect(page.locator("#g-intro-start")).toHaveText("Start");
+  await page.locator("#g-intro-start").click();
+  await expect(page.locator("#g-head-pos")).toHaveText(/^Pair 1 of \d+$/);
+  await expect(page.locator("#g-card-key")).toHaveText("1a");
+  await expect(page.locator("#g-cam-chip")).toBeHidden();
+
+  // The default countdown: 3 s with the big button as Cancel.
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-count-num")).toHaveText("3");
+  await expect(page.locator("#g-primary-label")).toHaveText("Cancel");
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-count")).toBeHidden();
+  await expect(page.locator("#g-primary-label")).toHaveText("Capture A");
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "false",
+  );
+
+  await countdownOff(page);
+  await expect(page.locator("#g-primary-sub")).toHaveText("shoots at once");
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+  // While B is due, photo A can be laid over the finder.
+  await page.locator("#g-ghost-toggle").click();
+  await expect(page.locator("#g-ghost")).toBeVisible();
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-review")).toBeVisible();
+  await expect(page.locator("#g-review-a")).toBeVisible();
+  await expect(page.locator("#g-ghost")).toBeHidden();
+  const log = page.locator("#log");
+  await expect(log).toContainText("run: light tests at 1 place(s)");
+  await expect(log).toContainText("countdown: cancelled");
+  await expect(log).toContainText("photo A: 1a-s1 #1 320x240 grey mean 127.5");
+  await expect(log).toContainText("light check 1a-s1: ");
+
+  // A retake is offered by the slot, and taken back by a second tap.
+  await page.locator("#g-slot-b").click();
+  await expect(page.locator("#g-primary-label")).toHaveText("Retake B");
+  await page.locator("#g-slot-b").click();
+  await expect(page.locator("#g-primary-label")).toHaveText("Next pair");
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-head-pos")).toHaveText(/^Pair 2 of/);
+  await expect(log).toContainText("next pair: ");
+
+  await page.locator("#g-open-pairs").click();
+  await expect(page.locator("#g-pair-grid button").first()).toContainText(
+    /done|retake suggested/,
+  );
+  await page.locator("#g-go-end").click();
+  await expect(page.locator("#g-end-kicker")).toHaveText(
+    /^1 of \d+ pairs captured$/,
+  );
+  const state = page.locator("#g-download-state");
+  await expect(state).toHaveText(
+    "One zip with 1 pair, saved to this phone only.",
+  );
+  await expect(page.locator("#g-summary")).toHaveValue(/Pairs complete: 1 of/);
+  await expect(page.locator("#g-summary")).toHaveValue(/not downloaded yet/);
+
+  // A dismissed save dialog loses nothing and counts no download.
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__saveAnswer = "cancel";
+  });
+  await page.locator("#g-download-all").click();
+  await expect(state).toHaveText(
+    "Not saved: the save dialog was closed. Nothing was lost.",
+  );
+  await expect(page.locator("#g-download-all")).toHaveText("Download all");
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__saveAnswer = "save";
+  });
+  await page.locator("#g-download-all").click();
+  await expect(state).toHaveText(/^Saved feature-match-run-.+\.zip \(/);
+  await expect(state).toHaveClass(/ok/);
+  await expect(page.locator("#g-download-all")).toHaveText("Download again");
+  await expect(page.locator("#g-summary")).not.toHaveValue(
+    /not downloaded yet/,
+  );
+  const zipName = /** @type {string} */ (
+    await page.evaluate(
+      () => Object.keys(/** @type {any} */ (window).__saved)[0],
+    )
+  );
+  expect(zipName).toMatch(/^feature-match-run-.+\.zip$/);
+  const { names, texts } = await zipContents(await savedBytes(page, zipName));
+  expect(names).toHaveLength(5);
+  const a = names.find((n) =>
+    /^feature-match-01-1a-s1-.*-frame-a\.png$/.test(n),
+  );
+  const b = names.find((n) =>
+    /^feature-match-01-1a-s1-.*-frame-b\.png$/.test(n),
+  );
+  const info = names.find((n) =>
+    /^feature-match-01-1a-s1-.*-frames\.json$/.test(n),
+  );
+  expect(a && b && info).toBeTruthy();
+  const frames = texts[/** @type {string} */ (info)] ?? "";
+  expect(() => JSON.parse(frames)).not.toThrow();
+  expect(frames).toContain(/** @type {string} */ (a));
+  expect(frames).toContain(/** @type {string} */ (b));
+  expect(texts["feature-match-summary.txt"]).toContain("Pairs complete: 1 of");
+  expect(texts["feature-match-log.txt"]).toContain("photo B: 1a-s1 #1");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: without a save dialog (most phones) the zip
+ * goes out through a download link, and the photos of the run live in
+ * the page's database: after a reload the run continues where it was,
+ * with the taken photos drawn again from storage.
+ */
+test("the guided photo test downloads through a link and keeps its photos across a reload", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.addInitScript(() => {
+    // Taken away on purpose: the save goes through a download link.
+    delete (/** @type {any} */ (window).showSaveFilePicker);
+  });
+  await page.goto("/feature-match-check.html");
+  await guidedFirstPair(page);
+  await page.reload();
+  await expect(page.locator("#g-run")).toBeVisible();
+  await expect(page.locator("#g-intro")).toBeHidden();
+  await expect(page.locator("#g-review-a")).toBeVisible();
+  await expect(page.locator("#g-slot-b canvas")).toBeVisible();
+  await page.locator("#g-open-pairs").click();
+  await page.locator("#g-go-end").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#g-download-all").click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^feature-match-run-.+\.zip$/);
+  const { names } = await zipContents(await readDownload(download));
+  expect(names.filter((n) => n.endsWith(".png"))).toHaveLength(2);
+  expect(names).toContain("feature-match-summary.txt");
+  await expect(page.locator("#g-download-state")).toHaveText(/^Saved /);
+});
+
+/**
+ * Why this test matters: the measure sheet is where the guided view keeps
+ * the benchmark. A run on the current pair must use the pair's two photos
+ * and fill the moved Results, and the pair's matches file is offered only
+ * after that run. With sift.js stubbed nothing is downloaded from outside.
+ */
+test("the guided measure sheet runs the benchmark on the current pair", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.addInitScript(() => {
+    // Taken away on purpose: the save goes through a download link.
+    delete (/** @type {any} */ (window).showSaveFilePicker);
+  });
+  await page.goto("/feature-match-check.html");
+  await guidedFirstPair(page);
+  await page.locator("#g-open-pairs").click();
+  await page.locator("#g-go-end").click();
+  await page.locator("#g-open-measure").click();
+  await expect(page.locator("#g-sheet-measure #options")).toBeAttached();
+  await expect(page.locator("#g-sheet-measure #run-synthetic")).toBeVisible();
+  await expect(page.locator("#g-measure-state")).toHaveText(
+    "pair 1a-s1: photos A and B ready",
+  );
+  await expect(page.locator("#g-file-matches")).toBeDisabled();
+  await chooseSiftOnly(page);
+  await page.locator("#g-measure-run").click();
+  await expect(page.locator("#g-measure-state")).toHaveText("done: 1 methods");
+  await expect(page.locator("#results tbody tr")).toHaveCount(1);
+  await expect(page.locator("#g-file-matches")).toBeEnabled();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#g-file-matches").click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(
+    /^feature-match-01-1a-s1-.*-matches\.json$/,
+  );
+  await expect(page.locator("#g-files-state")).toHaveText(/^saved /);
+});
+
+/**
+ * Why this test matters: the guided run screen is laid out for a phone
+ * held upright, a phone on its side and a desktop window, as in the chosen
+ * prototype (whose boxes these numbers are, measured side by side). Upright,
+ * header, step card, viewfinder and action bar stack in one column; wider,
+ * the viewfinder takes the right side. The edges, the 10 px gaps and the
+ * thumb-sized big button are pinned, the page must not scroll sideways,
+ * and the step chip carries the colour of the photo that is due.
+ */
+for (const vp of [
+  { width: 412, height: 915 },
+  { width: 915, height: 412 },
+  { width: 880, height: 790 },
+]) {
+  test(`the guided run screen fits ${String(vp.width)}x${String(vp.height)}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(vp);
+    await routeNetwork(page, fulfillSift);
+    await fakeCamera(page);
+    await page.goto("/feature-match-check.html");
+    await page.locator("#g-intro-start").click();
+    await expect(page.locator("#g-cam-chip")).toBeHidden();
+    const m = await page.evaluate(() => {
+      const box = (/** @type {string} */ sel) => {
+        const e = /** @type {Element} */ (document.querySelector(sel));
+        const r = e.getBoundingClientRect();
+        return {
+          left: r.left,
+          top: r.top,
+          right: r.right,
+          bottom: r.bottom,
+          height: r.height,
+        };
+      };
+      return {
+        head: box("#g-run .run-head"),
+        card: box("#g-run .card"),
+        finder: box("#g-finder"),
+        actions: box("#g-run .actions"),
+        primary: box("#g-primary"),
+        chip: getComputedStyle(
+          /** @type {Element} */ (document.querySelector("#g-card-shot")),
+        ).backgroundColor,
+        scrollW: document.documentElement.scrollWidth,
+      };
+    });
+    const near = (/** @type {number} */ got, /** @type {number} */ want) =>
+      expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
+    const { head, card, finder, actions, primary } = m;
+    near(head.left, 16);
+    near(head.top, 12);
+    near(card.top - head.bottom, 10);
+    near(card.left, 16);
+    near(actions.left, 16);
+    near(actions.bottom, vp.height - 12);
+    near(primary.height, 92);
+    if (vp.width < vp.height) {
+      // One column: card, viewfinder, action bar, 10 px apart.
+      for (const r of [head, card, finder, actions]) {
+        near(r.right, vp.width - 16);
+      }
+      near(finder.top - card.bottom, 10);
+      near(actions.top - finder.bottom, 10);
+    } else {
+      // The viewfinder on the right, the column beside it.
+      near(actions.top - card.bottom, 10);
+      near(finder.left - card.right, 10);
+      near(finder.right, vp.width - 16);
+      near(finder.top, 12);
+      near(finder.bottom, vp.height - 12);
+    }
+    expect(m.scrollW).toBeLessThanOrEqual(vp.width);
+    expect(m.chip).not.toBe("rgba(0, 0, 0, 0)");
+  });
+}

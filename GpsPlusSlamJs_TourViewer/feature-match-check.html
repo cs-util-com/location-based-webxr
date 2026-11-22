@@ -9,7 +9,9 @@
     <title>Feature matching benchmark</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/design.css" />
-    <style>
+    <link rel="stylesheet" href="/src/checks/feature-match/guided-view.css" />
+    <!-- The four-step view (?ui=cockpit); off in the guided view. -->
+    <style id="cockpit-style">
       body {
         margin: 0;
         padding: 16px;
@@ -273,6 +275,61 @@
         align-items: center;
         margin: 8px 0;
       }
+    </style>
+    <script>
+      // ?ui=cockpit shows the four-step view; the guided run is the default.
+      (function () {
+        var cockpit =
+          new URLSearchParams(location.search).get("ui") === "cockpit";
+        document.documentElement.dataset.ui = cockpit ? "cockpit" : "guided";
+        document.getElementById("cockpit-style").disabled = !cockpit;
+      })();
+    </script>
+    <!-- Flat target capture, opened from either view. -->
+    <style id="flat-style">
+      .flat button {
+        min-height: 44px;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid #2f5d78;
+        background: #2f5d78;
+        color: #fff;
+        font: inherit;
+      }
+      .flat button.secondary {
+        background: #fff;
+        color: #2f5d78;
+      }
+      .flat label {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        margin: 4px 12px 4px 0;
+      }
+      .flat .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 8px 0;
+      }
+      .flat .hint {
+        margin: 6px 0;
+        color: #5b6870;
+        font-size: 0.85rem;
+      }
+      .flat .pick {
+        flex: 1 1 12rem;
+        min-width: 0;
+        max-width: 100%;
+        margin-right: 0;
+      }
+      .flat .pick select {
+        flex: 1;
+        min-width: 0;
+        max-width: 100%;
+        min-height: 44px;
+      }
 
       /* Flat target capture: one screen, every control without scrolling. */
       /* No pull-to-refresh or overscroll bounce while the phone rests still. */
@@ -452,6 +509,9 @@
       }
       .flat-actions a[hidden] {
         display: none;
+      }
+      .flat button:disabled {
+        opacity: 0.6;
       }
     </style>
   </head>
@@ -764,6 +824,373 @@
         <textarea id="report" readonly aria-label="Report"></textarea>
         <pre id="log" aria-label="Log"></pre>
       </section>
+    </div>
+    <!-- The guided run (the default view; ?ui=cockpit shows the four steps). -->
+    <div id="guided" hidden>
+      <!-- First run: what, why still, nothing uploaded, what you send back. -->
+      <section id="g-intro" class="screen intro" hidden>
+        <div class="intro-head">
+          <p class="kicker">Photo test, about 15 minutes</p>
+          <h1>How well do feature matchers work on your phone?</h1>
+          <p class="lede">
+            You take pairs of photos of the same scene. Between the two photos
+            of a pair you change exactly one thing: the light, a turn of the
+            phone, the distance or where you stand. Later, matching programs try
+            to find the same points in both photos.
+          </p>
+        </div>
+        <ul class="facts">
+          <li>
+            <span class="fact-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="7" y="3" width="10" height="16" rx="2" />
+                <path d="M5 21h14M12 19v2" />
+              </svg>
+            </span>
+            <div>
+              <strong>Keep the phone still while it shoots.</strong>
+              A tap shakes the phone, so each photo is taken 3 seconds after
+              your tap, with a beep per second. Hands off until the click.
+            </div>
+          </li>
+          <li>
+            <span class="fact-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <rect x="5" y="10" width="14" height="10" rx="2" />
+                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+              </svg>
+            </span>
+            <div>
+              <strong>Nothing is uploaded.</strong>
+              The photos stay on this phone until you tap Download. They hold
+              pixels only: no location, no time, no camera data.
+            </div>
+          </li>
+          <li>
+            <span class="fact-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+              </svg>
+            </span>
+            <div>
+              <strong>You send back one file.</strong>
+              At the end, one zip with all photos, each named by its pair, plus
+              a short summary you can paste into a message.
+            </div>
+          </li>
+          <li>
+            <span class="fact-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" />
+                <path d="M12 8v5M12 16h.01" />
+              </svg>
+            </span>
+            <div>
+              <strong>Nothing personal in the picture.</strong>
+              No faces, papers, screens, house numbers or windows to the
+              outside. Aim at something with detail: shelves, a poster, a
+              patterned rug.
+            </div>
+          </li>
+        </ul>
+        <div class="intro-setup">
+          <div class="spots" role="radiogroup" aria-labelledby="g-spots-label">
+            <span id="g-spots-label" class="spots-label"
+              >Light tests (need a dark room) at</span
+            >
+            <button type="button" role="radio" data-spots="1">1 place</button>
+            <button type="button" role="radio" data-spots="2">2 places</button>
+            <button type="button" role="radio" data-spots="3">3 places</button>
+          </div>
+          <p class="hint">
+            Lock the screen rotation and do not zoom. The camera asks for
+            permission once.
+          </p>
+          <button id="g-intro-start" type="button" class="primary big">
+            Start
+          </button>
+        </div>
+      </section>
+
+      <!-- One step at a time: header, step card, viewfinder, action bar. -->
+      <section id="g-run" class="screen run" hidden>
+        <header class="run-head">
+          <button
+            id="g-open-help"
+            type="button"
+            class="icon-btn"
+            aria-label="What is this test?"
+          >
+            ?
+          </button>
+          <div class="progress" aria-live="polite">
+            <span id="g-head-pos" class="head-pos">Pair 1 of 14</span>
+            <span class="bar" aria-hidden="true"
+              ><span id="g-head-bar"></span
+            ></span>
+          </div>
+          <button id="g-open-pairs" type="button" class="pairs-btn">
+            Pairs <span id="g-head-done">0/14</span>
+          </button>
+        </header>
+
+        <article class="card" aria-live="polite">
+          <div class="card-top">
+            <span id="g-card-key" class="key-chip">1a</span>
+            <h2>
+              <span id="g-card-title"></span>
+              <small id="g-card-place" class="place"></small>
+            </h2>
+            <span id="g-card-shot" class="shot-chip" data-shot="a">Shot A</span>
+          </div>
+          <div class="card-body">
+            <div id="g-card-diagram" class="diagram" aria-hidden="true"></div>
+            <ol class="seq">
+              <li id="g-seq-a" data-part="a">
+                <span class="seq-tag">A</span><span id="g-seq-a-text"></span>
+              </li>
+              <li id="g-seq-change" data-part="change">
+                <span class="seq-tag">then</span
+                ><span id="g-seq-change-text"></span>
+              </li>
+              <li id="g-seq-b" data-part="b">
+                <span class="seq-tag">B</span><span id="g-seq-b-text"></span>
+              </li>
+            </ol>
+          </div>
+          <p class="foot-lines">
+            <span id="g-card-purpose" class="purpose"></span>
+            <span id="g-card-avoid" class="avoid"></span>
+          </p>
+        </article>
+
+        <div id="g-finder" class="finder">
+          <video id="g-video" playsinline muted></video>
+          <canvas id="g-ghost" class="ghost" aria-hidden="true" hidden></canvas>
+          <div id="g-review" class="review" hidden>
+            <figure>
+              <canvas id="g-review-a" aria-label="Photo A"></canvas>
+              <figcaption>A</figcaption>
+            </figure>
+            <figure>
+              <canvas id="g-review-b" aria-label="Photo B"></canvas>
+              <figcaption>B</figcaption>
+            </figure>
+            <p id="g-review-note" class="review-note"></p>
+          </div>
+          <div class="finder-chips">
+            <span id="g-steady" class="chip" hidden>steady</span>
+            <span id="g-cam-chip" class="chip dim" hidden></span>
+            <button
+              id="g-ghost-toggle"
+              type="button"
+              class="chip chip-btn"
+              aria-pressed="false"
+              hidden
+            >
+              Show A
+            </button>
+          </div>
+          <div id="g-count" class="count" hidden aria-live="assertive">
+            <span id="g-count-num" class="count-num">3</span>
+            <span class="count-text">Hands off</span>
+          </div>
+          <div id="g-flash" class="flash" hidden></div>
+        </div>
+
+        <footer class="actions">
+          <button
+            id="g-slot-a"
+            type="button"
+            class="slot"
+            data-slot="a"
+            aria-label="Photo A: retake"
+          >
+            <span class="slot-img"><canvas hidden></canvas></span>
+            <span class="slot-label">A</span>
+            <span class="slot-sub">empty</span>
+          </button>
+          <button
+            id="g-slot-b"
+            type="button"
+            class="slot"
+            data-slot="b"
+            aria-label="Photo B: retake"
+          >
+            <span class="slot-img"><canvas hidden></canvas></span>
+            <span class="slot-label">B</span>
+            <span class="slot-sub">empty</span>
+          </button>
+          <button id="g-primary" type="button" class="primary main">
+            <span id="g-primary-label">Capture A</span>
+            <span id="g-primary-sub" class="primary-sub"></span>
+          </button>
+        </footer>
+      </section>
+
+      <!-- The end: one download, the summary, the copy-log button. -->
+      <section id="g-end" class="screen end" hidden>
+        <div class="end-head">
+          <p id="g-end-kicker" class="kicker"></p>
+          <h1 id="g-end-title"></h1>
+          <p id="g-end-lede" class="lede"></p>
+        </div>
+        <div class="end-download">
+          <button id="g-download-all" type="button" class="primary big">
+            Download all
+          </button>
+          <p id="g-download-state" class="state" aria-live="polite"></p>
+        </div>
+        <div class="end-summary">
+          <label for="g-summary" class="label">Summary to paste back</label>
+          <textarea id="g-summary" readonly rows="7"></textarea>
+          <div class="row">
+            <button id="g-copy-summary" type="button" class="secondary">
+              Copy summary
+            </button>
+            <span
+              id="g-copy-summary-state"
+              class="state"
+              aria-live="polite"
+            ></span>
+          </div>
+        </div>
+        <div class="end-log">
+          <div class="row">
+            <button id="g-copy-log" type="button" class="secondary">
+              Copy log
+            </button>
+            <span id="g-copy-log-state" class="state" aria-live="polite"></span>
+          </div>
+          <p class="hint">
+            Not needed when you send the zip - it already holds the log. Use it
+            to paste a quick note into a chat, or when something went wrong.
+          </p>
+        </div>
+        <div class="end-more row">
+          <button id="g-end-back" type="button" class="secondary">
+            Back to the pairs
+          </button>
+          <button id="g-open-measure" type="button" class="secondary">
+            Measure on this phone (optional)
+          </button>
+        </div>
+      </section>
+
+      <!-- Overlay: every pair at a glance, jump to one, settings. -->
+      <div
+        id="g-sheet-pairs"
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="g-pairs-title"
+        hidden
+      >
+        <div class="sheet-box">
+          <div class="sheet-head">
+            <h2 id="g-pairs-title">All pairs</h2>
+            <span id="g-pairs-count" class="state"></span>
+            <button
+              id="g-close-pairs"
+              type="button"
+              class="icon-btn"
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
+          <ul id="g-pair-grid" class="pair-grid"></ul>
+          <div class="legend" aria-hidden="true">
+            <span><i class="dot done"></i>done</span>
+            <span><i class="dot half"></i>A only</span>
+            <span><i class="dot retake"></i>retake suggested</span>
+            <span><i class="dot missing"></i>missing</span>
+          </div>
+          <div class="sheet-settings">
+            <div class="setting" role="radiogroup" aria-labelledby="g-cd-label">
+              <span id="g-cd-label">Countdown</span>
+              <button type="button" role="radio" data-countdown="3">3 s</button>
+              <button type="button" role="radio" data-countdown="5">5 s</button>
+              <button type="button" role="radio" data-countdown="0">off</button>
+            </div>
+            <label class="setting"
+              ><input id="g-sound" type="checkbox" checked /> Beep and
+              click</label
+            >
+          </div>
+          <div class="sheet-foot row">
+            <button id="g-add-other" type="button" class="secondary">
+              Add an extra pair (other)
+            </button>
+            <button id="g-go-end" type="button" class="primary">
+              Finish and download
+            </button>
+            <button id="g-start-over" type="button" class="danger">
+              Start over
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay: optional on-phone measurement. The options, the speed
+           test and the results of the four-step view move in here. -->
+      <div
+        id="g-sheet-measure"
+        class="sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="g-measure-title"
+        hidden
+      >
+        <div class="sheet-box measure">
+          <div class="sheet-head">
+            <h2 id="g-measure-title">Measure on this phone</h2>
+            <button
+              id="g-close-measure"
+              type="button"
+              class="icon-btn"
+              aria-label="Close"
+            >
+              &times;
+            </button>
+          </div>
+          <p class="hint">
+            Optional. Runs the matchers here on a pair's photos and times them.
+            Downloads up to 66 MB of models once. A run on a pair uses 1 run, no
+            warm-up, WebGPU (WASM where the phone has none) and one XFeat file;
+            the options below apply to a synthetic run.
+          </p>
+          <div class="row">
+            <button id="g-measure-run" type="button" class="primary">
+              Run on this pair
+            </button>
+            <span id="g-measure-state" class="state" aria-live="polite"></span>
+          </div>
+          <div id="g-measure-synthetic" class="row"></div>
+          <div class="row">
+            <span class="state">This pair's files:</span>
+            <button id="g-file-a" type="button" class="secondary">
+              Photo A
+            </button>
+            <button id="g-file-b" type="button" class="secondary">
+              Photo B
+            </button>
+            <button id="g-file-info" type="button" class="secondary">
+              Sizes and device
+            </button>
+            <button id="g-file-matches" type="button" class="secondary">
+              Matches
+            </button>
+            <span id="g-files-state" class="state" aria-live="polite"></span>
+          </div>
+          <div class="row">
+            <button id="g-open-flat" type="button" class="secondary">
+              Flat targets (own steps)
+            </button>
+          </div>
+          <div id="g-measure-more" class="measure-more"></div>
+        </div>
+      </div>
     </div>
     <section id="flat" class="flat" aria-label="Flat target capture" hidden>
       <header class="flat-bar">
