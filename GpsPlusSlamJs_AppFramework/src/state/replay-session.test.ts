@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
+import type * as StoreSubscribersModule from './store-subscribers';
 
 // The desktop scene creates a real WebGLRenderer — mock it for jsdom. Return
 // value is configured per-test (below) where THREE is in scope.
@@ -23,8 +24,16 @@ vi.mock('../ar/replay-scene', () => ({
   initReplayScene: vi.fn(),
   disposeReplayScene: vi.fn(),
   updateOrbitTarget: vi.fn(),
-  getAlignmentLerper: vi.fn(() => ({ setTarget: vi.fn() })),
+  applyReplayAlignment: vi.fn(),
 }));
+// The real bridge runs; the spy only lets a test read the deps it was given.
+vi.mock('./store-subscribers', async (importOriginal) => {
+  const actual = await importOriginal<typeof StoreSubscribersModule>();
+  return {
+    ...actual,
+    wireStoreSubscribers: vi.fn(actual.wireStoreSubscribers),
+  };
+});
 // Stub the heavy webxr-session module: gps-event-markers (pulled in
 // transitively) needs getScene/getArWorldGroup. The NUE→WebXR pose converters
 // are NOT stubbed — replay-session calls the library's nueToWebXR /
@@ -36,7 +45,12 @@ vi.mock('../ar/webxr-session', () => ({
 }));
 
 import { startReplaySession } from './replay-session';
-import { initReplayScene, disposeReplayScene } from '../ar/replay-scene';
+import {
+  initReplayScene,
+  disposeReplayScene,
+  applyReplayAlignment,
+} from '../ar/replay-scene';
+import { wireStoreSubscribers } from './store-subscribers';
 import { OccupancyGrid } from '../ar/occupancy-grid';
 import { OccupancyCubesVisualizer } from '../visualization/occupancy-cubes-visualizer';
 import { gpsEventVisualizer } from '../visualization/gps-event-markers';
@@ -103,6 +117,19 @@ describe('startReplaySession', () => {
     expect(session.getCubesVisualizer()).not.toBeNull();
     expect(session.getOcclusionMesh()).not.toBeNull();
     expect(session.getActionCount()).toBe(0);
+    session.dispose();
+  });
+
+  /**
+   * Why this test matters:
+   * Replay lands each alignment exactly, in the frame it arrives, through the
+   * scene's direct apply; no smoothing step may sit between the store and
+   * the group (the exactness itself is pinned in replay-scene.test.ts).
+   */
+  it('routes the alignment straight to the replay scene, with no smoothing step', () => {
+    const session = startReplaySession({ actions: [], container });
+    const deps = vi.mocked(wireStoreSubscribers).mock.calls[0]![1];
+    expect(deps.applyAlignmentMatrix).toBe(applyReplayAlignment);
     session.dispose();
   });
 

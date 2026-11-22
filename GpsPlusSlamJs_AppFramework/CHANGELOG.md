@@ -278,6 +278,14 @@
   app wants it, belongs to the app. The `lerpRate` option is removed (it
   has nothing left to set); `createAlignmentLerper` is unchanged and stays
   for apps that drive their own group.
+- `ar/replay-scene`: **replay follows the same rule.** The desktop replay
+  scene no longer eases `arWorldGroup` toward each alignment; the new
+  `applyReplayAlignment(matrix)` writes it exactly, in the frame it
+  arrives, and `startReplaySession` uses it. `getAlignmentLerper()` is
+  removed: wire `applyAlignmentMatrix: applyReplayAlignment` into
+  `wireStoreSubscribers` instead. An app that wants smoothing adds it
+  itself, as the RecorderApp does for its live AR view (it drives its own
+  `createAlignmentLerper` from `ar/wire-ar-scene.ts`).
 - `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
   `(votes) => boolean | void`. Returning `false` says it cast no votes;
   otherwise the controller asks every deferred anchor to re-place once, and

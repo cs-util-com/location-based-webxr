@@ -35,10 +35,6 @@ import {
   createCameraFollower,
   type CameraFollower,
 } from '../visualization/camera-follower.js';
-import {
-  createAlignmentLerper,
-  type AlignmentLerper,
-} from '../visualization/alignment-lerper.js';
 import { createGpsCompassCubes } from '../visualization/gps-compass-cubes.js';
 import {
   createCss3dRendererManager,
@@ -68,7 +64,6 @@ export interface ReplaySceneState {
   rAFId: number;
   container: HTMLElement;
   cameraFollower: CameraFollower;
-  alignmentLerper: AlignmentLerper;
   css3dManager: Css3dRendererManager;
 }
 
@@ -220,10 +215,6 @@ export function initReplayScene(container: HTMLElement): {
   orbitControls.enableDamping = true;
   orbitControls.target.set(0, 0, 0);
 
-  // Create alignment lerper (Issue 4) — smooths alignment-matrix transitions
-  // so arWorldGroup.matrix lerps toward target instead of snapping.
-  const alignmentLerper = createAlignmentLerper(arWorldGroup);
-
   // Create camera follower (Issue 8) — child of scene root (not arWorldGroup),
   // so world rotation stays identity regardless of alignment matrix.
   const cameraFollower = createCameraFollower(scene);
@@ -249,7 +240,6 @@ export function initReplayScene(container: HTMLElement): {
     rAFId,
     container,
     cameraFollower,
-    alignmentLerper,
     css3dManager,
   };
 
@@ -277,8 +267,7 @@ export function disposeReplayScene(): void {
   // Cancel render loop
   cancelAnimationFrame(state.rAFId);
 
-  // Dispose alignment lerper and camera follower
-  state.alignmentLerper.dispose();
+  // Dispose camera follower
   state.cameraFollower.dispose();
 
   // Dispose CSS3D renderer overlay
@@ -365,12 +354,28 @@ export function getCameraFollower(): THREE.Object3D | null {
 }
 
 /**
- * Get the alignment lerper, or null if not initialized.
- * Used by replay-mode to route store-subscriber alignment updates
- * through the lerper instead of applying them directly.
+ * Apply an alignment matrix to the replay scene's arWorldGroup, exactly and
+ * at once: the group shows the newest alignment in the frame it arrives, the
+ * same rule as the live binding. Smoothing, if an app wants it, is the app's.
+ *
+ * Pass it as `applyAlignmentMatrix` to `wireStoreSubscribers`.
+ * No-op if not initialized; a matrix that is not 16 finite numbers is
+ * rejected with a warning and leaves the group unchanged.
+ *
+ * @param matrix - 16-element column-major matrix (gl-matrix mat4 format)
  */
-export function getAlignmentLerper(): AlignmentLerper | null {
-  return state?.alignmentLerper ?? null;
+export function applyReplayAlignment(matrix: readonly number[]): void {
+  if (!state) {
+    return;
+  }
+  if (matrix.length !== 16 || !matrix.every(Number.isFinite)) {
+    log.warn('Replay alignment ignored - expected 16 finite numbers');
+    return;
+  }
+  const group = state.arWorldGroup;
+  group.matrix.fromArray(matrix);
+  group.matrixAutoUpdate = false;
+  group.updateMatrixWorld(true);
 }
 
 /**
@@ -430,10 +435,6 @@ function startRenderLoop(
     } else {
       updateFpsMovement(dt);
     }
-
-    // Update alignment lerper (Issue 4) — interpolate arWorldGroup.matrix
-    // toward the latest target set by store subscribers.
-    state.alignmentLerper.update(dt);
 
     // Update camera follower position (Issue 8) — must happen after
     // controls update so the follower sees the latest camera position.

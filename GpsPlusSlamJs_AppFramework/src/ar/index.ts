@@ -212,7 +212,7 @@ export {
   updateOrbitTarget,
   getCameraMode,
   getCameraFollower,
-  getAlignmentLerper,
+  applyReplayAlignment,
   toggleCameraMode,
 } from './replay-scene.js';
 

@@ -343,7 +343,8 @@ WebXR session lifecycle, Three.js renderer setup, image/depth capture, occupancy
   - `bresenham3d(...)` — Voxel ray traversal.
 - **Replay scene**
   - `initReplayScene(container)` / `disposeReplayScene()` — Create and tear down a 3D replay scene with orbit/FPS controls.
-  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` / `getAlignmentLerper()` — Replay scene controls.
+  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` — Replay scene controls.
+  - `applyReplayAlignment()` - Writes an alignment to the replay scene's `arWorldGroup`, exactly, in the frame it arrives (no smoothing).
 - **Constants**
   - `WEBXR_TO_NUE` — The WebXR → NUE basis change.
 
