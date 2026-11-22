@@ -94,13 +94,15 @@ describe("dinoTimingArm", () => {
 
   it("says which output is missing instead of reading garbage", async () => {
     const ort = fakeOrt();
-    ort.api.InferenceSession.create = () =>
-      Promise.resolve({
-        inputNames: ["pixel_values"],
-        outputNames: ["last_hidden_state"],
-        run: () => Promise.resolve({}),
-        release: () => Promise.resolve(),
-      });
+    // The fake runtime's session type fixes its output; this one has none.
+    (ort.api.InferenceSession as { create: () => Promise<unknown> }).create =
+      () =>
+        Promise.resolve({
+          inputNames: ["pixel_values"],
+          outputNames: ["last_hidden_state"],
+          run: () => Promise.resolve({}),
+          release: () => Promise.resolve(),
+        });
     const loaded = await dinoTimingArm("int8", "wasm", deps(ort.api, []), {
       a: grey(1),
       b: grey(2),
