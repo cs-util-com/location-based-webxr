@@ -94,7 +94,7 @@ where)`, owner question Q-E2-2's default; `where` is the phone's "on this
   "since the last finish".** This is the rule the milestone's cold review
   turned on. Finishing is not terminal: it merges the placed objects into
   the in-memory manifest, empties the list, and leaves that batch alive
-  only inside `ctx.rebuiltZip`, a Blob that dies with the page. A draft
+  only inside the save handle's newest bytes (`ctx.saves`), a Blob that dies with the page. A draft
   reset by each finish would hold only what was placed AFTER the last
   download, while the finish rebuilds from the hosted zip, which never had
   the earlier ones - two downloads, each missing the other's content, and

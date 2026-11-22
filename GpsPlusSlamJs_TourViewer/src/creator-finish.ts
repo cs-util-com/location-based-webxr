@@ -4,8 +4,9 @@
  * (DEC-N6) with the measured level, the manifest and the photos, a listed
  * tour's series continued, the walk left out unless kept, and what the
  * written zip changes on the page; plus the keep-the-walk switch. The
- * rebuild's rules are `finish-rebuild.ts`, shared with the desktop editor
- * (M6 E0); this file is the phone page around them.
+ * Finish is one save of the tour document, through the open's save handle
+ * (`tour-document-save.ts`) the desktop editor saves through too; this
+ * file is the phone page around it.
  *
  * @see creator-finish.ts.md
  */
@@ -19,15 +20,15 @@ import type { CreatorHandoff } from "./creator-handoff.js";
 import type { CreatorMeasuring } from "./creator-measuring.js";
 import type { CreatorPreviews } from "./creator-previews.js";
 import type { CreatorSettle } from "./creator-settle.js";
-import { finishedFileName, rebuildFinishedTour } from "./finish-rebuild.js";
 import { FINISH_LABELS, finishReadiness } from "./qr-author-mode.js";
 import { authoringFinished } from "./tour-authoring-actions.js";
+import { manifestNow } from "./tour-document.js";
 import {
-  historyAssetIds,
-  historyStoryAssetIds,
-  historyTimingEntries,
-  manifestNow,
-} from "./tour-document.js";
+  createTourSaves,
+  dispatchThunk,
+  type NewestBytes,
+  type TourSaves,
+} from "./tour-document-save.js";
 import { scanEntryNames } from "./tour-read-set.js";
 import type { TourSession } from "./tour-session.js";
 import type {
@@ -137,7 +138,9 @@ export function wireCreatorFinish(deps: {
     // ... and while a rebuilt file waits: the next Finish rebuilds from it,
     // so a changed tick could not change it (U2 milestone review #2).
     dom.keepScanRow.hidden =
-      deps.sessionLive() || ctx.rebuiltZip !== null || scanMemo.count === 0;
+      deps.sessionLive() ||
+      (ctx.saves?.newest() ?? null) !== null ||
+      scanMemo.count === 0;
   }
 
   /** The manifest the next Finish starts from: the tour document's as it
@@ -181,6 +184,23 @@ export function wireCreatorFinish(deps: {
     );
   }
 
+  /** The open's save handle (`tour-document-save.ts`): the one made at
+   *  its first Finish, kept on the page for the next Finish and the save
+   *  button; a new one for a tour opened since. */
+  function savesOf(session: TourSession): TourSaves {
+    const { generation } = ctx.tourDocument.state();
+    if (ctx.saves?.generation === generation) return ctx.saves;
+    ctx.saves = createTourSaves({
+      tour: session,
+      generation,
+      fileOf: (id) => ctx.tourDocument.pictureOf(id),
+      // The phone reads no picture in the background: each is kept as it
+      // is taken.
+      picturesRead: () => Promise.resolve(),
+    });
+    return ctx.saves;
+  }
+
   function canStart(): boolean {
     return (
       readiness() === "ready" &&
@@ -212,7 +232,7 @@ export function wireCreatorFinish(deps: {
     // result must not land in a session or a tour it was not made for
     // (M3 review #2).
     const sessionGeneration = ctx.arSessionGeneration;
-    /** The document's write: undo waits until it ends (`canStep`), and
+    /** The document's save: undo waits until it ends (`canStep`), and
      *  what it lands names the open it began on. The Finish holds the
      *  page's save slot while it runs (`finish-status.ts`): the claim
      *  puts the last Finish's failure away. */
@@ -230,16 +250,16 @@ export function wireCreatorFinish(deps: {
     ctx.placementNote = null;
     tour.finishProgressed({ kind: "reading", bytes: current.archive.size });
     deps.render();
+    const saves = savesOf(current);
     let wroteZip = false;
     /** The zip THIS Finish made, and its result sentences: a failure after
      *  it still hands the zip over (F4 milestone review #1). */
-    let madeZip: typeof ctx.rebuiltZip = null;
+    let madeZip: NewestBytes | null = null;
     let notes = "";
-    const generation = tour.saveStarted();
     /** The failure the panel says: only for the tour this Finish began
-     *  on, so it never outlives its tour. The save ends and the slot is
-     *  released with it, never reset by the zip's own hand-over (the phone
-     *  dispatches no `saveDelivered`). */
+     *  on, so it never outlives its tour. The save ends with it, and the
+     *  slot is released with it; the zip's own hand-over takes it back
+     *  only for a Finish that did not fail (`creator-handoff.ts`). */
     let said: string | undefined;
     /** Lets a rebuild step through only when its whole percent changes. */
     const progressShown = createProgressGate();
@@ -249,50 +269,49 @@ export function wireCreatorFinish(deps: {
       if (deps.sessionLive()) deps.handoff.offer(notes);
       else deps.handoff.save(notes);
     };
-    void (async () => {
+    // One save of the document, queued behind none (the slot is the
+    // page's): it starts inside this dispatch, so the snapshot is the
+    // document at the tap. The phone's own steps - the AR session's end,
+    // the completion step, the hand-over - run inside the save, so an undo
+    // waits for them too; the save ends, with the failure said, after them.
+    const finish = async (): Promise<void> => {
       try {
-        // Assembled INSIDE the try (M4 review #1): a manifest the reader
+        // Taken INSIDE the try (M4 review #1): a manifest the reader
         // rejects (a duplicate id) must fail the finish visibly, not throw
         // past the claimed save slot and freeze the panel.
-        const manifest = finishBase();
-        const stationsAtStart = tour.state().stations;
-        const deleted = [...tour.deleted()];
+        const snap = dispatchThunk(ctx.store, saves.snapshot());
         // The Finish's rules, shared with the desktop editor (M6 E0,
         // `finish-rebuild.ts`): the edits applied, the files written and
         // removed, a listed tour's series continued, from the newest bytes.
-        const previous = ctx.rebuiltZip;
-        const finished = await rebuildFinishedTour({
-          tour: current,
-          manifest,
-          // A snapshot: placements land in the document during the rebuild.
-          placed: [...tour.entries()],
-          deleted,
-          // What an undo after this Finish may still show (a cover).
-          keepAssets: historyAssetIds(tour.state()),
-          keepStoryAssets: historyStoryAssetIds(tour.state()),
-          keepEntries: historyTimingEntries(tour.state()),
-          levels,
-          keepScan: dom.keepScanInput.checked,
-          previous,
-          shouldContinue: () => ctx.session === current,
-          onProgress: (done, total) => {
-            if (!progressShown(done, total)) return;
-            tour.finishProgressed({ kind: "rebuilding", done, total });
-            deps.render();
+        const finished = await saves.rebuild(
+          snap,
+          dom.keepScanInput.checked,
+          undefined,
+          {
+            levels,
+            shouldContinue: () => ctx.session === current,
+            onProgress: (done, total) => {
+              if (!progressShown(done, total)) return;
+              tour.finishProgressed({ kind: "rebuilding", done, total });
+              deps.render();
+            },
           },
-        });
-        if (finished === null || ctx.session !== current) return;
-        const { blob, written, signedManifest, scanLeftOut } = finished;
-        ctx.rebuiltZip = {
-          blob,
-          written,
-          ...(signedManifest === undefined ? {} : { signedManifest }),
-          // The hosted file's own name, made safe (`finishedFileName`, the
-          // rule the desktop editor shares); the Drive steps then ask for the
-          // same rename on Drive (Drive replace plan §5 #7).
-          filename: finishedFileName(current),
-        };
-        madeZip = ctx.rebuiltZip;
+        );
+        if (ctx.session !== current) return;
+        const { blob, written, scanLeftOut } = finished;
+        // The placed objects are in the zip now; the next finish (a
+        // re-measure, a re-opened tour) must not append them again - and
+        // the document has to ADVANCE to what was just written, or a second
+        // finish in the same open tour would rebuild from the pre-finish
+        // manifest and silently drop this batch. Only what
+        // this zip carries leaves the entries - by CONTENT, not id: a photo
+        // that landed while the zip was rebuilt is in neither, and waits
+        // for the next Finish (M2c review #6); the shared rule is the
+        // document's (`saved`, `pendingAfterRebuild`).
+        const before = tour.entries();
+        dispatchThunk(ctx.store, saves.land(finished, snap));
+        tour.saveLanded(written);
+        madeZip = saves.newest();
         // The debug data this file left out, offered in the Done step from
         // the bytes this Finish read (debug-captures plan M2, E2).
         deps.debugSave?.finished({
@@ -306,7 +325,10 @@ export function wireCreatorFinish(deps: {
                 : null,
             ...(written.tourId === undefined ? {} : { tourId: written.tourId }),
             title: written.title,
-            fileName: ctx.rebuiltZip.filename,
+            // The hosted file's own name, made safe (`finishedFileName`,
+            // the rule the desktop editor shares); the Drive steps then ask
+            // for the same rename on Drive (Drive replace plan §5 #7).
+            fileName: saves.fileName,
           },
         });
         // The Finish's result sentences: they stay on the line under the
@@ -327,22 +349,6 @@ export function wireCreatorFinish(deps: {
         ]
           .filter((line) => line !== "")
           .join(" ");
-        // The placed objects are in the zip now; the next finish (a
-        // re-measure, a re-opened tour) must not append them again - and
-        // the document has to ADVANCE to what was just written, or a second
-        // finish in the same open tour would rebuild from the pre-finish
-        // manifest and silently drop this batch (PR #435 review). Only what
-        // this zip carries leaves the entries - by CONTENT, not id: a photo
-        // that landed while the zip was rebuilt is in neither, and waits
-        // for the next Finish (M2c review #6); the shared rule is the
-        // document's (`saved`, `pendingAfterRebuild`).
-        const before = tour.entries();
-        tour.saved({
-          generation,
-          written,
-          appliedDeletions: deleted,
-          stationsAtStart,
-        });
         const kept = new Set(tour.entries().map((p) => p.object.id));
         const finishedEntries = before.filter((p) => !kept.has(p.object.id));
         // A photo that leaves keeps its bytes here for its preview: the
@@ -412,11 +418,10 @@ export function wireCreatorFinish(deps: {
           // retry (U2 milestone review #4) - and is handed over: saved off
           // AR, else offered on the button (F4 milestone review #1). An
           // earlier Finish's file stays saveable from the button.
-          if (ctx.rebuiltZip !== null) dom.finishBlock.hidden = false;
-          if (madeZip !== null && ctx.rebuiltZip === madeZip) handOver();
-          else if (ctx.rebuiltZip !== null) {
-            dom.downloadButton.disabled = false;
-          }
+          const newest = saves.newest();
+          if (newest !== null) dom.finishBlock.hidden = false;
+          if (madeZip !== null && newest === madeZip) handOver();
+          else if (newest !== null) dom.downloadButton.disabled = false;
         }
       } finally {
         // A Finish that wrote no zip leaves its visit unsettled again while
@@ -424,14 +429,17 @@ export function wireCreatorFinish(deps: {
         // settle with the rest of the visit at its end, through one
         // alignment - the tap's settle is redone then.
         if (!wroteZip) deps.settle.unsettle(settledAtTap);
-        tour.saveEnded(generation, said);
         tour.finishReleased(said);
         deps.render();
         // The AR button reads the finish (Saving…, Close AR after a
         // failure), and nothing else re-renders it when a finish ends.
         deps.renderArEntry?.();
       }
-    })();
+      // The save ends with the failure said (`saveEnded`'s error); one
+      // stopped by a tour switch, or of a tour closed since, says none.
+      if (said !== undefined) throw new Error(said);
+    };
+    void dispatchThunk(ctx.store, saves.queued(finish)).catch(() => undefined);
     return true;
   }
 

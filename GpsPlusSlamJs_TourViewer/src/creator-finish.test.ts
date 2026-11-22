@@ -394,7 +394,16 @@ function zipOf(ctx: FinishSession): {
   readonly written: TourManifest;
   readonly delivered?: boolean;
 } | null {
-  return ctx.rebuiltZip;
+  const saves = ctx.saves;
+  const newest = saves?.newest() ?? null;
+  return saves === null || newest === null
+    ? null
+    : {
+        blob: newest.blob,
+        filename: saves.fileName,
+        written: newest.written,
+        ...(newest.delivered ? { delivered: true } : {}),
+      };
 }
 
 /**

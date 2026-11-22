@@ -66,7 +66,7 @@ were here. What stays is the Finish's side:
   phone, Finish steps aside while the rebuilt file waits for its save
   (`hideFinishForResult`); after AR ends without a Finish (the back
   gesture), Finish reads "Finish and save your changes"; a delivered save
-  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
+  marks the save handle's newest bytes delivered (`ctx.saves`); `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
 
 ## Public API
 
@@ -330,7 +330,7 @@ were here. What stays is the Finish's side:
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintGeneration`,
-  `rebuiltZip`, `placedPreviews`, `placementNote`; changes the tour
+  `placedPreviews`, `placementNote`; changes the tour
   document (`tourDocument`) and makes the draft follow it (`follow`, once
   per page); reads `gpsSamplesAtSessionStart`, `reticle`, `latestFrame`
   (written by `ar-entry.ts`), `session`, `currentLevels`.

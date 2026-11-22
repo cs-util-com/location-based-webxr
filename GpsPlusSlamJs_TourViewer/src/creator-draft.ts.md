@@ -107,7 +107,7 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     not land leaves no base, which is never superseded (the safe side).
   - **Not covered (E2p review #3, #7).** A desktop delete is honoured only
     once a version of the record was SEEN hosted. Nothing tells the phone an
-    upload happened (`rebuiltZip.delivered` is not proof of one), so since
+    upload happened (a delivered save, `saves.newest().delivered`, is not proof of one), so since
     F19 the phone asks once after a delivered Finish; without a yes the usual
     walk (place, upload, delete on the desktop, with no phone open in
     between) still offers the pin back, as before - the offer is a question

@@ -230,7 +230,7 @@ export function wireArchiveOpen(deps: {
     step(() => hooks.stopStations());
     // Its voices' audio and blob URLs, which an AR session's end keeps.
     step(() => hooks.releaseTourMedia());
-    ctx.rebuiltZip = null;
+    ctx.saves = null;
     ctx.tourLabel = null;
     // The measured level belongs to the CLOSING tour. It survives a SESSION
     // end on purpose (finishing ends the session), but it must not survive

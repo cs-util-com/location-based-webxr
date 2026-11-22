@@ -17,6 +17,7 @@ import {
 import { FINISH_LABELS } from "./qr-author-mode.js";
 import { hostReplaceText } from "./tour-host.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
+import type { NewestBytes, TourSaves } from "./tour-document-save.js";
 import { settle } from "./test-support/settle.js";
 
 function el() {
@@ -29,6 +30,28 @@ function el() {
       handlers.set(type, handler),
     click: () => handlers.get("click")?.(),
   };
+}
+
+/** A Finish made `blob`: the open's save handle holds it as its newest
+ *  bytes, under the name every save of the open writes, as
+ *  `tour-document-save.ts` keeps them. */
+function madeFile(
+  ctx: ReturnType<typeof createTourViewerSession>,
+  blob: Blob,
+): void {
+  let newest: NewestBytes = { blob, written: createEmptyTourManifest() };
+  const saves: Pick<
+    TourSaves,
+    "generation" | "fileName" | "newest" | "markDelivered"
+  > = {
+    generation: ctx.tourDocument.state().generation,
+    fileName: "tour.zip",
+    newest: () => newest,
+    markDelivered: (delivered) => {
+      if (newest.blob === delivered) newest = { ...newest, delivered: true };
+    },
+  };
+  ctx.saves = saves as TourSaves;
 }
 
 /** The page the last `wired` built: what `flush` watches. */
@@ -50,11 +73,7 @@ function wired(
     archive: { url: "https://example.test/tour.zip", size: 1 },
     hostedFileName: () => null,
   } as never;
-  ctx.rebuiltZip = {
-    blob: new Blob(["zip"]),
-    filename: "tour.zip",
-    written: createEmptyTourManifest(),
-  };
+  madeFile(ctx, new Blob(["zip"]));
   const dom = {
     downloadButton: el(),
     finishStatus: el(),
@@ -101,6 +120,44 @@ describe("a save that delivered tells the page which file it was (debug-captures
     ctx.openGeneration += 1;
     await flush();
     expect(heard).toEqual(["tour.zip"]);
+  });
+});
+
+describe("a delivered save in the tour document's save status", () => {
+  // Why: the phone's Finish saves through the document's save handle, as
+  // the desktop's Save does, so a file that arrived is named where the
+  // desktop's is (`save.delivered`), and the leave guard reads it on the
+  // handle's newest bytes. A Finish that failed after making its file
+  // keeps its failure said: the delivery is recorded for the guard, but
+  // the status does not clear the failure the panel shows.
+  it("names the file that arrived, and marks the bytes delivered", async () => {
+    const outcome = { delivered: false };
+    const { ctx, handoff } = wired(outcome);
+    handoff.save();
+    await flush();
+    expect(ctx.tourDocument.state().save.delivered).toBeNull();
+    expect(ctx.saves!.newest()!.delivered).toBeUndefined();
+    outcome.delivered = true;
+    handoff.save();
+    await flush();
+    expect(ctx.tourDocument.state().save.delivered).toEqual({
+      inPlace: false,
+      name: "tour.zip",
+    });
+    expect(ctx.saves!.newest()!.delivered).toBe(true);
+  });
+
+  it("keeps a failed Finish's failure said when its file arrives", async () => {
+    const { ctx, handoff } = wired({ delivered: true });
+    ctx.tourDocument.finishClaimed();
+    ctx.tourDocument.finishReleased("the code could not be written");
+    handoff.save();
+    await flush();
+    expect(ctx.tourDocument.state().save.error).toBe(
+      "the code could not be written",
+    );
+    expect(ctx.tourDocument.state().save.delivered).toBeNull();
+    expect(ctx.saves!.newest()!.delivered).toBe(true);
   });
 });
 
@@ -160,11 +217,7 @@ describe("the replace steps follow the chosen host (polish round M2, step 6)", (
       archive: { url: "https://example.test/tour.zip", size: 1 },
       hostedFileName: () => null,
     } as never;
-    ctx.rebuiltZip = {
-      blob: new Blob(["zip"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(ctx, new Blob(["zip"]));
     const dom = {
       downloadButton: el(),
       finishStatus: el(),
@@ -228,11 +281,7 @@ describe("the Drive address button (polish round M2, step 6)", () => {
       },
       hostedFileName: () => "tour.zip",
     } as never;
-    ctx.rebuiltZip = {
-      blob: new Blob(["zip"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(ctx, new Blob(["zip"]));
     const dom = {
       downloadButton: el(),
       finishStatus: el(),
@@ -320,11 +369,7 @@ describe("the question after a download-only Finish (F19)", () => {
       archive: { url: "https://example.test/tour.zip", size: 1 },
       hostedFileName: () => null,
     } as never;
-    ctx.rebuiltZip = {
-      blob: new Blob(["zip"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(ctx, new Blob(["zip"]));
     const dom = {
       downloadButton: el(),
       finishStatus: el(),
@@ -443,15 +488,11 @@ describe("the question after a download-only Finish (F19)", () => {
   // file's versions - read from the draft's "last written" - as hosted.
   it("a yes notes the file the question was asked about, never a later Finish's", async () => {
     const { ctx, dom, handoff, noted } = wiredAsk();
-    const asked = ctx.rebuiltZip!.written;
+    const asked = ctx.saves!.newest()!.written;
     handoff.save();
     await flush();
     // A later Finish made another file; its save has not run.
-    ctx.rebuiltZip = {
-      blob: new Blob(["zip 2"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(ctx, new Blob(["zip 2"]));
     dom.uploadYes.click();
     await flush();
     expect(noted).toHaveLength(1);
@@ -474,11 +515,7 @@ describe("the question after a download-only Finish (F19)", () => {
     other.handoff.save();
     await flush();
     expect(other.dom.uploadAsk.hidden).toBe(false);
-    other.ctx.rebuiltZip = {
-      blob: new Blob(["zip 2"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(other.ctx, new Blob(["zip 2"]));
     other.delivered = false;
     other.handoff.save();
     expect(other.dom.uploadAsk.hidden).toBe(true);
@@ -488,11 +525,7 @@ describe("the question after a download-only Finish (F19)", () => {
     const offered = wiredAsk();
     offered.handoff.save();
     await flush();
-    offered.ctx.rebuiltZip = {
-      blob: new Blob(["zip 2"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(offered.ctx, new Blob(["zip 2"]));
     offered.handoff.offer("");
     expect(offered.dom.uploadAsk.hidden).toBe(true);
   });
@@ -502,11 +535,7 @@ describe("the question after a download-only Finish (F19)", () => {
     handoff.save();
     await flush();
     dom.uploadNo.click();
-    ctx.rebuiltZip = {
-      blob: new Blob(["zip 2"]),
-      filename: "tour.zip",
-      written: createEmptyTourManifest(),
-    };
+    madeFile(ctx, new Blob(["zip 2"]));
     handoff.save();
     await flush();
     expect(dom.uploadAsk.hidden).toBe(false);

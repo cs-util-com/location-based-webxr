@@ -14,7 +14,6 @@
  * that had the symptom. Only the device (QR controller, reticle, camera)
  * is stood in.
  */
-import type { TourDocumentState } from "./tour-document.js";
 import { DRAFT_EDIT_MAKE_AGAIN } from "./draft-edit-gate.js";
 import {
   finishErrorLine,
@@ -92,6 +91,7 @@ import {
   odomNueFromWebXr,
   throughAlignment,
 } from "./visit-anchoring.js";
+import { landWrite } from "./test-support/land-write.js";
 import { asHosted, tourOf, withCaption } from "./test-support/tour-of.js";
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
@@ -1429,16 +1429,15 @@ function hostInstead(
 
 /** Wait for a Finish's async body to reach an end state (a real zip
  *  rebuild: polled, never a fixed count of turns). */
-async function finished(ctx: {
-  rebuiltZip: unknown;
-  tourDocument: { state(): TourDocumentState };
-}): Promise<void> {
+async function finished(
+  ctx: ReturnType<typeof createTourViewerSession>,
+): Promise<void> {
   for (let i = 0; i < 600; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 0));
     const state = ctx.tourDocument.state();
     if (
       !finishRunning(state) &&
-      (ctx.rebuiltZip !== null || finishFailed(state))
+      ((ctx.saves?.newest() ?? null) !== null || finishFailed(state))
     ) {
       return;
     }
@@ -1822,7 +1821,7 @@ describe(
         // from its result - an unheld archive finishes within a tick, so
         // `finishing` may already be false again.
         await vi.waitFor(() => {
-          expect(a.ctx.rebuiltZip).not.toBeNull();
+          expect(a.ctx.saves?.newest() ?? null).not.toBeNull();
         });
         await finished(a.ctx);
         expect(finishErrorLine(a.ctx.tourDocument.state())).toBeNull();
@@ -2939,14 +2938,11 @@ describe(
       expect(a.dom.undoLabel.textContent).toBe("Undo: delete the photo");
       // A Finish wrote the delete: the file no longer carries the photo.
       const doc = a.ctx.tourDocument;
-      const generation = doc.saveStarted();
-      doc.saved({
-        generation,
+      landWrite(a.ctx.store, doc, {
         written: tourOf([]),
         appliedDeletions: ["f1"],
         stationsAtStart: doc.state().stations,
       });
-      doc.saveEnded(generation);
       a.setup.renderAuthorReadout();
       a.dom.undoButton.click();
       await flush();
@@ -4452,7 +4448,7 @@ describe(
         it("a question left from an earlier Finish never notes a later Finish that was not saved", async () => {
           const store = memoryDraftStore();
           const a = await placeAndFinish(store);
-          const first = a.ctx.rebuiltZip;
+          const first = a.ctx.saves?.newest();
           const hostedA = [...tourObjects(a.ctx.tourDocument.manifest()!)];
           a.beginVisit();
           a.seeTheCode();
@@ -4464,7 +4460,7 @@ describe(
           a.seams.downloadZip = () => Promise.resolve(false);
           a.dom.finishButton.click();
           await vi.waitFor(() => {
-            expect(a.ctx.rebuiltZip).not.toBe(first);
+            expect(a.ctx.saves?.newest()).not.toBe(first);
           });
           await flush();
           a.dom.uploadYes.click();

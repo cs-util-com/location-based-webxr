@@ -33,6 +33,7 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 
 import { objectPlaced } from "./tour-authoring-actions.js";
+import type { TourSaves } from "./tour-document-save.js";
 import { codeLocked } from "./tour-viewing-actions.js";
 import {
   hostedLevels,
@@ -60,7 +61,6 @@ import type {
   SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
 import type { CapturedCameraFrame } from "gps-plus-slam-app-framework/ar/captured-camera-frame";
-import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-signed-manifest";
 
 import type { RenderedTourObjects } from "./content-placement.js";
 import type { FusedTallies, LastEvaluation } from "./qr-debug-readout.js";
@@ -481,20 +481,14 @@ export interface TourViewerSession {
    *  the visit's sighting of it live in the creator's code module,
    *  `creator-codes.ts`, code book plan M5d-2.) */
   mintGeneration: number;
-  /** The rebuilt zip of the last Finish, saved at the end of step 4 (and
-   *  again from its button), with the list its
-   *  `manifest.json` carries when the tour has one (K1 milestone review
-   *  R7): a second Finish rebuilds from this zip, so its list starts there. */
-  rebuiltZip: {
-    blob: Blob;
-    /** The tour.json this zip carries: what a yes to "did you upload
-     *  it?" notes (F19). */
-    written: TourManifest;
-    filename: string;
-    signedManifest?: SignedTourManifest;
-    /** A save delivered it (UI round 1, U2: the leave guard). */
-    delivered?: boolean;
-  } | null;
+  /** The open tour's save handle (`tour-document-save.ts`), made at its
+   *  first Finish; null before one and once the tour closes. Its newest
+   *  bytes are the file the last Finish made, saved at the end of step 4
+   *  (and again from its button): their tour.json (what a yes to "did you
+   *  upload it?" notes, F19), the `manifest.json` list a second Finish
+   *  continues, and whether a save delivered them
+   *  (UI round 1, U2: the leave guard). */
+  saves: TourSaves | null;
   /** What the panel calls the open tour (`tourLabel`); null with none. */
   tourLabel: string | null;
   /** The creator's hit-test reticle for the running session. */
@@ -724,7 +718,7 @@ export function createTourViewerSession(
     gpsSamplesAtSessionStart: 0,
     frameEpochAtSessionStart: 0,
     mintGeneration: 0,
-    rebuiltZip: null,
+    saves: null,
     tourLabel: null,
     arSessionGeneration: 0,
     reticle: null,

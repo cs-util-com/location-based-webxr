@@ -56,7 +56,7 @@ export function pin(id: string, label = `pin ${id}`, lat = 48.52): TourPin {
   };
 }
 
-export function photo(id: string): TourPicture {
+function photo(id: string): TourPicture {
   return {
     id,
     kind: "picture",
@@ -88,7 +88,7 @@ export async function tourFile(): Promise<File> {
 }
 
 /** A level file's text for a code standing at `geo`. */
-export function levelAt(geo: QrGeoPose): string {
+function levelAt(geo: QrGeoPose): string {
   return JSON.stringify({
     version: 1,
     qr: {
@@ -107,7 +107,7 @@ export function flush(page?: { getState(): unknown }): Promise<void> {
 
 // --- the operations ---------------------------------------------------------
 
-export interface DetailsChange {
+interface DetailsChange {
   readonly name?: string;
   readonly description?: string;
   readonly contact?: string;
@@ -123,7 +123,7 @@ export interface Page {
    *  the page's lists). */
   place(object: TourObject): Promise<void>;
   /** A new pin that starts its own station even within the automatic
-   *  radius of another (owner decision D8 of the editor round-2 plan; the
+   *  radius of another (the tour editor plan; the
    *  phone: its "New station here" chip, then a placement). */
   placeOwnStation(object: TourObject): Promise<void>;
   /** A note to `lat`/`lon`, height and facing kept (the phone: as its AR
@@ -170,14 +170,14 @@ export interface DesktopPage extends Page {
   objects(): TourObject[];
 }
 
-export interface AddedStation {
+interface AddedStation {
   readonly id: string;
   readonly lat: number;
   readonly lon: number;
 }
 
 /** `stations` minus the opened tour's, as `addedStations` reports them. */
-export function addedOf(stations: readonly AddedStation[]): AddedStation[] {
+function addedOf(stations: readonly AddedStation[]): AddedStation[] {
   const opened = new Set(tourOf(OPENED).stations.map((s) => s.id));
   return stations
     .filter((s) => !opened.has(s.id))
@@ -191,7 +191,7 @@ export const PHONE_FINISH_REFUSED = "the phone's Finish did not start";
 /** No such operation on this page today: the row cannot be driven. */
 export class NoSuchOperation extends Error {}
 
-export async function readRecords(
+async function readRecords(
   store: DraftFileStore,
   photoBytesRequired: boolean,
 ): Promise<{ objects: string[]; deleted: string[] }> {
@@ -204,7 +204,7 @@ export async function readRecords(
 
 // --- the desktop editor -----------------------------------------------------
 
-export function freeLock(): Promise<EditorLock> {
+function freeLock(): Promise<EditorLock> {
   return Promise.resolve({
     granted: true,
     release: () => undefined,
@@ -340,7 +340,7 @@ export async function desktopPage(
 
 // --- the phone --------------------------------------------------------------
 
-export const PHONE_DOM_KEYS = [
+const PHONE_DOM_KEYS = [
   "panel",
   "controls",
   "finishBlock",
@@ -381,7 +381,7 @@ export const PHONE_DOM_KEYS = [
   "debugSaveStatus",
 ] as const;
 
-export function phoneElement() {
+function phoneElement() {
   const handlers = new Map<string, () => void>();
   return {
     hidden: false,
@@ -571,7 +571,7 @@ export async function phonePage(
       );
       const failed = finishErrorLine(ctx.tourDocument.state());
       if (failed !== null) throw new Error(failed);
-      return ctx.rebuiltZip!.written;
+      return ctx.saves!.newest()!.written;
     },
     records: async () => {
       if (draftKey === null) throw new Error("the phone opened no draft");
@@ -582,9 +582,9 @@ export async function phonePage(
     },
     reopenRestored: () => phonePage(file, stores, true),
     lastFinished: () => {
-      const made = ctx.rebuiltZip;
+      const made = ctx.saves?.newest() ?? null;
       if (made === null) throw new Error("the phone finished no tour");
-      return new File([made.blob], made.filename, {
+      return new File([made.blob], ctx.saves!.fileName, {
         type: "application/zip",
       });
     },
