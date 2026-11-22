@@ -221,8 +221,9 @@ test("a voice and its timing are imported, a word is edited, and lining the voic
   await expect(onSign).toBeChecked();
   const download = page.waitForEvent("download");
   await save(page);
-  expect(await savedTourText(await (await download).path())).toContain(
-    '"words":"sign"',
+  expect(await savedTourText(await (await download).path())).toMatch(
+    // The file is written indented: the field and its value, any spacing.
+    /"words":s*"sign"/,
   );
   await page.evaluate(() => {
     /** @type {HTMLElement | null} */ (document.activeElement)?.blur();
