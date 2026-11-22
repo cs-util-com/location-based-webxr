@@ -105,7 +105,11 @@ editor's own namespace, one tab at a time. Design:
     `draft-shared-behaviour.test.ts`, "discard: a tab closed right after
     the rejection landed ..."). A setting saved afterwards claims the
     record first (`settingsIn`: removed, the meta rewritten without the
-    entry, then written), as an edit claims a rejected object id.
+    entry, then written), as an edit claims a rejected object id. The
+    open reads the record through `readSettingsText`, which honours the
+    rejection only in a meta that passes `isMeta`: a meta that parses
+    but fails it rejects nothing, so the open would read a rejected
+    record. Acceptable, since every meta this code writes passes `isMeta`.
   - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
     base's `written` list; the setting's keep is decided again against the

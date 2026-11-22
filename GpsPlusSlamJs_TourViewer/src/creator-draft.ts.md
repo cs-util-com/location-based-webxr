@@ -418,16 +418,23 @@ phone offers and restores the WHOLE record, by the desktop's rule
   follows the store the write goes to: while it is the open tour's, by
   that tour's lists; once the tour closed or a Finish moved the draft
   (`follow`) since the write was queued, or while its removal ran, by
-  that store's own meta (`claimElsewhere`), written directly: a
-  `follow` holds every queue until the write ends, so a claim through
-  the meta's queue would wait for the move while the move waits for it.
+  that store's own meta (`claimElsewhere`), in a claims queue per
+  namespace of its own, outside `draftWrites`: a `follow` holds every
+  queue of `draftWrites` until the write ends, so a claim through the
+  meta's queue would wait for the move while the move waits for it. The
+  claims queue orders the claims among themselves: run at once, two
+  claims for one namespace (two objects edited after "Delete it", both
+  writes running once the tour closed) each read the meta and rewrote it
+  without their own entry, the later rewrite put the other's back, and
+  that write, reported landed, was hidden by the next read and swept.
   `claimElsewhere` notes each id and entry it claims per store, and
   `follow` drops exactly those from the moved list, so the new meta does
   not reject the copied write; an id whose rejection stands (a spent
   draft whose sweep did not land) stays rejected. The note is dropped
   when the store opens again: its read already holds the claim.
   **Residual race:** `claimElsewhere` reads and rewrites the meta outside
-  the meta's queue, so a `recordMeta` queued for that store before the
+  the meta's queue (its claims queue orders it against other claims
+  only), so a `recordMeta` queued for that store before the
   switch and landing between the read and the rewrite can re-reject the
   entry, and the next open then hides that write. It needs a meta write
   of the old tour still queued at the move, and is not covered by a test;

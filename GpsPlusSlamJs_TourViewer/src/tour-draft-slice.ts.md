@@ -77,7 +77,13 @@ editsWaiting }`; `TourDraftStatus` is `none`, `reading`, `offered`,
   changes (`editsWaitingChanged`). Reset by a read or a close, it would
   say nothing waits while edits still do, and `selectEditWaitsForRead`
   would hide the page's note.
-- Defensive: a malformed generation, reason or count changes nothing.
+- **"Declined" means no edit waits, by the callers' rule, not the
+  reducer's:** both pages drop the gate's edits on "Not now"
+  (`gate.drop()`), so `editsWaiting` is back to 0 whenever the status is
+  `declined`. The reducer alone allows `declined` with `editsWaiting` > 0
+  (a count dispatched after the answer), and the property test reaches
+  that state only through its `stepOn` model of the pages.
+- Defensive: a malformed generation or count changes nothing.
 - **Not here yet:** this state of the question still lives in the pages,
   and moves with the one draft-writer core, a later step:
   - the phone (`creator-draft.ts`): the offer's `counts` and the other

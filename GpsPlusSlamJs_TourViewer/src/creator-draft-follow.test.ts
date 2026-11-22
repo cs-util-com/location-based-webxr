@@ -211,6 +211,48 @@ describe("the phone's draft says what it could not read", () => {
     expect(ctx.placementNote).toBe(DRAFT_PART_UNREAD);
   });
 
+  // Why: a "Delete it" that lands between the open's settings read and its
+  // draft read makes that read refuse the record it read (it is rejected
+  // now). The read's "a station did not read" went with it, but the flag
+  // that keeps a record with a lost station was kept, so the spent open
+  // treated a deleted record as one that may still read again and left
+  // its removal to the sweep alone. Refused, the record is no record at
+  // all: the spent open removes it as it removes any other.
+  it("forgets a lost station of a record the read refused once it was rejected", async () => {
+    const ns = await space(
+      JSON.stringify({ needsNoGps: false, createdStations: [unreadable] }),
+    );
+    const open = ns.open;
+    const rejectMidRead = async (key: string) => {
+      const store = await open(key);
+      return {
+        ...store,
+        getText: async (k: string) => {
+          const text = await store.getText(k);
+          if (k === SETTINGS_KEY) {
+            await store.put(
+              META_KEY,
+              JSON.stringify({
+                format: TOUR_OBJECT_RECORD_FORMAT,
+                tourUrl: OLD,
+                sizeM: 0.16,
+                rejected: [SETTINGS_REJECTED],
+              }),
+            );
+          }
+          return text;
+        },
+      };
+    };
+    const { ctx } = await wired(Object.assign(ns, { open: rejectMidRead }));
+    expect(ctx.placementNote, "nothing is said lost").toBeNull();
+    const removals = ns.log.filter((e) => e === `remove ${SETTINGS_KEY}`);
+    expect(removals, "the sweep and the spent open's own removal").toHaveLength(
+      2,
+    );
+    expect(ns.files(OLD).has(SETTINGS_KEY)).toBe(false);
+  });
+
   it("says nothing of a record that reads", async () => {
     const ns = await space(JSON.stringify({ needsNoGps: false }));
     const { ctx } = await wired(ns);
@@ -743,5 +785,42 @@ describe("an object edited after Delete it claims its id wherever its write runs
     expect(await moved).toBe(true);
     const next = await wired(ns, tourOf([pin("a")]), NEW);
     expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+  });
+
+  // Why: two objects edited after "Delete it", both writes running once
+  // the tour closed, claim their ids by the same namespace's meta from
+  // their own queues. Each read the meta and rewrote it without its own
+  // id, at the same time, so the later rewrite put the other id back:
+  // that write reported true, its record stayed on disk, and the next
+  // open hid it and swept it.
+  it("two edits that run after the tour closed both claim their ids, and both are offered", async () => {
+    const ns = namespaces();
+    const first = await wired(ns);
+    expect(await first.draft.writeObject(pin("a", "draft"))).toBe(true);
+    expect(await first.draft.writeObject(pin("b", "draft"))).toBe(true);
+    await flush();
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    ns.holdRemovesOf = new RegExp(`^(${objectKey("a")}|${objectKey("b")})$`);
+    page.dom.draftDiscard.click();
+    await flush();
+    expect(page.dom.draftOffer.hidden, "Delete it landed").toBe(true);
+    const wrote = [
+      page.draft.writeObject(pin("a", "edited a")),
+      page.draft.writeObject(pin("b", "edited b")),
+    ];
+    page.draft.reset();
+    ns.releasePuts();
+    expect(await Promise.all(wrote)).toEqual([true, true]);
+    await flush();
+    const meta = JSON.parse(ns.files(OLD).get(META_KEY) as string) as {
+      rejected?: string[];
+    };
+    expect(meta.rejected ?? []).not.toContain("a");
+    expect(meta.rejected ?? []).not.toContain("b");
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the edits are offered").toBe(false);
+    expect(ns.files(OLD).get(objectKey("a")) as string).toContain("edited a");
+    expect(ns.files(OLD).get(objectKey("b")) as string).toContain("edited b");
   });
 });
