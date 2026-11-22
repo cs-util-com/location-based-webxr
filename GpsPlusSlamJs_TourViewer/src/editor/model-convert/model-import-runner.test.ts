@@ -47,26 +47,40 @@ interface HeldRun {
   readonly progress: (fraction: number) => void;
 }
 
-/** A host whose runs the test answers by hand. */
+/** A host whose runs the test answers by hand. Like the real one, its
+ *  close() ends the Worker under every run not yet settled: each rejects
+ *  with an AbortError. */
 function fakeHost() {
   const runs: HeldRun[] = [];
+  const unsettled = new Set<(error: unknown) => void>();
   const host: OptimizerHost & { closes: number } = {
     closes: 0,
     run: (_kind, payload, _settings, control) =>
       new Promise<OptimizeOutcome>((resolve, reject) => {
+        const settleWith =
+          <T,>(done: (value: T) => void) =>
+          (value: T) => {
+            unsettled.delete(fail);
+            done(value);
+          };
+        const fail = settleWith(reject);
+        unsettled.add(fail);
         control.signal.addEventListener("abort", () =>
-          reject(new DOMException("stopped", "AbortError")),
+          fail(new DOMException("stopped", "AbortError")),
         );
         runs.push({
           payload,
-          resolve,
-          reject,
+          resolve: settleWith(resolve),
+          reject: fail,
           signal: control.signal,
           progress: control.progress,
         });
       }),
     close() {
       host.closes++;
+      for (const fail of [...unsettled]) {
+        fail(new DOMException("the Worker was let go", "AbortError"));
+      }
     },
   };
   return { host, runs };
@@ -252,6 +266,11 @@ describe("the model import runner", () => {
     expect(t.rows().map((r) => r.name)).toEqual(["b.gltf"]);
     expect(t.runs).toHaveLength(2);
     expect(t.delivered).toEqual([]);
+    // The next model's run is its own: letting the stopped one's Worker go
+    // never ends it, so it converts and is added.
+    t.runs[1]!.resolve(made());
+    await t.settle();
+    expect(t.delivered).toHaveLength(1);
     expect(t.runner.remove("import:nope")).toBe(false);
   });
 

@@ -258,9 +258,13 @@ export function createModelImportRunner(
         }),
       );
     } finally {
-      if (current?.id === job.id) current = null;
-      // Every settle lets the converter's Worker go.
-      if (!workerGone) host.close();
+      // Every settle lets the converter's Worker go - only while this job
+      // still holds it: a job stopped by remove() or close() let it go
+      // then, and the Worker may by now be the next job's.
+      if (current?.id === job.id) {
+        current = null;
+        if (!workerGone) host.close();
+      }
       pump();
     }
   }
@@ -311,6 +315,8 @@ export function createModelImportRunner(
       if (current?.id === id) {
         current.stop.abort();
         current = null;
+        // Its Worker goes now, before the next conversion can start in it.
+        host.close();
       }
       store.dispatch(act.importRemoved({ id }));
       leave(job);
