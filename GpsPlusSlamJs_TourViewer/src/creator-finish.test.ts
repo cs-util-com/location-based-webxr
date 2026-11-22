@@ -810,7 +810,11 @@ describe("a finished photo keeps its bytes for its preview (code book plan M2)",
     // Written, so it left the list of work to write.
     expect(ctx.tourDocument.entries()).toEqual([]);
     setup.beginAuthorVisit();
-    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    // Until the preview landed (a hosted photo is drawn in its station's
+    // frame, a few awaits deep), bounded; its bytes were read by then.
+    for (let i = 0; i < 50 && !ctx.placedPreviews.has("new"); i += 1) {
+      await Promise.resolve();
+    }
     expect(zipReads).toEqual([]);
     // The positive control (M2 review #6): the preview WAS rendered, so the
     // empty list above is not a preview that was never attempted.
