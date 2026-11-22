@@ -1012,6 +1012,50 @@ test("the feature matching benchmark keeps the running number across a reload", 
   expect(b.session).not.toBe(a.session);
 });
 
+/**
+ * Why this test matters: a tester may save a pair's files one by one
+ * instead of as the zip. Only the zip used to mark the pair saved, so a
+ * photo B taken again afterwards was offered under the names already on
+ * the device. Any save link marks the pair saved, and the retake gets a
+ * new running number.
+ */
+test("the feature matching benchmark numbers a retake after a single-file download", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await chooseSiftOnly(page);
+  await page.locator("#pair").selectOption("2a");
+  await takePhotos(page);
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  /** Save, then tap the frame B link; returns its download. */
+  const saveFrameB = async () => {
+    await page.locator("#save-frames").click();
+    await expect(page.locator("#save-links a")).toHaveCount(5);
+    const link = page.locator("#save-links a", { hasText: "frame B (PNG)" });
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      link.click(),
+    ]);
+    return download;
+  };
+  const stem = "feature-match-01-2a-s1-rotation-control-both-upright";
+  expect((await saveFrameB()).suggestedFilename()).toBe(`${stem}-frame-b.png`);
+
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#capture-b")).toHaveText("Take photo B");
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#pair-state")).toHaveText(
+    "now: pair 2, 2a rotation: control (both upright), spot 1",
+  );
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  expect((await saveFrameB()).suggestedFilename()).toBe(
+    "feature-match-02-2a-s1-rotation-control-both-upright-frame-b.png",
+  );
+});
+
 test("the feature matching benchmark tells two runs apart with storage blocked", async ({
   page,
 }) => {
