@@ -408,3 +408,62 @@ describe("the flat target capture", () => {
     ).toBe(POSES[1]!.id);
   });
 });
+
+describe("rules a one-line deletion would lose", () => {
+  // Why: in the flat mode the pair photos are not on screen; a photo there
+  // would start a pair nobody sees.
+  it("refuses a pair photo in the flat mode", () => {
+    const s = run([A.selectorChanged({ pair: "flat", spot: 1 })]);
+    expect(
+      featureMatchReducer(s, A.photoTaken({ which: "a", photo: photo("a1") })),
+    ).toBe(s);
+  });
+
+  // Why: after an advance Exit of a later flat mode returns to the pair the
+  // protocol moved to, not to the one picked before the advance.
+  it("moves the pair Exit returns to along with the advance", () => {
+    const s = run([
+      ...savedPair(),
+      A.filesDownloaded(),
+      A.selectorChanged({ pair: "flat", spot: 1 }),
+      A.flatExited(),
+    ]);
+    expect(s.progress.pair).toBe(PAIRS[1].key);
+  });
+
+  // Why: a synthetic run must not mark the camera pair as measured.
+  it("leaves the camera run alone when another run finishes", () => {
+    const s = run([
+      A.photoTaken({ which: "a", photo: photo("a1") }),
+      A.photoTaken({ which: "b", photo: photo("b1") }),
+      A.runStarted("synthetic"),
+      A.runFinished({ text: "done", resultsId: "r1" }),
+    ]);
+    expect(s.cameraRun).toBe("none");
+    expect(s.resultsId).toBeNull();
+    expect(s.status.synthetic).toBe("done");
+  });
+
+  // Why: the views tell "I started it" from "it was refused" by the state's
+  // identity (`accepted` in the store); a refused reducer must return the
+  // very same object.
+  it("returns the same state for a refused run, save or zip", () => {
+    const running = run([A.runStarted("speed")]);
+    expect(featureMatchReducer(running, A.runStarted("speed"))).toBe(running);
+    expect(featureMatchReducer(running, A.saveStarted())).toBe(running);
+    const idle = start();
+    expect(featureMatchReducer(idle, A.flatSavingStarted())).toBe(idle);
+  });
+
+  // Why: one zip at a time, and only once a reference exists to put in it.
+  it("refuses a flat zip while one is made or without a reference", () => {
+    const noRef = run([
+      A.flatOpened(),
+      A.flatSurfaceAdded({ cls: CLS, original: false }),
+    ]);
+    expect(featureMatchReducer(noRef, A.flatSavingStarted())).toBe(noRef);
+    const saving = run([...withReference(), A.flatSavingStarted()]);
+    expect(saving.flat.saving).toBe(true);
+    expect(featureMatchReducer(saving, A.flatSavingStarted())).toBe(saving);
+  });
+});

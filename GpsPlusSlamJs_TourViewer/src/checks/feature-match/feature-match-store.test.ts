@@ -57,18 +57,19 @@ describe("stored progress", () => {
     const { data, storage } = memory({
       [PROGRESS_KEY]: JSON.stringify({ sequence: 4, pair: "2a", spot: 2 }),
     });
+    const setItem = vi.spyOn(storage, "setItem");
     const { store } = make(storage);
     expect(store.getState().progress).toMatchObject({
       sequence: 4,
       pair: "2a",
       spot: 2,
     });
+    // An action that changes no progress writes nothing.
     store.dispatch(A.logged("x"));
-    expect(data.get(PROGRESS_KEY)).toBe(
-      JSON.stringify({ sequence: 4, pair: "2a", spot: 2 }),
-    );
+    expect(setItem).not.toHaveBeenCalled();
     store.dispatch(A.photoTaken({ which: "a", photo: photo("p1") }));
     expect(JSON.parse(data.get(PROGRESS_KEY)!)).toMatchObject({ sequence: 5 });
+    expect(setItem).toHaveBeenCalledTimes(1);
   });
 
   // Why: the flat progress outlives the page so a reload keeps the surfaces.
@@ -159,5 +160,112 @@ describe("side tables", () => {
     dispose();
     expect(revokeUrl).toHaveBeenCalledWith("blob:u");
     expect(sides.urls.size).toBe(0);
+  });
+});
+
+describe("accepted and put", () => {
+  const saved = {
+    name: "A" as const,
+    frame,
+    source: { width: 8, height: 6 },
+  };
+
+  // Why: a second tap while a run goes must not start a second run, and
+  // the view learns that only from `accepted`.
+  it("tells a taken action from a refused one", () => {
+    const { accepted } = make(memory().storage);
+    expect(accepted(A.runStarted("synthetic"))).toBe(true);
+    expect(accepted(A.runStarted("synthetic"))).toBe(false);
+  });
+
+  // Why: an entry its action does not name must not stay behind, and an
+  // offered URL of a refused save must be revoked.
+  it("keeps an entry its action names and drops a refused one's", () => {
+    const { put, sides, revokeUrl } = make(memory().storage);
+    expect(
+      put(
+        sides.frames,
+        [["p1", saved]],
+        A.photoTaken({ which: "a", photo: photo("p1") }),
+      ),
+    ).toBe(true);
+    expect(sides.frames.has("p1")).toBe(true);
+    expect(
+      put(
+        sides.frames,
+        [["p2", saved]],
+        A.photoTaken({ which: "b", photo: { ...photo("p2"), width: 0 } }),
+      ),
+    ).toBe(false);
+    expect(sides.frames.has("p2")).toBe(false);
+    expect(
+      put(
+        sides.urls,
+        [["u1", "blob:1"]],
+        A.saveFinished([{ id: "u1", file: "a", text: "a" }]),
+      ),
+    ).toBe(false);
+    expect(revokeUrl).toHaveBeenCalledWith("blob:1");
+  });
+});
+
+describe("reconcile of the flat side tables", () => {
+  const taps = [
+    { x: 10, y: 10 },
+    { x: 300, y: 12 },
+    { x: 298, y: 200 },
+    { x: 12, y: 198 },
+  ];
+
+  // Why: a reference retaken leaves the old frame and preview unnamed.
+  it("drops the marked reference and its preview once dropped", () => {
+    const { store, sides, put } = make(memory().storage);
+    store.dispatch(A.flatOpened());
+    store.dispatch(A.flatSurfaceAdded({ cls: CLS, original: false }));
+    put(
+      sides.flatFrames,
+      [["f1", frame]],
+      A.flatReferenceTaken({ id: "f1", width: 4, height: 3 }),
+    );
+    for (const t of taps) {
+      store.dispatch(A.flatTapped(t));
+    }
+    put(
+      sides.flatFrames,
+      [["f2", frame]],
+      A.flatPreviewMade({ id: "f2", width: 4, height: 3 }),
+    );
+    expect([...sides.flatFrames.keys()]).toEqual(["f1", "f2"]);
+    store.dispatch(A.flatReferenceDropped());
+    expect(sides.flatFrames.size).toBe(0);
+  });
+
+  // Why: Retake last removes a shot from the progress; its photo must go.
+  it("drops the photo of a removed shot", () => {
+    const { store, sides, photosOf, put } = make(memory().storage);
+    store.dispatch(A.flatOpened());
+    store.dispatch(A.flatSurfaceAdded({ cls: CLS, original: false }));
+    put(
+      sides.flatFrames,
+      [["f1", frame]],
+      A.flatReferenceTaken({ id: "f1", width: 320, height: 240 }),
+    );
+    for (const t of taps) {
+      store.dispatch(A.flatTapped(t));
+    }
+    put(
+      sides.flatFrames,
+      [["f2", frame]],
+      A.flatPreviewMade({ id: "f2", width: 200, height: 150 }),
+    );
+    store.dispatch(A.flatReferenceAccepted());
+    store.dispatch(A.flatShotTaken(200));
+    const surface = store.getState().flat.progress.surfaces[0]!;
+    const shot = surface.shots[0]!;
+    photosOf(surface.id).shots.set(`${shot.pose}#${String(shot.q)}`, frame);
+    store.dispatch(A.logged("x"));
+    expect(photosOf(surface.id).shots.size).toBe(1);
+    store.dispatch(A.flatShotRemoved());
+    expect(photosOf(surface.id).shots.size).toBe(0);
   });
 });

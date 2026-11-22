@@ -124,7 +124,7 @@ export function startFlatCapture(
   deps: FlatDeps,
 ): FlatCapture {
   const ui = findUi(root);
-  const { store, sides, newId, photosOf } = deps.store;
+  const { store, sides, newId, photosOf, accepted, put } = deps.store;
   const flat = (): FlatState => store.getState().flat;
   const current = (): SurfaceProgress | null => currentSurface(flat());
   const status = (text: string): void => {
@@ -150,8 +150,7 @@ export function startFlatCapture(
   );
 
   /** Photos that exist only in this page: leaving it would lose them. */
-  const hasUnsaved = (): boolean =>
-    flat().still !== null || flatHasUnsaved(store.getState(), sides);
+  const hasUnsaved = (): boolean => flatHasUnsaved(store.getState(), sides);
 
   // --- screen wake lock -------------------------------------------------
 
@@ -583,14 +582,15 @@ export function startFlatCapture(
     const frame = captureFrame(ui.video, FLAT_CAPTURE_MAX);
     if (ph === "ref-live") {
       const id = newId("flat");
-      sides.flatFrames.set(id, frame);
       photosOf(s.id).camera = {
         width: ui.video.videoWidth,
         height: ui.video.videoHeight,
       };
-      // Into the state at once: any other action first would drop the
-      // frame from the side table as unnamed.
-      store.dispatch(
+      // put: the frame and the action naming it in one step, so no other
+      // action can drop the frame as unnamed in between.
+      put(
+        sides.flatFrames,
+        [[id, frame]],
         A.flatReferenceTaken({ id, width: frame.width, height: frame.height }),
       );
       deps.log(
@@ -609,6 +609,8 @@ export function startFlatCapture(
       deps.log(`flat: full-light shot refused, grey ${mean.toFixed(1)}`);
       return;
     }
+    // Not through put: the shot key is known only once the reducer has
+    // placed the shot, and nothing is dispatched between the two.
     const shot = after.shots.at(-1)!;
     photosOf(s.id).shots.set(shotKey(shot.pose, shot.q), frame);
     const text = `${shot.pose} q${String(shot.q)}: ${shot.fullLight ? "full light" : `${shot.lumaRatio.toFixed(2)} of full`}, bin ${shot.bin}`;
@@ -682,8 +684,9 @@ export function startFlatCapture(
           rectifiedSize(taps, FLAT_CAPTURE_MAX),
         );
         const id = newId("flat");
-        sides.flatFrames.set(id, preview);
-        store.dispatch(
+        put(
+          sides.flatFrames,
+          [[id, preview]],
           A.flatPreviewMade({
             id,
             width: preview.width,
@@ -810,10 +813,8 @@ export function startFlatCapture(
   };
 
   ui.download.addEventListener("click", () => {
-    store.dispatch(A.flatSavingStarted());
-    const f = flat();
-    const s = currentSurface(f);
-    if (!f.saving || !s) {
+    const s = currentSurface(flat());
+    if (!s || !accepted(A.flatSavingStarted())) {
       return;
     }
     surfaceZip(s)
@@ -822,9 +823,10 @@ export function startFlatCapture(
         // from script after an await can be blocked, and only the tap is
         // proof enough to mark the photos downloaded.
         const urlId = newId("url");
-        sides.urls.set(urlId, URL.createObjectURL(blob));
         const text = `${String(n)} photos, ${formatBytes(blob.size)}`;
-        store.dispatch(
+        put(
+          sides.urls,
+          [[urlId, URL.createObjectURL(blob)]],
           A.flatSavingEnded({
             prepared: {
               surface: s.id,

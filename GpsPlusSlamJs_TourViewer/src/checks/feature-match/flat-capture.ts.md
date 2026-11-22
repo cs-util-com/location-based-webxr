@@ -21,16 +21,15 @@ The DOM side of the flat target capture mode of `feature-match-check.html`: a fu
 - **Screen on.** A screen wake lock is requested on open and again whenever the page becomes visible (the browser drops it when hidden), and released on close; a refusal is logged, never fatal.
 - **Back-forward cache.** `pagehide` closes the mode; a `pageshow` restore from the cache reopens it, since the pair selector still reads flat.
 - **Labels.** The shoot button names the pose (`Darker shot, 40 % 0 deg (3 s)`). The class suggested for the next surface (the one furthest from its plan) never overwrites a class the user picked, until that surface is started.
-- **State in the store, resources here.** Open, the phase's inputs (the reference being marked, taps, preview), the pose, the countdown, saving, the picked class, the prepared zip and the status line are store state; the camera stream, its generation counter, the countdown and live-reading timers and the wake lock stay in this closure. The view re-renders only when the `flat` part of the state changed, so the page's log lines never replace a button under a finger. A frame put in a side table is named by an action in the same step.
+- **State in the store, resources here.** Open, the phase's inputs (the reference being marked, taps, preview), the pose, the countdown, saving, the picked class, the prepared zip and the status line are store state; the camera stream, its generation counter, the countdown and live-reading timers and the wake lock stay in this closure. The view re-renders only when the `flat` part of the state changed, so the page's log lines never replace a button under a finger. Every side table entry goes in through the store's `put` (set and the action naming it in one step); the shot photos are the one exception, set right after `flatShotTaken` because their key exists only once the reducer placed the shot. The zip starts only when `accepted(flatSavingStarted())` says the reducer took it.
 
 ## Example
 
 ```ts
 const flat = startFlatCapture(document, {
-  session,
+  store: fm, // createFeatureMatchStore(...)
   log,
   fail,
-  pageLog: () => logText,
   onExit,
 });
 flat.open();
@@ -38,4 +37,4 @@ flat.open();
 
 ## Tests
 
-`playwright-tests/feature-match-check.spec.js`, "captures a flat target surface end to end": faked camera, countdown and cancel, corners with a redo, the check, a full-light and a dimmed shot with their bins (live and stored), the zip's entries and JSON, the progress after a reload, the prepare-then-Save link with the session in the zip and JSON names, the capture source and camera size in the JSON, every visible button and link on screen at 412x915, 880x790, 790x880, 830x600 and 750x700 in every phase, and Exit back to the photo pairs. "keeps the photos when the zip fails, and attaches the original": a PNG encoder returning null gives the error, marks nothing and leaves the button ready, and a picked original file reaches the zip. The rules are unit-tested in `flat-target.test.ts` and `flat-progress.test.ts`.
+`playwright-tests/feature-match-check.spec.js`, "captures a flat target surface end to end": faked camera, countdown and cancel, corners with a redo, the check, a full-light and a dimmed shot with their bins (live and stored), the zip's entries and JSON, the progress after a reload, the prepare-then-Save link with the session in the zip and JSON names, the capture source and camera size in the JSON, every visible button and link on screen at 412x915, 880x790, 790x880, 830x600 and 750x700 in every phase, and Exit back to the photo pairs. "keeps the photos when the zip fails, and attaches the original": a PNG encoder returning null gives the error, marks nothing and leaves the button ready, and a picked original file reaches the zip. The rules are unit-tested in `flat-target.test.ts`, `flat-progress.test.ts` and, for the flat steps in the store, `feature-match-slice.test.ts`.

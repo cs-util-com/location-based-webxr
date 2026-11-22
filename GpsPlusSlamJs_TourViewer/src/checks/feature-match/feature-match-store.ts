@@ -8,7 +8,11 @@
  *
  * @see feature-match-store.ts.md
  */
-import { configureStore, createListenerMiddleware } from "@reduxjs/toolkit";
+import {
+  configureStore,
+  createListenerMiddleware,
+  type UnknownAction,
+} from "@reduxjs/toolkit";
 
 import { parseProgress, progressText, type SavedFrame } from "./bench-export";
 import type { Frame } from "./bench-image";
@@ -258,6 +262,34 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     return p;
   };
 
+  /**
+   * Dispatches `action` and says whether the reducer took it: a refused
+   * action returns the same state object. So "I started the run" is never
+   * confused with "a run was already going".
+   */
+  const accepted = (action: UnknownAction): boolean => {
+    const before = store.getState();
+    store.dispatch(action);
+    return store.getState() !== before;
+  };
+
+  /**
+   * Puts side table entries in place and dispatches the action that names
+   * them, in one step: no other action can come between and drop them as
+   * unnamed. An entry the action does not name (it was refused) is dropped
+   * by the reconcile it triggers, a URL revoked. Returns `accepted`.
+   */
+  const put = <V>(
+    table: Map<string, V>,
+    entries: readonly (readonly [string, V])[],
+    action: UnknownAction,
+  ): boolean => {
+    for (const [id, value] of entries) {
+      table.set(id, value);
+    }
+    return accepted(action);
+  };
+
   function dispose(): void {
     listener.clearListeners();
     for (const url of sides.urls.values()) {
@@ -266,7 +298,7 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     sides.urls.clear();
   }
 
-  return { store, sides, newId, photosOf, dispose };
+  return { store, sides, newId, photosOf, accepted, put, dispose };
 }
 
 export type FeatureMatchStore = ReturnType<typeof createFeatureMatchStore>;

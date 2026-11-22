@@ -385,7 +385,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     session: sessionToken(crypto.getRandomValues(new Uint8Array(4))),
     revokeUrl: (url) => URL.revokeObjectURL(url),
   });
-  const { store, sides, newId } = fm;
+  const { store, sides, newId, accepted, put } = fm;
   const state = (): FeatureMatchState => store.getState();
   // The camera, its start in flight and the pictures stay here: they are
   // browser resources, not state.
@@ -734,9 +734,10 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(source.width)}x${String(source.height)}), ${describeGrey(grey)}`,
     );
     const id = newId("photo");
-    sides.frames.set(id, { name, frame: f, source });
     const before = state();
-    store.dispatch(
+    put(
+      sides.frames,
+      [[id, { name, frame: f, source }]],
       A.photoTaken({
         which,
         photo: {
@@ -837,20 +838,20 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   }
 
   ui.saveFrames.addEventListener("click", () => {
-    store.dispatch(A.saveStarted());
-    if (state().busy !== "saving") {
+    if (!accepted(A.saveStarted())) {
       return;
     }
     saveFiles()
       .then((files) => {
         // The URLs and the action in one step: an action between them
         // would revoke URLs the state does not name yet.
+        const urls: [string, string][] = [];
         const offered: Offered[] = files.map(([file, text, blob]) => {
           const id = newId("url");
-          sides.urls.set(id, URL.createObjectURL(blob));
+          urls.push([id, URL.createObjectURL(blob)]);
           return { id, file, text: `${text}, ${formatBytes(blob.size)}` };
         });
-        store.dispatch(A.saveFinished(offered));
+        put(sides.urls, urls, A.saveFinished(offered));
         log("files ready to save");
       })
       .catch((e: unknown) => {
@@ -1058,12 +1059,13 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   /** Ends the run in progress, its camera results kept beside the state. */
   const finishRun = (text: string, results: MethodResult[] | null): void => {
-    let resultsId: string | null = null;
-    if (results && state().running === "camera") {
-      resultsId = newId("results");
-      sides.results.set(resultsId, results);
-    }
-    store.dispatch(A.runFinished({ text, resultsId }));
+    const resultsId =
+      results && state().running === "camera" ? newId("results") : null;
+    put(
+      sides.results,
+      resultsId && results ? [[resultsId, results]] : [],
+      A.runFinished({ text, resultsId }),
+    );
   };
 
   /**
@@ -1073,8 +1075,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   function startRun(kind: "camera" | "synthetic"): void {
     // A control set by script fires no event: read them all once more.
     optionsChanged();
-    store.dispatch(A.runStarted(kind));
-    if (state().running !== kind) {
+    if (!accepted(A.runStarted(kind))) {
       return;
     }
     runOnce(kind)
@@ -1207,8 +1208,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   ui.runSpeed.addEventListener("click", () => {
     optionsChanged();
-    store.dispatch(A.runStarted("speed"));
-    if (state().running !== "speed") {
+    if (!accepted(A.runStarted("speed"))) {
       return;
     }
     runSpeedOnce()

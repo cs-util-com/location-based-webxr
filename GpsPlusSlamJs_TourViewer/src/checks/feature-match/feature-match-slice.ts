@@ -728,7 +728,7 @@ const slice = createSlice({
         type: "set-reference",
         id: s.id,
         reference: {
-          corners: f.taps,
+          corners: plain(f.taps),
           width: f.still.width,
           height: f.still.height,
           rectified: { width: f.preview.width, height: f.preview.height },

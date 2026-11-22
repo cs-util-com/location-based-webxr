@@ -30,6 +30,8 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 - The state holds plain, serializable data only; every frame, result and URL is named by an id into a side table.
 - `busy === "running"` exactly when `running` is set; `advancedFor <= sequence`; the running number never decreases; photo B never exists without A; a `resultsId` only with `cameraRun === "done"`; offered files only when saved and idle.
+- A refused action returns the very same state object; the store's `accepted` relies on it.
+- The advance after a download also moves `lastPair` (the pair Exit of the flat mode returns to) to the new pair. The page before the store returned to the pair picked before the advance; the new pair is the one the protocol asks for next, so this is kept on purpose.
 - An accepted photo B always belongs to a pair whose number is above `advancedFor`, so saved file names are never reused.
 - Every flat action ends in `settleFlat`: a prepared zip survives only for the current surface, on the poses step, with the shot count it was made for.
 
@@ -44,5 +46,5 @@ store.getState().pairInProgress; // { pair: "1a", spot: 1, sequence: 1, ... }
 
 ## Tests
 
-- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses).
+- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference).
 - `feature-match-slice.property.test.ts`: random action sequences keep the invariants above, a second download is a no-op, a failed light check keeps the pair, and the flat prepared zip is always valid.
