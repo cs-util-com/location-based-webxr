@@ -10,6 +10,7 @@ import {
 } from "./feature-match-slice";
 import {
   deviceSummary,
+  hasRate,
   introCountdownText,
   endView,
   isMoving,
@@ -393,6 +394,18 @@ describe("the steady hint", () => {
   ];
   const settledAfter = (threshold: number): number =>
     level(tap).findIndex((l, i) => i > 0 && l <= threshold);
+
+  // Why this test matters: the views' devicemotion listeners mark motion
+  // as seen on a usable reading only; an all-NaN reading tested against
+  // null alone made the readout claim "steady" without any measurement.
+  it("counts only a finite rate as a reading", () => {
+    expect(hasRate(null)).toBe(false);
+    expect(hasRate({ alpha: null, beta: null, gamma: null })).toBe(false);
+    expect(
+      hasRate({ alpha: Number.NaN, beta: Infinity, gamma: -Infinity }),
+    ).toBe(false);
+    expect(hasRate({ alpha: Number.NaN, beta: 0, gamma: null })).toBe(true);
+  });
 
   it("ignores a reading without a rotation rate", () => {
     expect(motionStep(5, null)).toBe(5);

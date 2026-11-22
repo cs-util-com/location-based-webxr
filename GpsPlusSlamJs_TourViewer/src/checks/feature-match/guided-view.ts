@@ -1,6 +1,6 @@
 /**
  * The guided view of the feature matching page (the default; `?ui=cockpit`
- * shows the four steps): an intro, then one pair at a time with a step
+ * shows the cockpit, `cockpit-view.ts`): an intro, then one pair at a time with a step
  * card, a viewfinder and a countdown before each photo, a pairs sheet,
  * the end screen with Download all and the summary, and an optional
  * measure sheet that holds the measuring block (`bench-engine.ts`).
@@ -13,24 +13,9 @@
  *
  * @see guided-view.ts.md
  */
-import {
-  downloadBlob,
-  packFilesAsZip,
-  ZIP_FILE_TYPE,
-  type DownloadFileType,
-} from "gps-plus-slam-app-framework/storage";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
-import { captureFrame, frameCanvas, framePng } from "./bench-dom";
-import { $, CAPTURE_MAX, type BenchEngine } from "./bench-engine";
-import {
-  FRAME_FILES,
-  framesInfo,
-  matchesInfo,
-  pairFileNames,
-  pairTag,
-} from "./bench-export";
-import { greyStats } from "./bench-image";
-import { errorText, formatBytes } from "./bench-net";
+import { frameCanvas } from "./bench-dom";
+import { $, type BenchEngine } from "./bench-engine";
 import type { CameraControl } from "./camera-control";
 import {
   featureMatchActions as A,
@@ -41,42 +26,22 @@ import type { FeatureMatchStore } from "./feature-match-store";
 import { startFlatCapture } from "./flat-capture";
 import { diagramSvg } from "./guided-diagram";
 import {
-  deviceSummary,
   endView,
   introCountdownText,
+  hasRate,
   isMoving,
   measureText,
   motionStep,
   pairRows,
   planPairOf,
-  runPairs,
   runView,
-  type PlanPair,
 } from "./guided-model";
-import { MAX_EXTRA, runZipName, summaryText } from "./plan-slots";
+import { createPlanIo } from "./plan-io";
+import { MAX_EXTRA } from "./plan-slots";
 import { planSlots } from "./run-plan";
 
 type Screen = "intro" | "run" | "end";
 type Sheet = "pairs" | "measure" | null;
-type Shot = "a" | "b";
-
-const PNG_FILE_TYPE: DownloadFileType = {
-  description: "PNG image",
-  mimeType: "image/png",
-  extension: ".png",
-};
-const JSON_FILE_TYPE: DownloadFileType = {
-  description: "JSON file",
-  mimeType: "application/json",
-  extension: ".json",
-};
-
-/** The summary file inside the run zip. */
-const SUMMARY_FILE = "feature-match-summary.txt";
-
-/** How long the white flash after a photo stays, in ms. */
-const FLASH_MS = 360;
-
 export interface GuidedDeps {
   readonly root: ParentNode;
   readonly fm: FeatureMatchStore;
@@ -96,7 +61,7 @@ const byId = <T extends HTMLElement>(root: ParentNode, id: string): T =>
 /** Wires the guided view found under `root`; returns its render. */
 export function startGuidedView(deps: GuidedDeps): () => void {
   const { root, fm, engine, camera, log, fail } = deps;
-  const { store, sides, newId, accepted, put } = fm;
+  const { store, sides, accepted } = fm;
   const state = (): FeatureMatchState => store.getState();
   const el = <T extends HTMLElement = HTMLElement>(id: string): T =>
     byId<T>(root, id);
@@ -176,7 +141,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   };
 
   // The measuring block keeps its own elements and listeners; it moves
-  // into the measure sheet, and the four-step layout stays out of sight.
+  // into the measure sheet, and its old home stays out of sight.
   el("measure-synthetic").append(
     $(root, "#run-synthetic"),
     $(root, "#synthetic-state"),
@@ -195,89 +160,31 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   let screen: Screen = state().plan.shots === 0 ? "intro" : "run";
   let sheet: Sheet = null;
   let ghostOn = false;
-  /** Raised by every camera start, so only the newest one reports back. */
-  let camTry = 0;
   let motion = { level: 0, seen: false, moving: false };
-  /** The phone moved while the countdown ran; named in the photo's log line. */
-  let movedDuringCount = false;
-  let countTimer: ReturnType<typeof setInterval> | null = null;
-  let audio: AudioContext | null = null;
-  let deviceLine = "-";
   /** The pair grid's rows as last drawn, so a render keeps the buttons. */
   let gridKey = "";
 
-  /** Says in the finder why a tap or a countdown ended without a photo. */
-  const shotNote = createToast(el("finder"), {
-    className: "chip warn shot-note",
-    id: "g-shot-note",
+  const io = createPlanIo({
+    fm,
+    engine,
+    camera,
+    video,
+    flash: ui.flash,
+    // Says in the finder why a tap or a countdown ended without a photo.
+    note: createToast(el("finder"), {
+      className: "chip warn shot-note",
+      id: "g-shot-note",
+    }),
+    log,
+    fail,
+    moving: () => motion.moving,
+    deviceKnown: () => {
+      render();
+    },
   });
+  const { startCamera, cancelCount } = io;
 
-  void engine.deviceInfo().then((d) => {
-    deviceLine = deviceSummary(d);
-    render();
-  });
-
-  // --- sound, vibration, flash ------------------------------------------------
-
-  const beep = (freq: number, ms: number): void => {
-    if (!state().plan.settings.sound) {
-      return;
-    }
-    try {
-      audio ??= new AudioContext();
-      const o = audio.createOscillator();
-      const g = audio.createGain();
-      o.frequency.value = freq;
-      g.gain.setValueAtTime(0.15, audio.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + ms / 1000);
-      o.connect(g).connect(audio.destination);
-      o.start();
-      o.stop(audio.currentTime + ms / 1000);
-    } catch {
-      // No audio: the countdown digits still show.
-    }
-  };
-  /** Only at the tap, never at the shot: a vibration then shakes the photo. */
-  const buzz = (ms: number): void => {
-    try {
-      navigator.vibrate(ms);
-    } catch {
-      // No vibration.
-    }
-  };
-  const flash = (): void => {
-    ui.flash.hidden = false;
-    setTimeout(() => {
-      ui.flash.hidden = true;
-    }, FLASH_MS);
-  };
-
-  // --- camera and screens -----------------------------------------------------
-
-  const startCamera = async (): Promise<void> => {
-    const mine = ++camTry;
-    store.dispatch(A.cameraStartSet("starting"));
-    const r = await camera.start();
-    if (mine === camTry) {
-      store.dispatch(A.cameraStartSet(r === "failed" ? "failed" : "idle"));
-    }
-  };
-
-  const stopTimer = (): void => {
-    if (countTimer !== null) {
-      clearInterval(countTimer);
-      countTimer = null;
-    }
-  };
-
-  const cancelCount = (why: string): void => {
-    if (state().guided.count === null) {
-      return;
-    }
-    store.dispatch(A.guidedCountSet(null));
-    stopTimer();
-    log(`countdown: ${why}`);
-  };
+  // --- screens ------------------------------------------------------------------
 
   const show = (next: Screen): void => {
     if (next !== "run") {
@@ -306,93 +213,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     render();
   };
 
-  // --- photos -------------------------------------------------------------------
-
-  const shoot = (shot: Shot): void => {
-    const before = state();
-    const slot = runView(before).slot;
-    if (video.videoWidth === 0) {
-      log("capture: the camera has no picture yet");
-      shotNote.show("No photo: the camera had no picture yet. Tap again.");
-      return;
-    }
-    const f = captureFrame(video, CAPTURE_MAX);
-    const source = { width: video.videoWidth, height: video.videoHeight };
-    const grey = greyStats(f);
-    const id = newId("photo");
-    const name = shot === "a" ? "A" : "B";
-    const ok = put(
-      sides.frames,
-      [[id, { name, frame: f, source }]],
-      A.planPhotoTaken({
-        slot,
-        which: shot,
-        photo: {
-          id,
-          width: f.width,
-          height: f.height,
-          source,
-          greyMean: grey.mean,
-        },
-      }),
-    );
-    const moved = movedDuringCount;
-    movedDuringCount = false;
-    if (!ok) {
-      log(`capture: photo ${name} of ${slot} refused`);
-      shotNote.show(`No photo ${name}: the page was busy. Tap again.`);
-      return;
-    }
-    shotNote.clear();
-    beep(1320, 60);
-    flash();
-    const rec = state().plan.slots[slot];
-    log(
-      `photo ${name}: ${slot} #${String(rec?.seq ?? 0)} ${String(f.width)}x${String(f.height)} grey mean ${grey.mean.toFixed(1)}${moved ? " (phone moved during countdown)" : ""}`,
-    );
-    if (rec?.a && rec.b && rec.light) {
-      log(`light check ${slot}: ${rec.light}`);
-    }
-    if (shot === "a") {
-      ghostOn = false;
-    }
-  };
-
-  const tick = (): void => {
-    const c = state().guided.count;
-    if (!c) {
-      stopTimer();
-      return;
-    }
-    if (c.left <= 1) {
-      stopTimer();
-      store.dispatch(A.guidedCountSet(null));
-      shoot(c.shot);
-      return;
-    }
-    if (!accepted(A.guidedCountSet({ shot: c.shot, left: c.left - 1 }))) {
-      cancelCount("refused");
-      return;
-    }
-    beep(660, 90);
-  };
-
-  const beginCount = (shot: Shot): void => {
-    const secs = state().plan.settings.countdown;
-    buzz(30);
-    if (!secs) {
-      shoot(shot);
-      return;
-    }
-    if (!accepted(A.guidedCountSet({ shot, left: secs }))) {
-      return;
-    }
-    movedDuringCount = motion.moving;
-    beep(660, 90);
-    stopTimer();
-    countTimer = setInterval(tick, 1000);
-  };
-
   const tapPrimary = (): void => {
     const p = runView(state()).primary;
     if (p.disabled) {
@@ -408,7 +228,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
           return;
         }
         if (p.shot) {
-          beginCount(p.shot);
+          if (p.shot === "a") {
+            ghostOn = false;
+          }
+          io.beginCount(p.shot);
         }
         return;
       case "next":
@@ -420,166 +243,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
         return;
       case "finish":
         show("end");
-    }
-  };
-
-  // --- Download all -------------------------------------------------------------
-
-  const summaryOf = (s: FeatureMatchState): string =>
-    summaryText({
-      session: s.session,
-      spots: s.plan.spots,
-      list: planSlots(s.plan),
-      pairs: s.plan.slots,
-      shots: s.plan.shots,
-      downloads: s.plan.downloads,
-      device: deviceLine,
-    });
-
-  const packRun = async (s: FeatureMatchState): Promise<Blob> => {
-    const pairs = runPairs(s, sides.frames);
-    const device = await engine.deviceInfo();
-    const files: { path: string; data: Blob | string }[] = [];
-    for (const p of pairs) {
-      files.push(
-        { path: p.names.A, data: await framePng(p.a.frame, "frame A") },
-        { path: p.names.B, data: await framePng(p.b.frame, "frame B") },
-        {
-          path: p.names.info,
-          data: framesInfo(
-            [p.a, p.b],
-            device,
-            CAPTURE_MAX,
-            p.tag,
-            { light: p.light, session: s.session },
-            { A: p.names.A, B: p.names.B },
-          ),
-        },
-      );
-    }
-    log(`download: ${String(pairs.length)} pairs as ${runZipName(s.session)}`);
-    const now = state();
-    files.push(
-      { path: SUMMARY_FILE, data: summaryOf(now) },
-      { path: FRAME_FILES.log, data: `${logText(now)}\n` },
-    );
-    return packFilesAsZip(files);
-  };
-
-  const downloadAll = async (): Promise<void> => {
-    if (!accepted(A.runZipStarted())) {
-      return;
-    }
-    const name = runZipName(state().session);
-    try {
-      const zip = await packRun(state());
-      const saved = await downloadBlob(zip, name, ZIP_FILE_TYPE);
-      if (saved) {
-        store.dispatch(A.planRunDownloaded());
-        store.dispatch(
-          A.runZipEnded({
-            phase: "saved",
-            text: `Saved ${name} (${formatBytes(zip.size)}). Send this file.`,
-          }),
-        );
-        log(`download: saved ${name}`);
-      } else {
-        store.dispatch(
-          A.runZipEnded({
-            phase: "idle",
-            text: "Not saved: the save dialog was closed. Nothing was lost.",
-          }),
-        );
-        log("download: the save dialog was closed");
-      }
-    } catch (e) {
-      fail("download", e);
-      store.dispatch(
-        A.runZipEnded({
-          phase: "failed",
-          text: `Could not prepare the zip: ${errorText(e)}. Nothing was lost; try again.`,
-        }),
-      );
-    }
-  };
-
-  // --- single files (measure sheet) ------------------------------------------
-
-  /** The current pair's matches, when a plan run on this take finished. */
-  const matchesOf = (s: FeatureMatchState, pair: PlanPair | null) => {
-    const r = s.planRun;
-    if (!pair || !r || r.slot !== pair.slot.id || r.seq !== pair.seq) {
-      return undefined;
-    }
-    return r.resultsId ? sides.results.get(r.resultsId) : undefined;
-  };
-
-  type FileKind = "A" | "B" | "info" | "matches";
-  const saveFile = async (kind: FileKind): Promise<void> => {
-    const s = state();
-    const pair = planPairOf(s, sides.frames);
-    if (!pair || !accepted(A.planFileSaveStarted())) {
-      return;
-    }
-    let note: string;
-    try {
-      const rec = s.plan.slots[pair.slot.id];
-      const tag = pairTag(pair.slot.key, pair.slot.spot, pair.seq);
-      const names = pairFileNames(tag);
-      const json = (text: string): Blob =>
-        new Blob([text], { type: "application/json" });
-      let blob: Blob;
-      let type = JSON_FILE_TYPE;
-      if (kind === "A" || kind === "B") {
-        const f = kind === "A" ? pair.a : pair.b;
-        blob = await framePng(f.frame, `frame ${kind}`);
-        type = PNG_FILE_TYPE;
-      } else if (kind === "info") {
-        blob = json(
-          framesInfo(
-            [pair.a, pair.b],
-            await engine.deviceInfo(),
-            CAPTURE_MAX,
-            tag,
-            { light: rec?.light ?? null, session: s.session },
-            { A: names.A, B: names.B },
-          ),
-        );
-      } else {
-        const res = matchesOf(s, pair);
-        if (!res) {
-          throw new Error("no finished run on this pair");
-        }
-        blob = json(matchesInfo(res, { a: pair.a.frame, b: pair.b.frame }));
-      }
-      const name = names[kind];
-      if (await downloadBlob(blob, name, type)) {
-        // Kept and dropped at once: only the take's downloaded mark stays,
-        // so no Blob goes into the side table.
-        const id = newId("file");
-        store.dispatch(A.planFileKept({ id, name, slot: pair.slot.id }));
-        store.dispatch(A.planFilesDownloaded([id]));
-        store.dispatch(A.planKeptDropped());
-        note = `saved ${name} (${formatBytes(blob.size)})`;
-        log(`file saved: ${name}`);
-      } else {
-        note = "not saved: the save dialog was closed";
-      }
-    } catch (e) {
-      fail("save", e);
-      note = `could not save: ${errorText(e)}`;
-    }
-    store.dispatch(A.planFileSaveEnded(note));
-  };
-
-  // --- copy -------------------------------------------------------------------
-
-  const copyText = async (text: string, out: HTMLElement): Promise<void> => {
-    try {
-      await navigator.clipboard.writeText(text);
-      out.textContent = "copied";
-    } catch {
-      out.textContent = "copy refused: select the text and copy by hand";
     }
   };
 
@@ -719,7 +382,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ui.downloadAll.disabled = !v.canDownload;
     ui.downloadState.className = `state ${v.download.tone}`.trim();
     ui.downloadState.textContent = v.download.text;
-    ui.summary.value = summaryOf(s);
+    ui.summary.value = io.summaryOf(s);
     ui.storeState.hidden = !s.photoStoreFailing;
   };
 
@@ -733,15 +396,13 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ui.fileA.disabled = off;
     ui.fileB.disabled = off;
     ui.fileInfo.disabled = off;
-    ui.fileMatches.disabled = off || !matchesOf(s, pair);
+    ui.fileMatches.disabled = off || !io.matchesOf(s, pair);
     ui.filesState.textContent = s.fileSave.text;
   };
 
   const render = (): void => {
     const s = state();
-    if (s.guided.count === null) {
-      stopTimer();
-    }
+    io.syncTimer();
     ui.intro.hidden = screen !== "intro";
     ui.run.hidden = screen !== "run";
     ui.end.hidden = screen !== "end";
@@ -873,14 +534,14 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     sheet = null;
     show("intro");
   });
-  ui.downloadAll.addEventListener("click", () => void downloadAll());
+  ui.downloadAll.addEventListener("click", () => void io.downloadAll());
   el("copy-summary").addEventListener(
     "click",
-    () => void copyText(summaryOf(state()), ui.copySummaryState),
+    () => void io.copyText(io.summaryOf(state()), ui.copySummaryState),
   );
   el("copy-log").addEventListener(
     "click",
-    () => void copyText(logText(state()), ui.copyLogState),
+    () => void io.copyText(logText(state()), ui.copyLogState),
   );
   el("end-back").addEventListener("click", () => {
     show("run");
@@ -894,10 +555,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   ui.measureRun.addEventListener("click", () => {
     engine.startRun("plan");
   });
-  ui.fileA.addEventListener("click", () => void saveFile("A"));
-  ui.fileB.addEventListener("click", () => void saveFile("B"));
-  ui.fileInfo.addEventListener("click", () => void saveFile("info"));
-  ui.fileMatches.addEventListener("click", () => void saveFile("matches"));
+  ui.fileA.addEventListener("click", () => void io.saveFile("A"));
+  ui.fileB.addEventListener("click", () => void io.saveFile("B"));
+  ui.fileInfo.addEventListener("click", () => void io.saveFile("info"));
+  ui.fileMatches.addEventListener("click", () => void io.saveFile("matches"));
 
   const flat = startFlatCapture(root, {
     store: fm,
@@ -919,15 +580,15 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   });
   window.addEventListener("devicemotion", (ev) => {
     const r = ev.rotationRate;
-    if (!r || (r.alpha === null && r.beta === null && r.gamma === null)) {
+    if (!hasRate(r)) {
       return;
     }
     const level = motionStep(motion.level, r);
     const moving = isMoving(level);
     const changed = moving !== motion.moving || !motion.seen;
     motion = { level, seen: true, moving };
-    if (moving && state().guided.count !== null) {
-      movedDuringCount = true;
+    if (moving) {
+      io.moved();
     }
     if (changed) {
       render();

@@ -3,9 +3,7 @@ import fc from "fast-check";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
-  FLAT_MODE,
   FRAME_FILES,
-  NO_PAIR,
   PAIRS,
   allFilesZip,
   assertPlainPng,
@@ -16,10 +14,8 @@ import {
   LIGHT_FLOOR_A,
   LIGHT_FLOOR_B,
   matchesInfo,
-  nextPair,
   pairFileNames,
   pairTag,
-  parseSpot,
   parseProgress,
   pngChunkTypes,
   progressText,
@@ -635,18 +631,6 @@ describe("pairs", () => {
     }
   });
 
-  // Why this test matters: "none" is the manual run that uses the Options;
-  // its files must still be named, and the selector must not move on from
-  // it into the protocol by itself.
-  it("tags and names a manual run, and stays on it", () => {
-    const tag = pairTag(NO_PAIR.key, 1, 4);
-    expect(tag.pairLabel).toBe("manual run");
-    expect(pairFileNames(tag).all).toBe(
-      "feature-match-04-none-s1-manual-run.zip",
-    );
-    expect(nextPair(NO_PAIR.key, 1)).toEqual({ key: "none", spot: 1 });
-  });
-
   // Why this test matters: only the light pairs are repeated at spots; a
   // spot carried over from 1c into 2a would name a spot the pair has not.
   it("records spot 1 for every pair that is not a light pair", () => {
@@ -661,50 +645,6 @@ describe("pairs", () => {
     expect(() => pairTag("1a", 1.5, 1)).toThrow("spot");
     expect(() => pairTag("1a", 1, 0)).toThrow("sequence");
   });
-
-  it("reads the spot field, any bad value as spot 1", () => {
-    expect(parseSpot("2")).toBe(2);
-    expect(parseSpot("3")).toBe(3);
-    for (const bad of ["", "  ", "0", "4", "1.5", "x", "-1"]) {
-      expect(parseSpot(bad)).toBe(1);
-    }
-  });
-
-  // Why this test matters: the selector moves on by itself after each
-  // save, so the next pair is ready without a tap; the light pairs are
-  // repeated at three spots before the rotation pairs start.
-  it("moves on to the next pair; light runs through spots 1-3 first", () => {
-    expect(nextPair("1a", 1)).toEqual({ key: "1b", spot: 1 });
-    expect(nextPair("1c", 1)).toEqual({ key: "1a", spot: 2 });
-    expect(nextPair("1c", 2)).toEqual({ key: "1a", spot: 3 });
-    expect(nextPair("1c", 3)).toEqual({ key: "2a", spot: 1 });
-    expect(nextPair("2d", 1)).toEqual({ key: "3a", spot: 1 });
-    expect(nextPair("4d", 1)).toEqual({ key: "x", spot: 1 });
-    expect(nextPair("x", 2)).toEqual({ key: "x", spot: 2 });
-  });
-
-  it("walks the whole list from 1a spot 1 in 20 steps to other", () => {
-    let at = { key: "1a", spot: 1 };
-    const seen: string[] = [];
-    for (let i = 0; i < 21; i++) {
-      seen.push(`${at.key}-s${String(at.spot)}`);
-      at = nextPair(at.key, at.spot);
-    }
-    expect(seen.slice(0, 10)).toEqual([
-      "1a-s1",
-      "1b-s1",
-      "1c-s1",
-      "1a-s2",
-      "1b-s2",
-      "1c-s2",
-      "1a-s3",
-      "1b-s3",
-      "1c-s3",
-      "2a-s1",
-    ]);
-    expect(seen.at(-1)).toBe("x-s1");
-    expect(new Set(seen).size).toBe(21);
-  });
 });
 
 // Why these tests matter: a reload or a discarded tab restarted the running
@@ -713,12 +653,12 @@ describe("pairs", () => {
 // throwing on the page.
 describe("progress across reloads", () => {
   it("reads back what it wrote", () => {
-    const p = { sequence: 7, pair: "2b", spot: 1 } as const;
+    const p = { sequence: 7 };
     expect(parseProgress(progressText(p))).toEqual(p);
   });
 
   it("starts over on nothing, garbage or a value out of range", () => {
-    const start = { sequence: 0, pair: "1a", spot: 1 };
+    const start = { sequence: 0 };
     for (const bad of [
       null,
       "",
@@ -726,27 +666,18 @@ describe("progress across reloads", () => {
       "[]",
       '{"sequence":-1,"pair":"1a","spot":1}',
       '{"sequence":1.5,"pair":"1a","spot":1}',
-      '{"sequence":2,"pair":"9z","spot":1}',
-      '{"sequence":2,"pair":"1a","spot":4}',
+      '{"sequence":"2"}',
     ]) {
       expect(parseProgress(bad), String(bad)).toEqual(start);
     }
   });
 
-  // Why this test matters: the flat target mode is chosen in the same
-  // selector, and a reload must reopen it rather than fall back to 1a.
-  it("keeps the flat target mode as the selection", () => {
-    expect(
-      parseProgress(`{"sequence":3,"pair":"${FLAT_MODE.key}","spot":1}`).pair,
-    ).toBe(FLAT_MODE.key);
-    expect(PAIRS.map((p): string => p.key)).not.toContain(FLAT_MODE.key);
-    expect(() => pairTag(FLAT_MODE.key, 1, 1)).toThrow(/unknown pair/);
-  });
-
-  it("keeps the manual run as the selected pair", () => {
-    expect(parseProgress('{"sequence":3,"pair":"none","spot":1}').pair).toBe(
-      "none",
-    );
+  // Why this test matters: a page of an earlier version stored the pair
+  // it showed too; that is read past, and the running number kept.
+  it("ignores the fields an earlier page stored beside the number", () => {
+    expect(parseProgress('{"sequence":3,"pair":"flat","spot":2}')).toEqual({
+      sequence: 3,
+    });
   });
 });
 

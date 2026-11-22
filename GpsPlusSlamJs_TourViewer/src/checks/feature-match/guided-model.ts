@@ -125,7 +125,7 @@ function primaryView(s: FeatureMatchState, due: "a" | "b" | null): PrimaryView {
       label: "Next pair",
       sub: warn
         ? "or tap A or B to retake first"
-        : `${next.key}: ${GUIDED_STEPS[next.key as keyof typeof GUIDED_STEPS].title}`,
+        : `${next.key}: ${GUIDED_STEPS[next.key].title}`,
     };
   }
   if (step.kind === "missing") {
@@ -150,7 +150,7 @@ export function runView(s: FeatureMatchState): RunView {
   const list = planSlots(s.plan);
   const i = Math.min(Math.max(0, s.plan.current), list.length - 1);
   const slot = list[i]!;
-  const key = slot.key as keyof typeof GUIDED_STEPS;
+  const key = slot.key;
   const card = guidedCard(key);
   const rec = s.plan.slots[slot.id];
   const g = s.guided;
@@ -229,7 +229,7 @@ const STATUS_WORDS: Readonly<Record<SlotStatus, string>> = {
 export function pairRows(s: FeatureMatchState): PairRow[] {
   return planSlots(s.plan).map((slot, index) => {
     const status = slotStatus(s.plan.slots[slot.id]);
-    const title = GUIDED_STEPS[slot.key as keyof typeof GUIDED_STEPS].title;
+    const title = GUIDED_STEPS[slot.key].title;
     return {
       index,
       label: isLight(slot.key)
@@ -408,14 +408,23 @@ type RotationRate = {
   readonly gamma: number | null;
 } | null;
 
+/**
+ * The finite rotation rates of a reading. A value that is not a finite
+ * number counts as missing: one NaN would latch the level to NaN for good.
+ */
+const finiteRates = (r: RotationRate): number[] =>
+  r
+    ? [r.alpha, r.beta, r.gamma].filter(
+        (v): v is number => typeof v === "number" && Number.isFinite(v),
+      )
+    : [];
+
+/** Whether a `devicemotion` reading carries a usable rotation rate. */
+export const hasRate = (r: RotationRate): boolean => finiteRates(r).length > 0;
+
 /** The next smoothed motion level from a `devicemotion` rotation rate. */
 export function motionStep(level: number, r: RotationRate): number {
-  if (!r) return level;
-  // A value that is not a finite number counts as missing: one NaN would
-  // latch the level to NaN for good.
-  const rates = [r.alpha, r.beta, r.gamma].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
+  const rates = finiteRates(r);
   if (rates.length === 0) return level;
   const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
   // Absurdly large rates can sum past the largest number: ignore that too.

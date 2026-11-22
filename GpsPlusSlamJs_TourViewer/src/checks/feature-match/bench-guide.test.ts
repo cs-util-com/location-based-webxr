@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BEFORE_YOU_START, PAIR_GUIDE, SPOT_NOTE } from "./bench-guide";
-import { NO_PAIR, PAIRS } from "./bench-export";
+import { PAIRS } from "./bench-export";
 
 const DASHES = /[\u2012-\u2015]/;
 
@@ -9,7 +9,7 @@ const DASHES = /[\u2012-\u2015]/;
 // from on the phone; a pair without its purpose, steps or avoid line leaves
 // the tester guessing from one dropdown line, which is the gap this closes.
 describe("PAIR_GUIDE", () => {
-  const keys = [...PAIRS.map((p) => p.key), NO_PAIR.key];
+  const keys = PAIRS.map((p) => p.key);
 
   it("has a complete entry for every pair, and for no other key", () => {
     expect(Object.keys(PAIR_GUIDE).sort()).toEqual([...keys].sort());

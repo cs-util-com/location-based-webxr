@@ -71,13 +71,13 @@ export interface SurfacePhotos {
 
 /** What lives beside the store, keyed by the ids the state holds. */
 export interface FeatureMatchSides {
-  /** The camera photos, the page's pair and the plan's, by `PhotoMeta.id`. */
+  /** The plan's camera photos, by `PhotoMeta.id`. */
   readonly frames: Map<string, SavedFrame>;
   /** The plan's kept pair zips, by `KeptFile.id`. */
   readonly blobs: Map<string, Blob>;
-  /** Run results, by the camera run's `resultsId` or `planRun.resultsId`. */
+  /** Run results, by `planRun.resultsId`. */
   readonly results: Map<string, readonly MethodResult[]>;
-  /** Blob URLs of offered files and the prepared flat zip, by id. */
+  /** The Blob URL of the prepared flat zip, by id. */
   readonly urls: Map<string, string>;
   /** The flat reference being marked and its preview, by `FrameMeta.id`. */
   readonly flatFrames: Map<string, Frame>;
@@ -148,11 +148,7 @@ function reconcile(
   sides: FeatureMatchSides,
   revokeUrl: (url: string) => void,
 ): void {
-  const photoIds = new Set([
-    s.photos.a?.id,
-    s.photos.b?.id,
-    ...planPhotoIds(s.plan),
-  ]);
+  const photoIds = new Set(planPhotoIds(s.plan));
   for (const id of sides.frames.keys()) {
     if (!photoIds.has(id)) {
       sides.frames.delete(id);
@@ -164,16 +160,13 @@ function reconcile(
       sides.blobs.delete(id);
     }
   }
-  const resultIds = new Set([s.resultsId, s.planRun?.resultsId]);
+  const resultIds = new Set([s.planRun?.resultsId]);
   for (const id of sides.results.keys()) {
     if (!resultIds.has(id)) {
       sides.results.delete(id);
     }
   }
-  const urlIds = new Set(s.offered.map((o) => o.id));
-  if (s.flat.prepared) {
-    urlIds.add(s.flat.prepared.urlId);
-  }
+  const urlIds = new Set(s.flat.prepared ? [s.flat.prepared.urlId] : []);
   for (const [id, url] of sides.urls) {
     if (!urlIds.has(id)) {
       revokeUrl(url);
@@ -269,16 +262,10 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
 
   listener.startListening({
     predicate: (_a, cur, prev) =>
-      cur.progress.sequence !== prev.progress.sequence ||
-      cur.progress.pair !== prev.progress.pair ||
-      cur.progress.spot !== prev.progress.spot,
+      cur.progress.sequence !== prev.progress.sequence,
     effect: (_a, api) => {
-      const p = api.getState().progress;
-      write(
-        deps.storage,
-        PROGRESS_KEY,
-        progressText({ sequence: p.sequence, pair: p.pair, spot: p.spot }),
-      );
+      const { sequence } = api.getState().progress;
+      write(deps.storage, PROGRESS_KEY, progressText({ sequence }));
     },
   });
   listener.startListening({
@@ -376,7 +363,11 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     }
     flagFailing(unstored.size > 0);
   }
-  /** Writes the oldest unstored photo still named, unless one is in flight. */
+  /**
+   * Writes the oldest unstored photo still named, unless a retry is in
+   * flight. A new photo's own write may run beside it, so at most two
+   * photo copies are written at once.
+   */
   function retryOldest(): void {
     if ([...unstored].some((id) => writing.has(id))) {
       return;

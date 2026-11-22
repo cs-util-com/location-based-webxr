@@ -41,24 +41,8 @@ export const PAIRS = [
   { key: "x", label: "other" },
 ] as const;
 
-/**
- * The selector's "none": a manual run that uses the Options. Not part of
- * the protocol, so nextPair never moves into or out of it.
- */
-export const NO_PAIR = { key: "none", label: "manual run" } as const;
-
-/** A key of PAIRS, or NO_PAIR's. */
-export type PairKey = (typeof PAIRS)[number]["key"] | typeof NO_PAIR.key;
-
-/**
- * The selector's flat target capture mode: a capture flow of its own
- * (flat-capture.ts), not a photo pair, so pairTag refuses it and nextPair
- * never moves into or out of it.
- */
-export const FLAT_MODE = { key: "flat", label: "flat target capture" } as const;
-
-/** What the selector can hold: a pair key or the flat target mode. */
-export type SelectorKey = PairKey | typeof FLAT_MODE.key;
+/** A key of PAIRS. */
+export type PairKey = (typeof PAIRS)[number]["key"];
 
 /** Spots the light pairs are repeated at. */
 const SPOTS = 3;
@@ -137,7 +121,7 @@ export interface PairTag {
  *   sequence that is not an integer of at least 1.
  */
 export function pairTag(key: string, spot: number, sequence: number): PairTag {
-  const p = [...PAIRS, NO_PAIR].find((q) => q.key === key);
+  const p = PAIRS.find((q) => q.key === key);
   if (!p) {
     throw new Error(`unknown pair ${key}`);
   }
@@ -155,36 +139,25 @@ export function pairTag(key: string, spot: number, sequence: number): PairTag {
   };
 }
 
-/** What the page keeps across a reload: the running number and the selection. */
+/** What the page keeps across a reload: the running number. */
 export interface Progress {
   readonly sequence: number;
-  readonly pair: SelectorKey;
-  readonly spot: number;
 }
 
-const START: Progress = { sequence: 0, pair: "1a", spot: 1 };
+const START: Progress = { sequence: 0 };
 
 /** The stored form of `p`. */
 export function progressText(p: Progress): string {
-  return JSON.stringify({ sequence: p.sequence, pair: p.pair, spot: p.spot });
+  return JSON.stringify({ sequence: p.sequence });
 }
 
 /**
- * The stored progress, or the start (no pair yet, 1a at spot 1) for
- * nothing stored, unreadable text or a value out of range.
+ * The stored progress, or the start (no pair yet) for nothing stored,
+ * unreadable text or a value out of range. Other fields are ignored.
  */
 export function parseProgress(text: string | null): Progress {
-  const v = jsonObject(text);
-  if (v === null) {
-    return START;
-  }
-  const { sequence, pair, spot } = v;
-  const key = [...PAIRS, NO_PAIR, FLAT_MODE].find((q) => q.key === pair)?.key;
-  return key !== undefined &&
-    isIntIn(sequence, 0, Number.MAX_SAFE_INTEGER) &&
-    isIntIn(spot, 1, SPOTS)
-    ? { sequence, pair: key, spot }
-    : START;
+  const sequence = jsonObject(text)?.sequence;
+  return isIntIn(sequence, 0, Number.MAX_SAFE_INTEGER) ? { sequence } : START;
 }
 
 /** The JSON object in `text`, or null for nothing, bad JSON or a non-object. */
@@ -219,31 +192,6 @@ export function sessionToken(bytes: Uint8Array): string {
     );
   }
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** The spot field's value; anything but 1, 2 or 3 reads as 1. */
-export function parseSpot(text: string): number {
-  const n = Number(text.trim());
-  return Number.isInteger(n) && n >= 1 && n <= SPOTS ? n : 1;
-}
-
-/**
- * The pair after `key` at `spot`: the next in PAIRS. The light pairs run
- * through every spot first (1c at spot 1 or 2 goes on to 1a at the next
- * spot), the pairs after them start at spot 1, and "other" stays.
- */
-export function nextPair(
-  key: string,
-  spot: number,
-): { key: string; spot: number } {
-  if (key === "1c" && spot < SPOTS) {
-    return { key: "1a", spot: spot + 1 };
-  }
-  const i = PAIRS.findIndex((p) => p.key === key);
-  if (i < 0 || i === PAIRS.length - 1) {
-    return { key, spot };
-  }
-  return { key: PAIRS[i + 1]!.key, spot: key === "1c" ? 1 : spot };
 }
 
 /** The downloaded names of one pair's files. */

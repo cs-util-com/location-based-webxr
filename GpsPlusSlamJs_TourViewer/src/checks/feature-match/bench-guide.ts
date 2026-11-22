@@ -23,16 +23,17 @@ export interface PairGuide {
 
 /** The general rules, shown once in "Before you start". */
 export const BEFORE_YOU_START: readonly string[] = [
-  "Lock the screen rotation. Do not zoom.",
-  "After photo B, wait until the run has finished, then tap Save files and Download all before the next photo A (a new photo A clears the result).",
+  "Put the phone on a stand. Lock the screen rotation. Do not zoom.",
+  "After photo B the pair is measured and saved as one zip, by itself or kept for Download all at the end (Details, Settings). Wait for the run before the next photo.",
   "Nothing personal in the picture: no faces, documents, screens, letters, house numbers, and no window showing the outside.",
   "Aim at something with detail (furniture, shelves, pictures, patterned fabric); a plain white wall gives nothing to match.",
-  "The selector moves to the next pair by itself after Download all; pick another pair any time to repeat or skip one.",
+  "The next pair comes up by itself; Details, Pairs takes any pair again or skips one.",
+  "Saving each pair by itself: Chrome may ask once whether this page may download several files. Choose Allow, or keep them for Download all under Settings.",
 ];
 
 /** Shown with the light pairs. */
 export const SPOT_NOTE =
-  "Spot: test 1 is repeated at up to 3 places in the room (spot 1, 2, 3). After 1c, point the phone at another part of the room; the selector moves to 1a at the next spot by itself.";
+  "Spot: test 1 is repeated at up to 3 places in the room (spot 1, 2, 3). After 1c, point the phone at another part of the room; 1a at the next spot comes up by itself.";
 
 /** The order of light and photos, first and bold on the dimmed pairs. */
 const LIGHT_ON_A = "Photo A with the light ON as normal.";
@@ -205,14 +206,6 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
     steps: ["Photo A.", "Photo B."],
     strongSteps: 0,
     avoid: "Anything personal in the picture.",
-    spotNote: false,
-  },
-  none: {
-    purpose:
-      "A manual benchmark run: the Options decide what runs, and no photo test settings apply.",
-    steps: ["Set the Options.", "Photo A.", "Photo B."],
-    strongSteps: 0,
-    avoid: "Using it for the photo tests: pick their pair instead.",
     spotNote: false,
   },
 };

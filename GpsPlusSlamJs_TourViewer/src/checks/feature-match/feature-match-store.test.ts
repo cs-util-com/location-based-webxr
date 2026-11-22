@@ -54,21 +54,23 @@ describe("stored progress", () => {
   // Why: a reload or a discarded tab must continue the numbering.
   it("starts from the stored progress, and writes it when it changes", () => {
     const { data, storage } = memory({
-      [PROGRESS_KEY]: JSON.stringify({ sequence: 4, pair: "2a", spot: 2 }),
+      [PROGRESS_KEY]: JSON.stringify({ sequence: 4 }),
     });
     const setItem = vi.spyOn(storage, "setItem");
     const { store } = make(storage);
-    expect(store.getState().progress).toMatchObject({
-      sequence: 4,
-      pair: "2a",
-      spot: 2,
-    });
+    expect(store.getState().progress).toEqual({ sequence: 4 });
     // An action that changes no progress writes nothing.
     store.dispatch(A.logged("x"));
     expect(setItem).not.toHaveBeenCalled();
-    store.dispatch(A.photoTaken({ which: "a", photo: photo("p1") }));
-    expect(JSON.parse(data.get(PROGRESS_KEY)!)).toMatchObject({ sequence: 5 });
-    expect(setItem).toHaveBeenCalledTimes(1);
+    store.dispatch(
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    );
+    expect(JSON.parse(data.get(PROGRESS_KEY)!)).toEqual({ sequence: 5 });
+    // The plan is stored too; the progress is written once.
+    const progressWrites = setItem.mock.calls.filter(
+      ([k]) => k === PROGRESS_KEY,
+    );
+    expect(progressWrites).toHaveLength(1);
   });
 
   // Why: the flat progress outlives the page so a reload keeps the surfaces.
@@ -84,7 +86,9 @@ describe("stored progress", () => {
     const { store } = make(blocked);
     expect(store.getState().progress.sequence).toBe(0);
     expect(() => {
-      store.dispatch(A.photoTaken({ which: "a", photo: photo("p1") }));
+      store.dispatch(
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      );
       store.dispatch(A.flatSurfaceAdded({ cls: CLS, original: false }));
     }).not.toThrow();
     expect(store.getState().progress.sequence).toBe(1);
@@ -92,41 +96,38 @@ describe("stored progress", () => {
 });
 
 describe("side tables", () => {
-  // Why: frames and URLs the state no longer names are memory leaks, and
-  // a URL left alive keeps its Blob.
-  it("drops frames and revokes URLs the state no longer names", () => {
-    const { store, sides, revokeUrl } = make(memory().storage);
-    sides.frames.set("p1", {
-      name: "A",
-      frame,
-      source: { width: 8, height: 6 },
-    });
-    store.dispatch(A.photoTaken({ which: "a", photo: photo("p1") }));
+  // Why: frames and results the state no longer names are memory leaks.
+  it("drops frames and results the state no longer names", () => {
+    const { store, sides } = make(memory().storage);
+    const keep = (id: string) =>
+      sides.frames.set(id, {
+        name: "A",
+        frame,
+        source: { width: 8, height: 6 },
+      });
+    keep("p1");
+    store.dispatch(
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    );
     expect(sides.frames.has("p1")).toBe(true);
-    sides.frames.set("p2", {
-      name: "B",
-      frame,
-      source: { width: 8, height: 6 },
-    });
-    store.dispatch(A.photoTaken({ which: "b", photo: photo("p2") }));
-    store.dispatch(A.runStarted("camera"));
+    keep("p2");
+    store.dispatch(
+      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+    );
+    store.dispatch(A.runStarted("plan"));
     sides.results.set("r1", []);
     store.dispatch(A.runFinished({ text: "ok", resultsId: "r1" }));
     expect(sides.results.has("r1")).toBe(true);
-    store.dispatch(A.saveStarted());
-    sides.urls.set("u1", "blob:1");
-    store.dispatch(A.saveFinished([{ id: "u1", file: "a.zip", text: "zip" }]));
-    expect(revokeUrl).not.toHaveBeenCalled();
+    // A frame nobody names goes at the next action.
+    keep("stray");
+    store.dispatch(A.logged("x"));
+    expect(sides.frames.has("stray")).toBe(false);
 
-    sides.frames.set("p3", {
-      name: "A",
-      frame,
-      source: { width: 8, height: 6 },
-    });
-    store.dispatch(A.photoTaken({ which: "a", photo: photo("p3") }));
-    expect(revokeUrl).toHaveBeenCalledWith("blob:1");
-    expect(sides.urls.size).toBe(0);
-    expect([...sides.frames.keys()]).toEqual(["p3"]);
+    keep("p3");
+    store.dispatch(
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p3") }),
+    );
+    expect([...sides.frames.keys()].sort()).toEqual(["p2", "p3"]);
     expect(sides.results.size).toBe(0);
   });
 
@@ -197,15 +198,15 @@ describe("accepted and put", () => {
     expect(accepted(A.runStarted("synthetic"))).toBe(false);
   });
 
-  // Why: an entry its action does not name must not stay behind, and an
-  // offered URL of a refused save must be revoked.
+  // Why: an entry its action does not name must not stay behind, and the
+  // URL of a refused zip must be revoked.
   it("keeps an entry its action names and drops a refused one's", () => {
     const { put, sides, revokeUrl } = make(memory().storage);
     expect(
       put(
         sides.frames,
         [["p1", saved]],
-        A.photoTaken({ which: "a", photo: photo("p1") }),
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
       ),
     ).toBe(true);
     expect(sides.frames.has("p1")).toBe(true);
@@ -213,7 +214,11 @@ describe("accepted and put", () => {
       put(
         sides.frames,
         [["p2", saved]],
-        A.photoTaken({ which: "b", photo: { ...photo("p2"), width: 0 } }),
+        A.planPhotoTaken({
+          slot: "1a-s1",
+          which: "b",
+          photo: { ...photo("p2"), width: 0 },
+        }),
       ),
     ).toBe(false);
     expect(sides.frames.has("p2")).toBe(false);
@@ -221,7 +226,7 @@ describe("accepted and put", () => {
       put(
         sides.urls,
         [["u1", "blob:1"]],
-        A.saveFinished([{ id: "u1", file: "a", text: "a" }]),
+        A.flatSavingEnded({ prepared: null, status: "x" }),
       ),
     ).toBe(false);
     expect(revokeUrl).toHaveBeenCalledWith("blob:1");

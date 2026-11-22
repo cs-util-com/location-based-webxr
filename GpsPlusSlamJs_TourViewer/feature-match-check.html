@@ -10,279 +10,13 @@
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/design.css" />
     <link rel="stylesheet" href="/src/checks/feature-match/guided-view.css" />
-    <!-- The four-step view (?ui=cockpit); off in the guided view. -->
-    <style id="cockpit-style">
-      body {
-        margin: 0;
-        padding: 16px;
-        background: #f3f5f7;
-        color: #1b2328;
-        font:
-          15px/1.4 system-ui,
-          sans-serif;
-        overflow-x: hidden;
-      }
-      h1 {
-        font-size: 1.25rem;
-        margin: 0 0 4px;
-      }
-      .intro {
-        margin: 0 0 12px;
-        color: #4a565e;
-      }
-      .layout {
-        display: grid;
-        gap: 12px;
-        grid-template-columns: minmax(0, 1fr);
-      }
-
-      @media (width >= 900px), (orientation: landscape) and (width >= 640px) {
-        .layout {
-          grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
-        }
-      }
-      .steps {
-        list-style: none;
-        margin: 0 0 10px;
-        padding: 0;
-        display: grid;
-        gap: 8px;
-      }
-      .steps > li {
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: #fff;
-      }
-      .steps > li[data-state="current"] {
-        border: 2px solid #2f5d78;
-        box-shadow: 0 0 0 3px #2f5d7826;
-      }
-      .steps > li[data-state="todo"] {
-        opacity: 0.65;
-      }
-      .steps h2 {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin: 0;
-        font-size: 1rem;
-      }
-      .num {
-        display: inline-grid;
-        place-items: center;
-        flex: none;
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        background: #c9d2d8;
-        color: #1b2328;
-        font-size: 0.85rem;
-        font-weight: 700;
-      }
-      li[data-state="current"] .num {
-        background: #2f5d78;
-        color: #fff;
-      }
-      li[data-state="done"] .num {
-        background: #2e7d4f;
-        color: #fff;
-      }
-      .step-mark {
-        margin-left: auto;
-        color: #5b6870;
-        font-size: 0.8rem;
-        font-weight: 400;
-      }
-      li[data-state="done"] .step-mark::after {
-        content: "done";
-        color: #2e7d4f;
-      }
-      li[data-state="current"] .step-mark::after {
-        content: "now";
-        color: #2f5d78;
-      }
-      details {
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-        padding: 8px 10px;
-        background: #fff;
-      }
-      summary {
-        font-weight: 600;
-        min-height: 32px;
-        cursor: pointer;
-      }
-      fieldset {
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-        margin: 8px 0;
-        padding: 8px 10px;
-        background: #fff;
-      }
-      legend {
-        font-weight: 600;
-      }
-      label {
-        display: inline-flex;
-        gap: 6px;
-        align-items: center;
-        margin: 4px 12px 4px 0;
-      }
-      .hint {
-        margin: 6px 0;
-        color: #5b6870;
-        font-size: 0.85rem;
-      }
-      button {
-        min-height: 44px;
-        padding: 8px 16px;
-        border-radius: 8px;
-        border: 1px solid #2f5d78;
-        background: #2f5d78;
-        color: #fff;
-        font: inherit;
-      }
-      button.secondary {
-        background: #fff;
-        color: #2f5d78;
-      }
-      button:disabled {
-        opacity: 0.6;
-      }
-      video {
-        width: 100%;
-        max-height: 40vh;
-        background: #000;
-        border-radius: 6px;
-      }
-      .table-wrap {
-        overflow-x: auto;
-        background: #fff;
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-      }
-      table {
-        border-collapse: collapse;
-        font-size: 0.85rem;
-        white-space: nowrap;
-      }
-      th,
-      td {
-        padding: 4px 8px;
-        border-bottom: 1px solid #e3e8ec;
-        text-align: left;
-      }
-      .row-error td {
-        color: #a02020;
-      }
-      .picture {
-        margin: 0 0 10px;
-        padding: 8px;
-        background: #fff;
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-      }
-      .picture figcaption {
-        margin: 0 0 6px;
-        font-size: 0.85rem;
-        overflow-wrap: anywhere;
-      }
-      .picture canvas {
-        display: block;
-        max-width: 100%;
-        height: auto;
-        background: #000;
-      }
-      .picture-error figcaption {
-        margin: 0;
-        color: #a02020;
-      }
-      pre,
-      textarea {
-        box-sizing: border-box;
-        width: 100%;
-        font:
-          12px/1.35 ui-monospace,
-          monospace;
-        background: #fff;
-        border: 1px solid #c9d2d8;
-        border-radius: 8px;
-        padding: 8px;
-      }
-      pre {
-        max-height: 30vh;
-        overflow: auto;
-        white-space: pre-wrap;
-        overflow-wrap: anywhere;
-      }
-      textarea {
-        height: 30vh;
-      }
-      .pick {
-        flex: 1 1 12rem;
-        min-width: 0;
-        max-width: 100%;
-        margin-right: 0;
-      }
-      .pick select {
-        flex: 1;
-        min-width: 0;
-        max-width: 100%;
-        min-height: 44px;
-      }
-      .guide {
-        margin: 8px 0;
-        padding: 8px 10px;
-        border-left: 4px solid #2f5d78;
-        background: #eef3f6;
-        border-radius: 6px;
-      }
-      .guide p,
-      .guide ol,
-      .guide ul {
-        margin: 4px 0;
-      }
-      .guide ol,
-      .guide ul {
-        padding-left: 1.4em;
-      }
-      .guide li {
-        margin: 2px 0;
-      }
-      .guide-purpose {
-        font-weight: 600;
-      }
-      .guide-avoid {
-        color: #8a3b12;
-      }
-      #before-start {
-        margin: 0 0 8px;
-      }
-      .light-warning {
-        margin: 0 0 10px;
-        padding: 10px 12px;
-        border: 2px solid #a02020;
-        border-radius: 8px;
-        background: #fdecea;
-        color: #7a1616;
-        font-weight: 600;
-      }
-      .row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-        margin: 8px 0;
-      }
-    </style>
+    <link rel="stylesheet" href="/src/checks/feature-match/cockpit-view.css" />
     <script>
-      // ?ui=cockpit shows the four-step view; the guided run is the default.
+      // ?ui=cockpit shows the cockpit; the guided run is the default.
       (function () {
         var cockpit =
           new URLSearchParams(location.search).get("ui") === "cockpit";
         document.documentElement.dataset.ui = cockpit ? "cockpit" : "guided";
-        document.getElementById("cockpit-style").disabled = !cockpit;
       })();
     </script>
     <!-- Flat target capture, opened from either view. -->
@@ -516,125 +250,15 @@
     </style>
   </head>
   <body>
-    <h1>Feature matching benchmark</h1>
-    <p class="intro">
-      Times keypoint extraction and matching of three methods on this device, on
-      two photos you take, and draws what each one matched. Models load from the
-      network on first use (ALIKED + LightGlue about 64 MB).
-    </p>
     <div class="layout">
       <section aria-label="Steps">
-        <div id="camera-box" hidden>
-          <video id="video" playsinline muted></video>
-        </div>
-        <ol class="steps">
-          <li id="step-1" data-state="current" aria-current="step">
-            <h2>
-              <span class="num">1</span> Take photo A
-              <span class="step-mark"></span>
-            </h2>
-            <details id="before-start" open>
-              <summary>Before you start</summary>
-              <ul id="before-start-list" class="guide"></ul>
-            </details>
-            <p class="hint">
-              Pick the pair, follow its steps below, then take photo A.
-            </p>
-            <div class="row">
-              <label class="pick"
-                >Pair
-                <select id="pair"></select>
-              </label>
-              <label
-                >Spot
-                <input
-                  id="spot"
-                  type="number"
-                  min="1"
-                  max="3"
-                  value="1"
-                  size="2"
-              /></label>
-            </div>
-            <div id="pair-guide" class="guide" aria-live="polite">
-              <p id="guide-purpose" class="guide-purpose"></p>
-              <ol id="guide-steps"></ol>
-              <p id="guide-avoid" class="guide-avoid"></p>
-              <p id="guide-spot" class="hint" hidden></p>
-            </div>
-            <p id="pair-state" class="hint" aria-live="polite"></p>
-            <div class="row">
-              <button id="capture-a" type="button">Start camera</button>
-              <span id="state-a" aria-live="polite">not taken</span>
-            </div>
-          </li>
-          <li id="step-2" data-state="todo">
-            <h2>
-              <span class="num">2</span> Take photo B
-              <span class="step-mark"></span>
-            </h2>
-            <p class="hint">
-              Follow the pair's steps above: change only what the pair names
-              (the light, the turn, the distance or the side step), and keep
-              most of what A shows in view.
-            </p>
-            <div class="row">
-              <button id="capture-b" type="button" disabled>
-                Take photo B
-              </button>
-              <span id="state-b" aria-live="polite">not taken</span>
-            </div>
-          </li>
-          <li id="step-3" data-state="todo">
-            <h2>
-              <span class="num">3</span> Run
-              <span class="step-mark"></span>
-            </h2>
-            <p class="hint">
-              Starts by itself after photo B, with every method and size ticked
-              in the options; a photo test pair sets the rest itself (1 run, no
-              warm-up, WebGPU, or WASM on a phone without WebGPU, one XFeat
-              file). The camera is off meanwhile. The pictures under Results
-              fill in as each one finishes. A full run takes minutes.
-            </p>
-            <div class="row">
-              <button id="run" type="button" class="secondary" disabled>
-                Run again
-              </button>
-              <span id="run-state" aria-live="polite">waiting for photo B</span>
-            </div>
-          </li>
-          <li id="step-4" data-state="todo">
-            <h2>
-              <span class="num">4</span> Save
-              <span class="step-mark"></span>
-            </h2>
-            <div class="row">
-              <button id="save-frames" type="button" disabled>
-                Save files
-              </button>
-              <span id="save-state" aria-live="polite">after the run</span>
-            </div>
-            <p id="save-links" class="row"></p>
-            <p class="hint">
-              Every file is named by its running number and pair, and after
-              Download all the pair moves on to the next one. Offers one zip
-              holding everything, this page's log and report included, and each
-              file on its own, to save on this device only: the two photos as
-              PNG, a JSON of their sizes, grey values and this device's browser,
-              OS version, model, cores, memory, screen and GPU, and a JSON of
-              every method's keypoints and matches. The photos carry pixels
-              only, no location, time or EXIF data. Nothing is uploaded.
-            </p>
-          </li>
-        </ol>
         <details id="options">
           <summary>Options: everything is on, untick to leave out</summary>
           <p id="options-note" class="hint">
-            Photo tests set these themselves: while a pair is picked, a camera
-            run uses 1 run, no warm-up, WebGPU only (WASM where the phone has no
-            WebGPU, named in the log) and xfeat_fp16.tflite only. Pick the pair
-            "none" for a camera run with these Options.
+            The methods apply to every run. A run on a photo pair sets the rest
+            itself: 1 run, no warm-up, WebGPU only (WASM where the phone has no
+            WebGPU, named in the log) and xfeat_fp16.tflite only. Runs, warm-up,
+            backends and model files apply to the synthetic run.
           </p>
           <fieldset>
             <legend>Methods</legend>
@@ -792,7 +416,6 @@
         </details>
       </section>
       <section aria-label="Results">
-        <p id="light-warning" class="light-warning" role="alert" hidden></p>
         <div class="table-wrap">
           <table id="results">
             <thead>
@@ -825,7 +448,262 @@
         <pre id="log" aria-label="Log"></pre>
       </section>
     </div>
-    <!-- The guided run (the default view; ?ui=cockpit shows the four steps). -->
+    <!-- The cockpit (?ui=cockpit): the viewfinder and one fixed dock. -->
+    <div id="cockpit" class="c-app" hidden>
+      <!-- The viewfinder and what may cover it; the dock is never covered. -->
+      <section id="c-stage" class="c-stage" aria-label="Camera">
+        <video id="c-video" playsinline muted></video>
+        <canvas id="c-ghost" class="c-ghost" hidden></canvas>
+        <div class="c-frame" aria-hidden="true">
+          <i></i><i></i><i></i><i></i>
+        </div>
+        <div id="c-count" class="c-count" aria-hidden="true"></div>
+        <div id="c-flash" class="c-flash" aria-hidden="true" hidden></div>
+        <div id="c-cover" class="c-cover" hidden>
+          <div class="c-cover-card">
+            <b>Measuring</b>
+            <span id="c-cover-text">Camera paused so the timing is fair.</span>
+          </div>
+        </div>
+        <div id="c-welcome" class="c-welcome" hidden>
+          <h1>Photo pairs for feature matching</h1>
+          <p id="c-welcome-lede"></p>
+          <ul id="c-welcome-list"></ul>
+          <p class="c-welcome-go">Tap the big button to start the camera.</p>
+        </div>
+        <aside id="c-drawer" class="c-drawer" aria-label="Details" hidden>
+          <nav class="c-tabs" role="tablist">
+            <button type="button" role="tab" data-tab="pairs">Pairs</button>
+            <button type="button" role="tab" data-tab="guide">Guide</button>
+            <button type="button" role="tab" data-tab="results">Results</button>
+            <button type="button" role="tab" data-tab="settings">
+              Settings
+            </button>
+            <button
+              id="c-drawer-close"
+              type="button"
+              class="c-drawer-x"
+              aria-label="Close details"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 3l10 10M13 3L3 13" />
+              </svg>
+            </button>
+          </nav>
+          <div class="c-panel" data-panel="pairs" role="tabpanel">
+            <p id="c-pairs-summary" class="c-hint"></p>
+            <ol id="c-pair-list" class="c-pairlist"></ol>
+            <div class="c-row">
+              <button id="c-download-drawer" type="button" class="c-btn">
+                Download all
+              </button>
+              <span
+                id="c-download-note"
+                class="c-hint"
+                aria-live="polite"
+              ></span>
+            </div>
+            <div class="c-row">
+              <button id="c-add-other" type="button" class="c-btn c-ghostbtn">
+                Add an other pair
+              </button>
+              <button id="c-start-over" type="button" class="c-btn c-ghostbtn">
+                Start over
+              </button>
+            </div>
+            <p class="c-hint">
+              Tap a pair to take it (again). Every file is named by its running
+              number and pair, for example
+              <code>feature-match-03-1b-s2-light-dimmed.zip</code>.
+            </p>
+          </div>
+          <div class="c-panel" data-panel="guide" role="tabpanel" hidden>
+            <h2 id="c-guide-title"></h2>
+            <p id="c-guide-purpose" class="c-guide-purpose"></p>
+            <ol id="c-guide-steps"></ol>
+            <p id="c-guide-avoid" class="c-guide-avoid"></p>
+            <p id="c-guide-spot" class="c-hint" hidden></p>
+            <details id="c-before-start">
+              <summary>Before you start</summary>
+              <ul id="c-before-list"></ul>
+            </details>
+          </div>
+          <div class="c-panel" data-panel="results" role="tabpanel" hidden>
+            <p id="c-light-warn" class="c-warn" role="alert" hidden></p>
+            <div class="c-row">
+              <button id="c-measure-run" type="button" class="c-btn">
+                Run on this pair
+              </button>
+              <span
+                id="c-measure-state"
+                class="c-hint"
+                aria-live="polite"
+              ></span>
+            </div>
+            <div class="c-row">
+              <button id="c-file-a" type="button" class="c-btn c-ghostbtn">
+                Photo A
+              </button>
+              <button id="c-file-b" type="button" class="c-btn c-ghostbtn">
+                Photo B
+              </button>
+              <button id="c-file-info" type="button" class="c-btn c-ghostbtn">
+                Frames JSON
+              </button>
+              <button
+                id="c-file-matches"
+                type="button"
+                class="c-btn c-ghostbtn"
+              >
+                Matches JSON
+              </button>
+              <span id="c-files-state" class="c-hint" aria-live="polite"></span>
+            </div>
+            <div class="c-row">
+              <button
+                id="c-copy-summary"
+                type="button"
+                class="c-btn c-ghostbtn"
+              >
+                Copy summary
+              </button>
+              <span
+                id="c-copy-summary-state"
+                class="c-hint"
+                aria-live="polite"
+              ></span>
+            </div>
+            <div class="c-row">
+              <button id="c-open-flat" type="button" class="c-btn c-ghostbtn">
+                Flat target capture
+              </button>
+            </div>
+            <div id="c-measure-more" class="c-measure"></div>
+          </div>
+          <div class="c-panel" data-panel="settings" role="tabpanel" hidden>
+            <fieldset>
+              <legend>Saving</legend>
+              <label
+                ><input type="radio" name="c-save" value="each" /> Each pair as
+                one zip, by itself</label
+              >
+              <label
+                ><input type="radio" name="c-save" value="end" /> Keep them
+                here, download all at the end</label
+              >
+              <p class="c-hint">
+                A pair whose download was blocked stays on this page: Download
+                all saves every kept pair in one zip.
+              </p>
+            </fieldset>
+            <fieldset>
+              <legend>Countdown after a tap</legend>
+              <label
+                ><input type="radio" name="c-countdown" value="0" /> None</label
+              >
+              <label
+                ><input type="radio" name="c-countdown" value="3" /> 3 s</label
+              >
+              <label
+                ><input type="radio" name="c-countdown" value="5" /> 5 s</label
+              >
+              <label><input id="c-sound" type="checkbox" /> Beep</label>
+            </fieldset>
+            <fieldset>
+              <legend>Light tests at</legend>
+              <label
+                ><input type="radio" name="c-spots" value="1" /> 1 place</label
+              >
+              <label
+                ><input type="radio" name="c-spots" value="2" /> 2 places</label
+              >
+              <label
+                ><input type="radio" name="c-spots" value="3" /> 3 places</label
+              >
+              <p class="c-hint">Fixed once the first photo is taken.</p>
+            </fieldset>
+            <fieldset>
+              <legend>Viewfinder</legend>
+              <label
+                ><input id="c-show-ghost" type="checkbox" checked /> Show photo
+                A faintly while lining up B</label
+              >
+            </fieldset>
+          </div>
+        </aside>
+      </section>
+      <!-- The dock: fixed slots and sizes; text changes inside boxes that never resize. -->
+      <section id="c-dock" class="c-dock" aria-label="Controls">
+        <button
+          id="c-chip"
+          type="button"
+          class="c-chip"
+          aria-label="Pair, open the pair list"
+        >
+          <b id="c-chip-key"></b>
+          <span id="c-chip-label"></span>
+          <span id="c-chip-spot" class="c-spot"></span>
+        </button>
+        <div class="c-progress" aria-label="Progress">
+          <span id="c-progress-text"></span>
+        </div>
+        <div id="c-segs" class="c-segs" aria-hidden="true"></div>
+        <p id="c-instr" class="c-instr" aria-live="polite"></p>
+        <button id="c-shot-a" type="button" class="c-shot" aria-label="Photo A">
+          <span class="c-shot-img"><canvas hidden></canvas></span>
+          <span class="c-shot-tag">A <i id="c-state-a">-</i></span>
+        </button>
+        <span id="c-change" class="c-change" aria-hidden="true">
+          <svg viewBox="0 0 24 12"><path d="M1 6h20M16 1l5 5-5 5" /></svg>
+          <span id="c-change-text"></span>
+        </span>
+        <button id="c-shot-b" type="button" class="c-shot" aria-label="Photo B">
+          <span class="c-shot-img"><canvas hidden></canvas></span>
+          <span class="c-shot-tag">B <i id="c-state-b">-</i></span>
+        </button>
+        <button id="c-retake" type="button" class="c-side-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" />
+          </svg>
+          <span id="c-retake-label">Retake</span>
+        </button>
+        <div class="c-shutter-wrap">
+          <svg class="c-meter" viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="c-meter-bg" cx="50" cy="50" r="46" />
+            <circle id="c-meter-fg" class="c-meter-fg" cx="50" cy="50" r="46" />
+          </svg>
+          <button id="c-shutter" type="button" class="c-shutter">
+            <span id="c-shutter-text">Start</span>
+          </button>
+        </div>
+        <button id="c-next" type="button" class="c-side-btn">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+          </svg>
+          <span>Next pair</span>
+        </button>
+        <div class="c-readouts">
+          <span id="c-read-still" class="c-readout">still: -</span>
+          <span id="c-read-light" class="c-readout">light: -</span>
+          <span id="c-read-mode" class="c-readout">tap</span>
+        </div>
+        <p id="c-status" class="c-status" aria-live="polite"></p>
+        <div class="c-dock-foot">
+          <button
+            id="c-details"
+            type="button"
+            class="c-foot-btn"
+            aria-expanded="false"
+          >
+            Details
+          </button>
+          <button id="c-download-all" type="button" class="c-foot-btn">
+            Download all
+          </button>
+        </div>
+      </section>
+    </div>
+    <!-- The guided run (the default view; ?ui=cockpit shows the cockpit). -->
     <div id="guided" hidden>
       <!-- First run: what, why still, nothing uploaded, what you send back. -->
       <section id="g-intro" class="screen intro" hidden>
@@ -1143,7 +1021,7 @@
       </div>
 
       <!-- Overlay: optional on-phone measurement. The options, the speed
-           test and the results of the four-step view move in here. -->
+           test and the results of the measuring block move in here. -->
       <div
         id="g-sheet-measure"
         class="sheet"

@@ -949,8 +949,6 @@
 }
 
 /* ---- the build only: the four-step view is out of sight ---- */
-:where(html[data-ui="guided"]) body > h1,
-:where(html[data-ui="guided"]) body > .intro,
 :where(html[data-ui="guided"]) body > .layout {
   display: none;
 }
@@ -1051,14 +1049,6 @@
 }
 :where(html[data-ui="guided"]) .measure textarea {
   height: 30vh;
-}
-:where(html[data-ui="guided"]) .measure .light-warning {
-  margin: 0;
-  padding: 10px 12px;
-  border: 2px solid var(--danger);
-  border-radius: 10px;
-  color: var(--danger);
-  font-weight: 600;
 }
 
 /* The wrapper takes no box, so each screen fills the viewport as in the prototype. */
