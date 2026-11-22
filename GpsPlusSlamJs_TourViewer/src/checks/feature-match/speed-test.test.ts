@@ -96,9 +96,10 @@ describe("speedTestInput and speedTestSettings", () => {
         { ...all, backends: ["wasm"] },
         pair(),
         "no WebGPU on this device: WASM instead",
+        1,
       ),
     ).toBe(
-      "long edge 480 (480x360) for the keypoint arms, DINOv2 input 224x224, SIFT cap 512 per frame, XFeat fp16 as the reference, backends wasm (no WebGPU on this device: WASM instead)",
+      "long edge 480 (480x360) for the keypoint arms, DINOv2 input 224x224, SIFT cap 512 per frame, XFeat fp16 as the reference, backends wasm (no WebGPU on this device: WASM instead), ort wasm threads 1",
     );
   });
 });

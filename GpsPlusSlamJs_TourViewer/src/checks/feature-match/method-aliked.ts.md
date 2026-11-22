@@ -27,7 +27,7 @@ The ALIKED + LightGlue method of the benchmark: the split ONNX exports of the AL
 - The export fixes 512 keypoints per frame; the frame is resized to multiples of 32 and the keypoints are mapped back to frame pixels.
 - The matcher takes A and B stacked (`[2, 1, K, 2]` normalized keypoints, `[2, 1, K, 128]` descriptors); its `matches0` (-1 for none) gives the pairs. Matches are LightGlue's own output, not a nearest-neighbour pass.
 - Inputs and outputs are read by name with a fallback to their position.
-- The runtime loads once per page; its Wasm path and thread count are set then (threads only under cross-origin isolation).
+- The runtime loads once per page; its Wasm path and thread count are set then (`ortWasmThreads(isolated, cores)`: up to four threads under cross-origin isolation, else one; the speed report prints the same number).
 - Init is the creation of both sessions; if the second fails, the first is released.
 - 64 MB of models: off by default on the page.
 

@@ -1513,6 +1513,17 @@ test("the flat target capture keeps the photos when the zip fails, and attaches 
   await download.click();
   const saveLink = page.locator("#flat-save-link");
   await expect(saveLink).toBeVisible();
+  // A shot taken after the zip was made makes it stale: its Save link goes
+  // and Download counts the new shot, so the zip saved holds every photo.
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^taken: w40-t0 q2/,
+    AFTER_COUNTDOWN,
+  );
+  await expect(saveLink).toBeHidden();
+  await expect(download).toHaveText("Download zip (3 new)");
+  await download.click();
+  await expect(saveLink).toBeVisible();
   const [zipFile] = await Promise.all([
     page.waitForEvent("download"),
     saveLink.click(),
@@ -1523,8 +1534,36 @@ test("the flat target capture keeps the photos when the zip fails, and attaches 
   const names = (await reader.getEntries()).map((e) => e.filename);
   await reader.close();
   expect(names).toContain("s01-original.png");
+  expect(names.some((n) => /^s01-w40-t0-q2-b\d\.png$/.test(n))).toBe(true);
   await expect(download).toHaveText("Download zip");
   expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: an attached original lives only in the page until
+ * a zip of its surface is saved; a surface with an original and nothing
+ * else yet must still make leaving the page ask first.
+ */
+test("the flat target capture asks before leaving with only an attached original", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await page.locator("#pair").selectOption("flat");
+  await page.locator("#flat-new-file").setInputFiles({
+    name: "poster.png",
+    mimeType: "image/png",
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+  });
+  await page.locator("#flat-new").click();
+  await expect(page.locator("#log")).toContainText("original attached");
+  const dialog = page.waitForEvent("dialog");
+  await page.close({ runBeforeUnload: true });
+  const d = await dialog;
+  expect(d.type()).toBe("beforeunload");
+  await d.accept();
 });
 
 /**
@@ -1550,6 +1589,43 @@ test("the feature matching speed test reports an arm that cannot load", async ({
     await runtimeHeld;
     await route.abort();
   });
+  // A wake lock that counts the locks held; hiding the page drops them, as
+  // the browser does.
+  await page.addInitScript(() => {
+    const w = /** @type {Window & Record<string, unknown>} */ (window);
+    const locks = new Set();
+    w.__locksHeld = () => locks.size;
+    w.__hide = (/** @type {boolean} */ hidden) => {
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => (hidden ? "hidden" : "visible"),
+      });
+      if (hidden) {
+        for (const l of locks) {
+          l.release();
+        }
+      }
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+    Object.defineProperty(navigator, "wakeLock", {
+      configurable: true,
+      value: {
+        request: () => {
+          const t = new EventTarget();
+          const lock = Object.assign(t, {
+            release: () => {
+              if (locks.delete(lock)) {
+                t.dispatchEvent(new Event("release"));
+              }
+              return Promise.resolve();
+            },
+          });
+          locks.add(lock);
+          return Promise.resolve(lock);
+        },
+      },
+    });
+  });
   await page.goto("/feature-match-check.html");
   await expect(page.locator("#log")).toContainText("ready");
   await page.locator("#speed summary").click();
@@ -1562,6 +1638,24 @@ test("the feature matching speed test reports an arm that cannot load", async ({
   await run.click();
   await expect(run).toHaveText("Timing...");
   await expect(run).toBeDisabled();
+  // The screen stays on while it runs; a page hidden meanwhile is named.
+  const locksHeld = () =>
+    page.evaluate(() =>
+      /** @type {() => number} */ (
+        /** @type {Window & Record<string, unknown>} */ (window).__locksHeld
+      )(),
+    );
+  await expect.poll(locksHeld).toBe(1);
+  const hide = (/** @type {boolean} */ hidden) =>
+    page.evaluate((h) => {
+      /** @type {(h: boolean) => void} */ (
+        /** @type {Window & Record<string, unknown>} */ (window).__hide
+      )(h);
+    }, hidden);
+  await hide(true);
+  expect(await locksHeld()).toBe(0);
+  await hide(false);
+  await expect.poll(locksHeld).toBe(1);
   releaseRuntime();
   await expect(page.locator("#speed-state")).toHaveText(
     "done: 1 arms, 1 with errors (see the report)",
@@ -1573,6 +1667,9 @@ test("the feature matching speed test reports an arm that cannot load", async ({
   expect(report).toContain("input: synthetic");
   expect(report).toContain("SIFT cap 512 per frame");
   expect(report).toMatch(/ERROR load: /);
+  expect(report).toContain("ERROR page was hidden during runs");
+  expect(report).toMatch(/ort wasm threads \d/);
+  expect(await locksHeld()).toBe(0);
 
   // Nothing ticked: said at once, nothing run.
   await page.locator("#t-siftlg").uncheck();

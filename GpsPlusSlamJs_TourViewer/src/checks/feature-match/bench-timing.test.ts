@@ -8,6 +8,7 @@ import {
   referenceRatio,
   roundOrder,
   runTiming,
+  runTimingByGroup,
   timingBackends,
   type ArmTiming,
   type TimingArm,
@@ -75,12 +76,35 @@ function arm(
 // Why these tests matter: the steady numbers are only comparable between
 // arms when the first run is kept out and every round gives each arm one
 // run, in an order that moves, so no arm always follows the heaviest one.
+// A plain rotation keeps each arm's successor fixed in all but one
+// position per round; a balanced (Williams) order lets every arm follow
+// every other equally often over a cycle.
 describe("roundOrder", () => {
-  it("rotates the arm order by one each round", () => {
+  it("follows a balanced (Williams) design", () => {
+    expect(roundOrder(4, 0)).toEqual([0, 1, 3, 2]);
+    expect(roundOrder(4, 1)).toEqual([1, 2, 0, 3]);
     expect(roundOrder(3, 0)).toEqual([0, 1, 2]);
-    expect(roundOrder(3, 1)).toEqual([1, 2, 0]);
-    expect(roundOrder(3, 4)).toEqual([1, 2, 0]);
+    expect(roundOrder(3, 3)).toEqual([2, 1, 0]);
+    expect(roundOrder(3, 6)).toEqual([0, 1, 2]);
     expect(roundOrder(0, 3)).toEqual([]);
+  });
+
+  it("property: over a whole cycle every arm follows every other equally often", () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 2, max: 9 }), (count) => {
+        const cycle = count % 2 === 0 ? count : 2 * count;
+        const follows = new Map<string, number>();
+        for (let r = 0; r < cycle; r++) {
+          const o = roundOrder(count, r);
+          for (let i = 1; i < o.length; i++) {
+            const k = `${String(o[i - 1])}>${String(o[i])}`;
+            follows.set(k, (follows.get(k) ?? 0) + 1);
+          }
+        }
+        expect(follows.size).toBe(count * (count - 1));
+        expect(new Set(follows.values()).size).toBe(1);
+      }),
+    );
   });
 
   it("property: every round is a permutation, and over `count` rounds each arm leads once", () => {
@@ -186,6 +210,44 @@ describe("runTiming", () => {
       ),
       { numRuns: 25 },
     );
+  });
+});
+
+// Why: two backends loaded at once compete for memory and the GPU, and a
+// loaded WebGPU session can slow the WASM arms; each group runs alone,
+// its sessions released before the next group loads.
+describe("runTimingByGroup", () => {
+  it("runs each backend group alone, in first-seen order, and keeps the arm order", async () => {
+    const c = clock();
+    const calls: string[] = [];
+    const lines: string[] = [];
+    const arms = [
+      arm("g1", [10], c, calls, { group: "webgpu" }),
+      arm("w1", [20], c, calls, { group: "wasm" }),
+      arm("g2", [30], c, calls, { group: "webgpu" }),
+    ];
+    const loads: string[] = [];
+    for (const a of arms) {
+      const load = a.load.bind(a);
+      a.load = () => {
+        const gone = arms.filter((x) => x.disposed()).map((x) => x.id);
+        loads.push(`${a.id} (${gone.join(",")})`);
+        return load();
+      };
+    }
+    const results = await runTimingByGroup(
+      arms,
+      { runs: 1 },
+      hooks(c.now, lines),
+    );
+    expect(results.map((r) => r.id)).toEqual(["g1", "g2", "w1"]);
+    expect(loads).toEqual(["g1 ()", "g2 ()", "w1 (g1,g2)"]);
+    expect(calls).toEqual(["g1", "g2", "g1", "g2", "w1", "w1"]);
+    expect(lines.filter((l) => l.startsWith("backend "))).toEqual([
+      "backend webgpu: 2 arms",
+      "backend wasm: 1 arm",
+    ]);
+    expect(arms.every((a) => a.disposed())).toBe(true);
   });
 });
 

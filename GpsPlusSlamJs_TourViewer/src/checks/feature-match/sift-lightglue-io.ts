@@ -120,6 +120,12 @@ export function lightGlueSiftFrame(
       `frame size must be positive, got ${String(width)}x${String(height)}`,
     );
   }
+  // Infinity keeps every keypoint.
+  if (!(max >= 1) || (Number.isFinite(max) && !Number.isInteger(max))) {
+    throw new RangeError(
+      `max must be a whole number from 1 or Infinity, got ${String(max)}`,
+    );
+  }
   if (!Number.isInteger(r.n) || r.n < 0) {
     throw new Error(`sift.js: malformed result (n=${String(r.n)})`);
   }

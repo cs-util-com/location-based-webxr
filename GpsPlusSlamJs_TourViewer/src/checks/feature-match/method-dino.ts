@@ -30,13 +30,17 @@ import {
   type AlikedBackend,
 } from "./method-aliked";
 
-/** onnx-community/dinov2-small (Apache-2.0 weights) at a pinned revision. */
+/**
+ * onnx-community/dinov2-small at a pinned revision (an ONNX export of the
+ * original DINOv2 weights, which are Apache-2.0; the export's card names
+ * no licence of its own).
+ */
 const DINO_BASE =
   "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/";
 
 export type DinoVariant = "int8" | "q4f16";
 
-/** The pinned files and their sizes in bytes. */
+/** The pinned files and their sizes in bytes (checked after the download). */
 export const DINO_MODELS: Readonly<
   Record<DinoVariant, { readonly url: string; readonly bytes: number }>
 > = {
@@ -50,8 +54,10 @@ export function dinoTimingArm(
   backend: AlikedBackend,
   deps: LoadDeps,
   input: { readonly a: Frame; readonly b: Frame },
+  options: { readonly bytes?: number } = {},
 ): TimingArm {
   const model = DINO_MODELS[variant];
+  const expectedBytes = options.bytes ?? model.bytes;
   return {
     id: `dinov2-${variant}-${backend}`,
     label: `DINOv2-S/14 ${variant} (onnxruntime-web) ${backend}`,
@@ -61,6 +67,11 @@ export function dinoTimingArm(
       const ort = await loadOrtRuntime(deps);
       const net = { fetch: deps.fetch, now: deps.now, lookup: lookupIn(deps) };
       const file = await fetchBytes(model.url, `DINOv2 ${variant}`, net);
+      if (file.bytes.byteLength !== expectedBytes) {
+        throw new Error(
+          `DINOv2 ${variant}: ${String(file.bytes.byteLength)} bytes, not the pinned ${String(expectedBytes)} (wrong file from ${model.url})`,
+        );
+      }
       const t0 = deps.now();
       const session = await ort.InferenceSession.create(file.bytes, {
         executionProviders: [backend],
@@ -116,7 +127,7 @@ export function dinoTimingArm(
           };
         },
         dispose: () => {
-          void session.release();
+          session.release().catch(() => undefined);
         },
       };
     },

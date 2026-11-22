@@ -11,6 +11,7 @@ import {
   flatProgressText,
   SURFACES_PER_CLASS,
   surfaceSummary,
+  unsavedCount,
   type FlatAction,
   type FlatProgress,
 } from "./flat-progress";
@@ -217,6 +218,28 @@ const action: fc.Arbitrary<FlatAction> = fc.oneof(
     id: fc.option(fc.integer({ min: 1, max: 4 }), { nil: null }),
   }),
 );
+
+describe("unsavedCount", () => {
+  // Why: an attached original exists only in the page until a zip of its
+  // surface was saved; a surface with an original but no reference yet
+  // must not count as having nothing to lose (its memory would be freed
+  // and leaving the page would not warn).
+  it("counts an attached original until its surface's zip was saved", () => {
+    const fresh = flatReducer(EMPTY_PROGRESS, {
+      type: "add-surface",
+      cls: "busy",
+      original: true,
+    });
+    const s = fresh.surfaces[0]!;
+    expect(unsavedCount(s, false)).toBe(0);
+    expect(unsavedCount(s, true)).toBe(1);
+    const saved = flatReducer(
+      flatReducer(fresh, { type: "set-reference", id: 1, reference: REF }),
+      { type: "saved", id: 1 },
+    ).surfaces[0]!;
+    expect(unsavedCount(saved, true)).toBe(0);
+  });
+});
 
 describe("progress properties", () => {
   // Why: whatever the person taps, the stored progress reads back the same,

@@ -36,7 +36,7 @@ import {
  * The site worker's mirror of the pinned model (same origin); the mirror
  * reads COLMAP's 3.13.0 release asset (45,806,253 bytes).
  */
-export const SIFT_LIGHTGLUE_PATH = "/api/model/sift-lightglue.onnx";
+export const SIFT_LIGHTGLUE_PATH = "/api/model/sift-lightglue-3.13.0.onnx";
 /** The pinned file's sha256, as COLMAP's own download check lists it. */
 export const SIFT_LIGHTGLUE_SHA256 =
   "e0500228472b43f92b3d36881a09b3310d3b058b56187b246cc7b9ab6429096e";
@@ -175,7 +175,7 @@ export function siftLightGlueMethod(
         },
         match: (a, b) => matchWith(ort, session, a, b),
         dispose: () => {
-          void session.release();
+          session.release().catch(() => undefined);
         },
       };
     },

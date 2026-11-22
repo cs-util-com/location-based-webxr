@@ -7,7 +7,7 @@ import {
   MODEL_MIRROR_PREFIX,
 } from "./model-mirror";
 
-const NAME = "sift-lightglue.onnx";
+const NAME = "sift-lightglue-3.13.0.onnx";
 const PINNED = MIRRORED_MODELS[NAME]!;
 
 function upstream(body: string, headers: Record<string, string> = {}) {
@@ -42,6 +42,46 @@ describe("handleModelMirror", () => {
     expect(r.headers.get("cache-control")).toContain("immutable");
     expect(r.headers.get("content-type")).toBe("application/octet-stream");
   });
+
+  // Why: an edge cache told to keep everything for a year could keep a
+  // redirect to an expiring signed URL, or an upstream error, for a year.
+  // The browser caches the immutable answer; the edge is not asked to.
+  it("asks no edge cache to keep the upstream answer", async () => {
+    const up = upstream("x", { "content-length": String(PINNED.bytes) });
+    await handleModelMirror(req(`${MODEL_MIRROR_PREFIX}${NAME}`), up.fetch);
+    expect(up.calls[0]!.init).not.toHaveProperty("cf");
+  });
+
+  it("names the release in the route, so an immutable URL always means the same bytes", () => {
+    expect(Object.keys(MIRRORED_MODELS)).toEqual([
+      "sift-lightglue-3.13.0.onnx",
+    ]);
+    expect(PINNED.upstream).toContain("/download/3.13.0/");
+  });
+
+  // Why: the names one character away from an allowed one, an encoded
+  // letter and the object prototype's own keys must all stay unknown.
+  it.each([
+    "sift-lightglue-3.13.0.onnx.bak",
+    "SIFT-LIGHTGLUE-3.13.0.ONNX",
+    "sift-lightglue-3.13.0.onnx/",
+    "%73ift-lightglue-3.13.0.onnx",
+    "sift-lightglue.onnx",
+    "__proto__",
+    "constructor",
+    "hasOwnProperty",
+  ])(
+    "answers 404 for the near miss %s without an upstream request",
+    async (name) => {
+      const up = upstream("x");
+      const r = await handleModelMirror(
+        req(`${MODEL_MIRROR_PREFIX}${name}`),
+        up.fetch,
+      );
+      expect(r.status).toBe(404);
+      expect(up.calls).toEqual([]);
+    },
+  );
 
   it("answers HEAD without a body", async () => {
     const up = upstream("x");

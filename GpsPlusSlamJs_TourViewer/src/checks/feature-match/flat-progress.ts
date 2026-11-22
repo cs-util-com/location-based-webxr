@@ -263,6 +263,19 @@ export function surfaceSummary(s: SurfaceProgress): SurfaceSummary {
   };
 }
 
+/**
+ * What leaving the page would lose of a surface: its unsaved photos and
+ * reference, plus an attached original (it lives only in the page) until
+ * a zip of the surface was saved. Every zip carries the original, and a
+ * zip is saved only with a reference, so a saved reference means a saved
+ * original.
+ */
+export const unsavedCount = (
+  s: SurfaceProgress,
+  originalAttached: boolean,
+): number =>
+  surfaceSummary(s).unsaved + (originalAttached && !s.referenceSaved ? 1 : 0);
+
 export interface ClassSummary {
   readonly cls: SurfaceClass;
   readonly label: string;

@@ -6,7 +6,7 @@ DINOv2-S/14 as a timing arm of the speed test: one forward pass per frame throug
 
 ## Public API
 
-- `DinoVariant` (`int8` | `q4f16`) and `DINO_MODELS`: the files of `onnx-community/dinov2-small` at a pinned revision, int8 24,446,700 bytes, q4f16 13,908,222 bytes.
+- `DinoVariant` (`int8` | `q4f16`) and `DINO_MODELS`: the files of `onnx-community/dinov2-small` at a pinned revision, int8 24,446,700 bytes, q4f16 13,908,222 bytes. A downloaded file of another size is refused before any session is created (`dinoTimingArm`'s optional fifth argument `{ bytes }` replaces the expected size, for tests). A failing session release is swallowed.
 - `dinoTimingArm(variant, backend, deps, { a, b })`: a `TimingArm` in the backend's group, never the reference. `load()` loads the ORT runtime, downloads the file and creates the session (start-up). A run is three phases: preprocess (both frames), forward A, forward B; its note is the cosine A-B. A missing output is an error naming it.
 
 ## Invariants and assumptions
@@ -22,4 +22,4 @@ const arm = dinoTimingArm("int8", "webgpu", browserDeps, sizedPair);
 
 ## Tests
 
-`method-dino.test.ts` with a fake runtime: the pinned variant fetched, both forward passes timed and the CLS cosine reported, and a missing output named.
+`method-dino.test.ts` with a fake runtime: the pinned variant fetched, both forward passes timed and the CLS cosine reported, a missing output named, a file of the wrong size refused before any session, and a failing release swallowed.

@@ -48,7 +48,7 @@ export function speedTestInput(
 /**
  * The arms in load order, per backend: the XFeat reference (fp16, the
  * smallest download) first, then DINOv2, then SIFT + LightGlue (the
- * largest). The run order is rotated per round by the harness anyway.
+ * largest). The harness balances the run order over the rounds anyway.
  */
 export function speedTestArms(
   c: SpeedTestChoice,
@@ -90,6 +90,7 @@ export function speedTestSettings(
   c: SpeedTestChoice,
   input: BenchInput,
   backendNote: string | null,
+  wasmThreads: number,
 ): string {
   const sized = sizeForLongEdge(input.a.width, input.a.height, c.longEdge);
   return [
@@ -98,5 +99,6 @@ export function speedTestSettings(
     `SIFT cap ${String(c.siftCap)} per frame`,
     `XFeat fp16 as the reference`,
     `backends ${c.backends.join("+") || "none"}${backendNote ? ` (${backendNote})` : ""}`,
+    `ort wasm threads ${String(wasmThreads)}`,
   ].join(", ");
 }

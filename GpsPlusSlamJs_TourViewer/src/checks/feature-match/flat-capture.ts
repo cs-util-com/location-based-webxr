@@ -21,6 +21,7 @@ import {
   parseFlatProgress,
   poseSummary,
   surfaceSummary,
+  unsavedCount,
   usableFullLight,
   type FlatAction,
   type FlatProgress,
@@ -217,16 +218,19 @@ export function startFlatCapture(
    */
   const freeOtherPhotos = (keep: number): void => {
     for (const s of progress.surfaces) {
-      if (s.id !== keep && surfaceSummary(s).unsaved === 0) {
+      if (s.id !== keep && unsavedHere(s) === 0) {
         photos.delete(s.id);
       }
     }
   };
 
+  /** What of a surface exists only in this page, its original included. */
+  const unsavedHere = (s: SurfaceProgress): number =>
+    unsavedCount(s, (photos.get(s.id)?.original ?? null) !== null);
+
   /** Photos that exist only in this page: leaving it would lose them. */
   const hasUnsaved = (): boolean =>
-    still !== null ||
-    progress.surfaces.some((s) => surfaceSummary(s).unsaved > 0);
+    still !== null || progress.surfaces.some((s) => unsavedHere(s) > 0);
 
   const dropPrepared = (): void => {
     if (prepared) {
@@ -252,7 +256,7 @@ export function startFlatCapture(
     try {
       const lock = await navigator.wakeLock.request("screen");
       if (!isOpen || wakeLock !== null) {
-        void lock.release();
+        lock.release().catch(() => undefined);
         return;
       }
       wakeLock = lock;

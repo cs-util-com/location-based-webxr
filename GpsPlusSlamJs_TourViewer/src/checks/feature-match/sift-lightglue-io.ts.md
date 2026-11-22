@@ -10,7 +10,7 @@ The pure conversion between sift.js results and the inputs of COLMAP's `sift-lig
 - `LIGHTGLUE_SIFT_INPUTS`: the model's ten input names in order (keypoints, descriptors, scales and orientations of each image, plus the image sizes).
 - `rootSiftFloat(desc, n)`: sift.js already outputs RootSIFT scaled by 512 as uint8; this undoes the quantization with an L2 normalization only (no second square root). An all-zero row stays zero. `RangeError` for a buffer shorter than `n` rows.
 - `wrapAngle(a)`: an angle into (-pi, pi], as the model's training data had it; `RangeError` for a non-finite angle.
-- `LightGlueSiftFrame` and `lightGlueSiftFrame(r, max, width, height)`: one frame's inputs, cut to the first `max` keypoints (sift.js orders them strongest first), positions kept as they are (pixel centres at integers). Throws naming the field for a missing or short buffer, `RangeError` for a bad `max`.
+- `LightGlueSiftFrame` and `lightGlueSiftFrame(r, max, width, height)`: one frame's inputs, cut to the first `max` keypoints (sift.js orders them strongest first), positions kept as they are (pixel centres at integers). Throws naming the field for a missing or short buffer, `RangeError` for a `max` that is not a whole number from 1 (`Infinity` keeps every keypoint).
 - `FloatFeed` and `lightGlueSiftFeeds(a, b)`: the ten feeds with batch-1 shapes.
 
 ## Invariants and assumptions

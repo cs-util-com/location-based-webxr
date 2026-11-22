@@ -119,15 +119,55 @@ export function timingBackends(
 }
 
 /**
- * The arm order of a round: rotated by one each round, so no arm always
- * runs first (after a pause) or right after the heaviest one.
+ * The arm order of a round, from a balanced (Williams) design: row
+ * 0, 1, n-1, 2, n-2, ... shifted by the round, and for an odd count the
+ * mirrored rows in the second half of a cycle of 2n rounds. Over a cycle
+ * (n rounds, 2n for odd n) every arm leads equally often and follows every
+ * other arm equally often, so no arm always runs right after the heaviest.
  */
 export function roundOrder(count: number, round: number): number[] {
   if (!Number.isInteger(count) || count < 0) {
     throw new RangeError(`count must be a whole number, got ${String(count)}`);
   }
-  const shift = count === 0 ? 0 : ((round % count) + count) % count;
-  return Array.from({ length: count }, (_, i) => (i + shift) % count);
+  if (count === 0) {
+    return [];
+  }
+  const cycle = count % 2 === 0 ? count : 2 * count;
+  const r = ((round % cycle) + cycle) % cycle;
+  const shift = r % count;
+  const row = Array.from({ length: count }, (_, k) => {
+    const base = k === 0 ? 0 : k % 2 === 1 ? (k + 1) / 2 : count - k / 2;
+    return (base + shift) % count;
+  });
+  return r >= count ? row.reverse() : row;
+}
+
+/**
+ * runTiming once per backend group, one group after another in the order
+ * the groups first appear, so the sessions of one backend are released
+ * before the next backend loads; the results keep the arm order within a
+ * group, groups in that order.
+ */
+export async function runTimingByGroup(
+  arms: readonly TimingArm[],
+  options: { readonly runs: number },
+  hooks: TimingHooks,
+): Promise<ArmTiming[]> {
+  const groups: string[] = [];
+  for (const a of arms) {
+    if (!groups.includes(a.group)) {
+      groups.push(a.group);
+    }
+  }
+  const results: ArmTiming[] = [];
+  for (const g of groups) {
+    const of = arms.filter((a) => a.group === g);
+    hooks.log(
+      `backend ${g}: ${String(of.length)} arm${of.length === 1 ? "" : "s"}`,
+    );
+    results.push(...(await runTiming(of, options, hooks)));
+  }
+  return results;
 }
 
 /** Collected samples of one arm while the rounds run. */

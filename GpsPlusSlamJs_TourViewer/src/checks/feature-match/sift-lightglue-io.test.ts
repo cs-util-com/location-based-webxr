@@ -145,6 +145,22 @@ describe("lightGlueSiftFrame", () => {
     expect(f.scales.length).toBe(2);
   });
 
+  // Why: a cap of 0, a fraction or NaN would silently give an empty or
+  // odd-sized input instead of an error naming the cap.
+  it.each([0, -1, 1.5, Number.NaN])("refuses the cap %s", (max) => {
+    const r = {
+      n: 0,
+      x: [],
+      y: [],
+      scale: [],
+      angle: [],
+      desc: new Uint8Array(),
+    };
+    expect(() => lightGlueSiftFrame(r as never, max, 10, 10)).toThrow(
+      RangeError,
+    );
+  });
+
   it("refuses a result without scales or orientations, or short buffers", () => {
     const r = result(2, () => [1]);
     expect(() =>

@@ -10,7 +10,7 @@ The speed test's arm list from the page's choices: per backend the XFeat fp16 re
 - `SPEED_LONG_EDGES` (480, 640, 960) and `SPEED_SIFT_CAPS` (512, 1024): what the page offers.
 - `speedTestInput(input, longEdge)`: both frames resized once, the known warp of a synthetic pair kept.
 - `speedTestArms(choice, input, deps)`: per backend, in load order XFeat (the group's reference), DINOv2, SIFT + LightGlue; the harness rotates the run order anyway.
-- `speedTestSettings(choice, input, backendNote)`: the settings line every number rests on (long edge and real size, DINOv2 224x224, SIFT cap, the reference, backends and the WebGPU fallback note).
+- `speedTestSettings(choice, input, backendNote, wasmThreads)`: the settings line every number rests on (long edge and real size, DINOv2 224x224, SIFT cap, the reference, backends and the WebGPU fallback note, and `ort wasm threads N`).
 
 ## Invariants and assumptions
 
@@ -21,7 +21,12 @@ The speed test's arm list from the page's choices: per backend the XFeat fp16 re
 
 ```ts
 const arms = speedTestArms(choice, pair.input, browserDeps);
-const line = speedTestSettings(choice, pair.input, note);
+const line = speedTestSettings(
+  choice,
+  pair.input,
+  note,
+  ortWasmThreads(crossOriginIsolated, navigator.hardwareConcurrency),
+);
 ```
 
 ## Tests

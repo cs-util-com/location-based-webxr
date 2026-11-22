@@ -60,11 +60,13 @@ import { syntheticPair } from "./bench-synthetic";
 import {
   formatTimingReport,
   parseTimingRuns,
-  runTiming,
+  runTimingByGroup,
   timingBackends,
 } from "./bench-timing";
 import { startFlatCapture } from "./flat-capture";
+import { ortWasmThreads } from "./method-aliked";
 import type { DinoVariant } from "./method-dino";
+import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
 import {
   SPEED_LONG_EDGES,
   SPEED_SIFT_CAPS,
@@ -1127,22 +1129,46 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
     ui.report.value = "";
-    const settingsLine = speedTestSettings(choice, pair.input, note);
+    const settingsLine = speedTestSettings(
+      choice,
+      pair.input,
+      note,
+      ortWasmThreads(
+        globalThis.crossOriginIsolated === true,
+        navigator.hardwareConcurrency,
+      ),
+    );
     log(
       `speed test: ${String(arms.length)} arms, ${String(runs)} runs; ${settingsLine}`,
     );
-    const results = await runTiming(
-      arms,
-      { runs },
-      {
-        now: () => performance.now(),
-        yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
-        log: (line) => {
-          log(line);
-          ui.speedState.textContent = `running: ${line}`;
+    // A hidden page or a dark screen is throttled: keep the screen on, and
+    // say in the report when the page was hidden anyway.
+    const guard = guardRun({
+      doc: document,
+      wakeLock: "wakeLock" in navigator ? navigator.wakeLock : undefined,
+      log: (line) => log(`speed test: ${line}`),
+    });
+    let results;
+    try {
+      results = await runTimingByGroup(
+        arms,
+        { runs },
+        {
+          now: () => performance.now(),
+          yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
+          log: (line) => {
+            log(line);
+            ui.speedState.textContent = `running: ${line}`;
+          },
         },
-      },
-    );
+      );
+    } finally {
+      guard.end();
+    }
+    if (guard.wasHidden()) {
+      errors.push(HIDDEN_DURING_RUNS);
+      log(`ERROR speed test: ${HIDDEN_DURING_RUNS}`);
+    }
     ui.report.value = formatTimingReport({
       startedAt,
       device,

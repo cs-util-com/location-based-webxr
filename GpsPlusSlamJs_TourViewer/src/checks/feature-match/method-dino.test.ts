@@ -67,10 +67,13 @@ describe("dinoTimingArm", () => {
   it("fetches the pinned variant, times both forward passes and reports the CLS cosine", async () => {
     const ort = fakeOrt();
     const fetched: string[] = [];
-    const arm = dinoTimingArm("q4f16", "wasm", deps(ort.api, fetched), {
-      a: grey(255),
-      b: grey(255),
-    });
+    const arm = dinoTimingArm(
+      "q4f16",
+      "wasm",
+      deps(ort.api, fetched),
+      { a: grey(255), b: grey(255) },
+      { bytes: 8 },
+    );
     expect(arm.group).toBe("wasm");
     expect(arm.reference).toBe(false);
     const loaded = await arm.load();
@@ -103,12 +106,53 @@ describe("dinoTimingArm", () => {
           run: () => Promise.resolve({}),
           release: () => Promise.resolve(),
         });
-    const loaded = await dinoTimingArm("int8", "wasm", deps(ort.api, []), {
-      a: grey(1),
-      b: grey(2),
-    }).load();
+    const loaded = await dinoTimingArm(
+      "int8",
+      "wasm",
+      deps(ort.api, []),
+      { a: grey(1), b: grey(2) },
+      { bytes: 8 },
+    ).load();
     await expect(loaded.step()).rejects.toThrow(
       "DINOv2: no last_hidden_state output",
     );
+  });
+
+  // Why: a file of another size is another model (or an error page); its
+  // timings would be reported as the pinned variant's.
+  it("refuses a file that is not the pinned size, before any session", async () => {
+    const ort = fakeOrt();
+    await expect(
+      dinoTimingArm("int8", "wasm", deps(ort.api, []), {
+        a: grey(1),
+        b: grey(2),
+      }).load(),
+    ).rejects.toThrow(/DINOv2 int8: 8 bytes, not the pinned 24446700/);
+    expect(ort.created).toEqual([]);
+  });
+
+  // Why: a release that fails after the run must not become an unhandled
+  // rejection (the page logs those as errors of the run).
+  it("swallows a failing session release", async () => {
+    const ort = fakeOrt();
+    const create = ort.api.InferenceSession.create;
+    ort.api.InferenceSession.create = async (b, o) => ({
+      ...(await create(b, o)),
+      release: () => Promise.reject(new Error("gone")),
+    });
+    const loaded = await dinoTimingArm(
+      "int8",
+      "wasm",
+      deps(ort.api, []),
+      { a: grey(1), b: grey(2) },
+      { bytes: 8 },
+    ).load();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", onUnhandled);
+    loaded.dispose();
+    await new Promise((r) => setTimeout(r, 10));
+    process.off("unhandledRejection", onUnhandled);
+    expect(unhandled).toEqual([]);
   });
 });

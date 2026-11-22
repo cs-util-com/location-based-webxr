@@ -19,7 +19,7 @@ export interface MirroredModel {
 export const MIRRORED_MODELS: Readonly<Record<string, MirroredModel>> = {
   // COLMAP 3.13.0 release asset (BSD-3-Clause); the LightGlue weights it
   // carries are Apache-2.0. Its sha256 is checked by the page that loads it.
-  "sift-lightglue.onnx": {
+  "sift-lightglue-3.13.0.onnx": {
     upstream:
       "https://github.com/colmap/colmap/releases/download/3.13.0/sift-lightglue.onnx",
     bytes: 45_806_253,
@@ -61,9 +61,7 @@ export async function handleModelMirror(
     upstream = await fetchImpl(model.upstream, {
       method: request.method,
       redirect: "follow",
-      // Cloudflare edge cache; ignored outside a worker.
-      cf: { cacheEverything: true, cacheTtl: 31_536_000 },
-    } as RequestInit);
+    });
   } catch (e) {
     return jsonError(
       502,

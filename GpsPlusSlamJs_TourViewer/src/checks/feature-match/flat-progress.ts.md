@@ -18,6 +18,7 @@ The progress of the flat target capture as a pure reducer: which surfaces were s
 - `usableFullLight(mean)`.
 - `afterReload(progress)`: drops unsaved shots and an unsaved reference (their photos were in memory).
 - `poseSummary`, `surfaceSummary` (poses complete, photos, captures not yet downloaded, reference included), `classSummary` (started and complete against the target per class).
+- `unsavedCount(s, originalAttached)`: what leaving the page would lose of a surface, `surfaceSummary(s).unsaved` plus 1 for an attached original until the surface's zip was saved (a zip is saved only with a reference and always carries the original, so `referenceSaved` stands for it).
 - `flatProgressText(p)` and `parseFlatProgress(text)`: the stored form; any unreadable part gives `EMPTY_PROGRESS`, never a throw.
 
 ## Invariants and assumptions

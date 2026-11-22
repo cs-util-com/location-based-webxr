@@ -143,6 +143,7 @@ describe("siftLightGlueMethod", () => {
       siftLightGlueMethod("wasm", deps(ort.api, fetched)).init(),
     ).rejects.toThrow(/sha256 .* is not the pinned model's e0500228472b/);
     expect(fetched[0]).toContain(SIFT_LIGHTGLUE_PATH);
+    expect(SIFT_LIGHTGLUE_PATH).toBe("/api/model/sift-lightglue-3.13.0.onnx");
     expect(ort.created).toEqual([]);
     expect(SIFT_LIGHTGLUE_SHA256).toHaveLength(64);
   });
@@ -161,6 +162,29 @@ describe("siftLightGlueMethod", () => {
     };
     expect((await runner.match(empty, empty)).length).toBe(0);
     expect(ort.runs).toEqual([]);
+  });
+});
+
+// Why: a release that fails after the run must not become an unhandled
+// rejection (the page logs those as errors of the run).
+describe("siftLightGlueMethod dispose", () => {
+  it("swallows a failing session release", async () => {
+    const ort = fakeOrt();
+    const create = ort.api.InferenceSession.create;
+    ort.api.InferenceSession.create = async (b, o) => ({
+      ...(await create(b, o)),
+      release: () => Promise.reject(new Error("gone")),
+    });
+    const runner = await siftLightGlueMethod("wasm", deps(ort.api, []), {
+      sha256: await sha256Hex(MODEL),
+    }).init();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => unhandled.push(e);
+    process.on("unhandledRejection", onUnhandled);
+    runner.dispose();
+    await new Promise((r) => setTimeout(r, 10));
+    process.off("unhandledRejection", onUnhandled);
+    expect(unhandled).toEqual([]);
   });
 });
 

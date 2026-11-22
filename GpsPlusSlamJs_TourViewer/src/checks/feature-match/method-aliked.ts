@@ -86,17 +86,27 @@ export function ortApi(mod: unknown): OrtApi {
 const runtimes = new WeakMap<LoadDeps["importModule"], Promise<OrtApi>>();
 
 /** The runtime, imported and configured once per page (per `importModule`). */
+/**
+ * The onnxruntime-web WASM thread count: threads need cross-origin
+ * isolation, so without it one thread; with it up to four.
+ */
+export function ortWasmThreads(
+  isolated: boolean,
+  cores: number | undefined,
+): number {
+  return isolated ? Math.max(1, Math.min(4, Math.floor(cores ?? 1))) : 1;
+}
+
 export function loadOrtRuntime(deps: LoadDeps): Promise<OrtApi> {
   let p = runtimes.get(deps.importModule);
   if (!p) {
     p = deps.importModule(ORT_URL).then((mod) => {
       const ort = ortApi(mod);
       ort.env.wasm.wasmPaths = ORT_WASM_DIR;
-      // Threads need cross-origin isolation; without it one thread.
-      ort.env.wasm.numThreads =
-        globalThis.crossOriginIsolated === true
-          ? Math.min(4, globalThis.navigator?.hardwareConcurrency ?? 1)
-          : 1;
+      ort.env.wasm.numThreads = ortWasmThreads(
+        globalThis.crossOriginIsolated === true,
+        globalThis.navigator?.hardwareConcurrency,
+      );
       return ort;
     });
     p.catch(() => runtimes.delete(deps.importModule));
@@ -236,8 +246,8 @@ export function alikedMethod(
         extract: (frame) => extractWith(ort, extractor, frame),
         match: (a, b) => matchWith(ort, matcher, a, b),
         dispose: () => {
-          void extractor.release();
-          void matcher.release();
+          extractor.release().catch(() => undefined);
+          matcher.release().catch(() => undefined);
         },
       };
     },
