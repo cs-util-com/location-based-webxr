@@ -420,22 +420,31 @@ test.describe("character maker", () => {
   // would put a fresh draft in its place; an Undo of that Discard would
   // bring back a draft the library had saved without marking it, and the
   // next save would make a second copy. So Discard waits while the
-  // character is saved, like Start over, and once the save has ended the
-  // library view shows the one character and no unfinished draft.
+  // character is saved, like Start over, and says why; once the save has
+  // ended the library view shows the one character and no unfinished
+  // draft. The library writes are held, not the pictures: while the
+  // pictures are written the save's own generation check already stops
+  // it, so only the library write needs the wait.
   test("Discard waits while the character is saved", async ({ page }) => {
-    await page.addInitScript(slowSeams);
     await toStep4(page);
     await bringPicture(page, drawSheet);
     await expect(page.locator('[data-panel="4"]')).toBeVisible();
     await page.locator("#nextBtn").click();
     await page.locator("#charName").fill("Ranger Rita");
-    await page.evaluate(() => {
-      /** @type {any} */ (window).__pngDelay = 800;
-    });
+    await page.evaluate(holdWrites);
     await page.locator("#nextBtn").click();
-    await expect(page.locator("#nextBtn")).toHaveText("Saving...");
+    await expect.poll(() => counter(page, "__writesHeld")).toBeGreaterThan(0);
     await page.locator("#toHome").click();
-    await expect(page.locator("#draftRow [data-discard]")).toBeDisabled();
+    const discard = page.locator("#draftRow [data-discard]");
+    await expect(discard).toBeDisabled();
+    await expect(discard).toHaveAttribute(
+      "title",
+      "Discard waits until the character is saved",
+    );
+    await expect(page.locator("#draftRow [data-saving]")).toHaveText(
+      "Saving...",
+    );
+    await page.evaluate(() => /** @type {any} */ (window).__releaseWrites());
     await expect(page.locator("#libCount")).toHaveText("1 character");
     await expect(page.locator("#draftRow")).toBeHidden();
     await expect(page.locator("#toasts")).toContainText(
@@ -473,7 +482,9 @@ test.describe("character maker", () => {
   // Why: once the library writes, the save goes through even when a new
   // picture starts another character meanwhile; the new draft is not
   // marked as saved, so the toast must not read as if this page still
-  // showed the saved one: it says where the character went.
+  // showed the saved one: it says where the character went. The new
+  // picture is not lost either: its cut arrives, it is not shown as saved,
+  // and saving it makes a second character, not a change of the first.
   test("a new picture while the library writes leaves an honest toast", async ({
     page,
   }) => {
@@ -495,8 +506,22 @@ test.describe("character maker", () => {
       "Saved on this device: Ranger Rita. A new character was started meanwhile",
     );
     await expect(page.locator("#savedBox")).toBeHidden();
+    await expect(page.locator('[data-panel="4"]')).toBeVisible({
+      timeout: 15000,
+    });
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#savedBox")).toBeHidden();
+    // The new picture goes on with the same draft, its name included.
+    await expect(page.locator("#charName")).toHaveValue("Ranger Rita");
+    await page.locator("#charName").fill("Ranger Rob");
+    await page.locator("#nextBtn").click();
+    await expect(page.locator("#savedBox")).toContainText(
+      "Ranger Rob is on this device now",
+    );
     await page.reload();
-    await expect(page.locator("#libCount")).toHaveText("1 character");
+    await expect(page.locator("#libCount")).toHaveText("2 characters");
+    await expect(page.locator("#libList")).toContainText("Ranger Rita");
+    await expect(page.locator("#libList")).toContainText("Ranger Rob");
   });
 
   // Why: Start over sits in the header next to the save; while the
