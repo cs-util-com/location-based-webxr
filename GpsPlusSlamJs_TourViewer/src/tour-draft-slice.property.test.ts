@@ -105,6 +105,22 @@ function actionOf(s: Step, state: TourDraftState) {
   }
 }
 
+/**
+ * One step as the pages take it. "Not now" on both pages dispatches
+ * `declined` and, when it landed, drops the edits that waited
+ * (`gate.drop()` in `creator-draft.ts` and `editor/draft-offer.ts`), and
+ * the gate then reports a count of 0. The reducer alone never sees a
+ * decline without that drop, so the model takes both: `declined` on its
+ * own would leave a put-off offer with edits waiting, a state no page
+ * reaches.
+ */
+function stepOn(state: TourDraftState, s: Step): TourDraftState {
+  const next = tourDraftReducer(state, actionOf(s, state));
+  if (s.kind !== "decline" || next.status !== "declined") return next;
+  if (state.status === "declined") return next;
+  return tourDraftReducer(next, a.editsWaitingChanged({ count: 0 }));
+}
+
 const undecided = (s: TourDraftState) =>
   s.status === "offered" || s.status === "declined";
 
@@ -117,8 +133,7 @@ describe("the draft question over random sequences", () => {
         let decidedInQuestion = false;
         for (const s of steps) {
           const before = state;
-          const action = actionOf(s, state);
-          state = tourDraftReducer(state, action);
+          state = stepOn(state, s);
           const late = "late" in s && s.late > 0;
           // A late answer changes nothing at all.
           expect(late ? state : before).toEqual(before);
@@ -182,13 +197,27 @@ describe("the draft question over random sequences", () => {
       fc.property(fc.array(step, { maxLength: 30 }), (steps) => {
         let state = initialTourDraftState;
         for (const s of steps) {
-          state = tourDraftReducer(state, actionOf(s, state));
+          state = stepOn(state, s);
           expect(state.editsWaiting > 0 && state.status === "declined").toBe(
             false,
           );
         }
       }),
-      { numRuns: 300 },
+      {
+        numRuns: 300,
+        // A sequence that once failed here: an edit waited through the
+        // read, the offer showed, and "Not now" was tapped.
+        examples: [
+          [
+            [
+              { kind: "count", count: 1 },
+              { kind: "read" },
+              { kind: "found", late: 0 },
+              { kind: "decline", late: 0 },
+            ],
+          ],
+        ],
+      },
     );
   });
 });
