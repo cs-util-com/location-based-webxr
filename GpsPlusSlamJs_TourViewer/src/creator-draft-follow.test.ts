@@ -19,7 +19,14 @@ import type {
 import { TOUR_OBJECT_RECORD_FORMAT } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { draftKeyForTour } from "./authoring-draft.js";
 import { wireCreatorDraft } from "./creator-draft.js";
-import { META_KEY, objectKey, photoKey } from "./draft-persistence.js";
+import {
+  CODES_KEY,
+  CODES_REJECTED,
+  META_KEY,
+  objectKey,
+  photoKey,
+  SETTINGS_REJECTED,
+} from "./draft-persistence.js";
 import {
   DRAFT_PART_UNREAD,
   parseSettingsRecord,
@@ -63,12 +70,19 @@ function namespaces(options: { unreadable?: string } = {}) {
 }
 
 function element() {
+  const clicks: (() => void)[] = [];
   return {
     hidden: true,
     disabled: false,
     textContent: "",
     value: "0.2",
-    addEventListener: () => undefined,
+    addEventListener: (_type: string, listener: () => void) => {
+      clicks.push(listener);
+    },
+    /** A tap on it: its listeners, in order. */
+    click: () => {
+      for (const listener of clicks) listener();
+    },
   };
 }
 
@@ -77,39 +91,45 @@ function flush(): Promise<void> {
   return settle(() => [memoryDraftOps()]);
 }
 
+/** A code this page measured: what its codes facade holds. */
+type PageCode = { id: string; json: string };
+
 async function wired(
   ns: ReturnType<typeof namespaces>,
   tour = tourOf([pin("a")]),
+  url = OLD,
+  pageCode: PageCode | null = null,
 ) {
   const store = createTourViewerStore();
   const ctx = createTourViewerSession(store);
   ctx.tourDocument.open(tour);
+  const dom = {
+    sizeInput: element(),
+    draftOffer: element(),
+    draftOfferText: element(),
+    draftRestore: element(),
+    draftDismiss: element(),
+    draftDiscard: element(),
+  };
   const draft = wireCreatorDraft({
     ctx,
-    dom: {
-      sizeInput: element(),
-      draftOffer: element(),
-      draftOfferText: element(),
-      draftRestore: element(),
-      draftDismiss: element(),
-      draftDiscard: element(),
-    } as never,
+    dom: dom as never,
     openDraftStore: ns.open,
     visitLog: createVisitLog(),
     codes: {
-      inHand: () => null,
+      inHand: () => pageCode,
       restoreInHand: () => undefined,
       restoreLevels: () => undefined,
-      notHosted: () => [],
+      notHosted: () => (pageCode === null ? [] : [pageCode]),
     } as never,
     wizard: { revealStep: () => undefined },
     sessionLive: () => false,
     syncPreviews: () => undefined,
     render: () => undefined,
   });
-  draft.present(OLD);
+  draft.present(url);
   await flush();
-  return { ctx, draft };
+  return { ctx, draft, dom };
 }
 
 describe("the phone's draft of an older format", () => {
@@ -453,5 +473,275 @@ describe("the phone draft keeps the versions a running save wrote", () => {
     const { ctx } = await wired(ns, saved);
     expect(ctx.placementNote ?? "").not.toContain("newer");
     expect(ns.files(OLD).has(objectKey("a"))).toBe(true);
+  });
+});
+
+describe("Delete it's commit point holds the settings and codes records", () => {
+  const RENAMED = { needsNoGps: false, details: { title: "The castle walk" } };
+  const LEVEL = { id: "old", json: "{}" };
+
+  /** OLD's namespace with a stamped meta and `files`. */
+  async function seeded(files: Record<string, string>) {
+    const ns = namespaces();
+    const space = await ns.open(draftKeyForTour(OLD));
+    await space.put(
+      META_KEY,
+      JSON.stringify({
+        format: TOUR_OBJECT_RECORD_FORMAT,
+        tourUrl: OLD,
+        sizeM: 0.16,
+      }),
+    );
+    for (const [key, text] of Object.entries(files)) await space.put(key, text);
+    return ns;
+  }
+
+  /** A page with OLD's draft offered, "Delete it" tapped and landed, and
+   *  the record's removal held: a settings write issued now waits behind
+   *  it, as a rename that waited for the answer does. */
+  async function deletedWithRemovalHeld() {
+    const ns = await seeded({
+      [SETTINGS_KEY]: JSON.stringify({
+        needsNoGps: false,
+        details: { title: "An older name" },
+      }),
+    });
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the record is offered").toBe(false);
+    ns.holdRemovesOf = new RegExp(`^${SETTINGS_KEY}$`);
+    page.dom.draftDiscard.click();
+    await flush();
+    expect(page.dom.draftOffer.hidden, "Delete it landed").toBe(true);
+    const saved = page.draft.saveSettings(RENAMED);
+    return { ns, page, saved };
+  }
+
+  // Why: a settings write issued after a landed "Delete it" is newer than
+  // the rejection and must claim it. Run once the tour had closed, the
+  // claim was skipped (it read the closed tour's lists): the record landed
+  // under a meta that still rejected it, nothing was said, and the next
+  // open swept it - the rename lost without a word.
+  it("a settings write that runs after the tour closed claims the rejection, and the next open offers it", async () => {
+    const { ns, page, saved } = await deletedWithRemovalHeld();
+    page.draft.reset();
+    ns.releasePuts();
+    expect(await saved).toBe(true);
+    await flush();
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the rename is offered").toBe(false);
+  });
+
+  // Why: the same write, run once a Finish moved the draft to the saved
+  // file's key: the claim read the new namespace's lists, the record
+  // landed in the old one under its rejection, the copy carried both, and
+  // the new namespace's meta rejected the record again.
+  it("a settings write that runs after the draft followed a Finish claims the rejection there too", async () => {
+    const { ns, page, saved } = await deletedWithRemovalHeld();
+    const moved = page.draft.follow(NEW);
+    await flush();
+    ns.releasePuts();
+    expect(await saved).toBe(true);
+    expect(await moved).toBe(true);
+    await flush();
+    const next = await wired(ns, tourOf([pin("a")]), NEW);
+    expect(next.dom.draftOffer.hidden, "the rename is offered").toBe(false);
+  });
+
+  // Why: a close and a reopen in the same tab while "Delete it"'s commit
+  // was on its way: the reopen read the record before the commit landed
+  // and the rest after it, and offered the record alone - a record the
+  // creator had just deleted, back as the draft.
+  it("a reopen whose read the commit lands in the middle of offers nothing", async () => {
+    const ns = await seeded({ [SETTINGS_KEY]: JSON.stringify(RENAMED) });
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the record is offered").toBe(false);
+    ns.holdPutsOf = new RegExp(`^${META_KEY}$`);
+    page.dom.draftDiscard.click();
+    page.draft.reset();
+    page.draft.present(OLD);
+    await flush();
+    ns.releasePuts();
+    await flush();
+    expect(page.dom.draftOffer.hidden, "nothing is offered").toBe(true);
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "nor at the next open").toBe(true);
+  });
+
+  // Why: the codes record goes with the draft, so the commit names it as
+  // it names the settings record. Replaced only after the commit, a tab
+  // closed right after it left the deleted code on disk, and the next
+  // open offered it again.
+  it("a tab closed right after the commit landed leaves the codes record inert", async () => {
+    const ns = await seeded({
+      [CODES_KEY]: JSON.stringify({ level: LEVEL, levels: [LEVEL] }),
+    });
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the code is offered").toBe(false);
+    ns.crashAfter = 1;
+    page.dom.draftDiscard.click();
+    await flush();
+    ns.crashAfter = null;
+    const meta = JSON.parse(ns.files(OLD).get(META_KEY) as string) as {
+      rejected?: string[];
+    };
+    expect(meta.rejected).toContain(CODES_REJECTED);
+    expect(meta.rejected).toContain(SETTINGS_REJECTED);
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "nothing is offered").toBe(true);
+    await flush();
+    expect(
+      (ns.files(OLD).get(CODES_KEY) as string | undefined) ?? "",
+      "the next open dropped the deleted code",
+    ).not.toContain('"old"');
+  });
+
+  // Why: the codes record holds the page's own codes beside the waiting
+  // draft's. Named in the commit while the page held a code, a tab closed
+  // between the commit and the record's rewrite left the page's code
+  // inert, and the next open dropped it: a code measured while the offer
+  // waited, lost without a word. With page codes the record is rewritten
+  // after the commit instead; a crash then offers the deleted draft's
+  // codes again, beside the page's, which is visible and recoverable.
+  it("a tab closed right after the commit keeps a code the page measured", async () => {
+    const ns = await seeded({
+      [CODES_KEY]: JSON.stringify({ level: LEVEL, levels: [LEVEL] }),
+    });
+    const mine = { id: "mine", json: "{}" };
+    const page = await wired(ns, tourOf([pin("a")]), OLD, mine);
+    expect(page.dom.draftOffer.hidden, "the code is offered").toBe(false);
+    expect(ns.files(OLD).get(CODES_KEY) as string).toContain('"mine"');
+    ns.crashAfter = 1;
+    page.dom.draftDiscard.click();
+    await flush();
+    ns.crashAfter = null;
+    const next = await wired(ns);
+    await flush();
+    expect(
+      (ns.files(OLD).get(CODES_KEY) as string | undefined) ?? "",
+      "the page's code is still on disk",
+    ).toContain('"mine"');
+    expect(next.dom.draftOffer.hidden, "and offered").toBe(false);
+  });
+
+  // Why: a code measured after "Delete it" is newer than the rejection:
+  // its write claims the codes record, or the next open would hide it.
+  it("a code measured after Delete it claims the codes record, and the next open offers it", async () => {
+    const ns = await seeded({
+      [CODES_KEY]: JSON.stringify({ level: LEVEL, levels: [LEVEL] }),
+    });
+    const page = await wired(ns);
+    page.dom.draftDiscard.click();
+    await flush();
+    const fresh = { id: "fresh", json: "{}" };
+    expect(await page.draft.saveCodes({ level: fresh, levels: [fresh] })).toBe(
+      true,
+    );
+    await flush();
+    const meta = JSON.parse(ns.files(OLD).get(META_KEY) as string) as {
+      rejected?: string[];
+    };
+    expect(meta.rejected ?? []).not.toContain(CODES_REJECTED);
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the new code is offered").toBe(false);
+  });
+
+  // Why: the same claim once the tour closed before the code's write ran:
+  // it claims the rejection by the namespace's own meta.
+  it("a code write that runs after the tour closed claims the rejection, and the next open offers it", async () => {
+    const ns = await seeded({
+      [CODES_KEY]: JSON.stringify({ level: LEVEL, levels: [LEVEL] }),
+    });
+    const page = await wired(ns);
+    ns.holdRemovesOf = new RegExp(`^${CODES_KEY}$`);
+    page.dom.draftDiscard.click();
+    await flush();
+    const fresh = { id: "fresh", json: "{}" };
+    const saved = page.draft.saveCodes({ level: fresh, levels: [fresh] });
+    page.draft.reset();
+    ns.releasePuts();
+    expect(await saved).toBe(true);
+    await flush();
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the new code is offered").toBe(false);
+  });
+});
+
+describe("an object edited after Delete it claims its id wherever its write runs", () => {
+  /** OLD with a draft of pin "a" offered, "Delete it" tapped and landed. */
+  async function deleted(holdSweep: boolean) {
+    const ns = namespaces();
+    const first = await wired(ns);
+    expect(await first.draft.writeObject(pin("a", "draft"))).toBe(true);
+    await flush();
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    if (holdSweep) ns.holdRemovesOf = new RegExp(`^${objectKey("a")}$`);
+    page.dom.draftDiscard.click();
+    await flush();
+    expect(page.dom.draftOffer.hidden, "Delete it landed").toBe(true);
+    return { ns, page };
+  }
+
+  // Why: the edit is newer than the rejection. Run once the tour had
+  // closed (queued behind the id's sweep), its claim was skipped: it
+  // landed under a meta still rejecting the id, and the next open hid it
+  // and swept it.
+  it("an edit that runs after the tour closed is offered at the next open", async () => {
+    const { ns, page } = await deleted(true);
+    const wrote = page.draft.writeObject(pin("a", "edited"));
+    page.draft.reset();
+    ns.releasePuts();
+    expect(await wrote).toBe(true);
+    await flush();
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+    expect(ns.files(OLD).has(objectKey("a"))).toBe(true);
+  });
+
+  // Why: the same edit, run once a Finish moved the draft to the saved
+  // file's key: it landed in the old namespace under the rejection, the
+  // copy carried it, and the new meta rejected the id again.
+  it("an edit that runs after the draft followed a Finish is offered there", async () => {
+    const { ns, page } = await deleted(true);
+    const wrote = page.draft.writeObject(pin("a", "edited"));
+    const moved = page.draft.follow(NEW);
+    await flush();
+    ns.releasePuts();
+    expect(await wrote).toBe(true);
+    expect(await moved).toBe(true);
+    await flush();
+    const next = await wired(ns, tourOf([pin("a")]), NEW);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+  });
+
+  // Why: a claim that started while the draft was the open tour's, and
+  // whose removal was still running when a Finish moved it, wrote the
+  // meta through the meta's queue - which waited for the move, while the
+  // move waited for this claim: neither ever ended, and every later write
+  // of the draft waited behind them.
+  it("a claim the draft moves away from in the middle still ends, and the edit is offered there", async () => {
+    const { ns, page } = await deleted(false);
+    await flush();
+    ns.holdRemovesOf = new RegExp(`^${objectKey("a")}$`);
+    let wroteDone = false;
+    let movedDone = false;
+    const wrote = page.draft.writeObject(pin("a", "edited")).then((ok) => {
+      wroteDone = true;
+      return ok;
+    });
+    await flush();
+    const moved = page.draft.follow(NEW).then((ok) => {
+      movedDone = true;
+      return ok;
+    });
+    await flush();
+    ns.releasePuts();
+    await flush();
+    expect(wroteDone, "the edit's write ended").toBe(true);
+    expect(movedDone, "the move ended").toBe(true);
+    expect(await wrote).toBe(true);
+    expect(await moved).toBe(true);
+    const next = await wired(ns, tourOf([pin("a")]), NEW);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
   });
 });

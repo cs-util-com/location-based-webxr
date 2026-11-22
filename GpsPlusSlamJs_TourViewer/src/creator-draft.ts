@@ -33,13 +33,17 @@ import {
   restoreOfferText,
 } from "./authoring-draft.js";
 import {
+  CODES_KEY,
+  CODES_REJECTED,
   META_KEY,
+  metaRejectedIds,
   photoKey,
   readDraft,
   readDraftCodes,
   readSettingsText,
   removeDraftObject,
   SETTINGS_REJECTED,
+  writeMetaWithout,
   addDraftBaseKey,
   writeDraftCodes,
   writeDraftLiveRecord,
@@ -130,14 +134,14 @@ export interface CreatorDraft {
   /** One awaited write of an object's record, with its base (M6 E2p):
    *  the object list's edits, moves and undos. */
   writeObject(object: TourObject, blob?: Blob): Promise<boolean>;
-  /** A Finish wrote these objects into `written` (M6 E2p re-review #1):
+  /** A Finish wrote these objects into `written` (M6 E2p):
    *  their versions there are this device's own work, whether or not the
    *  creator uploads the file. */
   finished(ids: readonly string[], written: TourManifest): void;
   /**
    * The creator said a Finish's file was uploaded (follow-up F19):
    * `written` is the tour.json of THAT file, captured when the question
-   * was asked (F19 review #2) - never a later Finish's that was not
+   * was asked - never a later Finish's that was not
    * saved. Every object a Finish of this load wrote gets its version in
    * `written` as SEEN hosted, so a delete made elsewhere afterwards is
    * honoured rather than offered back. Whether every note landed; true
@@ -209,8 +213,8 @@ export async function hostedLevelJson(
   );
   if (entry === undefined) return null;
   try {
-    // Under the text cap, like every JSON the session reads (K0
-    // milestone review R10): a level file is text on the JS heap.
+    // Under the text cap, like every JSON the session reads: a level file
+    // is text on the JS heap.
     return await session.loadEntryText(entry.filename);
   } catch {
     // Unreadable is not proof of anything, and the safe direction is to
@@ -223,8 +227,7 @@ export async function hostedLevelJson(
  *  are not edits of the tour document, so the draft question's gate does
  *  not hold them (`draft-edit-gate.ts`). */
 interface CodesHolder {
-  /** The stored draft's codes while nobody decided on them (plan M3b, the
-   *  M6 E2c review #3 before it): from the open's read until Restore
+  /** The stored draft's codes while nobody decided on them (plan M3b): from the open's read until Restore
    *  brings them in or a rejection of the draft lands. A write of the
    *  codes meanwhile - a measurement, a settle - re-states them after the
    *  page's own, or the draft's measured code would be gone from disk at
@@ -293,7 +296,7 @@ export function wireCreatorDraft(deps: {
    */
   let draftRejected: readonly string[] = [];
   /**
-   * The ids the meta ON DISK rejects (M6 E2c review #3): the read's raw
+   * The ids the meta ON DISK rejects: the read's raw
    * list, then each landed meta write's. `draftRejected` is pruned to ids
    * with files, but until a meta write lands the disk still rejects the
    * rest - and a change of one of those, not claimed, would be hidden by
@@ -309,11 +312,11 @@ export function wireCreatorDraft(deps: {
    * The meta: every write for a tour targets one key in one directory, and
    * the mint and finish ones are unawaited - so an earlier write landing
    * later would overwrite a newer one, including a rejection or a measured
-   * level (PR #456 review).
+   * level.
    *
    * An object: a placement's write is unawaited too, so without the queue a
    * quick delete of it could land first and the placement come back on the
-   * next open (M4 review #7; the M2c review's filed #7). Queued per id, an
+   * next open. Queued per id, an
    * operation that takes several steps - a claim of a rejected id, then
    * the write (see `writeForObject`) - is also never interleaved with
    * another operation on the same id.
@@ -324,18 +327,51 @@ export function wireCreatorDraft(deps: {
    * independent chains, which is the same clobber through another door,
    * and it is reachable: the paste paths trim before opening, but the
    * `?qr=` boot passes the decoded payload through untouched, and that is
-   * external data (PR #460 review). That makes
+   * external data. That makes
    * both properties structural rather than remembered: a tour that stalls
    * blocks only itself, and the ordering survives any interleaving of
    * opens. Two earlier shapes each held only half of that - one chain per
    * session blocked every tour behind a stall, and one chain plus "the
    * last tour seen" lost the ordering for A after B was opened in between
-   * (PR #457 and #459 reviews).
+   *.
    *
    * A key is dropped once its queue drains, so this holds only work in
    * flight.
    */
   const draftWrites = createKeyedChain();
+  /**
+   * The ids (and reserved entries) a write claimed by a namespace's own
+   * meta once that namespace was no longer the open tour's
+   * (`claimElsewhere`), per namespace. A `follow` away from a namespace
+   * drops exactly these from the list it carries over: the copy holds
+   * their writes, so the new meta must not reject them again. Only these:
+   * an id whose rejection stands (a spent draft whose sweep did not land)
+   * stays rejected.
+   */
+  const claimedElsewhere = new WeakMap<DraftFileStore, Set<string>>();
+
+  /**
+   * Claim `id` by `store`'s own meta, which is no longer the open tour's:
+   * `remove` its rejected files, then rewrite the meta without it,
+   * directly - never through the meta's queue, which a `follow` holds
+   * (`exclusive`) until the claiming write ends. True when the meta did
+   * not reject it or the rewrite landed.
+   */
+  async function claimElsewhere(
+    store: DraftFileStore,
+    id: string,
+    remove: () => Promise<void>,
+  ): Promise<boolean> {
+    if (!(await metaRejectedIds(store)).includes(id)) return true;
+    await remove();
+    let claimed = claimedElsewhere.get(store);
+    if (claimed === undefined) {
+      claimed = new Set();
+      claimedElsewhere.set(store, claimed);
+    }
+    claimed.add(id);
+    return writeMetaWithout(store, id);
+  }
 
   function metaChainKey(tourUrl: string): string {
     return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
@@ -456,11 +492,11 @@ export function wireCreatorDraft(deps: {
     deps.render();
   }
 
-  /** The tour as it was OPENED (M6 E2p review #2): a Finish advances the
+  /** The tour as it was OPENED: a Finish advances the
    *  tour document to what this page wrote, which is not what is hosted
    *  until the creator uploads it. Every hosted comparison of `present`
-   *  uses it (re-review #3). The document keeps it (`opened()`), so the
-   *  draft holds no copy of its own (the r880 milestone review LOW-5). */
+   *  uses it. The document keeps it (`opened()`), so the
+   *  draft holds no copy of its own. */
   const openedTour = (): TourManifest | null => ctx.tourDocument.opened();
   /** The line saying the draft gave way to newer edits, for the open. */
   let supersededNote: string | null = null;
@@ -514,8 +550,7 @@ export function wireCreatorDraft(deps: {
   /** The opened tour's version of an object, recorded as seen with each
    *  draft write of it (M6 E2p); none for an object it does not carry.
    *  Taken when the write is QUEUED: a queued write can run after another
-   *  open (`reset`, `present`), whose tour is not the one edited (third
-   *  review #1). */
+   *  open (`reset`, `present`), whose tour is not the one edited. */
   function seenKey(id: string): string | undefined {
     return hostedObjects(openedTour()).key(id);
   }
@@ -536,12 +571,42 @@ export function wireCreatorDraft(deps: {
     writeVisit(store, tourUrl, entry);
   }
 
+  /**
+   * CLAIM a record the meta rejects (`SETTINGS_REJECTED`, `CODES_REJECTED`)
+   * before a write of it, as an object's id is claimed (`writeForObject`):
+   * the rejected file removed, the meta rewritten without the entry. Runs
+   * inside the record's queue, before its write.
+   *
+   * While `store` is the open tour's, by that tour's lists. Once it is not
+   * (the tour closed, or a Finish moved the draft to another key since the
+   * write was queued, or while its removal ran), by `store`'s own meta
+   * (`claimElsewhere`): the claim follows the store the write goes to.
+   * Skipped, the write landed under a meta that still rejected it, and the
+   * next open swept it without a word.
+   *
+   * True when nothing needed claiming or the meta write landed.
+   */
+  async function claimRecord(
+    store: DraftFileStore,
+    tourUrl: string,
+    fileKey: string,
+    entry: string,
+  ): Promise<boolean> {
+    const remove = () => store.remove(fileKey);
+    if (draftStore !== store) return claimElsewhere(store, entry, remove);
+    if (!draftRejected.includes(entry) && !diskRejected.has(entry)) {
+      return true;
+    }
+    await remove();
+    if (draftStore !== store) return claimElsewhere(store, entry, remove);
+    draftRejected = draftRejected.filter((r) => r !== entry);
+    return recordMeta(tourUrl);
+  }
+
   /** The settings record's write in its queue: the whole record, or its
    *  removal (`null`). Every edit of the document waits while a draft is
-   *  undecided, so a record written is always decided work. A record the
-   *  meta rejects (`SETTINGS_REJECTED`) is CLAIMED first, as an object's
-   *  id is (`writeForObject`): the rejected file removed, the meta
-   *  rewritten without it, then the write. */
+   *  undecided, so a record written is always decided work, and it claims
+   *  a rejected record first (`claimRecord`). */
   function writeSettings(
     store: DraftFileStore,
     tourUrl: string,
@@ -553,16 +618,12 @@ export function wireCreatorDraft(deps: {
           await store.remove(SETTINGS_KEY);
           return true;
         }
-        let claimed = true;
-        if (
-          draftStore === store &&
-          (draftRejected.includes(SETTINGS_REJECTED) ||
-            diskRejected.has(SETTINGS_REJECTED))
-        ) {
-          await store.remove(SETTINGS_KEY);
-          draftRejected = draftRejected.filter((r) => r !== SETTINGS_REJECTED);
-          claimed = await recordMeta(tourUrl);
-        }
+        const claimed = await claimRecord(
+          store,
+          tourUrl,
+          SETTINGS_KEY,
+          SETTINGS_REJECTED,
+        );
         const wrote = await store.put(SETTINGS_KEY, settingsRecordText(record));
         return claimed && wrote;
       })
@@ -572,7 +633,8 @@ export function wireCreatorDraft(deps: {
   /** The codes record's write in its queue: `codes`, with the waiting
    *  draft's codes of `held` (the open the write is FOR, as for the
    *  settings) re-stated as they stand when the write RUNS - the open's
-   *  read of the record sets them in this same queue. */
+   *  read of the record sets them in this same queue. It claims a
+   *  rejected record first (`claimRecord`). */
   function writeCodes(
     store: DraftFileStore,
     tourUrl: string,
@@ -580,9 +642,19 @@ export function wireCreatorDraft(deps: {
     held: CodesHolder | null,
   ): Promise<boolean> {
     return draftWrites
-      .run(codesChainKey(tourUrl), () =>
-        writeDraftCodes(store, withStoredCodes(codes, held?.codes ?? null)),
-      )
+      .run(codesChainKey(tourUrl), async () => {
+        const claimed = await claimRecord(
+          store,
+          tourUrl,
+          CODES_KEY,
+          CODES_REJECTED,
+        );
+        const wrote = await writeDraftCodes(
+          store,
+          withStoredCodes(codes, held?.codes ?? null),
+        );
+        return claimed && wrote;
+      })
       .catch(() => false);
   }
 
@@ -613,7 +685,7 @@ export function wireCreatorDraft(deps: {
   /**
    * Write something FOR object `id` - its record and bytes, or its
    * tombstone - in that id's queue, and only once the meta no longer
-   * rejects the id (M4 review #1).
+   * rejects the id.
    *
    * THE META OUTRANKS AN OBJECT'S FILES (`readDraft`), so a change to an
    * id the meta rejects - a published tour reopened and its spent draft
@@ -631,9 +703,23 @@ export function wireCreatorDraft(deps: {
    * still lets the change be written - it is newer than anything on disk -
    * and reports false, so the creator hears it is not backed up.
    *
-   * Only while `store` is still the open tour's: `draftRejected` is that
-   * tour's list.
+   * While `store` is the open tour's, by that tour's lists; once it is
+   * not, by `store`'s own meta (`claimElsewhere`), as a record's claim.
    */
+  async function claimObject(
+    store: DraftFileStore,
+    tourUrl: string,
+    id: string,
+  ): Promise<boolean> {
+    const remove = () => removeDraftObject(store, id);
+    if (draftStore !== store) return claimElsewhere(store, id, remove);
+    if (!draftRejected.includes(id) && !diskRejected.has(id)) return true;
+    await remove();
+    if (draftStore !== store) return claimElsewhere(store, id, remove);
+    draftRejected = draftRejected.filter((rejected) => rejected !== id);
+    return recordMeta(tourUrl);
+  }
+
   function writeForObject(
     store: DraftFileStore,
     tourUrl: string,
@@ -641,15 +727,14 @@ export function wireCreatorDraft(deps: {
     write: (store: DraftFileStore) => Promise<boolean>,
   ): Promise<boolean> {
     return draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      let claimed = true;
-      if (
+      // Nothing to claim, the common case: the write is issued in this
+      // same turn, as before claims followed the store.
+      const claimed =
         draftStore === store &&
-        (draftRejected.includes(id) || diskRejected.has(id))
-      ) {
-        await removeDraftObject(store, id);
-        draftRejected = draftRejected.filter((rejected) => rejected !== id);
-        claimed = await recordMeta(tourUrl);
-      }
+        !draftRejected.includes(id) &&
+        !diskRejected.has(id)
+          ? true
+          : await claimObject(store, tourUrl, id);
       const wrote = await write(store);
       return claimed && wrote;
     });
@@ -661,24 +746,26 @@ export function wireCreatorDraft(deps: {
    * when its turn comes: a change made since claimed it, and the file on
    * disk is that change now (`writeForObject`). Skipped too once another
    * tour is open: the next open of this one sweeps what the meta rejects.
-   * The settings record's entry (`SETTINGS_REJECTED`) removes the record,
-   * in the record's own queue.
+   * A record's entry (`SETTINGS_REJECTED`, `CODES_REJECTED`) removes that
+   * record, in the record's own queue.
    */
   function sweepRejected(
     store: DraftFileStore,
     tourUrl: string,
     id: string,
   ): void {
-    const settings = id === SETTINGS_REJECTED;
+    const record =
+      id === SETTINGS_REJECTED
+        ? { key: SETTINGS_KEY, chain: settingsChainKey(tourUrl) }
+        : id === CODES_REJECTED
+          ? { key: CODES_KEY, chain: codesChainKey(tourUrl) }
+          : null;
     void draftWrites
-      .run(
-        settings ? settingsChainKey(tourUrl) : objectChainKey(tourUrl, id),
-        async () => {
-          if (draftStore !== store || !draftRejected.includes(id)) return;
-          if (settings) await store.remove(SETTINGS_KEY);
-          else await removeDraftObject(store, id);
-        },
-      )
+      .run(record?.chain ?? objectChainKey(tourUrl, id), async () => {
+        if (draftStore !== store || !draftRejected.includes(id)) return;
+        if (record !== null) await store.remove(record.key);
+        else await removeDraftObject(store, id);
+      })
       .catch(() => undefined);
   }
 
@@ -738,7 +825,7 @@ export function wireCreatorDraft(deps: {
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
       // read. (NOT on each placement - a placement's write is the object
-      // file only and never reaches here; PR #456 review.)
+      // file only and never reaches here.)
       rejected: draftRejected,
     };
     // Values captured NOW, write ordered by call within this tour. The
@@ -791,6 +878,15 @@ export function wireCreatorDraft(deps: {
             : await from.getText(key);
           // Listed but unreadable: not copied (the old namespace has it).
           ok = data !== undefined && (await opened.put(key, data)) && ok;
+        }
+        // A write that ran once the draft had moved claimed its rejection
+        // in the old namespace's meta (`claimElsewhere`), not in this
+        // list: the copy holds that write, so the new meta must not reject
+        // it again.
+        const away = claimedElsewhere.get(from);
+        claimedElsewhere.delete(from);
+        if (draftStore === opened && away !== undefined) {
+          draftRejected = draftRejected.filter((r) => !away.has(r));
         }
         return ok;
       })
@@ -1023,9 +1119,21 @@ export function wireCreatorDraft(deps: {
     // and the deletes after it are housekeeping. Nothing is removed BEFORE
     // the write lands, so a reload during it sees the draft as it was.
     // The settings record goes with the draft: every edit waited, so
-    // nothing of this page's is in it. Named whether or not a record is on
-    // disk; the next read prunes the entry once no file is left.
-    const rejectedIds = [...notLive(waiting.storedIds), SETTINGS_REJECTED];
+    // nothing of this page's is in it. The codes record goes with it too
+    // while this page holds no code; once it does, the record holds this
+    // page's codes beside the draft's, so it is not rejected (a crash
+    // before its rewrite below would lose this page's codes) and the
+    // rewrite drops the draft's. A crash in between then offers the
+    // deleted draft's codes again, beside this page's: visible, never
+    // lost. Named whether or not a record is on disk; the next read
+    // prunes an entry once no file is left.
+    const codesAtTap = pageCodes();
+    const rejectsCodes = !hasPageCodes();
+    const rejectedIds = [
+      ...notLive(waiting.storedIds),
+      SETTINGS_REJECTED,
+      ...(rejectsCodes ? [CODES_REJECTED] : []),
+    ];
     // In progress (async-ui-feedback): the offer stays, its buttons off,
     // until the commit says how it went. Edits keep waiting meanwhile.
     const deleting = asked;
@@ -1038,20 +1146,26 @@ export function wireCreatorDraft(deps: {
     draftRejected = rejectedIds;
     // ENQUEUED synchronously, with the values captured at the tap. The
     // chain guarantees ordering, not immediacy: the `put` itself is issued
-    // from a `then`, so it is a microtask away at best (PR #457 review).
+    // from a `then`, so it is a microtask away at best.
     const committed = recordMeta(tourUrl);
     // The draft's codes go with it once the commit LANDED: this page's
-    // only, as they stood at the tap. Queued NOW, so a write of the codes
-    // issued after the tap - live work, newer - lands after it, without
-    // the rejected ones. A commit that did not land writes nothing: the
-    // draft is still there, its codes with it.
+    // only, as they stood at the tap - an empty record when it holds none,
+    // claiming the record back. Queued NOW, so a
+    // write of the codes issued after the tap - live work, newer - lands
+    // after it, without the rejected ones. A commit that did not land
+    // writes nothing: the draft is still there, its codes with it.
     const held = undecided;
-    const codesAtTap = pageCodes();
     void draftWrites
       .run(codesChainKey(tourUrl), async () => {
         if (!(await committed)) return false;
         if (held !== null) held.codes = null;
-        return writeDraftCodes(store, codesAtTap);
+        const claimed = await claimRecord(
+          store,
+          tourUrl,
+          CODES_KEY,
+          CODES_REJECTED,
+        );
+        return (await writeDraftCodes(store, codesAtTap)) && claimed;
       })
       .catch(() => false);
     void (async () => {
@@ -1083,8 +1197,11 @@ export function wireCreatorDraft(deps: {
         deps.render();
         return;
       }
+      // The codes record is the codes task's above.
       for (const id of rejectedIds) {
-        if (id !== SETTINGS_REJECTED) sweepRejected(store, tourUrl, id);
+        if (id !== SETTINGS_REJECTED && id !== CODES_REJECTED) {
+          sweepRejected(store, tourUrl, id);
+        }
       }
       // The record goes with the draft, queued before the waiting edits
       // land, whose own record lands after it. Not swept like an object:
@@ -1138,6 +1255,9 @@ export function wireCreatorDraft(deps: {
       if (stale()) return false;
       draftStore = store;
       draftTourUrl = tourUrl;
+      // This open's lists start from its read: a claim made in this
+      // namespace while it was not open is in that read already.
+      if (store !== undefined) claimedElsewhere.delete(store);
       if (store === undefined) {
         // No persistence at all - a browser without OPFS, blocked site
         // data, a quota wall. The creator must hear it ONCE, here: this
@@ -1145,10 +1265,7 @@ export function wireCreatorDraft(deps: {
         // notice, because no write ever fails to tell them so.
         noteNoPersistence();
         ctx.store.dispatch(
-          tourDraftActions.unavailable({
-            generation: thisQuestion,
-            reason: "storage",
-          }),
+          tourDraftActions.noneFound({ generation: thisQuestion }),
         );
         return false;
       }
@@ -1163,7 +1280,7 @@ export function wireCreatorDraft(deps: {
       // The settings record, in its own queue.
       let frameLost = false;
       let lost = false;
-      const storedSettings = await draftWrites.run(
+      let storedSettings = await draftWrites.run(
         settingsChainKey(tourUrl),
         async () => {
           const read = parseSettingsRecord(
@@ -1178,18 +1295,26 @@ export function wireCreatorDraft(deps: {
         },
       );
       if (stale()) return false;
+      await codesRead.catch(() => undefined);
+      if (stale()) return false;
+      const stored = await readDraft(store);
+      if (stale()) return false;
+      // A "Delete it" whose commit landed between the record's read and
+      // this one (a close and reopen in the same tab): the record read
+      // before it is rejected now, and offered alone it would bring the
+      // deleted record back.
+      if (stored?.rejectedOnDisk.includes(SETTINGS_REJECTED) === true) {
+        storedSettings = undefined;
+        lost = false;
+      }
       if (lost) {
         unreadNote = DRAFT_PART_UNREAD;
         ctx.placementNote = unreadNote;
         deps.render();
       }
-      await codesRead.catch(() => undefined);
-      if (stale()) return false;
-      const stored = await readDraft(store);
-      if (stale()) return false;
       // A captured photo whose bytes did not read is dropped by the read
       // (its restore would name a content entry the zip lacks); the
-      // creator is told, never left to find it gone (PR #876 review).
+      // creator is told, never left to find it gone.
       if ((stored?.photosUnread ?? 0) > 0 && unreadNote === null) {
         unreadNote = DRAFT_PART_UNREAD;
         ctx.placementNote = unreadNote;
@@ -1230,8 +1355,7 @@ export function wireCreatorDraft(deps: {
         if (hasPageCodes()) void writeCodes(store, tourUrl, pageCodes(), held);
         return false;
       }
-      // A newer edit elsewhere wins (M6 E2p, owner question Q-E2-2's
-      // default): those records are not offered back, and the page says
+      // A newer edit elsewhere wins (M6 E2p): those records are not offered back, and the page says
       // so once.
       const superseded = draftObjectsSuperseded(stored.draft, opened);
       supersededNote =
@@ -1285,8 +1409,8 @@ export function wireCreatorDraft(deps: {
         draftIsSpent(stored.draft, opened, hostedLevel, stored.visits.length)
       ) {
         // SPENT: the hosted zip carries every object AND the measurement,
-        // and the draft holds no AR visit (the zip never carries those,
-        // M3a/M3b review #5). That is the only proof the content reached
+        // and the draft holds no AR visit (the zip never carries those).
+        // That is the only proof the content reached
         // the file the world sees, and the only thing that deletes a
         // draft.
         // No re-open. It existed only because `clear` used to remove the
@@ -1294,8 +1418,7 @@ export function wireCreatorDraft(deps: {
         // empties in place and stays usable. Re-opening would carry the
         // same failure forward: `openDraftStore` returns undefined on any
         // transient refusal, and assigning that over a WORKING store turns
-        // persistence off for the rest of the tour, silently (PR #443
-        // review).
+        // persistence off for the rest of the tour, silently.
         // Same rule as the discard: delete exactly what `readDraft`
         // returned. A spent draft is one the hosted zip already carries
         // in full, so every id here is safe to drop - and anything this
@@ -1311,11 +1434,14 @@ export function wireCreatorDraft(deps: {
         // Minus this page's visits (`notLive`); the edits made during the
         // awaits above waited, so none of them is in this list.
         const sweep = notLive(stored.storedIds);
-        // A settings record the meta already rejects stays rejected: its
-        // file may still be on disk.
-        draftRejected = draftRejected.includes(SETTINGS_REJECTED)
-          ? [...sweep, SETTINGS_REJECTED]
-          : sweep;
+        // A record the meta already rejects stays rejected: its file may
+        // still be on disk.
+        draftRejected = [
+          ...sweep,
+          ...draftRejected.filter(
+            (r) => r === SETTINGS_REJECTED || r === CODES_REJECTED,
+          ),
+        ];
         // Same commit point as the discard, for the same reason: an
         // interrupted sweep must not bring a spent draft back - and the
         // same notice when it does not land.
@@ -1444,10 +1570,7 @@ export function wireCreatorDraft(deps: {
           return;
         }
         ctx.store.dispatch(
-          tourDraftActions.unavailable({
-            generation: thisQuestion,
-            reason: "read-failed",
-          }),
+          tourDraftActions.noneFound({ generation: thisQuestion }),
         );
         // A read that threw offers nothing: the waiting edits must not be
         // stranded behind a question nobody can see, nor the note that
@@ -1538,7 +1661,7 @@ export function wireCreatorDraft(deps: {
       const store = draftStore;
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
-      // As a reader of the written file sees it (third review #5).
+      // As a reader of the written file sees it.
       const read = hostedObjects(manifestAsRead(written));
       for (const id of ids) {
         const key = read.key(id);
@@ -1553,12 +1676,12 @@ export function wireCreatorDraft(deps: {
       // No draft here (no persistence, or no tour's namespace yet): there
       // is nothing a later open could offer back, so nothing to note and
       // nothing failed - never "could not note it", asked again on every
-      // Save again (PR #626 bot finding 3).
+      // Save again.
       if (draftStore === undefined || draftTourUrl === null) return true;
       // The file asked about: an earlier Finish's objects are in it too, in
       // the version the creator just said is hosted (a later Finish carries
       // them on); an object absent from it is not noted. As a reader of
-      // that file sees them (third review #5).
+      // that file sees them.
       const read = hostedObjects(manifestAsRead(written));
       const notes = [...finishedIds].flatMap((id) => {
         const key = read.key(id);
@@ -1573,7 +1696,7 @@ export function wireCreatorDraft(deps: {
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return Promise.resolve();
       // In the id's queue: a placement's write still in flight lands first,
-      // and this removal after it (M4 review #7).
+      // and this removal after it.
       return draftWrites.run(objectChainKey(tourUrl, id), async () => {
         await removeDraftObject(store, id);
         forgottenIds.add(id);

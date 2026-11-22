@@ -21,12 +21,9 @@ rules, whichever page asks it.
     same.
   - `found({ generation, text })` - the read found a draft to offer, in
     these words. Only while `reading`.
-  - `noneFound({ generation })` - the read found nothing to offer. Only
-    while `reading`.
-  - `unavailable({ generation, reason })` - no draft can be kept:
-    `storage` (no storage in this browser), `other-tab` (another tab
-    holds the tour's draft), `read-failed` (the read threw). Never over
-    an undecided offer.
+  - `noneFound({ generation })` - the read found nothing to offer, or
+    could not read (no draft store, a read that threw). Only while
+    `reading`.
   - `restored({ generation })` - Restore. From `offered` or `declined`,
     not while "Delete it" runs.
   - `declined({ generation })` - "Not now": the offer is hidden, the
@@ -48,9 +45,9 @@ rules, whichever page asks it.
     (`DRAFT_EDIT_WAITS`) when `waits`.
   - `selectEditWaitsForRead(state)` - an edit waits for a draft still
     being read (the page says `DRAFT_BEING_READ`).
-- `TourDraftState` - `{ status, reason, generation, text, deleting,
+- `TourDraftState` - `{ status, generation, text, deleting,
 editsWaiting }`; `TourDraftStatus` is `none`, `reading`, `offered`,
-  `declined`, `restored` or `unavailable`.
+  `declined` or `restored`.
 
 ## Invariants & assumptions
 
@@ -60,8 +57,14 @@ editsWaiting }`; `TourDraftStatus` is `none`, `reading`, `offered`,
   `readStarted`, `questionEnded` and `tourDocument/closed` move it, by
   one. `tourDocument/opened` does not: the desktop reads the draft
   before its session dispatches `opened`.
-- `text` is set exactly while the draft is undecided, `reason` exactly
-  while `unavailable`; `deleting` only while `offered`.
+- `text` is set exactly while the draft is undecided; `deleting` only
+  while `offered`.
+- **A draft that cannot be kept is no state of the question.** No
+  storage, another tab or a refused write is said by each page in its own
+  words (the phone's placement note, the desktop's no-backup toast), and
+  touches nothing here: a report of it while the draft is read must never
+  turn away a draft the read then finds
+  (`draft-shared-behaviour.test.ts`, "open with a refused meta write").
 - **What stays outside the store:** the draft's records and photo bytes
   (each page's side table of the offer: `offered` in `creator-draft.ts`,
   the offer `editor-draft.ts` returns), and the gate's held actions and
@@ -102,8 +105,7 @@ selectDraftOffer(store.getState()); // { text, waits: false, deleting: false }
 ## Tests
 
 - `tour-draft-slice.test.ts` - each answer's path, the reopen and close
-  guards, "Delete it"'s progress and failure, `unavailable` never over an
-  offer, malformed payloads, the note while a read runs, and
+  guards, "Delete it"'s progress and failure, malformed payloads, the note while a read runs, and
   `tourDocument/opened` keeping the question.
 - `tour-draft-slice.property.test.ts` - random read, found, restore,
   decline, re-show, delete, reopen and close sequences with late

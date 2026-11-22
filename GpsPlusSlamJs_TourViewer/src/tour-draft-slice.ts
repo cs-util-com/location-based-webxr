@@ -26,21 +26,16 @@ import { tourDocumentActions } from "./tour-document.js";
  * - `offered`: a draft waits for an answer, and its offer shows.
  * - `declined`: put off with "Not now": still undecided, the offer hidden.
  * - `restored`: the draft came back into the tour.
- * - `unavailable`: no draft can be kept for this tour (`reason`).
+ *
+ * A draft that cannot be kept (no storage, another tab, a refused write)
+ * is no state of the question: each page says so in its own words, and a
+ * report of it during the read must never turn away a draft the read
+ * finds.
  */
-type TourDraftStatus =
-  "none" | "reading" | "offered" | "declined" | "restored" | "unavailable";
-
-/** Why no draft can be kept: no storage in this browser, another tab
- *  holds the tour's draft, or its read failed. */
-type DraftUnavailableReason = "storage" | "other-tab" | "read-failed";
-
-const REASONS: readonly string[] = ["storage", "other-tab", "read-failed"];
+type TourDraftStatus = "none" | "reading" | "offered" | "declined" | "restored";
 
 export interface TourDraftState {
   readonly status: TourDraftStatus;
-  /** Set exactly while `status` is `unavailable`. */
-  readonly reason: DraftUnavailableReason | null;
   /** The question: moves on every read and every end of a question. */
   readonly generation: number;
   /** The offer's words; set exactly while the draft is undecided
@@ -54,7 +49,6 @@ export interface TourDraftState {
 
 export const initialTourDraftState: TourDraftState = {
   status: "none",
-  reason: null,
   generation: 0,
   text: null,
   deleting: false,
@@ -86,7 +80,6 @@ function nextQuestion(
 ): void {
   state.generation += 1;
   state.status = status;
-  state.reason = null;
   state.text = null;
   state.deleting = false;
 }
@@ -112,25 +105,12 @@ const tourDraftSlice = createSlice({
       state.status = "offered";
       state.text = action.payload.text;
     },
-    /** The read found nothing to offer. */
+    /** The read found nothing to offer, or could not read. */
     noneFound(state, action: PayloadAction<Question>) {
       if (!current(state, action.payload) || state.status !== "reading") {
         return;
       }
       state.status = "none";
-    },
-    /** No draft can be kept. Never over an undecided offer: its records
-     *  are in memory and its answers still work. */
-    unavailable(
-      state,
-      action: PayloadAction<
-        Question & { readonly reason: DraftUnavailableReason }
-      >,
-    ) {
-      if (!current(state, action.payload) || undecided(state)) return;
-      if (!REASONS.includes(action.payload.reason)) return;
-      state.status = "unavailable";
-      state.reason = action.payload.reason;
     },
     /** Restore: the draft is the tour's now. Not while "Delete it" runs. */
     restored(state, action: PayloadAction<Question>) {

@@ -54,24 +54,23 @@ import {
  *
  * The ordering it replaces, and why: this file used to be deleted FIRST,
  * so a reload racing a discard found no draft at all - a race live at
- * about one run in six (PR #443). Deleting it first meant emptying the
+ * about one run in six. Deleting it first meant emptying the
  * whole namespace, which is what made a discard delete pins placed
- * seconds earlier; removing that shape (r680) inverted the guarantee,
+ * seconds earlier; removing that shape inverted the guarantee,
  * because the discard then rewrote this file and deleted afterwards, and
  * a reload in between was offered the draft it had just rejected. Neither
  * shape was safe in both directions. This one is: the old lost work, the
  * next resurrected a rejection, and a single authoritative write does
  * neither.
  *
- * The r680 window had a THIRD state, not just "kept" and "discarded", and
+ * That second shape's window had a THIRD state, not just "kept" and "discarded", and
  * it is worth naming because the commit point is what removes it: the
  * rewritten meta dropped the rejected level (`recordMeta` writes the
  * code in hand, which is null right after a fresh open), so a tab
  * closing between that write and the deletes left a draft with its objects
  * and NO measurement - offered, restorable, and with Finish still refused
  * until the creator walked back to the poster. Now that same interruption
- * leaves the objects rejected, so nothing is offered at all (PR #455
- * review).
+ * leaves the objects rejected, so nothing is offered at all.
  *
  * Design and costs:
  * `docs/2026-09-10-1345-draft-rejection-commit-point-plan.md` (docs repo).
@@ -100,6 +99,10 @@ export const SETTINGS_KEY = "settings";
  * an object's id: kept in the list while the record's file is on disk.
  */
 export const SETTINGS_REJECTED = ":settings";
+/** The codes record's entry in a meta's `rejected` list, by the settings
+ *  record's rule (`SETTINGS_REJECTED`): "Delete it" names it, and
+ *  `readDraftCodes` reads no codes the meta rejects. */
+export const CODES_REJECTED = ":codes";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 const DELETED_PREFIX = "deleted:";
@@ -166,8 +169,7 @@ export async function removeDraftObject(
  * Record a placement or an edit, and - when `seen` is given - that this
  * device saw that version of the object hosted (M6 E2p): the tour as the
  * page opened it. The result is the record's write: a base that did not
- * land is removed, which falls back to the behaviour before E2p (review #6,
- * third review #2). Both writes
+ * land is removed, which falls back to the behaviour before E2p. Both writes
  * run at once; callers queue an id's writes, so the base's read and write
  * are not raced.
  */
@@ -251,7 +253,7 @@ export async function addDraftBaseKey(
   if (after === before) return true;
   if (await store.put(baseKey(id), JSON.stringify(after))) return true;
   // An older base left beside a newer record could call this device's own
-  // work "replaced" (third review #2); no base is never superseded.
+  // work "replaced"; no base is never superseded.
   await store.remove(baseKey(id));
   return false;
 }
@@ -277,7 +279,7 @@ export async function writeDraftDeletion(
 }
 
 /**
- * Take back a deletion: remove `id`'s tombstone (an Undo, M4 review #5).
+ * Take back a deletion: remove `id`'s tombstone (an Undo, M4).
  * A record written for the id BEFORE this call (an edited object's) then
  * counts again; until then the tombstone outranks it, so an Undo cut short
  * leaves the object deleted rather than half restored.
@@ -339,6 +341,50 @@ function rejectedIdsOf(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === "string");
 }
 
+/** The store's meta, or undefined when it is missing or does not read as
+ *  one (`isMeta`, the rule `readDraft` reads it by). */
+async function storedMeta(
+  store: DraftFileStore,
+): Promise<DraftMeta | undefined> {
+  const text = await store.getText(META_KEY);
+  if (text === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isMeta(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every id the store's meta rejects; none when there is no meta or it
+ *  does not read (`rejectedIdsOf`'s rule). */
+export async function metaRejectedIds(
+  store: DraftFileStore,
+): Promise<string[]> {
+  return rejectedIdsOf((await storedMeta(store))?.rejected);
+}
+
+/**
+ * Rewrite the store's meta without `id` in its `rejected` list: a claim
+ * made by the store's own meta, for a write that runs once the tour it was
+ * issued for is no longer the open one. True when nothing needed it (no
+ * meta, or `id` not rejected) or the write landed.
+ */
+export async function writeMetaWithout(
+  store: DraftFileStore,
+  id: string,
+): Promise<boolean> {
+  const meta = await storedMeta(store);
+  if (meta === undefined) return true;
+  const rejected = rejectedIdsOf(meta.rejected);
+  if (!rejected.includes(id)) return true;
+  return writeDraftMeta(store, {
+    tourUrl: meta.tourUrl,
+    sizeM: meta.sizeM,
+    rejected: rejected.filter((r) => r !== id),
+  });
+}
+
 /**
  * The settings record's text, or undefined when there is none or the
  * meta rejects it (`SETTINGS_REJECTED`): a record "Delete it" threw away
@@ -348,18 +394,8 @@ function rejectedIdsOf(value: unknown): string[] {
 export async function readSettingsText(
   store: DraftFileStore,
 ): Promise<string | undefined> {
-  const metaText = await store.getText(META_KEY);
-  if (metaText !== undefined) {
-    try {
-      const parsed: unknown = JSON.parse(metaText);
-      const rejected =
-        typeof parsed === "object" && parsed !== null
-          ? rejectedIdsOf((parsed as { rejected?: unknown }).rejected)
-          : [];
-      if (rejected.includes(SETTINGS_REJECTED)) return undefined;
-    } catch {
-      // Not JSON: no rejection.
-    }
+  if ((await metaRejectedIds(store)).includes(SETTINGS_REJECTED)) {
+    return undefined;
   }
   return store.getText(SETTINGS_KEY);
 }
@@ -518,11 +554,13 @@ function codesOf(value: unknown): DraftCodes {
 /**
  * Read the draft's codes: the codes file only. The code fields an older
  * meta carried are not read (debug-captures plan M3b, D5: no old drafts
- * to carry over). None when the file is missing or does not read.
+ * to carry over). None when the file is missing or does not read, or
+ * the meta rejects it (`CODES_REJECTED`).
  */
 export async function readDraftCodes(
   store: DraftFileStore,
 ): Promise<DraftCodes> {
+  if ((await metaRejectedIds(store)).includes(CODES_REJECTED)) return NO_CODES;
   const text = await store.getText(CODES_KEY);
   if (text === undefined) return NO_CODES;
   try {
@@ -572,7 +610,7 @@ export interface StoredDraft {
    */
   rejectedIds: readonly string[];
   /**
-   * EVERY id the meta on disk rejects, files or not (M6 E2c review #3).
+   * EVERY id the meta on disk rejects, files or not.
    * `rejectedIds` is pruned, and the next meta write stores it - but until
    * that write lands the meta still rejects the pruned ids, so a change of
    * one must be claimed against THIS list, or the next read hides it.
@@ -582,7 +620,7 @@ export interface StoredDraft {
    * The AR visits' logs (M3b), oldest first: what the summary after Finish
    * needs from visits of an earlier page load. Not part of `draft`: a visit
    * is never written into the zip - but it is offered with the draft and
-   * keeps it from counting as spent (`draftIsSpent`, M3a/M3b review #5),
+   * keeps it from counting as spent (`draftIsSpent`),
    * so only a discard drops it. A visit id the meta
    * rejects is skipped like an object's, and its file is among
    * `storedIds`, so a discard or a spent draft sweeps it with the rest.
@@ -608,7 +646,7 @@ export interface StoredDraft {
   /**
    * How many photo records the read dropped because their bytes did not
    * read (`photoBytesRequired`, the phone's rule): part of the draft that
-   * did not read, which the caller tells the creator (PR #876 review).
+   * did not read, which the caller tells the creator.
    */
   photosUnread: number;
 }
@@ -624,7 +662,7 @@ export async function readDraft(
   store: DraftFileStore,
   options: {
     /** Drop a photo record whose bytes are missing (the phone's rule,
-     *  default). The desktop editor reads with it off (M6 E2c review #1):
+     *  default). The desktop editor reads with it off:
      *  its photo notes' bytes are in the file it opened, never in the
      *  draft. */
     readonly photoBytesRequired?: boolean;
@@ -647,7 +685,7 @@ export async function readDraft(
   // the whole flow already supports. Discarding the draft instead would
   // throw away every placement the creator made, which is the opposite of
   // the rule two screens up: a record that does not read costs itself and
-  // nothing else (M1/M3 review #10). `readDraftCodes` reads each field so.
+  // nothing else. `readDraftCodes` reads each field so.
   const codes = await readDraftCodes(store);
 
   const keys = await store.keys();
@@ -666,7 +704,7 @@ export async function readDraft(
   // `indexOf` returns -1, `slice(0)` hands back the whole key, and the
   // deletes become two no-ops - a silent leak no current test could catch,
   // because every one of them builds its keys with `objectKey`/`photoKey`
-  // on both sides (PR #455 review).
+  // on both sides.
   const storedIds = [
     ...new Set(
       keys.flatMap((key) => {
@@ -722,8 +760,7 @@ export async function readDraft(
         ? undefined
         : new Blob([bytes], { type: stored.type });
     // A photo record whose bytes are gone would name a content entry the
-    // rebuilt zip does not contain, which is the failure mode PR #435 was
-    // about. Drop the record with them - unless the caller's photos live
+    // rebuilt zip does not contain, which is a failure mode of its own. Drop the record with them - unless the caller's photos live
     // in the file it opened (the editor's).
     if (blob === undefined && options.photoBytesRequired === false) continue;
     if (blob === undefined) {
@@ -752,6 +789,7 @@ export async function readDraft(
   const visits = await readVisits(store, keys, rejected);
   const onDisk = new Set(storedIds);
   if (keys.includes(SETTINGS_KEY)) onDisk.add(SETTINGS_REJECTED);
+  if (keys.includes(CODES_KEY)) onDisk.add(CODES_REJECTED);
   return {
     draft: {
       tourUrl: meta.tourUrl,
@@ -803,7 +841,7 @@ function isMeta(value: unknown): value is DraftMeta {
 
 /**
  * The measured level, or null - checked field by field for the same reason
- * an object is (PR #438 review).
+ * an object is.
  *
  * `typeof x === "object"` accepted `{}`, `[]` and `{ id: 5 }`, which were
  * then used as `{ id: string; json: string }`. This field travels further
@@ -821,8 +859,7 @@ function isLevel(value: unknown): value is DraftLevel | null {
   // The framework's OWN id rule, not `typeof === "string"`: the throw this
   // guard exists to prevent is `qrLevelFileName`'s, and that rejects a
   // string carrying a path separator or a `..` segment. A weaker check here
-  // reads as closed while the failure path stays open (PR #438 review,
-  // second pass).
+  // reads as closed while the failure path stays open.
   return (
     isWritableQrLevelId(record["id"]) && typeof record["json"] === "string"
   );

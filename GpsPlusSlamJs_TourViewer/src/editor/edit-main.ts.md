@@ -521,8 +521,10 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   question kept). The answers' logic is `createDraftOffer`
   (`editor/draft-offer.ts`); this file renders its view as the toast.
   It starts the store's draft question (`tourDraftActions.readStarted`)
-  before the read and ends it as `noneFound` when nothing is offered, or
-  `unavailable` when no backup can be kept (`tour-draft-slice.ts`).
+  before the read and ends it as `noneFound` when nothing is offered
+  (`tour-draft-slice.ts`). A backup that cannot be kept is the no-backup
+  toast and `data-draft="off"`, never store state: reported while the
+  draft is read, it must not turn the found draft away.
   **"Not now" is for looking only**: from the offer on, every edit of the
   tour waits in the store's draft gate (`draft-edit-gate.ts`); the first
   one shows the offer again, its words saying the edit waits
