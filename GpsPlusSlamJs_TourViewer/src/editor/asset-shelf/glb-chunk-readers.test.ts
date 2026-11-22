@@ -178,6 +178,20 @@ describe("the GLB chunk readers on the same bytes", () => {
     expect(
       verdicts(viewOver({ "#uffer": 0, byteOffset: 0, byteLength: 0 })),
     ).toEqual(NONE);
+    // The shrunk counterexample of seed -845185933: the same class over a
+    // 16-byte binary chunk its one buffer covers.
+    expect(
+      verdicts(
+        build([
+          json({
+            asset: { version: "2.0" },
+            buffers: [{ byteLength: 16 }],
+            bufferViews: [{ " uffer": 0, byteOffset: 0, byteLength: 16 }],
+          }),
+          bin(16),
+        ]),
+      ),
+    ).toEqual(NONE);
     expect(
       verdicts(viewOver({ buffer: 1, byteOffset: 0, byteLength: 0 })),
     ).toEqual(NONE);
