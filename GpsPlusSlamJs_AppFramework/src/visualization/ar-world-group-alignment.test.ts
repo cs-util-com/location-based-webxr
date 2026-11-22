@@ -205,4 +205,30 @@ describe('enableArWorldGroupAlignment', () => {
     handle.dispose();
     expect(() => runSessionDisposers()).not.toThrow();
   });
+
+  // Why this test matters: content that follows the alignment (the deferred
+  // anchors' follow phase) sets its local matrix to the inverse of
+  // `arWorldGroup.matrix` and expects its world pose to be its NUE pose. That
+  // holds only if every binding update leaves `matrixWorld` equal to `matrix`
+  // under the identity scene root, in the same frame.
+  it('leaves arWorldGroup.matrixWorld equal to its matrix after every update', () => {
+    const store = makeFakeStore(makeNonTrivialAlignment(10));
+    const scene = new THREE.Scene();
+    const arWorldGroup = new THREE.Group();
+    scene.add(arWorldGroup);
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup });
+    const check = (): void =>
+      expectMatrixClose(
+        arWorldGroup.matrixWorld.toArray(),
+        arWorldGroup.matrix.toArray()
+      );
+    runFrameUpdates(1 / 30, 1);
+    check();
+    store.setAlignment(makeNonTrivialAlignment(11));
+    for (let i = 0; i < 40; i++) {
+      runFrameUpdates(1 / 30, 2 + i / 30);
+      check();
+    }
+    handle.dispose();
+  });
 });

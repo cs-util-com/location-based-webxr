@@ -126,6 +126,22 @@ describe('createQrTrackingController', () => {
     expect(beforeEachVote).toEqual(beforeEachVote.map(() => 'detection'));
   });
 
+  // Why this test matters: an app's `dispatchVotes` may return `false` to say
+  // it cast no votes (a spent budget, no session zero); the deferred anchors'
+  // code-lock release hangs on that answer, so the lock itself must not change
+  // for any return value.
+  it('locks as usual when dispatchVotes returns false', async () => {
+    const onLocked = vi.fn();
+    const { controller } = setup({
+      dispatchVotes: (() => false) as unknown as (votes: unknown[]) => void,
+      onLocked,
+    });
+    await tick(controller);
+    await tick(controller);
+    expect(controller.status).toBe('tracking');
+    expect(onLocked).toHaveBeenCalledTimes(1);
+  });
+
   it('fetches the level only once per URL (cache)', async () => {
     const { controller, fetchLevel } = setup();
     await tick(controller);
