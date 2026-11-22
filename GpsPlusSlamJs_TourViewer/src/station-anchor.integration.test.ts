@@ -318,6 +318,7 @@ async function standFigure(
   }: { stationId?: string; pose?: StageCharacterLook["pose"] } = {},
 ) {
   let nowMs = 0;
+  let cameraReads = 0;
   const texture = new THREE.Texture();
   texture.image = { width: 100, height: 200 };
   const stage = createSceneStage({
@@ -325,7 +326,10 @@ async function standFigure(
     poseOf: () => FIGURE_POSE,
     decodeTexture: () => Promise.resolve(texture),
     lookPainters: fakeCharacterPainters().painters,
-    getCamera: () => w.camera,
+    getCamera: () => {
+      cameraReads += 1;
+      return w.camera;
+    },
     now: () => nowMs,
     fadeMs: 1,
   });
@@ -342,6 +346,8 @@ async function standFigure(
     holder,
     /** The pose-free root the figure stands in (it changes on a re-entry). */
     root: () => holder.parent!,
+    /** How often the look read the camera (each of its ticks does). */
+    cameraReads: () => cameraReads,
     /** Follow the station's presence until the fade settled. */
     follow(shown: boolean) {
       stage.follow(() => shown);
@@ -666,7 +672,9 @@ describe("a story figure shares its station's anchor", () => {
 describe("the walk's focus beacon and ring", () => {
   // Why these tests matter: the beacon stands over the station the walk is
   // about. On the scene root it would slide against a station that holds
-  // its place in view; as an anchor of its own it follows the same rule.
+  // its place in view; in its station's key it holds and lands with it,
+  // and a focus change stands it on the new station's matrix, never on a
+  // correction an earlier focus held back.
   const CUE = {
     id: "s",
     at: [0, 0, -30] as [number, number, number],
@@ -729,19 +737,89 @@ describe("the walk's focus beacon and ring", () => {
     expect(c.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
   });
 
-  it("move inside their key on a focus change, with no commit", async () => {
-    const w = await world();
-    const c = cues(w);
-    w.store.setNorth(2);
+  /** A focus with no content of its own, behind the station: in view
+   *  while the camera looks "out", when the station is not. */
+  const BEHIND = {
+    ...CUE,
+    id: "a",
+    at: [0, 0, 30] as [number, number, number],
+  };
+
+  /** Look out at A's beacon, correct, and run frames until the station
+   *  landed out of view while A's beacon holds in view. */
+  function holdA(w: World, c: ReturnType<typeof cues>) {
+    w.look("out");
+    c.marks.onFocusCue(BEHIND);
     w.frame();
     const root = c.beacon.parent!;
     expect(root.parent).toBe(w.group);
-    const held = root.matrix.clone();
-    c.marks.onFocusCue({ ...CUE, id: "t", at: [5, 0, -40] });
+    const placed = root.matrix.clone();
+    const stationBefore = w.station.matrix.clone();
+    w.store.setNorth(2, -3);
+    for (let i = 0; i < 10 && w.station.matrix.equals(stationBefore); i += 1) {
+      c.marks.onFocusCue(BEHIND);
+      w.frame();
+    }
+    expect(w.station.matrix.equals(stationBefore)).toBe(false);
+    expect(root.matrix.equals(placed)).toBe(true);
+    return { root, placed };
+  }
+
+  it("stand on the new focus's station matrix on a focus change, in that frame", async () => {
+    const w = await world();
+    const c = cues(w);
+    const { root } = holdA(w, c);
+    expect(root.matrix.equals(w.station.matrix)).toBe(false);
+    c.marks.onFocusCue(CUE);
+    // The frame of the change: before any pass.
+    const now = c.beacon.parent!;
+    expect(now.parent).toBe(w.group);
+    expect(c.ring.parent).toBe(now);
+    expect(now.matrix.equals(w.station.matrix)).toBe(true);
     w.frame();
+    expect(c.beacon.parent!.matrix.equals(w.station.matrix)).toBe(true);
+  });
+
+  it("stay in their key through a null cue, hidden, and land while hidden", async () => {
+    // Why: the guide sends no cue whenever it shows no distance for a
+    // moment. Taken out of its key, the beacon would come back as a new
+    // placement; kept in it hidden, it counts as out of view, so the
+    // correction lands unseen, and it reappears at its station's place.
+    const w = await world();
+    const c = cues(w);
+    const { root, placed } = holdA(w, c);
+    c.marks.onFocusCue(null);
+    expect(root.visible).toBe(false);
+    expect(root.parent).toBe(w.group);
+    w.frame();
+    expect(root.matrix.equals(placed)).toBe(false);
+    c.marks.onFocusCue(BEHIND);
     expect(c.beacon.parent).toBe(root);
+    expect(root.visible).toBe(true);
+    expect(c.error()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
+  });
+
+  it("keep their place through a null cue while their station's content holds in view", async () => {
+    // Why: a short gap must not move a beacon that stands with content the
+    // visitor sees: in that station's key the content holds the key.
+    const w = await world();
+    const c = cues(w);
+    w.look("in");
+    c.marks.onFocusCue(CUE);
+    w.frame();
+    const root = c.beacon.parent!;
+    const held = root.matrix.clone();
+    w.store.setNorth(2, -3);
+    w.frame();
+    c.marks.onFocusCue(null);
+    w.frame();
+    w.frame();
     expect(root.matrix.equals(held)).toBe(true);
-    expect([c.beacon.position.x, c.beacon.position.z]).toEqual([5, -40]);
+    c.marks.onFocusCue(CUE);
+    expect(c.beacon.parent).toBe(root);
+    w.frame();
+    expect(root.matrix.equals(held)).toBe(true);
+    expect(root.matrix.equals(w.station.matrix)).toBe(true);
   });
 
   it("lead the breadcrumbs to the beacon as it stands, and again once it landed", async () => {
@@ -916,7 +994,11 @@ describe("a code lock through the viewer's pipeline", () => {
       w.store.setNorth(3);
     });
     await p.lock();
+    // The look ticked in the commit's pass, against the placed figure: the
+    // page's tick earlier in that frame saw the figure's old place.
+    const reads = f.cameraReads();
     w.frame();
+    expect(f.cameraReads()).toBeGreaterThan(reads);
     expect(f.root().matrix.equals(w.station.matrix)).toBe(true);
     expect(f.error()).toBeLessThan(TOL);
     p.dispose();

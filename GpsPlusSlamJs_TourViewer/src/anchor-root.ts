@@ -33,15 +33,18 @@ export interface AnchoredRoot {
  * anchor's first bounds see it) as a root of key `key` under `parent`.
  * Null when it cannot (no alignment binding yet, a root nested in another
  * anchor): logged, and the caller stands its content on the scene root.
+ * `onCommit` runs in the pass that places the key, so camera-relative
+ * work can follow in that frame.
  */
 export function anchorRoot(
   parent: Object3D,
   key: string,
   root: Object3D,
+  onCommit?: () => void,
 ): AnchoredRoot | null {
   try {
     const anchor = deferredAnchor(parent, key);
-    anchor.add(root);
+    anchor.add(root, onCommit === undefined ? {} : { onCommit });
     return {
       parent,
       root,

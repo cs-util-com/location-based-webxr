@@ -14,15 +14,17 @@ Callers:
 - `scene-stage.ts`: a story figure's holder, in a wrapper of its
   station's key (`stationAnchorKey`, the key `station-content.ts` uses),
   so figure and station content share one matrix and commit in one pass.
-- `walk-focus-cues.ts`: the beacon and the ring, in one wrapper of key
-  `walk-focus`.
+- `walk-focus-cues.ts`: the beacon and the ring, in one wrapper of their
+  focus station's key (`stationAnchorKey`), re-stood on a focus change.
 
 ## Public API
 
-- `anchorRoot(parent, key, root): AnchoredRoot | null`
+- `anchorRoot(parent, key, root, onCommit?): AnchoredRoot | null`
   - `parent`: the anchor parent (the AR world group with its alignment
     binding). `key`: the anchor key. `root`: an identity wrapper with its
     content already inside, so the anchor's first bounds include it.
+    `onCommit`: runs in the pass that places the key (the framework's
+    `add` option), so camera-relative work follows in that frame.
   - Returns null, after a `warn` log, when the framework refuses (no
     binding for `parent` yet, a root nested in another anchor, a set torn
     down); the wrapper is detached and the caller stands its content on
@@ -59,6 +61,6 @@ anchored?.release();
 - `station-anchor.integration.test.ts`: the figure and the beacon through
   `wireSceneMarks` under a real bound world group (shared key, union,
   figure alone, code lock, presence re-entry, beacon defer and commit,
-  focus change).
+  focus change, null cue).
 - `scene-stage.test.ts`, `walk-focus-cues.test.ts`: the fallback to the
   scene root for a parent without an alignment binding.

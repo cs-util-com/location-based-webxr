@@ -88,8 +88,12 @@ does. Plan:
   its last root, so a figure alone at its station re-enters as a first
   placement, and one beside its station's content joins the key's matrix.
 - The figure's taps (`characterTapTargets`) read world matrices, so a tap
-  finds him where the anchor stands him; `tappablePins` ignores him (he
-  carries no pin name).
+  finds him where the anchor stands him; `tappablePins` ignores him: it
+  finds pins only inside a `station-content:<id>` group, and his wrapper
+  has no such ancestor.
+- His wrapper's `onCommit` ticks the look, so placed in view (a code
+  lock, a window) he turns and opens against his new place in that frame;
+  the page's tick earlier in the frame saw the old one.
 - **The figure follows its station's presence** (the figure fades, the
   audio plays on): a look whose station stops showing fades out
   (`content-fade.ts`, through the look's own `setPresence`) and leaves the

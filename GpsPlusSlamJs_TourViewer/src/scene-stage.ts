@@ -243,7 +243,14 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       const wrapper = new Group();
       wrapper.name = `station-stage-anchor:${s.stationId}`;
       wrapper.add(s.root);
-      s.anchored = anchorRoot(parent, stationAnchorKey(s.stationId), wrapper);
+      // Placed in view (a code lock, a window), the look turns and opens
+      // against his new place in that frame: the page's tick saw the old.
+      s.anchored = anchorRoot(
+        parent,
+        stationAnchorKey(s.stationId),
+        wrapper,
+        tickLook,
+      );
       if (s.anchored !== null) return;
     }
     s.scene.add(s.root);
