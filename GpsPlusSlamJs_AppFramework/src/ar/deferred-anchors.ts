@@ -574,7 +574,7 @@ function createAnchorSet(
       const ungated = m.member.ungated();
       if (releasing && delta > DEFERRED_ANCHOR_EPSILON_M) {
         commitMember(m, 'release:code-lock');
-      } else if (delta < threshold) {
+      } else if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
         m.pendingSinceMs = null;
       } else if (ungated !== null) {
         commitMember(m, ungated);
@@ -955,9 +955,6 @@ function createAnchorSet(
   }
 
   function join(member: AnchorSetMember): AnchorSetMembership {
-    if (disposed) {
-      throw new Error('joinAnchorSet: the anchor set ended with its session');
-    }
     if (nestsWithAny(member.object, keyOfRoot.keys())) {
       throw new Error(
         'joinAnchorSet: nested anchors are not supported; the object is ' +

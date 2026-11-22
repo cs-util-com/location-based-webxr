@@ -59,7 +59,7 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
   binding it is the same set the deferred keys use; without one the parent
   gets a set of its own with no window (T is a fixed identity), which runs on
   its own frame-loop registration and ends with its last member. Throws for
-  a member object inside, or holding, a deferred root, and after teardown.
+  a member object inside, or holding, a deferred root.
   - `AnchorSetMember`: `object` (the set writes its `position`), `camera`
     (the view when the session has no camera), `step(dt, elapsedS, target,
 into)` (writes the target local position, returns the threshold below
