@@ -131,6 +131,14 @@ describe("buildAuthorControllerConfig", () => {
     });
   });
 
+  it("reports that it cast nothing, so no lock releases the anchors", () => {
+    // Why this matters: the framework controller releases the deferred
+    // anchors after `dispatchVotes` unless it returns false; authoring
+    // casts no votes, so it must say so.
+    const config = buildAuthorControllerConfig(0.2, fakeDeps());
+    expect(config.dispatchVotes([])).toBe(false);
+  });
+
   it("runs minIntervalMs 0 — the frame source is the single cadence owner", () => {
     const config = buildAuthorControllerConfig(0.2, fakeDeps());
     expect(config.minIntervalMs).toBe(0);

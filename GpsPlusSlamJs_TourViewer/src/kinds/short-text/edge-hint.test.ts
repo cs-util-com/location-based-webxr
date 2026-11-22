@@ -9,6 +9,12 @@
 import fc from "fast-check";
 import { Group, PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
+import {
+  createAnchorBoundsCache,
+  createAnchorView,
+  isAnchorInView,
+  updateAnchorView,
+} from "gps-plus-slam-app-framework/ar/anchor-visibility";
 
 import { worldEnv } from "../../world-part.js";
 import {
@@ -291,6 +297,51 @@ describe("the hint's part", () => {
     expect(d).toBeGreaterThan(EDGE_HINT.depthM - 0.01);
     expect(d).toBeLessThan(EDGE_HINT.depthM * 1.3);
     expect(at.y).toBeGreaterThan(1.6);
+    part.dispose();
+  });
+
+  it("does not hold its station in view by its tag: the tag and chip are not counted", () => {
+    // Why: a station with an edge hint stands as a deferred anchor, which
+    // waits while anything of it is in view. The tag and chip are placed
+    // in front of the camera every frame, so counted they would hold the
+    // station in view for good, and its correction would never land.
+    const part = edgeHintPart(block, env);
+    const scene = new Group();
+    scene.add(part.object);
+    part.object.position.set(0, 0, 6); // behind a camera looking down -z
+    const camera = new PerspectiveCamera(60, W / H, 0.1, 100);
+    camera.position.set(0, 1.6, 0);
+    scene.add(camera);
+    scene.updateMatrixWorld(true);
+    part.update?.({
+      seconds: 0,
+      viewer: [0, 1.6, 0],
+      camera,
+      metresPerPxAtOneM: 2 / ((camera.projectionMatrix.elements[5] ?? 1) * H),
+    });
+    scene.updateMatrixWorld(true);
+    // The tag is drawn, at the screen edge in front of the camera.
+    expect(
+      part.object.children.filter((c) => c.visible && c.renderOrder >= 999),
+    ).not.toHaveLength(0);
+    const view = updateAnchorView(createAnchorView(), camera);
+    expect(
+      isAnchorInView(view, part.object, {
+        marginDeg: 0,
+        cache: createAnchorBoundsCache(),
+        fresh: true,
+      }),
+    ).toBe(false);
+    // In front, the ring alone holds it.
+    part.object.position.set(0, 0, -6);
+    scene.updateMatrixWorld(true);
+    expect(
+      isAnchorInView(view, part.object, {
+        marginDeg: 0,
+        cache: createAnchorBoundsCache(),
+        fresh: true,
+      }),
+    ).toBe(true);
     part.dispose();
   });
 

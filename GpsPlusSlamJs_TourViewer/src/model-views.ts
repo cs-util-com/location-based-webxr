@@ -36,6 +36,7 @@ import type {
   TourModelWorldView,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_MODEL_WORLD_VIEWS } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { mergeForAnchorBounds } from "gps-plus-slam-app-framework/ar/anchor-visibility";
 
 import {
   pinchedToyFactor,
@@ -548,6 +549,13 @@ export function mountModelView(
     shadow.raycast = () => undefined;
     model.add(shadow);
     restores.push(() => shadow.removeFromParent());
+  }
+
+  // A model with no inner motion is bounded by one sphere in its station
+  // anchor's view test; a playing clip, a toy (dragged, scaled) or a
+  // cutaway (its frame moves and turns with the section) is not.
+  if (mixer === null && view !== "toy" && view !== "cutaway") {
+    mergeForAnchorBounds(model);
   }
 
   // --- toy

@@ -182,6 +182,8 @@ function harness(
     solveQrPose: () => null,
     getIntrinsics: () => null,
     getScene: () => scene,
+    // Stations on the scene root, as in the e2e fakes.
+    getStationAnchorParent: () => null,
     createLabel: (text: string) => {
       labels.push(text);
       return { object: new Object3D(), dispose: () => undefined };

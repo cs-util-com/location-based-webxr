@@ -118,7 +118,8 @@ export function buildAuthorControllerConfig(
     dispatchVotes: () => {
       // Unreachable: a geo-less level never produces votes. Kept explicit
       // so a future schema change fails a test here instead of silently
-      // voting during authoring.
+      // voting during authoring. false: nothing cast, no anchor release.
+      return false;
     },
     onDetection: (event) => {
       deps.recordDetection(event);

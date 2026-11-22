@@ -48,7 +48,7 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   Details:
   Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's: without a door it is left out quietly). With a door (`worldPart`, one field the station renderer shares) an object goes to it exactly as its block (`tourObjectBlock`at the local origin) would at a station: a pin as its head on a stem and every view no drawing here has, placed at the object's pose with its id in`userData.objectId`; the creator's AR previews (`creator-previews.ts`) pass the door in the edit mode for an item placed in this visit or held by no station (a hosted item goes through `renderStationBlocks` in its station's frame, as the visitor draws it), the visitor's other callers pass none and keep pins as labels;
 a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
-picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
+picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all under the given parent in the session's NUE; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model
 here (a world-view object, the creator's previews) is not drawn - it never
 reaches the photo loader and
@@ -117,8 +117,10 @@ under - what a tap in AR is cast against to name the object
   yaw bug the geo-join review caught. Pinned by bearing in the tests.
 - GPS-world `y` IS absolute altitude (the stack's convention); the records
   carry it as `geo.alt`.
-- Rendering is at the scene root in the session's NUE, like the photo
-  planes - unless the caller passes `poseOf`, a pose per object in the
+- Rendering is in the session's NUE into the `scene` handed in, like the
+  photo planes: the scene root, or a station's group, which in an AR visit
+  is a deferred anchor under the AR world group whose matrix cancels the
+  alignment, so NUE stays right inside it (`station-content.ts`) - unless the caller passes `poseOf`, a pose per object in the
   frame of the `scene` it hands in. The creator's previews of the running
   AR visit use it to sit under the AR world group at their odometry pose,
   so they stay rigid while GPS re-solves (authoring plan 2026-09-28-0953

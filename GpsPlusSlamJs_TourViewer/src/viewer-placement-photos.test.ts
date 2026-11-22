@@ -185,6 +185,8 @@ function harness(input: {
     solveQrPose: () => null,
     getIntrinsics: () => null,
     getScene: () => scene,
+    // Stations on the scene root, as in the e2e fakes.
+    getStationAnchorParent: () => null,
     createLabel: () => ({
       object: new Scene(),
       dispose: () => undefined,

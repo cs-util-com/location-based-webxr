@@ -31,7 +31,7 @@ This file currently implements **sub-steps 2 (bootstrap phase),
 3 (steady-state `'snap-every-tick'` + distance-scaled threshold gate),
 4 (`'snap-when-offscreen'` mode gate, with a one-time initial-placement
 exemption for `skipBootstrap` anchors), and 5 (re-bootstrap on external
-move)** of the port plan. Since the anchor-set milestone the
+move)** of the port plan. Since the anchor set, the
 steady-state commit gate is not its own: the anchor is a position member of
 its `arWorldGroup`'s anchor set ([`ar/deferred-anchors.ts`](../ar/deferred-anchors.ts.md)),
 which decides when its target lands. Floor-Y correction (sub-step 6) is not
@@ -94,7 +94,7 @@ object as an `@internal` testing seam in lieu of pumping the global
 
 - **No nested anchors**: a `THREE.Object3D` whose parent chain already
   contains a `GpsAnchor`-managed object, or that holds one below it, cannot
-  be anchored — the constructor throws. Mirrors the C# invariant.
+  be anchored: the constructor throws. Mirrors the C# invariant.
   Implementation: a module-level `WeakSet<Object3D>` tracks managed objects.
   Nesting with a deferred anchor of the same set is refused in both
   directions too: `createGpsAnchor` throws for an object inside, or holding,
@@ -114,7 +114,10 @@ object as an `@internal` testing seam in lieu of pumping the global
   bound, the local target is `T⁻¹ · nue` with T the binding's target (the
   alignment times the dev world jump, when one is set), so the object's
   world position equals its NUE, the same as scene-root content of the same
-  GPS point. Without a binding, `getAlignmentMatrix` is the T.
+  GPS point. Without a binding, `getAlignmentMatrix` is the T. Under the
+  dev world jump J (dev only, no consumer), a `'mature-alignment'` start-up
+  anchor fixes its point through the caller's alignment A, while its steady
+  target solves through the group's J·A.
 - **`elapsed` is monotonic seconds**: tied to `XRFrame.time / 1000`.
   Tests inject controlled values via `__tickForTests`.
 - **Bootstrap median is per-coordinate**: `lat`, `lon`, and (if any
@@ -183,8 +186,10 @@ object as an `@internal` testing seam in lieu of pumping the global
   first commit, which must land even on-screen so the marker can leave the
   origin (the AnchorStarter `?show=` reveal). That exemption is consumed by the
   first committed correction and **never re-armed** (a re-bootstrap moves an
-  already-placed object). The exemption is consumed only by a commit, so an
-  anchor created at its target keeps it armed until its first real move.
+  already-placed object). An object that starts within its threshold (or
+  the set's epsilon) of its first target, such as a cached pose a reload
+  restores, is placed already: the exemption ends at that first step,
+  without a commit, and its first real correction is gated.
   The earlier **large-jump bypass** (which overrode the
   frustum gate on a >2°/4 m/20 m alignment-matrix delta) was **removed**: now
   that the whole frame rides one `arWorldGroup.matrix`, a large jump moves the

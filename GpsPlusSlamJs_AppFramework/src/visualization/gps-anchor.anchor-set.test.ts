@@ -12,7 +12,7 @@
  * WebXR to NUE basis node and the AR pose node inside the world group.
  */
 import '../test-setup';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createGpsAnchor, type GpsAnchorOptions } from './gps-anchor.js';
 import { enableArWorldGroupAlignment } from './ar-world-group-alignment.js';
@@ -21,9 +21,13 @@ import {
   __resetAnchorReleaseForTests,
   requestAnchorRelease,
 } from '../ar/anchor-release.js';
-import { deferredAnchor } from '../ar/deferred-anchors.js';
+import {
+  __runPassForTests,
+  deferredAnchor,
+  joinAnchorSet,
+} from '../ar/deferred-anchors.js';
 import { getArParentBinding } from '../ar/ar-parent-target.js';
-import { clearFrameUpdates } from '../ar/frame-loop.js';
+import { clearFrameUpdates, runFrameUpdates } from '../ar/frame-loop.js';
 import { WEBXR_TO_NUE } from '../ar/webxr-nue-basis.js';
 import {
   clearSessionDisposers,
@@ -148,8 +152,8 @@ function rig(opts: { bound?: boolean; mature?: boolean } = {}) {
      * A `skipBootstrap` anchor of `object` at `gpsPoint`. The default object
      * is a small mesh that starts 50 m above the group origin, out of view,
      * so its first placement (exempt from the gate) is a real move: an
-     * anchor already at its target keeps that exemption armed until it
-     * first moves.
+     * object that starts within its threshold of the target ends that
+     * exemption at once, without a commit.
      */
     anchor(
       gpsPoint: LatLong,
@@ -343,6 +347,77 @@ describe('createGpsAnchor in the anchor set: events', () => {
     r.run(4);
     expect(object.position.x).toBeCloseTo(-5, 6);
   });
+
+  it('inside an open window, every further above-threshold correction lands in view too', () => {
+    // Why this test matters: a deferred key follows T for the whole window;
+    // a member follows it in steps of its own threshold (it never moves for
+    // less, in view or out). A member that landed only the window's first
+    // correction would be held at a stale place for the rest of the window.
+    const r = rig();
+    r.run(2);
+    const { object } = r.anchor(ZERO);
+    r.run(2);
+    r.store.bumpEpoch();
+    r.store.setT(tOf(5));
+    r.run(1);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+    r.store.setT(tOf(9)); // 4 m more, still inside the window
+    r.run(1);
+    expect(object.position.x).toBeCloseTo(-9, 6);
+  });
+
+  it('an anchor that joined before the binding joins the bound set once it exists', () => {
+    // Why this test matters: an app may create a GPS anchor before it
+    // enables the alignment binding. Its set had no binding, so no window
+    // and no shared release; it must not stay that way for the session,
+    // nor may a second set appear beside it for the same parent.
+    const r = rig({ bound: false });
+    r.run(2);
+    const { anchor, object } = r.anchor(ZERO);
+    r.run(2);
+    expect(object.position.length()).toBeLessThan(1e-9);
+    enableArWorldGroupAlignment({ store: r.store, arWorldGroup: r.group });
+    runFrameUpdates(DT, 1); // the old set's own frame update hands it over
+    r.store.bumpEpoch();
+    r.store.setT(tOf(5));
+    r.run(1);
+    expect(object.position.x, "the bound set's window let it land").toBeCloseTo(
+      -5,
+      6
+    );
+    // One set: a deferred key of the same parent refuses to nest with it.
+    const holder = new THREE.Group();
+    r.group.add(holder);
+    holder.attach(object);
+    expect(() => deferredAnchor(r.group, 'k').add(holder)).toThrow(/nest/);
+    // Disposed after the hand-over, it leaves the bound set: a T step out of
+    // view, which would land it were it still a member, moves nothing.
+    r.group.attach(object);
+    anchor.dispose();
+    r.look('out');
+    r.store.setT(tOf(9));
+    r.run(6);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+  });
+
+  it('a member the bound set refuses at the hand-over stays in its own set and keeps running', () => {
+    // Why this test matters: a member that nests with a key added after the
+    // binding cannot join the bound set; dropped from both sets it would
+    // stand frozen for the rest of the session.
+    const r = rig({ bound: false });
+    r.run(2);
+    const { object } = r.anchor(ZERO);
+    r.run(2);
+    enableArWorldGroupAlignment({ store: r.store, arWorldGroup: r.group });
+    const holder = new THREE.Group();
+    deferredAnchor(r.group, 'k').add(holder);
+    holder.attach(object);
+    runFrameUpdates(DT, 1); // the hand-over: refused, it stays
+    r.look('out');
+    r.store.setT(tOf(5));
+    r.run(4);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+  });
 });
 
 describe('createGpsAnchor in the anchor set: where the target comes from', () => {
@@ -415,5 +490,120 @@ describe('createGpsAnchor in the anchor set: nesting', () => {
     r.group.add(holder);
     r.anchor(ZERO, {}, anchored);
     expect(() => deferredAnchor(r.group, 'h').add(holder)).toThrow(/nest/i);
+  });
+});
+
+describe('createGpsAnchor in the anchor set: the first placement', () => {
+  it('an object created within its threshold of the target takes no in-view first commit later', () => {
+    // Why this test matters: an app that reloads a cached pose (the
+    // AnchorStarter's `?show=` link) creates the object a metre or two from
+    // its target. That is its placement. If the one-time exemption stayed
+    // armed, the first correction above the threshold would land in view
+    // as 'first', a visible jump the gate exists to prevent.
+    const r = rig();
+    r.run(2);
+    const object = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2),
+      new THREE.MeshBasicMaterial()
+    );
+    object.position.set(1, 0, 0); // 1 m from the target, threshold 3.6 m
+    r.anchor(ZERO, {}, object);
+    r.run(2);
+    expect(object.position.x).toBeCloseTo(1, 9); // the cached pose holds
+
+    r.store.setT(tOf(5)); // target (-5, 0, 0): 6 m away, above the threshold
+    r.run(6);
+    expect(object.position.x).toBeCloseTo(1, 9); // in view: deferred
+
+    r.look('out');
+    r.run(6);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+  });
+});
+
+describe('the anchor set: position members', () => {
+  /** A member of `r.group` whose target is its own position plus `offset`. */
+  function joinStill(
+    r: ReturnType<typeof rig>,
+    threshold: number,
+    offset: number
+  ): { placed: () => number } {
+    const object = new THREE.Object3D();
+    r.group.add(object);
+    let placed = 0;
+    joinAnchorSet(r.group, {
+      object,
+      camera: r.camera,
+      step: (_dt, _elapsedS, _source, into) => {
+        into.copy(object.position).setX(object.position.x + offset);
+        return threshold;
+      },
+      ungated: () => null,
+      placed: () => {
+        placed += 1;
+      },
+    });
+    return { placed: () => placed };
+  }
+
+  it.each([
+    [0, 0, 0],
+    [-1, 0, 0],
+    [0, 0.015, 0],
+    [0, 0.03, 1], // above the epsilon: a real move, committed
+  ])(
+    'threshold %d with the target %d m away: %d commits',
+    (threshold, offset, commits) => {
+      // Why this test matters: a member whose threshold is 0 or less, at
+      // (or within the epsilon of) its target, used to stay pending
+      // forever. Out of view it then committed a zero move every pass,
+      // logging it each time and spending the set's one commit of that
+      // pass. A move above the epsilon still lands.
+      const r = rig();
+      r.look('out');
+      const member = joinStill(r, threshold, offset);
+      for (let i = 0; i < 8; i += 1) {
+        __runPassForTests(r.group, r.camera, DT, i * DT);
+      }
+      expect(member.placed() > 0 ? 1 : 0).toBe(commits);
+    }
+  );
+
+  it('two pending members out of view commit in two passes, one per pass', () => {
+    // Why this test matters: the set traverses at most one subtree per
+    // pass, members included, which is what bounds a pass's cost with many
+    // anchors. Two members that both wait take two passes.
+    const r = rig();
+    r.look('out');
+    r.run(2);
+    const a = r.anchor(ZERO).object;
+    const b = r.anchor(gpsAt(0, -1)).object;
+    r.run(3); // both first placements (exempt from the gate)
+    r.store.setT(tOf(5));
+    const landed = (): number =>
+      [a, b].filter((o) => Math.abs(o.position.x + 5) < 1e-6).length;
+    const counts: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      r.run(1);
+      counts.push(landed());
+    }
+    expect(counts).toEqual([1, 2, 2]);
+  });
+
+  it('a set without a binding ends with its last member', () => {
+    // Why this test matters: an unbound set runs on its own frame update.
+    // It must stop when its last anchor is disposed, or every app without
+    // a binding keeps a pass running each frame after its anchors are gone.
+    const r = rig({ bound: false });
+    const a = r.anchor(ZERO).anchor;
+    const b = r.anchor(gpsAt(1)).anchor;
+    const spy = vi.spyOn(r.group, 'updateWorldMatrix');
+    a.dispose();
+    runFrameUpdates(DT, 1);
+    expect(spy).toHaveBeenCalled(); // one member left: the set still runs
+    b.dispose();
+    spy.mockClear();
+    runFrameUpdates(DT, 2);
+    expect(spy).not.toHaveBeenCalled();
   });
 });

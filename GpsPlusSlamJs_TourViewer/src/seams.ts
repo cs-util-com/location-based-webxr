@@ -104,6 +104,13 @@ export interface TourViewerSeams {
    */
   controllerDeps: Partial<EnableGpsArDeps>;
   getArWorldGroup(): Object3D | null;
+  /**
+   * Where the visitor's stations stand as deferred anchors
+   * (`station-content.ts` `anchorParent`): the AR world group in
+   * production. The e2e fake returns null, because its alignment fake
+   * creates no binding: stations stay on the scene root there.
+   */
+  getStationAnchorParent(): Object3D | null;
   enableArWorldGroupAlignment(options: {
     store: SubscribableStore;
     arWorldGroup: Object3D;
@@ -291,6 +298,7 @@ const pnpSolver = /* @__PURE__ */ new PlanarPnpSquare();
 export const realSeams: TourViewerSeams = {
   controllerDeps: {},
   getArWorldGroup,
+  getStationAnchorParent: getArWorldGroup,
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,

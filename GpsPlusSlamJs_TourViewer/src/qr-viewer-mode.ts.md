@@ -99,7 +99,9 @@ hasVoted)` is forwarded from every controller lock (no detected-text
 - `ViewerPipelineDeps.isIgnored(text)` is read FIRST on every lock (§7j
   #16): an ignored code's `resolveStablePose` returns null without asking
   the fused pose (about 10 ms a lock on the phone), `dispatchVotes` drops
-  anything, a spent budget is not re-armed, and its lock goes to
+  anything, (the config's `dispatchVotes` returns `false` on every refusal, ignored code,
+  closed store, spent budget or no detection yet, and `true` after a cast, so
+  the controller releases the deferred anchors only on a cast), a spent budget is not re-armed, and its lock goes to
   `onIgnoredLock(text, level)` instead of `onLocked` - so no keep-alive
   restart and no gate pass "via code".
 - `onVotedPose({ text, qrPoseWorld, level }, atMs)` - every voted lock's

@@ -587,3 +587,51 @@ describe("station content: stale failures, the one-at-a-time rule, late parts", 
     expect(h.opacityOf("b")).toBe(0);
   });
 });
+
+describe("station content: an anchor parent", () => {
+  // Why: the e2e fakes and every non-AR caller hand no anchor parent (or
+  // null), and their stations must stand on the scene root exactly as
+  // before; a parent without an alignment binding (the AR world group
+  // before the session bound it) must still show the station rather than
+  // lose it to a throw.
+  it("without one (or with null) a station enters on the scene, as before", async () => {
+    for (const anchorParent of [undefined, () => null]) {
+      const h = harness(anchorParent === undefined ? {} : { anchorParent });
+      h.content.setPart("a", "items", planePart().part);
+      h.content.show(new Set(["a"]));
+      await h.at(1000);
+      expect(h.names()).toEqual(["station-content:a"]);
+    }
+  });
+
+  it("with a parent that has no alignment binding, the station still enters on the scene", async () => {
+    const parent = new Group();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const h = harness({ anchorParent: () => parent });
+      h.content.setPart("a", "items", planePart().part);
+      h.content.show(new Set(["a"]));
+      await h.at(1000);
+      expect(h.names()).toEqual(["station-content:a"]);
+      expect(parent.children).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+  it("with an anchor-parent seam that throws, the station still enters on the scene", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const h = harness({
+        anchorParent: () => {
+          throw new Error("no AR session");
+        },
+      });
+      h.content.setPart("a", "items", planePart().part);
+      h.content.show(new Set(["a"]));
+      await h.at(1000);
+      expect(h.names()).toEqual(["station-content:a"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});

@@ -20,6 +20,7 @@ import {
   type LatLongAlt,
 } from '../core/index.js';
 import {
+  DEFERRED_ANCHOR_EPSILON_M,
   joinAnchorSet,
   type AnchorSetMembership,
 } from '../ar/deferred-anchors.js';
@@ -303,7 +304,7 @@ function assertNotNested(object: THREE.Object3D): void {
   }
   if (holdsAnchoredObject(object)) {
     throw new Error(
-      'createGpsAnchor: nested GpsAnchors are not supported — ' +
+      'createGpsAnchor: nested GpsAnchors are not supported: ' +
         'the supplied object3D holds an anchored descendant.'
     );
   }
@@ -466,7 +467,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
    * maps **AR-odometry NUE → GPS-world NUE**. `object3D.position` is a
    * *local* transform in that AR-odometry frame. To make the object's
    * *world* position equal the GPS-world `nue`, the local target must be
-   * `T⁻¹ · nue` — writing raw `nue` would double-apply the alignment (world
+   * `T⁻¹ · nue`; writing raw `nue` would double-apply the alignment (world
    * = `T · nue`). Under a binding (`enableArWorldGroupAlignment`) T is read
    * from the binding, so a T that differs from the caller's alignment (the
    * dev world jump) is solved with the same value the group carries;
@@ -474,7 +475,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
    * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md`.
    *
    * Returns null on missing inputs (no `zeroRef`, or no alignment matrix
-   * yet from the caller — an AR-local object cannot be placed without
+   * yet from the caller: an AR-local object cannot be placed without
    * knowing the AR↔NUE transform).
    */
   // E-3 target cache (2026-07-10 quality review): the geo trig + 4×4
@@ -543,7 +544,16 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     options.camera.getWorldPosition(scratchCamWorld);
     options.object3D.getWorldPosition(scratchObjWorld);
     const distFromCamera = scratchCamWorld.distanceTo(scratchObjWorld);
-    return distanceThreshold * (1 + (10 * distFromCamera) / 100);
+    const threshold = distanceThreshold * (1 + (10 * distFromCamera) / 100);
+    // An object that starts within its threshold of the target (a cached
+    // pose) is placed already: the first-placement exemption ends here, so
+    // its first real correction is gated like any other. The same rule as
+    // the set's "not pending".
+    const delta = options.object3D.position.distanceTo(into);
+    if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
+      firstCommitPending = false;
+    }
+    return threshold;
   };
 
   /** One frame: the bootstrap, or the steady-state target and threshold.

@@ -61,7 +61,7 @@ import {
 import { mountLectern } from "./lectern-view.js";
 import { mountReadingSign, type ReadingSignBlock } from "./reading-sign.js";
 import { worldPartOf } from "./play-kinds.js";
-import { worldEnv } from "./world-part.js";
+import { tickWorldParts, worldEnv } from "./world-part.js";
 import type { WorldSound } from "./world-sound.js";
 import type { WorldScreen } from "./world-part.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
@@ -988,6 +988,21 @@ export function createViewerPlacement(deps: {
         now,
         // Smooth fades on a phone: every rendered frame of the AR session.
         registerFrame: (fn) => registerFrameUpdate(fn),
+        // Stations defer alignment changes while in view (the AR world
+        // group; null in the e2e fakes, which keep them on the scene root).
+        anchorParent: () => seams.getStationAnchorParent(),
+        // A placed station re-ticks its own camera-relative parts in the
+        // same frame (the edge hint's tag reads the station's matrix),
+        // with the page's per-frame tick's clock and view height.
+        onAnchorCommit: (group) => {
+          tickWorldParts(
+            group,
+            seams.getViewerCamera(),
+            performance.now(),
+            undefined,
+            globalThis.innerHeight,
+          );
+        },
         // Logged per station, each time it is drawn (visitor plan §3).
         onMounted: (stationId, rendered, part) => {
           const base = partLogs.get(part);

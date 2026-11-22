@@ -3,7 +3,7 @@
  * K-D4: the idea, not its implementation): a short line of dots on the
  * ground from the visitor towards the next station, so the way reads at a
  * glance where the HUD's arrow only points. At the scene root in the
- * session's GPS-world NUE, like the tour's content.
+ * session's GPS-world NUE.
  *
  * The dots run straight towards the station (the tour carries no paths),
  * start one spacing ahead of the visitor, and stop short of the station's

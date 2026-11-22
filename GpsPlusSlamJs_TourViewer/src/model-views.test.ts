@@ -11,6 +11,12 @@
 import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
+import {
+  createAnchorBoundsCache,
+  createAnchorView,
+  isAnchorInView,
+  updateAnchorView,
+} from "gps-plus-slam-app-framework/ar/anchor-visibility";
 
 import { TOY_MAX_SIZE_M } from "./model-gestures.js";
 import {
@@ -350,6 +356,51 @@ describe("mountModelView", () => {
     const second = mountModelView(replaced, { ...b, asset: "bell2" }, 3 / 8);
     expect(second.notes).toEqual(first.notes);
     expect(second.notePoints()).toHaveLength(1);
+  });
+
+  // Why: a station stands as a deferred anchor whose view test traverses
+  // its subtree; a still model is bounded by one sphere (its many meshes
+  // would cost a test each), but a model that moves inside (a playing
+  // clip, a toy the visitor drags and scales) must keep its own parts, or
+  // the sphere would stay where the model was.
+  it("bounds a still model by one sphere for the anchor view test, never a moving one", () => {
+    const track = new THREE.VectorKeyframeTrack(
+      "swinger.position",
+      [0, 1],
+      [0, 0, 0, 5, 0, 0],
+    );
+    const clip = new THREE.AnimationClip("swing", 1, [track]);
+    const merged = (view: TourModelBlock["view"], autoplay: boolean) => {
+      const { parent, model, mesh } = standing([0, 0, -10]);
+      mesh.name = "swinger";
+      model.animations = [clip];
+      const v = mountModelView(
+        model,
+        block(view, { animation: { name: "swing", autoplay } }),
+        1.5,
+      );
+      const scene = new THREE.Group();
+      scene.add(parent);
+      scene.updateMatrixWorld(true);
+      const cache = createAnchorBoundsCache();
+      isAnchorInView(
+        updateAnchorView(createAnchorView(), cameraAt([0, 1, 0], [0, 1, -10])),
+        parent,
+        { marginDeg: 0, cache, fresh: true },
+      );
+      v.dispose();
+      return cache.mergeRoots.has(model);
+    };
+    for (const view of ["placed", "ghost", "hotspots"] as const) {
+      expect(merged(view, false), view).toBe(true);
+    }
+    expect(merged("hotspots", true), "hotspots holds the clip").toBe(true);
+    expect(merged("placed", true), "a playing clip").toBe(false);
+    expect(merged("toy", false), "a toy").toBe(false);
+    // The cutaway's frame moves and turns with the section and can stand
+    // outside the sphere kept at the model's first bounds, so a station
+    // could commit while a corner of the frame is on screen.
+    expect(merged("cutaway", false), "a cutaway").toBe(false);
   });
 
   // Why: the clip loops where the tour asks for it, and hotspots holds it

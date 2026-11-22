@@ -49,7 +49,9 @@ camera, so `installTourViewerArFakes(page)` installs
   pipeline; the REAL controller, slice, stability gate and mint run over
   them - plus `fakeScene` (a scene-root stub the image planes land in). Both stubs parent what they hold as three does (`parenting`), the world group under the scene, each shown and with an identity world matrix, so a visitor's tap on a world part finds the part shown under its station and a child's world pose reads as before. Since the stubs parent, in every spec that installs these fakes a station's content group has a parent chain up to the scene: its world parts tick, its model views count as shown, and a tap on a model or a part runs the pick before the pin sheet opens. The world group is parented (its `parent` is the scene) but deliberately not listed among the scene's `children`, so the scene's child counts the specs read are unchanged;
   `getArWorldGroup`/`getScene` return null until initAR ran, pinning the
-  production ordering; `locationPermission` / `locationOutcome` /
+  production ordering; `getStationAnchorParent` always returns null (the
+  alignment fake creates no binding), so stations stand on the scene root
+  as plain groups and the specs read them there; `locationPermission` / `locationOutcome` /
   `locationRequests` (the visitor screen's gate: what the permission
   query answers, what a location-only tap comes back with, how many taps
   were made); `geolocationPermissionRequests` (how often the controller

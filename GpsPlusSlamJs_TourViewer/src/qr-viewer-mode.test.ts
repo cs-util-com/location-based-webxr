@@ -145,6 +145,44 @@ describe("buildViewerControllerConfig", () => {
     );
   });
 
+  it("tells the controller whether the votes were cast: false on every refusal, true after a cast", () => {
+    // Why this matters: the framework controller releases the deferred
+    // anchors right after `dispatchVotes` unless it returns false. A wrapper
+    // that returned nothing on its refusals would read as a cast, and
+    // visible stations would jump at a lock that moved nothing.
+    const votes = [{ v: 1 }] as never[];
+
+    // No detection yet: nothing to attribute the votes to.
+    expect(buildViewerControllerConfig(fakeDeps()).dispatchVotes(votes)).toBe(
+      false,
+    );
+
+    // An ignored code.
+    const ignoring = buildViewerControllerConfig(
+      fakeDeps({ isIgnored: (text) => text === TEXT }),
+    );
+    ignoring.onDetection?.({ text: TEXT, timestamp: 0 } as QrDetectionEvent);
+    expect(ignoring.dispatchVotes(votes)).toBe(false);
+
+    // The store cannot accept votes yet.
+    const closed = buildViewerControllerConfig(
+      fakeDeps({ canAcceptVotes: () => false }),
+    );
+    closed.onDetection?.({ text: TEXT, timestamp: 0 } as QrDetectionEvent);
+    expect(closed.dispatchVotes(votes)).toBe(false);
+
+    // Cast until the budget is spent, then refused.
+    const deps = fakeDeps();
+    const config = buildViewerControllerConfig(deps);
+    for (let i = 0; i < MAX_VOTED_LOCKS_PER_CODE; i += 1) {
+      config.onDetection?.({ text: TEXT, timestamp: i } as QrDetectionEvent);
+      expect(config.dispatchVotes(votes)).toBe(true);
+    }
+    config.onDetection?.({ text: TEXT, timestamp: 99 } as QrDetectionEvent);
+    expect(config.dispatchVotes(votes)).toBe(false);
+    expect(deps.dispatchVotes).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE);
+  });
+
   it("keys the budget by the decoded text, which IS the code's identity", () => {
     // Why this matters: the budget used to key by the resolved &c= value,
     // because two different payloads could name one code. Identity is now

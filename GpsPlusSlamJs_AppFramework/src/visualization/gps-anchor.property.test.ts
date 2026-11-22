@@ -21,7 +21,21 @@ import * as fc from 'fast-check';
 import * as THREE from 'three';
 import { createGpsAnchor } from './gps-anchor.js';
 import { clearFrameUpdates } from '../ar/frame-loop.js';
-import { calcRelativeCoordsInMeters } from '../core/index.js';
+import { calcRelativeCoordsInMeters, type LatLong } from '../core/index.js';
+import { enableArWorldGroupAlignment } from './ar-world-group-alignment.js';
+import {
+  __runPassForTests,
+  DEFERRED_ANCHOR_EPSILON_M,
+} from '../ar/deferred-anchors.js';
+import {
+  __resetAnchorReleaseForTests,
+  requestAnchorRelease,
+} from '../ar/anchor-release.js';
+import {
+  clearSessionDisposers,
+  runSessionDisposers,
+} from '../ar/session-disposers.js';
+import type { SubscribableStore } from '../state/subscribe-to-selector.js';
 
 afterEach(() => {
   clearFrameUpdates();
@@ -87,6 +101,10 @@ describe('createGpsAnchor — alignment-frame properties', () => {
           const arWorldGroup = new THREE.Group();
           const object3D = new THREE.Object3D();
           arWorldGroup.add(object3D);
+          // Far from every target, so the commit is a real move: a target
+          // within the set's epsilon of the start is (rightly) not committed
+          // and would leave the object up to 2 cm off.
+          object3D.position.set(0, 1000, 0);
           applyAlignmentToGroup(arWorldGroup, alignment);
           const camera = new THREE.PerspectiveCamera();
           const target = { lat: zero.lat + dLat, lon: zero.lon + dLon };
@@ -137,6 +155,269 @@ describe('createGpsAnchor — alignment-frame properties', () => {
           expect(a[i]).toBeCloseTo(b[i]!, 5);
         }
       })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Under an alignment binding: code-lock releases and frame-switch windows.
+// ---------------------------------------------------------------------------
+
+const BOUND_ZERO: LatLong = { lat: 48.0, lon: 11.0 };
+const BOUND_DT = 1 / 20;
+
+/** A store with what the binding reads: T, a mature extent and a frame epoch. */
+function makeBoundStore() {
+  const listeners = new Set<() => void>();
+  let alignment: number[] = new THREE.Matrix4().toArray();
+  let epoch = 0;
+  const positions = [0, 40].map((n, i) => ({
+    id: `p${i}`,
+    timestamp: i,
+    coordinates: [n, 0, 0] as [number, number, number],
+  }));
+  const build = () => ({
+    gpsData: {
+      zero: BOUND_ZERO,
+      gpsEvents: { alignmentMatrix: alignment, gpsPositions: positions },
+    },
+    qrDetected: { frameEpoch: epoch },
+  });
+  let state = build();
+  const emit = () => {
+    state = build();
+    for (const l of [...listeners]) l();
+  };
+  return {
+    getState: () => state,
+    subscribe: (l: () => void) => {
+      listeners.add(l);
+      return () => listeners.delete(l);
+    },
+    alignment: () => alignment,
+    setT(m: THREE.Matrix4) {
+      alignment = m.toArray();
+      emit();
+    },
+    bumpEpoch() {
+      epoch += 1;
+      emit();
+    },
+  } as unknown as SubscribableStore & {
+    alignment(): readonly number[];
+    setT(m: THREE.Matrix4): void;
+    bumpEpoch(): void;
+  };
+}
+
+type BoundOp =
+  | { kind: 't'; north: number; east: number; yawDeg: number }
+  | { kind: 'look'; dir: 'in' | 'out' }
+  | { kind: 'epoch' }
+  | { kind: 'release' }
+  | { kind: 'idle' };
+
+const boundOpArb = (withLook: boolean): fc.Arbitrary<BoundOp> =>
+  fc.oneof(
+    {
+      weight: 4,
+      arbitrary: fc.record({
+        kind: fc.constant('t' as const),
+        north: fc.double({ min: -4, max: 4, noNaN: true }),
+        east: fc.double({ min: -4, max: 4, noNaN: true }),
+        yawDeg: fc.double({ min: -10, max: 10, noNaN: true }),
+      }),
+    },
+    {
+      weight: withLook ? 2 : 0,
+      arbitrary: fc.record({
+        kind: fc.constant('look' as const),
+        dir: fc.constantFrom('in' as const, 'out' as const),
+      }),
+    },
+    { weight: 1, arbitrary: fc.constant({ kind: 'epoch' as const }) },
+    { weight: 1, arbitrary: fc.constant({ kind: 'release' as const }) },
+    { weight: 2, arbitrary: fc.constant({ kind: 'idle' as const }) }
+  );
+
+interface BoundScenario {
+  ops: BoundOp[];
+  dNorth: number;
+  dEast: number;
+}
+
+const boundScenarioArb = (withLook: boolean): fc.Arbitrary<BoundScenario> =>
+  fc.record({
+    ops: fc.array(boundOpArb(withLook), { minLength: 1, maxLength: 30 }),
+    dNorth: fc.double({ min: -2, max: 2, noNaN: true }),
+    dEast: fc.double({ min: -2, max: 2, noNaN: true }),
+  });
+
+/**
+ * A bound world group, a camera 30 m in front of its origin (facing it, or
+ * away after a `look` op `out`) and an anchor of a 1 m sphere near the
+ * origin, created at its first target (so its first placement is done).
+ * Under the ops' T (within 4 m and 10 degrees) the sphere stays in the
+ * camera's view while it faces the origin.
+ */
+function boundWorld(
+  { dNorth, dEast }: BoundScenario,
+  overrides: Partial<Parameters<typeof createGpsAnchor>[0]>
+) {
+  const store = makeBoundStore();
+  const group = new THREE.Group();
+  new THREE.Scene().add(group);
+  enableArWorldGroupAlignment({ store, arWorldGroup: group });
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(0, 0, 30);
+  group.add(camera);
+  const point = {
+    lat: BOUND_ZERO.lat + dNorth / 111319,
+    lon: BOUND_ZERO.lon + dEast / 74500,
+  };
+  const n = calcRelativeCoordsInMeters(BOUND_ZERO, point);
+  const nue = new THREE.Vector3(n[0], n[1], n[2]);
+  const object3D = new THREE.Mesh(
+    new THREE.SphereGeometry(1),
+    new THREE.MeshBasicMaterial()
+  );
+  object3D.position.copy(nue); // T is the identity at creation
+  group.add(object3D);
+  createGpsAnchor({
+    object3D,
+    arWorldGroup: group,
+    camera,
+    gpsPoint: point,
+    skipBootstrap: true,
+    getAlignmentMatrix: () => store.alignment(),
+    getGpsZeroRef: () => BOUND_ZERO,
+    ...overrides,
+  });
+  // One pass at T = identity: the first step finds it at its target.
+  __runPassForTests(group, camera, BOUND_DT, 0);
+  let elapsed = BOUND_DT;
+  return {
+    object3D,
+    /** Applies `op`; true when it requested a release. */
+    apply(op: BoundOp): boolean {
+      if (op.kind === 't') {
+        store.setT(
+          new THREE.Matrix4()
+            .makeTranslation(op.north, 0, op.east)
+            .multiply(
+              new THREE.Matrix4().makeRotationY(
+                THREE.MathUtils.degToRad(op.yawDeg)
+              )
+            )
+        );
+      } else if (op.kind === 'look') {
+        camera.rotation.set(0, op.dir === 'in' ? 0 : Math.PI, 0);
+      } else if (op.kind === 'epoch') store.bumpEpoch();
+      else if (op.kind === 'release') {
+        requestAnchorRelease('code-lock');
+        return true;
+      }
+      return false;
+    },
+    /** One frame: the binding's step, then the set's pass. */
+    pass() {
+      const counts = __runPassForTests(group, camera, BOUND_DT, elapsed);
+      elapsed += BOUND_DT;
+      return counts;
+    },
+    /** The distance of the anchor's world position from its GPS-world NUE. */
+    worldError(): number {
+      object3D.updateWorldMatrix(true, false);
+      return object3D.getWorldPosition(new THREE.Vector3()).distanceTo(nue);
+    },
+  };
+}
+
+function cleanUpBoundWorld(): void {
+  runSessionDisposers();
+  clearSessionDisposers();
+  clearFrameUpdates();
+  __resetAnchorReleaseForTests();
+}
+
+describe('createGpsAnchor under a binding: release and window events (properties)', () => {
+  it('in view, it moves only at a release or in an open window, and a release lands it on its NUE', () => {
+    // Why this test matters: the view gate has exactly two event
+    // exceptions, a code lock and a frame-switch window; a correction's
+    // size is never one. A random mix of T steps, frame switches and
+    // releases with the anchor always in view must show every move
+    // explained by one of the two, and a release must land it.
+    const seen = { release: 0, window: 0 };
+    const t3: BoundOp = { kind: 't', north: 3, east: 0, yawDeg: 0 };
+    fc.assert(
+      fc.property(boundScenarioArb(false), (scenario) => {
+        __resetAnchorReleaseForTests();
+        try {
+          const w = boundWorld(scenario, {
+            mode: 'snap-when-offscreen',
+            distanceThreshold: 0.2,
+          });
+          const unexplainedMoves: number[] = [];
+          let worstReleaseError = 0;
+          scenario.ops.forEach((op, i) => {
+            const released = w.apply(op);
+            const before = w.object3D.position.clone();
+            const { windowOpen } = w.pass();
+            const moved = w.object3D.position.distanceTo(before) > 1e-12;
+            if (moved && released) seen.release += 1;
+            else if (moved && windowOpen) seen.window += 1;
+            else if (moved) unexplainedMoves.push(i);
+            if (released) {
+              worstReleaseError = Math.max(worstReleaseError, w.worldError());
+            }
+          });
+          expect(unexplainedMoves).toEqual([]);
+          expect(worstReleaseError).toBeLessThanOrEqual(
+            DEFERRED_ANCHOR_EPSILON_M + 1e-9
+          );
+        } finally {
+          cleanUpBoundWorld();
+        }
+      }),
+      {
+        numRuns: 60,
+        // One of each event that moves it, so neither count can stay 0.
+        examples: [
+          [{ ops: [t3, { kind: 'release' }], dNorth: 0, dEast: 0 }],
+          [{ ops: [{ kind: 'epoch' }, t3], dNorth: 0, dEast: 0 }],
+        ],
+      }
+    );
+    expect(seen.release).toBeGreaterThan(0);
+    expect(seen.window).toBeGreaterThan(0);
+  });
+
+  it('snap-every-tick lands every frame, unaffected by release, window and dwell', () => {
+    // Why this test matters: `snap-every-tick` is the caller's choice to
+    // skip the view gate. Its anchor must sit on its NUE after every pass,
+    // whether it is in view, just turned away (the two-pass dwell), at a
+    // release or in a frame-switch window. Threshold 0, so only the set's
+    // epsilon is left between the anchor and its NUE.
+    fc.assert(
+      fc.property(boundScenarioArb(true), (scenario) => {
+        __resetAnchorReleaseForTests();
+        try {
+          const w = boundWorld(scenario, {
+            mode: 'snap-every-tick',
+            distanceThreshold: 0,
+          });
+          for (const op of scenario.ops) {
+            w.apply(op);
+            w.pass();
+            expect(w.worldError()).toBeLessThanOrEqual(
+              DEFERRED_ANCHOR_EPSILON_M + 1e-9
+            );
+          }
+        } finally {
+          cleanUpBoundWorld();
+        }
+      }),
+      { numRuns: 60 }
     );
   });
 });

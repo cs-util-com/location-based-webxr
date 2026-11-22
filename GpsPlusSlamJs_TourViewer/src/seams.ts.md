@@ -14,7 +14,13 @@ Keeps `main.ts` glue-only.
   frames, can send GPS fixes through the page's real path
   (`createGpsPositionHandler` -> `recordDeviceFix` -> the vote sink).
 
-- `interface TourViewerSeams { controllerDeps; getArWorldGroup;
+- `getStationAnchorParent()` - where the visitor's stations stand as
+  deferred anchors (`station-content.ts` `anchorParent`): production
+  returns `getArWorldGroup()`; the e2e fake returns null, since its
+  alignment fake creates no binding, so stations stay on the scene root
+  and the specs read them there.
+
+- `interface TourViewerSeams { controllerDeps; getArWorldGroup; getStationAnchorParent;
 enableArWorldGroupAlignment; startCameraFrameCapture;
 stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; getArPose;
@@ -144,5 +150,6 @@ const controller = createEnableGpsArController(seams.controllerDeps);
 ## Tests
 
 `seams.test.ts` — override inert under VITEST; every device function
-`main.ts` wires is present. The override path is exercised by
+`main.ts` wires is present; the stations' anchor parent is the framework's
+`getArWorldGroup` itself. The override path is exercised by
 `playwright-tests/ar-fakes.js` + `ar-mode.spec.js`.

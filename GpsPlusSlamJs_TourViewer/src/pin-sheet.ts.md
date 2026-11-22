@@ -21,7 +21,9 @@ tap on nothing closes the sheet.
     open (its station's content hidden, the block gone from the tour, or no
     scene); `main.ts` calls it on every station tick. Free while closed.
 - `tappablePins(scene, blocks)` - every shown object (itself and every
-  ancestor `visible`) under a `station-content:<id>` group whose
+  ancestor `visible`) under a `station-content:<id>` group (a child of
+  the scene, or of the AR world group one level below it, where an
+  anchored station stands) whose
   `userData.objectId` names a pin with a non-empty description, by id.
 - `tourBlocksById(manifest)` - every station's blocks by id (ids are
   unique tour-wide); empty without a tour.
