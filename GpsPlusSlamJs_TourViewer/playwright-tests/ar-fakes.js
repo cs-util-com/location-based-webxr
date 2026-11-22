@@ -422,6 +422,9 @@ export async function installTourViewerArFakes(page, options = {}) {
         // wiring assertion vacuous (PR #360 review).
         getArWorldGroup: () =>
           test.initARCalls.length > 0 ? worldGroup : null,
+        // The alignment fake below creates no binding, so stations stay on
+        // the scene root, where the specs read them.
+        getStationAnchorParent: () => null,
         // --- author-pipeline fakes (M3): the REAL controller/slice/stability
         // machinery runs; only the device-level detect/solve are scripted. ---
         createQrFrontEnd: () => ({

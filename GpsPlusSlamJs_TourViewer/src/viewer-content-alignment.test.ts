@@ -25,6 +25,14 @@
  * passes - and the content is placed - on the very first locked frame,
  * already through the corrected alignment.
  *
+ * Since then an AR visit hangs each station under the world group as a
+ * deferred anchor (`station-content.ts`): a GPS refinement waits while the
+ * station is looked at, and a code lock places it at once, so a scan's
+ * correction still reaches a station in view
+ * (`station-anchor.integration.test.ts`). This test keeps the stations on
+ * the scene root (no anchor parent, as in the e2e fakes) and pins the
+ * placement and alignment beneath that.
+ *
  * Scenario: exact odometry whose frame equals GPS-world NUE up to the
  * absolute altitude (the true alignment is a lift by the altitude), GPS
  * biased by B to the north-east, a ~40 m walk to a code minted at its true
@@ -238,6 +246,8 @@ async function visitorSession(
     }),
     getIntrinsics: () => ({ fx: 500, fy: 500, cx: 320, cy: 240 }),
     getScene: () => scene,
+    // Stations on the scene root, as in the e2e fakes.
+    getStationAnchorParent: () => null,
     createLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
     canShareZip: () => false,
   } as unknown as TourViewerSeams;

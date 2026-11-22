@@ -117,8 +117,10 @@ under - what a tap in AR is cast against to name the object
   yaw bug the geo-join review caught. Pinned by bearing in the tests.
 - GPS-world `y` IS absolute altitude (the stack's convention); the records
   carry it as `geo.alt`.
-- Rendering is at the scene root in the session's NUE, like the photo
-  planes - unless the caller passes `poseOf`, a pose per object in the
+- Rendering is in the session's NUE into the `scene` handed in, like the
+  photo planes: the scene root, or a station's group, which in an AR visit
+  is a deferred anchor under the AR world group whose matrix cancels the
+  alignment, so NUE stays right inside it (`station-content.ts`) - unless the caller passes `poseOf`, a pose per object in the
   frame of the `scene` it hands in. The creator's previews of the running
   AR visit use it to sit under the AR world group at their odometry pose,
   so they stay rigid while GPS re-solves (authoring plan 2026-09-28-0953

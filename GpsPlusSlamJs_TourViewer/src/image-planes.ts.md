@@ -18,10 +18,12 @@ camera faced, placed at the SCENE ROOT in raw GPS-world NUE.
 
 ## Invariants & assumptions
 
-- **Scene root, raw NUE** - the framework's parenting rule for built-once
-  geographic content (`ar-scene-hierarchy.ts`): children of `arWorldGroup`
-  would need alignment-inverse coordinates, and raw NUE there
-  double-applies the alignment.
+- **Raw NUE, in a GPS-world frame** - the planes go into the group the
+  caller hands in: the scene root, or a station's group, which in an AR
+  visit is a deferred anchor under `arWorldGroup` whose matrix cancels the
+  alignment (`station-content.ts`). A plain child of `arWorldGroup` would
+  need alignment-inverse coordinates, and raw NUE there double-applies the
+  alignment (`ar-scene-hierarchy.ts`).
 - Textures come from `decodeFrameTexture` (the framework's
   orientation-correct decoder) - an `ImageBitmap`-backed texture must be
   pre-flipped, which the decoder owns.

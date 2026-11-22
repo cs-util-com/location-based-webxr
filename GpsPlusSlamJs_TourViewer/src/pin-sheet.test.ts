@@ -134,6 +134,21 @@ describe("the pin sheet", () => {
     expect(h.sheet.openId()).toBeNull();
   });
 
+  it("offers the pins of a station anchored under the AR world group", () => {
+    // Why this matters: in an AR visit a station's content group is a
+    // deferred anchor under the world group, one level below the scene's
+    // children; a finder that read only the scene's children would make
+    // every pin untappable on the phone while the e2e (stations on the
+    // scene root there) stayed green.
+    const scene = new Group();
+    const world = sceneWith([{ id: "told", group: "station-content:gate" }]);
+    scene.add(world);
+    const blocks = new Map([["told", pin("told", "More.")]]);
+    expect([...tappablePins(scene, blocks).keys()]).toEqual(["told"]);
+    world.visible = false;
+    expect([...tappablePins(scene, blocks).keys()]).toEqual([]);
+  });
+
   it("offers only shown pins with a description under a station's content", () => {
     const scene = sceneWith([
       { id: "told", group: "station-content:gate" },

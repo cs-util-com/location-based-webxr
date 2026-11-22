@@ -12,6 +12,16 @@ under "show all"); this module never reads the store.
 
 - `createStationContent(deps): StationContent`
   - `deps.scene` - where a shown station's group is added (the scene root).
+  - `deps.anchorParent?()` - where a shown station stands as a deferred
+    anchor instead (`deferredAnchor(parent, "station:<id>")` of
+    `gps-plus-slam-app-framework/ar/deferred-anchors`): the AR world group
+    once its alignment binding exists. Read as each station enters; absent
+    or null, the station goes on `scene` as a plain group (non-AR callers,
+    the e2e fakes). An anchor that cannot take the group (no binding yet) is
+    logged and the station goes on `scene`.
+  - `deps.onAnchorCommit?(group)` - an anchored station's group was placed
+    (its world matrices fresh, the frame not yet rendered); the visitor
+    re-ticks that station's camera-relative parts (the edge hint's tag).
   - `deps.now()` - the page clock (ms), read when a fade changes direction.
   - `deps.fadeMs?` - the fade's length; default `CONTENT_FADE_MS` (400 ms,
     `content-fade.ts`).
@@ -52,6 +62,14 @@ under "show all"); this module never reads the store.
   reads).
 
 ## Invariants & assumptions
+
+- **Anchored stations defer.** Under `anchorParent` a station's group is
+  the anchor's pose-free root, placed at the alignment's inverse, so its
+  parts keep the GPS-world NUE coordinates they would have on `scene`.
+  While the station is in view an alignment change waits until it is out
+  of view; a code lock or a tracking frame switch places it at once. A part
+  mounted or removed while it stands calls `boundsChanged()`, so the view
+  test sees the new subtree; leaving calls `remove`.
 
 - **Nothing is decoded until a station is shown**; a shown station renders
   its parts into a detached group and enters the scene at opacity 0 once
@@ -110,7 +128,9 @@ content.update(Date.now());
   late part's opacity, replace/remove disposal, one render at a time, the
   counts for the stations shown, `contentStatus`, `onMounted` once, a throwing render; a throwing
   part tried once over enter/leave/enter, a throwing mount callback, no
-  material write once a fade settled, `showsAny`.
+  material write once a fade settled, `showsAny`; an anchor parent that is
+  null or absent puts the group on the scene, an unbound one falls back to
+  the scene with a warning.
 - `station-content.property.test.ts` - over generated sequences of show /
   show all / setPart / frames / settles: at most one station group
   (presence only); every result disposed at most
@@ -123,6 +143,13 @@ content.update(Date.now());
   can queue dozens of stale renders ahead of the last live one, and a
   fixed microtask budget left that station still fading in (a found
   counterexample, pinned as its own case).
+- `station-anchor.integration.test.ts` - a station as a deferred anchor
+  under a real world group and binding: it enters under the group, follows
+  an immature alignment, holds a mature change in view and lands once out
+  of view (dwell honoured), lands on an epoch bump or a camera jump, re-reads
+  its bounds after a late part, leaves on fade-out, is not held by its edge
+  hint, draws its tag against the committed place, and, through the real
+  QR controller, snaps on a code lock, not once the code's budget is spent.
 - `station-content.scale.test.ts` - the 100-station object count.
 - `station-content.sweep.test.ts` - the fade length's sweep.
 - End to end: `playwright-tests/stations.spec.js` (the walk from the gate

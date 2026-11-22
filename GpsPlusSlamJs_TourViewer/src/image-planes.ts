@@ -1,9 +1,11 @@
 /**
- * The tour's photo planes: its photos placed at the SCENE ROOT in raw
- * GPS-world NUE - the framework's parenting rule for built-once geographic
- * content (`ar-scene-hierarchy.ts`: children of `arWorldGroup` would need
- * alignment-inverse coordinates instead, and writing raw NUE there
- * double-applies the alignment). Textures come decoded from the tour's own
+ * The tour's photo planes: its photos placed in raw GPS-world NUE, into the
+ * group the caller hands in. That group stands in the GPS-world frame: the
+ * scene root, or a station's group, which in an AR visit is a deferred
+ * anchor under `arWorldGroup` whose own matrix cancels the alignment
+ * (`station-content.ts`). A plain child of `arWorldGroup` would need
+ * alignment-inverse coordinates instead, and raw NUE there double-applies
+ * the alignment (`ar-scene-hierarchy.ts`). Textures come decoded from the tour's own
  * streamed blobs (`decodeFrameTexture`, the framework's
  * orientation-correct decoder).
  */

@@ -8,6 +8,7 @@
  * a runtime crash on device otherwise.
  */
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { getSeams, realSeams } from "./seams";
@@ -24,5 +25,20 @@ describe("getSeams", () => {
     // The radar view cone: the XR camera's
     // P[0]; null without a camera (node has none), so the fallback cone.
     expect(realSeams.xrProjection0()).toBeNull();
+  });
+
+  // Stations become deferred anchors under the AR world group in production,
+  // but the e2e fake's alignment creates no binding: there they must stay
+  // on the scene root, where six specs read them. A fake that returned its
+  // world group would fall back with a warning on every station.
+  it("anchors stations under the AR world group, and the e2e fake keeps them on the scene root", () => {
+    expect(realSeams.getStationAnchorParent()).toBe(
+      realSeams.getArWorldGroup(),
+    );
+    const fakes = readFileSync(
+      new URL("../playwright-tests/ar-fakes.js", import.meta.url),
+      "utf8",
+    );
+    expect(fakes).toContain("getStationAnchorParent: () => null,");
   });
 });

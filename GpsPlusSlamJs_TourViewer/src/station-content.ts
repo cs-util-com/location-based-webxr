@@ -26,6 +26,12 @@
  *   tour decodes one station's part after another, never every photo at
  *   once.
  *
+ * - **Anchored.** With an `anchorParent` (the AR world group), a station
+ *   enters as a deferred anchor under it rather than on `scene`: while it is
+ *   in view an alignment change waits until it is out of view, a code lock
+ *   or a tracking frame switch places it at once. Its parts keep the
+ *   coordinates they would have on `scene`.
+ *
  * Fades advance on `update(nowMs)`: the page calls it on every store change
  * and camera frame, and `registerFrame` (the AR frame loop) calls it every
  * rendered frame, so a fade is smooth on a phone and still finishes where
@@ -35,6 +41,10 @@
  */
 
 import { Group, type Object3D } from "three";
+import {
+  deferredAnchor,
+  type DeferredAnchor,
+} from "gps-plus-slam-app-framework/ar/deferred-anchors";
 import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
 
 import {
@@ -64,6 +74,13 @@ export interface ContentPart {
 export interface StationContentDeps {
   /** Where a shown station's group is added (the scene root). */
   readonly scene: Object3D;
+  /** Where a shown station stands as a deferred anchor instead: the AR
+   *  world group, once its alignment binding exists. Read as a station
+   *  enters. Absent or null: on `scene`, as a plain group. */
+  anchorParent?(): Object3D | null;
+  /** An anchored station's group was placed (its world matrices are
+   *  fresh, the frame not yet rendered): camera-relative parts re-place. */
+  onAnchorCommit?(group: Object3D): void;
   /** The page clock (ms), read when a fade changes direction. */
   now(): number;
   /** The fade's length (ms); default `CONTENT_FADE_MS`. */
@@ -136,6 +153,8 @@ interface Entry {
   readonly rendered: Map<string, { part: ContentPart; result: RenderedPart }>;
   phase: Phase;
   group: Group | null;
+  /** The deferred anchor holding `group` while it stands anchored. */
+  anchor: DeferredAnchor | null;
   /** Bumped whenever the station's group is dropped: a render started
    *  before is stale. */
   token: number;
@@ -172,6 +191,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
         rendered: new Map(),
         phase: "idle",
         group: null,
+        anchor: null,
         token: 0,
         pending: 0,
         alpha: 0,
@@ -186,9 +206,11 @@ export function createStationContent(deps: StationContentDeps): StationContent {
   function teardown(entry: Entry): void {
     entry.token += 1;
     if (entry.group !== null) {
+      entry.anchor?.remove(entry.group);
       deps.scene.remove(entry.group);
       entry.group.removeFromParent();
     }
+    entry.anchor = null;
     for (const { result } of entry.rendered.values()) result.dispose();
     entry.rendered.clear();
     entry.group = null;
@@ -226,6 +248,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
             // A part landing in a group already in the scene takes its
             // alpha.
             setSubtreeOpacity(group, entry.alpha);
+            entry.anchor?.boundsChanged();
             deps.onMounted?.(entry.id, result, part);
           }
         } catch (error: unknown) {
@@ -287,6 +310,27 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     }
   }
 
+  /** Into the scene: as a deferred anchor under `anchorParent`, else (or
+   *  when the anchor cannot take it) on `scene`. */
+  function enter(entry: Entry, group: Group): void {
+    const parent = deps.anchorParent?.() ?? null;
+    if (parent !== null) {
+      try {
+        const anchor = deferredAnchor(parent, `station:${entry.id}`);
+        anchor.add(group, {
+          onCommit: (root) => deps.onAnchorCommit?.(root),
+        });
+        entry.anchor = anchor;
+        return;
+      } catch (error: unknown) {
+        // No alignment binding yet, or a root nested in another anchor:
+        // the station still shows, without deferring.
+        log.warn("a station could not enter as an anchor", error);
+      }
+    }
+    deps.scene.add(group);
+  }
+
   function update(nowMs: number): void {
     if (disposed) return;
     for (const entry of entries.values()) {
@@ -314,7 +358,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
       if (entry.phase !== "ready" || entry.group === null) continue;
       if (stationLeaving) continue;
       setSubtreeOpacity(entry.group, 0);
-      deps.scene.add(entry.group);
+      enter(entry, entry.group);
       entry.phase = "in";
       entry.alpha = 0;
       entry.lastMs = nowMs;
@@ -330,6 +374,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
       if (kept !== undefined) {
         kept.result.dispose();
         entry.rendered.delete(key);
+        entry.anchor?.boundsChanged();
       }
       if (part === null) entry.parts.delete(key);
       else entry.parts.set(key, part);
