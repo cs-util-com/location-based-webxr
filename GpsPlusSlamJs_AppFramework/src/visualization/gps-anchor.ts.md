@@ -157,8 +157,8 @@ object as an `@internal` testing seam in lieu of pumping the global
   first committed correction and **never re-armed** (a re-bootstrap moves an
   already-placed object). The earlier **large-jump bypass** (which overrode the
   frustum gate on a >2°/4 m/20 m alignment-matrix delta) was **removed**: now
-  that the whole frame rides one lerped `arWorldGroup.matrix`, a large jump is
-  absorbed smoothly for the entire view, so a per-anchor on-screen snap only
+  that the whole frame rides one `arWorldGroup.matrix`, a large jump moves the
+  whole view together, landing in one frame, so a per-anchor on-screen snap only
   manufactured the AnchorStarter cache-hit hard-jump — see
   `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
 

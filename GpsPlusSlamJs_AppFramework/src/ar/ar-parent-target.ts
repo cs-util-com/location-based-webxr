@@ -1,7 +1,7 @@
 /**
  * The target transform of an AR world group (T: odometry NUE -> GPS-world
- * NUE), read from the store once for everything that needs it: the lerper
- * that eases the group onto T, and the deferred anchors that re-place their
+ * NUE), read from the store once for everything that needs it: the binding
+ * that sets the group to T, and the deferred anchors that re-place their
  * content to T^-1. Composing T in one place is what keeps the two from ever
  * disagreeing (content would otherwise carry the alignment twice).
  *
@@ -58,8 +58,6 @@ export interface ArParentTarget {
   sessionElapsedS(elapsedS: number): number;
   /** Start the session clock on the first call; advance the dev jump clock. */
   tick(elapsedS: number): void;
-  /** Called with T (column-major array) whenever it changes. */
-  onTargetChange(listener: (t: readonly number[]) => void): () => void;
   /** Stop listening to the store. Reads still work (from `getState`). */
   dispose(): void;
 }
@@ -85,7 +83,6 @@ export function createArParentTarget(
   const alignment = new THREE.Matrix4();
   const jump = new THREE.Matrix4();
   const composed = new THREE.Matrix4();
-  const composedArray: number[] = new Array<number>(16).fill(0);
   let lastAlignment: unknown = undefined;
   let jumps = 0;
   let firstTickS: number | null = null;
@@ -93,13 +90,10 @@ export function createArParentTarget(
   let mature = false;
   let startS: number | null = null;
   const extent = createGpsExtentTracker();
-  const listeners = new Set<(t: readonly number[]) => void>();
 
   function recompose(): void {
     composed.multiplyMatrices(jump, alignment);
-    composed.toArray(composedArray);
     version += 1;
-    for (const listener of [...listeners]) listener(composedArray);
   }
 
   /** Re-read the alignment; true when it changed. */
@@ -169,15 +163,8 @@ export function createArParentTarget(
       );
       recompose();
     },
-    onTargetChange(listener) {
-      listeners.add(listener);
-      return () => {
-        listeners.delete(listener);
-      };
-    },
     dispose() {
       unsubscribe();
-      listeners.clear();
     },
   };
 }
@@ -249,14 +236,14 @@ export function devWorldJumpFromPage(): DevWorldJump | null {
 /**
  * What an alignment binding registers for its group: the target, and the
  * hook through which the group's anchor set runs its pass inside the
- * binding's own frame update, right after the lerp step.
+ * binding's own frame update, right after the alignment step.
  */
 export interface ArParentBinding {
   readonly group: THREE.Object3D;
   readonly target: ArParentTarget;
-  /** The lerp step (and the dev jump clock) of one frame, without the pass. */
+  /** The alignment step (and the dev jump clock) of one frame, without the pass. */
   step(dt: number, elapsedS: number): void;
-  /** Run `pass` after each lerp step; returns the detach function. */
+  /** Run `pass` after each alignment step; returns the detach function. */
   attachPass(pass: (dt: number, elapsedS: number) => void): () => void;
   /** Called once when the binding is disposed (the set then ticks itself). */
   onDispose(listener: () => void): () => void;

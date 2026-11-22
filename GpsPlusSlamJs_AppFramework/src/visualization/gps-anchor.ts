@@ -427,10 +427,10 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
    * Mode gate: in `'snap-when-offscreen'` a correction is suppressed while the
    * object is inside the camera frustum — corrections only land when the user
    * is not looking, so the anchor never visibly jumps. The whole AR frame
-   * (camera + every anchor) rides one lerped `arWorldGroup.matrix`
-   * (`enableArWorldGroupAlignment`), so an on-screen alignment change is
-   * absorbed smoothly for the entire view and never needs a per-anchor
-   * on-screen snap. The one exception is the first placement of a `skipBootstrap`
+   * (camera + every anchor) rides one `arWorldGroup.matrix`
+   * (`enableArWorldGroupAlignment`), so an on-screen alignment change moves
+   * the whole view together, landing in one frame, and never needs a
+   * per-anchor on-screen snap. The one exception is the first placement of a `skipBootstrap`
    * anchor (see `firstCommitPending`), which must escape the origin even while
    * on-screen. See
    * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
@@ -499,8 +499,8 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
 
     // Commit gate: the distance-scaled threshold plus the `snap-when-offscreen`
     // frustum suppression. When the gate accepts a correction the object snaps
-    // instantly to the target. Smoothing is NOT done per-anchor: alignment is
-    // lerped once at `arWorldGroup` (`enableArWorldGroupAlignment`), so all
+    // instantly to the target. The alignment is applied once, at
+    // `arWorldGroup` (`enableArWorldGroupAlignment`), so all
     // anchored content shifts together and each accepted commit here is only a
     // small off-screen residual. The sole on-screen exception is the one-time
     // initial placement of a `skipBootstrap` anchor (`firstCommitPending`),

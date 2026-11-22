@@ -1,7 +1,7 @@
 /**
  * Tests for `createArParentTarget` (P1) and the binding registry.
  *
- * Why these tests matter: the lerper that moves the AR world group and the
+ * Why these tests matter: the binding that moves the AR world group and the
  * deferred anchors that re-place content to T^-1 both read T from here. If
  * the two ever read different values, content carries part of the alignment
  * twice. Maturity decides whether anchors still follow the alignment, so its
@@ -89,8 +89,6 @@ describe('createArParentTarget', () => {
     const store = fakeStore({ alignmentMatrix: a });
     const target = createArParentTarget(store);
     expect(target.target().toArray()).toEqual([...a]);
-    const seen: number[][] = [];
-    target.onTargetChange((t) => seen.push([...t]));
     const v = target.version();
     const b = makeNonTrivialAlignment(2);
     store.set((s) => ({
@@ -102,7 +100,6 @@ describe('createArParentTarget', () => {
     }));
     expect(target.target().toArray()).toEqual([...b]);
     expect(target.version()).toBe(v + 1);
-    expect(seen).toEqual([[...b]]);
     target.dispose();
   });
 
@@ -182,11 +179,10 @@ describe('createArParentTarget', () => {
     const target = createArParentTarget(store, {
       devJump: { metres: 2, degrees: 10, periodS: DEV_WORLD_JUMP_PERIOD_S },
     });
-    const seen: number[][] = [];
-    target.onTargetChange((t) => seen.push([...t]));
+    const v = target.version();
     target.tick(0);
     target.tick(9.9);
-    expect(seen).toHaveLength(0);
+    expect(target.version()).toBe(v);
     target.tick(10);
     const jump = new THREE.Matrix4()
       .makeTranslation(2, 0, 0)
@@ -198,7 +194,7 @@ describe('createArParentTarget', () => {
       .target()
       .toArray()
       .forEach((v, i) => expect(v).toBeCloseTo(want[i]!, 9));
-    expect(seen).toHaveLength(1);
+    expect(target.version()).toBe(v + 1);
     // The alignment changing keeps the jump on top of it.
     const b = makeNonTrivialAlignment(6);
     store.set((s) => ({

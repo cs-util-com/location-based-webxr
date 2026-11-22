@@ -47,7 +47,7 @@ Exported from `gps-plus-slam-app-framework/visualization`.
   previous surface.
 - The mesh is parented under `getArWorldGroup()` (NUE local space) by the
   caller, **not** the GPS-aligned scene root — so the reticle rides the same
-  lerped `arWorldGroup` alignment as the camera. Because the hit pose is in the
+  `arWorldGroup` alignment as the camera. Because the hit pose is in the
   **WebXR** reference space, `updateReticle` applies the `WEBXR_TO_NUE` basis
   change (`reticle.matrix = WEBXR_TO_NUE · pose`). Writing the WebXR pose into
   the NUE-frame local matrix directly (the previous behaviour) misread

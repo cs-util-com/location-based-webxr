@@ -2,9 +2,9 @@
  * Deferred anchors: content under an AR world group (`arWorldGroup`) whose
  * correction waits until none of it is in view.
  *
- * The group carries the alignment T (odometry NUE -> GPS-world NUE): a
- * correction of T moves it in one frame, a small refinement eases over
- * about 0.3 s (`enableArWorldGroupAlignment`). Content placed under it with the local
+ * The group carries the alignment T (odometry NUE -> GPS-world NUE): every
+ * change of T moves it in one frame (`enableArWorldGroupAlignment`).
+ * Content placed under it with the local
  * matrix T^-1 sits at its NUE pose; content that keeps its local matrix
  * instead stays put relative to the camera. An anchor does the second while
  * it is in view, and re-places itself to the latest T^-1 once it has been
@@ -173,8 +173,8 @@ export function deferredAnchor(
 }
 
 /**
- * Test-only: run the binding's lerp step and then one pass of `parent`'s
- * set. `view` is a camera (read after the lerp step, as in a frame) or a
+ * Test-only: run the binding's alignment step and then one pass of
+ * `parent`'s set. `view` is a camera (read after that step, as in a frame) or a
  * prepared view. Returns this pass's operation counts.
  */
 export function __runPassForTests(

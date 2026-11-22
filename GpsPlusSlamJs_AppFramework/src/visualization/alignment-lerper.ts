@@ -9,9 +9,7 @@
  * Same lerpRate convention as camera-follower.ts (default 8 → ~90%
  * convergence in ~0.3 s at 60 fps).
  *
- * The first target is applied instantly (no animation from identity), and so
- * is any target set with `{ instant: true }` (a correction the caller wants
- * to land in one frame).
+ * The first target is applied instantly (no animation from identity).
  *
  * @see gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-03-21-user-feedback.md Issue 4
  */
@@ -27,21 +25,14 @@ const _targetPos = new THREE.Vector3();
 const _targetQuat = new THREE.Quaternion();
 const _targetScale = new THREE.Vector3();
 
-export interface LerperTargetOptions {
-  /** Land on this target on the next update(), without easing. */
-  readonly instant?: boolean;
-}
-
 export interface AlignmentLerper {
   /**
    * Set the target alignment matrix. The arWorldGroup will lerp toward
    * this target on subsequent update() calls.
    *
    * @param matrix 16-element column-major matrix (gl-matrix mat4 / Three.js toArray format)
-   * @param options `instant: true` applies the target exactly on the next
-   *   update() instead of easing toward it.
    */
-  setTarget(matrix: readonly number[], options?: LerperTargetOptions): void;
+  setTarget(matrix: readonly number[]): void;
 
   /**
    * Advance the interpolation by dt seconds. Call once per frame.
@@ -74,9 +65,7 @@ export function createAlignmentLerper(
   lerpRate = DEFAULT_LERP_RATE
 ): AlignmentLerper {
   let hasTarget = false;
-  // True for the first target and for an instant one: the next update
-  // writes the target exactly instead of easing toward it.
-  let applyNextExactly = true;
+  let isFirstTarget = true;
   let converged = false;
 
   // Stored decomposed target
@@ -95,12 +84,11 @@ export function createAlignmentLerper(
   };
 
   return {
-    setTarget(matrix: readonly number[], options?: LerperTargetOptions): void {
+    setTarget(matrix: readonly number[]): void {
       _matrix.fromArray(matrix);
       _matrix.decompose(storedTargetPos, storedTargetQuat, storedTargetScale);
       hasTarget = true;
       converged = false;
-      if (options?.instant === true) applyNextExactly = true;
     },
 
     update(dt: number): void {
@@ -108,10 +96,10 @@ export function createAlignmentLerper(
         return;
       }
 
-      if (applyNextExactly) {
-        // The first alignment (no lerp from identity) or an instant target.
+      if (isFirstTarget) {
+        // First alignment — apply instantly, no lerp from identity
         applyTargetExactly();
-        applyNextExactly = false;
+        isFirstTarget = false;
         converged = true;
         return;
       }

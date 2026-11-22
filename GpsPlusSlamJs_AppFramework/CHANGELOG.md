@@ -209,15 +209,7 @@
 ### Changed
 
 - `visualization/ar-world-group-alignment`: the binding drives the deferred
-  anchors under its group right after its lerp step. Options unchanged.
-- `visualization/ar-world-group-alignment`: **a correction of the alignment
-  lands in one frame.** A change that moves the AR camera (or, without a
-  camera child, the group's origin) by more than 1 m, or the first change
-  within 2 s of an odometry frame switch, is applied exactly in the frame it
-  is read; smaller refinements still ease over about 0.3 s. The world under
-  the group therefore jumps at once at a correction instead of sliding.
-- `visualization/alignment-lerper`: `setTarget(matrix, { instant: true })`
-  lands a target exactly on the next `update` (`LerperTargetOptions`).
+  anchors under its group right after its alignment step.
 - `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
   `utils/data-uri`, strictly: a payload with whitespace or without its
   padding, which plain `atob` accepted, is now an image that cannot be
@@ -278,6 +270,14 @@
 
 ### ⚠️ Breaking changes
 
+- `visualization/ar-world-group-alignment`: **alignment changes land in
+  the frame they arrive.** `enableArWorldGroupAlignment` no longer eases
+  the group over about 0.3 s: every new alignment, large or small, is
+  copied exactly into `arWorldGroup.matrix` in the frame it is read, so the
+  world under the group jumps at once instead of sliding. Smoothing, if an
+  app wants it, belongs to the app. The `lerpRate` option is removed (it
+  has nothing left to set); `createAlignmentLerper` is unchanged and stays
+  for apps that drive their own group.
 - `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
   `(votes) => boolean | void`. Returning `false` says it cast no votes;
   otherwise the controller asks every deferred anchor to re-place once, and

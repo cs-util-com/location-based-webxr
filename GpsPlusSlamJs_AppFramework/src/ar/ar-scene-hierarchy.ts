@@ -66,7 +66,7 @@ const AR_CAMERA_FAR = 200;
  * ROOT, with raw GPS-world NUE coordinates.** Nothing to pre-multiply, no
  * container, nothing per frame. The scene root IS the GPS-world frame, so a
  * city mesh, a building outline or any pre-built geographic geometry simply
- * goes there, and the lerped alignment on arWorldGroup moves the CAMERA
+ * goes there, and the alignment on arWorldGroup moves the CAMERA
  * through a world that stands still. This is the common case for map-derived
  * content and it is the cheap one.
  *

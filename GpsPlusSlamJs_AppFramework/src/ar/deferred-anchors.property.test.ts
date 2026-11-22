@@ -19,7 +19,7 @@
  * - Liveness: once the alignment is mature, the window closed and the root
  *   out of view, every key lands on T^-1 within k + 2 passes (k keys).
  * - Paths 1 and 2: after convergence the world pose is the NUE pose (the
- *   lerper and the anchors read one T), the dev jump included.
+ *   world-group binding and the anchors read one T), the dev jump included.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fc from 'fast-check';

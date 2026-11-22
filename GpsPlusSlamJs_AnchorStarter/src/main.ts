@@ -639,7 +639,7 @@ async function startAr(): Promise<void> {
       }),
     );
 
-    // GPS-register the AR view: lerp the store's alignment onto arWorldGroup so
+    // GPS-register the AR view: set arWorldGroup to the store's alignment so
     // the camera and the anchored marker ride the alignment together. Without
     // this the camera is pure-VIO and the anchor must absorb the full alignment
     // delta on every off-screen re-registration.

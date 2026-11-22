@@ -3,8 +3,8 @@
 ## Purpose
 
 The target transform T of an AR world group (odometry NUE to GPS-world
-NUE), read from the store once for everything that needs it: the lerper that
-eases the group onto T, and the deferred anchors that re-place their content
+NUE), read from the store once for everything that needs it: the binding that
+sets the group to T, and the deferred anchors that re-place their content
 to T^-1. Composing T in one place keeps the two from disagreeing; if they
 did, content would carry part of the alignment twice. It also answers the
 anchors' other session questions, and holds the registry of alignment
@@ -21,7 +21,6 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
     not mutate). A null or non-finite store alignment is ignored and the
     last T kept.
   - `version()`: increases whenever `target()` changes.
-  - `onTargetChange(listener)`: called with T (column-major) on each change.
   - `frameEpoch()`: `state.qrDetected.frameEpoch`, read structurally; 0
     without the slice or for a non-number.
   - `isMature()`: `isMatureAlignment` over the session's GPS extent of
@@ -43,8 +42,8 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
   - The jump (north by `metres`, a yaw by `degrees`) is composed on top of
     the alignment as `Tr(n * metres) x RotY(n * degrees) x alignment` after
     the n-th period (the first lands one period after the first tick), so a
-    tester can watch anchored content hold through a world jump. A jump of
-    more than 1 m at the camera lands in one frame, as any correction does
+    tester can watch anchored content hold through a world jump. The jump
+    lands in one frame, as every change of T does
     (`ar-world-group-alignment.ts.md`).
   - `DEV_WORLD_JUMP_PERIOD_S = 10`.
 - Binding registry
@@ -55,7 +54,7 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 
 ## Invariants
 
-- One T per group: the lerper and every deferred anchor under the group read
+- One T per group: the binding and every deferred anchor under the group read
   the same matrix, the dev jump included.
 - The store is only read (selectors and `subscribe`), never dispatched to.
 

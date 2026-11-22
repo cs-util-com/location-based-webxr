@@ -4,11 +4,10 @@
 
 Content under the AR world group (`arWorldGroup`) whose alignment correction
 waits until none of it is in view. The group carries the alignment T
-(odometry NUE to GPS-world NUE). A correction of T (a step of more than 1 m
-at the camera, or the first change after a frame-epoch change) moves the
-group onto T in the frame it arrives, so the world (map, globe, everything
-under the scene root at its NUE pose) jumps at once; a smaller refinement
-eases over about 0.3 s (lerp rate 8), see `ar-world-group-alignment.ts.md`.
+(odometry NUE to GPS-world NUE). Every change of T moves the group onto T
+in the frame it arrives, so the world (map, globe, everything under the
+scene root at its NUE pose) jumps at once, see
+`ar-world-group-alignment.ts.md`.
 A deferred anchor keeps its local matrix while it is in view, so
 it stays put relative to the camera, and re-places itself to the latest
 T^-1 once it is out of view. Raw tracking poses and the store are never
@@ -56,7 +55,7 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
     the window's longest span after its last trigger,
     `clamp(0.2 * session seconds, 10, 120)`.
 - `__runPassForTests(parent, cameraOrView, dt, elapsedS)`: test only. Runs
-  the binding's lerp step and one pass; returns
+  the binding's alignment step and one pass; returns
   `{ sphereTests, traversals, windowOpen, followUpdates }`.
 
 ## Phases, in pass order
@@ -96,9 +95,9 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
 - At most one key's subtree is traversed per pass (its view test and its
   corners), so k keys that all wait need k passes; the cached tests cost at
   most 3 tests per sphere (32 per root) per view slot.
-- The lerper and the anchors read one T (`ar-parent-target.ts`); after
-  convergence an anchor's world pose is its NUE pose.
-- The set runs inside the binding's frame update, after the lerp step. When
+- The binding and the anchors read one T (`ar-parent-target.ts`); once a
+  key is at T^-1 its world pose is its NUE pose.
+- The set runs inside the binding's frame update, after the alignment step. When
   the binding is disposed first, the set falls back to its own frame update.
 - Every commit logs `commit <kind>: <key>, waited <ms>, moved <m>`.
 

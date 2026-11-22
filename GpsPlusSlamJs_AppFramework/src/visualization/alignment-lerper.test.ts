@@ -353,35 +353,4 @@ describe('AlignmentLerper', () => {
     }
     expect(extractPosition(arWorldGroup.matrix).x).toBe(-4);
   });
-
-  // Why: a correction (a frame switch, a large re-solve) must land in the
-  // frame it arrives, not slide over about 0.3 s; the caller marks it
-  // instant. A later plain target eases again.
-  it('applies an instant target exactly on the next update, then eases again', () => {
-    lerper.setTarget(identityArray());
-    lerper.update(0.016);
-    lerper.update(0.016);
-    lerper.setTarget(translationArray(10, 0, 0), { instant: true });
-    lerper.update(0.016);
-    expect(extractPosition(arWorldGroup.matrix).x).toBe(10);
-    expect(arWorldGroup.matrixWorld.elements[12]).toBe(10);
-
-    lerper.setTarget(translationArray(12, 0, 0));
-    lerper.update(0.016);
-    const x = extractPosition(arWorldGroup.matrix).x;
-    expect(x).toBeGreaterThan(10);
-    expect(x).toBeLessThan(12);
-  });
-
-  it('lands an instant target set mid-ease, overriding the ease', () => {
-    lerper.setTarget(identityArray());
-    lerper.update(0.016);
-    lerper.setTarget(translationArray(10, 0, 0));
-    lerper.update(0.016);
-    lerper.setTarget(translationArray(-3, 0, 2), { instant: true });
-    lerper.update(0.016);
-    const pos = extractPosition(arWorldGroup.matrix);
-    expect(pos.x).toBe(-3);
-    expect(pos.z).toBe(2);
-  });
 });

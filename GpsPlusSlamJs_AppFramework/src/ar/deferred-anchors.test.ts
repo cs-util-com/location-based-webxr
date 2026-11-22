@@ -37,6 +37,7 @@ import {
   deferredAnchor,
 } from './deferred-anchors';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
+import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   clearSessionDisposers,
   runSessionDisposers,
@@ -115,8 +116,15 @@ function tOf(north: number, yawDeg = 0, east = 0): THREE.Matrix4 {
     );
 }
 
-/** A session: scene, world group with its binding, and a camera under it. */
-function session(opts: { mature?: boolean; epochSlice?: boolean } = {}) {
+/**
+ * A session: scene, world group with its binding, and a camera under it.
+ * `realHierarchy` puts the camera where an app has it, under the WebXR to
+ * NUE basis node and the AR pose node (`createSceneHierarchy`), at the same
+ * group-local pose.
+ */
+function session(
+  opts: { mature?: boolean; epochSlice?: boolean; realHierarchy?: boolean } = {}
+) {
   const store = makeStore({
     extentM: opts.mature === false ? 20 : 40,
     epochSlice: opts.epochSlice,
@@ -126,8 +134,32 @@ function session(opts: { mature?: boolean; epochSlice?: boolean } = {}) {
   scene.add(group);
   const binding = enableArWorldGroupAlignment({ store, arWorldGroup: group });
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-  group.add(camera);
-  camera.position.set(0, 0, 8);
+  const basis = new THREE.Group();
+  if (opts.realHierarchy === true) {
+    basis.matrix.copy(WEBXR_TO_NUE);
+    basis.matrixAutoUpdate = false;
+    const arpose = new THREE.Object3D();
+    group.add(basis);
+    basis.add(arpose);
+    arpose.add(camera);
+  } else {
+    group.add(camera);
+  }
+  /** Camera at group-local (0, 0, 8), turned `yaw` about the group's up. */
+  const placeCamera = (yaw: number): void => {
+    new THREE.Matrix4()
+      .compose(
+        new THREE.Vector3(0, 0, 8),
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          yaw
+        ),
+        new THREE.Vector3(1, 1, 1)
+      )
+      .premultiply(basis.matrix.clone().invert())
+      .decompose(camera.position, camera.quaternion, camera.scale);
+  };
+  placeCamera(0);
   let t = 0;
   const run = (n = 1) => {
     let last = __runPassForTests(group, camera, DT, t);
@@ -157,10 +189,10 @@ function session(opts: { mature?: boolean; epochSlice?: boolean } = {}) {
     },
     /** Look at the content (origin of the parent frame) or away from it. */
     look(mode: 'in' | 'out') {
-      camera.quaternion.setFromAxisAngle(
-        new THREE.Vector3(0, 1, 0),
-        mode === 'in' ? 0 : Math.PI
-      );
+      const yaw = mode === 'in' ? 0 : Math.PI;
+      // The plain rig keeps the camera position a test may have moved.
+      if (opts.realHierarchy === true) placeCamera(yaw);
+      else camera.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw);
     },
   };
 }
@@ -456,7 +488,7 @@ describe('deferredAnchor: the code-lock release', () => {
     deferredAnchor(s.group, 'a').add(root);
     s.run(2);
     s.store.setT(tOf(2, 5));
-    s.run(); // following, the lerp is still on its way
+    s.run(); // following
     requestAnchorRelease('code-lock');
     s.run();
     expectMatrixClose(root.matrix, inv(tOf(2, 5)));
@@ -664,7 +696,7 @@ describe('deferredAnchor: the frame-switch window', () => {
     s.run();
     const closed = s.runUntil(start + WINDOW_MIN_S + 0.1);
     expect(closed?.windowOpen).toBe(false);
-    // Still following: world pose is NUE while the lerp settles.
+    // Still following: the world pose is the NUE pose.
     expectMatrixClose(root.matrixWorld, IDENTITY, 1e-9);
     s.run(30);
     expectMatrixClose(root.matrix, inv(tOf(6)), 0.02);
@@ -823,9 +855,9 @@ describe('deferredAnchor: binding lifecycle', () => {
     expectMatrixClose(root.matrix, inv(tOf(4, 7)));
   });
 
-  // The lerper and the anchors read one composed T, dev jump included, so
-  // content and the world group agree after the jump lands.
-  it('agrees with the lerper on T with the dev jump on, for a set created after the first target', () => {
+  // The world-group binding and the anchors read one composed T, dev jump
+  // included, so content and the world group agree after the jump lands.
+  it('agrees with the world group on T with the dev jump on, for a set created after the first target', () => {
     const g = globalThis as { location?: unknown };
     const before = g.location;
     g.location = { search: '?devWorldJumpM=3&devWorldJumpDeg=10' };
@@ -879,7 +911,7 @@ describe('deferredAnchor: budget', () => {
   });
 
   // Why: a follow step writes every root's matrix and refreshes its
-  // subtree; once the lerp has converged the parent stands still, and
+  // subtree; between two alignment changes the parent stands still, and
   // re-writing the same matrix each frame is pure cost.
   it('skips follow updates while the parent matrix does not change', () => {
     const s = session({ mature: false });
@@ -889,20 +921,20 @@ describe('deferredAnchor: budget', () => {
       );
     }
     s.run(2);
-    s.store.setT(tOf(0.3)); // below the correction threshold: it eases
+    s.store.setT(tOf(0.3)); // the group lands on T in this pass
     expect(s.run().followUpdates).toBe(3);
-    s.run(200); // the lerp converges and snaps onto T
     expect(s.run().followUpdates).toBe(0);
     expect(s.run().followUpdates).toBe(0);
   });
 });
 
-// Why: "the world jumps at once" - a correction of T moves
-// the world group onto T in the frame it arrives, while a deferred anchor in
-// view still holds its pose relative to the camera in that same frame.
+// Why: the world group lands on every new T in the frame it arrives, while
+// a deferred anchor in view still holds its pose relative to the camera in
+// that same frame. Built on an app's hierarchy (camera under the basis and
+// AR pose nodes), where a direct-child camera would hide a frame mistake.
 describe('deferredAnchor: a correction frame', () => {
   it('lands the group on T in one frame; a visible anchor does not move, the world does', () => {
-    const s = session();
+    const s = session({ realHierarchy: true });
     s.look('in');
     const root = contentRoot();
     deferredAnchor(s.group, 'a').add(root);
@@ -926,7 +958,7 @@ describe('deferredAnchor: a correction frame', () => {
 
 describe('deferredAnchor: the three view tests', () => {
   // T turns the view about the camera's own position, so the camera does
-  // not move (the step eases) while the content swings across the side
+  // not move while the content swings across the side
   // plane: 7 m to the side and 8 m ahead it sits about 41 deg off axis,
   // outside the 30 deg half angle plus the 5 deg margin.
   function aboutCamera(yawDeg: number): THREE.Matrix4 {
