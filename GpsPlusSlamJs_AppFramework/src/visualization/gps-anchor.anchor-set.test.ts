@@ -373,7 +373,7 @@ describe('createGpsAnchor in the anchor set: events', () => {
     // nor may a second set appear beside it for the same parent.
     const r = rig({ bound: false });
     r.run(2);
-    const { object } = r.anchor(ZERO);
+    const { anchor, object } = r.anchor(ZERO);
     r.run(2);
     expect(object.position.length()).toBeLessThan(1e-9);
     enableArWorldGroupAlignment({ store: r.store, arWorldGroup: r.group });
@@ -390,6 +390,33 @@ describe('createGpsAnchor in the anchor set: events', () => {
     r.group.add(holder);
     holder.attach(object);
     expect(() => deferredAnchor(r.group, 'k').add(holder)).toThrow(/nest/);
+    // Disposed after the hand-over, it leaves the bound set: a T step out of
+    // view, which would land it were it still a member, moves nothing.
+    r.group.attach(object);
+    anchor.dispose();
+    r.look('out');
+    r.store.setT(tOf(9));
+    r.run(6);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+  });
+
+  it('a member the bound set refuses at the hand-over stays in its own set and keeps running', () => {
+    // Why this test matters: a member that nests with a key added after the
+    // binding cannot join the bound set; dropped from both sets it would
+    // stand frozen for the rest of the session.
+    const r = rig({ bound: false });
+    r.run(2);
+    const { object } = r.anchor(ZERO);
+    r.run(2);
+    enableArWorldGroupAlignment({ store: r.store, arWorldGroup: r.group });
+    const holder = new THREE.Group();
+    deferredAnchor(r.group, 'k').add(holder);
+    holder.attach(object);
+    runFrameUpdates(DT, 1); // the hand-over: refused, it stays
+    r.look('out');
+    r.store.setT(tOf(5));
+    r.run(4);
+    expect(object.position.x).toBeCloseTo(-5, 6);
   });
 });
 

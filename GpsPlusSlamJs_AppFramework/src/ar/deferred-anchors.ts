@@ -417,6 +417,8 @@ function createAnchorSet(
   const keyOfRoot = new Map<THREE.Object3D, KeyEntry>();
   const members = new Set<MemberEntry>();
   let disposed = false;
+  /** An unbound set offers its members to a bound set once only. */
+  let handOverTried = false;
   let bound = binding !== null;
 
   // Views: the set owns two and swaps them after each pass.
@@ -1014,22 +1016,27 @@ function createAnchorSet(
    * An unbound set whose parent has since gained a binding moves its
    * members to the bound set and ends, so one parent never runs two sets.
    * True when it did. A member the bound set refuses (it nests with a key
-   * added meanwhile) is logged and stays where it is, unmoved.
+   * added meanwhile) is logged once and stays in this set, which goes on
+   * running it.
    */
   function handOver(): boolean {
-    if (binding) return false;
+    if (binding || handOverTried) return false;
     const now = getArParentBinding(parent);
     if (!now) return false;
+    handOverTried = true;
     const home = boundSetFor(parent, now);
-    for (const m of members) {
+    for (const m of [...members]) {
       try {
         home.adopt(m);
+        members.delete(m);
       } catch (error) {
-        log.error(`${m.root.name || 'a position member'}: not moved`, error);
-        m.leave = () => undefined;
+        log.error(
+          `${m.root.name || 'a position member'}: stays unbound`,
+          error
+        );
       }
     }
-    members.clear();
+    if (members.size > 0) return false;
     dispose();
     return true;
   }

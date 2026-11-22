@@ -134,7 +134,9 @@ into)` (writes the target local position, returns the threshold below
 - Nesting is refused between keys, between a key and a member, in both
   directions. One parent runs one set: a member that joined before the
   parent had a binding is handed to the bound set by its unbound set's
-  next pass once the binding exists (that set then ends).
+  next pass once the binding exists (that set then ends). A member the
+  bound set refuses there (it nests with a key added meanwhile) is logged
+  once and stays in the unbound set, which keeps running it.
 - Known limit: a member's target is a position in the parent's frame, and
   the set writes it as the object's local position and tests the view at it
   the same way. That is exact for a direct child of the parent (every
@@ -176,6 +178,7 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   previous view, threshold, ungated modes, immature, release, window, the
   binding's T against the caller's alignment, nesting, a second
   above-threshold correction inside one window, a member that joined before
-  the binding moved to the bound set).
+  the binding moved to the bound set and leaving it on dispose, a refused
+  one kept running).
 - `deferred-anchors.structure.test.ts`: no dispatch and no store slice
   imports in the anchor modules.
