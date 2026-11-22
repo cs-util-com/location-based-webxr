@@ -237,6 +237,8 @@ export function wireCreatorFinish(deps: {
      *  page's save slot while it runs (`finish-status.ts`): the claim
      *  puts the last Finish's failure away. */
     const tour = ctx.tourDocument;
+    // Made before the slot is claimed: a throw here leaves no slot held.
+    const saves = savesOf(current);
     tour.finishClaimed();
     // A tap now would save the previous Finish's zip just before this one
     // saves the new one under the same name (F4 milestone review #5).
@@ -250,7 +252,6 @@ export function wireCreatorFinish(deps: {
     ctx.placementNote = null;
     tour.finishProgressed({ kind: "reading", bytes: current.archive.size });
     deps.render();
-    const saves = savesOf(current);
     let wroteZip = false;
     /** The zip THIS Finish made, and its result sentences: a failure after
      *  it still hands the zip over (F4 milestone review #1). */
@@ -276,7 +277,7 @@ export function wireCreatorFinish(deps: {
     // waits for them too; the save ends, with the failure said, after them.
     const finish = async (): Promise<void> => {
       try {
-        // Taken INSIDE the try (M4 review #1): a manifest the reader
+        // Taken INSIDE the try: a manifest the reader
         // rejects (a duplicate id) must fail the finish visibly, not throw
         // past the claimed save slot and freeze the panel.
         const snap = dispatchThunk(ctx.store, saves.snapshot());
@@ -306,7 +307,7 @@ export function wireCreatorFinish(deps: {
         // manifest and silently drop this batch. Only what
         // this zip carries leaves the entries - by CONTENT, not id: a photo
         // that landed while the zip was rebuilt is in neither, and waits
-        // for the next Finish (M2c review #6); the shared rule is the
+        // for the next Finish; the shared rule is the
         // document's (`saved`, `pendingAfterRebuild`).
         const before = tour.entries();
         dispatchThunk(ctx.store, saves.land(finished, snap));

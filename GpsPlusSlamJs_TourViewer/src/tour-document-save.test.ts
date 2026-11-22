@@ -12,6 +12,7 @@
  */
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import { qrLevelEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { readStoredEntryBytes } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import {
   parseTourManifest,
@@ -249,6 +250,64 @@ describe("createTourSaves", () => {
     await expect(
       dispatchThunk(store, saves.save({ keepScan: false })),
     ).rejects.toThrow(TOUR_REPLACED);
+    await session.close();
+  });
+});
+
+describe("createTourSaves: what the phone's Finish reads of the handle", () => {
+  // Why these tests matter: the phone keeps one handle per open by its
+  // `generation`, its leave guard reads `delivered` on the newest bytes,
+  // and its Finish writes the code levels with a progress line and a stop
+  // check. The page's own tests drive the handle through a fake for the
+  // hand-over, so these rules are pinned here, on real zips.
+  it("names the open it belongs to", async () => {
+    const { session, store } = await opened([pin("a")]);
+    const saves = savesOf(session, store);
+    expect(saves.generation).toBe(doc(store).generation);
+    await session.close();
+  });
+
+  it("marks only the newest bytes delivered: an older file's delivery changes nothing", async () => {
+    const { session, store } = await opened([pin("a")]);
+    const saves = savesOf(session, store);
+    rename(store, "a", "First");
+    const first = await dispatchThunk(store, saves.save({ keepScan: false }));
+    rename(store, "a", "Second");
+    const second = await dispatchThunk(store, saves.save({ keepScan: false }));
+    expect(saves.newest()?.written).toEqual(second.written);
+    saves.markDelivered(first.blob);
+    expect(saves.newest()?.blob).toBe(second.blob);
+    expect(saves.newest()?.delivered).toBeUndefined();
+    saves.markDelivered(second.blob);
+    expect(saves.newest()).toMatchObject({
+      blob: second.blob,
+      delivered: true,
+    });
+    await session.close();
+  });
+
+  it("passes the code levels, the progress line and the stop check to the rebuild", async () => {
+    const { session, store } = await opened([pin("a")]);
+    const saves = savesOf(session, store);
+    rename(store, "a", "First");
+    const level = { id: "lvl", json: '{"level":"lvl"}' };
+    const progress: number[] = [];
+    const snap = dispatchThunk(store, saves.snapshot());
+    const built = await saves.rebuild(snap, false, undefined, {
+      levels: [level],
+      onProgress: (done) => {
+        progress.push(done);
+      },
+    });
+    const bytes = readStoredEntryBytes(
+      new Uint8Array(await built.blob.arrayBuffer()),
+      qrLevelEntryName("lvl"),
+    );
+    expect(new TextDecoder().decode(bytes)).toBe(level.json);
+    expect(progress.length).toBeGreaterThan(0);
+    await expect(
+      saves.rebuild(snap, false, undefined, { shouldContinue: () => false }),
+    ).rejects.toThrow("the save was stopped");
     await session.close();
   });
 });

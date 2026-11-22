@@ -1,5 +1,6 @@
 /**
- * The parity contract as a property (tour editor plan D30): for any
+ * The parity contract as a property (the tour editor plan: one document,
+ * shared by both pages): for any
  * sequence of the operations both pages offer - an edit of a pin's text, a
  * delete (taken back or not), a new pin, the tour's name - the phone's
  * Finish writes the same `tour.json` as the desktop's download. Both save
@@ -10,11 +11,19 @@
  * the sequences someone thought of; the two pages once kept two working
  * copies of one tour, and a split that shows only after an unusual order
  * of edits is the kind the table misses. Only `tour.json` is compared:
- * the phone's Finish here writes no level (no code was measured), so its
- * level bytes are the opened file's on both pages.
+ * no code is measured in these sequences, so the phone's Finish writes no
+ * level (asserted: the file it made holds the same entries as the
+ * desktop's).
+ *
+ * Seeded, so a red run names the same sequence again. 24 runs of one to four operations
+ * over the four kinds (edit, delete, new pin, name) reach every ordered
+ * pair of kinds several times over; each run opens both pages and
+ * rebuilds two zips (about 1-2 s), so more would buy little within the
+ * time budget.
  */
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
+import { readStoredCentralDirectory } from "gps-plus-slam-app-framework/test-utils/zip-central-directory";
 import { memoryDraftStores } from "./test-support/memory-draft-stores.js";
 import { editorStore } from "./test-support/editor-store.js";
 import {
@@ -30,6 +39,13 @@ import {
 beforeAll(() => {
   editorStore();
 });
+
+/** The entry names of a saved file, sorted. */
+async function entryNames(file: File): Promise<string[]> {
+  return readStoredCentralDirectory(new Uint8Array(await file.arrayBuffer()))
+    .map((entry) => entry.name)
+    .sort();
+}
 
 /** One operation, its target chosen at run time among what the tour
  *  still holds (`pick`, modulo their count). */
@@ -124,9 +140,13 @@ describe("the parity contract as a property: the phone's Finish and the desktop'
           expect(withStationsByOrder(finished)).toEqual(
             withStationsByOrder(downloaded.written),
           );
+          // No level the desktop's file lacks: the same entries in both.
+          expect(await entryNames(phone.lastFinished())).toEqual(
+            await entryNames(downloaded.file),
+          );
         },
       ),
-      { numRuns: 12 },
+      { numRuns: 24, seed: 1558 },
     );
   }, 240_000);
 });

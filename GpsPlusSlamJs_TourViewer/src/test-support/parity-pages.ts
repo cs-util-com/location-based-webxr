@@ -1,5 +1,6 @@
 /**
- * The parity contract's two pages (tour editor plan D30, D31), shared by
+ * The parity contract's two pages (the tour editor plan: one document,
+ * shared by both pages), shared by
  * the table (`tour-document-parity.test.ts`) and its property
  * (`tour-document-parity.property.test.ts`): the same operations driven
  * through the phone's page (`wireCreatorSetup`: its object list, draft
@@ -134,7 +135,7 @@ export interface Page {
     lon: number,
     joinStation?: string,
   ): Promise<void>;
-  /** A station moved rigidly to `geo`, its items with it (D17), by a code
+  /** A station moved rigidly to `geo`, its items with it, by a code
    *  (the phone: as its settle moves it once the station's code was
    *  re-measured, the code's new text in the same step; the desktop
    *  measures no code and moves the station alone). */
@@ -262,7 +263,7 @@ export async function desktopPage(
     placeOwnStation: () =>
       Promise.reject(
         new NoSuchOperation(
-          "desktop: a new station for a placement (D8's desktop half)",
+          "desktop: a new station for a placement (not built on the desktop yet)",
         ),
       ),
     move: (id, lat, lon, joinStation) => {
@@ -607,7 +608,7 @@ export async function phonePage(
  *  lacks named by their order: the automatic-station rule mints a random
  *  id on each page, which says nothing about whether they agree. So is
  *  the tour's own id, which each page's open mints for a file without
- *  one (Q-I): it must be there, and is named `minted`. */
+ *  one: it must be there, and is named `minted`. */
 export function withStationsByOrder(written: TourManifest): unknown {
   const known = new Set(tourOf(OPENED).stations.map((s) => s.id));
   const names = new Map<string, string>();

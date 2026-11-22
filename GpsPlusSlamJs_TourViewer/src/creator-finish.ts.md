@@ -155,7 +155,8 @@ module's sidecar states them as its contract.
   milestone review R1) and a deflate bomb fails the Finish with the cap's
   sentence; a previous Finish's zip is this page's own stored output and
   gets the rebuild's default budget. What an undo after the Finish may still show is kept: the assets the history names (`keepAssets`, `historyAssetIds`) and the read-along entries it names (`keepEntries`, `historyTimingEntries`), so a timing no narration names is removed but an undone text keeps its own. The write is the document's:
-  `saveStarted` before the snapshot (an undo waits while it runs),
+  `saveStarted` once the save starts, right after the snapshot (nothing
+  runs between them; an undo waits while it runs),
   `saved` when the zip is built (`land`), `saveEnded` in every outcome. On success
   the file is the handle's newest bytes, the document's written tour **advances to what
   was just written** (`saved`), and

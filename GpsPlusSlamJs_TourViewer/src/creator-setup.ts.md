@@ -66,7 +66,7 @@ were here. What stays is the Finish's side:
   phone, Finish steps aside while the rebuilt file waits for its save
   (`hideFinishForResult`); after AR ends without a Finish (the back
   gesture), Finish reads "Finish and save your changes"; a delivered save
-  marks the save handle's newest bytes delivered (`ctx.saves`); `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
+  marks the save handle's newest bytes delivered (`ctx.saves`); `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it).
 
 ## Public API
 
