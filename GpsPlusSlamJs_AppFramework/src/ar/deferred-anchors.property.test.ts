@@ -10,8 +10,12 @@
  * root is in view at either pose follows from the look alone.
  *
  * - Safety: while a root is in view (previous or current pass), its local
- *   matrix changes only to put it at its NUE pose (follow, window entry,
- *   first placement) or, at a release, to T^-1; at most once per release.
+ *   matrix changes only at a release (to T^-1, at most once per release) or
+ *   to put it at its NUE pose while a follow is due: the window is open, or
+ *   the alignment is immature and no code has voted, or the root was still
+ *   following and has not yet reached T^-1. The oracle keeps its own model
+ *   of "following", from the window flag, the target's maturity and the
+ *   root's exact box corners.
  * - Liveness: once the alignment is mature, the window closed and the root
  *   out of view, every key lands on T^-1 within k + 2 passes (k keys).
  * - Paths 1 and 2: after convergence the world pose is the NUE pose (the
@@ -24,6 +28,7 @@ import {
   __resetAnchorReleaseForTests,
   requestAnchorRelease,
 } from './anchor-release';
+import { getArParentBinding } from './ar-parent-target';
 import {
   DEFERRED_ANCHOR_EPSILON_M,
   __runPassForTests,
@@ -174,31 +179,80 @@ function applyOp(
   return false;
 }
 
+/** What the oracle knows about one pass. */
+interface PassFacts {
+  readonly windowOpen: boolean;
+  readonly inView: boolean;
+  readonly released: boolean;
+  /** A follow phase is due: the window is open, or immature with no release yet. */
+  readonly due: boolean;
+}
+
+/** The exact box corners (and origin) of root k's mesh, root-local. */
+function cornersOfRoot(k: number): THREE.Vector3[] {
+  const cx = k * 0.4 - 0.4;
+  const corners = [new THREE.Vector3()];
+  for (let i = 0; i < 8; i += 1) {
+    corners.push(
+      new THREE.Vector3(
+        cx + (i & 1 ? 0.2 : -0.2),
+        i & 2 ? 0.2 : -0.2,
+        i & 4 ? 0.2 : -0.2
+      )
+    );
+  }
+  return corners;
+}
+
+function farFrom(a: THREE.Matrix4, b: THREE.Matrix4, k: number): boolean {
+  return cornersOfRoot(k).some(
+    (c) =>
+      c.clone().applyMatrix4(a).distanceTo(c.clone().applyMatrix4(b)) >
+      DEFERRED_ANCHOR_EPSILON_M
+  );
+}
+
 /**
- * The safety oracle for one pass: an in-view root changes only to its NUE
- * pose or at a release. True when a release moved an in-view root.
+ * The safety oracle for one pass: an in-view root changes only at a
+ * release, or to its NUE pose while a follow is due or still running.
+ * Updates `following` (the oracle's model) and returns true when a release
+ * moved an in-view root.
  */
 function checkSafety(
   roots: THREE.Object3D[],
   before: THREE.Matrix4[],
-  windowOpen: boolean,
-  inView: boolean,
-  released: boolean
+  following: boolean[],
+  facts: PassFacts,
+  tInv: THREE.Matrix4
 ): boolean {
   let changedByRelease = false;
   roots.forEach((root, i) => {
     const changed = maxDiff(before[i]!, root.matrix) > 1e-12;
-    const atNue = maxDiff(root.matrixWorld, IDENTITY) <= 1e-9;
-    if (windowOpen) expect(atNue).toBe(true);
-    if (changed && !inView) seenMoves.outOfView += 1;
-    if (!changed || !inView) return;
-    seenMoves.inView += 1;
-    if (atNue) return; // follow, window entry
-    // Otherwise only a release may move it, and only to T^-1.
-    expect(released).toBe(true);
-    changedByRelease = true;
+    const mayFollow = facts.due || following[i]!;
+    following[i] =
+      facts.due ||
+      (following[i]! && !facts.released && farFrom(root.matrix, tInv, i));
+    if (checkRootMove(root, changed, mayFollow, facts)) changedByRelease = true;
   });
   return changedByRelease;
+}
+
+/** One root's move against the oracle; true when only a release explains it. */
+function checkRootMove(
+  root: THREE.Object3D,
+  changed: boolean,
+  mayFollow: boolean,
+  facts: PassFacts
+): boolean {
+  const atNue = maxDiff(root.matrixWorld, IDENTITY) <= 1e-9;
+  if (facts.windowOpen) expect(atNue).toBe(true);
+  if (changed && !facts.inView) seenMoves.outOfView += 1;
+  if (!changed || !facts.inView) return false;
+  seenMoves.inView += 1;
+  if (atNue && mayFollow) return false; // follow, window entry
+  // Otherwise only a release may move it, and only to T^-1.
+  expect(facts.released).toBe(true);
+  return true;
 }
 
 /**
@@ -281,19 +335,28 @@ function buildWorld(keys: number, matureAtStart: boolean): World {
 }
 
 /** Runs the ops, checking the safety oracle after every pass. */
-function runOps(world: World, ops: Op[]): void {
+function runOps(world: World, ops: Op[], matureAtStart: boolean): void {
   const { store, camera, roots, setLook, pass } = world;
+  const target = getArParentBinding(world.group)!.target;
   let prevLook = world.look();
   let releases = 0;
   let releaseChanges = 0;
+  // A key added in a follow phase starts following.
+  const following = roots.map(() => !matureAtStart);
   for (const op of ops) {
     const released = applyOp(op, store, camera, setLook);
     if (released) releases += 1;
 
     const before = roots.map((r) => r.matrix.clone());
     const counts = pass();
-    const inView = world.look() === 'in' || prevLook === 'in';
-    if (checkSafety(roots, before, counts.windowOpen, inView, released)) {
+    const facts: PassFacts = {
+      windowOpen: counts.windowOpen,
+      inView: world.look() === 'in' || prevLook === 'in',
+      released,
+      due: counts.windowOpen || (releases === 0 && !target.isMature()),
+    };
+    const tInv = target.target().clone().invert();
+    if (checkSafety(roots, before, following, facts, tInv)) {
       releaseChanges += 1;
     }
     expect(releaseChanges).toBeLessThanOrEqual(releases);
@@ -310,7 +373,7 @@ function runScenario({ ops, matureAtStart, keys, devJump }: Scenario): void {
   try {
     const world = buildWorld(keys, matureAtStart);
     world.pass();
-    runOps(world, ops);
+    runOps(world, ops, matureAtStart);
 
     // Liveness: mature, quiet until the window closes, then out of view.
     world.store.mature();

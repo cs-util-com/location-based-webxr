@@ -478,8 +478,9 @@ describe('deferredAnchor: the code-lock release', () => {
     const counts = s.run();
     expect(counts.windowOpen).toBe(false);
     expectMatrixClose(root.matrix, inv(tOf(3, 10)));
-    const lerping = !s.group.matrix.equals(tOf(3, 10));
-    expect(lerping).toBe(true);
+    // The first T change after the epoch change is a correction: the group
+    // landed on it in the same frame.
+    expectMatrixClose(s.group.matrix, tOf(3, 10));
     for (let i = 0; i < 30; i += 1) {
       s.run();
       expectMatrixClose(root.matrix, inv(tOf(3, 10)));
@@ -523,7 +524,7 @@ describe('deferredAnchor: the code-lock release', () => {
     expectMatrixClose(root.matrix, IDENTITY);
   });
 
-  // Finding: content that loads after the session's first code lock must not
+  // Content that loads after the session's first code lock must not
   // fall back into the follow phase just because the extent is still short.
   it('starts a set created after a code vote with the immature phase ended', () => {
     const s = session({ mature: false });
@@ -873,7 +874,265 @@ describe('deferredAnchor: budget', () => {
       const counts = s.run();
       expect(counts.traversals).toBeLessThanOrEqual(1);
       expect(counts.sphereTests).toBeLessThanOrEqual(limit);
+      expect(counts.followUpdates).toBeLessThanOrEqual(20);
     }
+  });
+
+  // Why: a follow step writes every root's matrix and refreshes its
+  // subtree; once the lerp has converged the parent stands still, and
+  // re-writing the same matrix each frame is pure cost.
+  it('skips follow updates while the parent matrix does not change', () => {
+    const s = session({ mature: false });
+    for (let k = 0; k < 3; k += 1) {
+      deferredAnchor(s.group, `k${k}`).add(
+        contentRoot(new THREE.Vector3(k, 0, 0))
+      );
+    }
+    s.run(2);
+    s.store.setT(tOf(0.3)); // below the correction threshold: it eases
+    expect(s.run().followUpdates).toBe(3);
+    s.run(200); // the lerp converges and snaps onto T
+    expect(s.run().followUpdates).toBe(0);
+    expect(s.run().followUpdates).toBe(0);
+  });
+});
+
+// Why: "the world jumps at once" - a correction of T moves
+// the world group onto T in the frame it arrives, while a deferred anchor in
+// view still holds its pose relative to the camera in that same frame.
+describe('deferredAnchor: a correction frame', () => {
+  it('lands the group on T in one frame; a visible anchor does not move, the world does', () => {
+    const s = session();
+    s.look('in');
+    const root = contentRoot();
+    deferredAnchor(s.group, 'a').add(root);
+    const world = contentRoot(); // scene-root content at its NUE pose
+    s.scene.add(world);
+    s.run(2);
+    const anchorBefore = cameraRelative(s.camera, root);
+    const worldBefore = cameraRelative(s.camera, world);
+    s.store.setT(tOf(5, 20));
+    s.run();
+    expectMatrixClose(s.group.matrix, tOf(5, 20));
+    expectMatrixClose(root.matrix, IDENTITY);
+    expectMatrixClose(cameraRelative(s.camera, root), anchorBefore);
+    expectMatrixClose(
+      cameraRelative(s.camera, world),
+      worldBefore.clone().multiply(inv(tOf(5, 20))),
+      1e-9
+    );
+  });
+});
+
+describe('deferredAnchor: the three view tests', () => {
+  // T turns the view about the camera's own position, so the camera does
+  // not move (the step eases) while the content swings across the side
+  // plane: 7 m to the side and 8 m ahead it sits about 41 deg off axis,
+  // outside the 30 deg half angle plus the 5 deg margin.
+  function aboutCamera(yawDeg: number): THREE.Matrix4 {
+    return new THREE.Matrix4()
+      .makeTranslation(0, 0, 8)
+      .multiply(
+        new THREE.Matrix4().makeRotationY(THREE.MathUtils.degToRad(yawDeg))
+      )
+      .multiply(new THREE.Matrix4().makeTranslation(0, 0, -8));
+  }
+
+  function outAtCurrentPose() {
+    const s = session();
+    s.look('in');
+    const root = contentRoot(new THREE.Vector3(7, 0, 0));
+    deferredAnchor(s.group, 'a').add(root);
+    s.run(3);
+    return { s, root };
+  }
+
+  it('does not commit when the content is out of view now but in view at its new pose', () => {
+    const { s, root } = outAtCurrentPose();
+    s.store.setT(aboutCamera(-10)); // T^-1 turns the content to about 31 deg
+    for (let i = 0; i < 8; i += 1) {
+      s.run();
+      expectMatrixClose(root.matrix, IDENTITY);
+    }
+  });
+
+  it('commits when the new pose is out of view too', () => {
+    const { s, root } = outAtCurrentPose();
+    s.store.setT(aboutCamera(10)); // T^-1 turns the content to about 51 deg
+    s.run(3);
+    expectMatrixClose(root.matrix, inv(aboutCamera(10)));
+  });
+
+  // The previous view is re-expressed by the parent's motion. A correction
+  // that moves the parent far in one frame, with the look turned away in
+  // that same frame, must still count the content as seen last frame.
+  it('carries the previous view by the parent motion through a one-frame jump', () => {
+    const s = session();
+    s.store.setT(tOf(5, 40));
+    s.run(2);
+    s.look('in');
+    const root = contentRoot();
+    deferredAnchor(s.group, 'a').add(root);
+    s.run(3);
+    const before = root.matrix.clone();
+    s.store.setT(tOf(25, 100));
+    s.look('out');
+    s.run();
+    expectMatrixClose(root.matrix, before);
+    s.run();
+    expectMatrixClose(root.matrix, inv(tOf(25, 100)));
+  });
+});
+
+describe('deferredAnchor: bounds and frames', () => {
+  // The epsilon is measured over the root's own box: a root that arrives
+  // with a pose of its own (which add() replaces) must not have its box
+  // measured where that pose put it.
+  it('measures the epsilon in the root frame when the root arrives with a pose', () => {
+    const s = session();
+    s.look('in');
+    const root = contentRoot();
+    root.position.set(300, 0, 0);
+    root.updateMatrix(); // the pose is in its matrix when add() measures the box
+    deferredAnchor(s.group, 'a').add(root);
+    s.run(2);
+    // 0.05 m at 300 m, nothing near the root. The release decides in the
+    // same pass, before any traversal could renew the corners.
+    s.store.setT(tOf(0, 0.01));
+    requestAnchorRelease('code-lock');
+    s.run();
+    expectMatrixClose(root.matrix, IDENTITY);
+  });
+
+  // A part mounted far from the root without boundsChanged(): the next
+  // fresh traversal of the key also renews its corners, so a later yaw
+  // that only moves that part is still seen as a move.
+  it('renews the corners at a fresh traversal', () => {
+    const s = session();
+    s.look('out');
+    const root = contentRoot();
+    deferredAnchor(s.group, 'a').add(root);
+    s.run(2);
+    const far = new THREE.Mesh(
+      new THREE.SphereGeometry(0.2),
+      new THREE.MeshBasicMaterial()
+    );
+    far.position.set(500, 0, 0); // off to the side of both looks
+    root.add(far);
+    s.store.setT(tOf(3));
+    s.run(3);
+    expectMatrixClose(root.matrix, inv(tOf(3)));
+    s.store.setT(tOf(3, 0.01)); // 0.087 m at the far part
+    s.run(4);
+    expectMatrixClose(root.matrix, inv(tOf(3, 0.01)));
+  });
+
+  it('follows in the parent frame under a scene root that is not at identity', () => {
+    const s = session({ mature: false });
+    s.scene.position.set(4, 0, -2);
+    s.scene.rotation.y = 0.5;
+    s.scene.updateMatrixWorld(true);
+    const root = contentRoot();
+    deferredAnchor(s.group, 'a').add(root);
+    s.store.setT(tOf(2, 5));
+    s.run(3);
+    expectMatrixClose(root.matrix, inv(s.group.matrix), 1e-9);
+    root.updateMatrixWorld(true);
+    expectMatrixClose(root.matrixWorld, s.scene.matrixWorld, 1e-9);
+  });
+
+  // The jump detector watches the raw camera in the group's frame: a
+  // correction that moves the group (and the camera with it) is not an
+  // odometry jump.
+  it('opens no window for a 5 m T step while the raw camera stands still', () => {
+    const s = session();
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(3);
+    s.store.setT(tOf(5));
+    expect(s.run().windowOpen).toBe(false);
+    expect(s.run().windowOpen).toBe(false);
+  });
+});
+
+describe('deferredAnchor: the window rules', () => {
+  function openWindowAt10(contentAt?: THREE.Vector3) {
+    const s = session();
+    s.look('in');
+    s.camera.position.z = 40;
+    deferredAnchor(s.group, 'a').add(contentRoot(contentAt));
+    s.run(2);
+    s.setNow(10);
+    s.store.bumpEpoch();
+    expect(s.run().windowOpen).toBe(true);
+    return s;
+  }
+
+  it('closes exactly 2 s after its last step, not before', () => {
+    const s = openWindowAt10();
+    s.setNow(11.95);
+    expect(s.run().windowOpen).toBe(true);
+    s.setNow(12);
+    expect(s.run().windowOpen).toBe(false);
+  });
+
+  // The noise floor (0.1 m at the content) sits between these two step
+  // sizes: 0.12 m steps keep the window open, 0.08 m steps do not.
+  for (const [stepM, open] of [
+    [0.12, true],
+    [0.08, false],
+  ] as const) {
+    it(`${open ? 'stays open' : 'closes'} with a ${stepM} m T step each second`, () => {
+      const s = openWindowAt10();
+      for (let k = 1; k <= 4; k += 1) {
+        s.runUntil(10 + k);
+        s.store.setT(tOf(stepM * k));
+        s.run();
+      }
+      expect(s.runUntil(14.5)?.windowOpen).toBe(open);
+    });
+  }
+
+  it('measures the T step at the content, so a yaw far from the origin keeps it open', () => {
+    const s = openWindowAt10(new THREE.Vector3(0, 0, -50));
+    for (let k = 1; k <= 4; k += 1) {
+      s.runUntil(10 + k);
+      s.store.setT(tOf(0, 0.2 * k)); // 0.17 m at the content, 0 at the origin
+      s.run();
+    }
+    expect(s.runUntil(14.5)?.windowOpen).toBe(true);
+  });
+
+  it('re-arms its cap at a second trigger while open', () => {
+    const s = openWindowAt10();
+    for (let k = 1; k <= 14; k += 1) {
+      s.runUntil(10 + k);
+      if (k === 5) s.store.bumpEpoch();
+      s.store.setT(tOf(0.15 * k));
+      expect(s.run().windowOpen, `k=${k}`).toBe(true); // 21 s to 24 s included
+    }
+    expect(s.runUntil(25.2)?.windowOpen).toBe(false);
+  });
+
+  it('a release absorbs an epoch change of its own pass', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(2);
+    s.store.bumpEpoch();
+    requestAnchorRelease('code-lock');
+    expect(s.run().windowOpen).toBe(false);
+    expect(s.run().windowOpen).toBe(false);
+  });
+
+  it('a release absorbs a camera jump of its own pass', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(2);
+    s.camera.position.x += 3;
+    requestAnchorRelease('code-lock');
+    expect(s.run().windowOpen).toBe(false);
+    expect(s.run().windowOpen).toBe(false);
   });
 });
 

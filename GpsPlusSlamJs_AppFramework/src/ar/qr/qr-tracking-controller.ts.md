@@ -119,7 +119,7 @@ imageHeight, intrinsics }`, eight fields (seven until M3b b3; the line
 
 ## Tests
 
-- `qr-tracking-controller.test.ts` — the anchor release (once after a cast
+- `qr-tracking-controller.test.ts` - the anchor release (once after a cast
   vote, ordered votes, release, onLocked; none for `false`, geo-less or
   unstable), happy-path status progression + 4 votes
   dispatched, level cached once per URL, error path on fetch failure, stays

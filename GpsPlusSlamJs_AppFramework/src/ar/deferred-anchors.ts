@@ -2,8 +2,9 @@
  * Deferred anchors: content under an AR world group (`arWorldGroup`) whose
  * correction waits until none of it is in view.
  *
- * The group carries the alignment T (odometry NUE -> GPS-world NUE) and
- * moves at once when T changes. Content placed under it with the local
+ * The group carries the alignment T (odometry NUE -> GPS-world NUE): a
+ * correction of T moves it in one frame, a small refinement eases over
+ * about 0.3 s (`enableArWorldGroupAlignment`). Content placed under it with the local
  * matrix T^-1 sits at its NUE pose; content that keeps its local matrix
  * instead stays put relative to the camera. An anchor does the second while
  * it is in view, and re-places itself to the latest T^-1 once it has been
@@ -123,6 +124,8 @@ export interface DeferredAnchorPassCounts {
   readonly traversals: number;
   /** Whether the frame-switch window is open after this pass. */
   readonly windowOpen: boolean;
+  /** Keys whose follow step rewrote their matrix (0 while the parent stands still). */
+  readonly followUpdates: number;
 }
 
 interface AnchorSet {
@@ -183,7 +186,12 @@ export function __runPassForTests(
   const set = sets.get(parent);
   if (!set) {
     getArParentBinding(parent)?.step(dt, elapsedS);
-    return { sphereTests: 0, traversals: 0, windowOpen: false };
+    return {
+      sphereTests: 0,
+      traversals: 0,
+      windowOpen: false,
+      followUpdates: 0,
+    };
   }
   if (set.isBound()) set.binding.step(dt, elapsedS);
   return set.pass(view, dt, elapsedS);
@@ -191,6 +199,7 @@ export function __runPassForTests(
 
 const scratchA = new THREE.Vector3();
 const scratchB = new THREE.Vector3();
+const ORIGIN_ONLY: readonly THREE.Vector3[] = [new THREE.Vector3()];
 
 /** Largest distance any of `corners` moves between local matrices `a` and `b`. */
 function displacement(
@@ -291,6 +300,7 @@ function createAnchorSet(
   let lastEpoch = target.frameEpoch();
   let lastCam: THREE.Vector3 | null = null;
   const lastTargetInv = target.target().clone().invert();
+  let lastTargetVersion = target.version();
   let roundRobin = 0;
 
   // Per-pass scratch.
@@ -300,7 +310,18 @@ function createAnchorSet(
   const parentInv = new THREE.Matrix4();
   const camNow = new THREE.Vector3();
   const counters: AnchorVisibilityCounters = { sphereTests: 0, traversals: 0 };
+  let followUpdates = 0;
   let nowMs = 0;
+  // Reused view-test options (no per-test allocation): at the current pose,
+  // and at the new pose T^-1 (`targetInv` is updated in place each pass).
+  const atCurrent = {
+    marginDeg: ANCHOR_VIEW_MARGIN_DEG,
+    nowMs: 0,
+    counters,
+    cache: createAnchorBoundsCache(),
+    fresh: false,
+  };
+  const atTarget = { ...atCurrent, atLocal: targetInv };
 
   function cornersOf(key: KeyEntry): THREE.Vector3[] {
     const all: THREE.Vector3[] = [];
@@ -350,21 +371,24 @@ function createAnchorSet(
     return windowOpen || (!immatureEnded && !target.isMature());
   }
 
+  function inView(
+    view: AnchorView,
+    r: RootEntry,
+    options: typeof atCurrent,
+    fresh: boolean
+  ): boolean {
+    options.cache = r.cache;
+    options.fresh = fresh;
+    options.nowMs = nowMs;
+    return isAnchorInView(view, r.root, options);
+  }
+
+  /** In view at its current pose (this or the previous view) or at T^-1 (this view). */
   function keyInView(key: KeyEntry, fresh: boolean): boolean {
-    const base = {
-      marginDeg: ANCHOR_VIEW_MARGIN_DEG,
-      nowMs,
-      counters,
-    } as const;
     for (const r of key.roots.values()) {
-      const cache = r.cache;
-      if (isAnchorInView(cur, r.root, { ...base, cache, fresh })) return true;
-      if (hasPrev && isAnchorInView(prev, r.root, { ...base, cache })) {
-        return true;
-      }
-      if (isAnchorInView(cur, r.root, { ...base, cache, atLocal: targetInv })) {
-        return true;
-      }
+      if (inView(cur, r, atCurrent, fresh)) return true;
+      if (hasPrev && inView(prev, r, atCurrent, false)) return true;
+      if (inView(cur, r, atTarget, false)) return true;
     }
     return false;
   }
@@ -471,7 +495,7 @@ function createAnchorSet(
 
   /** How far T^-1 moved any key's content (or the origin) since the last pass. */
   function targetStep(): number {
-    let step = displacement(lastTargetInv, targetInv, [new THREE.Vector3()]);
+    let step = displacement(lastTargetInv, targetInv, ORIGIN_ONLY);
     for (const key of keys.values()) {
       step = Math.max(
         step,
@@ -532,7 +556,11 @@ function createAnchorSet(
   }
 
   function continueFollow(key: KeyEntry, followWanted: boolean): void {
-    assign(key, followInv);
+    // A parent that stands still leaves nothing to rewrite.
+    if (!key.local.equals(followInv)) {
+      assign(key, followInv);
+      followUpdates += 1;
+    }
     // After the phase ends, follow on until the key is at T^-1.
     if (
       !followWanted &&
@@ -594,9 +622,11 @@ function createAnchorSet(
     if (!pick) return;
     roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
     excludeNested(pick);
-    if (keys.get(pick.key) === pick && !keyInView(pick, true)) {
-      commit(pick, targetInv, 'out-of-view');
-    }
+    if (keys.get(pick.key) !== pick) return;
+    // The fresh traversal renews the bounds; the corners follow it, so a
+    // part mounted without boundsChanged() counts from here on.
+    for (const r of pick.roots.values()) r.corners = rootCorners(r.root);
+    if (!keyInView(pick, true)) commit(pick, targetInv, 'out-of-view');
   }
 
   /** This view is the next pass's previous view. */
@@ -615,8 +645,9 @@ function createAnchorSet(
   ): DeferredAnchorPassCounts {
     counters.sphereTests = 0;
     counters.traversals = 0;
+    followUpdates = 0;
     if (disposed || !Number.isFinite(elapsedS))
-      return { ...counters, windowOpen };
+      return { ...counters, windowOpen, followUpdates };
     nowMs = elapsedS * 1000;
     const sessionS = target.sessionElapsedS(elapsedS);
     parent.updateWorldMatrix(true, false);
@@ -629,11 +660,14 @@ function createAnchorSet(
     const epoch = target.frameEpoch();
     applyRelease(epoch, cam);
     const trigger = detectTrigger(epoch, cam);
-    stepWindow(trigger, targetStep(), elapsedS, sessionS);
+    const version = target.version();
+    const tStep = version === lastTargetVersion ? 0 : targetStep();
+    lastTargetVersion = version;
+    stepWindow(trigger, tStep, elapsedS, sessionS);
     followKeys();
     commitOneDeferred();
     swapViews();
-    return { ...counters, windowOpen };
+    return { ...counters, windowOpen, followUpdates };
   }
 
   /** Throws on a root the set cannot take; true when it already belongs to `key`. */

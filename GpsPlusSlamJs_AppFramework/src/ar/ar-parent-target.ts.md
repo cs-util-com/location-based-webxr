@@ -41,8 +41,11 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
   - `devWorldJumpFromPage()`: reads `location.search` only under
     `import.meta.env.DEV`; a production build folds the reader away.
   - The jump (north by `metres`, a yaw by `degrees`) is composed on top of
-    the alignment, `jump^n x alignment`, once per period after the first
-    tick, so a tester can watch anchored content hold through a world jump.
+    the alignment as `Tr(n * metres) x RotY(n * degrees) x alignment` after
+    the n-th period (the first lands one period after the first tick), so a
+    tester can watch anchored content hold through a world jump. A jump of
+    more than 1 m at the camera lands in one frame, as any correction does
+    (`ar-world-group-alignment.ts.md`).
   - `DEV_WORLD_JUMP_PERIOD_S = 10`.
 - Binding registry
   - `ArParentBinding { group, target, step, attachPass, onDispose }`.
