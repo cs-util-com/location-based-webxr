@@ -102,8 +102,10 @@ describe("maker-slice", () => {
       fresh(),
       A.talkChosen("steady"),
       A.saved({ id: "c1", name: "Pip", generation: 0 }),
+      A.cutStarted(),
       A.cutFailed("Only three poses"),
     );
+    expect(s0.draft.failure).toBe("Only three poses");
     const s = run(s0, A.cutStarted());
     expect(isCutting(s)).toBe(true);
     expect(s.draft).toMatchObject({
@@ -121,6 +123,15 @@ describe("maker-slice", () => {
     expect(failed.cut).toBe("none");
     expect(failed.draft.failure).toBe("Only three poses");
     expect(run(s, A.cutAborted()).cut).toBe("none");
+  });
+
+  // Why: a failure belongs to the cut that was running; one reported with
+  // no cut running (a stale report) must not drop the cut on screen, which
+  // would lose the author's picture and leave the check step without one.
+  it("ignores a failure reported while no cut runs", () => {
+    const shown = run(ready(), A.went(4));
+    expect(run(shown, A.cutFailed("late"))).toBe(shown);
+    expect(run(fresh(), A.cutFailed("late"))).toEqual(fresh());
   });
 
   // Why: the previews redraw when the version moves: a re-cut and a talk

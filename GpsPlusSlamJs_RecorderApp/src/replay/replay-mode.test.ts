@@ -34,11 +34,7 @@ vi.mock('gps-plus-slam-app-framework/ar/replay-scene', () => ({
     renderer: { name: 'mock-renderer' },
   })),
   disposeReplayScene: vi.fn(),
-  getAlignmentLerper: vi.fn(() => ({
-    setTarget: vi.fn(),
-    update: vi.fn(),
-    dispose: vi.fn(),
-  })),
+  applyReplayAlignment: vi.fn(),
 }));
 
 vi.mock('gps-plus-slam-app-framework/storage/zip-reader', () => ({
@@ -188,6 +184,7 @@ import { createRecorderStore } from '../state/recorder-store';
 import {
   initReplayScene,
   disposeReplayScene,
+  applyReplayAlignment,
 } from 'gps-plus-slam-app-framework/ar/replay-scene';
 import { gpsEventVisualizer } from 'gps-plus-slam-app-framework/visualization/gps-event-markers';
 import { refPointVisualizer } from '../visualization/ref-point-visualizer';
@@ -411,6 +408,14 @@ describe('replay-mode', () => {
     const wireCall = vi.mocked(wireStoreSubscribers).mock.calls[0];
     const subscribedStore = wireCall[0];
     expect(subscribedStore).toBe(controller.getStore());
+  });
+
+  it('applies each alignment directly through the replay scene, with no smoothing step', async () => {
+    // Why: replay lands each alignment exactly, in the frame it arrives; the
+    // app adds no smoothing of its own (exactness: replay-scene.test.ts).
+    await startReplayMode(fakeZipData, makeConfig());
+    const deps = vi.mocked(wireStoreSubscribers).mock.calls[0][1];
+    expect(deps.applyAlignmentMatrix).toBe(applyReplayAlignment);
   });
 
   it('does NOT pass onNewGpsPosition to wireStoreSubscribers', async () => {

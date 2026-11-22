@@ -123,6 +123,7 @@ describe("the voice focus under the setting", () => {
       hold: () => calls.push(name + " hold"),
       carryOn: () => calls.push(name + " carryOn"),
       stop: () => calls.push(name + " stop"),
+      forget: () => undefined,
     });
     const a = voice("a");
     expect(focus.selfStart(a)).toBe(true);
@@ -145,6 +146,7 @@ describe("the voice focus under the setting", () => {
       hold: () => calls.push("hold"),
       carryOn: () => calls.push("carryOn"),
       stop: () => calls.push("stop"),
+      forget: () => undefined,
     };
     focus.selfStart(a);
     setting.set(false);
@@ -165,6 +167,7 @@ describe("the voice focus under the setting", () => {
       hold: () => calls.push("hold"),
       carryOn: () => calls.push("carryOn"),
       stop: () => calls.push("stop"),
+      forget: () => undefined,
     };
     focus.selfStart(a);
     setting.set(false);
@@ -191,6 +194,7 @@ describe("the voice focus under the setting", () => {
       hold: () => undefined,
       carryOn: () => undefined,
       stop: () => undefined,
+      forget: () => undefined,
     };
     focus.tapped(held);
     focus.tapped(shown);
@@ -287,6 +291,7 @@ describe("a tap with sound off", () => {
       hold: () => calls.push("held hold"),
       carryOn: () => calls.push("held carryOn"),
       stop: () => calls.push("held stop"),
+      forget: () => undefined,
     };
     focus.selfStart(held);
     setting.set(false);
@@ -294,6 +299,7 @@ describe("a tap with sound off", () => {
       hold: () => calls.push("tapped hold"),
       carryOn: () => calls.push("tapped carryOn"),
       stop: () => calls.push("tapped stop"),
+      forget: () => undefined,
     };
     focus.tapped(tapped);
     expect(setting.on()).toBe(true);

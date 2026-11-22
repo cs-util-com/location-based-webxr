@@ -76,7 +76,7 @@ import { scanEntryNames } from "../tour-read-set.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import type { TourSession } from "../tour-session.js";
 import { DETAIL_FIELDS, type DetailsForm } from "../tour-details-form.js";
-import { isHeldEdit } from "../draft-edit-gate.js";
+import { type HeldEdit, isHeldEdit } from "../draft-edit-gate.js";
 import {
   canStep,
   changeCount,
@@ -85,6 +85,7 @@ import {
   characterRefusal,
   characterRemoveRefusal,
   detailsChange,
+  documentFrames,
   documentObjects,
   effectiveDetails,
   fileUseCount,
@@ -415,6 +416,21 @@ interface EditorRefusal {
   readonly reason: string;
 }
 
+/** An edit that waits for the draft question (`draft-edit-gate.ts`):
+ *  `landed` gives what it made once it is in the tour, or null when it
+ *  never got there (dropped, or refused by the tour as it was by then). */
+export interface EditorHeld<T> {
+  readonly kind: "held";
+  readonly landed: Promise<T | null>;
+}
+
+/** A paste made: its copies' ids, notes and folders, in the plan's order. */
+interface EditorPasted {
+  readonly kind: "pasted";
+  readonly objects: readonly string[];
+  readonly folders: readonly string[];
+}
+
 /** What a draft offers back (`editor-draft.ts`). */
 interface EditorRestore {
   readonly objects: readonly TourObject[];
@@ -635,6 +651,14 @@ const NO_VOICE =
 const NO_VOICE_TO_DESCRIBE =
   "Add the voice first: the synthetic mark and the credit describe it.";
 
+/** Said for the words row without a voice. */
+const NO_VOICE_FOR_WORDS =
+  "Add the voice first: the words show while the voice plays.";
+
+/** Said for words put on the sign of a text that is not a reading sign. */
+const WORDS_ONLY_ON_A_SIGN =
+  "Only a reading sign can show the words on the sign.";
+
 /** Said when the tour's timing for a text cannot be read. */
 const TIMING_UNREAD =
   "The tour's timing for this text could not be read, so it cannot be changed here.";
@@ -660,6 +684,11 @@ export interface NarrationFacts {
   readonly synthetic: boolean;
   /** Who speaks it, as stored ("": no credit). */
   readonly voiceCredit: string;
+  /** Where the words show while the voice plays: "sign", the creator
+   *  put them on the reading sign; null, in the box (the default). */
+  readonly words: "sign" | null;
+  /** The text's stored view: the words row is only for `reading`. */
+  readonly view: string;
 }
 
 /** A change of a long text's narration (`editNarration`). */
@@ -682,7 +711,10 @@ export type NarrationChange =
   | { readonly kind: "synthetic"; readonly synthetic: boolean }
   /** Who speaks it, as typed: stored by `normalVoiceCredit` (trimmed,
    *  single-spaced, capped; empty takes the credit off). */
-  | { readonly kind: "voiceCredit"; readonly text: string };
+  | { readonly kind: "voiceCredit"; readonly text: string }
+  /** Where the words show while the voice plays: on the reading sign, or
+   *  (null) in the box at the bottom, the field's absence. */
+  | { readonly kind: "words"; readonly value: "sign" | null };
 
 /** Said for a size given to a block whose row has none. */
 const NO_EXTENT = "This item has no size to set.";
@@ -1130,10 +1162,35 @@ export interface EditorSession {
    *  picture read first, and held under its copy's id): ONE step.
    *  Refused for a folder the tour lacks, a photo whose picture cannot be
    *  read, and a copy that would take an item beyond its station's
-   *  reach. */
+   *  reach. `held` while the edit waits for the draft question
+   *  (`draft-edit-gate.ts`): `landed` gives the copy once it is in the
+   *  tour, or null when it never got there (its pictures dropped). */
   duplicateFolder(
     folderId: string,
-  ): Promise<{ kind: "duplicated"; folderId: string } | EditorRefusal>;
+  ): Promise<
+    | { kind: "duplicated"; folderId: string }
+    | EditorHeld<{ kind: "duplicated"; folderId: string }>
+    | EditorRefusal
+  >;
+  /** Paste copies of notes and plain folders into the station
+   *  `toStationId` (`clipboard.ts`'s `pasteOf` says which): each with
+   *  everything it holds and every id new, a photo's picture read first
+   *  and held under its copy's id. Into a note's or folder's own station
+   *  the copy Duplicate makes; into another one, standing there as the
+   *  original stands in its own (a note out of any folder). ONE step for
+   *  the lot. `objects` and `folders`: the copies' ids, in the plan's
+   *  order. Refused for anything the tour lacks (the target station too),
+   *  a picture that cannot be read, a tour that changed during that read,
+   *  and a copy beyond its station's reach. `held` while the edit waits
+   *  for the draft question, as for `duplicateFolder`. */
+  paste(plan: {
+    readonly toStationId: string;
+    readonly objects: readonly string[];
+    readonly folders: readonly {
+      readonly stationId: string;
+      readonly folderId: string;
+    }[];
+  }): Promise<EditorPasted | EditorHeld<EditorPasted> | EditorRefusal>;
   /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
    *  about its origin, sizes and distances alike. One step. Refused for a
    *  folder the tour lacks, a scale out of the bounds, and one that takes
@@ -1727,6 +1784,25 @@ export function createEditorSession(input: {
     return isHeldEdit(out) || doc().revision !== was;
   }
 
+  /** A held edit's outcome (`EditorHeld`): once it lands, `made()` - what
+   *  it made, or null when the document refused it then; null too when it
+   *  was dropped. Either null drops the pictures held for its copies
+   *  (`pictured`), which nothing in the tour names then. */
+  function heldUntilLanded<T>(
+    out: HeldEdit,
+    pictured: readonly string[],
+    made: () => T | null,
+  ): EditorHeld<T> {
+    return {
+      kind: "held",
+      landed: out.landed.then((landed) => {
+        const result = landed === null || mine() === null ? null : made();
+        if (result === null) for (const id of pictured) files.delete(id);
+        return result;
+      }),
+    };
+  }
+
   const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
   const noSuchFolder: EditorRefusal = {
     kind: "refused",
@@ -1845,6 +1921,11 @@ export function createEditorSession(input: {
       return was === undefined
         ? undefined
         : { ...was, synthetic: change.synthetic === true };
+    }
+    if (change.kind === "words") {
+      if (was === undefined) return undefined;
+      const { words: _old, ...kept } = was;
+      return change.value === "sign" ? { ...kept, words: "sign" } : kept;
     }
     if (change.kind === "voiceCredit") {
       if (was === undefined) return undefined;
@@ -3269,6 +3350,8 @@ export function createEditorSession(input: {
         durationMs: narration?.durationMs ?? null,
         synthetic: narration?.synthetic === true,
         voiceCredit: narration?.voiceCredit ?? "",
+        words: narration?.words === "sign" ? ("sign" as const) : null,
+        view: object.view,
       };
       if (narration?.timing === undefined) {
         return { ...facts, timingText: null, timingUnread: false };
@@ -3342,6 +3425,14 @@ export function createEditorSession(input: {
       ) {
         return { kind: "refused", reason: NO_VOICE_TO_DESCRIBE };
       }
+      if (change.kind === "words") {
+        if (was === undefined) {
+          return { kind: "refused", reason: NO_VOICE_FOR_WORDS };
+        }
+        if (change.value === "sign" && latest.view !== "reading") {
+          return { kind: "refused", reason: WORDS_ONLY_ON_A_SIGN };
+        }
+      }
       if (change.kind === "removeVoice" && was === undefined) {
         return { kind: "unchanged" };
       }
@@ -3353,9 +3444,11 @@ export function createEditorSession(input: {
         return { kind: "unchanged" };
       }
       const narration = narrationAfter(was, change, voice, entry);
-      // The same mark or credit again: no change, said as none.
+      // The same mark, credit or words place again: no change, said as none.
       if (
-        (change.kind === "synthetic" || change.kind === "voiceCredit") &&
+        (change.kind === "synthetic" ||
+          change.kind === "voiceCredit" ||
+          change.kind === "words") &&
         sameJson(narration, was)
       ) {
         return { kind: "unchanged" };
@@ -3372,7 +3465,9 @@ export function createEditorSession(input: {
                 ? `the synthetic voice mark of ${objectName(latest)}`
                 : change.kind === "voiceCredit"
                   ? `the voice credit of ${objectName(latest)}`
-                  : `the timing of ${objectName(latest)}`;
+                  : change.kind === "words"
+                    ? `where the words of ${objectName(latest)} show`
+                    : `the timing of ${objectName(latest)}`;
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.narrationEdited({
@@ -3515,28 +3610,147 @@ export function createEditorSession(input: {
         if (copyId !== undefined) files.set(copyId, blob);
       }
       const copyId = newIds[folderId];
-      if (
-        copyId !== undefined &&
-        took(() =>
-          store.dispatch(
-            tourDocumentActions.folderDuplicated({
-              stationId: fresh.station.id,
-              folderId,
-              newIds,
-              what: `the copy of "${folderName(fresh.folder)}"`,
-            }),
-          ),
-        )
-      ) {
-        return { kind: "duplicated", folderId: copyId };
+      const pictured = items.flatMap((o) => newIds[o.id] ?? []);
+      if (copyId !== undefined) {
+        const was = doc().revision;
+        const out = store.dispatch(
+          tourDocumentActions.folderDuplicated({
+            stationId: fresh.station.id,
+            folderId,
+            newIds,
+            what: `the copy of "${folderName(fresh.folder)}"`,
+          }),
+        );
+        const made = { kind: "duplicated" as const, folderId: copyId };
+        if (isHeldEdit(out)) {
+          return heldUntilLanded(out, pictured, () =>
+            folderOf(own(), copyId) === null ? null : made,
+          );
+        }
+        if (doc().revision !== was) return made;
       }
-      for (const id of items.map((o) => newIds[o.id])) {
-        if (id !== undefined) files.delete(id);
-      }
+      for (const id of pictured) files.delete(id);
       if (mine() === null) return notInTour;
       return folderOf(own(), folderId) === null
         ? noSuchFolder
         : { kind: "refused", reason: FOLDER_TOO_FAR };
+    },
+    async paste(plan) {
+      const state = mine();
+      if (state === null) return notInTour;
+      // What is copied, as the tour is: the notes, and each folder's
+      // items at any depth.
+      const sourcesIn = (of: TourDocumentState) => {
+        const objects = documentObjects(of).map((o) => o.object);
+        return [
+          ...plan.objects.map((id) => objects.filter((o) => o.id === id)),
+          ...plan.folders.map(({ folderId }) =>
+            objects.filter((o) => o.folder?.includes(folderId) === true),
+          ),
+        ].flat();
+      };
+      const hasTarget = (of: TourDocumentState) =>
+        documentFrames(of).some((f) => f.id === plan.toStationId);
+      if (
+        !hasTarget(state) ||
+        plan.objects.some((id) => find(id) === undefined) ||
+        plan.folders.some((f) => folderOf(state, f.folderId) === null)
+      ) {
+        return notApplied;
+      }
+      const items = sourcesIn(state);
+      const read = await picturesOf(items);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // The tour may have changed during the read: paste only while what
+      // is copied is exactly what was read (a photo added meanwhile would
+      // be copied without its picture).
+      const after = mine();
+      if (after === null) return notInTour;
+      const held = sourcesIn(after).map((o) => o.id);
+      const fresh = plan.folders.map((f) => folderOf(after, f.folderId));
+      if (
+        !hasTarget(after) ||
+        held.length !== items.length ||
+        held.some((id, i) => id !== items[i]?.id) ||
+        fresh.some((f) => f === null)
+      ) {
+        return notApplied;
+      }
+      const objects = plan.objects.map((id) => ({ id, newId: newObjectId() }));
+      const folderIds = (folder: TourFolder): string[] => [
+        folder.id,
+        ...folder.children.filter(isTourFolder).flatMap(folderIds),
+      ];
+      const folders = plan.folders.map(({ stationId, folderId }, i) => {
+        const inIt = documentObjects(after)
+          .map((o) => o.object)
+          .filter((o) => o.folder?.includes(folderId) === true)
+          .map((o) => o.id);
+        const folder = fresh[i]?.folder;
+        return {
+          stationId,
+          folderId,
+          newIds: Object.fromEntries(
+            [...(folder === undefined ? [] : folderIds(folder)), ...inIt].map(
+              (id) => [id, newObjectId()],
+            ),
+          ),
+        };
+      });
+      // A copy's new id by its original's, for the pictures.
+      const copies = new Map<string, string>([
+        ...objects.map((o) => [o.id, o.newId] as const),
+        ...folders.flatMap((f) => Object.entries(f.newIds)),
+      ]);
+      const pictured: string[] = [];
+      for (const [id, blob] of read) {
+        const copyId = copies.get(id);
+        if (copyId === undefined) continue;
+        files.set(copyId, blob);
+        pictured.push(copyId);
+      }
+      const names = [
+        ...plan.objects.flatMap((id) => {
+          const found = find(id);
+          return found === undefined ? [] : [objectName(found.object)];
+        }),
+        ...fresh.flatMap((f) =>
+          f === null ? [] : [`"${folderName(f.folder)}"`],
+        ),
+      ];
+      const what =
+        names.length === 1
+          ? `the copy of ${names[0] ?? ""}`
+          : `the paste of ${String(names.length)} copies`;
+      const was = doc().revision;
+      const out = store.dispatch(
+        tourDocumentActions.clipboardPasted({
+          toStationId: plan.toStationId,
+          objects,
+          folders,
+          what,
+        }),
+      );
+      const made: EditorPasted = {
+        kind: "pasted",
+        objects: objects.map((o) => o.newId),
+        folders: folders.map((f) => f.newIds[f.folderId] ?? f.folderId),
+      };
+      if (isHeldEdit(out)) {
+        return heldUntilLanded(out, pictured, () =>
+          made.objects.every((id) => find(id) !== undefined) &&
+          made.folders.every((id) => folderOf(own(), id) !== null)
+            ? made
+            : null,
+        );
+      }
+      if (doc().revision !== was) return made;
+      for (const id of pictured) files.delete(id);
+      if (mine() === null) return notInTour;
+      return {
+        kind: "refused",
+        reason: folders.length > 0 ? FOLDER_TOO_FAR : TOO_FAR_FROM_STATION,
+      };
     },
     scaleFolder(folderId, value) {
       const state = mine();

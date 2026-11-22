@@ -152,26 +152,11 @@ describe("the draft question in the store", () => {
     expect(landed.text).toBeNull();
   });
 
-  it("says no draft can be kept, but never over an offer still to answer", () => {
-    const none = run(
-      a.readStarted(),
-      a.unavailable({ generation: 1, reason: "storage" }),
-    );
-    expect(none).toMatchObject({ status: "unavailable", reason: "storage" });
-    const offered = run(
-      a.readStarted(),
-      a.found({ generation: 1, text: "Back?" }),
-      a.unavailable({ generation: 1, reason: "other-tab" }),
-    );
-    expect(offered).toMatchObject({ status: "offered", reason: null });
-  });
-
-  it("refuses a malformed count or reason", () => {
+  it("refuses a malformed count", () => {
     const s = run(
       a.readStarted(),
       a.editsWaitingChanged({ count: -1 }),
       a.editsWaitingChanged({ count: 1.5 }),
-      a.unavailable({ generation: 1, reason: "nope" as never }),
     );
     expect(s).toMatchObject({ status: "reading", editsWaiting: 0 });
   });

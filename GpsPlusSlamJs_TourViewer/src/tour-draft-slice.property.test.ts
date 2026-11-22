@@ -32,7 +32,6 @@ type Step =
       kind:
         | "found"
         | "none"
-        | "unavailable"
         | "restore"
         | "decline"
         | "reshow"
@@ -46,7 +45,6 @@ const answer = fc.record({
   kind: fc.constantFrom(
     "found",
     "none",
-    "unavailable",
     "restore",
     "decline",
     "reshow",
@@ -92,8 +90,6 @@ function actionOf(s: Step, state: TourDraftState) {
       return a.found({ generation, text: `words ${generation}` });
     case "none":
       return a.noneFound({ generation });
-    case "unavailable":
-      return a.unavailable({ generation, reason: "storage" });
     case "restore":
       return a.restored({ generation });
     case "decline":
@@ -109,6 +105,22 @@ function actionOf(s: Step, state: TourDraftState) {
   }
 }
 
+/**
+ * One step as the pages take it. "Not now" on both pages dispatches
+ * `declined` and, when it landed, drops the edits that waited
+ * (`gate.drop()` in `creator-draft.ts` and `editor/draft-offer.ts`), and
+ * the gate then reports a count of 0. The reducer alone never sees a
+ * decline without that drop, so the model takes both: `declined` on its
+ * own would leave a put-off offer with edits waiting, a state no page
+ * reaches.
+ */
+function stepOn(state: TourDraftState, s: Step): TourDraftState {
+  const next = tourDraftReducer(state, actionOf(s, state));
+  if (s.kind !== "decline" || next.status !== "declined") return next;
+  if (state.status === "declined") return next;
+  return tourDraftReducer(next, a.editsWaitingChanged({ count: 0 }));
+}
+
 const undecided = (s: TourDraftState) =>
   s.status === "offered" || s.status === "declined";
 
@@ -121,8 +133,7 @@ describe("the draft question over random sequences", () => {
         let decidedInQuestion = false;
         for (const s of steps) {
           const before = state;
-          const action = actionOf(s, state);
-          state = tourDraftReducer(state, action);
+          state = stepOn(state, s);
           const late = "late" in s && s.late > 0;
           // A late answer changes nothing at all.
           expect(late ? state : before).toEqual(before);
@@ -131,10 +142,9 @@ describe("the draft question over random sequences", () => {
             s.kind === "read" || s.kind === "end" || s.kind === "close";
           expect(state.generation).toBe(before.generation + (moves ? 1 : 0));
           if (moves) decidedInQuestion = false;
-          // The words exist exactly while undecided; the reason exactly
-          // while unavailable; "Delete it" runs only on a showing offer.
+          // The words exist exactly while undecided; "Delete it" runs
+          // only on a showing offer.
           expect(state.text !== null).toBe(undecided(state));
-          expect(state.reason !== null).toBe(state.status === "unavailable");
           expect(!state.deleting || state.status === "offered").toBe(true);
           // Nothing but its end answers while "Delete it" runs.
           const heldByDelete =
@@ -187,13 +197,27 @@ describe("the draft question over random sequences", () => {
       fc.property(fc.array(step, { maxLength: 30 }), (steps) => {
         let state = initialTourDraftState;
         for (const s of steps) {
-          state = tourDraftReducer(state, actionOf(s, state));
+          state = stepOn(state, s);
           expect(state.editsWaiting > 0 && state.status === "declined").toBe(
             false,
           );
         }
       }),
-      { numRuns: 300 },
+      {
+        numRuns: 300,
+        // A sequence that once failed here: an edit waited through the
+        // read, the offer showed, and "Not now" was tapped.
+        examples: [
+          [
+            [
+              { kind: "count", count: 1 },
+              { kind: "read" },
+              { kind: "found", late: 0 },
+              { kind: "decline", late: 0 },
+            ],
+          ],
+        ],
+      },
     );
   });
 });

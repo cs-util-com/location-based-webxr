@@ -84,6 +84,15 @@ export function fileDropTarget(
   return null;
 }
 
+/** Where the pictures a converted model did not use go: the row the drop
+ *  was on, as the files dropped with no model; the shelf for an item's
+ *  file field, which took the model (a picture there would be refused). */
+export function leftoverTarget(
+  target: FileDropTarget | null,
+): FileDropTarget | null {
+  return target?.kind === "item" ? null : target;
+}
+
 /** Whether a drag carries files (not a row of the tree, not text). */
 export function dragHasFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer?.types ?? []).includes("Files");

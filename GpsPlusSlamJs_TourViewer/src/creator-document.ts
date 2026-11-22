@@ -42,7 +42,6 @@ import {
   tourFieldChanges,
   type LevelText,
   type SettleChange,
-  type StationFrame,
   type TourDocumentState,
   type TourRestore,
   type TourSaveProgress,
@@ -281,19 +280,11 @@ export interface CreatorDocument {
   undo(): DocumentUndo;
   /** Counts every edit, undo and redo (`TourDocumentState.revision`). */
   revision(): number;
-  /** A write (the Finish) begins: undo waits; its generation, which every
-   *  later answer names. */
-  saveStarted(): number;
-  /** The write landed (`saved`); the AR placements of the entries it
-   *  took out go with them. */
-  saved(save: {
-    readonly generation: number;
-    readonly written: TourManifest;
-    readonly appliedDeletions: readonly string[];
-    readonly stationsAtStart: readonly StationFrame[];
-  }): void;
-  /** The write ended, landed or not. */
-  saveEnded(generation: number, error?: string): void;
+  /** A save of the open tour landed `written` in the document
+   *  (`saved`, dispatched by the save, `tour-document-save.ts`): the AR
+   *  placements of the entries it took out go with them, and the station
+   *  anchors of the stations it carried. */
+  saveLanded(written: TourManifest): void;
   /** The Finish takes the page's save slot: it runs, and the last
    *  Finish's failure is put away (`finish-status.ts` reads it). */
   finishClaimed(): void;
@@ -701,31 +692,17 @@ export function createCreatorDocument(
       };
     },
     revision: () => state().revision,
-    saveStarted() {
-      const { generation } = state();
-      store.dispatch(tourDocumentActions.saveStarted({ generation }));
-      return generation;
-    },
-    saved(save) {
-      store.dispatch(tourDocumentActions.saved(save));
+    saveLanded(written) {
       const kept = new Set(state().placed.map((p) => p.object.id));
       for (const id of [...placements.keys()]) {
         if (!kept.has(id)) placements.delete(id);
       }
       // A station the write carried is the file's from now on, as its
       // written items are: a later settle re-poses it no more.
-      for (const station of save.written.stations) {
+      for (const station of written.stations) {
         stationAnchors.delete(station.id);
       }
       sideVersion += 1;
-    },
-    saveEnded(generation, error) {
-      store.dispatch(
-        tourDocumentActions.saveEnded({
-          generation,
-          ...(error === undefined ? {} : { error }),
-        }),
-      );
     },
     finishClaimed() {
       store.dispatch(tourDocumentActions.saveClaimed({ by: "explicit" }));

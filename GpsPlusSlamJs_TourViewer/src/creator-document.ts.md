@@ -87,9 +87,10 @@ what)` dispatches them with the settle's codes as one
 - `keepPicture(id, blob)` - a deleted photo's picture, for an undo after a
   write took it out.
 - `open(manifest | null)`, `close()` - see the invariants.
-- The write (the Finish): `saveStarted() -> generation`, `saved({
-generation, written, appliedDeletions, stationsAtStart })`,
-  `saveEnded(generation, error?)`.
+- `saveLanded(written)` - a save of the open tour landed `written` (the
+  save handle dispatched `saved`, `tour-document-save.ts`): the AR
+  placements of the entries it took out go, and the station anchors of
+  the stations it carried. The save's begin and end are the handle's.
 - The Finish's status in the save status (`finish-status.ts` reads it):
   `finishClaimed()` (the page's save slot as `"explicit"`; clears the last
   failure), `finishProgressed(progress)` (`save.progress`),
@@ -126,11 +127,11 @@ generation, written, appliedDeletions, stationsAtStart })`,
   dropped). A dropped placement takes its photo's bytes and its AR
   placement out of the side tables, which it filled at the tap, so
   nothing in memory names an object that never came to be.
-- **The save status is not all here yet**: the slice's `save` says
-  whether a write runs for the undo (`canStep`); the phone's Finish keeps
-  its own beside it - a named deviation from the root Redux rule, with its
-  follow-up, in `creator-finish.ts.md` (the r880 milestone review
-  MEDIUM-1).
+- **The save status is the slice's**: `save` says whether a write runs
+  for the undo (`canStep`); both pages save through the open's save
+  handle (`tour-document-save.ts`), which begins and ends it, and the
+  phone's Finish holds the page's save slot in the same status
+  (`finishClaimed` / `finishReleased`, `creator-finish.ts.md`).
 
 - **No tour is an open, empty document.** The slice takes edits only into
   an open document, and the creator may place before any tour is open

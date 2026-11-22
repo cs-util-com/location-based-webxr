@@ -32,6 +32,7 @@ import {
   mountWorldPart,
   canvasTexture,
   tapShownWorldPart,
+  tickEachWorldPart,
   tickWorldParts,
   unmountWorldPart,
   worldEnv,
@@ -444,5 +445,43 @@ describe("the world's sound and frame", () => {
     expect(x).toBeCloseTo(1);
     expect(y).toBeCloseTo(0);
     expect(z).toBeCloseTo(0);
+  });
+
+  it("ticks the parts a page names, wherever they hang, with the lens and the selection (tickEachWorldPart)", () => {
+    // Why this test matters: the AR creator draws its previews outside any
+    // station's content group, so the visitor's tick never reaches them;
+    // the creator names its own parts and hands the editing selection (a
+    // character shows his bubble while selected) and the lens (a sound's
+    // icon keeps its size on the screen), the frame the editor gives.
+    const root = new Group();
+    root.position.set(0, 0, 5);
+    const frames: Parameters<NonNullable<WorldPart["update"]>>[0][] = [];
+    const object = new Group();
+    root.add(object);
+    const ticked: WorldPart = {
+      object,
+      update: (f) => frames.push(f),
+      dispose: () => undefined,
+    };
+    const skipped: WorldPart = {
+      object: new Group(),
+      update: (f) => frames.push(f),
+      dispose: () => undefined,
+    };
+    const camera = new PerspectiveCamera(60, 1);
+    camera.updateMatrixWorld();
+    tickEachWorldPart([ticked, skipped], camera, 1000, {
+      viewHeightPx: 800,
+      selected: "m1",
+      shown: (part) => part.object.parent !== null,
+    });
+    expect(frames).toHaveLength(1);
+    const f = frames[0];
+    expect(f?.seconds).toBe(1);
+    expect(f?.viewer[2]).toBeCloseTo(-5);
+    expect(f?.camera).toBe(camera);
+    expect(f?.selected).toBe("m1");
+    const lens = camera.projectionMatrix.elements[5] ?? 0;
+    expect(f?.metresPerPxAtOneM).toBeCloseTo(2 / (lens * 800));
   });
 });

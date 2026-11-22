@@ -7,7 +7,7 @@
  * `hit-test` API reports under the screen centre. The framework delta is
  * *where* the mesh is parented and *which frame the hit pose is in*: apps add
  * the mesh under `getArWorldGroup()` (NUE local space) rather than the
- * GPS-aligned scene root, so the reticle rides the same lerped `arWorldGroup`
+ * GPS-aligned scene root, so the reticle rides the same `arWorldGroup`
  * alignment as the camera — but the WebXR hit pose arrives in the WebXR
  * reference space, so `updateReticle` applies the `WEBXR_TO_NUE` basis change
  * to it (see that function for the full rationale).

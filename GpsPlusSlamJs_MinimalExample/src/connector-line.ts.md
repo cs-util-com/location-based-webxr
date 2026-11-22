@@ -21,7 +21,7 @@ drift between them — stays obvious even with several pairs on screen.
 - Vertex 1 is the cube's world position expressed in sphere-local coordinates
   (`sphere.worldToLocal(cube.getWorldPosition())`). `update()` refreshes the
   sphere's world matrix first so the conversion uses the sphere's current
-  transform (the GPS alignment lerped onto `arWorldGroup` moves the sphere).
+  transform (the GPS alignment on `arWorldGroup` moves the sphere).
 - `sphere` and `cube` may live under different, arbitrarily transformed parents
   (they do: sphere under `arWorldGroup`, cube under `scene`). The world→local
   conversion is what makes the line span the two frames correctly.

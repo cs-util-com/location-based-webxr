@@ -5,6 +5,7 @@
 ## Public API
 
 - `normalizeBundlePath(path): string | null`: backslashes become `/`, empty and `.` segments go, `..` folds; leading slashes are dropped (the path is relative to the bundle root). Null for an empty path or one that climbs above the root.
+- `referenceResolver(files)`: `resolveReference` with `files` indexed once (exact, lower-case and lower-case file-name maps, an ambiguous key marked), for a caller resolving many references among one set; each look-up is then constant time instead of a pass over every file (`gltf-repack.ts`, `zip-bundle.ts`).
 - `resolveReference(uri, from, files, options?): Reference`, `from` being the referring file's own path among `files`:
   - `{ kind: "data", uri }` for a `data:` URI (decoded by the caller, with the framework's `utils/data-uri`);
   - `{ kind: "scheme", scheme }` for a web or other scheme (`https:`, `http:`, `blob:`...): never read, never fetched;

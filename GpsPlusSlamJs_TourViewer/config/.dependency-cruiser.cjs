@@ -151,12 +151,6 @@ module.exports = {
           // ...and the phone's draft store, its peer (the offer rules,
           // `hostedObjects`); it reads the tour only through the document.
           "^src/creator-draft\\.ts$",
-          // TEMPORARY - the phone's Finish: its rebuild I/O
-          // (`rebuildFinishedTour`, `finishedFileName`) - until it saves through the document's
-          // save (`tour-document-save.ts`, the desktop editor's already;
-          // follow-up of D30). The phone's tour itself is the document
-          // since its adoption (`creator-document.ts`).
-          "^src/creator-finish\\.ts$",
         ],
       },
       to: {

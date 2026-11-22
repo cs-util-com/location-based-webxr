@@ -154,7 +154,7 @@ cold review showed would have left a permanently opaque sphere.
   camera permission and then refusing to draw anything.
 - **The content goes on the SCENE ROOT, not on `arWorldGroup`.** The root IS
   the GPS-world frame, so map-derived content built once belongs there with no
-  inverse-alignment container; the lerped alignment on `arWorldGroup` moves the
+  inverse-alignment container; the alignment on `arWorldGroup` moves the
   CAMERA through a world that stands still. Two independent readers previously
   concluded the opposite, which is why `ar-scene-hierarchy.ts` states it at the
   top of the file.

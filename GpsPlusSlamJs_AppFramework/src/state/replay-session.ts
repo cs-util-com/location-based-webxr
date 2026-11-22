@@ -7,7 +7,7 @@
  * copy the RecorderApp's `replay/replay-mode.ts` orchestrator:
  *   - a store (a fresh framework store by default, or one the caller injects),
  *   - the non-WebXR desktop scene (`initReplayScene`),
- *   - the shared state→visuals bridge (`wireStoreSubscribers`: alignment lerp +
+ *   - the shared state→visuals bridge (`wireStoreSubscribers`: exact alignment +
  *     GPS event markers + the recorded camera trajectory driving `arpose`),
  *   - the occupancy grid → cube visualizer + occlusion mesh path, fed by the
  *     replayed `recordDepthSample` stream (`subscribeReplayOccupancy`),
@@ -42,7 +42,7 @@ import {
   initReplayScene,
   disposeReplayScene,
   updateOrbitTarget,
-  getAlignmentLerper,
+  applyReplayAlignment,
 } from '../ar/replay-scene.js';
 import { wireStoreSubscribers } from './store-subscribers.js';
 import { gpsEventVisualizer } from '../visualization/gps-event-markers.js';
@@ -165,14 +165,13 @@ export function startReplaySession(
     getArWorldGroup: () => scene.arWorldGroup,
   });
 
-  const alignmentLerper = getAlignmentLerper();
-
-  // Shared state→visuals bridge. Alignment lerps smoothly; the recorded odom
+  // Shared state→visuals bridge. Each alignment lands exactly, in the frame it
+  // arrives (no smoothing); the recorded odom
   // pose drives `arpose` so the orbit camera follows the recorded trajectory;
   // alignment snapshots recentre the orbit target.
   const snapshotPos = new THREE.Vector3();
   const unsubscribeStore = wireStoreSubscribers(store, {
-    applyAlignmentMatrix: (matrix) => alignmentLerper?.setTarget(matrix),
+    applyAlignmentMatrix: applyReplayAlignment,
     gpsEventVisualizer,
     onNewOdomPose: (odomPosition, odomRotation) => {
       const webxrPos = nueToWebXR(odomPosition);

@@ -15,8 +15,7 @@ import {
 } from "../asset-shelf/optimizer-protocol.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
 import { repackGltf } from "./gltf-repack.js";
-import { importRoleOf } from "./import-formats.js";
-import { note, refusal } from "./model-import-words.js";
+import { refusal } from "./model-import-words.js";
 import { readZipBundle, zipBundleNotes } from "./zip-bundle.js";
 
 /** What the page hands the converter for one import. */
@@ -33,7 +32,7 @@ export type ImportPayload =
       readonly name: string;
       readonly zip: Blob;
       /** The model to make, by its path in the zip (`listZipModels`);
-       *  without it the first, the others named in a note. */
+       *  without it the first by path. */
       readonly model?: string;
     };
 
@@ -92,10 +91,17 @@ export async function convertImport(
       reason: refusal.tooLarge(input.name, total, caps.maxBytes),
     };
   }
+  // A dropped folder arrives flat, by file name: two files of one name
+  // (textures/diffuse.png, normals/diffuse.png) cannot be told apart, so
+  // neither is taken first-wins.
+  const paths = input.files.map((f) => f.path);
+  const twice = paths.find((p, i) => paths.indexOf(p) !== i);
+  if (twice !== undefined) {
+    return { type: "kept", reason: refusal.namedTwice(input.name, twice) };
+  }
   const files = new Map<string, Uint8Array>();
   let read = 0;
   for (const { path, blob } of input.files) {
-    if (files.has(path)) continue;
     files.set(path, new Uint8Array(await blob.arrayBuffer()));
     if (control.signal.aborted) throw stoppedError();
     read += blob.size;
@@ -104,22 +110,14 @@ export async function convertImport(
   const result = repackGltf(input.name, files);
   if (!result.ok) return { type: "kept", reason: result.reason };
   control.progress(1);
-  // A part the model does not use is no file of the tour alone: it is
-  // named. A picture it does not use goes on to the shelf instead.
-  const unused = [...files.keys()].filter(
-    (path) => importRoleOf(path) === "companion" && !result.used.includes(path),
-  );
+  // Every loose model of a drop is handed all its parts, so a part this
+  // model did not use may be another's: the runner names the parts no
+  // model of the drop used, from `used`.
   return {
     type: "done",
     blob: glbBlob(result.glb),
     extension: "glb",
-    conversion: {
-      notes:
-        unused.length > 0
-          ? [...result.notes, note.unusedFiles(unused)]
-          : [...result.notes],
-      used: [...result.used],
-    },
+    conversion: { notes: [...result.notes], used: [...result.used] },
   };
 }
 

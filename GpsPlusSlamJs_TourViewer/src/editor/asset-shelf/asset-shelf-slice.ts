@@ -164,8 +164,11 @@ interface ShelfImport {
   readonly reason?: string;
   /** A failure Retry may fix (a crash); a refusal is not one. */
   readonly retryable: boolean;
-  /** The files' bytes together. */
+  /** The files' bytes together (for the models of one zip: the zip's,
+   *  on its first model's row only). */
   readonly bytes: number;
+  /** For each model of a zip of several: the zip's name. */
+  readonly partOf?: string;
   /** Arrival order, shared with the entries. */
   readonly seq: number;
 }
@@ -430,9 +433,10 @@ const assetShelfSlice = createSlice({
         readonly name: string;
         readonly format: ShelfImport["format"];
         readonly bytes: number;
+        readonly partOf?: string;
       }>,
     ) {
-      const { id, name, format, bytes } = action.payload;
+      const { id, name, format, bytes, partOf } = action.payload;
       if (state.imports[id] !== undefined) return state;
       const entry: ShelfImport = {
         id,
@@ -442,6 +446,7 @@ const assetShelfSlice = createSlice({
         progress: 0,
         retryable: false,
         bytes,
+        ...(partOf === undefined ? {} : { partOf }),
         seq: state.nextSeq,
       };
       return {
@@ -450,6 +455,21 @@ const assetShelfSlice = createSlice({
         nextSeq: state.nextSeq + 1,
       };
     },
+    /** A zip found to hold several models: its import is named by the
+     *  first, part of the zip. */
+    importSplit: (
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly name: string;
+        readonly partOf: string;
+      }>,
+    ) =>
+      withImport(state, action.payload.id, (was) => ({
+        ...was,
+        name: action.payload.name,
+        partOf: action.payload.partOf,
+      })),
     importStarted: (state, action: PayloadAction<{ readonly id: string }>) =>
       withImport(state, action.payload.id, (was) =>
         was.status === "queued"
@@ -602,7 +622,11 @@ export interface ShelfRow {
   readonly character?: ShelfCharacter;
   /** An import's row: a model being converted, not yet a file of the
    *  tour (`ShelfImport`). Its card offers only Retry and Remove. */
-  readonly import?: { readonly format: ShelfImport["format"] };
+  readonly import?: {
+    readonly format: ShelfImport["format"];
+    /** A model of a zip of several: the zip's name. */
+    readonly partOf?: string;
+  };
   /** A converted model's: what it was made from, and what was left out. */
   readonly madeFrom?: ShelfMadeFrom;
 }
@@ -631,7 +655,10 @@ function importRow(i: ShelfImport, position: number): ShelfRow {
     placesInUse: 0,
     swaps: 0,
     canUseOriginal: false,
-    import: { format: i.format },
+    import: {
+      format: i.format,
+      ...(i.partOf === undefined ? {} : { partOf: i.partOf }),
+    },
   };
 }
 

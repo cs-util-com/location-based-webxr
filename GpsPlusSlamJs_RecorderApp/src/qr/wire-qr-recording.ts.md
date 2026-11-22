@@ -94,6 +94,10 @@ the WS-5 **consumer** (debug axis+cube). `main.ts` calls it once in `handleEnter
   code votes only once the joint rotation over its recent detections is
   stable, at the level's printed size, evaluated after each recorded raw
   detection; before b6a they rode each lock's single-frame solve.
+  `dispatchVotes` answers whether the batch was cast: `false` with no code
+  named yet, without a session zero, or once the code's budget is spent;
+  `true` after dispatching. Only a cast batch makes the controller release
+  the deferred anchors (`requestAnchorRelease('code-lock')`).
 
 Both modes record each detection's corner-order source (`orderSource`,
 QR near-frontal pose plan §60, b4b-2) when the front end gives one, so a

@@ -114,7 +114,7 @@ export interface ObjectListModel {
 /** Said in AR while nothing is selected - a tap picks along its own ray
  *  (`object-pick.ts`); "aim the ring" read as the new selection ring (M3
  *  review #12). */
-export const SELECT_HINT = "Tap a pin or photo to select it.";
+export const SELECT_HINT = "Tap an item to select it.";
 /** Said on the page when there are pins. */
 const MOVE_HINT =
   "To move a pin, start the AR setup, select the pin and tap Move to the reticle.";

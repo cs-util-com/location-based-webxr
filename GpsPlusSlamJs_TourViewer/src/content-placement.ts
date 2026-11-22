@@ -59,7 +59,10 @@ import type {
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
-import { tourFreeEntries } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  tourFreeEntries,
+  tourObjectBlock,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import type { LatLong, Matrix4 } from "gps-plus-slam-app-framework/core";
 import { Euler, Group, Quaternion, type Object3D, type Texture } from "three";
@@ -250,7 +253,7 @@ export interface TourObjectRendererDeps {
   /**
    * A long text's reading stand (`lectern` view), built by the page
    * (`mountLectern`: a canvas texture, so node has none). Absent: a stand
-   * is left out quietly (the creator's previews draw none yet).
+   * is left out quietly.
    */
   readonly makeLectern?: (block: {
     readonly id: string;
@@ -267,6 +270,19 @@ export interface TourObjectRendererDeps {
     readonly title: string;
     readonly body: string;
   }) => { object: Object3D; dispose(): void };
+  /**
+   * The world door: a block's part in the world by its kind's row (the
+   * page passes `worldPartOf` of `play-kinds.ts` with its environment),
+   * asked of every block no drawing above has, whatever its kind, and of
+   * a pin (its head on a stem, `kinds/short-text/pin.ts`). Absent, or
+   * null for a block: nothing is drawn for it, quietly (a stand-in would
+   * be a marker nobody chose), and a pin is the plain label. In play a
+   * free character stands by the page's free host (`free-items.ts`), so
+   * his row gives no part here; in the editor's mode it gives his look
+   * (`kinds/character/world.ts`). An object reaches it as its block
+   * (`tourObjectBlock`), placed by the renderer at the object's pose.
+   */
+  readonly worldPart?: (block: TourBlock) => WorldPart | null;
 }
 
 export interface RenderedTourObjects {
@@ -294,7 +310,7 @@ export function renderTourObjects(
   const { poseOf } = deps;
   return renderContent(
     objects.map((object) => ({
-      drawn: drawnObject(object),
+      drawn: drawnObject(object, deps.worldPart !== undefined),
       pose: poseOf?.(object) ?? objectPoseNue(object.geo, deps.zero),
     })),
     deps,
@@ -315,16 +331,6 @@ export type TourStationRendererDeps = Omit<TourObjectRendererDeps, "poseOf"> & {
    * creator's view. A view no world drawing has is drawn as nothing.
    */
   readonly viewOf?: (block: TourBlock) => string;
-  /**
-   * The world door: a block's part in the world by its kind's row (the
-   * page passes `worldPartOf` of `play-kinds.ts` with its environment),
-   * asked of every block no drawing above has, whatever its kind. Absent,
-   * or null for a block: nothing is drawn for it, quietly (a stand-in
-   * would be a marker nobody chose). In play a free character stands by
-   * the page's free host (`free-items.ts`), so his row gives no part
-   * here; in the editor it gives his look (`kinds/character/world.ts`).
-   */
-  readonly worldPart?: (block: TourBlock) => WorldPart | null;
 };
 
 /**
@@ -514,14 +520,30 @@ function drawnByView(
   return { as: "door" };
 }
 
-/** A world-view object as drawn: a picture's file is its inline asset. An
- *  object's renderer has no world door, so a view only the door draws (a
- *  sign, a framed or cut-out picture, a model) is left out quietly. */
-function drawnObject(object: TourObject): Drawn {
+/** Where the block a door reads stands: the renderer places the part at
+ *  the object's pose, handed beside it. */
+const AT_ORIGIN = { position: [0, 0, 0], rotation: [0, 0, 0, 1] } as const;
+
+/** A world-view object as drawn: a picture's file is its inline asset.
+ *  With a world door (`door`) a pin and every view only the door draws (a
+ *  sign, a framed or cut-out picture, a model, a video, a sound, a
+ *  character) go to it as their block, as a station's free block does
+ *  (`drawnBlock`); without one those views are left out quietly and a pin
+ *  is the plain label. */
+function drawnObject(object: TourObject, door: boolean): Drawn {
+  const toDoor = (): Drawn => ({
+    id: object.id,
+    as: "world",
+    block: tourObjectBlock(object, AT_ORIGIN),
+  });
+  if (door && object.kind === "shortText" && object.view === "pin") {
+    return toDoor();
+  }
   const drawn = drawnByView(object, () =>
     object.kind === "picture" ? object.imageAsset.path : null,
   );
-  return drawn.as === "door" ? { id: object.id, as: "none" } : drawn;
+  if (drawn.as !== "door") return drawn;
+  return door ? toDoor() : { id: object.id, as: "none" };
 }
 
 /** A station's free block as drawn: a picture's file is the tour's asset
@@ -555,7 +577,6 @@ async function renderContent(
   }[],
   deps: Omit<TourObjectRendererDeps, "poseOf"> & {
     alive?: () => boolean;
-    worldPart?: TourStationRendererDeps["worldPart"];
   },
 ): Promise<RenderedTourObjects> {
   const labels: { object: Object3D; dispose(): void }[] = [];
@@ -661,8 +682,8 @@ async function renderContent(
         continue;
       }
       if (drawn.as === "lectern" || drawn.as === "reading") {
-        // No builder (the 3D editor, the creator's previews): left out
-        // quietly, as a block the world door answers null for.
+        // No builder (a page that passes none): left out quietly, as a
+        // block the world door answers null for.
         const make =
           drawn.as === "lectern" ? deps.makeLectern : deps.makeReadingSign;
         const stand = make?.({

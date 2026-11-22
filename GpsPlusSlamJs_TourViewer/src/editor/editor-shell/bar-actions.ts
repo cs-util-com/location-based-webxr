@@ -10,7 +10,7 @@
  */
 import type { InspectorModel } from "./inspector-model.js";
 
-export type BarAction = "duplicate" | "align" | "copy";
+export type BarAction = "duplicate" | "align" | "copyPosition";
 
 interface BarButton {
   readonly action: BarAction;
@@ -33,8 +33,8 @@ const BUTTONS: Readonly<Record<BarAction, BarButton>> = {
     label: "Align to station",
     title: "Turn it to face the way its station faces",
   },
-  copy: {
-    action: "copy",
+  copyPosition: {
+    action: "copyPosition",
     label: "Copy position",
     title: "Copy the position and heading as text",
   },
@@ -52,7 +52,7 @@ export function barActions(model: InspectorModel | null): readonly BarButton[] {
   // no place there, a video, neither).
   if (!["station", "item", "code"].includes(model.kind)) return [];
   if (model.kind === "item" && model.offset === null) return [];
-  const copy = positionText(model) === null ? [] : [BUTTONS.copy];
+  const copy = positionText(model) === null ? [] : [BUTTONS.copyPosition];
   if (model.kind === "code") return copy;
   if (model.kind === "station") return [BUTTONS.duplicate, ...copy];
   return [BUTTONS.duplicate, BUTTONS.align, ...copy];

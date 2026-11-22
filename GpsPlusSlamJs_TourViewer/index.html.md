@@ -621,7 +621,7 @@ authoring plan 2026-09-28-0953 M3b: owns `summary-codes`, `summary-map`,
 `summary-map-status`, `summary-start-ar`; written by `summary-panel.ts`,
 its map by the lazily imported `summary-map-view.ts`), `replace-help` (owns
 `replace-help-generic`, `replace-help-drive`, `replace-drive-copy`)), `visitor-screen`,
-`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `enter-ar`, `link-qr`, `link-qr-code`,
+`visitor-description`, `stats`, `error`, `error-contact`, `gallery`, `ar-hint`, `ar-status`, `ar-debug`, `travel-log-tools` (owns `travel-log-copy`, `travel-log-download`, `travel-log-mark`), `enter-ar`, `link-qr`, `link-qr-code`,
 `setup-panel`, `setup-status`, `size-offer`, `size-offer-text`,
 `size-offer-use`, `size-offer-keep`, `setup-controls`,
 `object-list` (its rows carry
@@ -732,7 +732,8 @@ value replaces the inherited one.
 `#ar-debug` (a `<pre>` in `#ar-root`, hidden unless `?debug=1`) holds the
 QR readout (QR near-frontal pose plan §66).
 Renaming one is an e2e-breaking change. `#ar-hint`, `#ar-status`,
-`#ar-debug`, `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
+`#ar-debug`, `#travel-log-tools` (with `#travel-log-copy`,
+`#travel-log-download` and `#travel-log-mark`), `#enter-ar` and `#setup-panel` must stay children of `#ar-root` (WebXR
 DOM overlay composites only that subtree; enforced by
 `tests/repo-config/hud-overlay-nesting.test.js`). The `#ar-hint` copy is
 the creator's; `visitor-screen.ts` re-words it for a visitor.

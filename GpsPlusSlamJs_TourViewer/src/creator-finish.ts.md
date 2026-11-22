@@ -13,7 +13,9 @@ M4 makes it write every code of the book, not only the one in hand.
 Since M6 E0 the page-free rules below - the manifest with the edits, the
 title, the files written and removed, the series successor, the newest
 bytes as input, the session's budget - run in `finish-rebuild.ts`
-(`rebuildFinishedTour`), shared with the desktop editor; since E0b also
+(`rebuildFinishedTour`), shared with the desktop editor; since the
+Finish moved into the store it reaches them through the open's save
+handle (`tour-document-save.ts`), the one the desktop's Save uses; since E0b also
 the bookkeeping after a write (`pendingAfterRebuild`). The walk's camera
 captures are debug data: no open bakes them and no Finish writes them.
 This file keeps the page: readiness, the settle, progress, the
@@ -76,34 +78,37 @@ module's sidecar states them as its contract.
 - **The Finish's status is the tour document's save status** (read
   through `finish-status.ts`): the Finish holds the page's save slot
   while it runs (`finishClaimed` at the tap, `finishReleased` at its end,
-  after `saveEnded`), reports its progress into `save.progress`
+  just before the save's `saveEnded`), reports its progress into `save.progress`
   (`finishProgressed`: the opened file's size, then the rebuilt entries,
   let through only when their whole percent changes - `createProgressGate`,
   so at most 101 rebuilding dispatches per Finish whatever the entry
   count, the last at 100 %: every dispatch calls every store subscriber,
   and the readout re-renders on each), and its failure is `save.error`, labelled by the selector.
   The failure is released with the slot only for the tour the Finish
-  began on, and the claim of the next Finish puts it away. The phone
-  dispatches no `saveDelivered`: its reset of the error would let a
-  failed Finish's own hand-over of the zip it made clear the failure, and
-  its `delivered` is the desktop's "where the last save arrived", not
-  "this rebuilt file was saved" - which stays `ctx.rebuiltZip.delivered`
-  (the leave guard), beside the file itself (a Blob, outside the store
-  either way). Still a deviation from "App state lives in the Redux
-  store": `ctx.rebuiltZip`. Follow-up:
-  the Finish moves onto the tour document's save thunk
-  (`tour-document-save.ts`, the desktop editor's save since it was built;
-  the same follow-up as this file's TEMPORARY boundary entry,
-  `config/.dependency-cruiser.cjs`), which takes the status into the store
-  and leaves only the Blob beside it. Not done with the desktop's, because
-  it would change this page's behaviour: the Finish reads its entries
-  after its first await (the thunk, before it), ends the
-  document's save only after the AR session's end and the wizard's step
-  (the thunk ends it at the landing, so an undo would be let in earlier),
-  and rebuilds with the code levels, a progress line and a stop check the
-  thunk does not take - each a decision to take, not a refactor
-  (`tour-document-save.ts.md`, "Not here yet"). As the desktop's
-  selection was recorded (`editor/edit-main.ts.md`).
+  began on, and the claim of the next Finish puts it away.
+- **The Finish is one save of the tour document** (`tour-document-save.ts`):
+  `queued` runs it at once, inside the tap's dispatch (the page's save
+  slot is already claimed, so none of this open runs), so the snapshot
+  (`snapshot()`: the entries with their kept pictures, the deletions,
+  `manifestNow`, the frames, and what the undo history still names) is
+  the document at the tap; a pin placed while the file is rebuilt waits
+  for the next Finish. `rebuild` takes the code levels, the progress
+  callback and the stop check (`ctx.session === current`; a stopped
+  rebuild throws, and a Finish of a tour switched away says nothing);
+  `land` makes the file the handle's newest bytes and the document's
+  written tour, and `ctx.tourDocument.saveLanded(written)` drops what went
+  with it. The phone's own steps - the AR session's end, the completion
+  step, the hand-over - run inside the save, so an undo stays refused
+  (`canStep`) until they are done; the save then ends with the failure
+  said (`saveEnded`'s error). The handle is the open's: made at its
+  first Finish (`ctx.saves`, for the generation the document holds),
+  kept for the next Finish and the save button, dropped when the tour
+  closes (`archive-open.ts`). Only the Blob stays outside the store.
+- **A delivered save is named in the save status, unless the Finish
+  failed** (`creator-handoff.ts`): the hand-over marks the handle's
+  newest bytes delivered (the leave guard reads it) and dispatches
+  `saveDelivered` only while `save.error` is null, so a Finish that failed
+  after making its file keeps its failure said when that file is saved.
 
 - **The tour's title** (polish round M4a; W2 of the tour editor plan
   2026-10-17-1816) is the tour document's: step 3's "Tour name" field
@@ -143,16 +148,17 @@ module's sidecar states them as its contract.
   (`ctx.tourDocument`, `creator-document.ts`: what the zip already carried,
   so a re-measure never drops placed content, or an empty manifest), plus each placed photo's bytes under
   `session.manifestWrap` (the session's own prefix, never re-derived).
-  The input is the **newest bytes for this tour**: `ctx.rebuiltZip` when a
-  previous finish produced one, else `session.readWholeArchive()` (the
+  The input is the **newest bytes for this tour**: the save handle's
+  `newest()` when a previous finish produced one, else `session.readWholeArchive()` (the
   warmed copy, else range slices). The hosted archive is untrusted, so its
   rebuild inflates under the session's own budget (`session.budget`, K0
   milestone review R1) and a deflate bomb fails the Finish with the cap's
   sentence; a previous Finish's zip is this page's own stored output and
   gets the rebuild's default budget. What an undo after the Finish may still show is kept: the assets the history names (`keepAssets`, `historyAssetIds`) and the read-along entries it names (`keepEntries`, `historyTimingEntries`), so a timing no narration names is removed but an undone text keeps its own. The write is the document's:
-  `saveStarted` before the snapshot (an undo waits while it runs),
-  `saved` when the zip is built, `saveEnded` in every outcome. On success
-  `ctx.rebuiltZip` is set, the document's written tour **advances to what
+  `saveStarted` once the save starts, right after the snapshot (nothing
+  runs between them; an undo waits while it runs),
+  `saved` when the zip is built (`land`), `saveEnded` in every outcome. On success
+  the file is the handle's newest bytes, the document's written tour **advances to what
   was just written** (`saved`), and
   the written work leaves the page's entries (`saved`), the AR session is ended through the
   controller (the framework's session-end path runs the app teardown) and
@@ -182,7 +188,7 @@ module's sidecar states them as its contract.
   next version, the hash of every file the zip holds - the kept ones from
   the list the input carries, the written ones hashed at the Finish; a
   second Finish starts from the list the first one wrote, kept in
-  `ctx.rebuiltZip.signedManifest`). Dropping it, as K1 first did, dropped
+  the handle's newest bytes, `signedManifest`). Dropping it, as K1 first did, dropped
   the series id's only home. A phone that knew the signed tour still
   warns that this copy is not signed. A NEW level file of a listed tour
   is written inside the tour's folder (`manifestWrap`), where its list

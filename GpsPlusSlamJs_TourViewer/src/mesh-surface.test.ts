@@ -517,7 +517,7 @@ describe("createMeshSurface smooths the ring (mesh-cursor smoothing plan 2026-10
 
   it("rides the world group: a moved and turned parent between picks makes no lag", () => {
     // Why (r867 review #2): the mesh, the reticle AND the camera hang under
-    // the world group, which the alignment lerper eases every frame. A
+    // the world group, which the alignment moves in one frame on every change. A
     // ring smoothed in WORLD coordinates lags every such step and slides
     // over a still surface (about 35 cm at 50 m from the pivot). Smoothed
     // in the parent's own frame, a still surface under a still phone is a

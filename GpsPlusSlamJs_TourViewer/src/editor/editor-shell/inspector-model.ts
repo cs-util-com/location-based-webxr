@@ -1410,7 +1410,9 @@ export function buildInspector(input: {
               title: item.title,
               body: item.body,
               hasNarration: item.narration !== undefined,
-              narrationKey: `${JSON.stringify(item.narration ?? null)}|${input.timingsStamp ?? ""}`,
+              // The view too: the Narration section's words row is only
+              // for a reading sign, so a view change re-reads it.
+              narrationKey: `${item.view}|${JSON.stringify(item.narration ?? null)}|${input.timingsStamp ?? ""}`,
               over: readingSheetContent(stations, item).over,
               pictures: textPictures(input.assets),
             }

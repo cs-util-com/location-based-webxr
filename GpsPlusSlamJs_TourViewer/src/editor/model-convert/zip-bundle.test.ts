@@ -19,6 +19,13 @@ import { listZipModels, readZipBundle, zipBundleNotes } from "./zip-bundle.js";
 
 const bytes = (text: string): Uint8Array<ArrayBuffer> =>
   new TextEncoder().encode(text);
+/** A `.gltf`'s text naming `buffers` and `images` by uri. */
+const gltfNaming = (buffers: string[], images: string[] = []): string =>
+  JSON.stringify({
+    asset: { version: "2.0" },
+    buffers: buffers.map((uri) => ({ uri, byteLength: 0 })),
+    images: images.map((uri) => ({ uri })),
+  });
 const zipOf = (files: Record<string, string>) =>
   packFilesAsZip(Object.entries(files).map(([path, data]) => ({ path, data })));
 
@@ -73,12 +80,14 @@ function emptyEntriesZip(count: number): Blob {
 }
 
 describe("readZipBundle", () => {
-  it("finds the .gltf and reads its parts, leaving out what no model uses", async () => {
+  it("finds the .gltf and reads the parts it names, leaving out what it does not", async () => {
+    const text = gltfNaming(["bust.bin"], ["tex/wood.png"]);
     const zip = await zipOf({
-      "bust/bust.gltf": "{}",
+      "bust/bust.gltf": text,
       "bust/bust.bin": "BIN",
       "bust/tex/wood.png": "PNG",
       "bust/readme.txt": "hello",
+      "bust/tex/extra.png": "PNG2",
       "__MACOSX/bust/._bust.gltf": "fork",
       "bust/._wood.png": "fork",
       "bust/.DS_Store": "x",
@@ -89,12 +98,11 @@ describe("readZipBundle", () => {
       kind: "gltf",
       model: "bust/bust.gltf",
       files: new Map([
-        ["bust/bust.gltf", bytes("{}")],
+        ["bust/bust.gltf", bytes(text)],
         ["bust/bust.bin", bytes("BIN")],
         ["bust/tex/wood.png", bytes("PNG")],
       ]),
-      others: [],
-      skipped: ["bust/readme.txt"],
+      skipped: ["bust/readme.txt", "bust/tex/extra.png"],
     });
   });
 
@@ -105,12 +113,11 @@ describe("readZipBundle", () => {
       kind: "glb",
       model: "x/rock.glb",
       glb: bytes("GLB"),
-      others: [],
       skipped: ["x/notes.txt"],
     });
   });
 
-  it("makes the first model by path and names the others", async () => {
+  it("makes the first model by path when none is asked for", async () => {
     const zip = await zipOf({
       "b/b.gltf": "{}",
       "a/a.gltf": "{}",
@@ -121,7 +128,6 @@ describe("readZipBundle", () => {
       ok: true,
       kind: "gltf",
       model: "a/a.gltf",
-      others: ["b/b.gltf", "c.glb"],
     });
   });
 
@@ -136,15 +142,62 @@ describe("readZipBundle", () => {
       kind: "glb",
       model: "c.glb",
       glb: bytes("GLB"),
-      others: [],
       skipped: [],
     });
     expect(
       await readZipBundle(zip, "set.zip", { model: "b/b.gltf" }),
-    ).toMatchObject({ ok: true, kind: "gltf", model: "b/b.gltf", others: [] });
+    ).toMatchObject({ ok: true, kind: "gltf", model: "b/b.gltf" });
     expect(await readZipBundle(zip, "set.zip", { model: "gone.gltf" })).toEqual(
       { ok: false, reason: refusal.zipNoModel("set.zip") },
     );
+  });
+
+  // Why: one zip of several model folders is one import per model, so
+  // each model must read only the parts its own text names: reading every
+  // part of the zip counted the other models' parts against its caps,
+  // inflated them all for each model, and named them on its card as "not
+  // used by the model".
+  it("reads for each model of a zip only the parts its text names, and names none of another model's", async () => {
+    const zip = await zipOf({
+      "a/a.gltf": gltfNaming(["a.bin"], ["a.png"]),
+      "a/a.bin": "ABIN",
+      "a/a.png": "APNG",
+      "b/b.gltf": gltfNaming(["b.bin"], ["b.png"]),
+      "b/b.bin": "BBIN",
+      "b/b.png": "BPNG",
+    });
+    for (const m of ["a", "b"]) {
+      const bundle = await readZipBundle(zip, "set.zip", {
+        model: `${m}/${m}.gltf`,
+        maxFiles: 3,
+      });
+      expect(bundle.ok && bundle.kind === "gltf").toBe(true);
+      if (!bundle.ok || bundle.kind !== "gltf") return;
+      expect([...bundle.files.keys()]).toEqual([
+        `${m}/${m}.gltf`,
+        `${m}/${m}.bin`,
+        `${m}/${m}.png`,
+      ]);
+      expect(
+        zipBundleNotes(bundle, [`${m}/${m}.bin`, `${m}/${m}.png`]),
+      ).toEqual([]);
+    }
+  });
+
+  // Why: in a zip of several models an entry no model can use (a readme)
+  // is named once, on the first model's card, not on every card.
+  it("names an entry of a kind no model uses on the first model of a zip only", async () => {
+    const zip = await zipOf({
+      "a/a.gltf": gltfNaming([]),
+      "b/b.gltf": gltfNaming([]),
+      "readme.txt": "hi",
+    });
+    expect(
+      await readZipBundle(zip, "set.zip", { model: "a/a.gltf" }),
+    ).toMatchObject({ ok: true, skipped: ["readme.txt"] });
+    expect(
+      await readZipBundle(zip, "set.zip", { model: "b/b.gltf" }),
+    ).toMatchObject({ ok: true, skipped: [] });
   });
 
   // Why: an entry named twice is ambiguous - which of the two is the
@@ -199,17 +252,87 @@ describe("readZipBundle", () => {
   });
 
   it("refuses past its file count and its size cap before reading the entries", async () => {
+    const text = gltfNaming(["a.bin"], ["b.png"]);
     const zip = await zipOf({
-      "m.gltf": "{}",
+      "m.gltf": text,
       "a.bin": "12345678",
       "b.png": "12345678",
     });
+    const total = text.length + 16;
     expect(
       await readZipBundle(zip, "m.zip", { maxFiles: 2, maxBytes: 1000 }),
-    ).toEqual({ ok: false, reason: refusal.zipTooManyFiles("m.zip", 3, 2) });
+    ).toEqual({ ok: false, reason: refusal.zipTooManyFiles("m.zip", 2) });
     expect(
-      await readZipBundle(zip, "m.zip", { maxFiles: 10, maxBytes: 17 }),
-    ).toEqual({ ok: false, reason: refusal.tooLarge("m.zip", 18, 17) });
+      await readZipBundle(zip, "m.zip", { maxFiles: 10, maxBytes: total - 1 }),
+    ).toEqual({
+      ok: false,
+      reason: refusal.tooLarge("m.zip", total, total - 1),
+    });
+  });
+
+  // Why: the model's text is untrusted and may name a part thousands of
+  // times or name thousands of parts; a name given twice is one part, and
+  // the reader stops once the named parts pass its file cap.
+  it("counts a part named many times once, and refuses once the named parts pass the file cap", async () => {
+    const parts = Object.fromEntries(
+      Array.from({ length: 50 }, (_, i) => [`p${i}.bin`, "B"]),
+    );
+    const repeated = await zipOf({
+      "m.gltf": gltfNaming(Array.from({ length: 5000 }, () => "p0.bin")),
+      ...parts,
+    });
+    expect(
+      await readZipBundle(repeated, "m.zip", { maxFiles: 2 }),
+    ).toMatchObject({ ok: true, kind: "gltf" });
+    const many = await zipOf({
+      "m.gltf": gltfNaming(
+        Array.from({ length: 5000 }, (_, i) => `p${i % 50}.bin`),
+        Array.from({ length: 5000 }, (_, i) => `missing${i}.png`),
+      ),
+      ...parts,
+    });
+    expect(await readZipBundle(many, "m.zip", { maxFiles: 10 })).toEqual({
+      ok: false,
+      reason: refusal.zipTooManyFiles("m.zip", 10),
+    });
+  });
+
+  // Why: the converter finds a buffer only by its path, never by its file
+  // name alone (a wrong .bin would look like a broken model); the reader
+  // must name the parts the converter will take, or a stray .bin of the
+  // same name would be read and then called "not used".
+  it("finds a buffer by its path only, and a picture by its file name too", async () => {
+    const zip = await zipOf({
+      "m.gltf": gltfNaming(["data/x.bin"], ["tex/wood.png"]),
+      "x.bin": "XBIN",
+      "wood.png": "WOOD",
+    });
+    const bundle = await readZipBundle(zip, "m.zip");
+    expect(bundle).toMatchObject({
+      ok: true,
+      kind: "gltf",
+      skipped: ["x.bin"],
+    });
+    expect(
+      bundle.ok && bundle.kind === "gltf" && [...bundle.files.keys()],
+    ).toEqual(["m.gltf", "wood.png"]);
+  });
+
+  // Why: the converter refuses a model whose text (its embedded data left
+  // aside) is past its text cap; the reader must not parse such a text
+  // first, which a structure-heavy text could make exhaust memory.
+  it("refuses a model text past the text cap before it parses it", async () => {
+    const text = gltfNaming(["a.bin"]);
+    const zip = await zipOf({ "m.gltf": text, "a.bin": "ABIN" });
+    expect(
+      await readZipBundle(zip, "m.zip", { maxTextBytes: text.length - 1 }),
+    ).toEqual({
+      ok: false,
+      reason: refusal.textTooLarge("m.gltf", text.length, text.length - 1),
+    });
+    expect(
+      await readZipBundle(zip, "m.zip", { maxTextBytes: text.length }),
+    ).toMatchObject({ ok: true });
   });
 
   it("stops when it is aborted", async () => {
@@ -243,7 +366,7 @@ describe("listZipModels", () => {
 });
 
 describe("zipBundleNotes", () => {
-  it("names the other models and the files the model did not use", () => {
+  it("names the files the model did not use", () => {
     expect(
       zipBundleNotes(
         {
@@ -253,15 +376,11 @@ describe("zipBundleNotes", () => {
             ["a.bin", bytes("B")],
             ["extra.png", bytes("P")],
           ]),
-          others: ["b.gltf"],
           skipped: ["readme.txt"],
         },
         ["a.bin"],
       ),
-    ).toEqual([
-      note.otherModels("a.gltf", ["b.gltf"]),
-      note.unusedFiles(["extra.png", "readme.txt"]),
-    ]);
+    ).toEqual([note.unusedFiles(["extra.png", "readme.txt"])]);
   });
 
   it("says nothing when the model used every file", () => {
@@ -270,7 +389,6 @@ describe("zipBundleNotes", () => {
         {
           model: "a.gltf",
           files: new Map([["a.gltf", bytes("{}")]]),
-          others: [],
           skipped: [],
         },
         [],
@@ -305,7 +423,7 @@ describe("readZipBundle, properties", () => {
           if (!bundle.ok) return;
           const kept =
             bundle.kind === "gltf" ? [...bundle.files.keys()] : [bundle.model];
-          const claimed = [...kept, ...bundle.others, ...bundle.skipped];
+          const claimed = [...kept, ...bundle.skipped];
           expect(new Set(claimed).size).toBe(claimed.length);
           for (const name of claimed) {
             expect(/__MACOSX\/|(^|\/)\._/.test(name)).toBe(false);

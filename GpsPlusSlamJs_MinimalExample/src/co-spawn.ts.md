@@ -41,7 +41,7 @@ point (across the `scene`↔`arWorldGroup` frame change) and the floater cube at
   bootstraps it by medianing the **object's own world pose** (via
   `worldNueToGps`), so it pins to where it was actually placed — not the phone's
   GPS — and its first steady-state commit is a small residual, not a jump toward
-  the device. `arWorldGroup` carries the (lerped) alignment
+  the device. `arWorldGroup` carries the alignment
   (`enableArWorldGroupAlignment`), so the world→local conversion is required and
   the object's world position is GPS-world NUE.
 - The cube and anchor must be far enough apart at spawn to be individually

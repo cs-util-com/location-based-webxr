@@ -23,6 +23,7 @@ import type { SignedTourManifest } from "gps-plus-slam-app-framework/ar/tour-sig
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
 import { hostedObjects } from "./authoring-draft.js";
+import type { LevelText } from "./code-book.js";
 import {
   finishedFileName,
   rebuildFinishedTour,
@@ -83,9 +84,25 @@ export const TOUR_REPLACED =
   "Another tour was opened since: this one is no longer open here.";
 
 /** The newest bytes of this open: the last landed save's. */
-interface NewestBytes {
+export interface NewestBytes {
   readonly blob: Blob;
   readonly signedManifest?: SignedTourManifest;
+  /** The tour.json they carry. */
+  readonly written: TourManifest;
+  /** A save delivered these bytes (`markDelivered`): the phone's leave
+   *  guard stops asking. Kept on the bytes, not in the slice, so a failed
+   *  Finish's file that arrived keeps its failure said. */
+  readonly delivered?: true;
+}
+
+/** What only the phone's Finish hands a rebuild: the code levels it
+ *  writes, its progress line and its stop check. */
+interface TourRebuildOptions {
+  readonly levels?: readonly LevelText[];
+  readonly onProgress?: (done: number, total: number) => void;
+  /** False once the save must stop (the tour it began on closed): the
+   *  rebuild then throws "the save was stopped". */
+  readonly shouldContinue?: () => boolean;
 }
 
 /** What a save reads from the document, all at once before its first
@@ -141,13 +158,19 @@ export type SavedTour = FinishedTour & {
   readonly wrote: ReadonlyMap<string, Blob>;
 };
 
-interface TourSaves {
+export interface TourSaves {
+  /** The open the saves belong to (`TourDocumentState.generation`). */
+  readonly generation: number;
   /** The name every save of this open is written under: the opened
    *  file's, made safe (the Finish's rule, `finishedFileName`). */
   readonly fileName: string;
   /** The newest bytes this open's saves wrote; null before one landed
    *  (a rebuild then reads the opened file). */
   newest(): NewestBytes | null;
+  /** A save delivered `blob`: when it is still the newest bytes, they
+   *  are marked delivered (`NewestBytes.delivered`); older bytes are
+   *  ignored. */
+  markDelivered(blob: Blob): void;
   /** One save, queued behind the ones before it: the snapshot taken when
    *  it starts, the pictures' reads, the rebuild, the landing; it resolves
    *  to the file built. Rejects with
@@ -182,11 +205,13 @@ interface TourSaves {
   picturesRead(): Promise<void>;
   /** The file rebuilt from the newest bytes - or from `whole`, the opened
    *  file as the caller already read it, so it is not read twice. Throws
-   *  what the rebuild throws. */
+   *  what the rebuild throws. `options`: the phone's levels, progress
+   *  and stop check (none: no level, no progress, never stopped). */
   rebuild(
     snap: TourSaveSnapshot,
     keepScan: boolean,
     whole?: Blob,
+    options?: TourRebuildOptions,
   ): Promise<FinishedTour>;
   /** `finished` becomes the newest bytes and the document's written file
    *  (`saved`; nowhere for a tour opened since); `inPlace`: it goes over
@@ -352,8 +377,12 @@ export function createTourSaves(input: {
   }
 
   const saves: TourSaves = {
+    generation,
     fileName: finishedFileName(tour),
     newest: () => newest,
+    markDelivered(blob) {
+      if (newest?.blob === blob) newest = { ...newest, delivered: true };
+    },
     save(options) {
       return (dispatch, getState) =>
         dispatch(
@@ -430,7 +459,7 @@ export function createTourSaves(input: {
     async picturesRead() {
       await input.picturesRead();
     },
-    async rebuild(snap, keepScan, whole) {
+    async rebuild(snap, keepScan, whole, options = {}) {
       const oversized = oversizedFile(snap);
       if (oversized !== null) throw new Error(oversized);
       const finished = await rebuildFinishedTour({
@@ -452,9 +481,15 @@ export function createTourSaves(input: {
         keepEntries: snap.keepEntries,
         files: snap.files,
         replaced: snap.replaced,
-        levels: [],
+        levels: options.levels ?? [],
         keepScan,
         previous: newest,
+        ...(options.onProgress === undefined
+          ? {}
+          : { onProgress: options.onProgress }),
+        ...(options.shouldContinue === undefined
+          ? {}
+          : { shouldContinue: options.shouldContinue }),
       });
       if (finished === null) throw new Error("the save was stopped");
       return finished;
@@ -468,6 +503,7 @@ export function createTourSaves(input: {
         }
         newest = {
           blob: finished.blob,
+          written: finished.written,
           ...(finished.signedManifest === undefined
             ? {}
             : { signedManifest: finished.signedManifest }),

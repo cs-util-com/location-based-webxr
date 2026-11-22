@@ -107,6 +107,8 @@ import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
+import { copyOf, pasteOf } from "./clipboard.js";
+import { runHeldEdit } from "./held-edit-flow.js";
 import {
   openedNoticeLines,
   openTourForEditing,
@@ -164,7 +166,10 @@ import {
   createShelfPanel,
   type ShelfPanel,
 } from "./asset-shelf/shelf-panel.js";
-import { notesWord, shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
+import {
+  shelfSqueezed,
+  shelvedWords,
+} from "./asset-shelf/shelf-panel-model.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -278,6 +283,7 @@ import {
   fileAddKindOf,
   fileAddKindOfAsset,
   fileDropTarget,
+  leftoverTarget,
   type FileDropTarget,
 } from "./file-drop.js";
 import {
@@ -965,12 +971,6 @@ const draft = createEditorDraft({
   holdLock: (key) => holdEditorDraftLock(navigator.locks, key),
   noBackup: (reason) => {
     document.body.dataset["draft"] = "off";
-    store.dispatch(
-      tourDraftActions.unavailable({
-        generation: selectTourDraft(store.getState()).generation,
-        reason: reason === "other-tab" ? "other-tab" : "storage",
-      }),
-    );
     noBackupNote = NO_BACKUP[reason];
     // Said during an open, it waits until the tour shows: switching tours
     // takes the old file's toasts away.
@@ -1479,6 +1479,81 @@ function deleteStoryEntry(id: string, story: TourStory): void {
 }
 
 /**
+ * Copy (the Edit menu's, Ctrl+C): the picked rows, or the one selected,
+ * on the editor's clipboard when each is a note or a plain folder
+ * (`clipboard.ts`), said by a toast; otherwise the toast says why and the
+ * clipboard keeps what it held. Copy changes nothing in the tour.
+ */
+function copySelection(): void {
+  if (editor === null) return;
+  const outcome = copyOf(store.getState().tourDocument, ui());
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  store.dispatch(editorViewActions.copied({ ids: outcome.ids }));
+  const [only] = outcome.ids;
+  toast(
+    outcome.ids.length > 1 || only === undefined
+      ? `Copied ${String(outcome.ids.length)} items`
+      : only.startsWith(FOLDER_PREFIX)
+        ? "Copied the folder"
+        : `Copied ${itemCalled(only)}`,
+  );
+}
+
+/**
+ * Paste (the Edit menu's, Ctrl+V): copies of the clipboard's notes and
+ * folders into the selected station, or the station of the selected row
+ * (`clipboard.ts`), ONE step; the first copy selected in its station's
+ * rows and a toast saying how many. A photo's picture is read first,
+ * said by a held "Pasting..." toast; another Paste or Duplicate meanwhile
+ * makes nothing (the `duplicating` flag), and a tour switched meanwhile
+ * drops the result. A refusal pastes nothing and is said. A paste that
+ * waits for the draft question is said only once it lands
+ * (`held-edit-flow.ts`).
+ */
+async function pasteSelection(): Promise<void> {
+  const mine = editor;
+  if (mine === null || ui().duplicating) return;
+  const plan = pasteOf(store.getState().tourDocument, ui());
+  if (plan.kind === "refused") {
+    toast(plan.reason);
+    return;
+  }
+  endUndo();
+  await runHeldEdit({
+    ...heldEditOnPage(mine, "Pasting..."),
+    run: () => mine.paste(plan),
+    made: (outcome) => {
+      showRowsOf(plan.toStationId);
+      const [note] = outcome.objects;
+      const [folder] = outcome.folders;
+      select(
+        note ?? (folder === undefined ? null : `${FOLDER_PREFIX}${folder}`),
+      );
+      const n = outcome.objects.length + outcome.folders.length;
+      toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
+      tourChanged();
+    },
+  });
+}
+
+/** What `runHeldEdit` takes from the page for an edit by `mine`: the
+ *  `duplicating` flag, the page's toasts and redraw. */
+function heldEditOnPage(mine: EditorSession, working: string) {
+  return {
+    working,
+    current: () => editor === mine,
+    busy: (on: boolean) =>
+      store.dispatch(editorViewActions.duplicatingChanged({ duplicating: on })),
+    toast: (text: string, held: boolean) =>
+      held ? toast(text, undefined, null, false) : toast(text),
+    refresh,
+  };
+}
+
+/**
  * Copy a note, a story (`story:<id>`, right after itself), a folder with
  * everything in it (`folder:<id>`), or a station with its notes, beside
  * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
@@ -1494,17 +1569,17 @@ async function duplicateSelection(id: string): Promise<void> {
     duplicateStorySelection(id.slice(STORY_PREFIX.length));
     return;
   }
+  if (id.startsWith(FOLDER_PREFIX)) {
+    await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
+    return;
+  }
   const tour = manifestToWrite(store.getState().tourDocument);
   if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
   store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
   const working = toast("Duplicating...", undefined, null, false);
   working.setAttribute("aria-busy", "true");
   try {
-    if (id.startsWith(FOLDER_PREFIX)) {
-      await duplicateFolderSelection(mine, id.slice(FOLDER_PREFIX.length));
-    } else {
-      await duplicateItemSelection(mine, id);
-    }
+    await duplicateItemSelection(mine, id);
   } finally {
     working.remove();
     store.dispatch(
@@ -1544,27 +1619,28 @@ async function duplicateItemSelection(
 }
 
 /** The plain folder `folderId` copied beside itself with everything in
- *  it: the copy selected in its station's rows, said once it was made;
- *  one step. A tour switched meanwhile drops the result. */
+ *  it: the copy selected in its station's rows, said once it was made
+ *  (for one that waits for the draft question, once it lands); one step.
+ *  A tour switched meanwhile drops the result. */
 async function duplicateFolderSelection(
   mine: EditorSession,
   folderId: string,
 ): Promise<void> {
   endUndo();
-  const outcome = await mine.duplicateFolder(folderId);
-  if (editor !== mine) return;
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
-    return;
-  }
-  const copy = plainFolderOf(store.getState().tourDocument, outcome.folderId);
-  if (copy !== null) showRowsOf(copy.stationId);
-  select(`${FOLDER_PREFIX}${outcome.folderId}`);
-  toast(
-    `Duplicated the folder${copy === null ? "" : ` as "${folderName(copy.folder)}"`}`,
-  );
-  tourChanged();
+  await runHeldEdit({
+    ...heldEditOnPage(mine, "Duplicating..."),
+    run: () => mine.duplicateFolder(folderId),
+    made: (outcome) => {
+      const doc = store.getState().tourDocument;
+      const copy = plainFolderOf(doc, outcome.folderId);
+      if (copy !== null) showRowsOf(copy.stationId);
+      select(`${FOLDER_PREFIX}${outcome.folderId}`);
+      toast(
+        `Duplicated the folder${copy === null ? "" : ` as "${folderName(copy.folder)}"`}`,
+      );
+      tourChanged();
+    },
+  });
 }
 
 /** The story `storyId` copied right after itself: the copy selected
@@ -2298,20 +2374,17 @@ async function dropFiles(
         },
         shelved: (assetId, fileName, notes) => {
           shelfPanel?.reveal(assetId);
-          toast(
-            notes > 0
-              ? `"${fileName}" is on the shelf, with ${notesWord(notes)} on its card.`
-              : `"${fileName}" is on the shelf.`,
-          );
+          toast(shelvedWords(fileName, notes));
         },
         notKept: () => {
           toast(FILE_NOT_KEPT);
         },
       }),
       // The pictures the model did not use go where the drop was made,
-      // as a plain drop's would.
+      // as a plain drop's would; onto the shelf from an item's file
+      // field, which took the model.
       release: (pictures) => {
-        void placeDropped(open, pictures, dropTarget);
+        void placeDropped(open, pictures, leftoverTarget(dropTarget));
       },
     });
     if (first !== undefined) shelfPanel?.reveal(first);
@@ -2675,6 +2748,38 @@ function undoKeys(event: KeyboardEvent): boolean {
   return true;
 }
 
+/** Whether the editor's own keys may act on `event`: a field's, a menu's
+ *  and a toolbar's keys are their own (`key-target.ts`), and none acts
+ *  over a dialog, the start card or a busy page. */
+function editKeysFree(event: KeyboardEvent): boolean {
+  return (
+    !inField(event.target) &&
+    !inMenu(event.target, event.key) &&
+    !inComposite(event.target, event.key) &&
+    !dialogOpen() &&
+    Boolean(modal.hidden) &&
+    !ui().busy
+  );
+}
+
+/** Ctrl+C and Ctrl+V on the page: Copy and Paste of notes and folders
+ *  (`copySelection`, `pasteSelection`); whether the key was the page's.
+ *  Wherever the editor's keys are not free, and while text is selected
+ *  on the page, they stay the browser's, so text still copies as text. */
+function clipboardKeys(event: KeyboardEvent): boolean {
+  const c = commandKey(event, "c");
+  const v = commandKey(event, "v");
+  if ((!c && !v) || event.shiftKey || editor === null) return false;
+  if (!editKeysFree(event) || window.getSelection()?.isCollapsed === false) {
+    return false;
+  }
+  event.preventDefault();
+  if (c) copySelection();
+  // A held Ctrl+V repeats; one press pastes once.
+  else if (!event.repeat) void pasteSelection();
+  return true;
+}
+
 function showModal(on: boolean): void {
   modal.hidden = !on;
   // Cancel returns to the open tour; with none there is nothing to return to.
@@ -2719,6 +2824,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (undoKeys(event)) return;
+  if (clipboardKeys(event)) return;
   if (event.key !== "Escape") return;
   switch (
     escapeAction({
@@ -5342,6 +5448,12 @@ const shell = createEditorShell({
     },
     remove: deleteSelection,
   },
+  clipboard: {
+    copy: copySelection,
+    paste: () => {
+      void pasteSelection();
+    },
+  },
   edits: {
     ...inspectorWriteCommands(writeInspectorEdit),
     scene: commitSceneEdit,
@@ -5496,15 +5608,7 @@ const view3d = createView3dOpener({
         },
         model: (id, edit) =>
           writeInspectorEdit((e) => e.editModel(id, edit)) === "written",
-        // A field's, a menu's and a toolbar's keys are their own
-        // (`key-target.ts`).
-        keysFree: (event) =>
-          !inField(event.target) &&
-          !inMenu(event.target, event.key) &&
-          !inComposite(event.target, event.key) &&
-          !dialogOpen() &&
-          Boolean(modal.hidden) &&
-          !ui().busy,
+        keysFree: editKeysFree,
       },
     });
     shown3d = view;

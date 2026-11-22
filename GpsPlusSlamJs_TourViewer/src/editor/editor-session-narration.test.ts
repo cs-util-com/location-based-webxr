@@ -118,6 +118,8 @@ describe("a narration added in the editor", () => {
       timingUnread: false,
       synthetic: false,
       voiceCredit: "",
+      words: null,
+      view: "reading",
     });
 
     const saved = await editor.save({ keepScan: false });
@@ -465,5 +467,104 @@ describe("who speaks the voice", () => {
       voiceCredit: "Read by Anna",
     });
     await session.close();
+  });
+});
+
+describe("where the words show while the voice plays", () => {
+  const voiced = async (objects: readonly TourObject[] = [ESSAY]) => {
+    const opened = await editorOf(objects);
+    await opened.editor.editNarration("t1", {
+      kind: "voice",
+      file: new Blob(["v"]),
+      fileName: "v.mp3",
+    });
+    return opened;
+  };
+
+  // Why: a new voice shows its words in the box, the visitor's default;
+  // the facts say so, and name the text's view (the row is only for a
+  // reading sign).
+  it("reads a new voice's words as in the box, on a reading sign", async () => {
+    const { session, editor } = await voiced();
+    expect(await editor.narration("t1")).toMatchObject({
+      words: null,
+      view: "reading",
+    });
+    await session.close();
+  });
+
+  // Why: putting the words on the sign is the creator's choice, one undo
+  // step, written by the save; the box is the field's absence, so taking
+  // them back off leaves no `words` in the tour.
+  it("puts the words on the sign and back, one step each, undone in turn, and saved", async () => {
+    const { session, editor } = await voiced();
+    const steps = editor.changeCount();
+    expect(
+      await editor.editNarration("t1", { kind: "words", value: "sign" }),
+    ).toEqual({ kind: "edited" });
+    expect(
+      await editor.editNarration("t1", { kind: "words", value: "sign" }),
+    ).toEqual({ kind: "unchanged" });
+    expect(await editor.narration("t1")).toMatchObject({ words: "sign" });
+    expect(editor.changeCount()).toBe(steps);
+
+    const saved = await editor.save({ keepScan: false });
+    const bytes = new Uint8Array(await saved.blob.arrayBuffer());
+    const tour = withWorldObjects(
+      parseTourManifest(JSON.parse(entryText(bytes, "tour.json"))),
+    );
+    const essay = tour.objects.find((o) => o.id === "t1");
+    expect(essay?.kind === "longText" ? essay.narration?.words : null).toBe(
+      "sign",
+    );
+
+    expect(
+      await editor.editNarration("t1", { kind: "words", value: null }),
+    ).toEqual({ kind: "edited" });
+    expect(await editor.narration("t1")).toMatchObject({ words: null });
+    const again = await editor.save({ keepScan: false });
+    const offTour = withWorldObjects(
+      parseTourManifest(
+        JSON.parse(
+          entryText(
+            new Uint8Array(await again.blob.arrayBuffer()),
+            "tour.json",
+          ),
+        ),
+      ),
+    );
+    const off = offTour.objects.find((o) => o.id === "t1");
+    expect(off?.kind === "longText" ? off.narration : null).not.toHaveProperty(
+      "words",
+    );
+    editor.undo();
+    expect(await editor.narration("t1")).toMatchObject({ words: "sign" });
+    editor.undo();
+    expect(await editor.narration("t1")).toMatchObject({
+      words: null,
+      hasVoice: true,
+    });
+    await session.close();
+  });
+
+  // Why: without a voice there is nothing to show words for, and only a
+  // reading sign has a sign to put them on; both refusals change nothing.
+  it("refuses without a voice and for a text that is not a reading sign, changing nothing", async () => {
+    const bare = await editorOf([ESSAY, PIN]);
+    for (const id of ["t1", "p1"]) {
+      expect(
+        await bare.editor.editNarration(id, { kind: "words", value: "sign" }),
+      ).toMatchObject({ kind: "refused" });
+    }
+    expect(bare.editor.changeCount()).toBe(0);
+    await bare.session.close();
+
+    const stand = await voiced([{ ...ESSAY, view: "lectern" }]);
+    const steps = stand.editor.changeCount();
+    expect(
+      await stand.editor.editNarration("t1", { kind: "words", value: "sign" }),
+    ).toMatchObject({ kind: "refused" });
+    expect(stand.editor.changeCount()).toBe(steps);
+    await stand.session.close();
   });
 });

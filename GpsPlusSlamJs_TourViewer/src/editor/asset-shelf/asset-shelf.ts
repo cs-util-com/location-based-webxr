@@ -66,6 +66,9 @@ export const DETAIL_NOT_SMALLER =
 const DETAIL_NOT_OFFERED =
   "Its detail can no longer be changed: the original was let go at the last save.";
 const DETAIL_BUSY = "Its detail is already being changed.";
+/** A model is being converted: none is made meanwhile. */
+export const DETAIL_WAITS_FOR_IMPORT =
+  "A model is being converted. Change the detail once it is on the shelf.";
 const DETAIL_NOT_MADE = "It could not be made at this detail.";
 
 /** What a slider request came to. */
@@ -469,6 +472,9 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     if (row.detail.busy || running.has(id) || goingBack.has(id)) {
       return refused(DETAIL_BUSY);
     }
+    // No model is made while the import converts one (a phone holds one
+    // large model at a time); a queued re-make would only wait the same.
+    if (modelConverting()) return refused(DETAIL_WAITS_FOR_IMPORT);
     const stop = new AbortController();
     running.set(id, stop);
     let ended = () => {};

@@ -274,7 +274,31 @@ never state). Design:
       photo added meanwhile has no picture read), and a copy taking an
       item beyond its station's reach (`FOLDER_TOO_FAR`); the held
       pictures are dropped then. Its step, like `deleteFolder`'s, names
-      the folder in quotes (`the copy of "Shots"`).
+      the folder in quotes (`the copy of "Shots"`). While a draft is
+      undecided the edit waits for the draft question
+      (`draft-edit-gate.ts`): the result is then
+      `{ kind: "held", landed }` (`EditorHeld`), `landed` giving the
+      `duplicated` result once the copy is in the tour, or null when the
+      edit was dropped or the tour refused it by then (its held pictures
+      dropped too, `heldUntilLanded`).
+    - `paste(plan)` (async) - the clipboard's notes and plain folders
+      copied into the station `plan.toStationId` (`clipboardPasted`), one
+      step for the lot: `{ kind: "pasted", objects, folders }` (the
+      copies' ids, in the plan's order). Each copy keeps its pose within
+      its station, so it lands where its source sat in its own; every
+      copied folder and item gets a new id; each photo's picture is read
+      first and held under its copy's id, as `duplicateFolder` does, and
+      the step re-checks after that read that every source and the
+      target station are still there (`NOT_APPLIED` otherwise). Refused
+      for an id or a target station the tour lacks, a picture that cannot
+      be read, and a copy the document refuses (`FOLDER_TOO_FAR` when
+      folders are pasted, else `TOO_FAR_FROM_STATION`: past the reach;
+      the scale rules `clipboard.ts` says first); the held pictures are
+      dropped then. Held by the draft gate it returns
+      `{ kind: "held", landed }` as `duplicateFolder` does, `landed`
+      giving the `pasted` result once every copy is in the tour. Its
+      step is `the copy of "<name>"` for one folder, `the copy of` and
+      the note's name for one note, else `the paste of <n> copies`.
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
       times (`folderScaled`): its whole group grows about its origin;
       "unchanged" for the scale it has (none counts as 1); refused out of
@@ -609,13 +633,14 @@ examples).
 
 ## Narration
 
-- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state, the `synthetic` mark and the `voiceCredit`, `""` for none), or a refusal.
+- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state, the `synthetic` mark and the `voiceCredit`, `""` for none, `words` (`"sign"` or null for the screen) and the text's `view`), or a refusal.
 - `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason; `edited` carries `notBackedUp: true` when the draft could not keep the voice's file.
   - `voice`: a sound file, brought in with `addFile(file, name, ["audio"])`; the same recording again is `unchanged`.
   - `removeVoice`: takes the timing off too.
   - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
   - `removeTiming`: keeps the voice.
   - `synthetic`: marks the voice synthetic or a person's; `voiceCredit`: who speaks it, stored by `normalVoiceCredit` (`../voice-credit.ts`: trimmed, single-spaced, cut to the format's 200 letters; empty takes the field off). Both only with a voice (refused in words otherwise), the same value again is `unchanged`.
+  - `words`: where the words show while the voice plays, `"sign"` (on a reading sign while it can be read, else in the box at the bottom) or null (the box, the default: the field is taken off). Only with a voice (`NO_VOICE_FOR_WORDS`) and `"sign"` only on a text shown as a reading sign (`WORDS_ONLY_ON_A_SIGN`); the same value again is `unchanged`; a timing removed or replaced keeps it.
   - A new voice is a person's with no credit (`synthetic: false`): the editor has no speech tool of its own, so every voice is a file brought in. A replaced voice keeps the mark and the credit.
   - Every narration an edit writes carries its credit in the stored form, so a tour opened with a credit written loosely (the format takes one as written) still takes every narration edit; the first stores it normalised.
 - Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.

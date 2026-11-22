@@ -66,7 +66,7 @@ const AR_CAMERA_FAR = 200;
  * ROOT, with raw GPS-world NUE coordinates.** Nothing to pre-multiply, no
  * container, nothing per frame. The scene root IS the GPS-world frame, so a
  * city mesh, a building outline or any pre-built geographic geometry simply
- * goes there, and the lerped alignment on arWorldGroup moves the CAMERA
+ * goes there, and the alignment on arWorldGroup moves the CAMERA
  * through a world that stands still. This is the common case for map-derived
  * content and it is the cheap one.
  *
@@ -74,10 +74,18 @@ const AR_CAMERA_FAR = 200;
  * GPS repeatedly → under arWorldGroup**, and then the alignment⁻¹ rule below
  * applies. Use `createGpsAnchor`, which does the conversion for you.
  *
+ * **GPS-world content that should follow alignment corrections without
+ * visible jumps → under arWorldGroup through `deferredAnchor`**
+ * (`ar/deferred-anchors`). It sits at its NUE pose, keeps still relative to
+ * the camera while any of it is in view, and re-places to the latest
+ * correction once it is out of view. Content that must stay rigid in
+ * odometry for one visit may use a static inverse-alignment container (the
+ * Tour Viewer's creator previews do); never re-solve content outside
+ * arWorldGroup.
+ *
  * The trade, so the choice is informed rather than copied: scene-root content
  * is geographically truthful but appears to shift against the camera
- * passthrough as the fusion refines the alignment (the lerp is what smooths
- * that). arWorldGroup content is visually locked to the real world but its
+ * passthrough as the fusion refines the alignment. arWorldGroup content is visually locked to the real world but its
  * geographic position drifts, which is why an anchor there re-solves.
  *
  * CAUTION — two NUE frames: arWorldGroup's local space is the *AR-odometry*

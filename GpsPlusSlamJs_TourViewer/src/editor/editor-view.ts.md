@@ -31,9 +31,16 @@ chrome reads, one copy for every view of the page.
     pickers, its drop, its link, "Open the editor") asks before it
     starts, and what keeps those controls off meanwhile, since `busy`
     alone is false between the open and the add;
-  - `duplicating` - a Duplicate is reading its pictures before it
-    writes: another one does nothing meanwhile (a second Ctrl+D makes
-    no copy);
+  - `duplicating` - a Duplicate or a Paste is reading its pictures
+    before it writes: another one does nothing meanwhile (a second
+    Ctrl+D or Ctrl+V makes no copy);
+  - `clipboard` - what the editor's Copy copied (`{ mode: "copy", ids }`:
+    selection ids of notes and plain folders, in the order picked), or
+    null; emptied on an open or a close. It is store state, not
+    transient UI: the Edit menu, the keys and the page all read it.
+    It holds ids, never copies, so a paste reads the tour as it is then
+    (`clipboard.ts` refuses what is gone); the system clipboard is not
+    used, so it lives as long as the page;
   - `view3dShown` - the 3D view shows;
   - `view3dLoad` - `"idle"`, `"loading"` (the 3D view's code, ground
     and WebGL are coming) or `"failed"` (the last load failed; the page
@@ -72,6 +79,9 @@ chrome reads, one copy for every view of the page.
     `pickingChanged({ picking })`, `entryStepChanged({ step })` (an
     unknown step ignored), `undeliveredChanged({ waits })`,
     `duplicatingChanged({ duplicating })`;
+  - `copied({ ids })` - the clipboard set to `ids` (repeats and blank or
+    non-text ids dropped; an empty list empties it; anything but a list
+    is ignored);
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - the 3D view's opener's (`view3d-opener.ts` dispatches them):
     `view3dRequested()` (loading; nothing while loading or shown),
@@ -154,7 +164,9 @@ shell's folds and layers, with unknown keys, empty ids and
 flags that are not booleans ignored; the unfolded stations emptied when
 another tour opens or the tour closes; the slice mounted
 beside the shared ones by `createTourViewerStore`, a colliding key
-refused, and the phone's store without it.
+refused, and the phone's store without it; the clipboard's order,
+de-duplication, emptying (by an empty Copy and by an open or a close),
+a malformed payload ignored, and Copy never touching the tour.
 `editor-view.property.test.ts`: any run of the view actions keeps the
 fields consistent and never changes the selection. The page's use of it is
 covered by `playwright-tests/editor.spec.js` (the editor's walks:

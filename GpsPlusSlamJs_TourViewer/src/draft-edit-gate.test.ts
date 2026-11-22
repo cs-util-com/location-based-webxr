@@ -278,6 +278,7 @@ describe("draft edit gate", () => {
       "folderRenamed",
       "folderDeleted",
       "folderDuplicated",
+      "clipboardPasted",
       "folderReordered",
       "characterDeclared",
       "characterRemoved",

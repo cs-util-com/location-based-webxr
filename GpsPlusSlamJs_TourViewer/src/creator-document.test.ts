@@ -17,7 +17,10 @@ import type {
   TourPin,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
-import { createCreatorDocument } from "./creator-document.js";
+import {
+  createCreatorDocument,
+  type CreatorDocumentStore,
+} from "./creator-document.js";
 import { stationsAsFinished } from "./creator-stations.js";
 import { manifestToWrite, tourDocumentActions } from "./tour-document.js";
 import {
@@ -27,6 +30,7 @@ import {
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
 import { createTourViewerStore } from "./tour-viewer-session.js";
+import { landWrite } from "./test-support/land-write.js";
 import { tourOf, withCaption } from "./test-support/tour-of.js";
 import {
   stationContent,
@@ -71,8 +75,15 @@ const PLACEMENT = {
   },
 };
 
+/** The store each test's document was made from, for a write landing
+ *  in it (`landWrite`). */
+const storeOfDoc = new WeakMap<object, CreatorDocumentStore>();
+
 function fresh() {
-  return createCreatorDocument(createTourViewerStore());
+  const store = createTourViewerStore();
+  const doc = createCreatorDocument(store);
+  storeOfDoc.set(doc, store);
+  return doc;
 }
 
 /** A draft that records its calls and answers as told. */
@@ -239,9 +250,11 @@ describe("the creator's document: changes through the slice's guards", () => {
     const doc = fresh();
     doc.open(tourOf([pin("a")]));
     doc.remove("a", "the delete");
-    const generation = doc.saveStarted();
+    const store = storeOfDoc.get(doc)!;
+    const { generation } = doc.state();
+    store.dispatch(tourDocumentActions.saveStarted({ generation }));
     expect(doc.undo()).toEqual({ kind: "refused", reason: "saving" });
-    doc.saveEnded(generation);
+    store.dispatch(tourDocumentActions.saveEnded({ generation }));
     expect(doc.undo()).toMatchObject({ kind: "undone", what: "the delete" });
     expect(doc.objects().map((o) => o.object.id)).toEqual(["a"]);
     expect(doc.undo()).toEqual({ kind: "nothing" });
@@ -282,15 +295,12 @@ describe("the creator's document: changes through the slice's guards", () => {
     const tour = tourOf([photo("f")]);
     doc.open(tour);
     doc.remove("f", "the delete");
-    const generation = doc.saveStarted();
     const written = { ...tour, stations: [] };
-    doc.saved({
-      generation,
+    landWrite(storeOfDoc.get(doc)!, doc, {
       written,
       appliedDeletions: ["f"],
       stationsAtStart: doc.state().stations,
     });
-    doc.saveEnded(generation);
     expect(doc.undo()).toEqual({ kind: "refused", reason: "picture-gone" });
     doc.keepPicture("f", new Blob(["f"]));
     expect(doc.undo().kind).toBe("undone");
@@ -300,15 +310,12 @@ describe("the creator's document: changes through the slice's guards", () => {
     const doc = fresh();
     doc.open(tourOf([]));
     doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
-    const generation = doc.saveStarted();
     const written = manifestToWrite(doc.state())!;
-    doc.saved({
-      generation,
+    landWrite(storeOfDoc.get(doc)!, doc, {
       written,
       appliedDeletions: [],
       stationsAtStart: doc.state().stations,
     });
-    doc.saveEnded(generation);
     expect(doc.entries()).toEqual([]);
     expect(doc.manifest()).not.toBeNull();
   });
@@ -410,13 +417,15 @@ describe("the creator's document: the AR anchors of the stations it starts", () 
     const doc = fresh();
     doc.open(tourOf([]));
     doc.place(pin("p"), { placement: PLACEMENT }, "a pin");
-    const generation = doc.saveStarted();
     const written = manifestToWrite(doc.state())!;
     const stationsAtStart = doc.state().stations;
     // Placed while the write ran: its station is not in the write.
     doc.place(pin("q", 48.53), { placement: ELSEWHERE }, "a pin");
-    doc.saved({ generation, written, appliedDeletions: [], stationsAtStart });
-    doc.saveEnded(generation);
+    landWrite(storeOfDoc.get(doc)!, doc, {
+      written,
+      appliedDeletions: [],
+      stationsAtStart,
+    });
     expect([...doc.stationPlacements()]).toEqual([
       [stationOf(doc, "q"), { ...ELSEWHERE, item: "q" }],
     ]);
@@ -555,14 +564,11 @@ describe("the creator's document: the draft follows it", () => {
     doc.open(tourOf([pin("a")]));
     doc.edit(withCaption(doc.objects()[0]!.object, "x"), "e");
     calls.length = 0;
-    const generation = doc.saveStarted();
-    doc.saved({
-      generation,
+    landWrite(storeOfDoc.get(doc)!, doc, {
       written: manifestToWrite(doc.state())!,
       appliedDeletions: [],
       stationsAtStart: doc.state().stations,
     });
-    doc.saveEnded(generation);
     doc.close();
     expect(calls).toEqual([]);
   });
@@ -579,14 +585,11 @@ describe("the creator's document: the tour as opened", () => {
     const file = tourOf([pin("a")]);
     doc.open(file);
     doc.edit(withCaption(doc.objects()[0]!.object, "x"), "e");
-    const generation = doc.saveStarted();
-    doc.saved({
-      generation,
+    landWrite(storeOfDoc.get(doc)!, doc, {
       written: manifestToWrite(doc.state())!,
       appliedDeletions: [],
       stationsAtStart: doc.state().stations,
     });
-    doc.saveEnded(generation);
     expect(doc.manifest()).not.toBe(file);
     expect(doc.opened()).toBe(file);
     doc.close();

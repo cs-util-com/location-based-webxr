@@ -90,6 +90,12 @@ const isIndex = (v: unknown): v is number =>
 /** The two halves of opening a tour with a scan, in their forced order. */
 export type EditorEntryStep = "opening" | "adding-scan";
 
+/** What Copy put on the editor's clipboard (`EditorViewState.clipboard`). */
+interface EditorClipboard {
+  readonly mode: "copy";
+  readonly ids: readonly string[];
+}
+
 export interface EditorViewState {
   /** The selected item's id (the model's: `station:<id>` for a station). */
   readonly selected: string | null;
@@ -110,8 +116,9 @@ export interface EditorViewState {
    *  added - one step to the person, from the open's start to the add's
    *  end (`editor-entry.ts`). Null otherwise. */
   readonly entryStep: EditorEntryStep | null;
-  /** A Duplicate is reading its pictures before it writes: another one
-   *  does nothing meanwhile, so a second Ctrl+D makes no second copy. */
+  /** A Duplicate or a Paste is reading its pictures before it writes:
+   *  another one does nothing meanwhile, so a second Ctrl+D or Ctrl+V
+   *  makes no second copy. */
   readonly duplicating: boolean;
   /** The 3D view shows (its load ended with its first frame drawn). */
   readonly view3dShown: boolean;
@@ -163,6 +170,12 @@ export interface EditorViewState {
   /** The plain folders the tree lists folded (to their row), by id: a
    *  folder is listed open until folded. */
   readonly foldedFolders: readonly string[];
+  /** The editor's own clipboard (Copy, Ctrl+C): the selection ids it
+   *  holds (an item's id, `folder:<id>`), in the order copied, or none.
+   *  Ids, not content: a paste re-checks them against the tour as it is
+   *  then (`clipboard.ts`). Not the system clipboard, so it never leaves
+   *  this tab; the open tour's, emptied with another tour or none. */
+  readonly clipboard: EditorClipboard | null;
 }
 
 export const initialEditorViewState: EditorViewState = {
@@ -191,6 +204,7 @@ export const initialEditorViewState: EditorViewState = {
   picked: [],
   selectMode: false,
   foldedFolders: [],
+  clipboard: null,
 };
 
 /** Whether a payload's flag is a flag: anything else changes nothing. */
@@ -313,6 +327,18 @@ const editorViewSlice = createSlice({
         state.entryStep = step;
       }
     },
+    /** What Copy copied, in order, repeats and blanks left out; none
+     *  empties the clipboard. Anything but a list changes nothing. */
+    copied(state, action: PayloadAction<{ ids: readonly string[] }>) {
+      const { ids } = action.payload;
+      if (!Array.isArray(ids)) return;
+      const kept = [
+        ...new Set(
+          ids.filter((id): id is string => typeof id === "string" && id !== ""),
+        ),
+      ];
+      state.clipboard = kept.length === 0 ? null : { mode: "copy", ids: kept };
+    },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;
     },
@@ -428,6 +454,7 @@ const editorViewSlice = createSlice({
       picked: string[];
       selectMode: boolean;
       foldedFolders: string[];
+      clipboard: EditorClipboard | null;
     }) => {
       state.openStations = [];
       state.openStories = [];
@@ -442,6 +469,8 @@ const editorViewSlice = createSlice({
       state.picked = [];
       state.selectMode = false;
       state.foldedFolders = [];
+      // The clipboard names the tour's ids.
+      state.clipboard = null;
     };
     builder
       .addCase(tourDocumentActions.opened, foldAll)

@@ -13,7 +13,7 @@
  * marker — and never on REGISTRATION. Nothing called
  * `createGpsPositionHandler`, so `recordGpsEvent` was never dispatched,
  * `gpsElements` stayed empty, the alignment matrix never left identity, and the
- * `enableArWorldGroupAlignment` binding in `ar-mode.ts` faithfully lerped
+ * `enableArWorldGroupAlignment` binding in `ar-mode.ts` faithfully applied
  * identity onto `arWorldGroup` forever. The city was drawn in the AR session's
  * own origin frame: wrong place, arbitrary rotation, no convergence.
  *

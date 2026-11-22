@@ -27,6 +27,7 @@ import {
 } from "./asset-optimizers.js";
 import {
   DETAIL_NOT_SMALLER,
+  DETAIL_WAITS_FOR_IMPORT,
   createAssetShelf,
   type AssetShelfDeps,
 } from "./asset-shelf.js";
@@ -214,6 +215,28 @@ describe("the shelf's detail slider", () => {
     await t.settle();
     expect(t.row()?.status).toBe("optimized");
     expect(t.row()?.detail).toBeUndefined();
+  });
+
+  // Why: a phone holds one large model at a time, so no model is made
+  // while the model import converts one; the slider must wait too, not
+  // start the optimizer beside the converter.
+  it("refuses a detail change while a model is being converted, and starts nothing", async () => {
+    const { shelf, fake, store, row } = await madeModel();
+    store.dispatch(
+      assetShelfActions.importQueued({
+        id: "import:1",
+        name: "a.gltf",
+        format: "gltf",
+        bytes: 4,
+      }),
+    );
+    store.dispatch(assetShelfActions.importStarted({ id: "import:1" }));
+    await expect(shelf.setDetail(M, 0.25)).resolves.toEqual({
+      kind: "refused",
+      reason: DETAIL_WAITS_FOR_IMPORT,
+    });
+    expect(fake.calls).toHaveLength(0);
+    expect(row()?.detail?.busy).toBe(false);
   });
 
   it("re-makes the model from the original at the author's share, busy until it lands", async () => {

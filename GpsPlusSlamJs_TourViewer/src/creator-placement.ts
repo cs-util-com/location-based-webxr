@@ -426,7 +426,7 @@ export function wireCreatorPlacement(deps: {
     }
     const position = reticle.getWorldPosition(new Vector3());
     // The reticle's place in the world group's own frame (odometry-NUE):
-    // what the rigid preview and the settle work from (plan §3.2, M2c).
+    // what the rigid preview and the settle work from.
     const group = seams.getArWorldGroup();
     const local = group === null ? null : group.worldToLocal(position.clone());
     const pin = mintPin({

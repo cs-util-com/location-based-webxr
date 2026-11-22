@@ -27,14 +27,21 @@ mistake.**
 - **Fixed geographic content, built once (a city mesh, building outlines, any
   map-derived geometry) → the SCENE ROOT, raw GPS-world NUE coordinates.**
   Nothing to pre-multiply, no container, nothing per frame. The scene root _is_
-  the GPS-world frame; the lerped alignment on `arWorldGroup` moves the CAMERA
+  the GPS-world frame; the alignment on `arWorldGroup` moves the CAMERA
   through a world that stands still.
 - **Content glued to what SLAM sees, or re-solved from GPS repeatedly → under
   `arWorldGroup`**, via `createGpsAnchor`, which applies alignment⁻¹ for you.
+- **GPS-world content that should follow corrections without visible jumps →
+  under `arWorldGroup` through `deferredAnchor`** (`ar/deferred-anchors`). It
+  sits at its NUE pose, keeps still relative to the camera while any of it is
+  in view, and re-places to the latest correction once it is out of view.
+  Content that must stay rigid in odometry for one visit may use a static
+  inverse-alignment container (the Tour Viewer's creator previews do); never
+  re-solve content outside `arWorldGroup`.
 
 The trade, so this is a choice rather than a copy: scene-root content is
 geographically truthful but shifts against the passthrough as the fusion
-refines the alignment (the lerp smooths that); `arWorldGroup` content is locked
+refines the alignment; `arWorldGroup` content is locked
 to the real world but its geographic position drifts, which is why an anchor
 there re-solves.
 

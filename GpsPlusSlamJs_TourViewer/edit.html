@@ -119,8 +119,10 @@
           ><span class="dot" aria-hidden="true"></span
           ><span class="lbl">Not saved</span></span
         >
-        <!-- At a phone's width the bar has no room for Undo, Redo and Add
-             in words: they fold into this menu (editor-shell.css). -->
+        <!-- The Edit menu, at every width: Undo and Redo, Copy, Paste,
+             Duplicate and Delete, and Add. At a phone's width the bar has
+             no room for its own Undo, Redo and Add in words: only the
+             menu's remain (editor-shell.css). -->
         <div class="menu-wrap studio" id="edit-menu-wrap">
           <button class="tbtn menu-btn" id="edit-menu-btn" type="button">
             <span class="lbl">Edit</span><i data-icon="down"></i>
@@ -144,7 +146,45 @@
             >
               Redo<kbd aria-hidden="true">Ctrl+Shift+Z</kbd>
             </button>
-            <!-- The top bar's Add, folded in with Undo and Redo. -->
+            <div role="separator"></div>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-copy"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+C"
+            >
+              Copy<kbd aria-hidden="true">Ctrl+C</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-paste"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+V"
+            >
+              Paste<kbd aria-hidden="true">Ctrl+V</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-duplicate"
+              aria-disabled="true"
+              aria-keyshortcuts="Control+D"
+            >
+              Duplicate<kbd aria-hidden="true">Ctrl+D</kbd>
+            </button>
+            <button
+              role="menuitem"
+              type="button"
+              id="edit-delete"
+              aria-disabled="true"
+              aria-keyshortcuts="Delete"
+            >
+              Delete<kbd aria-hidden="true">Del</kbd>
+            </button>
+            <div role="separator"></div>
+            <!-- The top bar's Add, the one left at a phone's width. -->
             <button
               role="menuitem"
               type="button"

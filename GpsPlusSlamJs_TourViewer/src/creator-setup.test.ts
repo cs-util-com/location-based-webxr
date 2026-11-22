@@ -19,6 +19,7 @@
  * `dom` - so this stays a pure test, as this package's unit tests are by
  * convention.
  */
+import { landWrite } from "./test-support/land-write.js";
 import { stationBlocks } from "./test-support/station-content.js";
 import { describe, expect, it } from "vitest";
 import { Group, Matrix4, Object3D, Vector3 } from "three";
@@ -35,6 +36,7 @@ import {
 } from "./tour-viewer-session.js";
 import {
   CODES_KEY,
+  CODES_REJECTED,
   deletedKey,
   META_KEY,
   objectKey,
@@ -715,6 +717,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(rejectedOf(metaPuts.at(-2)), "the attempt that failed").toEqual([
       "old-pin",
       SETTINGS_REJECTED,
+      CODES_REJECTED,
     ]);
     expect(
       rejectedOf(metaPuts.at(-1)),
@@ -2387,14 +2390,11 @@ describe("a draft holding edits and deletions (authoring plan 2026-09-28-0953 §
   function finishLanded(ctx: ReturnType<typeof wire>["ctx"]): void {
     const doc = ctx.tourDocument;
     const now = doc.state();
-    const generation = doc.saveStarted();
-    doc.saved({
-      generation,
+    landWrite(ctx.store, doc, {
       written: manifestToWrite(now)!,
       appliedDeletions: [...now.deleted],
       stationsAtStart: now.stations,
     });
-    doc.saveEnded(generation);
   }
 
   // Why: a delete made over the undecided draft waits, and Restore drops

@@ -654,8 +654,8 @@ describe('createGpsAnchor — steady state (snap-every-tick)', () => {
  *
  * The previous "large-jump bypass" (which overrode the on-screen gate on a
  * >2°/4 m/20 m alignment delta) was REMOVED: now that the whole frame rides one
- * lerped `arWorldGroup.matrix`, a large jump is absorbed smoothly for the entire
- * view, so a per-anchor on-screen snap only manufactured the AnchorStarter
+ * `arWorldGroup.matrix`, a large jump moves the whole view together in one
+ * frame, so a per-anchor on-screen snap only manufactured the AnchorStarter
  * cache-hit hard-jump. See
  * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md.
  *

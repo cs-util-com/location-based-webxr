@@ -91,20 +91,28 @@ function decoded(text: string): string {
 const comparable = (path: string): string | null =>
   normalizeBundlePath(path)?.normalize("NFC") ?? null;
 
-/** The one given path whose comparable form, keyed by `key`, equals
- *  `wanted`; null for none or several. */
-function uniqueMatch(
-  files: readonly (readonly [string, string])[],
-  key: (normalized: string) => string,
-  wanted: string,
-): string | null {
-  let found: string | null = null;
-  for (const [original, normalized] of files) {
-    if (key(normalized) !== wanted) continue;
-    if (found !== null) return null;
-    found = original;
+/** The given paths by their comparable form, by it in lower case and by
+ *  their lower-case file name; null where several share a key. */
+interface PathIndex {
+  readonly exact: ReadonlyMap<string, string>;
+  readonly byCase: ReadonlyMap<string, string | null>;
+  readonly byBase: ReadonlyMap<string, string | null>;
+}
+
+function indexPaths(files: readonly string[]): PathIndex {
+  const exact = new Map<string, string>();
+  const byCase = new Map<string, string | null>();
+  const byBase = new Map<string, string | null>();
+  const add = (map: Map<string, string | null>, key: string, path: string) =>
+    map.set(key, map.has(key) ? null : path);
+  for (const original of files) {
+    const normalized = comparable(original);
+    if (normalized === null) continue;
+    if (!exact.has(normalized)) exact.set(normalized, original);
+    add(byCase, normalized.toLowerCase(), original);
+    add(byBase, basenameOf(normalized).toLowerCase(), original);
   }
-  return found;
+  return { exact, byCase, byBase };
 }
 
 /** Where `uri`, written in the file at `from`, points among `files`. */
@@ -113,6 +121,24 @@ export function resolveReference(
   from: string,
   files: readonly string[],
   options: ResolveOptions = {},
+): Reference {
+  return referenceResolver(files)(uri, from, options);
+}
+
+/** `resolveReference` over one set of `files`, indexed once: for a caller
+ *  that resolves many references among the same files. */
+export function referenceResolver(
+  files: readonly string[],
+): (uri: string, from: string, options?: ResolveOptions) => Reference {
+  const index = indexPaths(files);
+  return (uri, from, options = {}) => resolveIn(index, uri, from, options);
+}
+
+function resolveIn(
+  index: PathIndex,
+  uri: string,
+  from: string,
+  options: ResolveOptions,
 ): Reference {
   const text = typeof uri === "string" ? uri : "";
   const scheme = SCHEME.exec(text)?.[1]?.toLowerCase();
@@ -129,37 +155,25 @@ export function resolveReference(
   const name = decoded(path.replace(/[?#].*$/s, ""))
     .replace(/\\/g, "/")
     .normalize("NFC");
-  const given: (readonly [string, string])[] = [];
-  const exact = new Map<string, string>();
-  for (const original of files) {
-    const normalized = comparable(original);
-    if (normalized === null) continue;
-    given.push([original, normalized]);
-    if (!exact.has(normalized)) exact.set(normalized, original);
-  }
   const base = basenameOf(name);
   if (!onAnotherComputer) {
     const wanted = normalizeBundlePath(
       name.startsWith("/") ? name : dirnameOf(comparable(from) ?? "") + name,
     );
     if (wanted === null) return { kind: "outside", name: base };
-    const hit = exact.get(wanted);
+    const hit = index.exact.get(wanted);
     if (hit !== undefined) return { kind: "file", path: hit, match: "exact" };
-    const byCase = uniqueMatch(
-      given,
-      (n) => n.toLowerCase(),
-      wanted.toLowerCase(),
-    );
-    if (byCase !== null) return { kind: "file", path: byCase, match: "case" };
+    const byCase = index.byCase.get(wanted.toLowerCase());
+    if (typeof byCase === "string") {
+      return { kind: "file", path: byCase, match: "case" };
+    }
   }
   const byBase =
     options.byBasename === false || base === ""
-      ? null
-      : uniqueMatch(
-          given,
-          (n) => basenameOf(n).toLowerCase(),
-          base.toLowerCase(),
-        );
-  if (byBase !== null) return { kind: "file", path: byBase, match: "basename" };
+      ? undefined
+      : index.byBase.get(base.toLowerCase());
+  if (typeof byBase === "string") {
+    return { kind: "file", path: byBase, match: "basename" };
+  }
   return { kind: onAnotherComputer ? "elsewhere" : "missing", name: base };
 }

@@ -226,7 +226,7 @@ again under the creator's typing on every tile of finer ground.
 
 ## Narration key
 
-`InspectorLongText.narrationKey` is the narration record (JSON) plus the input's `timingsStamp`: the Narration section re-reads when it changes.
+`InspectorLongText.narrationKey` is the text's view, the narration record (JSON) and the input's `timingsStamp`, as `view|record|stamp` (the view decides whether the words row shows): the Narration section re-reads when it changes.
 
 ## `file`
 

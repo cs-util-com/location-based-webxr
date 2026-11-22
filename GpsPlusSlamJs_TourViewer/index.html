@@ -473,6 +473,12 @@
         margin: 0 0 var(--space-2);
         text-shadow: var(--halo-text);
       }
+      /* The travelling box's field log buttons (?debug=1), in a row. */
+      #travel-log-tools:not([hidden]) {
+        display: flex;
+        gap: var(--space-2);
+        margin: 0 0 var(--space-2);
+      }
       /* The gate's escape: the secondary, quality-degrading choice. The
          old dashed outline said so; the sheet has no quiet button variant
          (only .btn--accent, which is louder), and the brief forbids
@@ -6710,6 +6716,37 @@
               <!-- The ?debug=1 QR readout (main.ts shows it; plan §66). Never for
                visitors without the flag. -->
               <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
+              <!-- The travelling box's field log, under the readout: a
+               visitor's ?debug=1 only (main.ts shows it). Copy puts the
+               walk's log on the clipboard, Download saves it as a file
+               when the clipboard cannot take it; Mark notes where reading
+               got hard. -->
+              <p id="travel-log-tools" data-testid="travel-log-tools" hidden>
+                <button
+                  type="button"
+                  class="btn"
+                  id="travel-log-copy"
+                  data-testid="travel-log-copy"
+                >
+                  Copy log
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  id="travel-log-download"
+                  data-testid="travel-log-download"
+                >
+                  Download log
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  id="travel-log-mark"
+                  data-testid="travel-log-mark"
+                >
+                  Mark
+                </button>
+              </p>
               <!-- The visitor's safety line, before the start button (tour
                editor plan 2026-10-17-1816, W6, D13); shown on the visitor's
                start page only (the CSS above). -->

@@ -48,7 +48,7 @@ lerper.dispose();
 
 ## Tests
 
-- `alignment-lerper.test.ts` — 13 unit tests covering:
+- `alignment-lerper.test.ts` covers:
   - First-target instant apply
   - Position lerp and quaternion slerp convergence
   - No overshoot with large dt

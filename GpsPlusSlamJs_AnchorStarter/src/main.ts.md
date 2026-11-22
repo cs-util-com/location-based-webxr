@@ -42,7 +42,7 @@
     `dom-overlay` / CSS3D stay on for the overlay UI) →
     `startSession` (so the GPS coordinator
     feeds alignment) → `enableArWorldGroupAlignment({ store, arWorldGroup })`
-    (lerps the alignment onto `arWorldGroup` so the camera + anchor ride it
+    (sets `arWorldGroup` to the newest alignment so the camera + anchor ride it
     together — GPS-registers the view, without which the camera is pure-VIO) →
     `createGpsPositionHandler` + `startGpsWatch` (the handler starts the
     compass cold start's `AbsoluteOrientationSensor` at the first recorded

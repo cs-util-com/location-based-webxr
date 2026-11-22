@@ -486,6 +486,29 @@ geo?, what })` - a copy inserted after the original (any station the
       stays untitled). One step. Refused: an unknown folder, a missing,
       taken or repeated new id, an item the copy would take beyond its
       station's reach.
+  - `clipboardPasted({ toStationId, objects: [{ id, newId }], folders: [{ stationId, folderId, newIds }], createdAtIso?, what })`
+    - the editor's Paste (`editor/clipboard.ts` says what is pasted):
+      copies of the notes and plain folders into the station
+      `toStationId`, the notes first, each in the order given, as ONE
+      step however many there are (a single one is that copy's own step).
+      Into a note's or a folder's own station it is the copy Duplicate
+      makes (`objectDuplicated`, `folderDuplicated`). Into another one,
+      a rigid move: the copy keeps its pose in its station's frame
+      (`rigidlyMoved` for a note, which goes to the station's top, out of
+      any folder; a folder keeps its pose composed through the folders
+      that held it, goes after the station's own children as a top-level
+      folder, and its items keep their poses in it). A rigid move keeps
+      every local offset, so a copy fits the target's bound wherever its
+      original fits its own: no fallback place is needed. The new ids
+      follow `folderDuplicated`'s rules. A nested folder pasted out of
+      the folders around it takes the product of their scales and its
+      own as its scale (`pastedFolderScale`), so what it holds keeps its
+      place and size. Refused, all or nothing: nothing to paste, an item
+      or a folder named twice, a story's entry, an unknown item, folder
+      or station, any refused copy; into another station also a note its
+      folders resize (their scales multiply to other than 1: out of them
+      it would change size) and a folder whose scale product lies past
+      0.1 to 10 (`clipboard.ts` says both first, with reasons).
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
     each keeping its world pose. Refused: `objectsFolderRefusal` (an
@@ -513,7 +536,8 @@ geo?, what })` - a copy inserted after the original (any station the
     inspector's "Pivot to centre", `folder-commands.ts`); `folderDeleted`
     and `folderDuplicated` (Del and Duplicate on a folder, the delete
     asked first, through the session's `deleteFolder` and
-    `duplicateFolder`).
+    `duplicateFolder`); `clipboardPasted` (the Edit menu's Paste and
+    Ctrl+V, through the session's `paste`).
   - `blockNumberSet({ id, field, value, what })` - a block's size: the
     field its placement row's `size` extent names
     (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to
@@ -594,7 +618,7 @@ written, hand })` (the hosted texts enter the book);
 
 - `selectTourDocument(root)` - the slice in a store's state.
 - Re-exported from `tour-content.ts` for the pages, read-only:
-  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
+  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first), `folderChainOf` (the chain around one child). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - The codes: `documentCodes(state)` (the book, in order),
@@ -1031,6 +1055,25 @@ store.dispatch(tourDocumentActions.undone());
   the opened tour gives back the same `manifestToWrite`; an edit of a
   station a delete or a move emptied (its radius, a title set then
   cleared) does not list it again, as a reload does not.
+- `tour-document-paste.test.ts` pins `clipboardPasted`: a note into
+  another station keeps its pose in the station's frame (swept over the
+  target's heading 0, 90 and 179 degrees and 100 m and 5 km away), a note
+  in a folder lands at the top, a folder (nested or not) lands as the
+  station's last folder with its items' paths renamed and their local
+  poses kept (swept over the folder's yaw 0, 30 and 179), a nested
+  folder under resized folders takes their scale (outer 0.5 and 2, inner
+  none and 1.5) with its note's local pose kept, the scale refusals
+  (a note in a resized folder, a product past 10), into the own
+  station it equals Duplicate, a multi paste is one step that undoes and
+  redoes whole, and every refusal returns the same state.
+  `tour-document-paste.property.test.ts` runs random sequences of up to 6
+  pastes over 3 stations of random headings: ids stay unique, every
+  folder an item names is its station's, each paste is one step, undoing
+  them all gives back the tour as opened, every note copied into
+  another station keeps its pose in the station's frame (the folder's
+  scale random: none, 0.5 or 2), and at least 90 % of the generated
+  pastes apply, those refused for a resized note left out of the count
+  and pinned as refused (so the property is not passed on refusals).
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.
@@ -1040,7 +1083,7 @@ store.dispatch(tourDocumentActions.undone());
 
 - State: `timings` (the read-along texts set here, by archive entry, `null` for none), `timingsWritten` (what the file last written holds for each). A voice is a file brought in (`addedAssets`, below), listed before the step naming it.
 - `narrationEdited({ object, timing?, what })`: a free long text's narration changed as ONE step - its voice, whether it names its entry (`tourTimingEntryName(id)`), that entry's text.
-  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, when its `synthetic` is not a boolean or its `voiceCredit` is not in the stored form (`normalVoiceCredit`, `voice-credit.ts`: never blank, within the cap), or when the entry is not the object's own.
+  - Refused (state unchanged) when anything but the narration differs from the object as the document holds it, when the narration names an audio that is not an audio asset of the written tour or of `addedAssets`, when its `synthetic` is not a boolean, its `voiceCredit` is not in the stored form (`normalVoiceCredit`, `voice-credit.ts`: never blank, within the cap) or its `words` is anything but absent or `"sign"`, or when the entry is not the object's own.
   - An undo brings back the entry's text the step started from.
   - It is a separate `createAction` handled in `extraReducers` and merged into `tourDocumentActions`: one more case reducer on the slice made the slice's type too long for the compiler to write out (TS7056).
 - `timingChanges(state)`: the entries set here that the written file does not hold, for an object not otherwise unsaved. `changeCount` counts each changed object once, so a new voice and its timing on one text count once.

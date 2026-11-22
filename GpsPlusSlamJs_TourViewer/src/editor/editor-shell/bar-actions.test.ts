@@ -123,17 +123,17 @@ describe("barActions", () => {
   it("gives a station Duplicate and Copy position, an item Align to station too", () => {
     expect(barActions(station).map((a) => a.action)).toEqual([
       "duplicate",
-      "copy",
+      "copyPosition",
     ]);
     expect(barActions(item).map((a) => a.action)).toEqual([
       "duplicate",
       "align",
-      "copy",
+      "copyPosition",
     ]);
   });
 
   it("gives a code, read-only here, its position only, and nothing without a selection", () => {
-    expect(barActions(code).map((a) => a.action)).toEqual(["copy"]);
+    expect(barActions(code).map((a) => a.action)).toEqual(["copyPosition"]);
     expect(barActions(null)).toEqual([]);
   });
 
@@ -150,7 +150,7 @@ describe("barActions", () => {
         title: "Turn it to face the way its station faces",
       },
       {
-        action: "copy",
+        action: "copyPosition",
         label: "Copy position",
         title: "Copy the position and heading as text",
       },

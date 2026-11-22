@@ -11,7 +11,7 @@
  * the END of a long walk inherits all the SLAM drift after it (8.4 m at
  * 500 m with 1 % / 1 degree per 100 m, `visit-settle.left-behind.test.ts`).
  * The new start-up must fix the point through exactly the first mature
- * alignment - not the lerped group matrix, not a later alignment - and must
+ * alignment - not the group's current matrix, not a later alignment - and must
  * never touch the object while it waits, so the placed object stays rigid.
  */
 // Activates the core library's licence before any module under test loads.
@@ -43,7 +43,7 @@ function env(live: Live, overrides: Partial<GpsAnchorOptions> = {}) {
   const arWorldGroup = new THREE.Group();
   const object3D = new THREE.Object3D();
   arWorldGroup.add(object3D);
-  // The group's matrix is the LERPED visual alignment, deliberately not the
+  // The group's matrix holds another alignment, deliberately not the
   // solved one: the fix must go through the solved alignment.
   arWorldGroup.matrixAutoUpdate = false;
   arWorldGroup.matrix.fromArray(makeNonTrivialAlignment(1234));

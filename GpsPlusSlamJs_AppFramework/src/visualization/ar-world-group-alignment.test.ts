@@ -1,6 +1,6 @@
 /**
  * Tests for `enableArWorldGroupAlignment` — the framework default that wires
- * the store's alignment selector to a lerped `arWorldGroup.matrix`.
+ * the store's alignment selector to `arWorldGroup.matrix`.
  *
  * Why this test matters: this is the load-bearing fix for the GPS-anchor
  * frame-architecture bug
@@ -8,19 +8,19 @@
  * Slice 2 / Bug A). The two simpler apps (MinimalExample, AnchorStarter) never
  * applied alignment to `arWorldGroup`, leaving the camera pure-VIO and forcing
  * every GPS anchor to absorb the full alignment delta on each re-registration.
- * This helper makes "apply lerped alignment to `arWorldGroup`" a single,
+ * This helper makes "apply the alignment to `arWorldGroup`" a single,
  * impossible-to-forget framework call. The tests pin:
  * - an already-present alignment is adopted at enable time (apps that enable
  *   after the first fix still register the view),
- * - a newly-dispatched alignment updates the lerper target and converges,
- * - the first target is applied instantly (no slide from identity), later
- *   targets ease,
+ * - every dispatched alignment, large or small, lands exactly in the next
+ *   frame (no easing anywhere in the framework),
  * - `null` alignment is ignored (no spurious identity target),
  * - `dispose()` stops both the subscription and the per-frame update.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { enableArWorldGroupAlignment } from './ar-world-group-alignment.js';
+import { getArParentBinding } from '../ar/ar-parent-target.js';
 import { runFrameUpdates, clearFrameUpdates } from '../ar/frame-loop.js';
 import {
   runSessionDisposers,
@@ -38,11 +38,21 @@ import type { CombinedRootState } from '../state/combined-root-state.js';
  */
 function makeFakeStore(initial: readonly number[] | null): SubscribableStore & {
   setAlignment: (matrix: readonly number[] | null) => void;
+  bumpEpoch: () => void;
 } {
   const listeners = new Set<() => void>();
-  let state = {
-    gpsData: { gpsEvents: { alignmentMatrix: initial } },
-  } as unknown as CombinedRootState;
+  let alignmentMatrix = initial;
+  let frameEpoch = 0;
+  const build = () =>
+    ({
+      gpsData: { gpsEvents: { alignmentMatrix } },
+      qrDetected: { frameEpoch },
+    }) as unknown as CombinedRootState;
+  let state = build();
+  const publish = () => {
+    state = build();
+    for (const listener of [...listeners]) listener();
+  };
   return {
     getState: () => state,
     subscribe: (listener: () => void) => {
@@ -50,23 +60,52 @@ function makeFakeStore(initial: readonly number[] | null): SubscribableStore & {
       return () => listeners.delete(listener);
     },
     setAlignment: (matrix: readonly number[] | null) => {
-      state = {
-        gpsData: { gpsEvents: { alignmentMatrix: matrix } },
-      } as unknown as CombinedRootState;
-      for (const listener of [...listeners]) listener();
+      alignmentMatrix = matrix;
+      publish();
+    },
+    bumpEpoch: () => {
+      frameEpoch += 1;
+      publish();
     },
   };
+}
+
+/** T as north metres (x), a yaw in degrees and east metres (z). */
+function tOf(north: number, yawDeg = 0, east = 0): number[] {
+  return new THREE.Matrix4()
+    .makeRotationY(THREE.MathUtils.degToRad(yawDeg))
+    .setPosition(north, 0, east)
+    .toArray();
+}
+
+/** A group in a scene, driven by the binding, with a frame clock. */
+function arRig(initial: readonly number[] | null) {
+  const store = makeFakeStore(initial);
+  const scene = new THREE.Scene();
+  const group = new THREE.Group();
+  scene.add(group);
+  const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+  let t = 0;
+  const frame = (dt = 1 / 30) => {
+    t += dt;
+    runFrameUpdates(dt, t);
+  };
+  return { store, group, handle, frame };
 }
 
 function matrixIsIdentity(group: THREE.Object3D): boolean {
   return group.matrix.equals(new THREE.Matrix4());
 }
 
-/**
- * The lerper decomposes each target into position/quaternion/scale and
- * recomposes it, so even an instantly-applied first target is not bit-identical
- * to the source array. Compare element-wise with a tight tolerance instead.
- */
+/** Element-wise equality (+0 and -0 alike): the group carries T itself. */
+function expectMatrixExact(
+  actual: readonly number[],
+  expected: readonly number[]
+): void {
+  for (let i = 0; i < 16; i++) expect(actual[i]! - expected[i]!).toBe(0);
+}
+
+/** Element-wise comparison with a tight tolerance. */
 function expectMatrixClose(
   actual: readonly number[],
   expected: readonly number[]
@@ -88,7 +127,7 @@ describe('enableArWorldGroupAlignment', () => {
     const arWorldGroup = new THREE.Group();
 
     const handle = enableArWorldGroupAlignment({ store, arWorldGroup });
-    // The first target is applied instantly on the first frame.
+    // The alignment lands on the first frame.
     runFrameUpdates(1, 1);
 
     expect(matrixIsIdentity(arWorldGroup)).toBe(false);
@@ -110,7 +149,7 @@ describe('enableArWorldGroupAlignment', () => {
     handle.dispose();
   });
 
-  it('applies the first dispatched alignment instantly, then eases to later ones', () => {
+  it('applies the first dispatched alignment, and a small refinement, exactly in the next frame', () => {
     const store = makeFakeStore(null);
     const arWorldGroup = new THREE.Group();
     const handle = enableArWorldGroupAlignment({ store, arWorldGroup });
@@ -118,29 +157,16 @@ describe('enableArWorldGroupAlignment', () => {
     const m1 = makeNonTrivialAlignment(2);
     store.setAlignment(m1);
     runFrameUpdates(1, 1);
-    // First target → instant (within decompose/compose float tolerance).
-    expectMatrixClose(
-      arWorldGroup.matrix.toArray(),
-      new THREE.Matrix4().fromArray([...m1]).toArray()
-    );
+    expectMatrixExact(arWorldGroup.matrix.toArray(), [...m1]);
 
-    const m2 = makeNonTrivialAlignment(3);
+    // A 1 cm refinement lands in one frame too: nothing eases.
+    const m2 = new THREE.Matrix4()
+      .makeTranslation(0.01, 0, 0)
+      .multiply(new THREE.Matrix4().fromArray([...m1]))
+      .toArray();
     store.setAlignment(m2);
-    // A single tiny step must NOT have reached m2 yet (it eases).
     runFrameUpdates(1 / 60, 2);
-    const partial = arWorldGroup.matrix.toArray();
-    const target = new THREE.Matrix4().fromArray([...m2]).toArray();
-    expect(partial).not.toEqual(target);
-
-    // Many steps converge close to m2.
-    for (let i = 0; i < 600; i++) runFrameUpdates(1 / 60, 3 + i / 60);
-    const converged = new THREE.Vector3().setFromMatrixPosition(
-      arWorldGroup.matrix
-    );
-    const want = new THREE.Vector3().setFromMatrixPosition(
-      new THREE.Matrix4().fromArray([...m2])
-    );
-    expect(converged.distanceTo(want)).toBeLessThan(1e-3);
+    expectMatrixExact(arWorldGroup.matrix.toArray(), m2);
     handle.dispose();
   });
 
@@ -157,7 +183,7 @@ describe('enableArWorldGroupAlignment', () => {
     store.setAlignment(makeNonTrivialAlignment(5));
     runFrameUpdates(1, 2);
     runFrameUpdates(1, 3);
-    expect(arWorldGroup.matrix.toArray()).toEqual(afterFirst);
+    expectMatrixExact(arWorldGroup.matrix.toArray(), afterFirst);
   });
 
   // Why these matter: the leak that two apps independently hit was the store
@@ -182,7 +208,7 @@ describe('enableArWorldGroupAlignment', () => {
     store.setAlignment(makeNonTrivialAlignment(7));
     runFrameUpdates(1, 2);
     runFrameUpdates(1, 3);
-    expect(arWorldGroup.matrix.toArray()).toEqual(afterFirst);
+    expectMatrixExact(arWorldGroup.matrix.toArray(), afterFirst);
   });
 
   it('dispose() after the teardown flush is an idempotent no-op', () => {
@@ -204,5 +230,149 @@ describe('enableArWorldGroupAlignment', () => {
     // doesn't try to run a teardown whose resources are already gone.
     handle.dispose();
     expect(() => runSessionDisposers()).not.toThrow();
+  });
+
+  // Why this test matters: content that follows the alignment (the deferred
+  // anchors' follow phase) sets its local matrix to the inverse of
+  // `arWorldGroup.matrix` and expects its world pose to be its NUE pose. That
+  // holds only if every binding update leaves `matrixWorld` equal to `matrix`
+  // under the identity scene root, in the same frame.
+  it('leaves arWorldGroup.matrixWorld equal to its matrix after every update', () => {
+    const store = makeFakeStore(makeNonTrivialAlignment(10));
+    const scene = new THREE.Scene();
+    const arWorldGroup = new THREE.Group();
+    scene.add(arWorldGroup);
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup });
+    const check = (): void =>
+      expectMatrixClose(
+        arWorldGroup.matrixWorld.toArray(),
+        arWorldGroup.matrix.toArray()
+      );
+    runFrameUpdates(1 / 30, 1);
+    check();
+    store.setAlignment(makeNonTrivialAlignment(11));
+    for (let i = 0; i < 40; i++) {
+      runFrameUpdates(1 / 30, 2 + i / 30);
+      check();
+    }
+    handle.dispose();
+  });
+});
+
+// Why: the framework always shows the newest alignment, so every change of
+// T lands exactly in the frame its version changes, whatever its size, its
+// rotation or the frame epoch; smoothing, if an app wants it, lives above
+// this layer.
+describe('enableArWorldGroupAlignment: every change lands at once', () => {
+  it.each([
+    ['a large step and yaw', tOf(5, 20, -3)],
+    ['a 1 cm step', tOf(0.01)],
+    ['a 0.1 degree yaw', tOf(0, 0.1)],
+    ['a 30 degree yaw about the origin', tOf(0, 30)],
+  ])('lands %s exactly in the frame it arrives', (_name, t) => {
+    const rig = arRig(tOf(0));
+    rig.frame();
+    rig.store.setAlignment(t);
+    rig.frame();
+    expectMatrixExact(rig.group.matrix.toArray(), t);
+    expectMatrixClose(rig.group.matrixWorld.toArray(), t);
+    rig.handle.dispose();
+  });
+
+  it('lands every change of a noisy 1 Hz series in its own frame, and holds it between changes', () => {
+    let seed = 7;
+    const rand = () => {
+      seed = (seed * 16807) % 2147483647;
+      return seed / 2147483647;
+    };
+    const rig = arRig(tOf(0));
+    rig.frame();
+    for (let second = 0; second < 10; second += 1) {
+      const next = tOf(rand() - 0.5, rand() - 0.5, rand() - 0.5);
+      rig.store.setAlignment(next);
+      for (let f = 0; f < 30; f += 1) {
+        rig.frame();
+        expectMatrixExact(rig.group.matrix.toArray(), next);
+      }
+    }
+    rig.handle.dispose();
+  });
+
+  // Why: frames with no new alignment must not touch the group at all. A
+  // binding that rewrote the matrix every frame would still pass every
+  // exact-landing test above, while walking the world matrices of the whole
+  // AR subtree each frame.
+  it('leaves the group untouched over frames with no new alignment', () => {
+    const rig = arRig(tOf(0));
+    rig.frame();
+    rig.store.setAlignment(tOf(2, 10, -1));
+    rig.frame();
+    const spy = vi.spyOn(rig.group, 'updateMatrixWorld');
+    for (let f = 0; f < 30; f += 1) rig.frame();
+    expect(spy).not.toHaveBeenCalled();
+    expectMatrixExact(rig.group.matrix.toArray(), tOf(2, 10, -1));
+    spy.mockRestore();
+    rig.handle.dispose();
+  });
+
+  // A regression pin only: how the group lands no longer depends on the
+  // frame epoch (only the deferred anchors read it), so this holds that an
+  // epoch change neither moves the group nor keeps the next alignment from
+  // landing.
+  it('does not change what it lands around a frame-epoch change', () => {
+    const rig = arRig(tOf(0));
+    rig.frame();
+    rig.store.bumpEpoch();
+    rig.frame();
+    expectMatrixExact(rig.group.matrix.toArray(), tOf(0));
+    rig.store.setAlignment(tOf(0.3));
+    rig.frame();
+    expectMatrixExact(rig.group.matrix.toArray(), tOf(0.3));
+    rig.handle.dispose();
+  });
+});
+
+// Why: the deferred anchors under the group read T from this binding and
+// run their pass inside its frame update. A pass that ran before the alignment
+// step, or a binding that outlived its dispose, would place content
+// against a stale or dead T.
+describe('enableArWorldGroupAlignment: the parent binding', () => {
+  it('registers a binding whose target is the applied T, and runs the pass after the alignment step', () => {
+    const a = makeNonTrivialAlignment(7);
+    const store = makeFakeStore(a);
+    const group = new THREE.Group();
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+    const binding = getArParentBinding(group);
+    expect(binding).not.toBeNull();
+    expectMatrixClose(binding!.target.target().toArray(), a);
+    const seen: number[][] = [];
+    binding!.attachPass(() => seen.push(group.matrix.toArray()));
+    const b = makeNonTrivialAlignment(8);
+    store.setAlignment(b);
+    runFrameUpdates(1 / 30, 0);
+    expect(seen).toHaveLength(1);
+    // The pass saw this frame's matrix, already at the new T.
+    expect(seen[0]).toEqual(group.matrix.toArray());
+    expectMatrixClose(seen[0]!, b);
+    expectMatrixClose(binding!.target.target().toArray(), b);
+    handle.dispose();
+  });
+
+  it('unregisters on dispose, stops the pass and tells its listeners', () => {
+    const store = makeFakeStore(makeNonTrivialAlignment(9));
+    const group = new THREE.Group();
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+    const binding = getArParentBinding(group)!;
+    let passes = 0;
+    let disposed = 0;
+    binding.attachPass(() => (passes += 1));
+    binding.onDispose(() => (disposed += 1));
+    handle.dispose();
+    runFrameUpdates(1 / 30, 0);
+    expect(getArParentBinding(group)).toBeNull();
+    expect(passes).toBe(0);
+    expect(disposed).toBe(1);
+    handle.dispose();
+    expect(disposed).toBe(1);
   });
 });

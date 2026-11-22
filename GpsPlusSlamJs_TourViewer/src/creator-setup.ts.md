@@ -66,11 +66,15 @@ were here. What stays is the Finish's side:
   phone, Finish steps aside while the rebuilt file waits for its save
   (`hideFinishForResult`); after AR ends without a Finish (the back
   gesture), Finish reads "Finish and save your changes"; a delivered save
-  marks `ctx.rebuiltZip.delivered`; `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it; U2 milestone review #2, #4).
+  marks the save handle's newest bytes delivered (`ctx.saves`); `leaveNeedsConfirm()` and `leaveQuestion()` (exported) are what `main.ts` asks before another tour or leaving the page. A failed Finish reveals a file it already made, and the keep-the-walk switch hides while a rebuilt file waits (the next Finish rebuilds from it).
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged?, codeVotes? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged?, codeVotes?, previewDrawings? }): CreatorSetup`
+  - `previewDrawings` - the previews' world door and stands, handed to
+    `creator-previews.ts`; the page's own unless a node test injects
+    them (node has no canvas: `authoring-settle.test.ts` draws a pin as a
+    node named by its caption).
   - `codeVotes(options)` (optional) - the viewer placement's
     `storedCodeVotes`, handed to the measuring module: a code the tour
     stores votes in a visit without GPS (`creator-measuring.ts`).
@@ -129,7 +133,9 @@ were here. What stays is the Finish's side:
     page resolves false), `beginAuthorVisit`,
     `endAuthorVisit` (it also ends the stations' line and ring, and
     disarms "New station here": the chip is the session's, D8),
-    `tickStations` (every camera frame in a creator's session: the open
+    `tickStations` (every camera frame in a creator's session: the
+    previews' world parts (`creator-previews.ts` `tick`, with the editing
+    selection), and the open
     station's line and ring through `creator-stations.ts` (judged where
     the reticle points while it is visible, else at the creator), which reads the
     working copy through the Finish's own writer and keeps no state of its
@@ -330,7 +336,7 @@ were here. What stays is the Finish's side:
     carry; an edit of a hosted object is not a placement.
 - Owns the session fields `lastDetectedText`, `activeSizeM`,
   `authorErrorText`, `mintGeneration`,
-  `rebuiltZip`, `placedPreviews`, `placementNote`; changes the tour
+  `placedPreviews`, `placementNote`; changes the tour
   document (`tourDocument`) and makes the draft follow it (`follow`, once
   per page); reads `gpsSamplesAtSessionStart`, `reticle`, `latestFrame`
   (written by `ar-entry.ts`), `session`, `currentLevels`.

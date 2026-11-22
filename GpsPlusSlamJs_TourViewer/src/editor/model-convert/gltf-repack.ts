@@ -48,7 +48,7 @@ import {
   objectOf,
 } from "../asset-shelf/glb-file.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
-import { resolveReference } from "./bundle-paths.js";
+import { referenceResolver } from "./bundle-paths.js";
 import { sniffImage } from "./image-sniff.js";
 import { compressionOf, note, refusal } from "./model-import-words.js";
 
@@ -128,7 +128,8 @@ interface Context {
   readonly model: string;
   readonly path: string;
   readonly files: ReadonlyMap<string, Uint8Array>;
-  readonly paths: readonly string[];
+  /** Finds a reference among the given files (indexed once). */
+  readonly resolve: ReturnType<typeof referenceResolver>;
   readonly limits: RepackLimits;
   readonly used: Set<string>;
   /** What was left out or guessed, in words. */
@@ -152,7 +153,7 @@ function decodedUri(uri: string): string {
  *  the bytes; an over-budget `data:` URI refuses at once. A file found
  *  other than by its exact path is noted. */
 function fetchUri(ctx: Context, uri: string, byBasename: boolean): Fetched {
-  const ref = resolveReference(uri, ctx.path, ctx.paths, { byBasename });
+  const ref = ctx.resolve(uri, ctx.path, { byBasename });
   if (ref.kind === "data") {
     const read = decodeDataUri(ref.uri, ctx.limits.maxBytes - ctx.budget);
     if (read.ok) return { ok: true, bytes: read.bytes, file: null };
@@ -430,7 +431,7 @@ const LOWER = 0x20;
  *  count after parsing finds: a cap on it refuses nothing that count
  *  would pass, and runs before a parse that a structure-heavy text could
  *  make exhaust memory. */
-function dataLiteralBytes(text: Uint8Array): number {
+export function dataLiteralBytes(text: Uint8Array): number {
   let total = 0;
   let open = text.indexOf(QUOTE);
   while (open >= 0) {
@@ -482,7 +483,7 @@ export function repackGltf(
     model: basenameOf(String(gltfPath).replace(/\\/g, "/")),
     path: gltfPath,
     files,
-    paths: [...files.keys()],
+    resolve: referenceResolver([...files.keys()]),
     limits: { ...DEFAULT_REPACK_LIMITS, ...limits },
     used: new Set(),
     notes: [],

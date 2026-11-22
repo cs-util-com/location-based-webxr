@@ -20,6 +20,7 @@ import type {
 } from "./travel-surface.js";
 import {
   createTravellingBox,
+  type TravelFrameSample,
   type TravelPointer,
   type TravellingBox,
 } from "./travelling-box.js";
@@ -30,6 +31,12 @@ import {
   TRAVELLING_BOX_DEFAULTS,
   type TravelHideWhy,
 } from "./travelling-box-rules.js";
+import {
+  createTravelLog,
+  parseTravelLog,
+  replayPlaces,
+  replaySelfCheck,
+} from "./travelling-box-log.js";
 import { quadOfClip } from "./test-support/quad-of-clip.js";
 import { createTravelRegistry } from "./travel-registry.js";
 import { CLOSING_TAP_GRACE_MS } from "./view-switch.js";
@@ -538,6 +545,138 @@ describe("createTravellingBox", () => {
     expect(cost.over50).toBe(1);
     expect(cost.over100).toBe(0);
     expect(cost.paints).toBe(1);
+  });
+
+  // Why: the field log replays the knobs offline from what each frame
+  // measured, so a frame must report the eye's ground distance, the
+  // lens's px per metre, the finger and the settled place with its want.
+  it("reports each frame as measured to onFrame", () => {
+    const frames: TravelFrameSample[] = [];
+    box.stop();
+    box = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs: TRAVELLING_BOX_DEFAULTS,
+      now: () => t,
+      reduceMotion: () => reduce,
+      viewRect: () => VIEW,
+      createCanvas: fakeCanvas,
+      onFrame: (s) => frames.push(s),
+    });
+    box.frame();
+    standAt(16);
+    surface.down = true;
+    run(32);
+    expect(frames).toHaveLength(3);
+    expect(frames[0]).toMatchObject({
+      at: 1000,
+      surface: "words:test",
+      travelling: true,
+      hideWhy: null,
+      slotFree: true,
+      finger: false,
+      place: "plate",
+      want: "plate",
+      wantWhy: "readable",
+    });
+    expect(frames[0]!.distM).toBeCloseTo(3, 6);
+    // fov 50 on an 844 px view: 422 / tan(25 deg) px per metre at 1 m.
+    const lens = 422 / Math.tan((25 * Math.PI) / 180);
+    expect(frames[0]!.pxPerM).toBeCloseTo(lens, 3);
+    expect(frames[0]!.metrics.letterPxH).toBeGreaterThan(30);
+    const last = frames[2]!;
+    expect(last).toMatchObject({ finger: true, place: "plate", want: "dock" });
+    expect(last.wantWhy).toBe("too small");
+    expect(last.distM).toBeCloseTo(16, 6);
+    // The settling's own steps: none on the first frame, 16 ms after.
+    expect(frames.map((f) => f.first)).toEqual([true, false, false]);
+    expect(frames[0]!.dtS).toBe(0);
+    expect(frames[1]!.dtS).toBeCloseTo(0.016, 6);
+  });
+
+  // Why: the knobs are chosen by replaying a logged walk, so the replay
+  // under the knobs the walk ran with must give the app's own place
+  // changes: the same sequence, each close to the app's time. The walk
+  // goes out and back, jitters around the threshold, holds a finger, turns
+  // away and stalls, the cases where a 10 Hz replay alone would drift.
+  it("replays a 60 Hz walk to the app's own place changes", () => {
+    const log = createTravelLog({ knobs: TRAVELLING_BOX_DEFAULTS });
+    box.stop();
+    box = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs: TRAVELLING_BOX_DEFAULTS,
+      now: () => t,
+      reduceMotion: () => reduce,
+      viewRect: () => VIEW,
+      createCanvas: fakeCanvas,
+      onFrame: (s) => log.frame(s),
+      onPlace: (e) => log.place(e),
+    });
+    box.frame();
+    // Out to 16 m and back over 8 s each.
+    let d = 3;
+    run(8000, () => standAt((d = Math.min(16, d + 13 / 500))));
+    run(8000, () => standAt((d = Math.max(3, d - 13 / 500))));
+    // Across the keep band (about 9.7 to 11.3 m here), swaying, with a
+    // quick tremble on top.
+    let i = 0;
+    run(10_000, () =>
+      standAt(10.5 + 1.3 * Math.sin((i += 1) / 30) + 0.15 * Math.sin(i / 2)),
+    );
+    // A finger on the plate while walking out, then lifted.
+    standAt(3);
+    run(1000);
+    surface.down = true;
+    d = 3;
+    run(2000, () => standAt((d = Math.min(16, d + 13 / 125))));
+    surface.down = false;
+    run(2000);
+    // Turned away, a stall of 400 ms, turned back.
+    standAt(3, Math.PI);
+    run(1000);
+    t += 400;
+    box.frame();
+    standAt(3, 0);
+    run(2000);
+    // A step back for one frame while the dock is pending: the app's hold
+    // starts again, which a 10 Hz sample alone would not see.
+    standAt(16);
+    run(160);
+    standAt(3);
+    run(16);
+    standAt(16);
+    run(1000);
+    // Back to the plate, then a stall of 400 ms while the dock is pending:
+    // the app counts at most 0.1 s of it.
+    standAt(3);
+    run(1000);
+    standAt(16);
+    run(96);
+    t += 400;
+    box.frame();
+    run(600);
+
+    const read = parseTravelLog(log.text());
+    const logged = read.events.filter((e) => e.kind === "place");
+    const replayed = replayPlaces(read, TRAVELLING_BOX_DEFAULTS).changes;
+    expect(logged.length).toBeGreaterThanOrEqual(6);
+    expect(replayed.map((c) => c.place)).toEqual(
+      logged.map((e) => (e.kind === "place" ? e.place : null)),
+    );
+    replayed.forEach((c, k) => {
+      expect(
+        Math.abs(c.t - logged[k]!.t),
+        `change ${String(k)}`,
+      ).toBeLessThanOrEqual(200);
+    });
+    expect(replaySelfCheck(read)).toMatchObject({
+      matched: logged.length,
+      firstMismatch: null,
+      maxLagMs: 0,
+    });
   });
 
   it("takes its quad and texture away when stopped", () => {

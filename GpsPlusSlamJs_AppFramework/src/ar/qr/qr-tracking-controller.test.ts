@@ -10,7 +10,7 @@
 
 // Activates the core library's licence before any module under test loads.
 import '../../test-setup';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import {
   createQrTrackingController,
   type QrTrackingStatus,
@@ -21,6 +21,7 @@ import { buildObjectPoints, type QrPoseSolution } from './qr-pose';
 import type { QrLevel } from './qr-level';
 import type { RgbaImage, QrDetection, QrFrontEnd } from './qr-frontend';
 import type { CapturedCameraFrame } from '../captured-camera-frame';
+import * as anchorRelease from '../anchor-release';
 
 const image: RgbaImage = {
   data: new Uint8ClampedArray(4),
@@ -75,7 +76,9 @@ function setup(
     frontEnd,
     solvePose: () => solution,
     fetchLevel,
-    dispatchVotes: (votes) => dispatched.push(...votes),
+    dispatchVotes: (votes) => {
+      dispatched.push(...votes);
+    },
     getIntrinsics: () => intrinsics,
     syntheticAccuracyM: 0.05,
     requiredLockCount: 2,
@@ -114,7 +117,7 @@ describe('createQrTrackingController', () => {
     const calls: string[] = [];
     const { controller } = setup({
       onDetection: () => calls.push('detection'),
-      dispatchVotes: () => calls.push('votes'),
+      dispatchVotes: () => void calls.push('votes'),
     });
     await tick(controller); // 1st success — no lock yet
     await tick(controller); // lock → detection then votes, same frame
@@ -124,6 +127,22 @@ describe('createQrTrackingController', () => {
       .filter((previous) => previous !== null);
     expect(beforeEachVote.length).toBeGreaterThan(0);
     expect(beforeEachVote).toEqual(beforeEachVote.map(() => 'detection'));
+  });
+
+  // Why this test matters: an app's `dispatchVotes` may return `false` to say
+  // it cast no votes (a spent budget, no session zero); the deferred anchors'
+  // code-lock release hangs on that answer, so the lock itself must not change
+  // for any return value.
+  it('locks as usual when dispatchVotes returns false', async () => {
+    const onLocked = vi.fn();
+    const { controller } = setup({
+      dispatchVotes: () => false,
+      onLocked,
+    });
+    await tick(controller);
+    await tick(controller);
+    expect(controller.status).toBe('tracking');
+    expect(onLocked).toHaveBeenCalledTimes(1);
   });
 
   it('fetches the level only once per URL (cache)', async () => {
@@ -310,7 +329,9 @@ describe('createQrTrackingController', () => {
           qr: { geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 30 } },
         })
       ),
-      dispatchVotes: (v) => dispatched.push(...v),
+      dispatchVotes: (v) => {
+        dispatched.push(...v);
+      },
       resolveSizeM: () => 0.18,
       getIntrinsics: () => intrinsics,
       syntheticAccuracyM: 0.05,
@@ -655,5 +676,69 @@ describe('createQrTrackingController isBusy', () => {
       await flush();
       expect(raws).toHaveLength(0);
     });
+  });
+});
+
+// Why these tests matter: a code lock re-places every deferred anchor at
+// once (the code's exact correction should not wait until the content is
+// out of view). The release must follow the votes it corrects, come before
+// the app's own lock handling, and never fire for a lock that cast no vote:
+// no geo, a pose not yet stable, or an app that said it cast none.
+describe('createQrTrackingController: the anchor release', () => {
+  afterEach(() => anchorRelease.__resetAnchorReleaseForTests());
+
+  /** Lock once; `order` records votes, releases and onLocked as they come. */
+  async function lockWith(
+    overrides: Partial<Parameters<typeof createQrTrackingController>[0]>,
+    order: string[] = []
+  ) {
+    const releases: string[] = [];
+    anchorRelease.registerReleaseReceiver((reason) => {
+      releases.push(reason);
+      order.push('release');
+    });
+    const { controller } = setup({
+      onLocked: () => order.push('locked'),
+      ...overrides,
+    });
+    await tick(controller);
+    await tick(controller);
+    return { releases, order };
+  }
+
+  it('requests one code-lock release when dispatchVotes returns nothing', async () => {
+    const { releases } = await lockWith({ dispatchVotes: () => undefined });
+    expect(releases).toEqual(['code-lock']);
+  });
+
+  it('orders votes, release, onLocked', async () => {
+    const order: string[] = [];
+    await lockWith({ dispatchVotes: () => void order.push('votes') }, order);
+    expect(order).toEqual(['votes', 'release', 'locked']);
+  });
+
+  it('requests a release when dispatchVotes returns true', async () => {
+    const { releases } = await lockWith({ dispatchVotes: () => true });
+    expect(releases).toEqual(['code-lock']);
+  });
+
+  it('requests no release when dispatchVotes returns false', async () => {
+    const { releases, order } = await lockWith({ dispatchVotes: () => false });
+    expect(releases).toEqual([]);
+    expect(order).toEqual(['locked']);
+  });
+
+  it('requests no release for a geo-less level', async () => {
+    const { releases } = await lockWith({
+      fetchLevel: vi.fn(() =>
+        Promise.resolve({ version: 1, qr: { physicalSizeM: 0.2 } })
+      ),
+    });
+    expect(releases).toEqual([]);
+  });
+
+  it('requests no release while the stable pose is not converged', async () => {
+    const { releases } = await lockWith({ resolveStablePose: () => null });
+    expect(releases).toEqual([]);
   });
 });
