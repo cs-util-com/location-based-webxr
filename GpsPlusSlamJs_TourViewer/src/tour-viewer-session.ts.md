@@ -95,7 +95,9 @@ lives here.
   - the visitor's stations (tour kit plan K4, `visitor-stations.ts`):
     no session fields (the station run lives in the guide, keyed by the
     open tour's stations); the hooks `tickStations` (a store change or a
-    camera frame), `stationCodeLocked(levelId)` (a trusted lock, after the
+    camera frame), `tickModelViews(nowMs)` (the models' views, notes and
+    cutaway chip; per frame from `tickStations`, and again on a station's
+    commit, `viewer-placement.ts` `stationCommitRetick`), `stationCodeLocked(levelId)` (a trusted lock, after the
     scan gate's part), `unlockStationAudio` (inside the start tap) and
     `stopStations` (the session ended or the tour closed) and
     `releaseTourMedia` (the tour closed: the narration's audio and blob

@@ -367,10 +367,15 @@ them.
     SLAM alignment change and lands once out of view. A code lock still
     moves it in view: the QR controller releases every deferred anchor on a
     lock that cast votes (the code-vote wrapper returns whether it cast).
-    `onAnchorCommit` re-ticks the committed group's world parts at once
-    (`tickWorldParts` with the viewer camera), so a tag or hint is never
-    drawn one frame against the old place. Pinned by
-    `station-anchor.integration.test.ts` (the rules) and by the
+    `onAnchorCommit` is `stationCommitRetick` (exported): it re-ticks the
+    committed group's world parts at once (`tickWorldParts` with the
+    viewer camera) and the models' views, notes and cutaway chip
+    (`hooks.tickModelViews`, `model-visitor.ts` `tick`), so a tag, a
+    hint or a note's disc is never drawn one frame against the old
+    place: the page's own tick ran earlier in that frame. Pinned by
+    `station-anchor.integration.test.ts` (the rules; an edge hint's tag
+    and a model's note in a commit's frame, both through
+    `stationCommitRetick`) and by the
     anchored-parent case of `viewer-content-alignment.test.ts` (this
     wiring: the station under the world group at its NUE, the re-tick
     reading the viewer camera on the commit).

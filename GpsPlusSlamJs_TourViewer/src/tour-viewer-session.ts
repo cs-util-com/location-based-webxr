@@ -326,6 +326,10 @@ export interface TourViewerHooks {
   /** The visitor's stations (tour kit plan K4): re-judge after a store
    *  change or a camera frame. */
   tickStations(): void;
+  /** One frame of the models' views, their notes and the cutaway chip at
+   *  `nowMs` (`model-visitor.ts` `tick`): run again when a station
+   *  commits, so they stand against its new pose in that frame. */
+  tickModelViews(nowMs: number): void;
   /** A printed code locked in the visitor's AR (its level id). */
   stationCodeLocked(levelId: string): void;
   /** Inside the "Start the tour" tap: unlock the stories' sound. */
@@ -369,6 +373,7 @@ export function createUnwiredHooks(): TourViewerHooks {
     resetScanGate: () => undefined,
     reconsiderScanGate: () => undefined,
     tickStations: () => undefined,
+    tickModelViews: () => undefined,
     stationCodeLocked: () => undefined,
     unlockStationAudio: () => undefined,
     stopStations: () => undefined,

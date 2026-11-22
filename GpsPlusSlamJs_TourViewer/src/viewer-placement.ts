@@ -61,7 +61,7 @@ import {
 import { mountLectern } from "./lectern-view.js";
 import { mountReadingSign, type ReadingSignBlock } from "./reading-sign.js";
 import { worldPartOf } from "./play-kinds.js";
-import { tickWorldParts, worldEnv } from "./world-part.js";
+import { tickWorldParts, worldEnv, type WorldPart } from "./world-part.js";
 import type { WorldSound } from "./world-sound.js";
 import type { WorldScreen } from "./world-part.js";
 import { hasStoryWorldBlocks, reachedWorldBlocks } from "./shown-blocks.js";
@@ -143,6 +143,34 @@ interface EntryCodeVotes {
   readonly keepAlive: QrVoteKeepAlive;
   readonly voteBudget: QrVoteBudget;
   readonly checks: MovedCodeChecks;
+}
+
+/**
+ * What a placed station re-ticks in its commit's frame: the camera-relative
+ * work the page's tick did earlier in that frame against the station's old
+ * pose. Its own world parts (the edge hint's tag reads the station's
+ * matrix) and the models' views, notes and cutaway chip
+ * (`model-visitor.ts` `tick`). Defaults: the page's clock and the
+ * window's height, every mounted world part.
+ */
+export function stationCommitRetick(deps: {
+  camera(): Object3D | null;
+  tickModels(nowMs: number): void;
+  nowMs?(): number;
+  viewHeightPx?(): number;
+  parts?(): readonly WorldPart[];
+}): (group: Object3D) => void {
+  return (group) => {
+    const nowMs = deps.nowMs?.() ?? performance.now();
+    tickWorldParts(
+      group,
+      deps.camera(),
+      nowMs,
+      deps.parts?.(),
+      deps.viewHeightPx?.() ?? globalThis.innerHeight,
+    );
+    deps.tickModels(nowMs);
+  };
 }
 
 /** Properties, not methods: they are handed to the hooks object unbound. */
@@ -991,18 +1019,14 @@ export function createViewerPlacement(deps: {
         // Stations defer alignment changes while in view (the AR world
         // group; null in the e2e fakes, which keep them on the scene root).
         anchorParent: () => seams.getStationAnchorParent(),
-        // A placed station re-ticks its own camera-relative parts in the
-        // same frame (the edge hint's tag reads the station's matrix),
-        // with the page's per-frame tick's clock and view height.
-        onAnchorCommit: (group) => {
-          tickWorldParts(
-            group,
-            seams.getViewerCamera(),
-            performance.now(),
-            undefined,
-            globalThis.innerHeight,
-          );
-        },
+        // A placed station re-ticks its camera-relative work in the
+        // same frame (`stationCommitRetick`).
+        onAnchorCommit: stationCommitRetick({
+          camera: () => seams.getViewerCamera(),
+          tickModels: (nowMs) => {
+            hooks.tickModelViews(nowMs);
+          },
+        }),
         // Logged per station, each time it is drawn (visitor plan §3).
         onMounted: (stationId, rendered, part) => {
           const base = partLogs.get(part);

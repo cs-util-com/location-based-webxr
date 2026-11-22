@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * Stations as deferred anchors, end to end in real three: the station
  * side table (`station-content.ts`) under a real AR world group, bound by
@@ -44,6 +45,17 @@ import { tickWorldParts, worldEnv, type WorldPart } from "./world-part.js";
 import { createSceneStage, type StageCharacterLook } from "./scene-stage.js";
 import { tappablePins } from "./pin-sheet.js";
 import { wireSceneMarks } from "./visitor-stations.js";
+import { stationCommitRetick } from "./viewer-placement.js";
+import {
+  mountModelView,
+  type ModelViewHandle,
+  type TourModelBlock,
+} from "./model-views.js";
+import {
+  createModelVisitor,
+  mountModelVisitorDom,
+  type ModelVisitor,
+} from "./model-visitor.js";
 import { WALK_BEACON_NAME, WALK_FOCUS_RING_NAME } from "./walk-focus-cues.js";
 import { fakeCharacterPainters } from "./test-support/fake-character-painters.js";
 
@@ -115,12 +127,27 @@ const block = {
   caption: "Toilets",
 } as Parameters<typeof edgeHintPart>[0];
 
+/** A model with one note facing the camera, 6 m ahead. */
+const NOTED_MODEL: TourModelBlock = {
+  id: "bell",
+  kind: "model",
+  view: "hotspots",
+  asset: "bell",
+  sizeM: 1,
+  createdAtIso: "2026-10-28T12:00:00.000Z",
+  pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+  annotations: [{ position: [0, 0, 0.5], normal: [0, 0, 1], title: "One" }],
+};
+
 /** A station of a ring 10 m ahead and, with `hint`, an edge hint far to
- *  the side, entered as an anchor under the world group. */
+ *  the side, with `model` a model with a note, entered as an anchor under
+ *  the world group. A station's commit re-ticks through the page's
+ *  `stationCommitRetick`. */
 async function world({
   extentM = 40,
   hint = false,
-}: { extentM?: number; hint?: boolean } = {}) {
+  model = false,
+}: { extentM?: number; hint?: boolean; model?: boolean } = {}) {
   const store = makeStore(extentM);
   const scene = new THREE.Scene();
   const group = new THREE.Group();
@@ -141,6 +168,32 @@ async function world({
   const tick = (root: THREE.Object3D | null) => {
     tickWorldParts(root, camera, nowMs, hintParts, 800);
   };
+  let models: ModelVisitor | null = null;
+  let notesLayer: HTMLElement | null = null;
+  const modelHandles: ModelViewHandle[] = [];
+  if (model) {
+    const host = document.createElement("div");
+    document.body.append(host);
+    const dom = mountModelVisitorDom(host);
+    for (const el of [dom.layer, dom.gestures]) {
+      Object.defineProperty(el, "clientWidth", { value: 400 });
+      Object.defineProperty(el, "clientHeight", { value: 800 });
+    }
+    notesLayer = dom.layer;
+    models = createModelVisitor({
+      dom,
+      scene: () => scene,
+      camera: () => camera,
+      pick: () => null,
+    });
+  }
+  const retick = stationCommitRetick({
+    camera: () => camera,
+    tickModels: (t) => models?.tick(t),
+    nowMs: () => nowMs,
+    viewHeightPx: () => 800,
+    parts: () => hintParts,
+  });
   const part: ContentPart = {
     render(parent) {
       parent.add(ring);
@@ -149,6 +202,14 @@ async function world({
         p.object.position.copy(HINT_NUE);
         parent.add(p.object);
         hintParts.push(p);
+      }
+      if (model) {
+        const m = new THREE.Group();
+        m.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1)));
+        m.position.set(0, 0, -6);
+        m.userData["objectId"] = NOTED_MODEL.id;
+        parent.add(m);
+        modelHandles.push(mountModelView(m, NOTED_MODEL, 1));
       }
       return Promise.resolve({ count: 1, skipped: [], dispose: () => {} });
     },
@@ -160,7 +221,7 @@ async function world({
     anchorParent: () => group,
     onAnchorCommit: (root) => {
       commits.push(root);
-      tick(root);
+      retick(root);
     },
   });
   // One pass at the identity: the group and camera hold their matrices.
@@ -190,6 +251,15 @@ async function world({
     hintParts,
     station,
     pass,
+    models,
+    modelHandles,
+    /** The note's disc as last drawn (its CSS transform), or null. */
+    noteDisc(): string | null {
+      const disc = notesLayer?.querySelector("button");
+      return disc === null || disc === undefined || disc.hidden
+        ? null
+        : disc.style.transform;
+    },
     /** One frame as the page runs it: the page's own tick of the world
      *  parts (the store subscription), the frame loop (binding step and
      *  anchor pass, with any commit's re-tick), then the render's matrix
@@ -197,6 +267,7 @@ async function world({
     frame() {
       scene.updateMatrixWorld();
       tick(scene);
+      models?.tick(nowMs);
       const counts = pass();
       scene.updateMatrixWorld();
       return counts;
@@ -801,6 +872,36 @@ describe("a code lock through the viewer's pipeline", () => {
     w.frame();
     expect(w.ringError()).toBeLessThan(DEFERRED_ANCHOR_EPSILON_M);
     p.dispose();
+  });
+
+  it("draws a model's note against the station the code placed, in that frame", async () => {
+    // Why: a note's disc is laid out on the screen from its model's world
+    // matrix by the page's tick, which runs before the anchor pass; a
+    // station the code snaps in view would leave the disc, for that frame,
+    // where the model stood before. The page's commit re-tick runs the
+    // models' tick again (`stationCommitRetick`); compared with a fresh
+    // tick after the render's matrix update.
+    const w = await world({ model: true });
+    try {
+      w.store.setNorth(2);
+      w.frame();
+      const held = w.noteDisc();
+      expect(held).not.toBeNull();
+      const p = pipeline(() => {
+        w.store.setNorth(3);
+      });
+      await p.lock();
+      const commitsBefore = w.commits.length;
+      w.frame();
+      expect(w.commits.length).toBeGreaterThan(commitsBefore);
+      const drawn = w.noteDisc();
+      expect(drawn).not.toBe(held);
+      w.models!.tick(Number.NaN);
+      expect(w.noteDisc()).toBe(drawn);
+      p.dispose();
+    } finally {
+      for (const h of w.modelHandles) h.dispose();
+    }
   });
 
   it("snaps the figure in view with its station, placed by the code", async () => {
