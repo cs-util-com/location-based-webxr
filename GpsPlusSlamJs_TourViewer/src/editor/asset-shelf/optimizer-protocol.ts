@@ -67,8 +67,15 @@ interface ProgressMessage {
   readonly fraction: number;
 }
 
-/** The smaller file, its extension, an image's new size, and what a
- *  model's passes did. */
+/** What a conversion into a tour model left out (`notes`, in words) and
+ *  which of the given files the model carries (`used`, by path). */
+export interface ConversionReport {
+  readonly notes: readonly string[];
+  readonly used: readonly string[];
+}
+
+/** The smaller file, its extension, an image's new size, what a model's
+ *  passes did, and what a conversion left out. */
 interface DoneMessage {
   readonly type: "done";
   readonly job: number;
@@ -77,6 +84,7 @@ interface DoneMessage {
   readonly width?: number;
   readonly height?: number;
   readonly model?: ModelReport;
+  readonly conversion?: ConversionReport;
 }
 
 /** The original stays, for `reason` (plain words). */
@@ -110,4 +118,77 @@ export interface WorkerStepControl {
 /** What a step throws once its run was stopped. */
 export function stoppedError(): DOMException {
   return new DOMException("the optimization was stopped", "AbortError");
+}
+
+/** One kind's step in a Worker: the answer it posts, without the job id. */
+export type WorkerStep = (
+  payload: unknown,
+  settings: OptimizerSettings,
+  control: WorkerStepControl,
+) => Promise<WorkerStepAnswer>;
+
+/** The part of a Worker's global scope the loop uses, so a test can fake
+ *  it. */
+export interface WorkerScope {
+  postMessage(message: OptimizerOutbound): void;
+  addEventListener(
+    type: "message",
+    listener: (event: MessageEvent) => void,
+  ): void;
+}
+
+/**
+ * The Worker side of the protocol: runs each `run` through its kind's step
+ * and posts the answer with the job id, forwards progress, stops a run on
+ * `cancel` (posting nothing for it afterwards: the page settled it), posts
+ * a throw as `failed` with its words, answers a kind without a step in
+ * words, and ignores whatever is no message of the protocol.
+ */
+export function serveSteps(
+  scope: WorkerScope,
+  steps: Partial<Record<TourAssetKind, WorkerStep>>,
+): void {
+  const running = new Map<number, AbortController>();
+  async function run(message: RunMessage): Promise<void> {
+    const { job } = message;
+    const step = steps[message.kind];
+    if (step === undefined) {
+      scope.postMessage({
+        type: "failed",
+        job,
+        reason: `This kind of file cannot be made smaller yet (${message.kind}).`,
+      });
+      return;
+    }
+    const stop = new AbortController();
+    running.set(job, stop);
+    try {
+      const answer = await step(message.payload, message.settings, {
+        signal: stop.signal,
+        progress: (fraction) => {
+          scope.postMessage({ type: "progress", job, fraction });
+        },
+      });
+      if (!stop.signal.aborted) scope.postMessage({ ...answer, job });
+    } catch (err) {
+      if (!stop.signal.aborted) {
+        scope.postMessage({
+          type: "failed",
+          job,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } finally {
+      running.delete(job);
+    }
+  }
+  scope.addEventListener("message", (event) => {
+    const message = inboundOf(event.data);
+    if (message === null) return;
+    if (message.type === "cancel") {
+      running.get(message.job)?.abort();
+      return;
+    }
+    void run(message);
+  });
 }

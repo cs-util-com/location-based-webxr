@@ -11,7 +11,9 @@ says its outcome, says a failure, and leaves nothing half done. The page
 ## Public API
 
 - `createShelfPageActions(deps: ShelfPageDeps): ShelfPageActions`
-  - `addFiles(open)`: `pickMany`, then `addToShelf`. A picker that rejects
+  - `addFiles(open, take?)`: `pickMany`, then `take` (default
+    `addToShelf`; the page passes its drop, so a model to convert is
+    converted first). A picker that rejects
     is said as `FILE_ADD_FAILED`.
   - `addToShelf(open, files)`: a busy toast (`shelf-add-busy`) while each
     file goes through `open.addFile`. A refusal is said per file as
@@ -51,5 +53,10 @@ now.`, plus `FILE_NOT_KEPT` when the file could not be kept.
 
 `shelf-page-actions.test.ts` uses fake deps and a fake session. It covers
 the busy toasts, the failure toasts, the refusals, the not-kept warning and
-both delete branches. Each branch was broken once by hand to prove that its
-test fails.
+both delete branches, and `addFiles` handing the picked files to `take`
+whole (and onto the shelf without one). Each branch was broken once by hand
+to prove that its test fails. `editor3d-model-import.spec.js` presses
+"Add files..." in a real page with a glTF folder's files and follows the
+one model it makes. Not covered by any test: a phone's own file picker with
+the `accept` list (`file-picker.ts`) - whether it lets a .gltf, .bin or
+.zip be picked is a check on a real phone, still to be made.

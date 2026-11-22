@@ -71,13 +71,21 @@ export function fileExt(name: string): string {
 }
 
 /** A card's second line: "Sound · WAV · 9.0 MB" (the size it came in);
- *  a character's entry: "Character · 2 files · 1.2 MB". */
+ *  a character's entry: "Character · 2 files · 1.2 MB"; a converted
+ *  model with notes: "3D model · GLB · 2.1 MB · 2 notes". */
 export function cardKindLine(row: ShelfRow): string {
   const size = formatBytes(row.originalBytes);
   if (row.character !== undefined) {
     return `Character · ${filesWord(row.character.files.length)} · ${size}`;
   }
-  return `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${size}`;
+  const line = `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${size}`;
+  const notes = row.madeFrom?.notes.length ?? 0;
+  return notes > 0 ? `${line} · ${notesWord(notes)}` : line;
+}
+
+/** "1 note", "2 notes": what a conversion left out, counted. */
+export function notesWord(count: number): string {
+  return `${String(count)} note${count === 1 ? "" : "s"}`;
 }
 
 /** 0 to 100, whole. */
@@ -121,6 +129,9 @@ const PHASE: Readonly<Record<TourAssetKind, string>> = {
   model: "Making the model smaller",
 };
 
+/** What a model being converted does (an import's row). */
+const CONVERTING_PHASE = "Converting to a tour model";
+
 /** A card's state line per state. */
 const STATE_LINES: Readonly<Record<CardState, (row: ShelfRow) => StateLine>> = {
   queued: (row) => {
@@ -132,7 +143,7 @@ const STATE_LINES: Readonly<Record<CardState, (row: ShelfRow) => StateLine>> = {
   },
   processing: (row) => ({
     kind: "processing",
-    phase: PHASE[row.kind],
+    phase: row.import === undefined ? PHASE[row.kind] : CONVERTING_PHASE,
     percent: percent(row.progress),
   }),
   ready: (row) => {
@@ -151,7 +162,12 @@ const STATE_LINES: Readonly<Record<CardState, (row: ShelfRow) => StateLine>> = {
   }),
   failed: (row) => ({
     kind: "failed",
-    title: row.retryable ? "Not optimized" : "Cannot be used",
+    title:
+      row.import !== undefined
+        ? "Not converted"
+        : row.retryable
+          ? "Not optimized"
+          : "Cannot be used",
     retry: row.retryable,
     why: row.reason ?? "",
   }),
@@ -164,6 +180,7 @@ export function stateLine(row: ShelfRow): StateLine {
 
 /** The words of an opened card: what happens to the file. */
 export function cardMore(row: ShelfRow): string {
+  if (row.import !== undefined) return importMore(row);
   const original = formatBytes(row.originalBytes);
   switch (cardState(row.status)) {
     case "ready":
@@ -182,6 +199,24 @@ export function cardMore(row: ShelfRow): string {
         ? `The original (${original}) is used, and a phone downloads all of it.`
         : "";
   }
+}
+
+/** The words of an opened import's card: nothing is in the tour until
+ *  the model is converted. */
+function importMore(row: ShelfRow): string {
+  if (row.status !== "failed") {
+    return "Being converted into a model the tour can show. Nothing is added until it is done.";
+  }
+  return row.retryable
+    ? "Nothing was added. Retry converts it again."
+    : "Nothing was added.";
+}
+
+/** "Converted from \"bust.gltf\"." and what the conversion left out, for
+ *  a model made from another file this session; null for any other. */
+export function madeFromLines(row: ShelfRow): string[] | null {
+  if (row.madeFrom === undefined) return null;
+  return [`Converted from "${row.madeFrom.from}".`, ...row.madeFrom.notes];
 }
 
 /** A video's warning when it is large for its length (`video-size.ts`,
@@ -350,7 +385,7 @@ export function railView(rows: readonly ShelfRow[]): RailView {
         state === "failed" ? 1 : Math.min(1, Math.max(0, r.progress || 0));
       const tip =
         state === "failed"
-          ? `${r.name}: not optimized`
+          ? `${r.name}: ${r.import === undefined ? "not optimized" : "not converted"}`
           : state === "queued"
             ? `${r.name}: queued`
             : `${r.name}: ${String(percent(progress))} %`;
@@ -551,6 +586,8 @@ export function shapeKey(rows: readonly ShelfRow[]): string {
         r.posterId ?? "",
         r.seconds ?? "",
         detailKey(r.detail),
+        r.import?.format ?? "",
+        (madeFromLines(r) ?? []).join(","),
         (r.character?.files ?? [])
           .map((f) => `${f.id}:${f.name}:${String(f.bytes)}`)
           .join(","),

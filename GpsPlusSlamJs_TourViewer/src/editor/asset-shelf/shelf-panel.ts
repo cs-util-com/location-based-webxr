@@ -24,6 +24,7 @@ import type { UseInChoice, UseInGroup } from "./use-in-choices.js";
 import {
   cardKindLine,
   cardMore,
+  madeFromLines,
   cardWarning,
   detailReadout,
   detailView,
@@ -120,6 +121,13 @@ export interface ShelfPanelDeps {
    *  the unsubscribe. */
   readonly subscribe: (listener: () => void) => () => void;
   readonly retry: (id: string) => boolean;
+  /** A model being converted (an import's row): Retry converts it again,
+   *  Remove stops it and drops it, false once it can no longer be stopped
+   *  (its model is being added). Absent, such a row offers neither. */
+  readonly imports?: {
+    readonly retry: (id: string) => void;
+    readonly remove: (id: string) => boolean;
+  };
   readonly useOriginal: (id: string) => Promise<boolean>;
   /** Re-makes a model at a share of its triangles (null: the default
    *  level) and says the outcome (`AssetShelf.setDetail`). */
@@ -724,13 +732,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     const top = el("div", "as-ctop");
     top.append(el("span", "as-cname", row.name));
     (top.lastElementChild as HTMLElement).title = row.name;
-    if (row.placesInUse > 0) {
-      const uses = button("as-uses", "uses", usesLabel(row.placesInUse));
-      uses.title = "Where it is used";
-      top.append(uses);
-    } else {
-      top.append(el("span", "as-uses zero", usesLabel(0)));
-    }
+    // An import is in no place of the tour yet: its card names none.
+    if (row.import === undefined) top.append(usesEl(row));
     main.append(top, el("div", "as-ckind", cardKindLine(row)), stateEl(row));
     const warning = cardWarning(row);
     if (warning !== null) {
@@ -750,6 +753,14 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     return card;
   }
 
+  /** "Used in 2" (a button to where), or "Not used". */
+  function usesEl(row: ShelfRow): HTMLElement {
+    if (row.placesInUse === 0) return el("span", "as-uses zero", usesLabel(0));
+    const uses = button("as-uses", "uses", usesLabel(row.placesInUse));
+    uses.title = "Where it is used";
+    return uses;
+  }
+
   function moreEl(row: ShelfRow): HTMLElement {
     const more = el("div", "as-more", cardMore(row));
     // A character's entry: the files he is drawn with.
@@ -760,6 +771,12 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       }
       more.append(files);
     }
+    const made = madeFromLines(row);
+    if (made !== null) {
+      const notes = el("ul", "as-files as-made");
+      for (const line of made) notes.append(el("li", "", line));
+      more.append(notes);
+    }
     const view = detailView(row);
     if (view !== null && row.status === "optimized") {
       more.append(detailEl(row, view));
@@ -768,7 +785,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     if (
       deps.useIn !== undefined &&
       row.status !== "failed" &&
-      row.character === undefined
+      row.character === undefined &&
+      row.import === undefined
     ) {
       buttons.append(button("btn small", "usein", "Use in...", "plus"));
     }
@@ -1155,7 +1173,13 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   /** How many places the replace of `row`'s file switches; 0 when it is
    *  not offered. */
   function replaceCountOf(row: ShelfRow): number {
-    if (deps.replace === undefined || row.status === "failed") return 0;
+    if (
+      deps.replace === undefined ||
+      row.status === "failed" ||
+      row.import !== undefined
+    ) {
+      return 0;
+    }
     return deps.replace.count(row.id);
   }
 
@@ -1176,6 +1200,10 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
   }
 
   function remove(row: ShelfRow): void {
+    if (row.import !== undefined) {
+      removeImport(row);
+      return;
+    }
     // A character's entry always asks: its delete takes the character out
     // with his files, a step the page makes (`removeUsed`).
     if (row.placesInUse > 0 || row.character !== undefined) {
@@ -1197,6 +1225,16 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
       return;
     }
     deps.toast(`${row.name} deleted.`, { label: "Undo", run: undo });
+  }
+
+  /** An import's Remove: stopped and gone, with nothing to undo (nothing
+   *  was added); one whose model is being added already stays. */
+  function removeImport(row: ShelfRow): void {
+    if (deps.imports?.remove(row.id) === true) {
+      deps.toast(`${row.name} was not converted.`);
+      return;
+    }
+    deps.toast(`${row.name} is being added and can no longer be stopped.`);
   }
 
   async function useOriginal(row: ShelfRow): Promise<void> {
@@ -1335,7 +1373,8 @@ export function createShelfPanel(deps: ShelfPanelDeps): ShelfPanel {
     uses: openUses,
     usein: openUseIn,
     retry: (row) => {
-      deps.retry(row.id);
+      if (row.import !== undefined) deps.imports?.retry(row.id);
+      else deps.retry(row.id);
     },
     useorig: (row) => {
       void useOriginal(row);

@@ -26,6 +26,16 @@ export type DataUriRead =
 
 const BASE64 = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/** Whether three.js reads `uri` as embedded data rather than resolving
+ *  and fetching it: its own test (`LoaderUtils.resolveURL`, three 0.170
+ *  to 0.185), the scheme in any letter case, a comma required, and `.`
+ *  matching no line break. The one answer to "is this a data URI" for
+ *  every reader of a model's URIs, so none is stricter or looser than
+ *  three. */
+export function isDataUri(uri: unknown): uri is string {
+  return typeof uri === 'string' && /^data:.*,.*$/i.test(uri);
+}
+
 /** How many bytes a strict base64 `payload` decodes to (its length must be
  *  a multiple of 4; padding counted off). */
 export function decodedLengthOf(payload: string): number {
@@ -36,11 +46,16 @@ export function decodedLengthOf(payload: string): number {
 /** A base64 `data:` URI's MIME type and payload (a whole number of base64
  *  quads), or null for any other text. */
 function base64Parts(uri: unknown): { mime: string; payload: string } | null {
-  if (typeof uri !== 'string' || !uri.startsWith('data:')) return null;
+  if (typeof uri !== 'string' || !isDataUri(uri)) return null;
   const comma = uri.indexOf(',');
-  if (comma < 0) return null;
-  const header = uri.slice(5, comma).split(';');
-  if (header.length < 2 || header[header.length - 1] !== 'base64') return null;
+  const header = uri.slice('data:'.length, comma).split(';');
+  // fetch, which three.js hands the URI to, reads the token in any case.
+  if (
+    header.length < 2 ||
+    header[header.length - 1]?.toLowerCase() !== 'base64'
+  ) {
+    return null;
+  }
   const payload = uri.slice(comma + 1);
   return payload.length % 4 === 0 ? { mime: header[0] ?? '', payload } : null;
 }

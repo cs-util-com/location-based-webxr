@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 
-import { decodeDataUri, decodedLengthOf } from './data-uri.js';
+import { decodeDataUri, decodedLengthOf, isDataUri } from './data-uri.js';
 
 const encode = (bytes: Uint8Array, mime = 'application/octet-stream') =>
   `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
@@ -74,6 +74,20 @@ describe('decodeDataUri', () => {
     });
   });
 
+  // three.js reads a URI as data by /^data:.*,.*$/i and hands it to fetch,
+  // where the scheme and the ";base64" token are matched in any letter
+  // case. A case-sensitive decoder refused such a URI as "broken" while
+  // three would have loaded it: a false refusal of a readable model.
+  it('decodes the scheme and the base64 token in any letter case', () => {
+    for (const uri of ['DATA:;base64,AAE=', 'Data:x/y;BASE64,AAE=']) {
+      expect(decodeDataUri(uri, 9), uri).toEqual({
+        ok: true,
+        bytes: Uint8Array.of(0, 1),
+        mime: expect.any(String),
+      });
+    }
+  });
+
   it('accepts a URI of exactly the cap', () => {
     const result = decodeDataUri(encode(new Uint8Array(30)), 30);
     expect(result.ok).toBe(true);
@@ -123,6 +137,49 @@ describe('decodeDataUri, properties', () => {
         expect(() => decodeDataUri(text, cap)).not.toThrow();
         expect(() => decodeDataUri('data:;base64,' + text, cap)).not.toThrow();
       })
+    );
+  });
+});
+
+/**
+ * Why these tests matter: `isDataUri` is the one place every reader of a
+ * model's URIs asks whether a URI is embedded data or something three.js
+ * would resolve and fetch. It must answer exactly as three's own test
+ * (`LoaderUtils.resolveURL`, /^data:.*,.*$/i): a stricter answer refuses
+ * models three reads, a looser one lets through a URI three fetches.
+ */
+describe('isDataUri', () => {
+  it('answers as three.js reads a URI: a comma, no line break, any case', () => {
+    for (const uri of ['data:,', 'data:;base64,AAE=', 'DATA:x,y', 'dAtA:,']) {
+      expect(isDataUri(uri), uri).toBe(true);
+    }
+    for (const uri of [
+      'data:x',
+      'data:\n,AAAA',
+      'data:,A\nA',
+      ' data:,',
+      'x.bin',
+      7,
+      null,
+    ]) {
+      expect(isDataUri(uri), JSON.stringify(uri)).toBe(false);
+    }
+  });
+
+  it('agrees with three.js on any string', () => {
+    const three = /^data:.*,.*$/i;
+    fc.assert(
+      fc.property(
+        fc.oneof(
+          fc.string(),
+          fc
+            .tuple(fc.constantFrom('data:', 'DATA:', 'DaTa:'), fc.string())
+            .map(([a, b]) => a + b)
+        ),
+        (uri) => {
+          expect(isDataUri(uri)).toBe(three.test(uri));
+        }
+      )
     );
   });
 });

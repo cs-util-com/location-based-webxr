@@ -17,12 +17,21 @@ and the phone's progress pill. Pure functions over the shelf's rows
 - `cardState(phase)`: the job's phase as the card's look (`running` is
   `processing`, `optimized` is `ready`).
 - `fileExt(name)`, `cardKindLine(row)`: "Sound · WAV · 9.0 MB", the size the
-  file came in; a character's row "Character · 2 files · 3.0 MB".
+  file came in; a character's row "Character · 2 files · 3.0 MB"; a
+  converted model with notes adds their count ("· 2 notes"), so a closed
+  card says there is something to read on it.
+- `notesWord(count)`: "1 note", "2 notes" (also the page's toast for a
+  converted model put on the shelf).
 - `stateLine(row)`: the card's state line, a tagged union: queued ("Queued,
   2 before it" / "Queued, next"), processing (phase words, whole percent),
   ready (sizes, gain or null), idle, kept, failed (title, retry offered,
   reason).
-- `cardMore(row)`: the words of an opened card.
+- `cardMore(row)`: the words of an opened card; an import's say that
+  nothing is added until it is converted, or that nothing was.
+- An import row's processing words are "Converting to a tour model"; its failed title is "Not converted", and the rail's
+  tip says "not converted".
+- `madeFromLines(row)`: a converted model's `Converted from "bust.gltf".`
+  and the conversion's notes, null for a file not converted.
 - `gainPercent(before, after)`: whole percent smaller, null when not
   smaller or unknown.
 - `usesLabel(n)`, `placesWord(n)`.

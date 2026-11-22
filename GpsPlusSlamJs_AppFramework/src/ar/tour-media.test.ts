@@ -556,6 +556,47 @@ describe('checkGlbInert - lists and references as three.js reads them', () => {
     }
   });
 
+  // A whole number is not enough: the refusal says the view names "no
+  // buffer of the file", so a view naming a buffer past the list is
+  // refused too, plain or through an extension.
+  it('refuses a view whose buffer is past the buffer list', () => {
+    for (const fields of [
+      { bufferViews: [{ buffer: 1, byteOffset: 0, byteLength: 12 }] },
+      {
+        bufferViews: [
+          {
+            buffer: 0,
+            byteOffset: 0,
+            byteLength: 12,
+            extensions: { VENDOR_x: { buffer: 1 } },
+          },
+        ],
+      },
+      { buffers: undefined },
+    ]) {
+      expect(checkGlbInert(meshGlb(fields)), JSON.stringify(fields)).toEqual({
+        ok: false,
+        reason: 'a buffer view names no buffer of the file',
+      });
+    }
+  });
+
+  // three.js's test is case-insensitive (/^data:.*,.*$/i) and fetch reads
+  // the scheme in any case, so an upper-case scheme is data three reads:
+  // refusing it refused a model every viewer opens.
+  it('reads a data: URI in any letter case as three.js does', () => {
+    const png = Buffer.from(pngHeader(4, 4)).toString('base64');
+    for (const uri of [
+      `DATA:image/png;base64,${png}`,
+      `Data:image/png;BASE64,${png}`,
+    ]) {
+      expect(
+        checkGlbInert(glb({ asset: { version: '2.0' }, images: [{ uri }] })),
+        uri.slice(0, 16)
+      ).toEqual({ ok: true });
+    }
+  });
+
   // three.js's meshopt plugin loads the buffer its extension names before
   // it looks for a decoder, and whether or not the extension is declared.
   it('refuses a view extension naming a buffer by anything but a whole number', () => {

@@ -23,6 +23,7 @@ import {
 } from "./asset-optimizers.js";
 import type { ModelReport } from "./model-step.js";
 import type {
+  ConversionReport,
   OptimizerInbound,
   OptimizerOutbound,
 } from "./optimizer-protocol.js";
@@ -34,9 +35,6 @@ import type {
  *  margin are in optimizer-client.ts.md. Progress restarts the wait, so a
  *  long run that keeps reporting is never cut. */
 export const OPTIMIZER_SILENCE_MS = 120_000;
-
-/** Said when the Worker stopped answering. */
-const SILENT = `the optimizer stopped answering for ${OPTIMIZER_SILENCE_MS / 60_000} minutes`;
 
 /** The part of the page the watchdog reads, so a test can fake it: the
  *  wait pauses while the page is hidden. */
@@ -117,6 +115,19 @@ function numbersAt(value: unknown, fields: readonly string[]): boolean {
   return fields.every((f) => Number.isFinite(o[f]));
 }
 
+const isTexts = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((v) => typeof v === "string");
+
+/** `value` as a conversion's report, or undefined when it does not read
+ *  (advisory, as a model's report is). */
+function conversionReportOf(value: unknown): ConversionReport | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Partial<Record<string, unknown>>;
+  return isTexts(r.notes) && isTexts(r.used)
+    ? { notes: r.notes, used: r.used }
+    : undefined;
+}
+
 /** Whether `value` reads as a level-of-detail report: its counts, its
  *  reason (a string or null), its flag and every slider stop. */
 function isLodReport(value: unknown): boolean {
@@ -182,10 +193,14 @@ function answerOf(
   }
 }
 
+/** A host for the Worker `spawn` makes. `who` names it in the words a
+ *  crash or a silence reads ("the converter stopped unexpectedly"). */
 export function createOptimizerHost(
   spawn: () => OptimizerWorker,
   page: OptimizerPage | null = globalThis.document ?? null,
+  who = "optimizer",
 ): OptimizerHost {
+  const silent = `the ${who} stopped answering for ${OPTIMIZER_SILENCE_MS / 60_000} minutes`;
   let worker: OptimizerWorker | null = null;
   const pending = new Map<number, Pending>();
   let seq = 0;
@@ -202,7 +217,7 @@ export function createOptimizerHost(
     if (page?.visibilityState === "hidden") return;
     watchdog = setTimeout(() => {
       watchdog = null;
-      dropAll(() => new OptimizerCrashed(SILENT));
+      dropAll(() => new OptimizerCrashed(silent));
     }, OPTIMIZER_SILENCE_MS);
   }
 
@@ -243,6 +258,7 @@ export function createOptimizerHost(
       run.resolve({ kind: "kept", reason: answer.reason });
     } else {
       const model = modelReportOf(answer.model);
+      const conversion = conversionReportOf(answer.conversion);
       run.resolve({
         kind: "optimized",
         blob: answer.blob,
@@ -250,6 +266,7 @@ export function createOptimizerHost(
         ...(answer.width === undefined ? {} : { width: answer.width }),
         ...(answer.height === undefined ? {} : { height: answer.height }),
         ...(model === undefined ? {} : { model }),
+        ...(conversion === undefined ? {} : { conversion }),
       });
     }
   }
@@ -263,7 +280,9 @@ export function createOptimizerHost(
       onAnswer(event);
     };
     spawned.onerror = () => {
-      if (worker === spawned) dropAll(() => new OptimizerCrashed());
+      if (worker === spawned) {
+        dropAll(() => new OptimizerCrashed(`the ${who} stopped unexpectedly`));
+      }
     };
     worker = spawned;
     page?.addEventListener("visibilitychange", onVisibility);

@@ -164,7 +164,12 @@ describe("a model file's bytes by kind", () => {
           { buffer: 0, byteOffset: 0, byteLength: 36 },
           { buffer: 0, byteOffset: 36, byteLength: 100 },
         ],
-        images: [{ bufferView: 0 }, { bufferView: 0 }, { uri: "x.png" }],
+        images: [
+          { bufferView: 0 },
+          { bufferView: 0 },
+          // A picture in the file as a data: URI is in no view.
+          { uri: "data:image/png;base64,AAAA" },
+        ],
       },
       new Uint8Array(136),
     );

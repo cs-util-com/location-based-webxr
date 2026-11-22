@@ -906,3 +906,77 @@ describe("a character's entry", () => {
     expect(actIn("fig", "delyes")).toBeNull();
   });
 });
+
+// Why: an import's card stands for a model that is not in the tour yet:
+// it must name no places and offer no "Use in..." or replace, its Retry
+// and Remove must reach the converter (not the optimizer, which holds no
+// such file), and a Remove that can no longer stop it must say so rather
+// than claim it was removed.
+describe("an import's card", () => {
+  const importing = (over: Partial<ShelfRow> = {}) =>
+    row({
+      id: "import:1",
+      kind: "model",
+      name: "bust.gltf",
+      status: "running",
+      progress: 0.3,
+      canUseOriginal: false,
+      import: { format: "gltf" },
+      ...over,
+    });
+
+  it("converts with a bar, names no places and offers only Remove", () => {
+    rows = [importing()];
+    panel({
+      useIn: { choices: () => [], use: vi.fn() },
+      replace: { count: () => 3, run: vi.fn(() => Promise.resolve()) },
+    });
+    expect(card("import:1")?.querySelector(".as-ph")?.textContent).toBe(
+      "Converting to a tour model",
+    );
+    expect(card("import:1")?.querySelector(".as-uses")).toBeNull();
+    (actIn("import:1", "toggle") as HTMLElement).click();
+    expect(actIn("import:1", "usein")).toBeNull();
+    expect(actIn("import:1", "replace")).toBeNull();
+    expect(actIn("import:1", "useorig")).toBeNull();
+    expect(actIn("import:1", "del")).not.toBeNull();
+  });
+
+  it("hands Retry and Remove to the converter, and says a Remove that came too late", () => {
+    rows = [importing({ status: "failed", retryable: true, reason: "gone" })];
+    const imports = { retry: vi.fn(), remove: vi.fn(() => true) };
+    const { deps } = panel({ imports });
+    expect(
+      card("import:1")?.querySelector(".as-cstate")?.textContent,
+    ).toContain("Not converted");
+    (actIn("import:1", "retry") as HTMLButtonElement).click();
+    expect(imports.retry).toHaveBeenCalledWith("import:1");
+    expect(deps.retry).not.toHaveBeenCalled();
+    (actIn("import:1", "del") as HTMLButtonElement).click();
+    expect(imports.remove).toHaveBeenCalledWith("import:1");
+    expect(deps.remove).not.toHaveBeenCalled();
+    expect(deps.toast).toHaveBeenLastCalledWith("bust.gltf was not converted.");
+    imports.remove.mockReturnValue(false);
+    (actIn("import:1", "del") as HTMLButtonElement).click();
+    expect(deps.toast).toHaveBeenLastCalledWith(
+      "bust.gltf is being added and can no longer be stopped.",
+    );
+  });
+
+  it("lists what a converted model was made from in its opened card", () => {
+    rows = [
+      row({
+        kind: "model",
+        name: "bust.glb",
+        madeFrom: { from: "bust.gltf", notes: ["Made without x.png."] },
+      }),
+    ];
+    panel();
+    (actIn("a", "toggle") as HTMLElement).click();
+    expect(
+      [...(card("a")?.querySelectorAll(".as-made li") ?? [])].map(
+        (li) => li.textContent,
+      ),
+    ).toEqual(['Converted from "bust.gltf".', "Made without x.png."]);
+  });
+});

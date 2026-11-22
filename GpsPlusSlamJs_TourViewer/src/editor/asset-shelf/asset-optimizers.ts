@@ -16,6 +16,7 @@
 import type { TourAssetKind } from "gps-plus-slam-app-framework/ar/tour-manifest";
 
 import type { ModelReport } from "./model-step.js";
+import type { ConversionReport } from "./optimizer-protocol.js";
 import type { OptimizerSettings } from "./optimizer-settings.js";
 import { SOUND_DECODER, soundOptimizer } from "./sound-optimizer.js";
 
@@ -31,6 +32,8 @@ export type OptimizeOutcome =
       readonly height?: number;
       /** What a model's passes did (`model-step.ts`). */
       readonly model?: ModelReport;
+      /** What a conversion into a tour model left out. */
+      readonly conversion?: ConversionReport;
     }
   | {
       /** The original stays, for `reason` (plain words). */

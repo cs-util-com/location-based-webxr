@@ -35,7 +35,10 @@ import {
   TOUR_MAX_IMAGE_PIXELS,
 } from "gps-plus-slam-app-framework/ar/tour-media";
 import { DEFAULT_ARCHIVE_LIMITS } from "gps-plus-slam-app-framework/storage";
-import { decodeDataUri } from "gps-plus-slam-app-framework/utils/data-uri";
+import {
+  decodeDataUri,
+  isDataUri,
+} from "gps-plus-slam-app-framework/utils/data-uri";
 
 import {
   glbContainer,
@@ -69,7 +72,9 @@ export type RepackResult =
       readonly glb: Uint8Array<ArrayBuffer>;
       /** What was left out, in words; empty when nothing was. */
       readonly notes: readonly string[];
-      /** The given files the model used, besides the `.gltf` itself. */
+      /** The given files the model carries, besides the `.gltf` itself: a
+       *  file that was left out (a picture of a kind a tour cannot carry,
+       *  say) is not among them. */
       readonly used: readonly string[];
     }
   | { readonly ok: false; readonly reason: string };
@@ -103,10 +108,6 @@ function uriName(uri: string): string {
   return name;
 }
 
-/** Whether `uri` is embedded data (the scheme in any letter case, as
- *  `resolveReference` reads it): it has no file name to quote. */
-const isDataUri = (uri: string) => /^data:/i.test(uri);
-
 /** Thrown inside the repack and turned into `{ ok: false, reason }`. */
 class Refusal extends Error {
   constructor(readonly reason: string) {
@@ -116,7 +117,11 @@ class Refusal extends Error {
 }
 
 type Fetched =
-  | { readonly ok: true; readonly bytes: Uint8Array }
+  | {
+      readonly ok: true;
+      readonly bytes: Uint8Array;
+      readonly file: string | null;
+    }
   | { readonly ok: false; readonly why: string };
 
 interface Context {
@@ -142,13 +147,15 @@ function decodedUri(uri: string): string {
 }
 
 /** The bytes `uri` names, or the kind of failure ("missing", "outside",
- *  "elsewhere", "scheme", "broken"); an over-budget `data:` URI refuses at
- *  once. A file found other than by its exact path is noted. */
+ *  "elsewhere", "scheme", "broken"), and the given file they came from
+ *  (null for embedded data), which the caller marks as used once it keeps
+ *  the bytes; an over-budget `data:` URI refuses at once. A file found
+ *  other than by its exact path is noted. */
 function fetchUri(ctx: Context, uri: string, byBasename: boolean): Fetched {
   const ref = resolveReference(uri, ctx.path, ctx.paths, { byBasename });
   if (ref.kind === "data") {
     const read = decodeDataUri(ref.uri, ctx.limits.maxBytes - ctx.budget);
-    if (read.ok) return { ok: true, bytes: read.bytes };
+    if (read.ok) return { ok: true, bytes: read.bytes, file: null };
     if (read.why === "too-large") {
       throw new Refusal(
         refusal.tooLarge(
@@ -164,8 +171,12 @@ function fetchUri(ctx: Context, uri: string, byBasename: boolean): Fetched {
   if (ref.match !== "exact") {
     ctx.notes.push(note.stoodIn(decodedUri(uri), ref.path));
   }
-  ctx.used.add(ref.path);
-  return { ok: true, bytes: ctx.files.get(ref.path)! };
+  return { ok: true, bytes: ctx.files.get(ref.path)!, file: ref.path };
+}
+
+/** Records `file` (null for embedded data) as one the model carries. */
+function markUsed(ctx: Context, file: string | null): void {
+  if (file !== null) ctx.used.add(file);
 }
 
 function take(ctx: Context, bytes: number): void {
@@ -211,6 +222,7 @@ function readBuffers(ctx: Context, json: GltfObject): Uint8Array[] {
       );
     }
     take(ctx, length);
+    markUsed(ctx, fetched.file);
     return fetched.bytes.subarray(0, length);
   });
 }
@@ -336,6 +348,7 @@ function readImages(
       throw new Refusal(refusal.pictureTooLarge(ctx.model, label, cap.reason));
     }
     take(ctx, fetched.bytes.length);
+    markUsed(ctx, fetched.file);
     out.push([image, fetched.bytes, sniffed.mime]);
   });
   unlinkLeftOut(json, leftOut, ctx.notes);
@@ -395,7 +408,7 @@ function dataUriLength(json: GltfObject): number {
   for (const key of ["buffers", "images"]) {
     for (const item of listOf(json, key) ?? []) {
       const uri = objectOf(item)?.["uri"];
-      if (typeof uri === "string" && uri.startsWith("data:")) {
+      if (isDataUri(uri)) {
         total += uri.length;
       }
     }
@@ -405,11 +418,14 @@ function dataUriLength(json: GltfObject): number {
 
 const QUOTE = 0x22;
 const BACKSLASH = 0x5c;
-/** The bytes of `data:`. */
+/** The bytes of `data:`, lower case. */
 const DATA_PREFIX = [0x64, 0x61, 0x74, 0x61, 0x3a];
+/** ASCII letters' lower-case bit: `data` in any case matches with it set. */
+const LOWER = 0x20;
 
 /** The bytes inside the raw text's string literals that start with
- *  `data:`, found without decoding or parsing anything. Every data URI is
+ *  `data:` (in any letter case, as three.js reads the scheme), found
+ *  without decoding or parsing anything. Every data URI is
  *  such a literal, so the text minus this is at most the text the exact
  *  count after parsing finds: a cap on it refuses nothing that count
  *  would pass, and runs before a parse that a structure-heavy text could
@@ -426,7 +442,11 @@ function dataLiteralBytes(text: Uint8Array): number {
       close = text.indexOf(QUOTE, close + 1);
     }
     const end = close < 0 ? text.length : close;
-    if (DATA_PREFIX.every((byte, k) => text[open + 1 + k] === byte)) {
+    const startsData = DATA_PREFIX.every((byte, k) => {
+      const at = text[open + 1 + k];
+      return at !== undefined && (byte === 0x3a ? at : at | LOWER) === byte;
+    });
+    if (startsData) {
       total += end - open - 1;
     }
     open = close < 0 ? -1 : text.indexOf(QUOTE, close + 1);
