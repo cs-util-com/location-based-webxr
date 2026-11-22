@@ -155,7 +155,7 @@ export interface FlatState {
 }
 
 /** What the guided view's camera button does next, beside the plan. */
-export interface GuidedState {
+interface GuidedState {
   /** The photo of the current pair being replaced; null takes the due one. */
   readonly retake: "a" | "b" | null;
   /** A countdown before a photo; its timer is the view's. */
@@ -163,7 +163,7 @@ export interface GuidedState {
 }
 
 /** The take a plan run measured, and its results once it ended. */
-export interface PlanRun {
+interface PlanRun {
   readonly slot: string;
   readonly seq: number;
   /** Side table key of the results; null while running or with none. */

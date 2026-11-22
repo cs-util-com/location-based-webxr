@@ -257,16 +257,14 @@ describe("guided capture state properties", () => {
           const slot = planSlots(s.plan)[s.plan.current]!;
           const rec = s.plan.slots[slot.id];
           const { retake, count } = s.guided;
-          if (retake) {
-            expect(rec?.[retake]).toBeTruthy();
-          }
-          if (count) {
-            expect(count.shot).toBe(shotDue(rec, retake));
-            expect(count.left).toBeGreaterThanOrEqual(1);
-          }
-          if (s.running === "plan") {
-            expect(s.planRun?.slot).toBeDefined();
-          }
+          expect(!retake || Boolean(rec?.[retake])).toBe(true);
+          expect(count ? count.shot : null).toBe(
+            count ? shotDue(rec, retake) : null,
+          );
+          expect(!count || count.left >= 1).toBe(true);
+          expect(s.running !== "plan" || s.planRun?.slot !== undefined).toBe(
+            true,
+          );
         }
       }),
     );

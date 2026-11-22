@@ -2,7 +2,13 @@
 
 ## Purpose
 
-The page module of `feature-match-check.html`: the guided steps (photo A, photo B, run, save), the camera, the options, the results table, the result pictures and the copyable log. All measuring lives in `bench-run.ts`. It is a view on the page store (`feature-match-store.ts`, state in `feature-match-slice.ts`): taps and option changes dispatch actions, `render` draws the state on every change, and the flat target mode (`flat-capture.ts`) is a second view on the same store.
+The entry of `feature-match-check.html`: it creates the page store (`feature-match-store.ts`, state in `feature-match-slice.ts`), the stamped log and `fail`, the page error listeners, the camera (`camera-control.ts`), the measuring block (`bench-engine.ts`) and the view, and subscribes their renders. Taps and option changes dispatch actions; each part draws the state on every change. All measuring lives in `bench-run.ts`.
+
+The page as a whole is described below, whichever module implements a rule:
+
+- `camera-control.ts`: the camera start, stop and generation guard.
+- `bench-engine.ts`: Options, Speed test, the runs (camera, synthetic, plan pair), results table, pictures, report, Copy log and log.
+- `cockpit-view.ts`: the four steps, the pair selector, the guide card, the light warning, Save and its links, and the flat target mode.
 
 ## Public API
 

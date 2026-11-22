@@ -7,7 +7,8 @@ import {
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
-import { endView, pairRows, runView } from "./guided-model";
+import { endView, pairRows, planPairOf, runView } from "./guided-model";
+import type { SavedFrame } from "./bench-export";
 import type { PhotoMeta } from "./run-plan";
 
 const run = (
@@ -203,5 +204,36 @@ describe("endView", () => {
       canDownload: true,
     });
     expect(endView(run([])).canDownload).toBe(false);
+  });
+});
+
+const saved = (name: "A" | "B"): SavedFrame => ({
+  name,
+  frame: { width: 2, height: 1, rgba: new Uint8ClampedArray(8) },
+  source: { width: 2, height: 1 },
+});
+
+// Why this test matters: a plan run measures the current pair's two frames
+// from the side table; it must refuse a half pair or a frame the side table
+// lost (a failed restore), never measure stale pixels.
+describe("planPairOf", () => {
+  it("returns the current pair's frames once both are in the side table", () => {
+    const s = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    const frames = new Map([
+      ["1a-s1-a", saved("A")],
+      ["1a-s1-b", saved("B")],
+    ]);
+    const p = planPairOf(s, frames);
+    expect(p?.slot.key).toBe("1a");
+    expect(p?.a.name).toBe("A");
+    expect(p?.b.name).toBe("B");
+    expect(p?.seq).toBe(s.plan.slots["1a-s1"]!.seq);
+  });
+
+  it("is null for a half pair or a frame missing from the side table", () => {
+    const half = run([shot("1a-s1", "a")]);
+    expect(planPairOf(half, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
+    const full = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    expect(planPairOf(full, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
   });
 });

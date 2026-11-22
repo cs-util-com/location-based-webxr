@@ -6,6 +6,7 @@
  *
  * @see guided-model.ts.md
  */
+import type { SavedFrame } from "./bench-export";
 import type { FeatureMatchState } from "./feature-match-slice";
 import { guidedCard, LIGHT_NOTE, GUIDED_STEPS } from "./guided-texts";
 import type { DiagramKind } from "./guided-diagram";
@@ -14,14 +15,15 @@ import {
   nextStep,
   shotDue,
   slotStatus,
+  type Slot,
   type SlotStatus,
 } from "./plan-slots";
 import { planSlots } from "./run-plan";
 
 /** A step of the card's A / change / B list. */
-export type StepMark = "now" | "past" | "todo";
+type StepMark = "now" | "past" | "todo";
 
-export interface ThumbView {
+interface ThumbView {
   readonly filled: boolean;
   readonly retaking: boolean;
   readonly disabled: boolean;
@@ -29,9 +31,9 @@ export interface ThumbView {
   readonly sub: string;
 }
 
-export type PrimaryMode = "capture" | "cancel" | "next" | "missing" | "finish";
+type PrimaryMode = "capture" | "cancel" | "next" | "missing" | "finish";
 
-export interface PrimaryView {
+interface PrimaryView {
   readonly mode: PrimaryMode;
   readonly label: string;
   readonly sub: string;
@@ -260,4 +262,28 @@ export function endView(s: FeatureMatchState): EndView {
       : "Only complete pairs go into the zip. Go back to the pairs any time to add the rest.",
     canDownload: done > 0 && s.busy === "idle",
   };
+}
+
+/** The current plan pair's two frames, for a run or an export. */
+export interface PlanPair {
+  readonly slot: Slot;
+  /** The take's running number; it names the files. */
+  readonly seq: number;
+  readonly a: SavedFrame;
+  readonly b: SavedFrame;
+}
+
+/**
+ * The current slot's frames, or null for a half pair or a frame the side
+ * table does not hold (a restore that failed).
+ */
+export function planPairOf(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+): PlanPair | null {
+  const slot = planSlots(s.plan)[s.plan.current];
+  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  const a = rec?.a ? frames.get(rec.a.id) : undefined;
+  const b = rec?.b ? frames.get(rec.b.id) : undefined;
+  return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
 }

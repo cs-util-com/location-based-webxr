@@ -16,6 +16,7 @@ The guided view's screens as plain data, read from the page state (`FeatureMatch
   - `primary`: the big button. `capture` (with `shot` and the countdown in its line), `cancel` while a countdown runs, `next` / `missing` (with the slot `index`, from `nextStep`) or `finish`. Disabled while busy. After a failed light check `next` says "or tap A or B to retake first".
 - `pairRows(state)`: one row per slot, `{ index, label, sub, status, current }`.
 - `endView(state)`: `{ all, done, total, kicker, title, lede, canDownload }`; the zip needs a complete pair and an idle page.
+- `planPairOf(state, frames)`: the current slot's `{ slot, seq, a, b }` (frames from the side table), or null for a half pair or a frame the side table does not hold; a plan run and the single-file exports read it.
 
 ## Invariants
 
