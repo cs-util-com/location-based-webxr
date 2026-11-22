@@ -538,6 +538,106 @@ describe("the run plan's storage", () => {
     expect(store.getState().photoStoreFailing).toBe(false);
   });
 
+  // Why: a refusing database (quota) was retried for every unstored photo
+  // at every plan change, each try a full structured clone of a photo and
+  // an ERROR line: quadratic in the photos taken. Now only a new photo
+  // retries, and only the oldest unstored one; each id is reported once;
+  // once a write succeeds the rest follow one after another.
+  it("retries a refusing database sparingly and reports each photo once", async () => {
+    const { data, db } = mapDb();
+    let refuse = true;
+    const tried: string[] = [];
+    const quota = {
+      ...db,
+      put: (k: string, v: unknown) => {
+        tried.push(k);
+        return refuse
+          ? Promise.reject(new DOMException("full", "QuotaExceededError"))
+          : db.put(k, v);
+      },
+    };
+    const { put, sides, store, failed } = makeWith(memory().storage, quota);
+    const take = async (id: string, slot: string) => {
+      put(
+        sides.frames,
+        [[id, saved("A")]],
+        A.planPhotoTaken({ slot, which: "a", photo: photo(id) }),
+      );
+      await settle();
+    };
+    await take("p1", "1a-s1");
+    await take("p2", "1b-s1");
+    await take("p3", "1c-s1");
+    expect(tried).toEqual(["p1", "p2", "p1", "p3", "p1"]);
+    // Plan changes that name no new photo write nothing.
+    store.dispatch(A.planMoved(2));
+    store.dispatch(A.planSettingsChanged({ countdown: 5 }));
+    await settle();
+    expect(tried).toHaveLength(5);
+    expect(failed).toHaveBeenCalledTimes(3);
+    expect(store.getState().photoStoreFailing).toBe(true);
+
+    refuse = false;
+    await take("p4", "2a-s1");
+    for (let i = 0; i < 8; i++) {
+      await settle();
+    }
+    expect([...data.keys()].sort()).toEqual(["p1", "p2", "p3", "p4"]);
+    expect(store.getState().photoStoreFailing).toBe(false);
+    expect(failed).toHaveBeenCalledTimes(3);
+  });
+
+  // Why: a photo retaken while it was written is deleted again after the
+  // write; when only that delete failed, the photo was still counted as
+  // not stored, though no slot names it, and the page said "not stored".
+  it("does not count a photo as unstored when only its cleanup delete failed", async () => {
+    const { data, db } = mapDb();
+    const pending: (() => void)[] = [];
+    const slow = {
+      ...db,
+      put: (k: string, v: unknown) =>
+        new Promise<void>((r) => {
+          pending.push(() => {
+            data.set(k, v);
+            r();
+          });
+        }),
+      delete: () => Promise.reject(new Error("gone")),
+    };
+    const { put, sides, store, failed } = makeWith(memory().storage, slow);
+    for (const id of ["p1", "p2"]) {
+      put(
+        sides.frames,
+        [[id, saved("A")]],
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo(id) }),
+      );
+    }
+    for (const release of pending.splice(0)) {
+      release();
+    }
+    for (let i = 0; i < 4; i++) {
+      await settle();
+    }
+    expect(failed).toHaveBeenCalled();
+    expect(store.getState().photoStoreFailing).toBe(false);
+  });
+
+  // Why: with no database at all (none in this browser, or blocked) no
+  // photo outlives a reload, so the page must say so as soon as the plan
+  // holds one, as it does for a database that refuses.
+  it("says photos are not stored when there is no database", () => {
+    const { put, sides, store } = makeWith(memory().storage, null);
+    expect(store.getState().photoStoreFailing).toBe(false);
+    put(
+      sides.frames,
+      [["p1", saved("A")]],
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    );
+    expect(store.getState().photoStoreFailing).toBe(true);
+    store.dispatch(A.planReset());
+    expect(store.getState().photoStoreFailing).toBe(false);
+  });
+
   // Why: the orphan sweep after a reload must never delete a photo taken
   // while it waited for the database's key list.
   it("keeps a photo taken while the orphan sweep reads the keys", async () => {

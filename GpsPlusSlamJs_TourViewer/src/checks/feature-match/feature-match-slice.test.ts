@@ -720,6 +720,31 @@ describe("the guided view's single-file save and camera start", () => {
     expect(featureMatchReducer(idle, A.planFileSaveEnded("x"))).toBe(idle);
   });
 
+  // Why: the line beside the file buttons names one pair's file; after a
+  // move, a new photo or a reset it would describe a pair no longer shown.
+  it("clears the single-file line when the pair or its photos change", () => {
+    const saved = run(
+      [A.planFileSaveStarted(), A.planFileSaveEnded("saved x")],
+      withPair(),
+    );
+    expect(saved.fileSave.text).toBe("saved x");
+    for (const a of [
+      A.planMoved(1),
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p3") }),
+      A.planPhotoLost({ slot: "1a-s1", which: "b" }),
+      A.planReset(),
+    ]) {
+      expect(run([a], saved).fileSave).toEqual({ preparing: false, text: "" });
+    }
+    // A change that keeps the pair keeps the line.
+    expect(
+      run([A.planSettingsChanged({ countdown: 5 })], saved).fileSave.text,
+    ).toBe("saved x");
+    // A file still being prepared keeps its own line.
+    const going = run([A.planFileSaveStarted()], withPair());
+    expect(run([A.planMoved(1)], going).fileSave).toEqual(going.fileSave);
+  });
+
   // Why: "starting" and "failed" are what the finder chip says; a photo, a
   // move or a reset must not wipe them, and nothing else may be stored.
   it("keeps the camera start status through plan changes", () => {

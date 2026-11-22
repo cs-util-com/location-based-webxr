@@ -463,6 +463,19 @@
 :where(html[data-ui="guided"]) .purpose {
   color: var(--ink-2);
 }
+/* Below 400 px of height (a phone on its side at 800x360) the card cannot
+   hold the step text and both foot lines: the purpose line goes (the help
+   explains each family) and the column grows so the step text wraps less.
+   The warning line stays. 37 % left the foot line 2 px past the card; 46 %
+   leaves 28 px, about the margin taller Linux fonts need. */
+@media (orientation: landscape) and (min-width: 700px) and (max-height: 399px) {
+  :where(html[data-ui="guided"]) .run {
+    grid-template-columns: minmax(300px, 46%) minmax(0, 1fr);
+  }
+  :where(html[data-ui="guided"]) .purpose {
+    display: none;
+  }
+}
 :where(html[data-ui="guided"]) .avoid {
   color: var(--warn);
 }
@@ -513,6 +526,16 @@
   color: var(--ink);
   font-size: 0.8rem;
   font-weight: 600;
+}
+/* Why a tap or a countdown ended without a photo (a toast, `toast-core`). */
+:where(html[data-ui="guided"]) .shot-note {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  text-align: center;
+  pointer-events: none;
 }
 :where(html[data-ui="guided"]) .chip.dim {
   color: var(--ink-2);

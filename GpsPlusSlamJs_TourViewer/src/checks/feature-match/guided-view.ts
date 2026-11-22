@@ -19,6 +19,7 @@ import {
   ZIP_FILE_TYPE,
   type DownloadFileType,
 } from "gps-plus-slam-app-framework/storage";
+import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { captureFrame, frameCanvas, framePng } from "./bench-dom";
 import { $, CAPTURE_MAX, type BenchEngine } from "./bench-engine";
 import {
@@ -42,6 +43,7 @@ import { diagramSvg } from "./guided-diagram";
 import {
   deviceSummary,
   endView,
+  introCountdownText,
   isMoving,
   measureText,
   motionStep,
@@ -110,6 +112,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     pairsSheet: el("sheet-pairs"),
     measureSheet: el("sheet-measure"),
     introStart: el<HTMLButtonElement>("intro-start"),
+    introStill: el("intro-still"),
     headPos: el("head-pos"),
     headBar: el("head-bar"),
     headDone: el("head-done"),
@@ -203,6 +206,12 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   /** The pair grid's rows as last drawn, so a render keeps the buttons. */
   let gridKey = "";
 
+  /** Says in the finder why a tap or a countdown ended without a photo. */
+  const shotNote = createToast(el("finder"), {
+    className: "chip warn shot-note",
+    id: "g-shot-note",
+  });
+
   void engine.deviceInfo().then((d) => {
     deviceLine = deviceSummary(d);
     render();
@@ -278,7 +287,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     if (next === "run") {
       if (
         !camera.on() &&
-        state().cameraStart === "idle" &&
+        state().cameraStart !== "failed" &&
         state().busy === "idle"
       ) {
         void startCamera();
@@ -304,6 +313,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     const slot = runView(before).slot;
     if (video.videoWidth === 0) {
       log("capture: the camera has no picture yet");
+      shotNote.show("No photo: the camera had no picture yet. Tap again.");
       return;
     }
     const f = captureFrame(video, CAPTURE_MAX);
@@ -330,8 +340,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     movedDuringCount = false;
     if (!ok) {
       log(`capture: photo ${name} of ${slot} refused`);
+      shotNote.show(`No photo ${name}: the page was busy. Tap again.`);
       return;
     }
+    shotNote.clear();
     beep(1320, 60);
     flash();
     const rec = state().plan.slots[slot];
@@ -542,12 +554,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       }
       const name = names[kind];
       if (await downloadBlob(blob, name, type)) {
+        // Kept and dropped at once: only the take's downloaded mark stays,
+        // so no Blob goes into the side table.
         const id = newId("file");
-        put(
-          sides.blobs,
-          [[id, blob]],
-          A.planFileKept({ id, name, slot: pair.slot.id }),
-        );
+        store.dispatch(A.planFileKept({ id, name, slot: pair.slot.id }));
         store.dispatch(A.planFilesDownloaded([id]));
         store.dispatch(A.planKeptDropped());
         note = `saved ${name} (${formatBytes(blob.size)})`;
@@ -745,6 +755,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       );
       b.disabled = started || s.busy !== "idle";
     }
+    ui.introStill.textContent = introCountdownText(s.plan.settings);
     ui.introStart.textContent =
       s.plan.shots > 0 ? "Continue where you left off" : "Start";
     for (const b of all<HTMLButtonElement>("#g-sheet-pairs [data-countdown]")) {

@@ -419,3 +419,14 @@ export function motionStep(level: number, r: RotationRate): number {
 }
 
 export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;
+
+/** The intro's "Keep the phone still" text for the countdown and sound settings. */
+export function introCountdownText(s: {
+  readonly countdown: number;
+  readonly sound: boolean;
+}): string {
+  if (s.countdown <= 0) {
+    return "A tap shakes the phone, and the countdown is off: each photo is taken at your tap. Rest the phone on something steady, or set a countdown under Pairs.";
+  }
+  return `A tap shakes the phone, so each photo is taken ${String(s.countdown)} seconds after your tap${s.sound ? ", with a beep per second" : ""}. Hands off until the click.`;
+}

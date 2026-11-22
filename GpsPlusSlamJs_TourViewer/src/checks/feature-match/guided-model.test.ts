@@ -9,6 +9,7 @@ import {
 } from "./feature-match-slice";
 import {
   deviceSummary,
+  introCountdownText,
   endView,
   isMoving,
   measureText,
@@ -447,5 +448,22 @@ describe("measureText", () => {
     expect(measureText(run([]), null)).toBe(
       "the current pair has no two photos yet",
     );
+  });
+});
+
+// Why this test matters: the intro's "Keep the phone still" fact named a
+// fixed 3 s countdown with beeps; with the countdown at 5 s, off, or the
+// sound off it told the tester something the page then did not do.
+describe("introCountdownText", () => {
+  it("follows the countdown and sound settings", () => {
+    expect(introCountdownText({ countdown: 3, sound: true })).toBe(
+      "A tap shakes the phone, so each photo is taken 3 seconds after your tap, with a beep per second. Hands off until the click.",
+    );
+    expect(introCountdownText({ countdown: 5, sound: false })).toBe(
+      "A tap shakes the phone, so each photo is taken 5 seconds after your tap. Hands off until the click.",
+    );
+    const off = introCountdownText({ countdown: 0, sound: true });
+    expect(off).toContain("the countdown is off");
+    expect(off).not.toMatch(/\d seconds/);
   });
 });
