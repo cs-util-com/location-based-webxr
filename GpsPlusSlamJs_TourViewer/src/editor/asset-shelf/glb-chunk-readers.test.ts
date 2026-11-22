@@ -163,6 +163,31 @@ describe("the GLB chunk readers on the same bytes", () => {
     expect(verdicts(build([json([1, 2])]))).toEqual(NONE);
     expect(verdicts(build([json(null)]))).toEqual(NONE);
   });
+
+  // The property below found this one (a "buffer" key changed by one byte
+  // to "#uffer"): the tour refused a view that names no buffer while the
+  // check page measured it. A view must name a buffer of the file, by a
+  // whole number below the buffer count, for every reader.
+  it("all refuse a buffer view that names no buffer of the file", () => {
+    const viewOver = (view: object, buffers: object[] = [{ byteLength: 0 }]) =>
+      build([
+        json({ asset: { version: "2.0" }, buffers, bufferViews: [view] }),
+        bin(0),
+      ]);
+    // The shrunk counterexample of seed -1948290153.
+    expect(
+      verdicts(viewOver({ "#uffer": 0, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 1, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 0, byteOffset: 0, byteLength: 0 }, [])),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 0, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(ALL);
+  });
 });
 
 /** A well-formed GLB: an object JSON chunk (padded to `pad`) naming

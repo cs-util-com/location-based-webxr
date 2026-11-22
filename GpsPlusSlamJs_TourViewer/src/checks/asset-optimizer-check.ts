@@ -9,6 +9,7 @@
  * @see asset-optimizer-check.ts.md
  */
 
+import { bufferViewsProblem } from "gps-plus-slam-app-framework/ar/tour-media";
 import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
@@ -476,8 +477,9 @@ export function bestLag(
 /** A model file's bytes by kind: `textures` are the buffer views its
  *  images name (a view two images share counts once), `geometry` is the
  *  rest (vertices, indices, the saved coarser levels, the JSON). Throws
- *  with words on a file that is no GLB or whose images name a buffer view
- *  it does not have. */
+ *  with words on a file that is no GLB, whose buffer views name no buffer
+ *  of the file (the tour's own rule, `bufferViewsProblem`), or whose images
+ *  name a buffer view it does not have. */
 export function glbByteShares(bytes: Uint8Array): {
   readonly total: number;
   readonly textures: number;
@@ -485,18 +487,20 @@ export function glbByteShares(bytes: Uint8Array): {
 } {
   const chunks = readGlbChunks(bytes);
   if (!chunks.ok) throw new Error(`the file is no GLB: ${chunks.reason}`);
+  const views = bufferViewsProblem(chunks.json);
+  if (views !== null) throw new Error(`the file is no tour model: ${views}`);
   const json = chunks.json as {
     bufferViews?: { byteLength?: number }[];
     images?: unknown[];
   };
-  const views = json.bufferViews ?? [];
+  const list = json.bufferViews ?? [];
   const named = new Set<number>();
   for (const image of json.images ?? []) {
     const index = (image as { bufferView?: unknown } | null)?.bufferView;
     if (index === undefined) continue;
     if (
       typeof index !== "number" ||
-      typeof views[index]?.byteLength !== "number"
+      typeof list[index]?.byteLength !== "number"
     ) {
       throw new Error(
         `an image names buffer view ${JSON.stringify(index)}, not in the file`,
@@ -505,6 +509,6 @@ export function glbByteShares(bytes: Uint8Array): {
     named.add(index);
   }
   let textures = 0;
-  for (const index of named) textures += views[index]!.byteLength!;
+  for (const index of named) textures += list[index]!.byteLength!;
   return { total: bytes.length, textures, geometry: bytes.length - textures };
 }

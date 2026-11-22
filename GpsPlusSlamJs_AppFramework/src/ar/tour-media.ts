@@ -16,7 +16,7 @@
  * make a phone allocate gigabytes (tour kit K4 review R2).
  */
 
-import { decodeDataUri } from '../utils/data-uri.js';
+import { decodeDataUri, isDataUri } from '../utils/data-uri.js';
 import { readGlbChunks } from '../utils/glb-chunks.js';
 import { imageInfo } from '../utils/image-header.js';
 
@@ -193,11 +193,6 @@ export function checkImageWithinCap(
   return { ok: true };
 }
 
-/** The URIs three.js reads as data rather than resolving them against
- *  its path and fetching them (`LoaderUtils.resolveURL`, three 0.170 to
- *  0.185): a comma is required and `.` matches no line break. */
-const DATA_URI = /^data:.*,.*$/;
-
 /** Why one of the lists three.js reads by key is not a list, or null.
  *  three reads `json.buffers[0]` from an object as readily as from an
  *  array, so an object would hide its entries from every check here. */
@@ -220,7 +215,7 @@ function uriProblem(owner: string, value: unknown): string | null {
   for (const [i, item] of value.entries()) {
     const uri = (item as { uri?: unknown } | null)?.uri;
     if (uri === undefined && (owner === 'image' || i === 0)) continue;
-    if (typeof uri !== 'string' || !DATA_URI.test(uri)) {
+    if (!isDataUri(uri)) {
       return `a ${owner} points outside the file`;
     }
   }
@@ -232,18 +227,34 @@ const isIndex = (value: unknown): boolean =>
 
 /** Why a buffer view would make three.js load a buffer by a key that is no
  *  index (`"0"` is not buffer 0 to its `=== 0`, so it fetches the page),
- *  or null. Its `buffer` and every extension's `buffer` are checked: the
- *  meshopt plugin loads the buffer its extension names before it looks
- *  for a decoder, declared or not. */
-function viewsProblem(views: unknown): string | null {
+ *  or by an index past the buffer list, or null. Its `buffer` and every
+ *  extension's `buffer` are checked: the meshopt plugin loads the buffer
+ *  its extension names before it looks for a decoder, declared or not.
+ *  `buffers` is a list or undefined (`listsProblem` runs first). */
+function viewsProblem(views: unknown, buffers: unknown): string | null {
   if (!Array.isArray(views)) return null;
+  const count = Array.isArray(buffers) ? buffers.length : 0;
+  const names = (value: unknown) => isIndex(value) && (value as number) < count;
   for (const item of views) {
     const view = item as { buffer?: unknown; extensions?: unknown } | null;
-    if (![view?.buffer, ...extensionBuffers(view?.extensions)].every(isIndex)) {
+    if (![view?.buffer, ...extensionBuffers(view?.extensions)].every(names)) {
       return 'a buffer view names no buffer of the file';
     }
   }
   return null;
+}
+
+/** Why a glTF's buffer views do not each name a buffer of the file (by a
+ *  whole number below the buffer count, plain and in every extension), or
+ *  null. Part of `checkGlbInert`, exported so a reader that measures a
+ *  `.glb` without the rest of that check (the Tour Viewer's optimizer
+ *  check page) refuses the same views. `json` is a parsed glTF object. */
+export function bufferViewsProblem(
+  json: Record<string, unknown>
+): string | null {
+  const lists = listsProblem(json);
+  if (lists !== null) return lists;
+  return viewsProblem(json['bufferViews'], json['buffers']);
 }
 
 /** The `buffer` of every extension object in `extensions` that has one. */
@@ -279,7 +290,7 @@ function referencesProblem(json: Record<string, unknown>): string | null {
   return (
     listsProblem(json) ??
     uriProblem('buffer', json['buffers']) ??
-    viewsProblem(json['bufferViews']) ??
+    bufferViewsProblem(json) ??
     uriProblem('image', json['images'])
   );
 }

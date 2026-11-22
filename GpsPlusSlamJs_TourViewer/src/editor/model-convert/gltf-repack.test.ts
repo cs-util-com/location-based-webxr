@@ -272,6 +272,10 @@ describe("repackGltf", () => {
       if (bytes !== null) files.set(`model/${uri}`, bytes);
       const result = repacked(files);
       expect(result.notes, uri).toEqual([words]);
+      // `used` names the files the model carries: a given file that was
+      // left out is not one of them (a caller adds unused pictures as
+      // pictures of their own, so a false "used" would lose one).
+      expect(result.used, uri).not.toContain(`model/${uri}`);
       const out = partsOf(result.glb);
       expect(out.json["images"], uri).toHaveLength(2);
       const material = JSON.stringify(out.json["materials"]);
@@ -384,6 +388,31 @@ describe("repackGltf", () => {
       reason: refusal.brokenPart("a.gltf"),
     });
     expect(one({ byteLength: 4, uri: "a.bin" }).ok).toBe(true);
+  });
+
+  // three.js reads a URI as data in any letter case (/^data:.*,.*$/i), so
+  // an upper-case scheme is embedded data to be decoded, never "broken",
+  // and its length counts against the data cap, not the text cap, both in
+  // the scan of the raw bytes and in the count after the parse.
+  it("reads an upper-case DATA: buffer and picture as embedded data", async () => {
+    const original = await textured();
+    const source = partsOf(original);
+    const files = splitGlb(source, {
+      buffers: ["data"],
+      images: ["data", "data"],
+    });
+    const upper = encode(
+      new TextDecoder()
+        .decode(files.get(GLTF))
+        .replace(/"data:/g, '"DATA:')
+        .replace(/;base64,/g, ";BASE64,"),
+    );
+    expect(new TextDecoder().decode(upper)).not.toContain('"data:');
+    files.set(GLTF, upper);
+    const result = repackGltf(GLTF, files, { maxTextBytes: 4096 });
+    expect(result.ok && result.notes).toEqual([]);
+    if (!result.ok) return;
+    expect(contentOf(partsOf(result.glb))).toEqual(contentOf(source));
   });
 
   it("caps the text without its data: URIs, and the whole file and its data at the size ceiling", async () => {
