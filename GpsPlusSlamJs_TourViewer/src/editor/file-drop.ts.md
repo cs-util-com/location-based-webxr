@@ -24,6 +24,9 @@ the drawn elements' data and the file's name and changes nothing.
   file field first (anywhere on the page), then a station's or a story's
   row inside `tree` (from any child of the row, by its `data-select`);
   null for an item's row, a header, an empty id, anything outside.
+- `leftoverTarget(target)` -> `FileDropTarget | null`: where the pictures
+  a converted model did not use go: the drop's row as it is, and the
+  shelf (null) for an item's file field, which took the model.
 - `dragHasFiles(event)` - whether a drag carries files (not a row of the
   tree being dragged, not text).
 

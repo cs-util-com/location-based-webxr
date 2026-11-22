@@ -14,10 +14,25 @@ import {
   fileAddKindOf,
   fileAddKindOfAsset,
   fileDropTarget,
+  leftoverTarget,
 } from "./file-drop.js";
 
 afterEach(() => {
   document.body.replaceChildren();
+});
+
+describe("leftoverTarget", () => {
+  // Why: the pictures a converted model left go where the drop went, but
+  // an item's file field took the model: a picture there would be
+  // refused and vanish, so it goes onto the shelf instead.
+  it("sends a converted model's leftover pictures to the drop's row, or the shelf for an item's file field", () => {
+    const station = { kind: "station", stationId: "s1" } as const;
+    const story = { kind: "story", storyId: "st1" } as const;
+    expect(leftoverTarget(station)).toBe(station);
+    expect(leftoverTarget(story)).toBe(story);
+    expect(leftoverTarget({ kind: "item", id: "b7" })).toBeNull();
+    expect(leftoverTarget(null)).toBeNull();
+  });
 });
 
 function page(): { tree: HTMLElement; at: (q: string) => Element } {

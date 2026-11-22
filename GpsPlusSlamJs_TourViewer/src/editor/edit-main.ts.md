@@ -1086,7 +1086,8 @@ on a desktop.
   the pictures dropped with it wait for it; the ones it did not use are
   let go after it to where the drop was made, as a plain drop's would be
   (`placeDropped`, the same path the files a tour takes as they are go:
-  a row, an item's file field, or the shelf). Once converted onto the
+  a row or the shelf; from an item's file field, which took the model,
+  the shelf, `leftoverTarget`). Once converted onto the
   shelf, its toast counts the notes its card carries ("with 2 notes on
   its card"). A part dropped alone (.bin,
   .mtl, .tga, .bmp) is refused in words. "Add files..." goes through the
