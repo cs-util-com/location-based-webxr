@@ -22,7 +22,8 @@ only behind `?debug=1`, and only when they name a value the sweep compares.
   - With `debug`, each `tb.<name>` that names an allowed value replaces
     its default.
   - `tb.metric` takes `min` or `h`.
-  - `tb.grow` takes `on` or `off`.
+  - Growth is not on the address: it stays on, and the field log's replay
+    decides it both ways (`travelling-box-log.ts.md`).
 
 ## Invariants and assumptions
 
@@ -40,7 +41,7 @@ const knobs = travellingBoxKnobs(
   location.search,
   debugUiEnabledFromSearch(location.search),
 );
-// ?debug=1&tb.thr=14&tb.grow=off -> { ...defaults, thr: 14, grow: false }
+// ?debug=1&tb.thr=14 -> { ...defaults, thr: 14 }
 ```
 
 ## Tests

@@ -22,6 +22,7 @@ import {
 } from "./narration-section.js";
 import { settle } from "../../test-support/settle.js";
 import { normalVoiceCredit, VOICE_CREDIT_MAX } from "../../voice-credit.js";
+import { importTiming } from "./timing-import.js";
 
 const BODY = "The mill turned all day. The miller slept at night.";
 const VTT = [
@@ -41,6 +42,8 @@ interface Held {
   timingText: string | null;
   synthetic?: boolean;
   voiceCredit?: string;
+  words?: "sign" | null;
+  view?: string;
 }
 
 /** Each voice the fake tour takes gets a new asset id, as the session's. */
@@ -69,6 +72,8 @@ function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
         timingUnread: false,
         synthetic: held.synthetic ?? false,
         voiceCredit: held.voiceCredit ?? "",
+        words: held.words ?? null,
+        view: held.view ?? "reading",
       }),
     edit: (_id, change) => {
       edits.push(change);
@@ -84,6 +89,7 @@ function make(over: Partial<NarrationSectionDeps> = {}): NarrationSection {
         if (change.kind === "timing") held.timingText = change.text;
         if (change.kind === "removeTiming") held.timingText = null;
         if (change.kind === "synthetic") held.synthetic = change.synthetic;
+        if (change.kind === "words") held.words = change.value;
         // The session stores a credit normalised: so does the fake.
         if (change.kind === "voiceCredit") {
           held.voiceCredit = normalVoiceCredit(change.text) ?? "";
@@ -777,5 +783,115 @@ describe("who speaks the voice", () => {
     await flush();
     expect(credit()).toBe(field);
     expect(field.value).toBe("Berta");
+  });
+});
+
+describe("where the words show while the voice plays", () => {
+  const choice = (value: "screen" | "sign") =>
+    section.node.querySelector<HTMLInputElement>(
+      `[data-ln="words"][value="${value}"]`,
+    );
+  const row = () =>
+    section.node.querySelector<HTMLElement>('[data-testid="narration-words"]');
+  async function timed(over: Partial<Held> = {}): Promise<void> {
+    const done = await importTiming(BODY, VTT, "en");
+    held = {
+      hasVoice: true,
+      audioId: "voice-1",
+      timingText: JSON.stringify(done.timing),
+      ...over,
+    };
+    section.update({ blockId: "essay", body: BODY, key: "w" });
+    await flush();
+  }
+
+  // Why: the words follow the voice; without one there is nothing to show
+  // them for, and the format has no narration to hold the choice.
+  it("offers no choice before there is a voice", () => {
+    expect(row()).toBeNull();
+  });
+
+  // Why: both places need a read-along that fits (the box and the sign
+  // both show the lit words), so without a timing the row says why there
+  // is nothing to choose yet instead of offering a choice that does
+  // nothing.
+  it("says the words show once the voice has a timing, with nothing to choose", async () => {
+    held = { hasVoice: true, audioId: "voice-1", timingText: null };
+    section.update({ blockId: "essay", body: BODY, key: "w0" });
+    await flush();
+    expect(row()?.textContent).toContain(
+      "The words show once the voice has a timing",
+    );
+    expect(choice("sign")).toBeNull();
+  });
+
+  // Why: only a reading sign has a sign the words can travel to; a stand
+  // or a card keeps them in the box, so no choice is offered there.
+  it("is only offered for a reading sign", async () => {
+    await timed({ view: "lectern" });
+    expect(row()).toBeNull();
+    await timed({ view: "card" });
+    expect(row()).toBeNull();
+  });
+
+  it("shows the box as the default, labelled as the prototype says", async () => {
+    await timed();
+    expect(row()?.textContent).toContain(
+      "While the voice plays, show the words",
+    );
+    expect(choice("screen")?.checked).toBe(true);
+    expect(choice("sign")?.checked).toBe(false);
+    expect(choice("screen")?.closest("label")?.textContent).toBe(
+      "On screen, in the box",
+    );
+    expect(choice("sign")?.closest("label")?.textContent).toBe(
+      "On the sign, while it can be read",
+    );
+    expect(row()?.textContent).toContain(
+      "On the sign, the words move into the box whenever",
+    );
+  });
+
+  // Why: the choice's write is async (the async-feedback rule): both
+  // options are disabled while it runs, the creator's pick stays shown,
+  // and the row ends on what the tour holds.
+  it("puts the words on the sign: disabled while it runs, chosen once the tour holds it", async () => {
+    await timed();
+    holdNext = true;
+    choice("sign")?.click();
+    await flush();
+    expect(edits.at(-1)).toEqual({ kind: "words", value: "sign" });
+    expect(choice("sign")?.disabled).toBe(true);
+    expect(choice("screen")?.disabled).toBe(true);
+    expect(choice("sign")?.checked).toBe(true);
+    expect(section.node.getAttribute("aria-busy")).toBe("true");
+    gate?.release("written");
+    await flush();
+    expect(choice("sign")?.disabled).toBe(false);
+    expect(choice("sign")?.checked).toBe(true);
+    expect(said.at(-1)).toMatch(/on the sign.*Ctrl\+Z undoes it/);
+
+    choice("screen")?.click();
+    await flush();
+    expect(edits.at(-1)).toEqual({ kind: "words", value: null });
+    expect(choice("screen")?.checked).toBe(true);
+    expect(said.at(-1)).toMatch(/in the box.*Ctrl\+Z undoes it/);
+  });
+
+  // Why: the refusal path of the async-feedback rule: the row goes back
+  // to the place the tour holds, enabled again, with nothing said by the
+  // section (the page says the refusal).
+  it("goes back to the tour's place when the tour refuses it", async () => {
+    await timed();
+    holdNext = true;
+    choice("sign")?.click();
+    await flush();
+    expect(choice("sign")?.checked).toBe(true);
+    gate?.release("refused");
+    await flush();
+    expect(choice("sign")?.disabled).toBe(false);
+    expect(choice("sign")?.checked).toBe(false);
+    expect(choice("screen")?.checked).toBe(true);
+    expect(said).toEqual([]);
   });
 });

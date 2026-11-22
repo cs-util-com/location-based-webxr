@@ -635,6 +635,14 @@ const NO_VOICE =
 const NO_VOICE_TO_DESCRIBE =
   "Add the voice first: the synthetic mark and the credit describe it.";
 
+/** Said for the words row without a voice. */
+const NO_VOICE_FOR_WORDS =
+  "Add the voice first: the words show while the voice plays.";
+
+/** Said for words put on the sign of a text that is not a reading sign. */
+const WORDS_ONLY_ON_A_SIGN =
+  "Only a reading sign can show the words on the sign.";
+
 /** Said when the tour's timing for a text cannot be read. */
 const TIMING_UNREAD =
   "The tour's timing for this text could not be read, so it cannot be changed here.";
@@ -660,6 +668,11 @@ export interface NarrationFacts {
   readonly synthetic: boolean;
   /** Who speaks it, as stored ("": no credit). */
   readonly voiceCredit: string;
+  /** Where the words show while the voice plays: "sign", the creator
+   *  put them on the reading sign; null, in the box (the default). */
+  readonly words: "sign" | null;
+  /** The text's stored view: the words row is only for `reading`. */
+  readonly view: string;
 }
 
 /** A change of a long text's narration (`editNarration`). */
@@ -682,7 +695,10 @@ export type NarrationChange =
   | { readonly kind: "synthetic"; readonly synthetic: boolean }
   /** Who speaks it, as typed: stored by `normalVoiceCredit` (trimmed,
    *  single-spaced, capped; empty takes the credit off). */
-  | { readonly kind: "voiceCredit"; readonly text: string };
+  | { readonly kind: "voiceCredit"; readonly text: string }
+  /** Where the words show while the voice plays: on the reading sign, or
+   *  (null) in the box at the bottom, the field's absence. */
+  | { readonly kind: "words"; readonly value: "sign" | null };
 
 /** Said for a size given to a block whose row has none. */
 const NO_EXTENT = "This item has no size to set.";
@@ -1845,6 +1861,11 @@ export function createEditorSession(input: {
       return was === undefined
         ? undefined
         : { ...was, synthetic: change.synthetic === true };
+    }
+    if (change.kind === "words") {
+      if (was === undefined) return undefined;
+      const { words: _old, ...kept } = was;
+      return change.value === "sign" ? { ...kept, words: "sign" } : kept;
     }
     if (change.kind === "voiceCredit") {
       if (was === undefined) return undefined;
@@ -3269,6 +3290,8 @@ export function createEditorSession(input: {
         durationMs: narration?.durationMs ?? null,
         synthetic: narration?.synthetic === true,
         voiceCredit: narration?.voiceCredit ?? "",
+        words: narration?.words === "sign" ? ("sign" as const) : null,
+        view: object.view,
       };
       if (narration?.timing === undefined) {
         return { ...facts, timingText: null, timingUnread: false };
@@ -3342,6 +3365,14 @@ export function createEditorSession(input: {
       ) {
         return { kind: "refused", reason: NO_VOICE_TO_DESCRIBE };
       }
+      if (change.kind === "words") {
+        if (was === undefined) {
+          return { kind: "refused", reason: NO_VOICE_FOR_WORDS };
+        }
+        if (change.value === "sign" && latest.view !== "reading") {
+          return { kind: "refused", reason: WORDS_ONLY_ON_A_SIGN };
+        }
+      }
       if (change.kind === "removeVoice" && was === undefined) {
         return { kind: "unchanged" };
       }
@@ -3353,9 +3384,11 @@ export function createEditorSession(input: {
         return { kind: "unchanged" };
       }
       const narration = narrationAfter(was, change, voice, entry);
-      // The same mark or credit again: no change, said as none.
+      // The same mark, credit or words place again: no change, said as none.
       if (
-        (change.kind === "synthetic" || change.kind === "voiceCredit") &&
+        (change.kind === "synthetic" ||
+          change.kind === "voiceCredit" ||
+          change.kind === "words") &&
         sameJson(narration, was)
       ) {
         return { kind: "unchanged" };
@@ -3372,7 +3405,9 @@ export function createEditorSession(input: {
                 ? `the synthetic voice mark of ${objectName(latest)}`
                 : change.kind === "voiceCredit"
                   ? `the voice credit of ${objectName(latest)}`
-                  : `the timing of ${objectName(latest)}`;
+                  : change.kind === "words"
+                    ? `where the words of ${objectName(latest)} show`
+                    : `the timing of ${objectName(latest)}`;
       const applied = took(() =>
         store.dispatch(
           tourDocumentActions.narrationEdited({

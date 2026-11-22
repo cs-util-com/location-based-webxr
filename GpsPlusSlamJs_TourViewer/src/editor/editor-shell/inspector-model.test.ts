@@ -1124,8 +1124,9 @@ describe("inspectorHint", () => {
         title: "The siege",
         body: "In 1632 the town was besieged.",
         hasNarration: false,
-        // No narration and no stamp given.
-        narrationKey: "null|",
+        // The view (the words row is only for a reading sign), no
+        // narration and no stamp given.
+        narrationKey: "lectern|null|",
         pictures: [],
       },
     });

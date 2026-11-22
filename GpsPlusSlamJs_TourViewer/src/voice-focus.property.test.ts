@@ -26,6 +26,7 @@ describe("createVoiceFocus (properties)", () => {
             sounding.delete(i);
             stopped.push(i);
           },
+          forget: () => undefined,
         }));
         const focus = createVoiceFocus();
         for (const { who, what } of events) {

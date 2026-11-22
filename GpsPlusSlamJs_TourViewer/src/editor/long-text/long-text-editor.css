@@ -689,6 +689,15 @@ button.lw-iss:hover {
   color: var(--s-text);
   font-size: 11px;
 }
+.ln-sec .ln-words {
+  min-width: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+}
+.ln-sec .ln-words legend {
+  padding: 0;
+}
 .ln-sec .ln-in {
   box-sizing: border-box;
   width: 100%;

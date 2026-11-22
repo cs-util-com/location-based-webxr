@@ -83,6 +83,8 @@ const APP_OVERLAY_CONTRACTS = [
     overlayIds: [
       'ar-status',
       'ar-debug',
+      // The travel log's debug buttons, beside the readout.
+      'travel-log-tools',
       'enter-ar',
       'setup-panel',
       'size-offer',

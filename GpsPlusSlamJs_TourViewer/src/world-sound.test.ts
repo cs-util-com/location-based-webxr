@@ -178,6 +178,39 @@ describe("a voice in the world", () => {
     expect(a.playing()).toBe(true);
   });
 
+  it("held behind a narration that is set aside, it is let go: paused where it stood, off at return, on at a tap", async () => {
+    // Why: a narration paused without a tap (the box pressed, a scrub) sets
+    // itself aside and lets a free voice held behind it go (`forget`). The
+    // circle's voice then reads as the visitor's pause, not as away: its
+    // circle shows it paused, leaving holds nothing, the return and the
+    // narration's end wake nothing, and only a tap goes on, where it stood.
+    const { focus, sound, made } = setup();
+    const spot = sound.sound(LOAD, "voice");
+    const narration = sound.sound(LOAD, "voice");
+    spot.play();
+    await flush();
+    if (made[0] !== undefined) made[0].currentTime = 12;
+    narration.play();
+    await flush();
+    expect(spot.wanted()).toBe(true);
+    const running = focus.running();
+    if (running === null) throw new Error("the narration does not run");
+    focus.aside(running);
+    expect(spot.wanted()).toBe(false);
+    expect(spot.playing()).toBe(false);
+    expect(focus.running()).toBeNull();
+    spot.hold();
+    expect(spot.wanted()).toBe(false);
+    spot.carryOn();
+    made[1]?.end();
+    await flush();
+    expect(spot.playing()).toBe(false);
+    spot.play();
+    await flush();
+    expect(spot.playing()).toBe(true);
+    expect(spot.timeMs()).toBe(12_000);
+  });
+
   it("with sound off plays on a tap only, never on a return", async () => {
     // Why: sound off holds the voice; a tap is the visitor's own ask and
     // plays, but walking back into the circle must not start it again.

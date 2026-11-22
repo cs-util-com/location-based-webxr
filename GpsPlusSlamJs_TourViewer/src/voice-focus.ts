@@ -24,8 +24,9 @@ export interface Voice {
   /** Out for good: a tap starts it again. */
   stop(): void;
   /** Let go while held: it stays paused where it stands, out of the
-   *  channel, and only a tap goes on. */
-  forget?(): void;
+   *  channel, and only a tap goes on. Required, so no voice can miss it
+   *  (a no-op for a story's voice, which the focus never lets go). */
+  forget(): void;
   /** A story's voice: its step waits for its end, so it is held, never
    *  stopped. */
   readonly story?: boolean;
@@ -111,7 +112,7 @@ export function createVoiceFocus(): VoiceFocus {
         return;
       }
       running = null;
-      behind?.forget?.();
+      behind?.forget();
     },
     running: () => running,
   };
@@ -260,6 +261,8 @@ export function focusedSceneAudio(
       onHeld(false);
       end?.();
     },
+    // A story's voice is never let go: set aside, the focus carries it on.
+    forget: () => undefined,
   };
   return {
     ...audio,
@@ -333,6 +336,10 @@ export function storyVideoVoice(
     stop() {
       video.pause();
       onHeld(false);
+    },
+    // A story's voice is never let go: set aside, the focus carries it on.
+    forget() {
+      return undefined;
     },
   };
   return {

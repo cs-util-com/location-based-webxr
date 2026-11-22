@@ -6,7 +6,9 @@
  * no longer fits an edited text with "Line the voice up again", what
  * an import or a lining up did, until the creator folds it away, and who
  * speaks the voice (the "Synthetic voice" switch and the "Spoken by"
- * credit the visitor sees after the speaker's name). Every
+ * credit the visitor sees after the speaker's name), and, for a reading
+ * sign, where the words show while the voice plays (in the box, or on the
+ * sign while it can be read). Every
  * action is async and shows it: its button is disabled and says what runs
  * until the tour holds the result, and a failure is said and leaves the
  * section as it was. The words and rules are `narration-status.ts`'s; the
@@ -110,7 +112,14 @@ function timingKey(text: string): string {
 
 /** What a running action says on its button. */
 type Busy =
-  "voice" | "remove" | "timing" | "untime" | "lineup" | "synthetic" | "credit";
+  | "voice"
+  | "remove"
+  | "timing"
+  | "untime"
+  | "lineup"
+  | "synthetic"
+  | "credit"
+  | "words";
 
 /** What a running action is doing, for a file dropped meanwhile. */
 const BUSY_WORDS: Record<Busy, string> = {
@@ -121,9 +130,17 @@ const BUSY_WORDS: Record<Busy, string> = {
   lineup: "The voice is still being lined up",
   synthetic: "The synthetic voice mark is still being changed",
   credit: "The credit is still being changed",
+  words: "Where the words show is still being changed",
 };
 
-/** Each section's credit field gets its own id, for its label. */
+/** The words row's two places, as the prototype names them. */
+const WORDS_PLACES = [
+  ["screen", "On screen, in the box"],
+  ["sign", "On the sign, while it can be read"],
+] as const;
+
+/** Each section's credit field gets its own id, for its label, and its
+ *  words choice its own radio group name. */
 let sections = 0;
 
 /** `bytes` as a person reads a size: "812 B", "1.5 KiB", "50.0 MiB". */
@@ -224,7 +241,8 @@ export function createNarrationSection(
   synthRow.append(synthBox, "Synthetic voice");
   const creditField = el("input", "ln-in");
   creditField.type = "text";
-  creditField.id = `ln-credit-${String(++sections)}`;
+  const sectionNo = ++sections;
+  creditField.id = `ln-credit-${String(sectionNo)}`;
   creditField.dataset["ln"] = "credit";
   // The format's cap counts letters (code points) after whitespace is
   // collapsed; `maxlength` counts UTF-16 units with every space. Twice the
@@ -236,6 +254,36 @@ export function createNarrationSection(
   const creditLabel = el("label", "ln-k", "Spoken by");
   creditLabel.htmlFor = creditField.id;
   speaker.append(synthRow, creditLabel, creditField);
+  // Where the words show while the voice plays: one node for the
+  // section's life like the switch, in the speaker part for a reading
+  // sign with a voice; its choice only once the voice has a timing.
+  const wordsRow = el("fieldset", "ln-words");
+  wordsRow.dataset["testid"] = "narration-words";
+  const wordsLegend = el(
+    "legend",
+    "ln-k",
+    "While the voice plays, show the words",
+  );
+  const wordsBoxes = WORDS_PLACES.map(([value, text]) => {
+    const radio = el("input");
+    radio.type = "radio";
+    radio.name = `ln-words-${String(sectionNo)}`;
+    radio.value = value;
+    radio.dataset["ln"] = "words";
+    const label = el("label", "ln-chk");
+    label.append(radio, text);
+    return { radio, label };
+  });
+  const wordsHelp = el(
+    "div",
+    "note",
+    "On the sign, the words move into the box whenever the sign is too far, out of view or too far to the side, and back when it can be read again.",
+  );
+  const wordsWait = el(
+    "div",
+    "note",
+    "The words show once the voice has a timing.",
+  );
 
   // --- state -----------------------------------------------------------------
   let input: NarrationSectionInput | null = null;
@@ -361,6 +409,36 @@ export function createNarrationSection(
     creditField.readOnly = busy !== null;
     if (doc.activeElement !== creditField) {
       creditField.value = held.voiceCredit;
+    }
+    drawWords(held);
+  }
+
+  /** The words row: only for a reading sign with a voice; its choice
+   *  once the voice has a timing (both places show the lit words), the
+   *  creator's pick kept while its write runs. */
+  function drawWords(held: NarrationFacts): void {
+    if (!held.hasVoice || held.view !== "reading") {
+      wordsRow.remove();
+      return;
+    }
+    if (wordsRow.parentNode !== speaker) speaker.append(wordsRow);
+    if (held.timingText === null) {
+      wordsRow.replaceChildren(wordsLegend, wordsWait);
+      return;
+    }
+    wordsRow.replaceChildren(
+      wordsLegend,
+      ...wordsBoxes.map((b) => b.label),
+      wordsHelp,
+    );
+    for (const { radio } of wordsBoxes) {
+      if (busy !== "words") {
+        radio.checked = radio.value === (held.words ?? "screen");
+      }
+      radio.disabled = busy !== null;
+      if (busy === "words" && radio.checked) {
+        radio.setAttribute("aria-busy", "true");
+      } else radio.removeAttribute("aria-busy");
     }
   }
 
@@ -706,6 +784,26 @@ export function createNarrationSection(
     });
   }
 
+  /** Where the words show while the voice plays: on the sign, or (null)
+   *  in the box. */
+  async function setWords(value: "sign" | null): Promise<void> {
+    const at = input;
+    if (at === null || facts?.hasVoice !== true || busy !== null) {
+      draw();
+      return;
+    }
+    if (value === facts.words) return;
+    await running("words", async () => {
+      const done = await deps.edit(at.blockId, { kind: "words", value });
+      if (done !== "written") return;
+      deps.say(
+        value === "sign"
+          ? "The words show on the sign while it can be read, and in the box when it cannot. Ctrl+Z undoes it."
+          : "The words show in the box at the bottom. Ctrl+Z undoes it.",
+      );
+    });
+  }
+
   /** The credit as entered (the field's change: leaving it, or Enter),
    *  one edit; the field then shows it as the tour stores it. */
   async function setCredit(text: string): Promise<void> {
@@ -894,6 +992,11 @@ export function createNarrationSection(
   synthBox.addEventListener("change", () => {
     void setSynthetic(synthBox.checked);
   });
+  for (const { radio } of wordsBoxes) {
+    radio.addEventListener("change", () => {
+      if (radio.checked) void setWords(radio.value === "sign" ? "sign" : null);
+    });
+  }
   creditField.addEventListener("change", () => {
     void setCredit(creditField.value);
   });

@@ -609,13 +609,14 @@ examples).
 
 ## Narration
 
-- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state, the `synthetic` mark and the `voiceCredit`, `""` for none), or a refusal.
+- `narration(itemId)`: the long text's `NarrationFacts` (voice, its audio asset id `audioId`, length, the read-along text from the newest bytes or the page's state, the `synthetic` mark and the `voiceCredit`, `""` for none, `words` (`"sign"` or null for the screen) and the text's `view`), or a refusal.
 - `editNarration(itemId, change)`: one `NarrationChange` as one undo step (`narrationEdited`), answering `edited`, `unchanged` or `refused` with a reason; `edited` carries `notBackedUp: true` when the draft could not keep the voice's file.
   - `voice`: a sound file, brought in with `addFile(file, name, ["audio"])`; the same recording again is `unchanged`.
   - `removeVoice`: takes the timing off too.
   - `timing`: compact JSON, at most `TOUR_TIMING_MAX_BYTES`, only with a voice.
   - `removeTiming`: keeps the voice.
   - `synthetic`: marks the voice synthetic or a person's; `voiceCredit`: who speaks it, stored by `normalVoiceCredit` (`../voice-credit.ts`: trimmed, single-spaced, cut to the format's 200 letters; empty takes the field off). Both only with a voice (refused in words otherwise), the same value again is `unchanged`.
+  - `words`: where the words show while the voice plays, `"sign"` (on a reading sign while it can be read, else in the box at the bottom) or null (the box, the default: the field is taken off). Only with a voice (`NO_VOICE_FOR_WORDS`) and `"sign"` only on a text shown as a reading sign (`WORDS_ONLY_ON_A_SIGN`); the same value again is `unchanged`; a timing removed or replaced keeps it.
   - A new voice is a person's with no credit (`synthetic: false`): the editor has no speech tool of its own, so every voice is a file brought in. A replaced voice keeps the mark and the credit.
   - Every narration an edit writes carries its credit in the stored form, so a tour opened with a credit written loosely (the format takes one as written) still takes every narration edit; the first stores it normalised.
 - Story-block long texts are refused. The voice and the timing are written in the same save as the tour that names them.

@@ -193,6 +193,7 @@ function channelHarness(step: Record<string, unknown>) {
     hold: () => calls.push("free holds"),
     carryOn: () => calls.push("free carries on"),
     stop: () => calls.push("free stops"),
+    forget: () => undefined,
   };
   const story = {
     id: "s",
