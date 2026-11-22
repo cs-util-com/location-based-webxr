@@ -23,6 +23,10 @@ wired into its logic: every interaction is faked.
     label exactly "YYYY-MM-DD Title" as in the heading.
   - Every in-page link points at an id on the page, every other link at a
     prototype folder with an `index.html` (or one of the package's pages).
+- `feature-match-1-cockpit/`, `feature-match-2-guided/` - the feature-match
+  test page for a phone on a stand: a camera-first dock with automatic capture
+  when the phone is still, and a guided one-step-per-screen run with a
+  countdown and one Download all at the end.
 - `start-page-1-doors-under-hero/` - the tour start page with three equal
   doors right under the hero and its film (walk a tour, make one on site,
   build or edit at a computer); a copy of the real page (`design.css` and

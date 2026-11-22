@@ -10,6 +10,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import fc from "fast-check";
+import { indexedDbKeyValueStore } from "../key-value-db";
 
 import {
   SHOW_SCAN_AGAIN_LABELS,
@@ -364,6 +365,7 @@ function fakeIdb(
           data.delete(key);
           return request(undefined);
         },
+        getAllKeys: () => request([...data.keys()]),
       });
       later(() => {
         if (options.failTx === true) {
@@ -426,6 +428,19 @@ describe("indexedDbHandleStore", () => {
       "readwrite",
       "readonly",
     ]);
+  });
+
+  // Why: the feature match check keeps its photos in a database of its own
+  // through the same adapter, and prunes them by listing the keys.
+  it("opens a named database and lists its keys", async () => {
+    const { factory, log } = fakeIdb();
+    const store = indexedDbKeyValueStore(factory, "photos-db", "photos");
+    await store?.put("p1", 1);
+    await store?.put("p2", 2);
+    expect(await store?.keys()).toEqual(["p1", "p2"]);
+    expect(log.opens).toEqual([{ name: "photos-db", version: 1 }]);
+    expect(log.created).toEqual(["photos"]);
+    expect(indexedDbKeyValueStore(undefined, "a", "b")).toBeNull();
   });
 
   it("rejects a failed open and opens again at the next call", async () => {

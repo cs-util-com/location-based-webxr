@@ -7,11 +7,12 @@
  * assets-only deployment it replaced (plan Rev 2, review finding 1).
  *
  * The `/api/` prefix is reserved for worker routes (`wrangler.toml`
- * `run_worker_first`), today only the Drive proxy; the long-blocked `/S/`
+ * `run_worker_first`): the Drive proxy and the model mirror; the long-blocked `/S/`
  * QR short-link rewrite joins this dispatcher when it is built.
  */
 
 import { corsHeaders, handleDriveProxy, type FetchLike } from "./drive-proxy";
+import { handleModelMirror, MODEL_MIRROR_PREFIX } from "./model-mirror";
 
 export interface SiteWorkerEnv {
   /** The `[assets] binding = "ASSETS"` from wrangler.toml. Declared
@@ -28,6 +29,9 @@ export function routeRequest(
   const { pathname } = new URL(request.url);
   if (pathname === "/api/drive-proxy") {
     return handleDriveProxy(request, { fetchImpl });
+  }
+  if (pathname.startsWith(MODEL_MIRROR_PREFIX)) {
+    return handleModelMirror(request, fetchImpl);
   }
   if (pathname.startsWith("/api/")) {
     // Carries the dev-origin CORS headers: without them, a typo'd route

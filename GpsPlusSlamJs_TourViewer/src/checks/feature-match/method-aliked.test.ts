@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { makeFrame } from "./bench-image";
 import type { LoadDeps } from "./bench-net";
 import {
+  ortWasmThreads,
   ALIKED_EXTRACTOR_URL,
   LIGHTGLUE_URL,
   ORT_URL,
@@ -129,5 +130,16 @@ describe("alikedMethod", () => {
 
     runner.dispose();
     expect(ort.released).toEqual(["extractor", "matcher"]);
+  });
+});
+
+// Why: the speed report names the thread count, because a page that is not
+// cross-origin isolated runs onnxruntime-web on one thread only.
+describe("ortWasmThreads", () => {
+  it("uses up to four threads only when cross-origin isolated", () => {
+    expect(ortWasmThreads(false, 8)).toBe(1);
+    expect(ortWasmThreads(true, 8)).toBe(4);
+    expect(ortWasmThreads(true, 2)).toBe(2);
+    expect(ortWasmThreads(true, undefined)).toBe(1);
   });
 });

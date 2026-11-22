@@ -8,6 +8,7 @@ import type { LoadDeps } from "./bench-net";
 import type { BenchMethod } from "./bench-run";
 import { alikedMethod } from "./method-aliked";
 import { siftMethod } from "./method-sift";
+import { siftLightGlueMethod } from "./method-sift-lightglue";
 import { xfeatMethod, type XFeatPrecision } from "./method-xfeat";
 
 export type Backend = "webgpu" | "wasm";
@@ -16,6 +17,8 @@ export interface MethodSelection {
   readonly sift: boolean;
   readonly xfeat: boolean;
   readonly aliked: boolean;
+  /** SIFT matched by LightGlue (onnxruntime-web); off when absent. */
+  readonly siftLightGlue?: boolean;
   readonly backends: readonly Backend[];
   readonly precisions: readonly XFeatPrecision[];
 }
@@ -45,6 +48,11 @@ export function buildMethods(
       out.push(alikedMethod(b, deps));
     }
   }
+  if (s.siftLightGlue === true) {
+    for (const b of s.backends) {
+      out.push(siftLightGlueMethod(b, deps));
+    }
+  }
   return out;
 }
 
@@ -63,6 +71,9 @@ export function selectionGaps(s: MethodSelection): string[] {
   }
   if (s.aliked && s.backends.length === 0) {
     gaps.push("ALIKED + LightGlue is ticked but no backend is");
+  }
+  if (s.siftLightGlue === true && s.backends.length === 0) {
+    gaps.push("SIFT + LightGlue is ticked but no backend is");
   }
   return gaps;
 }
