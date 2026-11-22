@@ -600,6 +600,7 @@ export function wireCreatorDraft(deps: {
       return true;
     }
     await remove();
+    if (draftStore !== store) return claimElsewhere(store, entry, remove);
     draftRejected = draftRejected.filter((r) => r !== entry);
     return recordMeta(tourUrl);
   }
@@ -716,6 +717,7 @@ export function wireCreatorDraft(deps: {
     if (draftStore !== store) return claimElsewhere(store, id, remove);
     if (!draftRejected.includes(id) && !diskRejected.has(id)) return true;
     await remove();
+    if (draftStore !== store) return claimElsewhere(store, id, remove);
     draftRejected = draftRejected.filter((rejected) => rejected !== id);
     return recordMeta(tourUrl);
   }

@@ -713,4 +713,35 @@ describe("an object edited after Delete it claims its id wherever its write runs
     const next = await wired(ns, tourOf([pin("a")]), NEW);
     expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
   });
+
+  // Why: a claim that started while the draft was the open tour's, and
+  // whose removal was still running when a Finish moved it, wrote the
+  // meta through the meta's queue - which waited for the move, while the
+  // move waited for this claim: neither ever ended, and every later write
+  // of the draft waited behind them.
+  it("a claim the draft moves away from in the middle still ends, and the edit is offered there", async () => {
+    const { ns, page } = await deleted(false);
+    await flush();
+    ns.holdRemovesOf = new RegExp(`^${objectKey("a")}$`);
+    let wroteDone = false;
+    let movedDone = false;
+    const wrote = page.draft.writeObject(pin("a", "edited")).then((ok) => {
+      wroteDone = true;
+      return ok;
+    });
+    await flush();
+    const moved = page.draft.follow(NEW).then((ok) => {
+      movedDone = true;
+      return ok;
+    });
+    await flush();
+    ns.releasePuts();
+    await flush();
+    expect(wroteDone, "the edit's write ended").toBe(true);
+    expect(movedDone, "the move ended").toBe(true);
+    expect(await wrote).toBe(true);
+    expect(await moved).toBe(true);
+    const next = await wired(ns, tourOf([pin("a")]), NEW);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+  });
 });
