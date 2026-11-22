@@ -57,7 +57,21 @@ import {
 import { formatMs } from "./bench-stats";
 import { stepStates, type FlowState } from "./bench-steps";
 import { syntheticPair } from "./bench-synthetic";
+import {
+  formatTimingReport,
+  parseTimingRuns,
+  runTiming,
+  timingBackends,
+} from "./bench-timing";
 import { startFlatCapture } from "./flat-capture";
+import type { DinoVariant } from "./method-dino";
+import {
+  SPEED_LONG_EDGES,
+  SPEED_SIFT_CAPS,
+  speedTestArms,
+  speedTestSettings,
+  type SpeedTestChoice,
+} from "./speed-test";
 
 /** The longest side a captured camera frame is kept at. */
 const CAPTURE_MAX = 1280;
@@ -108,6 +122,8 @@ interface Ui {
   readonly saveLinks: HTMLElement;
   readonly runSynthetic: HTMLButtonElement;
   readonly syntheticState: HTMLElement;
+  readonly runSpeed: HTMLButtonElement;
+  readonly speedState: HTMLElement;
   readonly table: HTMLTableSectionElement;
   readonly pictures: HTMLElement;
   readonly report: HTMLTextAreaElement;
@@ -142,6 +158,8 @@ function findUi(root: ParentNode): Ui {
     saveLinks: $(root, "#save-links"),
     runSynthetic: $(root, "#run-synthetic"),
     syntheticState: $(root, "#synthetic-state"),
+    runSpeed: $(root, "#run-speed"),
+    speedState: $(root, "#speed-state"),
     table: $(root, "#results tbody"),
     pictures: $(root, "#pictures"),
     report: $(root, "#report"),
@@ -447,6 +465,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       stream || captures.a === null ? "Take photo B" : "Start camera";
     ui.run.disabled = !idle || !pair;
     ui.runSynthetic.disabled = !idle;
+    ui.runSpeed.disabled = !idle;
     ui.saveFrames.disabled =
       !idle || !pair || (cameraRun !== "done" && cameraRun !== "failed");
     ui.cameraBox.hidden = stream === null;
@@ -907,6 +926,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       sift: checked(root, "#m-sift"),
       xfeat: checked(root, "#m-xfeat"),
       aliked: checked(root, "#m-aliked"),
+      siftLightGlue: checked(root, "#m-siftlg"),
       backends: settings.backends,
       precisions: settings.precisions,
     };
@@ -1056,6 +1076,112 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   }
   ui.run.addEventListener("click", () => startRun("camera"));
   ui.runSynthetic.addEventListener("click", () => startRun("synthetic"));
+
+  /** One of `allowed` by its text, else `fallback`. */
+  const pickNumber = <T extends number>(
+    allowed: readonly T[],
+    text: string,
+    fallback: T,
+  ): T => allowed.find((v) => String(v) === text) ?? fallback;
+
+  /**
+   * The speed test: the ticked arms per backend on the camera pair when
+   * both photos are taken, else on the synthetic pair; its report replaces
+   * the report text, so a camera run it hides is withdrawn first.
+   */
+  const runSpeedOnce = async (): Promise<string> => {
+    errors.length = 0;
+    const pair = pairOf(
+      captures.a !== null && captures.b !== null ? "camera" : "synthetic",
+    );
+    if (!pair) {
+      return "not run: no input";
+    }
+    const { backends, note } = timingBackends(
+      backendsFrom(tickedValues(root, "t-backend")),
+      await hasWebGpu(),
+    );
+    const dino: DinoVariant[] = [];
+    if (checked(root, "#t-dino-int8")) {
+      dino.push("int8");
+    }
+    if (checked(root, "#t-dino-q4f16")) {
+      dino.push("q4f16");
+    }
+    const choice: SpeedTestChoice = {
+      xfeat: checked(root, "#t-xfeat"),
+      siftLightGlue: checked(root, "#t-siftlg"),
+      dino,
+      backends,
+      longEdge: pickNumber(SPEED_LONG_EDGES, valueOf(root, "#t-edge"), 640),
+      siftCap: pickNumber(SPEED_SIFT_CAPS, valueOf(root, "#t-cap"), 512),
+    };
+    const arms = speedTestArms(choice, pair.input, browserDeps);
+    if (arms.length === 0) {
+      fail("speed test", new Error("tick at least one arm and backend"));
+      return "not run: nothing ticked";
+    }
+    const runs = parseTimingRuns(valueOf(root, "#t-runs"));
+    stopCamera();
+    withdrawCameraRun();
+    const startedAt = new Date().toISOString();
+    const device = await deviceInfo();
+    ui.report.value = "";
+    const settingsLine = speedTestSettings(choice, pair.input, note);
+    log(
+      `speed test: ${String(arms.length)} arms, ${String(runs)} runs; ${settingsLine}`,
+    );
+    const results = await runTiming(
+      arms,
+      { runs },
+      {
+        now: () => performance.now(),
+        yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
+        log: (line) => {
+          log(line);
+          ui.speedState.textContent = `running: ${line}`;
+        },
+      },
+    );
+    ui.report.value = formatTimingReport({
+      startedAt,
+      device,
+      input: pair.text,
+      settings: settingsLine,
+      runs,
+      results,
+      errors,
+    });
+    const failed = results.filter((r) => r.error !== null).length;
+    return failed === 0
+      ? `done: ${String(results.length)} arms: tap Copy log`
+      : `done: ${String(results.length)} arms, ${String(failed)} with errors (see the report)`;
+  };
+
+  ui.runSpeed.addEventListener("click", () => {
+    if (busy !== "idle") {
+      return;
+    }
+    const idleLabel = ui.runSpeed.textContent;
+    busy = "running";
+    ui.runSpeed.textContent = "Timing...";
+    ui.speedState.textContent = "running";
+    refresh();
+    runSpeedOnce()
+      .then((text) => {
+        ui.speedState.textContent = text;
+        log(text);
+      })
+      .catch((e: unknown) => {
+        fail("speed test", e);
+        ui.speedState.textContent = `failed: ${errorText(e)}`;
+      })
+      .finally(() => {
+        busy = "idle";
+        ui.runSpeed.textContent = idleLabel;
+        refresh();
+      });
+  });
 
   ui.copy.addEventListener("click", () => {
     const text = ui.report.value || ui.log.textContent || "";

@@ -27,7 +27,7 @@ export const ORT_URL =
 /** Its Wasm files, same version. */
 export const ORT_WASM_DIR =
   "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/";
-const ORT_PREFIX = "https://cdn.jsdelivr.net/npm/onnxruntime-web@";
+export const ORT_PREFIX = "https://cdn.jsdelivr.net/npm/onnxruntime-web@";
 
 export const ALIKED_EXTRACTOR_URL =
   "https://huggingface.co/kornia/raco-aliked/resolve/8f251612206a539335b62671c970bd80911495e3/raco_aliked_extractor_k512.onnx";
@@ -41,7 +41,7 @@ export interface OrtTensor {
   readonly data: unknown;
   readonly dims: readonly number[];
 }
-interface OrtSession {
+export interface OrtSession {
   readonly inputNames: readonly string[];
   readonly outputNames: readonly string[];
   run(feeds: Record<string, OrtTensor>): Promise<Record<string, OrtTensor>>;
@@ -85,7 +85,8 @@ export function ortApi(mod: unknown): OrtApi {
 /** Loaded once per page: the runtime and its global settings are shared. */
 const runtimes = new WeakMap<LoadDeps["importModule"], Promise<OrtApi>>();
 
-function loadRuntime(deps: LoadDeps): Promise<OrtApi> {
+/** The runtime, imported and configured once per page (per `importModule`). */
+export function loadOrtRuntime(deps: LoadDeps): Promise<OrtApi> {
   let p = runtimes.get(deps.importModule);
   if (!p) {
     p = deps.importModule(ORT_URL).then((mod) => {
@@ -196,7 +197,7 @@ export function alikedMethod(
     id: `aliked-lightglue-${backend}`,
     label: `ALIKED + LightGlue (onnxruntime-web) ${backend}`,
     async init(): Promise<MethodRunner> {
-      const ort = await loadRuntime(deps);
+      const ort = await loadOrtRuntime(deps);
       const net = { fetch: deps.fetch, now: deps.now, lookup: lookupIn(deps) };
       const ex = await fetchBytes(
         ALIKED_EXTRACTOR_URL,

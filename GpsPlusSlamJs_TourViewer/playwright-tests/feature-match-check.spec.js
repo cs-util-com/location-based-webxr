@@ -1526,3 +1526,59 @@ test("the flat target capture keeps the photos when the zip fails, and attaches 
   await expect(download).toHaveText("Download zip");
   expect(errors).toEqual([]);
 });
+
+/**
+ * Why this test matters: the speed test is started on a phone left alone
+ * for minutes, so its button must show that it is working, refuse a
+ * second start, and end in a report the copy button can take, even when
+ * an arm cannot load (here every CDN and model host is refused, so the
+ * SIFT + LightGlue arm fails at its runtime import). The real model runs
+ * are measured by hand on devices: a 46 MB download has no place in CI.
+ */
+test("the feature matching speed test reports an arm that cannot load", async ({
+  page,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, fulfillSift);
+  // The runtime import is held, so the in-progress state can be seen.
+  let releaseRuntime = () => undefined;
+  const runtimeHeld = new Promise((resolve) => {
+    releaseRuntime = () => resolve(undefined);
+  });
+  await page.route(/onnxruntime-web/, async (route) => {
+    await runtimeHeld;
+    await route.abort();
+  });
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await page.locator("#speed summary").click();
+  for (const box of ["#t-xfeat", "#t-dino-int8", "#t-dino-q4f16"]) {
+    await page.locator(box).uncheck();
+  }
+  await page.locator('input[name="t-backend"][value="webgpu"]').uncheck();
+  await page.locator("#t-runs").fill("2");
+  const run = page.locator("#run-speed");
+  await run.click();
+  await expect(run).toHaveText("Timing...");
+  await expect(run).toBeDisabled();
+  releaseRuntime();
+  await expect(page.locator("#speed-state")).toHaveText(
+    "done: 1 arms, 1 with errors (see the report)",
+  );
+  await expect(run).toHaveText("Run speed test");
+  await expect(run).toBeEnabled();
+  const report = await page.locator("#report").inputValue();
+  expect(report).toContain("Feature matching speed test");
+  expect(report).toContain("input: synthetic");
+  expect(report).toContain("SIFT cap 512 per frame");
+  expect(report).toMatch(/ERROR load: /);
+
+  // Nothing ticked: said at once, nothing run.
+  await page.locator("#t-siftlg").uncheck();
+  await run.click();
+  await expect(page.locator("#speed-state")).toHaveText(
+    "not run: nothing ticked",
+  );
+  expect(errors).toEqual([]);
+});

@@ -3,14 +3,15 @@
 ## Purpose
 
 The Cloudflare worker entry point in front of the static multi-app site: a
-route dispatcher that handles `/api/*` (today only the Drive proxy) and
+route dispatcher that handles `/api/*` (the Drive proxy and the model mirror) and
 delegates every other request to the static assets, byte-identical to the
 assets-only deployment it replaced.
 
 ## Public API
 
 - `routeRequest(request, env, fetchImpl?)` — the dispatcher:
-  `/api/drive-proxy` → `handleDriveProxy`; any other `/api/*` → JSON `404`
+  `/api/drive-proxy` → `handleDriveProxy`; `/api/model/<name>` →
+  `handleModelMirror` (`model-mirror.ts`); any other `/api/*` → JSON `404`
   (never the site's HTML 404 — the prefix is reserved for worker routes),
   carrying the dev-origin CORS headers so the error body is readable from
   a dev server instead of an opaque CORS failure (PR #369 review);

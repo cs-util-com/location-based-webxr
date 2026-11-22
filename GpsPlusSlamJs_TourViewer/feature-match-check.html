@@ -590,6 +590,10 @@
               ><input id="m-aliked" type="checkbox" checked /> ALIKED +
               LightGlue (onnxruntime-web, 13 MB + 51 MB)</label
             >
+            <label
+              ><input id="m-siftlg" type="checkbox" /> SIFT + LightGlue
+              (onnxruntime-web, 46 MB)</label
+            >
           </fieldset>
           <fieldset>
             <legend>Backends (XFeat, ALIKED)</legend>
@@ -650,6 +654,80 @@
           <p class="hint">
             A generated pair with a known warp, no camera: it also counts the
             matches that land within 3 px of where they should.
+          </p>
+        </details>
+        <details id="speed">
+          <summary>Speed test: download, start-up and steady times</summary>
+          <p class="hint">
+            Rest the phone, tap Run speed test and do not touch it until it says
+            done. Uses the camera pair when photos A and B are taken, else the
+            synthetic pair. One first run per arm, then the runs interleaved;
+            XFeat fp16 is the reference the others are divided by.
+          </p>
+          <fieldset>
+            <legend>Arms</legend>
+            <label
+              ><input id="t-xfeat" type="checkbox" checked /> XFeat fp16
+              (reference)</label
+            >
+            <label
+              ><input id="t-siftlg" type="checkbox" checked /> SIFT +
+              LightGlue</label
+            >
+            <label
+              ><input id="t-dino-int8" type="checkbox" checked /> DINOv2-S/14
+              int8</label
+            >
+            <label
+              ><input id="t-dino-q4f16" type="checkbox" checked /> DINOv2-S/14
+              q4f16</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>Backends</legend>
+            <label
+              ><input type="checkbox" name="t-backend" value="webgpu" checked />
+              WebGPU</label
+            >
+            <label
+              ><input type="checkbox" name="t-backend" value="wasm" checked />
+              WASM</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>Settings</legend>
+            <label
+              >Long edge
+              <select id="t-edge">
+                <option value="480">480</option>
+                <option value="640" selected>640</option>
+                <option value="960">960</option>
+              </select></label
+            >
+            <label
+              >SIFT cap
+              <select id="t-cap">
+                <option value="512" selected>512</option>
+                <option value="1024">1024</option>
+              </select></label
+            >
+            <label
+              >Runs
+              <input
+                id="t-runs"
+                type="number"
+                min="1"
+                max="50"
+                value="10"
+                size="3"
+            /></label>
+          </fieldset>
+          <div class="row">
+            <button id="run-speed" type="button">Run speed test</button>
+            <span id="speed-state" aria-live="polite"></span>
+          </div>
+          <p class="hint">
+            The result goes to the report below: tap Copy log and paste it.
           </p>
         </details>
       </section>
