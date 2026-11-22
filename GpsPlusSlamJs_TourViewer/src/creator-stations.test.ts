@@ -9,6 +9,7 @@ import { calcGpsCoords } from "gps-plus-slam-app-framework/core";
 import { Group, Mesh, type RingGeometry, type Vector3 } from "three";
 
 import { createCreatorDocument } from "./creator-document.js";
+import { landWrite } from "./test-support/land-write.js";
 import { tourOf } from "./test-support/tour-of.js";
 import {
   manifestToWrite,
@@ -323,7 +324,8 @@ describe("wireCreatorStations", () => {
     const scene = new Group();
     // The page's tour document, changed as the creator changes it (a
     // placement, a settle's re-pose, a delete, a Finish's write).
-    const tour = createCreatorDocument(createTourViewerStore());
+    const store = createTourViewerStore();
+    const tour = createCreatorDocument(store);
     tour.open(
       options.opened ??
         withRadius(tourOf([pin("gate", 0, 0)]), options.radiusM),
@@ -344,6 +346,7 @@ describe("wireCreatorStations", () => {
       scene.children.find((c) => c.name === STATION_RING_NAME) as
         Mesh | undefined;
     return {
+      store,
       tour,
       chip,
       stations,
@@ -672,14 +675,11 @@ describe("wireCreatorStations", () => {
     );
     // The Finish writes the station under the id the document gave it,
     // and the working copy starts again from the written tour.
-    const generation = h.tour.saveStarted();
-    h.tour.saved({
-      generation,
+    landWrite(h.store, h.tour, {
       written: manifestToWrite(h.tour.state())!,
       appliedDeletions: [],
       stationsAtStart: h.tour.state().stations,
     });
-    h.tour.saveEnded(generation);
     h.stand(120, 0);
     expect(h.chip.textContent).toBe(
       "You left Station 2 - what you place next starts a new station.",

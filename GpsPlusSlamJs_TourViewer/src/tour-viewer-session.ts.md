@@ -67,8 +67,9 @@ lives here.
     `mintGeneration` (the code in hand, its measurement and the visit's
     sighting of it are the store's `creatorCodes`, written only through
     `creator-codes.ts`),
-    `rebuiltZip` (with the `manifest.json` list it carries,
-    for the next Finish, K1 milestone review R7), `tourLabel` (set by
+    `saves` (the open tour's save handle, `tour-document-save.ts`, made at
+    its first Finish: its newest bytes carry the `manifest.json` list for
+    the next Finish), `tourLabel` (set by
     archive-open); the open
     tour's document `tourDocument` (`creator-document.ts`: the shared
     `tourDocument` slice of the store the session was made with, plus the
@@ -245,8 +246,8 @@ unchanged across the split (the split's behaviour-neutrality proof).
 - `TourViewerHooks.confirmLeaveTour()` - false when the creator declined to
   leave an unsaved rebuilt file for another tour (U2; `main.ts` binds it,
   `createUnwiredHooks` returns true).
-- `rebuiltZip.delivered` - a save delivered the rebuilt file (U2).
-- `rebuiltZip.written` - the tour.json that zip carries: what a yes to
+- `saves.newest().delivered` - a save delivered the rebuilt file (U2).
+- `saves.newest().written` - the tour.json that zip carries: what a yes to
   "did you upload it?" notes (F19 review #2).
 - `scanEntries` - see the S1 note above.
 

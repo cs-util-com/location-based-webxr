@@ -292,14 +292,14 @@ describe("the teardown clears tour-scoped state only when a tour closes", () => 
       throw new Error("a disposal failed");
     });
     const resetFinishStep = vi.spyOn(hooks, "resetFinishStep");
-    ctx.rebuiltZip = new Blob(["old"]) as never;
+    ctx.saves = {} as never;
     ctx.placement = { kind: "placing" } as never;
     const dom = openAnotherTour(ctx, hooks);
     await vi.waitFor(() => expect(dom.openButton.disabled).toBe(false));
     expect(sessionInHook).toBeNull();
     // The rest of the teardown still ran: with the session gone, no later
     // open re-runs it, so a skipped step would leak this tour into the next.
-    expect(ctx.rebuiltZip).toBeNull();
+    expect(ctx.saves).toBeNull();
     expect(ctx.placement).toEqual({ kind: "idle" });
     expect(resetFinishStep).toHaveBeenCalled();
     expect(ctx.session).toBeNull();

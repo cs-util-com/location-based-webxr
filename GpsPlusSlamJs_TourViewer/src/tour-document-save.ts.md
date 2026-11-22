@@ -10,8 +10,10 @@ in the document (`saved`). The slice's save status (`tour-document.ts`,
 `save.rebuilds` / `save.status` / `save.error`) is the one place that says
 a save runs, landed or failed; an undo waits for it (`canStep`).
 
-The desktop editor saves through it (`editor/editor-session.ts`). The
-phone's Finish does not yet: see "Not here yet" below.
+Both pages save through it: the desktop editor's Save
+(`editor/editor-session.ts`, `save`) and the phone's Finish
+(`creator-finish.ts`, `queued` with its own steps, the code levels, a
+progress line and a stop check).
 
 ## Public API
 
@@ -40,11 +42,20 @@ phone's Finish does not yet: see "Not here yet" below.
   - `picturesRead()` - settles once the pictures being read are read: a
     save waits for it, so a picture is read before a rebuild replaces the
     bytes it may be read from.
-- `TourSaves`
+- `TourSaves` (exported, with `NewestBytes`)
+  - `generation` - the open the handle belongs to: a page keeps one
+    handle per open by this (`creator-finish.ts` makes a new one for a
+    tour opened since).
   - `fileName` - the name every save of this open is written under
     (`finishedFileName`: the opened file's, made safe).
-  - `newest()` - the newest bytes this open's saves wrote; null before
-    one landed (a rebuild then reads the opened file, under its budget).
+  - `newest()` - the newest bytes this open's saves wrote (`NewestBytes`:
+    the Blob, the `manifest.json` list it carries, the tour.json it
+    carries as `written`, and `delivered` once a save delivered it); null
+    before one landed (a rebuild then reads the opened file, under its
+    budget).
+  - `markDelivered(blob)` - a save delivered `blob`: when it is still the
+    newest bytes they carry `delivered: true` (the phone's leave guard);
+    an older Blob changes nothing.
   - `save({ keepScan, inPlace? })` - thunk; resolves with the
     `FinishedTour` it built. Queued behind the saves before it; when it starts,
     the snapshot (`TourSaveSnapshot`: the entries with their kept
@@ -67,10 +78,13 @@ phone's Finish does not yet: see "Not here yet" below.
   - `picturesRead()` - settles after the input's `picturesRead()`
     (before a rebuild replaces the bytes a picture may be read from; the
     desktop's move of the walk waits for it too).
-  - `rebuild(snap, keepScan, whole?)` - `rebuildFinishedTour`
+  - `rebuild(snap, keepScan, whole?, options?)` - `rebuildFinishedTour`
     from the newest bytes, or from `whole` (the opened file as the caller
-    already read it, so it is not read twice); `levels: []`. Throws what
-    the rebuild throws, and "the save was stopped" for a stopped one.
+    already read it, so it is not read twice). `options`
+    (`TourRebuildOptions`): `levels` (the code files to write; none by
+    default), `onProgress(done, total)` and `shouldContinue()` (the
+    phone's progress line and stop check). Throws what the rebuild throws,
+    and "the save was stopped" for a stopped one.
   - `land(finished, snap, inPlace = false)` - thunk; `finished` becomes the newest bytes
     and the document's written file (`saved` with the snapshot's
     deletions and frames, and `inPlaceAt: snap.position` when `inPlace`;
@@ -83,8 +97,8 @@ phone's Finish does not yet: see "Not here yet" below.
   "Actions must be plain objects").
 - `TOUR_REPLACED` - "Another tour was opened since: this one is no longer
   open here." (also the desktop's refusal of a move of the walk).
-- Types: the module-private `TourDocumentThunk<R>`, `TourSaveSnapshot`
-  and `TourSaves` are read through the handle. (`TourSaveBuilt`, the
+- Types: the module-private `TourDocumentThunk<R>` and `TourSaveSnapshot`
+  are read through the handle. (`TourSaveBuilt`, the
   file built with what the open's bake decided, went with the bake.)
 
 ## Invariants & assumptions
@@ -95,7 +109,8 @@ phone's Finish does not yet: see "Not here yet" below.
 - **One handle per open.** The queue waits on the handle's own tail, so
   two handles for the same open would run their saves in parallel, each
   from its own newest bytes. A page creates one when it opens a tour
-  (`editor-session.ts` does, per session) and never a second.
+  (`editor-session.ts` does, per session; `creator-finish.ts` at the
+  open's first Finish) and never a second.
 - **The snapshot is taken when the save STARTS** - after the saves queued
   before it (at the dispatch only when none runs) - and before its first
   await: an edit made from then on stays pending for the next save
@@ -108,19 +123,9 @@ phone's Finish does not yet: see "Not here yet" below.
 - Blobs are never state: the newest bytes and the pictures stay outside
   the store.
 
-## Not here yet: the phone's Finish
+## What the snapshot keeps for an undo
 
 The snapshot carries what the undo history still names, kept by the rebuild: `keepAssets` (`historyAssetIds`), `keepStoryAssets` (`historyStoryAssetIds`, a captured photo's image an undo step shows in a story) and `keepEntries` (`historyTimingEntries`, the read-along entries; a timing nothing names is removed).
-
-`creator-finish.ts` still calls the rebuild itself (its TEMPORARY entry in
-`config/.dependency-cruiser.cjs`), and its save status stays in the
-session object (the named deviation MEDIUM-1, `creator-finish.ts.md`).
-Moving it onto this thunk would change the phone's behaviour, which a
-refactor must not: its Finish snapshots the entries after its first
-await (here, before it), it ends the document's save
-(`saveEnded`) only after the AR session's end and the wizard's step (so
-an undo stays refused through them), and it rebuilds with the code
-levels, a progress line and a stop check this handle does not take.
 
 ## Examples
 
@@ -153,7 +158,13 @@ save runs (refused, then taken once it ended), and a save of a replaced
 open (one begun before lands nowhere, one asked for after rejects). The
 desktop's whole save and walk move are covered through the session
 (`editor/editor-session.test.ts`), and both pages' writes by the parity
-contract (`tour-document-parity.test.ts`).
+contract (`tour-document-parity.test.ts`, and as a property over
+sequences of edits, deletes, new pins and names,
+`tour-document-parity.property.test.ts`). The phone's Finish through the
+handle (the snapshot at the tap, undo refused until its completion step,
+the progress line, a stop by a tour switch, a second Finish from the
+first's bytes) in `creator-finish.test.ts`, its delivered save in
+`creator-handoff.test.ts`.
 
 ## Narration files
 

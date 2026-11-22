@@ -19,6 +19,7 @@ import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-fe
 import { isDriveUrl } from "./open-errors.js";
 import { hostReplaceText, type TourHost } from "./tour-host.js";
 import type { TourManifest } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourDocumentActions } from "./tour-document.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 
@@ -177,8 +178,10 @@ export function wireCreatorHandoff(deps: {
   }
   function save(next?: string): void {
     if (next !== undefined) notes = next;
-    const rebuilt = ctx.rebuiltZip;
-    if (rebuilt === null) return;
+    const saves = ctx.saves;
+    const rebuilt = saves?.newest() ?? null;
+    if (saves === null || rebuilt === null) return;
+    const { fileName } = saves;
     // A question about another file is stale the moment this one saves.
     if (asked !== null && asked.blob !== rebuilt.blob) hideAsk();
     // Async-UI rule: in-progress before the await, the durable end state
@@ -194,13 +197,24 @@ export function wireCreatorHandoff(deps: {
     // Finish's own save has no fresh tap, which a share sheet needs; a
     // seam that throws becomes a rejection here, not a broken Finish.
     Promise.resolve()
-      .then(() => seams.downloadZip(rebuilt.blob, rebuilt.filename))
+      .then(() => seams.downloadZip(rebuilt.blob, fileName))
       .then(
         (delivered) => {
           if (openGeneration !== ctx.openGeneration) return;
           // Saved: the guard stops asking, and Finish comes back (U2).
-          if (delivered && ctx.rebuiltZip === rebuilt) {
-            ctx.rebuiltZip = { ...rebuilt, delivered: true };
+          if (delivered && ctx.saves === saves && saves.newest() === rebuilt) {
+            saves.markDelivered(rebuilt.blob);
+            // The document's save status says it, as the desktop's does -
+            // unless the Finish that made the file failed after it, whose
+            // failure the panel keeps saying (`saveDelivered` clears it).
+            if (ctx.tourDocument.state().save.error === null) {
+              ctx.store.dispatch(
+                tourDocumentActions.saveDelivered({
+                  inPlace: false,
+                  name: fileName,
+                }),
+              );
+            }
             deps.render();
           }
           dom.downloadButton.disabled = false;
@@ -208,7 +222,7 @@ export function wireCreatorHandoff(deps: {
           showStatus(
             finishSaveStatus(
               delivered,
-              rebuilt.filename,
+              fileName,
               drive(),
               ctx.session?.fromFile === true,
             ),
@@ -218,8 +232,8 @@ export function wireCreatorHandoff(deps: {
           // they are the flow's last instruction (PR #439 review #3). Only
           // `reset`, on a tour close, hides them again.
           if (delivered) {
-            deps.onDelivered?.(rebuilt);
-            presentReplaceSteps(rebuilt.filename);
+            deps.onDelivered?.({ blob: rebuilt.blob, filename: fileName });
+            presentReplaceSteps(fileName);
             dom.replaceHelp.hidden = false;
             // Asked after each save that delivered the file, until a yes
             // was given for it (F19; review #9: "Not yet" is not final).
@@ -303,8 +317,9 @@ export function wireCreatorHandoff(deps: {
     finishStarted: hideAsk,
     offer: (next) => {
       notes = next;
-      if (asked !== null && asked.blob !== ctx.rebuiltZip?.blob) hideAsk();
-      dom.downloadButton.disabled = ctx.rebuiltZip === null;
+      const newest = ctx.saves?.newest() ?? null;
+      if (asked !== null && asked.blob !== newest?.blob) hideAsk();
+      dom.downloadButton.disabled = newest === null;
       dom.downloadButton.textContent = FINISH_LABELS.saveAgain;
       showStatus(FINISH_LABELS.notSaved);
     },

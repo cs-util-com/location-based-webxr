@@ -12,7 +12,8 @@
  * This is the rule the milestone's cold review turned on, so it is worth
  * stating plainly. Finishing is not terminal: it merges the placed objects
  * into the in-memory manifest, empties the list, and leaves that batch
- * alive only inside `ctx.rebuiltZip` - a Blob that dies with the page. A
+ * alive only inside the save handle's newest bytes (`ctx.saves`) - a Blob
+ * that dies with the page. A
  * draft reset by each finish would therefore hold only the objects placed
  * AFTER the last download, while the finish itself would rebuild from the
  * hosted zip, which never had the earlier ones. The creator would end up

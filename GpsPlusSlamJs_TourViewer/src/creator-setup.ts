@@ -996,6 +996,7 @@ export function wireCreatorSetup(deps: {
 
   /** What the save guard reads (`finish-guard.ts`). */
   function guardInput(): FinishGuardInput {
+    const newest = ctx.saves?.newest() ?? null;
     return {
       sessionLive: sessionLive(),
       arAvailable: arController.getState().status !== "unsupported",
@@ -1004,9 +1005,7 @@ export function wireCreatorSetup(deps: {
       tourChanged: ctx.tourDocument.tourChanged(),
       codeCount: codes.toWrite().length,
       rebuilt:
-        ctx.rebuiltZip === null
-          ? null
-          : { delivered: ctx.rebuiltZip.delivered === true },
+        newest === null ? null : { delivered: newest.delivered === true },
       // The draft's own word (`persists`): false while work waits in
       // memory - no tour open, its manifest not settled (a broken
       // tour.json never opens a draft), its draft still opening - and once

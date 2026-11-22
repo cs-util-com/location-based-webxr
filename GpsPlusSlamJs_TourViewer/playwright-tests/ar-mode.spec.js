@@ -3192,7 +3192,8 @@ test("a draft accumulates ACROSS finishes: both batches land in the zip", async 
   //
   // Finishing is not terminal. It merges the placed objects into the
   // in-memory manifest, empties the list, and leaves that batch alive only
-  // inside `ctx.rebuiltZip` - a Blob that dies with the page. So a draft
+  // inside the save handle's newest bytes (`ctx.saves`) - a Blob that dies
+  // with the page. So a draft
   // reset by each finish would hold only what came AFTER the last download,
   // while the finish itself rebuilds from the HOSTED zip, which never had
   // the earlier batch. The creator would end up with two downloads, each

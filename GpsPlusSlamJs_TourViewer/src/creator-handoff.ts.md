@@ -47,7 +47,7 @@ the automatic save is in
     never read as this Finish's (F19 review #2).
 - `onUploaded?(written)` (follow-up F19) - the creator answered yes to the
   question after a delivered save; `written` is the tour.json of the file
-  the question was asked about (`rebuiltZip.written`, captured when it was
+  the question was asked about (the save handle's newest bytes' `written`, captured when it was
   asked). `creator-setup.ts` passes `draft.uploaded(written)`
   (`creator-draft.ts`), which resolves whether it was noted. Without it the
   question is never asked. `dom.uploadAsk`, `uploadAskText`, `uploadYes`,
@@ -84,8 +84,13 @@ the automatic save is in
   and the Drive steps), or "Not saved", or the failure, each with the
   button live again ("Save the tour zip again"). A seam that throws is a
   failure on the line, never a broken Finish.
-- **Delivered:** a save that delivered marks `ctx.rebuiltZip.delivered`, so
-  the leave guard stops asking and Finish comes back (U2).
+- **Delivered:** a save that delivered marks the save handle's newest
+  bytes delivered (`ctx.saves.markDelivered`), so the leave guard stops
+  asking and Finish comes back (U2), and names the file in the document's
+  save status (`saveDelivered`, as the desktop's Save does) - only while
+  `save.error` is null: a Finish that failed after making its file keeps
+  its failure said. The file and its name are the handle's (`newest()`,
+  `fileName`).
 - **The replace steps are earned, one way:** they appear on a delivered
   save; a later save that did not go through takes nothing back - they are
   the flow's last instruction (PR #439 review #3). Only `reset` hides them.
