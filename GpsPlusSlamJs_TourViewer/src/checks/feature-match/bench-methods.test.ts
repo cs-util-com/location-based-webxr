@@ -6,6 +6,7 @@ import {
   buildMethods,
   parseRuns,
   precisionsFrom,
+  runSettings,
   selectionGaps,
   type Backend,
 } from "./bench-methods";
@@ -129,5 +130,53 @@ describe("form values", () => {
     for (const bad of ["0", "51", "2.5", "", "x"]) {
       expect(parseRuns(bad)).toBe(5);
     }
+  });
+});
+
+// Why these tests matter: the photo tests must not depend on the tester
+// setting Options (a first zip ran 5 runs after a warm-up on both backends
+// with both XFeat files); a picked pair sets the run itself, and the log
+// line must say what was used, including the WASM fallback.
+describe("runSettings", () => {
+  const options = {
+    backends: ["webgpu", "wasm"] as Backend[],
+    precisions: ["fp16", "fp32"] as XFeatPrecision[],
+    runs: 5,
+  };
+
+  it("sets one run, no warm-up, WebGPU and one XFeat file for a picked pair", () => {
+    expect(runSettings({ ...options, pair: "1b" }, true)).toEqual({
+      photoTest: true,
+      backends: ["webgpu"],
+      precisions: ["fp16"],
+      runs: 1,
+      warmup: false,
+      line: "runs: 1, no warm-up, backends webgpu, XFeat files fp16 (photo test 1b)",
+    });
+  });
+
+  it("falls back to WASM where WebGPU is missing, and says so", () => {
+    const s = runSettings({ ...options, pair: "4d" }, false);
+    expect(s.backends).toEqual(["wasm"]);
+    expect(s.line).toBe(
+      "runs: 1, no warm-up, backends wasm (no WebGPU on this device), XFeat files fp16 (photo test 4d)",
+    );
+  });
+
+  it("uses the Options for a manual run or no pair", () => {
+    for (const pair of ["none", null]) {
+      expect(runSettings({ ...options, pair }, true)).toEqual({
+        photoTest: false,
+        ...options,
+        warmup: true,
+        line: "runs: 5 after 1 warm-up, backends webgpu+wasm, XFeat files fp16+fp32 (Options)",
+      });
+    }
+    expect(
+      runSettings({ backends: [], precisions: [], runs: 1, pair: null }, true)
+        .line,
+    ).toBe(
+      "runs: 1 after 1 warm-up, backends none, XFeat files none (Options)",
+    );
   });
 });

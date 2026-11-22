@@ -1,9 +1,9 @@
 /**
  * The media a tour archive may carry, as one allowlist of extensions and
- * MIME types (tour kit plan K0, review finding D12: content stays inert).
+ * MIME types: tour content stays inert.
  *
  * A tour opens from any link, and its page runs on the same origin that
- * will later hold a creator's signing key (K2), so nothing in a tour may
+ * will later hold a creator's signing key, so nothing in a tour may
  * be able to run as code there: raster images only (never SVG, which can
  * carry script), `.glb` only for models (one self-contained binary; no
  * external or http URIs, no extensions that need a decoder fetched from a
@@ -13,7 +13,7 @@
  * A raster image is also measured from its header before anything decodes
  * it, against one pixel cap (`TOUR_MAX_IMAGE_PIXELS`), and so is every
  * image inside a `.glb`: a few kilobytes of crafted header can otherwise
- * make a phone allocate gigabytes (tour kit K4 review R2).
+ * make a phone allocate gigabytes.
  */
 
 import { decodeDataUri, isDataUri } from '../utils/data-uri.js';
