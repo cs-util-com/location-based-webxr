@@ -45,7 +45,6 @@ import {
 } from "./editor-view.js";
 import { DRAFT_DELETING } from "../draft-edit-gate.js";
 import { createDraftOffer, type DraftOfferView } from "./draft-offer.js";
-import { selectTourDraft, tourDraftActions } from "../tour-draft-slice.js";
 import {
   childMoveChange,
   manifestToWrite,
@@ -958,12 +957,6 @@ const draft = createEditorDraft({
   holdLock: (key) => holdEditorDraftLock(navigator.locks, key),
   noBackup: (reason) => {
     document.body.dataset["draft"] = "off";
-    store.dispatch(
-      tourDraftActions.unavailable({
-        generation: selectTourDraft(store.getState()).generation,
-        reason: reason === "other-tab" ? "other-tab" : "storage",
-      }),
-    );
     noBackupNote = NO_BACKUP[reason];
     // Said during an open, it waits until the tour shows: switching tours
     // takes the old file's toasts away.
@@ -3346,9 +3339,6 @@ async function openFile(
   // The draft is read inside the open, before the tour shows (E2c plan
   // review #7): what an earlier visit left is offered with the tour.
   document.body.dataset["draft"] = "writing";
-  // The store's draft question for this open (`tour-draft-slice.ts`).
-  store.dispatch(tourDraftActions.readStarted());
-  const question = selectTourDraft(store.getState()).generation;
   // The opened file's entries: a smaller file it already holds at its
   // path (a save by download) is no work of the draft's any more.
   const wrap = outcome.session.manifestWrap;
@@ -3448,8 +3438,7 @@ async function openFile(
   // A tour opened afresh into the 3D view flies in; a draft to restore
   // goes straight to it.
   approachNext = drafted.offer === null;
-  if (drafted.offer !== null) offerDraft(editor, drafted.offer, question);
-  else store.dispatch(tourDraftActions.noneFound({ generation: question }));
+  if (drafted.offer !== null) offerDraft(editor, drafted.offer);
   if (handle !== null) void attachTarget(editor, handle, file);
   // After the open, never before it: the replay must not hold up the tour.
   tourWalk = carriesWalk ? opened : null;
@@ -3466,11 +3455,7 @@ async function openFile(
  * Not now leaves it for the next open, Delete it throws it away. It stays
  * until answered. Its answers are `draft-offer.ts`'s; this renders them.
  */
-function offerDraft(
-  mine: EditorSession,
-  offer: EditorDraftOffer,
-  question: number,
-): void {
+function offerDraft(mine: EditorSession, offer: EditorDraftOffer): void {
   let shown: HTMLElement | null = null;
   const render = (view: DraftOfferView | null): void => {
     shown?.remove();
@@ -3499,8 +3484,7 @@ function offerDraft(
     shown = t;
   };
   const answers = createDraftOffer({
-    store,
-    question,
+    gate: store.draftGate,
     text: offer.text,
     render,
     say: (text, error = false) => {

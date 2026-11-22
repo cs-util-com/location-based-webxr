@@ -176,31 +176,6 @@ describe("draft edit gate", () => {
     expect(store.draftGate.release()).toBe(0);
   });
 
-  // Why: both pages say an edit waits from the store (`tourDraft`), not
-  // from a flag of their own; the gate is the one place that knows, so it
-  // reports its count there - before it asks, so the question already
-  // reads it - and every way a wait ends puts it back to zero.
-  it("reports how many edits wait in the store's draft question", () => {
-    const store = openStore();
-    const waiting = () => store.getState().tourDraft.editsWaiting;
-    const seen: number[] = [];
-    store.draftGate.hold(() => seen.push(waiting()));
-    store.dispatch(editA("One"));
-    store.dispatch(editA("Two"));
-    expect(seen).toEqual([1]);
-    expect(waiting()).toBe(2);
-    store.draftGate.drop();
-    expect(waiting()).toBe(0);
-    store.dispatch(editA("Three"));
-    expect(waiting()).toBe(1);
-    store.draftGate.release();
-    expect(waiting()).toBe(0);
-    store.draftGate.hold(() => undefined);
-    store.dispatch(editA("Four"));
-    store.dispatch(tourDocumentActions.closed());
-    expect(waiting()).toBe(0);
-  });
-
   // Why: the property behind the pages' rule, on the gate alone: for any
   // interleaving of edits, put-offs and an answer, nothing is applied
   // before the answer, and after it the document is what the edits made

@@ -78,13 +78,6 @@ import {
   settingsOf,
   settingsParts,
 } from "./settings-record-offer.js";
-import {
-  selectDraftOffer,
-  selectDraftUndecided,
-  selectEditWaitsForRead,
-  tourDraftActions,
-  type TourDraftState,
-} from "./tour-draft-slice.js";
 import type { TourSession } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import type { VisitLog, VisitLogEntry } from "./visit-log.js";
@@ -360,10 +353,7 @@ export function wireCreatorDraft(deps: {
    *  tour's. */
   let undecided: CodesHolder | null = null;
   /** What a draft is offering, until the creator answers: kept while the
-   *  question is put off ("Not now"), so an edit can ask it again. The
-   *  page's side table of the offer (its records and photo bytes); the
-   *  question's status, words and progress are the store's `tourDraft`
-   *  (`tour-draft-slice.ts`), shared with the desktop editor. */
+   *  question is put off ("Not now"), so an edit can ask it again. */
   let offered: {
     objects: readonly TourObject[];
     /** EVERY id the READ saw on disk - not just the unhosted ones the
@@ -394,42 +384,20 @@ export function wireCreatorDraft(deps: {
      *  the desktop's (`settings-record-offer.ts`), the frames before the
      *  objects so each item's record lands in its own station. */
     settings: TourSettingsRecord | undefined;
+    /** The offer's words. */
+    text: string;
   } | null = null;
   /** The draft question's gate (`draft-edit-gate.ts`): every edit of the
    *  tour document waits from `present` until the draft is decided. */
   const gate = ctx.store.draftGate;
-  /** The store's draft question as it stands. */
-  const question = (): TourDraftState => ctx.store.getState().tourDraft;
-  /** The question `present` started (its `generation`): what this
-   *  page's answers name, so one of a tour gone changes nothing. */
-  let asked = -1;
+  /** An edit waits for the answer: the offer says so when it shows. */
+  let editWaits = false;
+  /** A "Delete it" in progress: the offer's buttons are disabled. */
+  let discarding = false;
   /** "Delete it"'s own label, put back when it is no longer in progress. */
   const discardLabel = dom.draftDiscard.textContent;
-  /** The question the offer was drawn from last. */
-  let drawnFrom: TourDraftState | null = null;
-  /** The offer from the store (`selectDraftOffer`): its words - with the
-   *  waiting line while an edit waits - and "Delete it"'s progress, which
-   *  turns every answer off (async-ui-feedback). Every dispatch reaches
-   *  it; it draws only when the question moved. */
-  function drawOffer(): void {
-    const now = question();
-    if (now === drawnFrom) return;
-    drawnFrom = now;
-    const shown =
-      now.generation === asked ? selectDraftOffer(ctx.store.getState()) : null;
-    dom.draftOffer.hidden = shown === null;
-    if (shown !== null) {
-      dom.draftOfferText.textContent = shown.waits
-        ? `${shown.text} ${EDIT_WAITS}`
-        : shown.text;
-    }
-    const deleting = shown?.deleting === true;
-    dom.draftDiscard.textContent = deleting ? DRAFT_DELETING : discardLabel;
-    dom.draftRestore.disabled = deleting;
-    dom.draftDismiss.disabled = deleting;
-    dom.draftDiscard.disabled = deleting;
-  }
-  ctx.store.subscribe(drawOffer);
+  /** The open tour's draft read (`present`) runs: AR does not start. */
+  let readRunning = false;
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
   /** The open tour's draft took the page's earlier work: its `present`
@@ -825,18 +793,20 @@ export function wireCreatorDraft(deps: {
     };
   }
 
-  /** The offer shows (a put-off one again): drawn from the store, with
-   *  what the page says around it. */
-  function showOffer(): void {
-    ctx.store.dispatch(tourDraftActions.reshown({ generation: asked }));
-    const waits = question().editsWaiting > 0;
+  /** The offer as it shows: its own words, and when an edit waits for the
+   *  answer, that it does. */
+  function showOffer(waiting: NonNullable<typeof offered>): void {
+    dom.draftOfferText.textContent = editWaits
+      ? `${waiting.text} ${EDIT_WAITS}`
+      : waiting.text;
+    dom.draftOffer.hidden = false;
     // The offer is outside the AR overlay, so a creator whose scan opened
     // the tour mid-session would not see it and would place the same
     // content again - or would not know why a tap placed nothing.
     if (deps.sessionLive()) {
       // With the superseded line, which this note must not hide.
       ctx.placementNote = [
-        waits ? EDIT_WAITS_IN_AR : OFFER_IN_AR,
+        editWaits ? EDIT_WAITS_IN_AR : OFFER_IN_AR,
         ...(supersededNote === null ? [] : [supersededNote]),
         ...(unreadNote === null ? [] : [unreadNote]),
       ].join(" ");
@@ -850,16 +820,15 @@ export function wireCreatorDraft(deps: {
     deps.wizard.revealStep("measure");
   }
 
-  /** The gate's question (`DraftEditGate.hold`): an edit waits (its
-   *  count is in the store already). Before the offer is ready (the draft
-   *  still reading) a note says so, and the offer's words say it once it
-   *  shows. */
+  /** The gate's question (`DraftEditGate.hold`): an edit waits. Before the
+   *  offer is ready (the draft still reading) a note says so, and the
+   *  offer's words say it once it shows. */
   function askAboutEdit(): void {
-    if (selectDraftUndecided(ctx.store.getState())) {
-      showOffer();
+    editWaits = true;
+    if (offered !== null) {
+      showOffer(offered);
       return;
     }
-    if (!selectEditWaitsForRead(ctx.store.getState())) return;
     ctx.placementNote = DRAFT_BEING_READ;
     deps.render();
   }
@@ -868,7 +837,9 @@ export function wireCreatorDraft(deps: {
    *  goes and the edits still waiting land, in the order they were made
    *  (none after a Restore, which dropped them first). */
   function decided(): void {
+    dom.draftOffer.hidden = true;
     offered = null;
+    editWaits = false;
     released();
   }
 
@@ -883,27 +854,25 @@ export function wireCreatorDraft(deps: {
     deps.render();
   }
 
-  /** This page's question waits for an answer, and "Delete it" is not
-   *  running: an answer may start. */
-  function answerable(): boolean {
-    const now = question();
-    return (
-      now.generation === asked &&
-      selectDraftUndecided(ctx.store.getState()) &&
-      !now.deleting
-    );
+  /** "Delete it" in progress (async-ui-feedback): no second answer
+   *  meanwhile, and its label says it runs. */
+  function setDiscarding(on: boolean): void {
+    discarding = on;
+    dom.draftDiscard.textContent = on ? DRAFT_DELETING : discardLabel;
+    dom.draftRestore.disabled = on;
+    dom.draftDismiss.disabled = on;
+    dom.draftDiscard.disabled = on;
   }
 
   dom.draftRestore.addEventListener("click", () => {
     const waiting = offered;
-    if (waiting === null || !answerable()) return;
+    if (waiting === null || discarding) return;
     // Decided: the codes become this page's below (`restoreLevels`).
     if (undecided !== null) undecided.codes = null;
     // An edit that waited was built from the document before the draft
     // came back: replayed after it, it would write its old values over the
     // draft's. Dropped before anything is put back, and the note says so.
     const dropped = gate.drop();
-    ctx.store.dispatch(tourDraftActions.restored({ generation: asked }));
     // Into the SAME document a live placement changes, so the finish needs
     // no second path: it writes these into the manifest exactly as it
     // writes anything else (an edit of a hosted object replaces it by id),
@@ -951,13 +920,14 @@ export function wireCreatorDraft(deps: {
   });
 
   dom.draftDismiss.addEventListener("click", () => {
-    if (!answerable()) return;
+    if (discarding) return;
     // Declining is NOT deleting: a mis-tap must not become the loss this
     // whole feature exists to prevent. The draft stays undecided: it is
     // offered again next time, and the next edit asks again. An edit that
     // waited is dropped - it was made over a draft nobody decided on - and
     // the creator is told.
-    ctx.store.dispatch(tourDraftActions.declined({ generation: asked }));
+    dom.draftOffer.hidden = true;
+    editWaits = false;
     if (gate.drop() > 0) {
       ctx.placementNote = DRAFT_EDIT_NOT_APPLIED;
       deps.render();
@@ -973,7 +943,7 @@ export function wireCreatorDraft(deps: {
     // commit point, and deleting without one is the shape that lost work
     // four times.
     const tourUrl = draftTourUrl;
-    if (waiting === null || !answerable()) return;
+    if (waiting === null || discarding) return;
     if (store === undefined || tourUrl === null) return;
     // The one way a creator can throw a draft away deliberately - and the
     // escape hatch for a draft that would otherwise be offered forever.
@@ -997,10 +967,7 @@ export function wireCreatorDraft(deps: {
     const rejectedIds = notLive(waiting.storedIds);
     // In progress (async-ui-feedback): the offer stays, its buttons off,
     // until the commit says how it went. Edits keep waiting meanwhile.
-    const deleting = asked;
-    ctx.store.dispatch(
-      tourDraftActions.deleteStarted({ generation: deleting }),
-    );
+    setDiscarding(true);
     // Assigned BEFORE the call, not after: a mint or finish issued in the
     // same tick must carry the rejection too, or its write would drop it.
     const wasRejected = draftRejected;
@@ -1026,10 +993,7 @@ export function wireCreatorDraft(deps: {
     void (async () => {
       const landed = await committed;
       const stillOpen = draftStore === store && draftTourUrl === tourUrl;
-      // The question's own: an answer of a tour gone changes nothing.
-      ctx.store.dispatch(
-        tourDraftActions.deleteEnded({ generation: deleting, landed }),
-      );
+      if (stillOpen) setDiscarding(false);
       if (!landed) {
         // The rejection is not on disk, so it must not stay in memory: a
         // later mint or finish would write it and commit a discard this
@@ -1093,10 +1057,9 @@ export function wireCreatorDraft(deps: {
     // draft is decided (`draft-edit-gate.ts`): no edit lands on a draft
     // nobody chose between. With nothing to offer the gate lets them
     // through at the end below.
-    ctx.store.dispatch(tourDraftActions.readStarted());
-    asked = question().generation;
-    const thisQuestion = asked;
+    editWaits = false;
     gate.hold(askAboutEdit);
+    readRunning = true;
     void (async (): Promise<boolean> => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
       if (stale()) return false;
@@ -1112,12 +1075,6 @@ export function wireCreatorDraft(deps: {
         // is the path where they are least protected and least likely to
         // notice, because no write ever fails to tell them so.
         noteNoPersistence();
-        ctx.store.dispatch(
-          tourDraftActions.unavailable({
-            generation: thisQuestion,
-            reason: "storage",
-          }),
-        );
         return false;
       }
       // The stored codes FIRST, in their own queue and synchronously
@@ -1359,56 +1316,44 @@ export function wireCreatorDraft(deps: {
         counts,
         visits: stored.visits,
         settings: waitingSettings,
+        text: "",
       };
       // The record's parts named as the desktop names them.
       const parts =
         recordChanges === undefined ? [] : settingsParts(recordChanges, "");
-      const words = restoreOfferText(counts.placed, hasLevel, {
+      offered.text = restoreOfferText(counts.placed, hasLevel, {
         changed: counts.changed,
         deleted: waitingDeletions.filter((id) => !moved.has(id)).length,
         visits: stored.visits.length,
       });
-      ctx.store.dispatch(
-        tourDraftActions.found({
-          generation: thisQuestion,
-          text:
-            parts.length > 0
-              ? `${words} Changed: ${joinedParts(parts)}.`
-              : words,
-        }),
-      );
-      showOffer();
+      if (parts.length > 0) {
+        offered.text = `${offered.text} Changed: ${joinedParts(parts)}.`;
+      }
+      showOffer(offered);
       return true;
     })().then(
-      (offers) => {
+      (asked) => {
         // A stale open's end says nothing about the open tour: its gate
         // ended with it (`opened`, `closed`, `reset`).
         if (stale()) {
           // A teardown's read: nothing reads now unless a newer open does.
-          if (question().status !== "reading") clearBeingRead();
+          if (!readRunning) clearBeingRead();
           return;
         }
+        readRunning = false;
         caughtUp = true;
         // Nothing to decide: the edits that waited land, into this store,
         // and a note that the page was reading goes.
-        if (offers) return;
-        ctx.store.dispatch(
-          tourDraftActions.noneFound({ generation: thisQuestion }),
-        );
+        if (asked) return;
         clearBeingRead();
         released();
       },
       () => {
         if (stale()) {
-          if (question().status !== "reading") clearBeingRead();
+          if (!readRunning) clearBeingRead();
           return;
         }
-        ctx.store.dispatch(
-          tourDraftActions.unavailable({
-            generation: thisQuestion,
-            reason: "read-failed",
-          }),
-        );
+        readRunning = false;
         // A read that threw offers nothing: the waiting edits must not be
         // stranded behind a question nobody can see, nor the note that
         // said it was reading stand.
@@ -1426,19 +1371,15 @@ export function wireCreatorDraft(deps: {
   }
 
   function readyForAr(): boolean {
-    const now = question();
-    const note =
-      now.generation !== asked
-        ? null
-        : now.status === "reading"
-          ? DRAFT_BEING_READ
-          : now.deleting
-            ? DRAFT_DELETE_RUNS
-            : selectDraftUndecided(ctx.store.getState())
-              ? DRAFT_DECIDE_BEFORE_AR
-              : null;
+    const note = readRunning
+      ? DRAFT_BEING_READ
+      : discarding
+        ? DRAFT_DELETE_RUNS
+        : offered !== null
+          ? DRAFT_DECIDE_BEFORE_AR
+          : null;
     if (note === null) return true;
-    if (note === DRAFT_DECIDE_BEFORE_AR) showOffer();
+    if (note === DRAFT_DECIDE_BEFORE_AR && offered !== null) showOffer(offered);
     ctx.placementNote = note;
     deps.render();
     return false;
@@ -1456,13 +1397,16 @@ export function wireCreatorDraft(deps: {
       caughtUp = false;
       // A continuation of the closing tour's `present` ends here.
       presentEpoch += 1;
+      readRunning = false;
       // And its question: what waited for it is dropped with the tour.
       gate.drop();
       gate.release();
-      ctx.store.dispatch(tourDraftActions.questionEnded());
+      editWaits = false;
+      setDiscarding(false);
       finishedIds.clear();
       knownKeys.clear();
       forgottenIds.clear();
+      dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
       draftTourUrl = null;

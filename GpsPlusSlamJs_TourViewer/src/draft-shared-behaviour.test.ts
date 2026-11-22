@@ -48,11 +48,6 @@ import { createEditorSession } from "./editor/editor-session.js";
 import { NOT_BACKED_UP } from "./object-editing.js";
 import type { ObjectListHandlers, ObjectListModel } from "./object-list.js";
 import { openTourFile } from "./tour-session.js";
-import {
-  selectTourDraft,
-  tourDraftActions,
-  type TourDraftState,
-} from "./tour-draft-slice.js";
 import { createTourViewerSession } from "./tour-viewer-session.js";
 import {
   documentObjects,
@@ -222,8 +217,6 @@ interface DraftPage {
   /** Whether the draft is undecided (offered, or put off with "Not
    *  now"): an edit then waits for the answer. */
   undecided(): boolean;
-  /** The draft question in the page's store (`tour-draft-slice.ts`). */
-  question(): TourDraftState;
   /** The page said something it should keep did not land: that this
    *  device keeps no backup copy, or that a "Delete it" did not delete. */
   saidNotKept(): boolean;
@@ -273,13 +266,6 @@ const openDesktop: OpenPage = async (browser) => {
     store,
   });
   const offer = opened.offer;
-  // As `edit-main.ts` starts the question before its read; this harness
-  // makes the store after the read, so it starts it here.
-  store.dispatch(tourDraftActions.readStarted());
-  const question = selectTourDraft(store.getState()).generation;
-  if (offer === null) {
-    store.dispatch(tourDraftActions.noneFound({ generation: question }));
-  }
   let said = "";
   let view: DraftOfferView | null = null;
   // As `edit-main.ts` wires it: the page's own answers, rendered into
@@ -288,8 +274,7 @@ const openDesktop: OpenPage = async (browser) => {
     offer === null
       ? null
       : createDraftOffer({
-          store,
-          question,
+          gate: store.draftGate,
           text: offer.text,
           render: (next) => {
             view = next;
@@ -383,7 +368,6 @@ const openDesktop: OpenPage = async (browser) => {
     shape: () => shapeOf(store),
     extras: () => extrasOf(store),
     undecided: () => store.draftGate.holding(),
-    question: () => selectTourDraft(store.getState()),
     saidNotKept: () => warned,
     space: () => {
       if (key === null) throw new Error("the desktop opened no draft");
@@ -675,7 +659,6 @@ const openPhone: OpenPage = async (browser) => {
     shape: () => shapeOf(store),
     extras: () => extrasOf(store),
     undecided: () => store.draftGate.holding(),
-    question: () => selectTourDraft(store.getState()),
     saidNotKept: () => warned,
     space: () => {
       if (key === null) throw new Error("the phone opened no draft");
@@ -1113,50 +1096,6 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
 
   // Why: the question's own "Not now" applies nothing: the waiting edit is
   // dropped, the draft stays undecided, and the next edit asks again.
-  // Why: both pages keep the draft question in the store, one slice for
-  // both (the store plan's `tourDraft`), and draw the offer from it: its
-  // status follows each answer, the offer's words are the slice's, and a
-  // waiting edit is counted there.
-  it("the draft question is the store's: offered, put off, asked again, restored", async () => {
-    const { browser, page } = await freshPage(open);
-    expect(page.question().status).toBe("none");
-    await page.edit("b", "The well");
-    const offered = await reopen(open, browser, page);
-    expect(offered.question()).toMatchObject({
-      status: "offered",
-      editsWaiting: 0,
-    });
-    expect(offered.question().text).toBe(offered.offer());
-    await offered.decline();
-    expect(offered.question().status).toBe("declined");
-    await offered.edit("a", "The gate");
-    expect(offered.question()).toMatchObject({
-      status: "offered",
-      editsWaiting: 1,
-    });
-    await offered.restore();
-    expect(offered.question()).toMatchObject({
-      status: "restored",
-      editsWaiting: 0,
-      text: null,
-    });
-  }, 60_000);
-
-  // Why: a landed "Delete it" ends the question in the store on both
-  // pages: nothing is offered, and nothing waits.
-  it("the draft question after Delete it: none, nothing waiting", async () => {
-    const { browser, page } = await freshPage(open);
-    await page.edit("b", "The well");
-    const offered = await reopen(open, browser, page);
-    await offered.edit("a", "The gate");
-    await offered.discard();
-    expect(offered.question()).toMatchObject({
-      status: "none",
-      editsWaiting: 0,
-      deleting: false,
-    });
-  }, 60_000);
-
   it("the question put off: the edit is dropped and the next edit asks again", async () => {
     const { browser, page, opened } = await freshPage(open);
     await page.edit("b", "The well");

@@ -31,9 +31,8 @@ is the page's own.
     `HeldEdit` instead of the action, and reaches neither the reducer nor
     any listener.
   - `hold(ask)` - edits wait from now on. `ask` runs inside the first
-    waiting edit's dispatch (again after each `drop`), after the count
-    of waiting edits reached the store; it shows the question and must
-    not dispatch an edit of the document.
+    waiting edit's dispatch (again after each `drop`); it shows the
+    question and must not dispatch.
   - `release(): number` - the answer was given: holding stops and the
     waiting edits are dispatched in their order. Returns how many.
   - `drop(): number` - the waiting edits are dropped (none applied, each
@@ -81,16 +80,13 @@ is the page's own.
   action back to the change that made it (`held`, `backedUp`).
 - `ask` is called once per wait, not per edit: a second edit while one
   waits joins it silently.
-- **The count is in the store, the edits are not:** the question's
-  status (reading, offered, put off, deleting, restored) is the store's
-  `tourDraft` slice (`tour-draft-slice.ts`), shared by both pages. The
-  gate reports how many edits wait there
-  (`tourDraftActions.editsWaitingChanged`) before it asks, and again at
-  every drop, release and end of the question. The held actions and the
-  promises their dispatches returned stay in the gate: resources, not
-  state. The pages still call `hold` / `release` / `drop` themselves at
-  each answer; running them from a listener of the slice is left to the
-  one draft-writer core, a later step.
+- No state in the store: the gate is a resource of the page's draft
+  question, and the offer's status (offered, put off, deleting) lives in
+  the pages. **This is a deviation** from the workspace rule that
+  workflow status is store state: it is kept because the offer's two
+  pages hold it in two different shapes today. The follow-up is a draft
+  status slice shared by both pages, with the gate's `hold` / `release` /
+  `drop` run by its listener.
 
 ## Examples
 
@@ -123,8 +119,7 @@ gate.drop(); // nothing applied; DRAFT_EDIT_NOT_APPLIED; the next edit asks agai
   file use deleted / file replaced / asset optimized held, undo and redo
   changing nothing while undecided, and a property over random edits and
   put-offs (nothing lands before the answer, the last batch lands in
-  order), and the count of waiting edits reaching the store's
-  `tourDraft` before the question is asked.
+  order).
 - `editor/draft-offer.test.ts` - the desktop's answers (Restore drops
   and says so, "Not now" drops and says so, "Delete it" replays, its
   progress and failure).

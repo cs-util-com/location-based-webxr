@@ -52,7 +52,6 @@ import { visitorWalkReducer } from "./visitor-walk-slice.js";
 import { visitorPrefsReducer } from "./visitor-prefs-slice.js";
 import { narrationBoxReducer } from "./narration-box-slice.js";
 import { startQuestionReducer } from "./start-question-slice.js";
-import { tourDraftReducer, type TourDraftState } from "./tour-draft-slice.js";
 import { createDraftEditGate, type DraftEditGate } from "./draft-edit-gate.js";
 
 import type {
@@ -127,10 +126,6 @@ type QrDebugView = ReturnType<TourViewerSeams["createQrDebugView"]>;
  * `startQuestion` is the setup's start answer (`start-question-slice.ts`),
  * read by step 2 and the host tiles; not recorded either.
  *
- * `tourDraft` is the open tour's draft question (`tour-draft-slice.ts`),
- * shared by the phone page and the desktop editor: both render the offer
- * and the note that an edit waits from it. Not recorded either.
- *
  * `pageReducers` are one page's own slices beside these (the desktop
  * editor's `editorView`): only the page that passes them has them, so the
  * phone's store never names an editor slice. A key one of the store's own
@@ -160,7 +155,6 @@ export function createTourViewerStore<
     visitorPrefs: visitorPrefsReducer,
     narrationBox: narrationBoxReducer,
     startQuestion: startQuestionReducer,
-    tourDraft: tourDraftReducer,
   };
   const clash = Object.keys(pageReducers ?? {}).filter((key) => key in own);
   if (clash.length > 0) {
@@ -203,9 +197,7 @@ export interface TourViewerPageStore extends CreatorDocumentStore {
   getState(): {
     readonly tourDocument: TourDocumentState;
     readonly creatorCodes: CreatorCodesState;
-    readonly tourDraft: TourDraftState;
   };
-  subscribe(listener: () => void): () => void;
   /** The draft question's edit gate (`draft-edit-gate.ts`). */
   readonly draftGate: DraftEditGate;
 }

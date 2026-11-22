@@ -234,8 +234,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   author pipeline starts). In AR the offer is out of sight, and an edit
   there would wait for a question nobody sees. `readyForAr` answers at
   once and never waits (WebXR starts only inside the tap's own user
-  activation): while the read runs (the store's `tourDraft` is
-  `reading`) it says
+  activation): while the read runs (`readRunning`) it says
   `DRAFT_BEING_READ`, while "Delete it" runs `DRAFT_DELETE_RUNS`, with an
   offer open it shows it again with `DRAFT_DECIDE_BEFORE_AR`; each keeps
   AR unstarted, and the next tap asks again. The read's end, a throw and
@@ -405,21 +404,6 @@ phone offers and restores the WHOLE record, by the desktop's rule
   removes the record unless the tour was reopened (that open read the
   record and owns it). An interrupted removal is safe: a record the
   opened tour carries is spent again at the next open.
-
-## The question in the store
-
-The draft question's status, the offer's words, "Delete it"'s progress and
-the count of waiting edits are the store's `tourDraft` slice
-(`tour-draft-slice.ts`), shared with the desktop editor. `present`
-starts a question (`readStarted`) and keeps its `generation` (`asked`);
-the read ends it as `found`, `noneFound` or `unavailable` (`storage` with
-no draft store, `read-failed` for a read that threw); the answers
-dispatch `restored`, `declined`, `deleteStarted` / `deleteEnded`, and
-`reset` dispatches `questionEnded`. The offer's DOM is drawn from
-`selectDraftOffer` by a store subscription (`drawOffer`), which draws
-only when the slice changed. What stays in this module: `offered`, the
-side table of the offer's records and photo bytes, and the guards
-(`presentEpoch`, `ctx.openGeneration`).
 
 ## Every end of the wait draws what waited
 
