@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { tourOf } from "./test-support/tour-of.js";
 import { tourDocumentActions } from "./tour-document.js";
 import {
   initialTourDraftState,
@@ -35,6 +36,21 @@ describe("the draft question in the store", () => {
     expect(s.status).toBe("offered");
     expect(view(s)).toEqual({ text: "Back?", waits: false, deleting: false });
     expect(selectDraftUndecided({ tourDraft: s })).toBe(true);
+  });
+
+  // Why: the desktop reads the draft before its session dispatches
+  // `tourDocument/opened`; were the open to start a new question, the
+  // offer just found would be stale before anyone could answer it.
+  it("tourDocument/opened keeps the question", () => {
+    const offered = run(
+      a.readStarted(),
+      a.found({ generation: 1, text: "Back?" }),
+    );
+    const s = tourDraftReducer(
+      offered,
+      tourDocumentActions.opened({ manifest: tourOf([]) }),
+    );
+    expect(s).toEqual(offered);
   });
 
   it("ends the read with nothing to offer", () => {

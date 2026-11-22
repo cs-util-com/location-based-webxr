@@ -69,10 +69,25 @@ editsWaiting }`; `TourDraftStatus` is `none`, `reading`, `offered`,
   reports only its count.
 - Not recorded: no `tourDraft/*` action is among the page's persisted
   prefixes.
+- **`editsWaiting` survives a new question**, unlike every other field
+  (`nextQuestion`): it mirrors the gate's held edits, which only the gate
+  changes (`editsWaitingChanged`). Reset by a read or a close, it would
+  say nothing waits while edits still do, and `selectEditWaitsForRead`
+  would hide the page's note.
 - Defensive: a malformed generation, reason or count changes nothing.
-- **Not here yet:** the superseded and unread notes of a read still live
-  in the pages (`creator-draft.ts`, `edit-main.ts`); they move with the
-  one draft-writer core, a later step.
+- **Not here yet:** this state of the question still lives in the pages,
+  and moves with the one draft-writer core, a later step:
+  - the phone (`creator-draft.ts`): the offer's `counts` and the other
+    plain parts of `offered` (its deleted ids, codes, size, visits and
+    settings record; the object records and photo bytes stay a side
+    table), `caughtUp` (the open's draft took the page's earlier work),
+    `warnedAboutPersistence` (the no-storage line was said), `undecided`
+    (the open's codes holder), and the read's notes (`supersededNote`,
+    `unreadNote`);
+  - the desktop (`editor/editor-draft.ts`, `edit-main.ts`): the offer it
+    keeps until it is restored or deleted (`offer`), whether the
+    no-backup line was said (`told`), and the notes (`noBackupNote`,
+    `unreadDraftNote`, the superseded lines of an open).
 
 ## Examples
 
@@ -88,12 +103,15 @@ selectDraftOffer(store.getState()); // { text, waits: false, deleting: false }
 
 - `tour-draft-slice.test.ts` - each answer's path, the reopen and close
   guards, "Delete it"'s progress and failure, `unavailable` never over an
-  offer, malformed payloads, the note while a read runs.
+  offer, malformed payloads, the note while a read runs, and
+  `tourDocument/opened` keeping the question.
 - `tour-draft-slice.property.test.ts` - random read, found, restore,
   decline, re-show, delete, reopen and close sequences with late
   answers: a late answer changes nothing, the invariants above hold, a
-  decided question is never offered again, and a waiting edit always
-  shows a put-off offer.
+  decided question is never offered again, each status is reached only
+  from where its answer may come (Restore from an undecided draft, a
+  deleted one from a running "Delete it", an offer from a read or a
+  put-off offer), and a waiting edit always shows a put-off offer.
 - `draft-shared-behaviour.test.ts` - both pages keep the question here
   ("the draft question is the store's ...", "... after Delete it").
 - `draft-edit-gate.test.ts` - the gate's count reaches the slice.

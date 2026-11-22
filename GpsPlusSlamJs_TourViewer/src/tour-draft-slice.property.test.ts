@@ -7,8 +7,10 @@
  * against reopens and closes. Whatever the order: an answer of an earlier
  * question changes nothing; the offer's words exist exactly while the
  * draft is undecided; "Delete it" runs only on a showing offer; no answer
- * lands while it runs; and a decided or deleted draft is never offered
- * again within its question.
+ * lands while it runs; a decided or deleted draft is never offered again
+ * within its question; and each status is reached only from where its
+ * answer may come: Restore from an undecided draft, a deleted one from a
+ * running "Delete it", an offer from a read or a put-off offer.
  */
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -151,6 +153,28 @@ describe("the draft question over random sequences", () => {
             decidedInQuestion = true;
           }
           expect(decidedInQuestion && undecided(state)).toBe(false);
+          // Where each status comes from, within the question.
+          const changed = !moves && state.status !== before.status;
+          expect(
+            !changed || state.status !== "restored" || undecided(before),
+            "Restore only from an undecided draft",
+          ).toBe(true);
+          expect(
+            !changed ||
+              before.status !== "offered" ||
+              state.status !== "none" ||
+              before.deleting,
+            "an offer ends as none only through Delete it",
+          ).toBe(true);
+          expect(
+            !changed ||
+              state.status !== "offered" ||
+              (before.status === "reading"
+                ? s.kind === "found"
+                : before.status === "declined" &&
+                  (s.kind === "reshow" || s.kind === "count")),
+            "an offer from a read or a put-off offer",
+          ).toBe(true);
           expect(state.editsWaiting).toBeGreaterThanOrEqual(0);
         }
       }),

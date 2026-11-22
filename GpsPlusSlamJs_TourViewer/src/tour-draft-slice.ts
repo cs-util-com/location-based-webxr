@@ -77,7 +77,9 @@ function current(state: TourDraftState, payload: unknown): boolean {
   );
 }
 
-/** A new question, or none: every answer of the one before is stale. */
+/** A new question, or none: every answer of the one before is stale.
+ *  `editsWaiting` stays: it is the gate's count, which only the gate
+ *  changes. */
 function nextQuestion(
   state: { -readonly [K in keyof TourDraftState]: TourDraftState[K] },
   status: "none" | "reading",
