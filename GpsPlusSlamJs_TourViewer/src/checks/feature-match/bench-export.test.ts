@@ -4,11 +4,25 @@ import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
   FRAME_FILES,
+  NO_PAIR,
+  PAIRS,
   allFilesZip,
   assertPlainPng,
   framesInfo,
+  LIGHT_CONTROL_TOLERANCE,
+  LIGHT_DARKER_RATIO,
+  lightCheck,
+  LIGHT_FLOOR_A,
+  LIGHT_FLOOR_B,
   matchesInfo,
+  nextPair,
+  pairFileNames,
+  pairTag,
+  parseSpot,
+  parseProgress,
   pngChunkTypes,
+  progressText,
+  sessionToken,
 } from "./bench-export";
 import { makeFrame, toFramePoint } from "./bench-image";
 import type { DeviceInfo } from "./bench-report";
@@ -115,6 +129,8 @@ const DEVICE: DeviceInfo = {
   webgpu: "qualcomm adreno",
 };
 
+const TAG = pairTag("1b", 2, 3);
+
 // Why these tests matter: the JSON travels with the frames, so its fields
 // are a fixed list: sizes, brightness and the device, and no time, place
 // or anything else a later change might add by accident.
@@ -133,16 +149,43 @@ describe("framesInfo", () => {
       ],
       DEVICE,
       1280,
+      TAG,
+      { light: "not-darker", session: "0a1b2c3d" },
     ),
   ) as Record<string, unknown>;
 
   it("holds exactly the listed fields", () => {
     expect(Object.keys(info).sort()).toEqual(
-      ["captureMaxLongEdge", "device", "format", "frames"].sort(),
+      [
+        "captureMaxLongEdge",
+        "device",
+        "format",
+        "frames",
+        "lightCheck",
+        "pair",
+        "pairLabel",
+        "session",
+        "spot",
+        "sequence",
+      ].sort(),
     );
     expect(info.format).toBe("feature-match-frames/1");
     expect(info.captureMaxLongEdge).toBe(1280);
     expect(info.device).toEqual(DEVICE);
+    expect(info.lightCheck).toBe("not-darker");
+    expect(info.session).toBe("0a1b2c3d");
+  });
+
+  // Why this test matters: the photos are scored offline per pair, and
+  // nobody writes down the order they were taken in; the JSON inside each
+  // zip is what says which pair it holds.
+  it("names the pair, its label, the spot and the running number", () => {
+    expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
+      "1b",
+      "light: dimmed",
+      2,
+      3,
+    ]);
   });
 
   it("describes each frame by file, size, camera size and grey values", () => {
@@ -175,6 +218,8 @@ describe("framesInfo", () => {
       [{ name: "A", frame: a, source: { width: 2, height: 1 } }],
       DEVICE,
       1280,
+      TAG,
+      { light: null, session: "0a1b2c3d" },
     );
     const keys: string[] = [];
     const walk = (v: unknown): void => {
@@ -194,6 +239,71 @@ describe("framesInfo", () => {
         ),
       ),
     ).toEqual([]);
+  });
+});
+
+// Why these tests matter: a light pair whose photo B is as bright as its
+// photo A (the light was dimmed before A instead of between A and B)
+// measures nothing about light, and was only seen in the saved numbers
+// after the evening. The check flags it at photo B, and the control pair
+// the other way round: its light must not change.
+describe("lightCheck", () => {
+  it("names the thresholds", () => {
+    expect(LIGHT_DARKER_RATIO).toBe(0.8);
+    expect(LIGHT_CONTROL_TOLERANCE).toBe(0.2);
+    expect(LIGHT_FLOOR_A).toBe(10);
+    expect(LIGHT_FLOOR_B).toBe(3);
+  });
+
+  it.each([
+    // [pair, mean A, mean B, result]
+    ["1b", 100, 70, "ok"],
+    ["1b", 100, 80, "ok"],
+    ["1b", 100, 90, "not-darker"],
+    ["1c", 100, 70, "ok"],
+    ["1c", 100, 80, "ok"],
+    ["1c", 100, 90, "not-darker"],
+    ["1b", 41.2, 41.2, "not-darker"],
+    ["1c", 23.2, 23.3, "not-darker"],
+    ["1b", 100, 130, "not-darker"],
+    // The tester's real, correctly dimmed pairs: B at 0.68 and 0.45 of A.
+    ["1b", 107, 72.8, "ok"],
+    ["1c", 107, 48.2, "ok"],
+    // A black photo A measures no dimming; a black photo B nothing at all.
+    ["1b", 0, 0, "too-dark-a"],
+    ["1b", 9.9, 5, "too-dark-a"],
+    ["1b", 10, 5, "ok"],
+    ["1c", 9, 2, "too-dark-a"],
+    ["1c", 50, 2.9, "too-dark-b"],
+    ["1c", 50, 3, "ok"],
+    ["1b", 50, 2, "ok"],
+    ["1a", 100, 100, "ok"],
+    ["1a", 100, 80, "ok"],
+    ["1a", 100, 120, "ok"],
+    ["1a", 100, 79, "changed"],
+    ["1a", 100, 121, "changed"],
+    // Below a mean of 10 the control allows 3 grey levels, not 20 %.
+    ["1a", 0, 0, "ok"],
+    ["1a", 0, 3, "ok"],
+    ["1a", 0, 3.1, "changed"],
+    ["1a", 5, 8.5, "changed"],
+    ["1a", 9, 11.9, "ok"],
+    ["1a", 0, 5, "changed"],
+  ])("%s with grey means %d and %d is %s", (pair, a, b, result) => {
+    expect(lightCheck(pair, a, b)).toBe(result);
+  });
+
+  it("checks the light pairs only", () => {
+    for (const p of PAIRS.filter((q) => !q.key.startsWith("1"))) {
+      expect(lightCheck(p.key, 100, 10)).toBeNull();
+    }
+    expect(lightCheck("none", 100, 10)).toBeNull();
+  });
+
+  it("refuses grey means that are not numbers from 0 to 255", () => {
+    expect(() => lightCheck("1b", NaN, 10)).toThrow(RangeError);
+    expect(() => lightCheck("1b", 10, -1)).toThrow(RangeError);
+    expect(() => lightCheck("1b", 256, 10)).toThrow(RangeError);
   });
 });
 
@@ -421,5 +531,212 @@ describe("allFilesZip", () => {
     const names = Object.values(FRAME_FILES);
     expect(new Set(names).size).toBe(names.length);
     expect(FRAME_FILES.all.endsWith(".zip")).toBe(true);
+  });
+});
+
+// Why these tests matter: the photos of one evening are taken pair after
+// pair with no written list of the order, so the saved files themselves
+// must say which pair they hold, and two pairs must never share a name
+// (a browser would then rename one and the pair would be lost).
+describe("pairs", () => {
+  it("lists the protocol's pairs in order, keys unique", () => {
+    expect(PAIRS.map((p) => p.key)).toEqual([
+      "1a",
+      "1b",
+      "1c",
+      "2a",
+      "2b",
+      "2c",
+      "2d",
+      "3a",
+      "3b",
+      "3c",
+      "4a",
+      "4b",
+      "4c",
+      "4d",
+      "x",
+    ]);
+    expect(PAIRS[1]).toEqual({ key: "1b", label: "light: dimmed" });
+    expect(PAIRS.at(-1)).toEqual({ key: "x", label: "other" });
+  });
+
+  it("names every file by running number, pair key, spot and label", () => {
+    expect(pairFileNames(pairTag("1b", 2, 3))).toEqual({
+      all: "feature-match-03-1b-s2-light-dimmed.zip",
+      A: "feature-match-03-1b-s2-light-dimmed-frame-a.png",
+      B: "feature-match-03-1b-s2-light-dimmed-frame-b.png",
+      info: "feature-match-03-1b-s2-light-dimmed-frames.json",
+      matches: "feature-match-03-1b-s2-light-dimmed-matches.json",
+    });
+    expect(pairFileNames(pairTag("3b", 1, 12)).all).toBe(
+      "feature-match-12-3b-s1-distance-1-5-m-to-3-m.zip",
+    );
+    expect(pairFileNames(pairTag("2d", 1, 140)).all).toBe(
+      "feature-match-140-2d-s1-rotation-tilted-30-45-deg.zip",
+    );
+  });
+
+  it("gives ASCII names without spaces, unique across running numbers", () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 1, max: 9999 }), {
+          minLength: 2,
+          maxLength: 20,
+        }),
+        fc.constantFrom(...PAIRS.map((p) => p.key)),
+        fc.integer({ min: 1, max: 3 }),
+        (sequences, key, spot) => {
+          const all = sequences.flatMap((n) =>
+            Object.values(pairFileNames(pairTag(key, spot, n))),
+          );
+          expect(new Set(all).size).toBe(all.length);
+          for (const name of all) {
+            expect(name).toMatch(/^feature-match-[a-z0-9.-]+$/);
+            expect(name).not.toMatch(/--/);
+          }
+        },
+      ),
+    );
+  });
+
+  // Why this test matters: inside the zip the entries keep their fixed
+  // names, so a tool reading any zip finds the same entries; the pair's
+  // own download names must never clash with them.
+  it("keeps the pair's names apart from the names inside the zip", () => {
+    const own = Object.values(pairFileNames(pairTag("1a", 1, 1)));
+    for (const inner of Object.values(FRAME_FILES)) {
+      expect(own).not.toContain(inner);
+    }
+  });
+
+  // Why this test matters: "none" is the manual run that uses the Options;
+  // its files must still be named, and the selector must not move on from
+  // it into the protocol by itself.
+  it("tags and names a manual run, and stays on it", () => {
+    const tag = pairTag(NO_PAIR.key, 1, 4);
+    expect(tag.pairLabel).toBe("manual run");
+    expect(pairFileNames(tag).all).toBe(
+      "feature-match-04-none-s1-manual-run.zip",
+    );
+    expect(nextPair(NO_PAIR.key, 1)).toEqual({ key: "none", spot: 1 });
+  });
+
+  // Why this test matters: only the light pairs are repeated at spots; a
+  // spot carried over from 1c into 2a would name a spot the pair has not.
+  it("records spot 1 for every pair that is not a light pair", () => {
+    expect(pairTag("1c", 3, 1).spot).toBe(3);
+    expect(pairTag("2a", 3, 1).spot).toBe(1);
+    expect(pairTag("x", 2, 1).spot).toBe(1);
+  });
+
+  it("refuses an unknown key, a spot outside 1-3 and a bad running number", () => {
+    expect(() => pairTag("9z", 1, 1)).toThrow("unknown pair 9z");
+    expect(() => pairTag("1a", 4, 1)).toThrow("spot");
+    expect(() => pairTag("1a", 1.5, 1)).toThrow("spot");
+    expect(() => pairTag("1a", 1, 0)).toThrow("sequence");
+  });
+
+  it("reads the spot field, any bad value as spot 1", () => {
+    expect(parseSpot("2")).toBe(2);
+    expect(parseSpot("3")).toBe(3);
+    for (const bad of ["", "0", "4", "1.5", "x", "-1"]) {
+      expect(parseSpot(bad)).toBe(1);
+    }
+  });
+
+  // Why this test matters: the selector moves on by itself after each
+  // save, so the next pair is ready without a tap; the light pairs are
+  // repeated at three spots before the rotation pairs start.
+  it("moves on to the next pair; light runs through spots 1-3 first", () => {
+    expect(nextPair("1a", 1)).toEqual({ key: "1b", spot: 1 });
+    expect(nextPair("1c", 1)).toEqual({ key: "1a", spot: 2 });
+    expect(nextPair("1c", 2)).toEqual({ key: "1a", spot: 3 });
+    expect(nextPair("1c", 3)).toEqual({ key: "2a", spot: 1 });
+    expect(nextPair("2d", 1)).toEqual({ key: "3a", spot: 1 });
+    expect(nextPair("4d", 1)).toEqual({ key: "x", spot: 1 });
+    expect(nextPair("x", 2)).toEqual({ key: "x", spot: 2 });
+  });
+
+  it("walks the whole list from 1a spot 1 in 20 steps to other", () => {
+    let at = { key: "1a", spot: 1 };
+    const seen: string[] = [];
+    for (let i = 0; i < 21; i++) {
+      seen.push(`${at.key}-s${String(at.spot)}`);
+      at = nextPair(at.key, at.spot);
+    }
+    expect(seen.slice(0, 10)).toEqual([
+      "1a-s1",
+      "1b-s1",
+      "1c-s1",
+      "1a-s2",
+      "1b-s2",
+      "1c-s2",
+      "1a-s3",
+      "1b-s3",
+      "1c-s3",
+      "2a-s1",
+    ]);
+    expect(seen.at(-1)).toBe("x-s1");
+    expect(new Set(seen).size).toBe(21);
+  });
+});
+
+// Why these tests matter: a reload or a discarded tab restarted the running
+// number, so two downloads of one evening shared a name; the progress is
+// kept across reloads, and anything unreadable starts over rather than
+// throwing on the page.
+describe("progress across reloads", () => {
+  it("reads back what it wrote", () => {
+    const p = { sequence: 7, pair: "2b", spot: 1 } as const;
+    expect(parseProgress(progressText(p))).toEqual(p);
+  });
+
+  it("starts over on nothing, garbage or a value out of range", () => {
+    const start = { sequence: 0, pair: "1a", spot: 1 };
+    for (const bad of [
+      null,
+      "",
+      "{",
+      "[]",
+      '{"sequence":-1,"pair":"1a","spot":1}',
+      '{"sequence":1.5,"pair":"1a","spot":1}',
+      '{"sequence":2,"pair":"9z","spot":1}',
+      '{"sequence":2,"pair":"1a","spot":4}',
+    ]) {
+      expect(parseProgress(bad), String(bad)).toEqual(start);
+    }
+  });
+
+  it("keeps the manual run as the selected pair", () => {
+    expect(parseProgress('{"sequence":3,"pair":"none","spot":1}').pair).toBe(
+      "none",
+    );
+  });
+});
+
+// Why this test matters: with storage blocked the running number starts at
+// 1 on every load; the session token keeps two such runs apart. It is
+// random bytes only, no time and no place.
+describe("sessionToken", () => {
+  it("is the bytes as hex", () => {
+    expect(sessionToken(new Uint8Array([0, 15, 160, 255]))).toBe("000fa0ff");
+  });
+
+  it("differs for different bytes", () => {
+    fc.assert(
+      fc.property(
+        fc.uint8Array({ minLength: 4, maxLength: 4 }),
+        fc.uint8Array({ minLength: 4, maxLength: 4 }),
+        (a, b) => {
+          fc.pre(a.some((v, i) => v !== b[i]));
+          expect(sessionToken(a)).not.toBe(sessionToken(b));
+        },
+      ),
+    );
+  });
+
+  it("refuses fewer than 4 bytes", () => {
+    expect(() => sessionToken(new Uint8Array(3))).toThrow(RangeError);
   });
 });

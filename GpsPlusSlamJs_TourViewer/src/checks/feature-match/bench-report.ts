@@ -47,6 +47,8 @@ export interface ReportInput {
   readonly input: string;
   readonly sizes: readonly number[];
   readonly runs: number;
+  /** Whether each size had a warm-up round before the timed runs. */
+  readonly warmup: boolean;
   readonly results: readonly MethodResult[];
   /** Lines logged outside the loop (a page error, a camera failure). */
   readonly errors: readonly string[];
@@ -159,7 +161,7 @@ export function formatReport(r: ReportInput): string {
     `started: ${r.startedAt}`,
     ...deviceLines(r.device),
     `input: ${r.input}`,
-    `sizes (long edge): ${r.sizes.join(", ")}; runs: ${String(r.runs)} after 1 warm-up`,
+    `sizes (long edge): ${r.sizes.join(", ")}; runs: ${String(r.runs)}${r.warmup ? " after 1 warm-up" : ", no warm-up"}`,
     `times: median / p90 in ms; extract per frame, match per pair` +
       `; correct = within ${String(CORRECT_TOL_PX)} px of the known warp (synthetic only)`,
     ...r.errors.map((e) => `ERROR ${e}`),

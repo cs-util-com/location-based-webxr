@@ -101,6 +101,21 @@ describe("runBenchmark", () => {
     expect(runner.disposed).toBe(true);
   });
 
+  // Why this test matters: the photo tests run once with no warm-up (they
+  // count matches, the timing is not their question); without the switch
+  // every size would cost a hidden extra round on the phone.
+  it("skips the warm-up when asked", async () => {
+    const h = hooks();
+    const runner = fakeRunner(h.clock);
+    await runBenchmark(
+      [method("fake", () => Promise.resolve(runner))],
+      { a: frame(64, 48), b: frame(64, 48), warp: null },
+      { sizes: [32], runs: 1, warmup: false },
+      h,
+    );
+    expect(runner.frames.filter((f) => f === "32x24")).toHaveLength(2);
+  });
+
   // Why this test matters: the page draws each method and size as soon as
   // it is done and saves its keypoints and matches; the sample must be the
   // features of one timed round in the pixels of that size, and arrive
