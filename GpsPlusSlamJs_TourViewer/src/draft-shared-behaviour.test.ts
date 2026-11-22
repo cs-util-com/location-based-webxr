@@ -1010,18 +1010,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     ],
   ];
 
-  /** The phone offers and restores the objects, the deletions and the
-   *  station poses of a draft, not the rest of its settings record (the
-   *  tour's details, the stations' own fields and order, the characters):
-   *  a draft holding only those reads as spent there and is swept at the
-   *  next open, Not now or not. A known gap of the phone page, recorded
-   *  here so it turns green (and must be flipped) once the phone restores
-   *  the whole record; only the deletion row holds on both pages. */
-  const settingsGap = (work: string) =>
-    name === "phone" && work !== "a deletion";
-
-  describe.each(DECLINED)("%s declined with Not now", (workName, work) => {
-    const gap = settingsGap(workName);
+  describe.each(DECLINED)("%s declined with Not now", (_workName, work) => {
     /** The work left on a fresh page, the tour opened again, "Not now",
      *  and the first edit, which waits for the answer. */
     async function declinedThenEdited() {
@@ -1044,7 +1033,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
 
     const caption = (p: DraftPage, id: string) => captionIn(p.shape(), id);
 
-    async function survivesRestore(): Promise<void> {
+    it("survives the first edit and Restore, which drops the edit, and the next open", async () => {
       const { browser, offered, left } = await declinedThenEdited();
       await offered.restore();
       expect(offered.offer()).toBe("");
@@ -1063,19 +1052,9 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
       await next.restore();
       expect(next.extras()).toBe(left.extras);
       expect(caption(next, "a")).toBe("The well");
-    }
-    it("survives the first edit and Restore, which drops the edit, and the next open", async () => {
-      // Expected to fail while it shows the gap, with the gap's own
-      // failure (the phone swept the draft: nothing to decline); red once
-      // the gap is closed, and flipped then.
-      const failed = await survivesRestore().then(
-        () => null,
-        (e: unknown) => e,
-      );
-      expect(String(failed)).toBe(gap ? NOTHING_OFFERED : "null");
     }, 60_000);
 
-    async function goneOnDelete(): Promise<void> {
+    it("is gone after the first edit and Delete it; the edit is kept", async () => {
       const { browser, offered, openedExtras } = await declinedThenEdited();
       await offered.discard();
       expect(offered.saidNotKept()).toBe(false);
@@ -1090,15 +1069,6 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
       expect(next.extras()).toBe(openedExtras);
       expect(holds(next, "b")).toBe(true);
       expect(caption(next, "a")).toBe("The gate");
-    }
-    it("is gone after the first edit and Delete it; the edit is kept", async () => {
-      // Expected to fail while it shows the gap, with the gap's own
-      // failure; red once the gap is closed, and flipped then.
-      const failed = await goneOnDelete().then(
-        () => null,
-        (e: unknown) => e,
-      );
-      expect(String(failed)).toBe(gap ? NOTHING_OFFERED : "null");
     }, 60_000);
   });
 
@@ -1123,8 +1093,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
   // the offer stands and then Restore: the move waits for the answer, and
   // Restore brings the whole draft back and drops the move (built before
   // the draft came back), saying so; made again, it lands on the draft.
-  // The phone does not restore a station's own fields (`settingsGap`).
-  async function renameKept(): Promise<void> {
+  it("while the offer stands, a station move and then Restore keep the draft's station rename", async () => {
     const { browser, page, opened } = await freshPage(open);
     await page.act(
       tourDocumentActions.stationEdited({
@@ -1152,17 +1121,6 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(next.shape().stations).toContain(
       JSON.stringify({ id: "st-a", geo: MOVED }),
     );
-  }
-  it("while the offer stands, a station move and then Restore keep the draft's station rename", async () => {
-    // Expected to fail while it shows the gap (as `it.fails` would):
-    // red once the gap is closed, and flipped then.
-    const failed = await renameKept().then(
-      () => null,
-      (e: unknown) => e,
-    );
-    expect(String(failed)).toBe(
-      settingsGap("a station rename") ? RENAME_NOT_OFFERED : "null",
-    );
   }, 60_000);
 
   // Why the next three matter: an edit that waited for the answer was
@@ -1187,8 +1145,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
 
   it("the draft renamed the tour, a details change waits: Restore keeps the draft's name and drops the change", async () => {
     const { browser, page } = await freshPage(open);
-    // An object change too, so the phone (which offers no details alone,
-    // `settingsGap`) offers this draft.
+    // An object change beside the rename: both come back.
     await page.edit("b", "The well");
     await page.act(
       tourDocumentActions.detailsChanged({
@@ -1206,9 +1163,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(offered.offer()).not.toBe("");
     await offered.restore();
     expect(offered.extras()).not.toContain("Held name");
-    expect(offered.extras().includes("The castle walk")).toBe(
-      !settingsGap("a rename of the tour"),
-    );
+    expect(offered.extras()).toContain("The castle walk");
     expect(captionIn(offered.shape(), "b")).toBe("The well");
     expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
   }, 60_000);
@@ -1248,14 +1203,6 @@ function captionIn(shape: DocumentShape, id: string): string | undefined {
     .map((o) => JSON.parse(o) as { id: string; caption?: string })
     .find((o) => o.id === id)?.caption;
 }
-
-/** The phone's failure while it shows the settings gap: the draft was
- *  swept as spent, so there is no offer to answer. */
-const NOTHING_OFFERED = "Error: the phone offered nothing";
-
-/** The same gap in the rename row: the reopen offers nothing. */
-const RENAME_NOT_OFFERED =
-  "AssertionError: the rename is offered: expected '' not to be '' // Object.is equality";
 
 // --- the property -----------------------------------------------------------
 

@@ -62,7 +62,6 @@
  * @see editor-draft.ts.md
  */
 
-import { tourStories } from "gps-plus-slam-app-framework/ar/tour-story";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type {
   TourAsset,
@@ -72,7 +71,6 @@ import type {
 import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
 import { tourBlockAssetIds } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
-import { tourImageIds } from "gps-plus-slam-app-framework/ar/tour-details";
 import {
   draftDeletionsNotYetHosted,
   draftObjectsNotYetHosted,
@@ -85,11 +83,6 @@ import {
   type DraftBase,
 } from "../authoring-draft.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
-import {
-  DETAIL_FIELDS,
-  detailsOf,
-  type TourDetailFields,
-} from "../tour-details-form.js";
 import {
   addDraftBaseKey,
   META_KEY,
@@ -111,211 +104,34 @@ import {
   type ShelfDetail,
   shelfDetailOf,
 } from "./asset-shelf/asset-shelf-slice.js";
-import {
-  framesOf,
-  objectAssetsHeld,
-  sameBeyondPose,
-  type StationFrame,
-  type StationPose,
-} from "../tour-document.js";
+import { objectAssetsHeld } from "../tour-document.js";
 import { sameJson } from "../same-json.js";
-import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
-import { characterChanges } from "../declared-characters.js";
 import {
-  changedStations,
   parseSettingsRecord,
   settingsRecordText,
   SETTINGS_KEY,
+  type TourSettingsRecord,
   withFiledNarration,
 } from "../tour-document-draft.js";
+import {
+  addsStations,
+  differs,
+  changedDetails,
+  changesSettings,
+  frameChangeCount,
+  heldAgainst,
+  joinedParts,
+  movedIds,
+  type SettingsChanges,
+  settingsChangeCount,
+  settingsChanges,
+  settingsOf,
+  settingsParts,
+} from "../settings-record-offer.js";
 
 /** The tour-level settings the editor changes (QR-first M1b-2): what the
- *  draft's settings record holds. */
-export interface EditorTourSettings {
-  readonly needsNoGps: boolean;
-  /** The tour's details as they stand (W2). Absent in a record written
-   *  before the details existed, or before any was changed: no opinion
-   *  about them, so it never offers to change (or blank) them. */
-  readonly details?: TourDetailFields;
-  /** Every station's pose (D17), once a frame was moved here: a moved
-   *  station comes back with its items (the r875 milestone review #1).
-   *  Absent: no opinion about them. A pose for a station the file does not
-   *  carry is no change. */
-  readonly stations?: readonly StationPose[];
-  /** The whole frames of the stations the page created ("Move to a new
-   *  station" starts one): the draft's objects name them, so a restore
-   *  puts them back first. Not a change of their own. */
-  readonly createdStations?: readonly StationFrame[];
-  /** Once a station was edited beyond its pose here (renamed, added,
-   *  deleted, reordered, copied), the stations edited beyond their pose or
-   *  added here, whole: each comes back as recorded, at the opened file's
-   *  pose when the file carries it. Absent: no opinion about them. */
-  readonly frames?: readonly StationFrame[];
-  /** The stations' order, when the record orders them (`recordedOrder`). */
-  readonly order?: readonly string[];
-  /** The stations of the file the record deleted. */
-  readonly deletedStations?: readonly string[];
-  /** The stations added by hand there (untitled and empty, each keeps
-   *  itself). */
-  readonly handMadeStations?: readonly string[];
-  /** The tour's declared characters, whole, once one was declared,
-   *  removed or restored here. Absent: no opinion about them. */
-  readonly characters?: readonly TourCharacter[];
-}
-
-/** The characters `wanted` changes against `against`'s (each added,
- *  gone or declared otherwise); none for a record without them. */
-function changedCharacters(
-  wanted: EditorTourSettings,
-  against: EditorTourSettings,
-): number {
-  if (wanted.characters === undefined) return 0;
-  return characterChanges(against.characters ?? [], wanted.characters);
-}
-
-/** One of the details' fields (`tour-details-form.ts`), in the order the
- *  offer names them. */
-type DetailField = (typeof DETAIL_FIELDS)[number];
-
-/** Each field as the page names it (`edit.html`'s "Tour details"). */
-const DETAIL_NAMES: Readonly<Record<DetailField, string>> = {
-  title: "name",
-  description: "description",
-  cover: "cover",
-  contact: "contact",
-};
-
-/** The fields `wanted` changes against `against`; none for a record
- *  without details (no opinion). */
-function changedDetails(
-  wanted: TourDetailFields | undefined,
-  against: TourDetailFields | undefined,
-): DetailField[] {
-  if (wanted === undefined) return [];
-  return DETAIL_FIELDS.filter((f) => wanted[f] !== against?.[f]);
-}
-
-/** What a record's whole frames change against `against`'s: the stations
- *  edited beyond their pose (a pose is `stations`' to name), the stations
- *  it adds that carry the creator's own work (a station a placement
- *  started is no change of its own: `addsStations`), the stations of
- *  `against` it deletes, and whether it orders the shared ones anew. None
- *  for a record without frames. */
-interface FrameChanges {
-  readonly edited: readonly string[];
-  readonly added: readonly string[];
-  readonly deleted: readonly string[];
-  readonly reordered: boolean;
-}
-
-const NO_FRAME_CHANGES: FrameChanges = {
-  edited: [],
-  added: [],
-  deleted: [],
-  reordered: false,
-};
-
-function changedFrames(
-  wanted: EditorTourSettings,
-  against: EditorTourSettings,
-): FrameChanges {
-  if (wanted.frames === undefined) return NO_FRAME_CHANGES;
-  const theirs = new Map((against.frames ?? []).map((f) => [f.id, f]));
-  const edited = wanted.frames
-    .filter((f) => {
-      const other = theirs.get(f.id);
-      return other !== undefined && !sameBeyondPose(other, f);
-    })
-    .map((f) => f.id);
-  const added = wanted.frames
-    .filter(
-      (f) =>
-        !theirs.has(f.id) &&
-        (f.title !== undefined ||
-          tourStories(f).length > 0 ||
-          f.description !== undefined ||
-          f.image !== undefined),
-    )
-    .map((f) => f.id);
-  const deleted = (wanted.deletedStations ?? []).filter((id) => theirs.has(id));
-  const order = wanted.order ?? [];
-  const ordered = new Set(order);
-  const shared = order.filter((id) => theirs.has(id));
-  const sharedTheirs = [...theirs.keys()].filter((id) => ordered.has(id));
-  return {
-    edited,
-    added,
-    deleted,
-    reordered: shared.some((id, i) => id !== sharedTheirs[i]),
-  };
-}
-
-/** The items an offered record moves between a story and the free items:
- *  the story entries of each station whose frame it edits, in its frame or
- *  in the file's. Such an item's object record (out of a story) or
- *  tombstone (into one) is part of that frame's change, counted there and
- *  never as a change or a deletion of its own. */
-function movedIds(
-  settings: EditorTourSettings | undefined,
-  manifest: TourManifest,
-): ReadonlySet<string> {
-  if (settings === undefined) return new Set();
-  const edited = new Set(changedFrames(settings, settingsOf(manifest)).edited);
-  const entries = (frames: readonly StationFrame[]) =>
-    frames
-      .filter((f) => edited.has(f.id))
-      .flatMap((f) =>
-        tourStories(f).flatMap((s) => s.children.map((c) => c.id)),
-      );
-  return new Set([
-    ...entries(settings.frames ?? []),
-    ...entries(settingsOf(manifest).frames ?? []),
-  ]);
-}
-
-/** How many changes a record's frames count as. */
-function frameChangeCount(changes: FrameChanges): number {
-  return (
-    changes.edited.length +
-    changes.added.length +
-    changes.deleted.length +
-    (changes.reordered ? 1 : 0)
-  );
-}
-
-/** Whether `wanted` changes a setting, a detail, a station's pose or a
- *  station beyond its pose that `against` holds: what the offer names. */
-function changesSettings(
-  wanted: EditorTourSettings,
-  against: EditorTourSettings,
-): boolean {
-  return (
-    wanted.needsNoGps !== against.needsNoGps ||
-    changedDetails(wanted.details, against.details).length > 0 ||
-    changedStations(wanted.stations, against.stations).length > 0 ||
-    frameChangeCount(changedFrames(wanted, against)) > 0 ||
-    changedCharacters(wanted, against) > 0
-  );
-}
-
-/** Whether `wanted` holds a station the page created that `against` does
- *  not carry: the draft's notes name it, so the record is work to keep
- *  (whole, its pose as it stands) even when nothing else changed. */
-function addsStations(
-  wanted: EditorTourSettings,
-  against: EditorTourSettings,
-): boolean {
-  const carried = new Set((against.stations ?? []).map((s) => s.id));
-  return (wanted.createdStations ?? []).some((f) => !carried.has(f.id));
-}
-
-/** Whether `wanted` holds anything `against` lacks. */
-function differs(
-  wanted: EditorTourSettings,
-  against: EditorTourSettings,
-): boolean {
-  return changesSettings(wanted, against) || addsStations(wanted, against);
-}
+ *  draft's settings record holds (`TourSettingsRecord`). */
+export type EditorTourSettings = TourSettingsRecord;
 
 /** Two records alike (null is "no record"). */
 function sameRecord(
@@ -351,28 +167,6 @@ const STATIONS_WHAT = "this tour's station positions";
 const FRAMES_WHAT = "this tour's stations";
 const CHARACTERS_WHAT = "this tour's characters";
 
-/** What an offered record changes against the opened file: whether the
- *  setting, and which details. */
-function settingsChanges(
-  settings: EditorTourSettings,
-  manifest: TourManifest,
-): {
-  readonly noGps: boolean;
-  readonly details: DetailField[];
-  readonly stations: string[];
-  readonly frames: FrameChanges;
-  readonly characters: number;
-} {
-  const file = settingsOf(manifest);
-  return {
-    noGps: settings.needsNoGps !== file.needsNoGps,
-    details: changedDetails(settings.details, file.details),
-    stations: changedStations(settings.stations, file.stations),
-    frames: changedFrames(settings, file),
-    characters: changedCharacters(settings, file),
-  };
-}
-
 /**
  * The offer's words (`restoreOfferText`), and - when it holds settings -
  * which and to what (M1b-2 milestone review #3; W2 names the details by
@@ -402,13 +196,8 @@ function offerText(
       ? `${counted} It is ${noGps}.`
       : `${counted} One of the changes is ${noGps}.`;
   }
-  const parts = settingsParts(changes, noGps);
-  const last = parts.pop();
-  const named = parts.length === 0 ? last : `${parts.join(", ")}, and ${last}`;
-  return `${counted} Changed: ${named}.`;
+  return `${counted} Changed: ${joinedParts(settingsParts(changes, noGps))}.`;
 }
-
-type SettingsChanges = ReturnType<typeof settingsChanges>;
 
 /** What an offered record changes that the offer names; null without a
  *  record, or for one holding only stations the page created (not a
@@ -420,48 +209,6 @@ function namedChanges(
   if (settings === undefined) return null;
   const changes = settingsChanges(settings, manifest);
   return settingsChangeCount(changes) === 0 ? null : changes;
-}
-
-/** How many changes a settings record counts as: the setting, each detail
- *  and each station one. */
-function settingsChangeCount(changes: SettingsChanges): number {
-  return (
-    (changes.noGps ? 1 : 0) +
-    changes.details.length +
-    changes.stations.length +
-    frameChangeCount(changes.frames) +
-    changes.characters
-  );
-}
-
-/** "a station" or "3 stations". */
-function stationsWord(count: number): string {
-  return count === 1 ? "a station" : `${String(count)} stations`;
-}
-
-/** The offer's named parts of a settings record, in the page's order. */
-function settingsParts(changes: SettingsChanges, noGps: string): string[] {
-  const parts: string[] = [];
-  if (changes.noGps) parts.push(noGps);
-  if (changes.details.length > 0) {
-    const names = changes.details.map((f) => DETAIL_NAMES[f]).join(", ");
-    parts.push(`the tour's details (${names})`);
-  }
-  if (changes.stations.length === 1) parts.push("the position of a station");
-  if (changes.stations.length > 1) {
-    parts.push(`the positions of ${String(changes.stations.length)} stations`);
-  }
-  const { edited, added, deleted, reordered } = changes.frames;
-  if (edited.length > 0) {
-    parts.push(
-      `the details of ${edited.length === 1 ? "a station" : `${String(edited.length)} stations`}`,
-    );
-  }
-  if (added.length > 0) parts.push(`${stationsWord(added.length)} added`);
-  if (deleted.length > 0) parts.push(`${stationsWord(deleted.length)} deleted`);
-  if (reordered) parts.push("the order of the stations");
-  if (changes.characters > 0) parts.push("the tour's characters");
-  return parts;
 }
 
 /** `settingsWhat` of an offer that holds `settings`; undefined when it
@@ -524,41 +271,6 @@ export function restoredLine(
               ? "the characters"
               : "the settings";
   return `Nothing was restored: the notes and ${part} those changes were for are changed here already.`;
-}
-
-/**
- * `settings` as measured against `manifest`: a cover naming no image of
- * that file (a deleted photo) is no opinion about the cover - the file's
- * own stands - since no save could write it (M4a review #1: the record
- * kept the deleted photo's cover, and every later open offered a cover
- * change that Restore could not make).
- */
-function heldAgainst(
-  settings: EditorTourSettings,
-  manifest: TourManifest,
-): EditorTourSettings {
-  const details = settings.details;
-  const cover = details?.cover;
-  if (details === undefined || cover === undefined) return settings;
-  // A captured photo's image is an asset of the tour since version 4.
-  const images = tourImageIds({ objects: [], assets: manifest.assets });
-  if (images.has(cover)) return settings;
-  const { cover: _gone, ...rest } = details;
-  return {
-    ...settings,
-    details:
-      manifest.cover === undefined ? rest : { ...rest, cover: manifest.cover },
-  };
-}
-
-function settingsOf(manifest: TourManifest): EditorTourSettings {
-  return {
-    needsNoGps: manifest.needsNoGps === true,
-    details: detailsOf(manifest),
-    stations: manifest.stations.map(({ id, geo }) => ({ id, geo })),
-    frames: framesOf(manifest),
-    characters: manifest.characters ?? [],
-  };
 }
 
 /** Every editor draft's namespace starts with this; the phone's never do

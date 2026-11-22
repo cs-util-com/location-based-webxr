@@ -312,7 +312,9 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   - `pictureOf(id)` (W2) - the kept picture of a photo brought back by an
     undo after a save; the card draws it, since the file no longer carries
     it.
-  - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
+  - `restore({ objects, deleted, settings? })` (M6 E2c; the record's part
+    built by `../settings-record-offer.ts`'s `restoreWithSettings`, the
+    phone's rule too) - a draft's work
     put back by the session's own rules: an object the tour carries takes
     the draft's version (`upsertPlaced`), a deletion its tombstone
     (`deleteObject`); the whole draft comes back (every edit waits

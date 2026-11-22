@@ -138,7 +138,10 @@ editor's own namespace, one tab at a time. Design:
   tour's "needs no GPS" setting, or both (M1b-2 milestone review #6).
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
   `EditorDraftDeps`, `EditorDraftOffer`, `EditorTourSettings` (`open`'s result type stays
-  module-private).
+  module-private). How a settings record is compared, counted, named and
+  restored is `../settings-record-offer.ts`, shared with the phone's
+  draft (`creator-draft.ts`), so the two pages offer one record by one
+  rule.
 
 ## Invariants & assumptions
 

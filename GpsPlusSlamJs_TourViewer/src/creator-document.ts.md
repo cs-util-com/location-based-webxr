@@ -66,10 +66,10 @@ what)` dispatches them with the settle's codes as one
     `settleApplied`, anchors a station a move started as `move` does,
     and returns the change (null for no step, and for a second commit).
     The settle commits through `creator-codes.ts`'s `applySettle`.
-  - `restore({ objects, deleted, pictures, stations?, createdStations? },
-what)` - a draft's work, already filtered by the page, with its
-    photos' pictures and the whole frames of the stations its objects were
-    seated in that the tour lacks;
+  - `restore(work, what)` - a draft's work, already filtered by the
+    page (a `TourRestore`: its objects, deletions and its settings
+    record's part, as `settings-record-offer.ts`'s `restoreWithSettings`
+    builds it), with its photos' pictures; one step;
   - `undo()` - `{ kind: "undone", what, backedUp }`, `{ kind: "nothing" }`,
     or refused: `"saving"` (`canStep`) or `"picture-gone"`
     (`picturesNeeded`, a photo whose picture this page does not hold).

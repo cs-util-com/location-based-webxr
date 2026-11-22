@@ -1896,7 +1896,7 @@ function step(
 
 /** What a draft's offer puts back, already checked by the page's rules
  *  (`editor-session.ts` `restore`): each applied as an edit would be. */
-interface TourRestore {
+export interface TourRestore {
   readonly objects: readonly TourObject[];
   readonly deleted: readonly string[];
   readonly needsNoGps?: boolean;

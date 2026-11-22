@@ -43,8 +43,8 @@ import {
   type LevelText,
   type SettleChange,
   type StationFrame,
-  type StationPose,
   type TourDocumentState,
+  type TourRestore,
   type TourSaveProgress,
 } from "./tour-document.js";
 import {
@@ -270,15 +270,7 @@ export interface CreatorDocument {
   /** A draft's work put back, already filtered by the page's rules, with
    *  its photos' pictures: one step. */
   restore(
-    work: {
-      readonly objects: readonly TourObject[];
-      readonly deleted: readonly string[];
-      readonly pictures: ReadonlyMap<string, Blob>;
-      readonly stations?: readonly StationPose[];
-      /** Whole frames of stations a draft's objects name that the tour
-       *  lacks (`TourSettingsRecord.createdStations`). */
-      readonly createdStations?: readonly StationFrame[];
-    },
+    work: TourRestore & { readonly pictures: ReadonlyMap<string, Blob> },
     what: string,
   ): DocumentChange;
   /** One step back, unless a write runs (`canStep`) or a photo it brings
@@ -678,18 +670,8 @@ export function createCreatorDocument(
     tourChanged: () => tourFieldChanges(state()) > 0,
     restore(work, what) {
       for (const [id, blob] of work.pictures) setPicture(id, blob);
-      return change(
-        tourDocumentActions.restored({
-          objects: work.objects,
-          deleted: work.deleted,
-          ...(work.stations === undefined ? {} : { stations: work.stations }),
-          ...(work.createdStations === undefined ||
-          work.createdStations.length === 0
-            ? {}
-            : { createdStations: work.createdStations }),
-          what,
-        }),
-      );
+      const { pictures: _pictures, ...restore } = work;
+      return change(tourDocumentActions.restored({ ...restore, what }));
     },
     undo() {
       const s = state();

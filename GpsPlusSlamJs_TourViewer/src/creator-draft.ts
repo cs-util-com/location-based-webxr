@@ -11,9 +11,10 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { readSideM, writeSideM } from "./printed-side.js";
-import type {
-  TourManifest,
-  TourObject,
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
@@ -57,9 +58,7 @@ import {
 } from "./draft-edit-gate.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { isTourContentKey } from "./tour-file-key.js";
-import type { StationFrame, StationPose } from "./tour-document.js";
 import {
-  changedStations,
   DRAFT_PART_UNREAD,
   parseSettingsRecord,
   settingsRecordText,
@@ -67,6 +66,18 @@ import {
   type TourCodesRecord,
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
+import {
+  addsStations,
+  changesSettings,
+  heldAgainst,
+  joinedParts,
+  movedIds,
+  restoreWithSettings,
+  settingsChangeCount,
+  settingsChanges,
+  settingsOf,
+  settingsParts,
+} from "./settings-record-offer.js";
 import type { TourSession } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import type { VisitLog, VisitLogEntry } from "./visit-log.js";
@@ -366,14 +377,12 @@ export function wireCreatorDraft(deps: {
     counts: { placed: number; changed: number };
     /** The draft's AR visits (M3b), for the summary after Finish. */
     visits: readonly VisitLogEntry[];
-    /** The station poses the settings record holds that differ from the
-     *  opened tour's (D17): a restore moves those frames first, so their
-     *  items' records land inside them. */
-    stations: readonly StationPose[];
-    /** The stations this draft's objects were placed in that the opened
-     *  tour lacks, whole (the settings record's `createdStations`): put
-     *  back before the objects, so each comes back in its own station. */
-    createdStations: readonly StationFrame[];
+    /** The settings record offered beside the objects (the tour's
+     *  details, its stations - poses, frames, order, created and deleted
+     *  ones - and its characters), or none: put back by the same rule as
+     *  the desktop's (`settings-record-offer.ts`), the frames before the
+     *  objects so each item's record lands in its own station. */
+    settings: TourSettingsRecord | undefined;
     /** The offer's words. */
     text: string;
   } | null = null;
@@ -756,17 +765,17 @@ export function wireCreatorDraft(deps: {
     changed: number;
     deleted: number;
   } {
-    const { objects, stations, deleted } = waiting;
+    const { objects, deleted } = waiting;
+    // The deletions come back as the tombstones they are; the record's
+    // frames come before the objects, whose records stand in them.
+    const { work } = restoreWithSettings(
+      ctx.tourDocument.state(),
+      { objects, deleted },
+      waiting.settings,
+    );
     ctx.tourDocument.restore(
       {
-        // The frames before the objects, whose records stand in them.
-        ...(stations.length === 0 ? {} : { stations }),
-        ...(waiting.createdStations.length === 0
-          ? {}
-          : { createdStations: waiting.createdStations }),
-        objects,
-        // The deletions come back as the tombstones they are (plan §3.4).
-        deleted,
+        ...work,
         pictures: new Map(
           objects.flatMap((o) => {
             const blob = waiting.photos.get(o.id);
@@ -1156,15 +1165,27 @@ export function wireCreatorDraft(deps: {
       }
       const waiting = draftObjectsNotYetHosted(stored.draft, opened);
       const waitingDeletions = draftDeletionsNotYetHosted(stored.draft, opened);
-      // The station poses the record holds that the opened tour does not
-      // (D17): work like any other, so the draft is not spent while one
-      // is waiting.
-      const moved = new Set(
-        changedStations(storedSettings?.stations, opened?.stations ?? []),
-      );
-      const waitingStations = (storedSettings?.stations ?? []).filter((p) =>
-        moved.has(p.id),
-      );
+      // The settings record by the desktop's rule: offered when it changes
+      // anything the opened tour holds, or holds a station the draft's
+      // objects name that the tour lacks - work like any other, so the
+      // draft is not spent while it waits. The phone never edits the "no
+      // GPS" setting, so a record's copy of it is no change: the tour's
+      // own stands (an older copy would undo a change made elsewhere).
+      const tour = opened ?? createEmptyTourManifest();
+      const file = settingsOf(tour);
+      const record =
+        storedSettings === undefined
+          ? undefined
+          : heldAgainst(
+              { ...storedSettings, needsNoGps: file.needsNoGps },
+              tour,
+            );
+      const waitingSettings =
+        record !== undefined &&
+        (changesSettings(record, file) ||
+          (waiting.length > 0 && addsStations(record, file)))
+          ? record
+          : undefined;
       // What the hosted zip stores for each of the draft's codes (M4c-1):
       // the content, read one by one like the one level was.
       const hostedTexts = new Map<string, string | null>();
@@ -1175,7 +1196,7 @@ export function wireCreatorDraft(deps: {
         hostedTexts.get(id) ?? null;
       if (stale()) return false;
       if (
-        waitingStations.length === 0 &&
+        waitingSettings === undefined &&
         draftIsSpent(stored.draft, opened, hostedLevel, stored.visits.length)
       ) {
         // SPENT: the hosted zip carries every object AND the measurement,
@@ -1242,13 +1263,26 @@ export function wireCreatorDraft(deps: {
       const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
       // New placements, and changes of objects the hosted zip carries.
       const hosted = hostedObjects(opened);
+      // An item a recorded frame moves between a story and the free items
+      // is part of that frame's change, counted there (as on the desktop).
+      const moved = movedIds(waitingSettings, tour);
       const edits = waiting.filter(
-        (o) => hosted.key(o.id) !== undefined,
+        (o) => hosted.key(o.id) !== undefined && !moved.has(o.id),
       ).length;
-      // A moved station is one change, as on the desktop.
+      const newOnes = waiting.filter(
+        (o) => hosted.key(o.id) === undefined,
+      ).length;
+      const recordChanges =
+        waitingSettings === undefined
+          ? undefined
+          : settingsChanges(waitingSettings, tour);
       const counts = {
-        placed: waiting.length - edits,
-        changed: edits + waitingStations.length,
+        placed: newOnes,
+        changed:
+          edits +
+          (recordChanges === undefined
+            ? 0
+            : settingsChangeCount(recordChanges)),
       };
       // A code measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a measurement
@@ -1271,17 +1305,20 @@ export function wireCreatorDraft(deps: {
         deleted: waitingDeletions,
         counts,
         visits: stored.visits,
-        stations: waitingStations,
-        // Whatever this page did meanwhile: a frame of an id the document
-        // carries is left as it is (`restored`).
-        createdStations: storedSettings?.createdStations ?? [],
+        settings: waitingSettings,
         text: "",
       };
+      // The record's parts named as the desktop names them.
+      const parts =
+        recordChanges === undefined ? [] : settingsParts(recordChanges, "");
       offered.text = restoreOfferText(counts.placed, hasLevel, {
         changed: counts.changed,
-        deleted: waitingDeletions.length,
+        deleted: waitingDeletions.filter((id) => !moved.has(id)).length,
         visits: stored.visits.length,
       });
+      if (parts.length > 0) {
+        offered.text = `${offered.text} Changed: ${joinedParts(parts)}.`;
+      }
       showOffer(offered);
       return true;
     })().then(
