@@ -618,7 +618,7 @@ written, hand })` (the hosted texts enter the book);
 
 - `selectTourDocument(root)` - the slice in a store's state.
 - Re-exported from `tour-content.ts` for the pages, read-only:
-  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first). A page reads
+  `isCapturedPhoto` and `ownedAssetIds` (the pictures that own their image asset), `folderChains` (each plain folder's chain from its station, outermost first), `folderChainOf` (the chain around one child). A page reads
   them here, never from `tour-content.ts` (the boundary rule
   `document-rules-through-tour-document`).
 - The codes: `documentCodes(state)` (the book, in order),

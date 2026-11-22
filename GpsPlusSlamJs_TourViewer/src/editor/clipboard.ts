@@ -22,10 +22,11 @@ import {
   tourChildPlace,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
-import { folderChainOf, folderChains } from "../tour-content.js";
 import {
   documentFrames,
   documentObjects,
+  folderChainOf,
+  folderChains,
   manifestToWrite,
   type TourDocumentState,
 } from "../tour-document.js";

@@ -196,9 +196,10 @@ import type { CodeMeasurement } from "./visit-settle.js";
 
 export type { LevelText } from "./code-book.js";
 /** The world view's readers (`tour-content.ts`), for the pages: which
- *  pictures are captured photos and own their image asset. Read-only; the
- *  rules stay behind the document. */
+ *  pictures are captured photos and own their image asset, and the folders
+ *  around a child. Read-only; the rules stay behind the document. */
 export {
+  folderChainOf,
   folderChains,
   isCapturedPhoto,
   ownedAssetIds,
