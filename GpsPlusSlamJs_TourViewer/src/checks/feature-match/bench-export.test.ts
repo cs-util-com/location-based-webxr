@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
+  FLAT_MODE,
   FRAME_FILES,
   NO_PAIR,
   PAIRS,
@@ -211,6 +212,26 @@ describe("framesInfo", () => {
         greySd: 0,
       },
     ]);
+  });
+
+  // Why this test matters: a run zip holds many pairs side by side, so
+  // each frames JSON must name the files its own pair's photos are under.
+  it("names the given files instead of the fixed ones", () => {
+    const text = framesInfo(
+      [
+        { name: "A", frame: a, source: { width: 4, height: 2 } },
+        { name: "B", frame: b, source: { width: 4, height: 2 } },
+      ],
+      DEVICE,
+      1280,
+      TAG,
+      { light: null, session: "0a1b2c3d" },
+      { A: "p-frame-a.png", B: "p-frame-b.png" },
+    );
+    const files = (
+      JSON.parse(text) as { frames: { file: string }[] }
+    ).frames.map((f) => f.file);
+    expect(files).toEqual(["p-frame-a.png", "p-frame-b.png"]);
   });
 
   it("names no time or place anywhere", () => {
@@ -710,6 +731,16 @@ describe("progress across reloads", () => {
     ]) {
       expect(parseProgress(bad), String(bad)).toEqual(start);
     }
+  });
+
+  // Why this test matters: the flat target mode is chosen in the same
+  // selector, and a reload must reopen it rather than fall back to 1a.
+  it("keeps the flat target mode as the selection", () => {
+    expect(
+      parseProgress(`{"sequence":3,"pair":"${FLAT_MODE.key}","spot":1}`).pair,
+    ).toBe(FLAT_MODE.key);
+    expect(PAIRS.map((p): string => p.key)).not.toContain(FLAT_MODE.key);
+    expect(() => pairTag(FLAT_MODE.key, 1, 1)).toThrow(/unknown pair/);
   });
 
   it("keeps the manual run as the selected pair", () => {

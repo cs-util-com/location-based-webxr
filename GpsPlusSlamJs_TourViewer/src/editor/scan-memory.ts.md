@@ -16,9 +16,8 @@ it as the first add did.
 - `interface HandleStore` - `get`, `put`, `delete` by string key; may
   reject.
 - `indexedDbHandleStore(factory: IDBFactory | undefined): HandleStore | null`
-  - database `tour-editor-scans`, object store `scans` (out-of-line keys),
-    opened on first use; a failed open is tried again at the next call; one
-    transaction per call. Null without IndexedDB.
+  - database `tour-editor-scans`, object store `scans`, through
+    `indexedDbKeyValueStore` (`../key-value-db.ts`). Null without IndexedDB.
 - `createScanMemory(store: HandleStore | null): ScanMemory`
   - `remember(tourId, handle)` - stores the handle itself; reads nothing of
     the file.
@@ -92,7 +91,8 @@ if (kept !== null) {
 - `scan-memory.test.ts`, `indexedDbHandleStore` - the adapter on a small
   hand-written IndexedDB stand-in: its database and one-time upgrade, one
   open for many calls, a failed open tried again, a blocked open and a
-  failed transaction rejecting.
+  failed transaction rejecting, and a named database listing its keys
+  (`indexedDbKeyValueStore`, tested here beside the stand-in).
 - `playwright-tests/editor.spec.js`, "remembers a scan picked in the
   picker by tour id ..." - the whole flow across reloads (picked, shown,
   offered, shown again, then deleted and said gone) on a stand-in store

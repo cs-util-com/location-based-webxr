@@ -110,7 +110,8 @@ export function tableRows(results: readonly MethodResult[]): TableRow[] {
   return rows;
 }
 
-function deviceLines(d: DeviceInfo): string[] {
+/** The device facts as report lines (shared by the speed test report). */
+export function deviceLines(d: DeviceInfo): string[] {
   return [
     `user agent: ${d.userAgent}`,
     `model: ${d.model ?? "-"}, platform version: ${d.platformVersion ?? "-"}`,

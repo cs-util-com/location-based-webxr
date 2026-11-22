@@ -59,6 +59,23 @@ describe("routeRequest", () => {
     expect(assetCalls.length).toBe(0);
   });
 
+  it("routes /api/model/* to the model mirror, which refuses unknown names", async () => {
+    const { env, assetCalls } = envSpy(new Response("asset"));
+    const fetched: string[] = [];
+    const response = await routeRequest(
+      new Request("https://gps.csutil.com/api/model/other.onnx"),
+      env,
+      (url) => {
+        fetched.push(url);
+        return Promise.resolve(new Response("x"));
+      },
+    );
+    expect(response.status).toBe(404);
+    expect(await response.text()).toMatch(/no mirrored model/);
+    expect(fetched).toEqual([]);
+    expect(assetCalls.length).toBe(0);
+  });
+
   it("answers unknown /api/* routes with a JSON 404, never the asset 404 page", async () => {
     // An unknown API route reaching the assets would return the site's
     // HTML 404 with a 200-ish asset pipeline — a JSON 404 keeps API

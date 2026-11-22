@@ -46,6 +46,26 @@ describe("buildMethods", () => {
     ]);
   });
 
+  it("adds SIFT + LightGlue per backend, last (its model is the largest download)", () => {
+    const ids = buildMethods(
+      {
+        sift: false,
+        xfeat: true,
+        aliked: false,
+        siftLightGlue: true,
+        backends: ["webgpu", "wasm"],
+        precisions: ["fp16"],
+      },
+      deps,
+    ).map((m) => m.id);
+    expect(ids).toEqual([
+      "xfeat-webgpu-fp16",
+      "xfeat-wasm-fp16",
+      "sift-lightglue-webgpu",
+      "sift-lightglue-wasm",
+    ]);
+  });
+
   it("gives nothing when nothing is chosen", () => {
     expect(
       buildMethods(
@@ -94,17 +114,26 @@ describe("selectionGaps", () => {
         fc.boolean(),
         fc.boolean(),
         fc.boolean(),
+        fc.boolean(),
         fc.subarray<Backend>(["webgpu", "wasm"]),
         fc.subarray<XFeatPrecision>(["fp16", "fp32"]),
-        (sift, xfeat, aliked, backends, precisions) => {
-          const s = { sift, xfeat, aliked, backends, precisions };
+        (sift, xfeat, aliked, siftLightGlue, backends, precisions) => {
+          const s = {
+            sift,
+            xfeat,
+            aliked,
+            siftLightGlue,
+            backends,
+            precisions,
+          };
           const ids = buildMethods(s, deps).map((m) => m.id);
           const runs = (prefix: string) =>
             ids.some((id) => id.startsWith(prefix));
           const everyTickedRuns =
-            (!sift || runs("sift")) &&
+            (!sift || ids.includes("sift")) &&
             (!xfeat || runs("xfeat")) &&
-            (!aliked || runs("aliked"));
+            (!aliked || runs("aliked")) &&
+            (!siftLightGlue || runs("sift-lightglue"));
           expect(selectionGaps(s).length === 0).toBe(everyTickedRuns);
         },
       ),

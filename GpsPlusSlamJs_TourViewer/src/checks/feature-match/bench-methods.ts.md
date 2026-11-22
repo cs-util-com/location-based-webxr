@@ -6,11 +6,11 @@ Turns the page's choices into the list of methods to run, and reads the form's v
 
 ## Public API
 
-- `MethodSelection { sift, xfeat, aliked, backends, precisions }`.
-- `buildMethods(selection, deps)`: SIFT once; XFeat per backend and precision; ALIKED + LightGlue per backend. Cheapest first.
+- `MethodSelection { sift, xfeat, aliked, siftLightGlue, backends, precisions }`.
+- `buildMethods(selection, deps)`: SIFT once; XFeat per backend and precision; ALIKED + LightGlue per backend; SIFT + LightGlue (`method-sift-lightglue.ts`) per backend. Cheapest first.
 - `backendsFrom(values)`: the ticked backend boxes (`webgpu`, `wasm`) in that fixed order, whatever order they come in; an empty list stays empty (no XFeat or ALIKED then); throws `RangeError` on an unknown value.
 - `precisionsFrom(values)`: the ticked XFeat model file boxes (`fp16`, `fp32`), same rules.
-- `selectionGaps(selection)`: one sentence per ticked method that `buildMethods` would leave out (XFeat with no backend or no model file, ALIKED + LightGlue with no backend); empty when every ticked method runs. The page refuses to run on a gap rather than drop a method without a word.
+- `selectionGaps(selection)`: one sentence per ticked method that `buildMethods` would leave out (XFeat with no backend or no model file, ALIKED + LightGlue or SIFT + LightGlue with no backend); empty when every ticked method runs. The page refuses to run on a gap rather than drop a method without a word.
 - `runSettings({ pair, backends, precisions, runs }, webgpuAvailable)` -> `RunSettings { photoTest, backends, precisions, runs, warmup, line }`. A protocol pair (any key but `none`) is a photo test and overrides the Options: 1 run, no warm-up, `webgpu` only (`wasm` when `webgpuAvailable` is false, and the line says "(no WebGPU on this device)") and the `fp16` XFeat file only. `none` or `null` (the synthetic run) keeps the Options with a warm-up. `line` starts with `runs:` and names what is used, e.g. `runs: 1, no warm-up, backends webgpu, XFeat files fp16 (photo test 1b)`.
 - `parseRuns(value)`: a whole number 1 to 50, else 5.
 

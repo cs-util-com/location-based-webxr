@@ -13,6 +13,7 @@
 import type { WritableFileHandle } from "./save-target.js";
 import { notAddedLine } from "./added-debug-data.js";
 import type { AddScanOutcome } from "./editor-entry.js";
+import { indexedDbKeyValueStore } from "../key-value-db.js";
 
 /** A picked file's handle, with the permission call Chromium has. */
 export type ScanHandle = WritableFileHandle;
@@ -30,65 +31,11 @@ export interface HandleStore {
 const SCAN_DB = "tour-editor-scans";
 const SCAN_STORE = "scans";
 
-/**
- * The browser's IndexedDB as a {@link HandleStore}: one database opened
- * on first use (a failed open is tried again at the next call), one
- * transaction per call. Null where the browser has no IndexedDB.
- */
-export function indexedDbHandleStore(
+/** The browser's IndexedDB as the scan memory's {@link HandleStore}
+ *  (`key-value-db.ts`). */
+export const indexedDbHandleStore = (
   factory: IDBFactory | undefined,
-): HandleStore | null {
-  if (factory === undefined) return null;
-  let db: Promise<IDBDatabase> | null = null;
-  const open = (): Promise<IDBDatabase> => {
-    db ??= new Promise<IDBDatabase>((resolve, reject) => {
-      const request = factory.open(SCAN_DB, 1);
-      request.onupgradeneeded = () => {
-        request.result.createObjectStore(SCAN_STORE);
-      };
-      request.onsuccess = () => {
-        resolve(request.result);
-      };
-      request.onerror = () => {
-        reject(request.error ?? new Error("IndexedDB did not open"));
-      };
-      request.onblocked = () => {
-        reject(new Error("IndexedDB is blocked by another tab"));
-      };
-    }).catch((err: unknown) => {
-      db = null;
-      throw err;
-    });
-    return db;
-  };
-  const run = async <T>(
-    mode: IDBTransactionMode,
-    op: (store: IDBObjectStore) => IDBRequest<T>,
-  ): Promise<T> => {
-    const database = await open();
-    return new Promise<T>((resolve, reject) => {
-      const tx = database.transaction(SCAN_STORE, mode);
-      const request = op(tx.objectStore(SCAN_STORE));
-      tx.oncomplete = () => {
-        resolve(request.result);
-      };
-      const failed = () => {
-        reject(tx.error ?? new Error("IndexedDB transaction failed"));
-      };
-      tx.onerror = failed;
-      tx.onabort = failed;
-    });
-  };
-  return {
-    get: (key) => run("readonly", (store) => store.get(key)),
-    put: async (key, value) => {
-      await run("readwrite", (store) => store.put(value, key));
-    },
-    delete: async (key) => {
-      await run("readwrite", (store) => store.delete(key));
-    },
-  };
-}
+): HandleStore | null => indexedDbKeyValueStore(factory, SCAN_DB, SCAN_STORE);
 
 /** The remembered scans, by tour id. Never rejects. */
 export interface ScanMemory {
