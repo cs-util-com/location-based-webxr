@@ -1085,3 +1085,328 @@ test("the feature matching benchmark tells two runs apart with storage blocked",
   expect(sessions[0]).toMatch(/^[0-9a-f]{8}$/);
   expect(sessions[1]).not.toBe(sessions[0]);
 });
+
+/**
+ * Dims the fake camera and waits for two frames of the flat mode's video.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function dimFlatCamera(page) {
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        /** @type {Window & Record<string, unknown>} */ (window).__dim = true;
+        const video = /** @type {HTMLVideoElement} */ (
+          document.querySelector("#flat-video")
+        );
+        video.requestVideoFrameCallback(() =>
+          video.requestVideoFrameCallback(() => resolve(undefined)),
+        );
+      }),
+  );
+}
+
+/**
+ * Taps the reference photo at fractions of its picture (not of its box:
+ * the canvas is letterboxed with object-fit: contain).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {[number, number][]} points
+ */
+async function tapCorners(page, points) {
+  const box = await page.locator("#flat-still").evaluate((el) => {
+    const c = /** @type {HTMLCanvasElement} */ (el);
+    const r = c.getBoundingClientRect();
+    const scale = Math.min(r.width / c.width, r.height / c.height);
+    return {
+      left: r.left + (r.width - c.width * scale) / 2,
+      top: r.top + (r.height - c.height * scale) / 2,
+      width: c.width * scale,
+      height: c.height * scale,
+    };
+  });
+  for (const [fx, fy] of points) {
+    await page.mouse.click(
+      box.left + fx * box.width,
+      box.top + fy * box.height,
+    );
+  }
+}
+
+/**
+ * The visible buttons of the flat mode that are not wholly on screen.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function offscreenFlatButtons(page) {
+  return page.locator("#flat button").evaluateAll((buttons) =>
+    buttons
+      .filter((b) => b.getClientRects().length > 0)
+      .filter((b) => {
+        const r = b.getBoundingClientRect();
+        return (
+          r.left < 0 ||
+          r.top < 0 ||
+          r.right > window.innerWidth + 0.5 ||
+          r.bottom > window.innerHeight + 0.5
+        );
+      })
+      .map((b) => b.id || (b.textContent ?? "").trim()),
+  );
+}
+
+/** Phone portrait, a small tablet's landscape and its portrait. */
+const FLAT_VIEWPORTS = [
+  { width: 412, height: 915 },
+  { width: 880, height: 790 },
+  { width: 790, height: 880 },
+];
+
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string} phase
+ */
+async function expectFlatControlsOnScreen(page, phase) {
+  for (const size of FLAT_VIEWPORTS) {
+    await page.setViewportSize(size);
+    expect(
+      await offscreenFlatButtons(page),
+      `${phase} at ${String(size.width)}x${String(size.height)}`,
+    ).toEqual([]);
+  }
+  await page.setViewportSize(FLAT_VIEWPORTS[0]);
+}
+
+/** Each photo waits for its 3 s countdown. */
+const AFTER_COUNTDOWN = { timeout: 10_000 };
+
+/**
+ * Why this test matters: the flat target capture is used on a phone resting
+ * on something steady, one surface after another, with photos that exist
+ * only in the page until downloaded. It proves the whole loop for one
+ * surface: the mode opens from the pair selector, the reference waits for
+ * its countdown (which a second tap cancels), the four corner taps are
+ * guided in order and can be redone, the straightened check is shown
+ * before it is kept, the full-light and a darker shot of a pose get their
+ * light bin from the luma ratio (shown live too), and one tap downloads
+ * one zip with every photo, the corners and the tags in the file names
+ * and the JSON. The progress survives a reload, every control is on
+ * screen at the three viewports without scrolling, Exit gives the photo
+ * pairs back, and nothing is uploaded (every request off the machine is
+ * refused).
+ */
+test("the feature matching page captures a flat target surface end to end", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.setViewportSize(FLAT_VIEWPORTS[0]);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+
+  await page.locator("#pair").selectOption("flat");
+  await expect(page.locator("#flat")).toBeVisible();
+  await expect(page.locator("#flat-where")).toHaveText("Overview");
+  await expect(page.locator("#flat-classes li")).toHaveText([
+    "busy picture: 0 of 5 complete, 0 started",
+    "text-heavy: 0 of 5 complete, 0 started",
+    "low-texture: 0 of 5 complete, 0 started",
+  ]);
+  await expectFlatControlsOnScreen(page, "overview");
+
+  await page.locator("#flat-new").click();
+  await expect(page.locator("#flat-where")).toHaveText(
+    "Surface 1, busy picture, reference",
+  );
+  const shoot = page.locator("#flat-shoot");
+  await expect(shoot).toHaveText("Take reference (3 s)");
+  await expect(shoot).toBeEnabled();
+  await expectFlatControlsOnScreen(page, "reference");
+
+  await shoot.click();
+  await expect(page.locator("#flat-countdown")).toBeVisible();
+  await expect(shoot).toHaveText(/^Cancel \(\d\)$/);
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText("cancelled");
+  await expect(page.locator("#flat-countdown")).toBeHidden();
+
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    "reference taken, 320x240",
+    AFTER_COUNTDOWN,
+  );
+  await expect(page.locator("#flat-hint")).toHaveText(
+    "Tap corner 1 of 4 on the photo: top-left.",
+  );
+  await expectFlatControlsOnScreen(page, "corners");
+  // A wrong first try, redone.
+  await tapCorners(page, [
+    [0.1, 0.1],
+    [0.1, 0.9],
+  ]);
+  await page.locator("#flat-redo").click();
+  await expect(page.locator("#flat-hint")).toHaveText(
+    "Tap corner 1 of 4 on the photo: top-left.",
+  );
+  await tapCorners(page, [
+    [0.1, 0.1],
+    [0.9, 0.1],
+    [0.9, 0.9],
+  ]);
+  await expect(page.locator("#flat-hint")).toHaveText(
+    "Tap corner 4 of 4 on the photo: bottom-left.",
+  );
+  await tapCorners(page, [[0.1, 0.9]]);
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^straightened: \d+x\d+$/,
+  );
+  await expect(page.locator("#flat-accept")).toBeVisible();
+  await expectFlatControlsOnScreen(page, "check");
+  await page.locator("#flat-accept").click();
+
+  await expect(page.locator("#flat-where")).toHaveText(
+    "Surface 1, busy picture, pose 40 % wide, 0 deg",
+  );
+  await expect(page.locator("#flat-poses button")).toHaveCount(6);
+  await expect(page.locator("#flat-guide")).toBeVisible();
+  await expect(shoot).toHaveText("Full-light shot (3 s)");
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    "taken: w40-t0 q1: full light, bin b1",
+    AFTER_COUNTDOWN,
+  );
+  await expect(page.locator("#flat-live")).toHaveText(
+    /^light now: (0\.9\d|1\.\d\d) of full, bin b1$/,
+  );
+
+  // A dimmer lamp: the white half drops to grey 64, so the guide region's
+  // mean falls to about a quarter of the full-light shot's: bin b4.
+  await dimFlatCamera(page);
+  await expect(page.locator("#flat-live")).toHaveText(
+    /^light now: 0\.[12]\d of full, bin b4$/,
+  );
+  await expect(page.locator('#flat-bins [data-bin="b4"]')).toHaveAttribute(
+    "data-live",
+    "true",
+  );
+  await expect(shoot).toHaveText("Darker shot (3 s)");
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^taken: w40-t0 q2: 0\.[12]\d of full, bin b4$/,
+    AFTER_COUNTDOWN,
+  );
+  for (const [bin, filled] of [
+    ["b1", "true"],
+    ["b2", "false"],
+    ["b3", "false"],
+    ["b4", "true"],
+  ]) {
+    await expect(
+      page.locator(`#flat-bins [data-bin="${bin}"]`),
+    ).toHaveAttribute("data-filled", filled);
+  }
+  await expectFlatControlsOnScreen(page, "poses");
+
+  const download = page.locator("#flat-download");
+  // New captures, not files: the reference (with its straightened copy)
+  // and the two shots.
+  await expect(download).toHaveText("Download zip (3 new)");
+  const [zipFile] = await Promise.all([
+    page.waitForEvent("download"),
+    download.click(),
+  ]);
+  expect(zipFile.suggestedFilename()).toBe("flat-target-s01-busy.zip");
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^downloaded flat-target-s01-busy\.zip: 4 photos, /,
+  );
+  await expect(download).toHaveText("Download zip");
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
+  );
+  const entries = await reader.getEntries();
+  expect(entries.map((e) => e.filename).sort()).toEqual([
+    "feature-match-log.txt",
+    "s01-info.json",
+    "s01-reference-rectified.png",
+    "s01-reference.png",
+    "s01-w40-t0-q1-b1.png",
+    "s01-w40-t0-q2-b4.png",
+  ]);
+  const infoEntry = entries.find((e) => e.filename === "s01-info.json");
+  if (!infoEntry || infoEntry.directory) {
+    throw new Error("no info JSON in the zip");
+  }
+  const info = JSON.parse(await infoEntry.getData(new TextWriter()));
+  await reader.close();
+  expect([info.format, info.surface, info.class]).toEqual([
+    "flat-target/1",
+    1,
+    "busy",
+  ]);
+  expect(info.session).toMatch(/^[0-9a-f]{8}$/);
+  expect(info.original).toEqual({ exists: false, file: null });
+  expect(info.reference.file).toBe("s01-reference.png");
+  expect([info.reference.width, info.reference.height]).toEqual([320, 240]);
+  expect(
+    info.reference.corners.map(
+      (/** @type {{ corner: string }} */ c) => c.corner,
+    ),
+  ).toEqual(["top-left", "top-right", "bottom-right", "bottom-left"]);
+  // The taps in the photo's own pixels: 90 % of 320x240.
+  expect(Math.abs(info.reference.corners[2].x - 288)).toBeLessThanOrEqual(2);
+  expect(Math.abs(info.reference.corners[2].y - 216)).toBeLessThanOrEqual(2);
+  expect(info.shots).toHaveLength(2);
+  expect(info.shots[0]).toMatchObject({
+    file: "s01-w40-t0-q1-b1.png",
+    pose: "w40-t0",
+    distanceWidthPercent: 40,
+    tiltDeg: 0,
+    fullLight: true,
+    lumaRatio: 1,
+    bin: "b1",
+    width: 320,
+    height: 240,
+  });
+  expect(info.shots[1]).toMatchObject({
+    file: "s01-w40-t0-q2-b4.png",
+    fullLight: false,
+    bin: "b4",
+  });
+  expect(info.shots[1].lumaRatio).toBeLessThan(0.35);
+
+  // After a reload the mode and the downloaded progress are back.
+  await page.reload();
+  await expect(page.locator("#log")).toContainText("ready");
+  await expect(page.locator("#flat")).toBeVisible();
+  await expect(page.locator("#flat-where")).toHaveText(
+    "Surface 1, busy picture, pose 40 % wide, 0 deg",
+  );
+  await expect(page.locator('#flat-bins [data-bin="b4"]')).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+  await page.locator("#flat-overview-open").click();
+  await expect(page.locator("#flat-classes li").first()).toHaveText(
+    "busy picture: 0 of 5 complete, 1 started",
+  );
+  await expect(page.locator("#flat-surfaces button")).toHaveText([
+    "Surface 1, busy picture: reference done, poses 0/6, 2 photos",
+  ]);
+  await expect(page.locator("#flat-new")).toHaveText("Start surface 2");
+  // The class furthest behind its plan is suggested for the next surface.
+  await expect(page.locator("#flat-new-class")).toHaveValue("text");
+
+  // Exit gives the photo pairs back, and they still work.
+  await page.locator("#flat-exit").click();
+  await expect(page.locator("#flat")).toBeHidden();
+  await expect(page.locator("#pair")).toHaveValue("1a");
+  await page.locator("#capture-a").click();
+  await expect(page.locator("#state-a")).toHaveText(
+    "camera on: aim, then tap Take photo A",
+  );
+  expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+  expect(errors).toEqual([]);
+});

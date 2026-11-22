@@ -273,6 +273,171 @@
         align-items: center;
         margin: 8px 0;
       }
+
+      /* Flat target capture: one screen, every control without scrolling. */
+      body.flat-open {
+        overflow: hidden;
+      }
+      .flat {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        height: 100dvh;
+        background: #101417;
+        color: #fff;
+      }
+      .flat[hidden],
+      .flat [hidden] {
+        display: none;
+      }
+      .flat-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 6px 12px;
+        background: #1b2328;
+      }
+      .flat-where {
+        flex: 1;
+        min-width: 0;
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
+      }
+      .flat-bar button {
+        min-height: 40px;
+        padding: 6px 10px;
+      }
+      .flat-stage {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+      }
+      .flat-stage video,
+      .flat-stage canvas {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        max-height: none;
+        object-fit: contain;
+        border-radius: 0;
+        background: #000;
+      }
+      .flat-stage canvas {
+        cursor: crosshair;
+        touch-action: manipulation;
+      }
+      .flat-guide {
+        position: absolute;
+        box-sizing: border-box;
+        border: 3px dashed #ffd400;
+        pointer-events: none;
+      }
+      .flat-countdown {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-size: 6rem;
+        font-weight: 700;
+        color: #ffd400;
+        text-shadow: 0 0 12px #000;
+        pointer-events: none;
+      }
+      .flat-overview {
+        position: absolute;
+        inset: 0;
+        overflow: auto;
+        padding: 12px;
+        background: #f3f5f7;
+        color: #1b2328;
+      }
+      .flat-overview h2 {
+        font-size: 1rem;
+        margin: 8px 0 4px;
+      }
+      .flat-overview ul {
+        margin: 4px 0;
+        padding-left: 1.2em;
+      }
+      .flat-surface {
+        display: block;
+        width: 100%;
+        margin: 4px 0;
+        text-align: left;
+      }
+      .flat-controls {
+        display: grid;
+        gap: 6px;
+        padding: 6px 12px 8px;
+        background: #1b2328;
+      }
+      .flat-controls p {
+        margin: 0;
+      }
+      .flat-hint {
+        font-size: 0.85rem;
+      }
+      .flat-state,
+      .flat-live {
+        font-size: 0.8rem;
+        color: #c9d2d8;
+        min-height: 1.1em;
+      }
+      .flat-poses {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+      }
+
+      @media (width >= 700px) {
+        .flat-poses {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+      .flat-poses button {
+        min-height: 40px;
+        padding: 4px;
+        font-size: 0.85rem;
+        background: #fff;
+        color: #2f5d78;
+      }
+      .flat-poses button[aria-pressed="true"] {
+        background: #ffd400;
+        color: #1b2328;
+        border-color: #ffd400;
+      }
+      .flat-bins {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 4px;
+      }
+      .flat-bin {
+        padding: 4px;
+        border: 2px solid #5b6870;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        text-align: center;
+      }
+      .flat-bin[data-filled="true"] {
+        background: #2e7d4f;
+        border-color: #2e7d4f;
+      }
+      .flat-bin[data-live="true"] {
+        border-color: #ffd400;
+        box-shadow: 0 0 0 2px #ffd400;
+      }
+      .flat-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .flat-actions button {
+        flex: 1 1 auto;
+        padding: 8px 10px;
+      }
     </style>
   </head>
   <body>
@@ -507,6 +672,83 @@
         <pre id="log" aria-label="Log"></pre>
       </section>
     </div>
+    <section id="flat" class="flat" aria-label="Flat target capture" hidden>
+      <header class="flat-bar">
+        <strong>Flat targets</strong>
+        <span id="flat-where" class="flat-where" aria-live="polite"></span>
+        <button id="flat-overview-open" type="button" class="secondary">
+          Overview
+        </button>
+        <button id="flat-exit" type="button" class="secondary">Exit</button>
+      </header>
+      <div id="flat-stage" class="flat-stage">
+        <video id="flat-video" playsinline muted></video>
+        <canvas
+          id="flat-still"
+          aria-label="Reference photo: tap the corners"
+          hidden
+        ></canvas>
+        <div id="flat-guide" class="flat-guide" hidden></div>
+        <div id="flat-countdown" class="flat-countdown" hidden></div>
+        <div id="flat-overview" class="flat-overview">
+          <h2>Progress (5 surfaces per class)</h2>
+          <ul id="flat-classes"></ul>
+          <div id="flat-surfaces"></div>
+          <h2>New surface</h2>
+          <div class="row">
+            <label class="pick"
+              >Class
+              <select id="flat-new-class"></select>
+            </label>
+          </div>
+          <div class="row">
+            <label
+              ><input id="flat-new-original" type="checkbox" /> a digital
+              original of it exists</label
+            >
+          </div>
+          <div class="row">
+            <label
+              >Original image (optional)
+              <input id="flat-new-file" type="file" accept="image/*"
+            /></label>
+          </div>
+          <div class="row">
+            <button id="flat-new" type="button">Start surface 1</button>
+          </div>
+          <p class="hint">
+            Per surface: one head-on reference with its four corners tapped,
+            then 6 poses (the surface 40, 20 and 12 % of the frame wide, each
+            straight on and turned about 40 deg), each first in full light and
+            then at lower light, the phone resting on something steady. A short
+            countdown follows every tap, so the phone is still when the photo is
+            taken. Photos stay on this device until you download them; nothing
+            is uploaded. After a reload only downloaded photos still exist:
+            download each surface before closing the page.
+          </p>
+        </div>
+      </div>
+      <div id="flat-controls" class="flat-controls">
+        <p id="flat-hint" class="flat-hint" aria-live="polite"></p>
+        <div id="flat-poses" class="flat-poses" aria-label="Poses"></div>
+        <div id="flat-bins" class="flat-bins" aria-label="Light bins"></div>
+        <p id="flat-live" class="flat-live"></p>
+        <div class="flat-actions">
+          <button id="flat-shoot" type="button">Take reference</button>
+          <button id="flat-redo" type="button" class="secondary">
+            Redo corners
+          </button>
+          <button id="flat-accept" type="button">Use this reference</button>
+          <button id="flat-retake" type="button" class="secondary">
+            Retake last
+          </button>
+          <button id="flat-download" type="button" class="secondary">
+            Download zip
+          </button>
+        </div>
+        <p id="flat-state" class="flat-state" aria-live="polite"></p>
+      </div>
+    </section>
     <script>
       // Until the page module runs, a load failure still becomes a log line.
       window.addEventListener("error", function (ev) {

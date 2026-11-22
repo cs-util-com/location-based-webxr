@@ -50,6 +50,16 @@ export const NO_PAIR = { key: "none", label: "manual run" } as const;
 /** A key of PAIRS, or NO_PAIR's. */
 export type PairKey = (typeof PAIRS)[number]["key"] | typeof NO_PAIR.key;
 
+/**
+ * The selector's flat target capture mode: a capture flow of its own
+ * (flat-capture.ts), not a photo pair, so pairTag refuses it and nextPair
+ * never moves into or out of it.
+ */
+export const FLAT_MODE = { key: "flat", label: "flat target capture" } as const;
+
+/** What the selector can hold: a pair key or the flat target mode. */
+export type SelectorKey = PairKey | typeof FLAT_MODE.key;
+
 /** Spots the light pairs are repeated at. */
 const SPOTS = 3;
 /** The pairs that are repeated at spots; every other pair is at spot 1. */
@@ -148,7 +158,7 @@ export function pairTag(key: string, spot: number, sequence: number): PairTag {
 /** What the page keeps across a reload: the running number and the selection. */
 export interface Progress {
   readonly sequence: number;
-  readonly pair: PairKey;
+  readonly pair: SelectorKey;
   readonly spot: number;
 }
 
@@ -169,7 +179,7 @@ export function parseProgress(text: string | null): Progress {
     return START;
   }
   const { sequence, pair, spot } = v;
-  const key = [...PAIRS, NO_PAIR].find((q) => q.key === pair)?.key;
+  const key = [...PAIRS, NO_PAIR, FLAT_MODE].find((q) => q.key === pair)?.key;
   return key !== undefined &&
     isIntIn(sequence, 0, Number.MAX_SAFE_INTEGER) &&
     isIntIn(spot, 1, SPOTS)

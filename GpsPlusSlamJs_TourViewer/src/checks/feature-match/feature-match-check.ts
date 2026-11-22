@@ -7,9 +7,10 @@
  * @see feature-match-check.ts.md
  */
 import { drawMatches, sideBySide } from "./bench-draw";
+import { captureFrame, frameCanvas, framePng } from "./bench-dom";
 import {
   allFilesZip,
-  assertPlainPng,
+  FLAT_MODE,
   FRAME_FILES,
   framesInfo,
   lightCheck,
@@ -27,15 +28,10 @@ import {
   type PairKey,
   type PairTag,
   type SavedFrame,
+  type SelectorKey,
 } from "./bench-export";
 import { BEFORE_YOU_START, PAIR_GUIDE, SPOT_NOTE } from "./bench-guide";
-import {
-  describeGrey,
-  fitInside,
-  greyStats,
-  makeFrame,
-  type Frame,
-} from "./bench-image";
+import { describeGrey, greyStats, type Frame } from "./bench-image";
 import {
   backendsFrom,
   buildMethods,
@@ -61,6 +57,7 @@ import {
 import { formatMs } from "./bench-stats";
 import { stepStates, type FlowState } from "./bench-steps";
 import { syntheticPair } from "./bench-synthetic";
+import { startFlatCapture } from "./flat-capture";
 
 /** The longest side a captured camera frame is kept at. */
 const CAPTURE_MAX = 1280;
@@ -224,62 +221,9 @@ async function collectDeviceInfo(): Promise<DeviceInfo> {
   };
 }
 
-/** The current video frame, shrunk to at most CAPTURE_MAX on its long side. */
-function captureFrame(video: HTMLVideoElement): Frame {
-  const size = fitInside(
-    video.videoWidth,
-    video.videoHeight,
-    CAPTURE_MAX,
-    CAPTURE_MAX,
-  );
-  const canvas = document.createElement("canvas");
-  canvas.width = size.width;
-  canvas.height = size.height;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) {
-    throw new Error("camera: no 2D canvas");
-  }
-  ctx.drawImage(video, 0, 0, size.width, size.height);
-  const img = ctx.getImageData(0, 0, size.width, size.height);
-  return makeFrame(size.width, size.height, img.data);
-}
-
 /** A frame and its grey values as one log phrase. */
 const frameText = (name: string, f: Frame): string =>
   `${name} ${String(f.width)}x${String(f.height)}, ${describeGrey(greyStats(f))}`;
-
-/** A canvas holding the frame's pixels. */
-function frameCanvas(f: Frame): HTMLCanvasElement {
-  const canvas = document.createElement("canvas");
-  canvas.width = f.width;
-  canvas.height = f.height;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) {
-    throw new Error("no 2D canvas");
-  }
-  ctx.putImageData(
-    new ImageData(new Uint8ClampedArray(f.rgba), f.width, f.height),
-    0,
-    0,
-  );
-  return canvas;
-}
-
-/**
- * A frame as PNG bytes: the canvas encoder writes pixels only (no EXIF,
- * text or time), and assertPlainPng refuses the file if that ever changes.
- */
-async function framePng(f: Frame, label: string): Promise<Blob> {
-  const canvas = frameCanvas(f);
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob(resolve, "image/png");
-  });
-  if (!blob) {
-    throw new Error(`${label}: PNG encoding failed`);
-  }
-  assertPlainPng(new Uint8Array(await blob.arrayBuffer()), label);
-  return blob;
-}
 
 const checked = (root: ParentNode, sel: string): boolean =>
   root.querySelector<HTMLInputElement>(sel)?.checked === true;
@@ -394,13 +338,15 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   let light: LightCheck | null = null;
 
   ui.pair.replaceChildren(
-    ...[...PAIRS, NO_PAIR].map((p) => {
+    ...[...PAIRS, NO_PAIR, FLAT_MODE].map((p) => {
       const option = document.createElement("option");
       option.value = p.key;
       option.textContent =
         p.key === NO_PAIR.key
           ? "none: manual run with the Options"
-          : `${p.key} ${p.label}`;
+          : p.key === FLAT_MODE.key
+            ? "flat: flat target capture (own steps)"
+            : `${p.key} ${p.label}`;
       return option;
     }),
   );
@@ -425,7 +371,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         PROGRESS,
         progressText({
           sequence,
-          pair: ui.pair.value as PairKey,
+          pair: ui.pair.value as SelectorKey,
           spot: parseSpot(ui.spot.value),
         }),
       );
@@ -438,6 +384,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   /** The guidance card follows the selector. */
   const showGuide = (): void => {
+    if (ui.pair.value === FLAT_MODE.key) {
+      return;
+    }
     const g = PAIR_GUIDE[ui.pair.value as PairKey];
     ui.guidePurpose.textContent = g.purpose;
     ui.guideSteps.replaceChildren(
@@ -626,7 +575,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       log("capture: the camera has no picture yet");
       return;
     }
-    const f = captureFrame(ui.video);
+    const f = captureFrame(ui.video, CAPTURE_MAX);
     captures[which] = {
       name,
       frame: f,
@@ -1123,7 +1072,38 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       });
   });
 
+  /**
+   * The flat target mode is picked in the pair selector and covers the
+   * page with its own capture steps and camera; Exit returns to the pair
+   * picked before it.
+   */
+  let lastPair: string =
+    ui.pair.value === FLAT_MODE.key ? PAIRS[0].key : ui.pair.value;
+  const flat = startFlatCapture(root, {
+    session,
+    log,
+    fail,
+    pageLog: () => ui.log.textContent ?? "",
+    onExit: () => {
+      ui.pair.value = lastPair;
+      showGuide();
+      saveProgress();
+      applyMode();
+    },
+  });
+  const applyMode = (): void => {
+    if (ui.pair.value === FLAT_MODE.key) {
+      stopCamera();
+      flat.open();
+    } else {
+      lastPair = ui.pair.value;
+      flat.close();
+    }
+  };
+  ui.pair.addEventListener("change", applyMode);
+
   window.addEventListener("pagehide", stopCamera);
   refresh();
   log("ready");
+  applyMode();
 }

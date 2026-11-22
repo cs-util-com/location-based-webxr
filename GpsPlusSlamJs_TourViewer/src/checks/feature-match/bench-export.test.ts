@@ -3,6 +3,7 @@ import fc from "fast-check";
 import { BlobReader, TextWriter, ZipReader } from "@zip.js/zip.js";
 
 import {
+  FLAT_MODE,
   FRAME_FILES,
   NO_PAIR,
   PAIRS,
@@ -710,6 +711,16 @@ describe("progress across reloads", () => {
     ]) {
       expect(parseProgress(bad), String(bad)).toEqual(start);
     }
+  });
+
+  // Why this test matters: the flat target mode is chosen in the same
+  // selector, and a reload must reopen it rather than fall back to 1a.
+  it("keeps the flat target mode as the selection", () => {
+    expect(
+      parseProgress(`{"sequence":3,"pair":"${FLAT_MODE.key}","spot":1}`).pair,
+    ).toBe(FLAT_MODE.key);
+    expect(PAIRS.map((p): string => p.key)).not.toContain(FLAT_MODE.key);
+    expect(() => pairTag(FLAT_MODE.key, 1, 1)).toThrow(/unknown pair/);
   });
 
   it("keeps the manual run as the selected pair", () => {
