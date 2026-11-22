@@ -5,9 +5,10 @@
 Camera-frustum visibility predicates used by GPS-anchored components (Item 1
 of [2026-05-07-csharp-features-not-yet-ported.md](../../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-07-csharp-features-not-yet-ported.md))
 and any other caller that needs to know whether a world-space point, sphere,
-or `Object3D` is currently visible to a camera. The eventual primary
-consumer is `GpsAnchor`'s `'snap-when-offscreen'` mode, which only commits
-a new local pose while the anchored object is outside the frustum.
+or `Object3D` is currently visible to a camera. `GpsAnchor`'s `'snap-when-offscreen'` mode used `isObjectInCameraFrustum`
+until it joined the anchor set (`../ar/deferred-anchors.ts`), whose view
+gate is `isAnchorInView` (`../ar/anchor-visibility.ts`); the predicates here
+stay public for apps.
 
 ## Public API
 

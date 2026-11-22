@@ -19,8 +19,11 @@ import {
   type LatLong,
   type LatLongAlt,
 } from '../core/index.js';
-import { registerFrameUpdate } from '../ar/frame-loop.js';
-import { isObjectInCameraFrustum } from './frustum-visibility.js';
+import {
+  joinAnchorSet,
+  type AnchorSetMembership,
+} from '../ar/deferred-anchors.js';
+import type { ArParentTarget } from '../ar/ar-parent-target.js';
 import { nueToArLocal, worldNueToGps } from './frame-conversions.js';
 import { interpolatingMedian } from '../utils/median.js';
 import {
@@ -176,6 +179,15 @@ function isObjectInAnchoredChain(object: THREE.Object3D): boolean {
   return false;
 }
 
+/** The other direction: `object` holds an anchored descendant. */
+function holdsAnchoredObject(object: THREE.Object3D): boolean {
+  let found = false;
+  object.traverse((o) => {
+    if (o !== object && anchoredObjects.has(o)) found = true;
+  });
+  return found;
+}
+
 /**
  * Returns true iff `object` is `arWorldGroup` itself or a descendant of it.
  * The anchor's `object3D` MUST satisfy this: only then does it ride the
@@ -281,13 +293,24 @@ function medianPoint(
   return { lat, lon };
 }
 
-export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
-  if (isObjectInAnchoredChain(options.object3D)) {
+/** Throws for an object inside, or holding, an anchored object. */
+function assertNotNested(object: THREE.Object3D): void {
+  if (isObjectInAnchoredChain(object)) {
     throw new Error(
       'createGpsAnchor: nested GpsAnchors are not supported — ' +
         'the supplied object3D is already inside an anchored parent chain.'
     );
   }
+  if (holdsAnchoredObject(object)) {
+    throw new Error(
+      'createGpsAnchor: nested GpsAnchors are not supported — ' +
+        'the supplied object3D holds an anchored descendant.'
+    );
+  }
+}
+
+export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
+  assertNotNested(options.object3D);
   if (!isDescendantOf(options.object3D, options.arWorldGroup)) {
     throw new Error(
       'createGpsAnchor: object3D must be a descendant of arWorldGroup ' +
@@ -420,32 +443,39 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   /**
    * Steady-state: compute the GPS-world NUE target from the stored
    * `gpsPoint` and the current `zeroRef`, map it into `arWorldGroup`'s
-   * AR-local frame via the inverse alignment matrix, and commit it to
-   * `object3D.position` iff the (AR-local) position delta exceeds the
-   * distance-scaled threshold AND the mode gate allows it.
+   * AR-local frame via the inverse of the group's alignment target, write
+   * it into `into` and return the distance-scaled threshold. The anchor set
+   * (`ar/deferred-anchors.ts`) commits it to `object3D.position` once the
+   * delta reaches the threshold AND its gate allows it.
    *
-   * Mode gate: in `'snap-when-offscreen'` a correction is suppressed while the
-   * object is inside the camera frustum — corrections only land when the user
-   * is not looking, so the anchor never visibly jumps. The whole AR frame
-   * (camera + every anchor) rides one `arWorldGroup.matrix`
-   * (`enableArWorldGroupAlignment`), so an on-screen alignment change moves
-   * the whole view together, landing in one frame, and never needs a
-   * per-anchor on-screen snap. The one exception is the first placement of a `skipBootstrap`
-   * anchor (see `firstCommitPending`), which must escape the origin even while
-   * on-screen. See
+   * Gate (`'snap-when-offscreen'`): the set holds a correction while any
+   * part of the object is in view, at its current pose (this and the
+   * previous frame) or at the target pose, and lands it once none is,
+   * confirmed by a fresh traversal. A code-lock release lands it at once,
+   * and a frame switch (an odometry epoch change) lets it land in view while
+   * the set's window is open. The whole AR frame rides one
+   * `arWorldGroup.matrix` (`enableArWorldGroupAlignment`), so an alignment
+   * change moves the whole view together in one frame and needs no
+   * per-anchor on-screen snap. The one view-gate exception besides those
+   * events is the first placement of a `skipBootstrap` anchor (see
+   * `firstCommitPending`), which must escape the origin even while
+   * on-screen. `'snap-every-tick'` is never gated by the view. See
    * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
    *
-   * Frame note: `arWorldGroup.matrix` IS the alignment matrix, which maps
-   * **AR-odometry NUE → GPS-world NUE**. `object3D.position` is a *local*
-   * transform in that AR-odometry frame. To make the object's *world*
-   * position equal the GPS-world `nue`, the local target must be
-   * `alignment⁻¹ · nue` — writing raw `nue` would double-apply the
-   * alignment (world = `alignment · nue`). See
+   * Frame note: `arWorldGroup.matrix` carries the alignment target T, which
+   * maps **AR-odometry NUE → GPS-world NUE**. `object3D.position` is a
+   * *local* transform in that AR-odometry frame. To make the object's
+   * *world* position equal the GPS-world `nue`, the local target must be
+   * `T⁻¹ · nue` — writing raw `nue` would double-apply the alignment (world
+   * = `T · nue`). Under a binding (`enableArWorldGroupAlignment`) T is read
+   * from the binding, so a T that differs from the caller's alignment (the
+   * dev world jump) is solved with the same value the group carries;
+   * without one, the caller's `getAlignmentMatrix` is T. See
    * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-31-gps-anchor-alignment-frame-bug.md`.
    *
-   * Returns silently on missing inputs (no `zeroRef`, or no alignment
-   * matrix yet — an AR-local object cannot be placed without knowing the
-   * AR↔NUE transform).
+   * Returns null on missing inputs (no `zeroRef`, or no alignment matrix
+   * yet from the caller — an AR-local object cannot be placed without
+   * knowing the AR↔NUE transform).
    */
   // E-3 target cache (2026-07-10 quality review): the geo trig + 4×4
   // inversion below depend only on (zeroRef, alignmentMatrix, gpsPoint) —
@@ -458,9 +488,26 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   let lastTargetAlignmentRef: unknown = null;
   let lastTargetGpsPointRef: unknown = null;
 
-  const maybeCommitSteadyState = (): void => {
+  /** The local target of `gpsPoint` under `alignment`, into `scratchTarget`. */
+  const refreshTarget = (zero: LatLong, alignment: readonly number[]): void => {
+    const targetAlt =
+      'altitude' in gpsPoint && typeof gpsPoint.altitude === 'number'
+        ? gpsPoint.altitude
+        : 0;
+    const nue = calcRelativeCoordsInMeters(zero, gpsPoint, targetAlt, 0);
+    // GPS-world NUE → AR-local: `alignment⁻¹ · nue`. Centralised in
+    // `nueToArLocal` so the frame conversion has one tested home (see its
+    // sidecar). Writes into the reused `scratchTarget` to avoid per-tick
+    // allocation.
+    nueToArLocal(alignment, [nue[0], nue[1], nue[2]], scratchTarget);
+  };
+
+  const steadyTarget = (
+    source: ArParentTarget | null,
+    into: THREE.Vector3
+  ): number | null => {
     const zero = options.getGpsZeroRef();
-    if (zero === null || zero === undefined) return;
+    if (zero === null || zero === undefined) return null;
     const currentAlignment = options.getAlignmentMatrix();
 
     // Without an alignment matrix we cannot map the GPS-world NUE target
@@ -468,83 +515,89 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     // object at its last local pose until an alignment exists. (Previously
     // this path committed raw NUE, which placed the object in the wrong
     // frame — see the alignment-frame bug doc referenced above.)
-    if (currentAlignment === null || currentAlignment === undefined) return;
+    if (currentAlignment === null || currentAlignment === undefined) {
+      return null;
+    }
+    // The binding's T changes exactly when its version does.
+    const alignmentRef = source === null ? currentAlignment : source.version();
 
     if (
       zero !== lastTargetZeroRef ||
-      currentAlignment !== lastTargetAlignmentRef ||
+      alignmentRef !== lastTargetAlignmentRef ||
       gpsPoint !== lastTargetGpsPointRef
     ) {
-      const targetAlt =
-        'altitude' in gpsPoint && typeof gpsPoint.altitude === 'number'
-          ? gpsPoint.altitude
-          : 0;
-      const nue = calcRelativeCoordsInMeters(zero, gpsPoint, targetAlt, 0);
-      // GPS-world NUE → AR-local: `alignment⁻¹ · nue`. Centralised in
-      // `nueToArLocal` so the frame conversion has one tested home (see its
-      // sidecar). Writes into the reused `scratchTarget` to avoid per-tick
-      // allocation.
-      nueToArLocal(currentAlignment, [nue[0], nue[1], nue[2]], scratchTarget);
+      refreshTarget(
+        zero,
+        source === null ? currentAlignment : source.target().elements
+      );
       lastTargetZeroRef = zero;
-      lastTargetAlignmentRef = currentAlignment;
+      lastTargetAlignmentRef = alignmentRef;
       lastTargetGpsPointRef = gpsPoint;
     }
+    into.copy(scratchTarget);
 
     // Distance-scaled threshold: `scale = 1 + 10 × distanceFromCamera/100`.
+    // Each accepted commit snaps the object instantly to the target; the
+    // alignment itself is applied once, at `arWorldGroup`, so a commit here
+    // is only the residual of this anchor's own GPS point.
     options.camera.getWorldPosition(scratchCamWorld);
     options.object3D.getWorldPosition(scratchObjWorld);
     const distFromCamera = scratchCamWorld.distanceTo(scratchObjWorld);
-    const scale = 1 + (10 * distFromCamera) / 100;
-    const posDelta = options.object3D.position.distanceTo(scratchTarget);
-
-    // Commit gate: the distance-scaled threshold plus the `snap-when-offscreen`
-    // frustum suppression. When the gate accepts a correction the object snaps
-    // instantly to the target. The alignment is applied once, at
-    // `arWorldGroup` (`enableArWorldGroupAlignment`), so all
-    // anchored content shifts together and each accepted commit here is only a
-    // small off-screen residual. The sole on-screen exception is the one-time
-    // initial placement of a `skipBootstrap` anchor (`firstCommitPending`),
-    // which must escape the AR origin even while the user is looking.
-    if (posDelta >= distanceThreshold * scale) {
-      const blockedByMode =
-        mode === 'snap-when-offscreen' &&
-        !firstCommitPending &&
-        isObjectInCameraFrustum(options.camera, options.object3D);
-      if (!blockedByMode) {
-        options.object3D.position.copy(scratchTarget);
-        firstCommitPending = false;
-      }
-    }
+    return distanceThreshold * (1 + (10 * distFromCamera) / 100);
   };
 
-  const tick = (_dt: number, elapsed: number): void => {
-    if (phase === 'anchored') {
-      maybeCommitSteadyState();
-      return;
-    }
+  /** One frame: the bootstrap, or the steady-state target and threshold.
+   *  A bootstrap frame has no target, so it never also commits. */
+  const step = (
+    elapsed: number,
+    source: ArParentTarget | null,
+    into: THREE.Vector3
+  ): number | null => {
+    if (phase === 'anchored') return steadyTarget(source, into);
     if (startup === 'mature-alignment') {
       followMaturity();
-      return;
+      return null;
     }
     if (phaseEnteredAtElapsed === null) {
       phaseEnteredAtElapsed = elapsed;
       lastSampleAtElapsed = elapsed - 1; // allow a sample on the next tick if no settling
     }
     // Settling window: ignore samples until it elapses.
-    if (elapsed - phaseEnteredAtElapsed < settlingSeconds) return;
+    if (elapsed - phaseEnteredAtElapsed < settlingSeconds) return null;
     // Sample at most once per second.
     if (lastSampleAtElapsed !== null && elapsed - lastSampleAtElapsed < 1)
-      return;
+      return null;
     const sample = getCurrentGpsPoint();
-    if (sample === null || sample === undefined) return;
+    if (sample === null || sample === undefined) return null;
     samples.push(sample);
     lastSampleAtElapsed = elapsed;
     if (samples.length >= sampleCount) {
       commitMedian();
     }
+    return null;
   };
 
-  const unregister = registerFrameUpdate(tick);
+  // The anchor set of `arWorldGroup` runs `step` once per frame and lands
+  // the target: `'snap-every-tick'` and the first placement are not gated
+  // by the view; every other commit is the set's.
+  let membership: AnchorSetMembership;
+  try {
+    membership = joinAnchorSet(options.arWorldGroup, {
+      object: options.object3D,
+      camera: options.camera,
+      step: (_dt, elapsed, source, into) => step(elapsed, source, into),
+      ungated: () => {
+        if (mode === 'snap-every-tick') return 'every-tick';
+        return firstCommitPending ? 'first' : null;
+      },
+      placed: () => {
+        firstCommitPending = false;
+      },
+    });
+  } catch (error) {
+    anchoredObjects.delete(options.object3D);
+    throw error;
+  }
 
   return {
     get phase() {
@@ -574,11 +627,11 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
       return gpsPoint;
     },
     dispose(): void {
-      unregister();
+      membership.leave();
       anchoredObjects.delete(options.object3D);
     },
     __tickForTests(dt: number, elapsed: number): void {
-      tick(dt, elapsed);
+      membership.runPassForTests(options.camera, dt, elapsed);
     },
   };
 }
