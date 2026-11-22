@@ -17,14 +17,21 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `selectorChanged({ pair, spot })`: ignored unless `pair` is a selector key and `spot` a valid spot; a non-flat pair is also remembered as the pair the flat mode exits to. `flatExited()` returns to it.
 - `cameraChanged(on)`.
 - `photoTaken({ which, photo })`: photo A starts a new pair (running number + 1, the pair and spot fixed from the selector, photo B cleared); photo B of a pair any of whose files was downloaded gets a new running number (the retake rule) and the light check. Either withdraws the run and the offered files. Refused while busy, in the flat mode, for photo B without A, and for a size that is not a positive finite number or a grey mean outside 0-255.
-- `runStarted(kind)` (`camera`, `synthetic`, `speed`): refused unless idle; a camera run also needs both photos. `runProgressed(line)` sets the running kind's status line. `runFinished({ text, resultsId })`: a camera run with results is `done`, without `failed` (Save then offers the photos alone, `NOTHING_MEASURED`). `cameraRunWithdrawn()`: a synthetic run or speed test hides the camera run and its files.
+- `runStarted(kind)` (`camera`, `synthetic`, `speed`, `plan`): refused unless idle; a camera run also needs both photos; a `plan` run needs both photos of the current plan slot, records that take in `planRun` `{ slot, seq, resultsId }` and ends a countdown. `runProgressed(line)` sets the running kind's status line. `runFinished({ text, resultsId })`: a `plan` run keeps its results id in `planRun`; a camera run with results is `done`, without `failed` (Save then offers the photos alone, `NOTHING_MEASURED`). `cameraRunWithdrawn()`: a synthetic run or speed test hides the camera run and its files.
 - `saveStarted()` (only when `canSave`), `saveFinished(offered)`, `saveFailed()`.
 - `filesDownloaded()`: the first download per pair moves the selector to `nextPair`, unless the light check failed (the pair stays, `pairNote` kind `kept`); a second one changes nothing.
 - `statusSet`, `tableSet`, `reportSet`, `logged(line)` (stamped by the view), `failed({ line, stamped })` (kept in `errors` for the run's report and logged), `errorsCleared`, `optionsChanged`, `speedOptionsChanged`.
 
 ### Run plan actions
 
-`planSized`, `planMoved`, `planPhotoTaken`, `planPhotoLost`, `planFileKept`, `planFilesDownloaded(ids)`, `planRunDownloaded`, `planKeptDropped`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan` with the page's one running number, so plan takes and pair-selector takes never share a number. A photo or a reset is refused while busy.
+`planSized`, `planMoved`, `planPhotoTaken`, `planPhotoLost`, `planFileKept`, `planFilesDownloaded(ids)`, `planRunDownloaded`, `planKeptDropped`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan` with the page's one running number, so plan takes and pair-selector takes never share a number. A photo or a reset is refused while busy. An accepted photo, move, resize or reset clears the guided retake target and countdown; a photo in `planRun`'s slot, a resize or a reset drops `planRun` (its results belong to the take before).
+
+### Guided view actions
+
+`state.guided` `{ retake, count }` is what the guided view's camera button does next (`guided-model.ts` reads it with `shotDue`).
+
+- `guidedRetakeToggled(which)`: points the next photo at A or B of the current slot, a second tap takes it back; refused while counting or busy and for a photo the slot does not hold.
+- `guidedCountSet({ shot, left } | null)`: one countdown second (the view owns the timer) or its end; refused while busy, for a shot other than the due one and for a count that is not a whole number of at least 1.
 
 ### Flat target actions
 
@@ -50,5 +57,5 @@ store.getState().pairInProgress; // { pair: "1a", spot: 1, sequence: 1, ... }
 
 ## Tests
 
-- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference), and the run plan inside the page state (the shared running number, the stored plan's start number, refusals while busy, the same state for refused plan actions).
+- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference), and the run plan inside the page state (the shared running number, the stored plan's start number, refusals while busy, the same state for refused plan actions), and the guided view's capture state (the retake toggle only onto a held photo, retake and countdown dropped at a photo, move and reset, the countdown only for the due photo and never while busy, the `plan` run on the current pair and its results dropped at a new photo there).
 - `feature-match-slice.property.test.ts`: random action sequences keep the invariants above, a second download is a no-op, a failed light check keeps the pair, and the flat prepared zip is always valid.

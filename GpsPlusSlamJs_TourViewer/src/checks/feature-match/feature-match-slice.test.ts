@@ -525,3 +525,108 @@ describe("the run plan inside the page state", () => {
     expect(s.plan).toBe(plan);
   });
 });
+
+describe("the guided view's capture state", () => {
+  const withA = (): FeatureMatchState =>
+    run([A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") })]);
+  const withPair = (): FeatureMatchState =>
+    run(
+      [A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") })],
+      withA(),
+    );
+
+  // Why: the retake target decides which photo the camera button replaces;
+  // it can only point at a photo the current pair has.
+  it("toggles the retake target only onto a photo the current pair holds", () => {
+    const s = start();
+    expect(featureMatchReducer(s, A.guidedRetakeToggled("a"))).toBe(s);
+    const a = run([A.guidedRetakeToggled("a")], withA());
+    expect(a.guided.retake).toBe("a");
+    expect(featureMatchReducer(withA(), A.guidedRetakeToggled("b"))).toEqual(
+      withA(),
+    );
+    expect(run([A.guidedRetakeToggled("a")], a).guided.retake).toBeNull();
+    const b = run(
+      [A.guidedRetakeToggled("a"), A.guidedRetakeToggled("b")],
+      withPair(),
+    );
+    expect(b.guided.retake).toBe("b");
+  });
+
+  // Why: a new photo, another pair or Start over make an old retake target
+  // and a running countdown point at the wrong photo.
+  it("drops retake and countdown on a photo, a move and a reset", () => {
+    const armed = run(
+      [A.guidedRetakeToggled("b"), A.guidedCountSet({ shot: "b", left: 3 })],
+      withPair(),
+    );
+    expect(armed.guided).toEqual({
+      retake: "b",
+      count: { shot: "b", left: 3 },
+    });
+    const cleared = { retake: null, count: null };
+    expect(
+      run(
+        [A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p3") })],
+        armed,
+      ).guided,
+    ).toEqual(cleared);
+    expect(run([A.planMoved(4)], armed).guided).toEqual(cleared);
+    expect(run([A.planReset()], armed).guided).toEqual(cleared);
+    // A refused move keeps both.
+    expect(run([A.planMoved(99)], armed).guided).toEqual(armed.guided);
+  });
+
+  // Why: the countdown may only run for the photo the button takes now,
+  // never during a run, and a tap while it runs is what cancels it.
+  it("starts a countdown only for the due photo, never while busy", () => {
+    const s = withA();
+    expect(
+      featureMatchReducer(s, A.guidedCountSet({ shot: "a", left: 3 })),
+    ).toBe(s);
+    expect(
+      featureMatchReducer(s, A.guidedCountSet({ shot: "b", left: 0 })),
+    ).toBe(s);
+    expect(
+      featureMatchReducer(s, A.guidedCountSet({ shot: "b", left: 1.5 })),
+    ).toBe(s);
+    const counting = run([A.guidedCountSet({ shot: "b", left: 3 })], s);
+    expect(counting.guided.count).toEqual({ shot: "b", left: 3 });
+    expect(run([A.guidedCountSet(null)], counting).guided.count).toBeNull();
+    // No retake toggle while counting.
+    expect(featureMatchReducer(counting, A.guidedRetakeToggled("a"))).toBe(
+      counting,
+    );
+    const busy = run([A.runStarted("speed")], s);
+    expect(
+      featureMatchReducer(busy, A.guidedCountSet({ shot: "b", left: 3 })),
+    ).toBe(busy);
+  });
+
+  // Why: a run of the guided view measures the current pair's photos; it
+  // needs both, and its results belong to that take only.
+  it("runs on the current plan pair and drops its results at a new photo there", () => {
+    expect(featureMatchReducer(withA(), A.runStarted("plan"))).toEqual(withA());
+    const going = run([A.runStarted("plan")], withPair());
+    expect(going.busy).toBe("running");
+    expect(going.running).toBe("plan");
+    expect(going.planRun).toEqual({ slot: "1a-s1", seq: 1, resultsId: null });
+    expect(going.status.run).toBe("running");
+    const done = run([A.runFinished({ text: "done", resultsId: "r9" })], going);
+    expect(done.busy).toBe("idle");
+    expect(done.planRun).toEqual({ slot: "1a-s1", seq: 1, resultsId: "r9" });
+    expect(done.cameraRun).toBe("none");
+    expect(done.status.run).toBe("done");
+    // A photo in another pair keeps them, a photo in this one drops them.
+    const other = run(
+      [A.planPhotoTaken({ slot: "1b-s1", which: "a", photo: photo("q1") })],
+      done,
+    );
+    expect(other.planRun?.resultsId).toBe("r9");
+    const again = run(
+      [A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p4") })],
+      done,
+    );
+    expect(again.planRun).toBeNull();
+  });
+});

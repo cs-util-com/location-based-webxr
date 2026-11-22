@@ -130,6 +130,26 @@ describe("side tables", () => {
     expect(sides.results.size).toBe(0);
   });
 
+  // Why: the guided view's run keeps its results under the plan run, not
+  // the camera pair's id; they must live exactly as long as that take.
+  it("keeps a plan run's results until a new photo of its pair", () => {
+    const { store, sides } = make(memory().storage);
+    for (const which of ["a", "b"] as const) {
+      store.dispatch(
+        A.planPhotoTaken({ slot: "1a-s1", which, photo: photo(`q${which}`) }),
+      );
+    }
+    store.dispatch(A.runStarted("plan"));
+    sides.results.set("r2", []);
+    store.dispatch(A.runFinished({ text: "ok", resultsId: "r2" }));
+    store.dispatch(A.planMoved(2));
+    expect(sides.results.has("r2")).toBe(true);
+    store.dispatch(
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("q3") }),
+    );
+    expect(sides.results.size).toBe(0);
+  });
+
   // Why: a stale prepared zip's URL must go with it.
   it("revokes a prepared flat zip's URL once it is dropped", () => {
     const { store, sides, revokeUrl } = make(memory().storage);

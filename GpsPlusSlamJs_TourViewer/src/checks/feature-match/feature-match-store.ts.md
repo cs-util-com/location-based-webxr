@@ -8,7 +8,7 @@ The store of the feature matching check page (`configureStore` over `feature-mat
 
 - `createFeatureMatchStore({ storage, session, revokeUrl, photoDb?, photoDbFailed? })` returns:
   - `store`: the Redux store.
-  - `sides`: the side tables, keyed by the ids the state holds: `frames` (camera photos by `PhotoMeta.id`, the run plan's photos included), `blobs` (the run plan's kept pair zips, by kept file id), `results` (the camera run's results by `resultsId`), `urls` (Blob URLs of offered files and of the prepared flat zip), `flatFrames` (the reference being marked and its preview), `flatPhotos` (each surface's photos, by surface id).
+  - `sides`: the side tables, keyed by the ids the state holds: `frames` (camera photos by `PhotoMeta.id`, the run plan's photos included), `blobs` (the run plan's kept pair zips, by kept file id), `results` (run results by the camera run's `resultsId` or the plan run's `planRun.resultsId`), `urls` (Blob URLs of offered files and of the prepared flat zip), `flatFrames` (the reference being marked and its preview), `flatPhotos` (each surface's photos, by surface id).
   - `restorePhotos()`: reads the run plan's photos back from `photoDb` into `frames` (see below). Never rejects.
   - `newId(prefix)`: a fresh side table key.
   - `photosOf(id)`: a surface's photos, created empty on first use.

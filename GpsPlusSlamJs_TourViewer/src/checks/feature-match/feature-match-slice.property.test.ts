@@ -11,6 +11,8 @@ import {
   type FeatureMatchState,
 } from "./feature-match-slice";
 import { POSES, SURFACE_CLASSES } from "./flat-target";
+import { shotDue } from "./plan-slots";
+import { planSlots } from "./run-plan";
 
 const photo = fc.record({
   id: fc.constantFrom("p1", "p2", "p3"),
@@ -204,6 +206,67 @@ describe("flat target capture properties", () => {
                 f.prepared.surface === cur?.id &&
                 f.prepared.shots === cur.shots.length),
           ).toBe(true);
+        }
+      }),
+    );
+  });
+});
+
+describe("guided capture state properties", () => {
+  const guidedPhoto = fc.record({
+    id: fc.constantFrom("g1", "g2"),
+    width: fc.constant(640),
+    height: fc.constant(480),
+    source: fc.constant({ width: 1280, height: 720 }),
+    greyMean: fc.double({ min: 0, max: 255, noNaN: true }),
+  });
+  const guidedAction: fc.Arbitrary<FeatureMatchAction> = fc.oneof(
+    fc
+      .record({
+        slot: fc.constantFrom("1a-s1", "1b-s1", "2a-s1"),
+        which: fc.constantFrom("a" as const, "b" as const),
+        photo: guidedPhoto,
+      })
+      .map((p) => A.planPhotoTaken(p)),
+    fc.integer({ min: -1, max: 4 }).map((i) => A.planMoved(i)),
+    fc
+      .constantFrom("a" as const, "b" as const)
+      .map((w) => A.guidedRetakeToggled(w)),
+    fc
+      .option(
+        fc.record({
+          shot: fc.constantFrom("a" as const, "b" as const),
+          left: fc.integer({ min: 0, max: 5 }),
+        }),
+      )
+      .map((c) => A.guidedCountSet(c)),
+    fc
+      .constantFrom("plan" as const, "speed" as const)
+      .map((k) => A.runStarted(k)),
+    fc.constant(A.runFinished({ text: "done", resultsId: "r1" })),
+    fc.constant(A.planReset()),
+  );
+
+  // Why: the camera button trusts these two fields; a retake target on a
+  // photo the pair lacks, or a countdown for a photo that is not due,
+  // would take the wrong photo or none.
+  it("keeps the retake target on a held photo and the countdown on the due one", () => {
+    fc.assert(
+      fc.property(fc.array(guidedAction, { maxLength: 40 }), (actions) => {
+        for (const s of states(actions)) {
+          const slot = planSlots(s.plan)[s.plan.current]!;
+          const rec = s.plan.slots[slot.id];
+          const { retake, count } = s.guided;
+          if (retake) {
+            expect(rec?.[retake]).toBeTruthy();
+          }
+          if (count) {
+            expect(count.shot).toBe(shotDue(rec, retake));
+            expect(count.left).toBeGreaterThanOrEqual(1);
+          }
+          if (s.running === "plan") {
+            expect(s.planRun?.slot).toBeDefined();
+          }
         }
       }),
     );

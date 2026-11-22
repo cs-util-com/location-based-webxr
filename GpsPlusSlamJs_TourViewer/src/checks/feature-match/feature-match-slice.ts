@@ -52,11 +52,13 @@ import {
 import {
   EMPTY_PLAN,
   maxSequence,
+  planSlots,
   planReducer,
   type PhotoMeta,
   type PlanAction,
   type RunPlan,
 } from "./run-plan";
+import { shotDue, slotStatus } from "./plan-slots";
 
 /** Save's label after a camera run that measured nothing. */
 export const NOTHING_MEASURED =
@@ -66,7 +68,8 @@ const AFTER_THE_RUN = "after the run";
 
 /** One action at a time: a run (benchmark or speed test) or a save. */
 type Busy = "idle" | "running" | "saving";
-type RunKind = "camera" | "synthetic" | "speed";
+/** "plan": a run on the current plan pair's photos (the guided view). */
+type RunKind = "camera" | "synthetic" | "speed" | "plan";
 /** The page's one-line status texts. */
 export type StatusSlot =
   "a" | "b" | "run" | "synthetic" | "speed" | "save" | "copy";
@@ -151,6 +154,22 @@ export interface FlatState {
   readonly status: string;
 }
 
+/** What the guided view's camera button does next, beside the plan. */
+export interface GuidedState {
+  /** The photo of the current pair being replaced; null takes the due one. */
+  readonly retake: "a" | "b" | null;
+  /** A countdown before a photo; its timer is the view's. */
+  readonly count: { readonly shot: "a" | "b"; readonly left: number } | null;
+}
+
+/** The take a plan run measured, and its results once it ended. */
+export interface PlanRun {
+  readonly slot: string;
+  readonly seq: number;
+  /** Side table key of the results; null while running or with none. */
+  readonly resultsId: string | null;
+}
+
 export interface FeatureMatchState {
   /** This page load's token for the saved JSON (no time, no place). */
   readonly session: string;
@@ -192,6 +211,8 @@ export interface FeatureMatchState {
   readonly flat: FlatState;
   /** The photo test run of the plan-driven views (`run-plan.ts`). */
   readonly plan: RunPlan;
+  readonly guided: GuidedState;
+  readonly planRun: PlanRun | null;
 }
 
 /** The options as the page's controls start. */
@@ -251,6 +272,8 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
   return {
     session: i.session,
     plan,
+    guided: { retake: null, count: null },
+    planRun: null,
     progress: {
       sequence,
       pair: p.pair,
@@ -360,6 +383,10 @@ function clearSaved(s: Draft, text: string): void {
   setStatus(s, "save", text);
 }
 
+/** The status line a run writes to. */
+const statusOf = (k: RunKind): StatusSlot =>
+  k === "camera" || k === "plan" ? "run" : k;
+
 function setStatus(s: Draft, slot: StatusSlot, text: string): void {
   s.status = { ...s.status, [slot]: text };
 }
@@ -424,7 +451,31 @@ const planCase =
     if (next.sequence !== s.progress.sequence) {
       s.progress = { ...s.progress, sequence: next.sequence };
     }
+    if (TARGET_CHANGES.has(action.type)) {
+      s.guided = { retake: null, count: null };
+    }
+    if (
+      (action.type === "photo" && s.planRun?.slot === action.slot) ||
+      action.type === "reset" ||
+      action.type === "size"
+    ) {
+      s.planRun = null;
+    }
   };
+
+/** Plan actions after which a retake target or countdown means another photo. */
+const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
+  "photo",
+  "move",
+  "size",
+  "reset",
+]);
+
+/** The current plan slot and its record, if any. */
+function currentSlot(s: Draft) {
+  const slot = planSlots(s.plan)[s.plan.current];
+  return { slot, rec: slot ? s.plan.slots[slot.id] : undefined };
+}
 
 const slice = createSlice({
   name: "featureMatch",
@@ -517,6 +568,15 @@ const slice = createSlice({
       if (kind === "camera" && (s.photos.a === null || s.photos.b === null)) {
         return;
       }
+      if (kind === "plan") {
+        const { slot, rec } = currentSlot(s);
+        const st = slotStatus(rec);
+        if (!slot || !rec || (st !== "done" && st !== "retake")) {
+          return;
+        }
+        s.planRun = { slot: slot.id, seq: rec.seq, resultsId: null };
+        s.guided = { ...s.guided, count: null };
+      }
       s.busy = "running";
       s.running = kind;
       if (kind === "camera") {
@@ -524,18 +584,14 @@ const slice = createSlice({
         s.resultsId = null;
         clearSaved(s, AFTER_THE_RUN);
       }
-      setStatus(s, kind === "camera" ? "run" : kind, "running");
+      setStatus(s, statusOf(kind), "running");
     },
     /** A line from the run in progress, shown on its status. */
     runProgressed(s: Draft, a: PayloadAction<string>) {
       if (s.running === null) {
         return;
       }
-      setStatus(
-        s,
-        s.running === "camera" ? "run" : s.running,
-        `running: ${a.payload}`,
-      );
+      setStatus(s, statusOf(s.running), `running: ${a.payload}`);
     },
     /**
      * The synthetic run or the speed test replaces what Results shows, so
@@ -565,7 +621,10 @@ const slice = createSlice({
       }
       s.busy = "idle";
       s.running = null;
-      setStatus(s, kind === "camera" ? "run" : kind, a.payload.text);
+      setStatus(s, statusOf(kind), a.payload.text);
+      if (kind === "plan" && s.planRun) {
+        s.planRun = { ...s.planRun, resultsId: a.payload.resultsId };
+      }
       if (kind === "camera") {
         s.cameraRun = a.payload.resultsId !== null ? "done" : "failed";
         s.resultsId = a.payload.resultsId;
@@ -683,6 +742,54 @@ const slice = createSlice({
       }),
     ),
     planReset: planCase((_: void) => ({ type: "reset" })),
+    /**
+     * Tap on thumbnail A or B: that photo is retaken next, a second tap
+     * takes it back. Refused while counting or busy, and for a photo the
+     * current pair does not hold.
+     */
+    guidedRetakeToggled(s: Draft, a: PayloadAction<"a" | "b">) {
+      const which = a.payload;
+      const { rec } = currentSlot(s);
+      if (
+        s.guided.count !== null ||
+        s.busy !== "idle" ||
+        (which !== "a" && which !== "b") ||
+        !rec?.[which]
+      ) {
+        return;
+      }
+      s.guided = {
+        ...s.guided,
+        retake: s.guided.retake === which ? null : which,
+      };
+    },
+    /**
+     * A countdown second, or null to end it (taken or cancelled). Refused
+     * while busy, for a photo that is not the one due, and for a count
+     * that is not a whole number of at least 1.
+     */
+    guidedCountSet(
+      s: Draft,
+      a: PayloadAction<{ shot: "a" | "b"; left: number } | null>,
+    ) {
+      const c = a.payload;
+      if (c === null) {
+        if (s.guided.count !== null) {
+          s.guided = { ...s.guided, count: null };
+        }
+        return;
+      }
+      const { rec } = currentSlot(s);
+      if (
+        s.busy !== "idle" ||
+        !Number.isInteger(c.left) ||
+        c.left < 1 ||
+        shotDue(rec, s.guided.retake) !== c.shot
+      ) {
+        return;
+      }
+      s.guided = { ...s.guided, count: { shot: c.shot, left: c.left } };
+    },
     optionsChanged(s: Draft, a: PayloadAction<BenchOptions>) {
       s.options = a.payload;
     },

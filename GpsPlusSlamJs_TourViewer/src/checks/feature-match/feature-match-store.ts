@@ -75,7 +75,7 @@ export interface FeatureMatchSides {
   readonly frames: Map<string, SavedFrame>;
   /** The plan's kept pair zips, by `KeptFile.id`. */
   readonly blobs: Map<string, Blob>;
-  /** The camera run's results, by `resultsId`. */
+  /** Run results, by the camera run's `resultsId` or `planRun.resultsId`. */
   readonly results: Map<string, readonly MethodResult[]>;
   /** Blob URLs of offered files and the prepared flat zip, by id. */
   readonly urls: Map<string, string>;
@@ -164,8 +164,9 @@ function reconcile(
       sides.blobs.delete(id);
     }
   }
+  const resultIds = new Set([s.resultsId, s.planRun?.resultsId]);
   for (const id of sides.results.keys()) {
-    if (id !== s.resultsId) {
+    if (!resultIds.has(id)) {
       sides.results.delete(id);
     }
   }
