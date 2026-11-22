@@ -1,0 +1,403 @@
+<!doctype html>
+<!-- Throwaway prototype: the feature-match photo test as a guided run, direction 2 (one step at a time, for a stranger on their own phone). Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>Guided matcher run</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <!-- First run: what, why still, nothing uploaded, what you send back. -->
+    <section id="screen-intro" class="screen intro" hidden>
+      <div class="intro-head">
+        <p class="kicker">Photo test, about 15 minutes</p>
+        <h1>How well do feature matchers work on your phone?</h1>
+        <p class="lede">
+          You take pairs of photos of the same scene. Between the two photos of
+          a pair you change exactly one thing: the light, a turn of the phone,
+          the distance or where you stand. Later, matching programs try to find
+          the same points in both photos.
+        </p>
+      </div>
+      <ul class="facts">
+        <li>
+          <span class="fact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="7" y="3" width="10" height="16" rx="2" />
+              <path d="M5 21h14M12 19v2" />
+            </svg>
+          </span>
+          <div>
+            <strong>Keep the phone still while it shoots.</strong>
+            A tap shakes the phone, so each photo is taken 3 seconds after your
+            tap, with a beep per second. Hands off until the click.
+          </div>
+        </li>
+        <li>
+          <span class="fact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <rect x="5" y="10" width="14" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+          </span>
+          <div>
+            <strong>Nothing is uploaded.</strong>
+            The photos stay on this phone until you tap Download. They hold
+            pixels only: no location, no time, no camera data.
+          </div>
+        </li>
+        <li>
+          <span class="fact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
+            </svg>
+          </span>
+          <div>
+            <strong>You send back one file.</strong>
+            At the end, one zip with all photos, each named by its pair, plus a
+            short summary you can paste into a message.
+          </div>
+        </li>
+        <li>
+          <span class="fact-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="8" />
+              <path d="M12 8v5M12 16h.01" />
+            </svg>
+          </span>
+          <div>
+            <strong>Nothing personal in the picture.</strong>
+            No faces, papers, screens, house numbers or windows to the outside.
+            Aim at something with detail: shelves, a poster, a patterned rug.
+          </div>
+        </li>
+      </ul>
+      <div class="intro-setup">
+        <div class="spots" role="radiogroup" aria-labelledby="spots-label">
+          <span id="spots-label" class="spots-label"
+            >Light tests (need a dark room) at</span
+          >
+          <button type="button" role="radio" data-spots="1">1 place</button>
+          <button type="button" role="radio" data-spots="2">2 places</button>
+          <button type="button" role="radio" data-spots="3">3 places</button>
+        </div>
+        <p class="hint">
+          Lock the screen rotation and do not zoom. The camera asks for
+          permission once.
+        </p>
+        <button id="intro-start" type="button" class="primary big">
+          Start
+        </button>
+      </div>
+    </section>
+
+    <!-- One step at a time: header, step card, viewfinder, action bar. -->
+    <section id="screen-run" class="screen run" hidden>
+      <header class="run-head">
+        <button
+          id="open-help"
+          type="button"
+          class="icon-btn"
+          aria-label="What is this test?"
+        >
+          ?
+        </button>
+        <div class="progress" aria-live="polite">
+          <span id="head-pos" class="head-pos">Pair 1 of 14</span>
+          <span class="bar" aria-hidden="true"
+            ><span id="head-bar"></span
+          ></span>
+        </div>
+        <button id="open-pairs" type="button" class="pairs-btn">
+          Pairs <span id="head-done">0/14</span>
+        </button>
+      </header>
+
+      <article class="card" aria-live="polite">
+        <div class="card-top">
+          <span id="card-key" class="key-chip">1a</span>
+          <h2>
+            <span id="card-title">Same light twice</span>
+            <small id="card-place" class="place"></small>
+          </h2>
+          <span id="card-shot" class="shot-chip" data-shot="A">Shot A</span>
+        </div>
+        <div class="card-body">
+          <div id="card-diagram" class="diagram" aria-hidden="true"></div>
+          <ol class="seq">
+            <li id="seq-a" data-part="A">
+              <span class="seq-tag">A</span><span id="seq-a-text"></span>
+            </li>
+            <li id="seq-change" data-part="change">
+              <span class="seq-tag">then</span
+              ><span id="seq-change-text"></span>
+            </li>
+            <li id="seq-b" data-part="B">
+              <span class="seq-tag">B</span><span id="seq-b-text"></span>
+            </li>
+          </ol>
+        </div>
+        <p class="foot-lines">
+          <span id="card-purpose" class="purpose"></span>
+          <span id="card-avoid" class="avoid"></span>
+        </p>
+      </article>
+
+      <div class="finder" id="finder">
+        <video id="video" playsinline muted hidden></video>
+        <canvas id="fake" aria-label="Camera view (simulated)"></canvas>
+        <img id="ghost" class="ghost" alt="" hidden />
+        <div id="review" class="review" hidden>
+          <figure>
+            <img id="review-a" alt="Photo A" />
+            <figcaption>A</figcaption>
+          </figure>
+          <figure>
+            <img id="review-b" alt="Photo B" />
+            <figcaption>B</figcaption>
+          </figure>
+          <p id="review-note" class="review-note"></p>
+        </div>
+        <div class="finder-chips">
+          <span id="steady" class="chip" hidden>steady</span>
+          <span id="sim-chip" class="chip dim" hidden>simulated camera</span>
+          <button
+            id="ghost-toggle"
+            type="button"
+            class="chip chip-btn"
+            aria-pressed="false"
+            hidden
+          >
+            Show A
+          </button>
+        </div>
+        <div id="count" class="count" hidden aria-live="assertive">
+          <span id="count-num" class="count-num">3</span>
+          <span class="count-text">Hands off</span>
+        </div>
+        <div id="flash" class="flash" hidden></div>
+      </div>
+
+      <footer class="actions">
+        <button
+          id="slot-a"
+          type="button"
+          class="slot"
+          data-slot="A"
+          aria-label="Photo A: retake"
+        >
+          <span class="slot-img"><img alt="" hidden /></span>
+          <span class="slot-label">A</span>
+          <span class="slot-sub">empty</span>
+        </button>
+        <button
+          id="slot-b"
+          type="button"
+          class="slot"
+          data-slot="B"
+          aria-label="Photo B: retake"
+        >
+          <span class="slot-img"><img alt="" hidden /></span>
+          <span class="slot-label">B</span>
+          <span class="slot-sub">empty</span>
+        </button>
+        <button id="primary" type="button" class="primary main">
+          <span id="primary-label">Capture A</span>
+          <span id="primary-sub" class="primary-sub">3 s countdown</span>
+        </button>
+      </footer>
+    </section>
+
+    <!-- The end: one download, the summary, the copy-log button. -->
+    <section id="screen-end" class="screen end" hidden>
+      <div class="end-head">
+        <p class="kicker" id="end-kicker">All pairs captured</p>
+        <h1 id="end-title">Thank you. One last step.</h1>
+        <p class="lede" id="end-lede">
+          Download the zip, then send it together with the summary below.
+        </p>
+      </div>
+      <div class="end-download">
+        <button id="download-all" type="button" class="primary big">
+          Download all
+        </button>
+        <p id="download-state" class="state" aria-live="polite">
+          One zip, about 0 MB, saved to this phone only.
+        </p>
+      </div>
+      <div class="end-summary">
+        <label for="summary" class="label">Summary to paste back</label>
+        <textarea id="summary" readonly rows="7"></textarea>
+        <div class="row">
+          <button id="copy-summary" type="button" class="secondary">
+            Copy summary
+          </button>
+          <span id="copy-summary-state" class="state" aria-live="polite"></span>
+        </div>
+      </div>
+      <div class="end-log">
+        <div class="row">
+          <button id="copy-log" type="button" class="secondary">
+            Copy log
+          </button>
+          <span id="copy-log-state" class="state" aria-live="polite"></span>
+        </div>
+        <p class="hint">
+          Not needed when you send the zip - it already holds the log. Use it to
+          paste a quick note into a chat, or when something went wrong.
+        </p>
+      </div>
+      <div class="end-more row">
+        <button id="end-back" type="button" class="secondary">
+          Back to the pairs
+        </button>
+        <button id="open-measure" type="button" class="secondary">
+          Measure on this phone (optional)
+        </button>
+      </div>
+    </section>
+
+    <!-- Overlay: every pair at a glance, jump to one, settings. -->
+    <div
+      id="sheet-pairs"
+      class="sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="pairs-title"
+      hidden
+    >
+      <div class="sheet-box">
+        <div class="sheet-head">
+          <h2 id="pairs-title">All pairs</h2>
+          <span id="pairs-count" class="state"></span>
+          <button
+            id="close-pairs"
+            type="button"
+            class="icon-btn"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <ul id="pair-grid" class="pair-grid"></ul>
+        <div class="legend" aria-hidden="true">
+          <span><i class="dot done"></i>done</span>
+          <span><i class="dot half"></i>A only</span>
+          <span><i class="dot retake"></i>retake suggested</span>
+          <span><i class="dot missing"></i>missing</span>
+        </div>
+        <div class="sheet-settings">
+          <div class="setting" role="radiogroup" aria-labelledby="cd-label">
+            <span id="cd-label">Countdown</span>
+            <button type="button" role="radio" data-countdown="3">3 s</button>
+            <button type="button" role="radio" data-countdown="5">5 s</button>
+            <button type="button" role="radio" data-countdown="0">off</button>
+          </div>
+          <label class="setting"
+            ><input id="sound" type="checkbox" checked /> Beep and click</label
+          >
+          <label class="setting proto"
+            ><input id="fake-dim" type="checkbox" /> Prototype: dim the
+            simulated room</label
+          >
+        </div>
+        <div class="sheet-foot row">
+          <button id="add-other" type="button" class="secondary">
+            Add an extra pair (other)
+          </button>
+          <button id="go-end" type="button" class="primary">
+            Finish and download
+          </button>
+          <button id="start-over" type="button" class="danger">
+            Start over
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlay: optional on-phone measurement (today's run, options, synthetic run). -->
+    <div
+      id="sheet-measure"
+      class="sheet"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="measure-title"
+      hidden
+    >
+      <div class="sheet-box">
+        <div class="sheet-head">
+          <h2 id="measure-title">Measure on this phone</h2>
+          <button
+            id="close-measure"
+            type="button"
+            class="icon-btn"
+            aria-label="Close"
+          >
+            &times;
+          </button>
+        </div>
+        <p class="hint">
+          Optional. Runs the matchers here on your photos and times them.
+          Downloads up to 66 MB of models once. The photo tests use 1 run, no
+          warm-up, WebGPU (WASM where the phone has none) and one XFeat file;
+          the boxes below apply to a manual or synthetic run.
+        </p>
+        <div class="opts">
+          <fieldset>
+            <legend>Methods</legend>
+            <label><input type="checkbox" checked /> SIFT</label>
+            <label><input type="checkbox" checked /> XFeat 1.4 MB</label>
+            <label
+              ><input type="checkbox" checked /> ALIKED + LightGlue 64 MB</label
+            >
+          </fieldset>
+          <fieldset>
+            <legend>Backends, files, sizes</legend>
+            <label><input type="checkbox" checked /> WebGPU</label>
+            <label><input type="checkbox" checked /> WASM</label>
+            <label><input type="checkbox" checked /> fp16</label>
+            <label><input type="checkbox" checked /> fp32</label>
+            <label><input type="checkbox" checked /> 320</label>
+            <label><input type="checkbox" checked /> 480</label>
+            <label><input type="checkbox" checked /> 640</label>
+            <label
+              >Runs <input type="number" value="5" min="1" max="50" size="2"
+            /></label>
+          </fieldset>
+        </div>
+        <div class="row">
+          <button id="measure-run" type="button" class="primary">
+            Run on my pairs
+          </button>
+          <button id="measure-synth" type="button" class="secondary">
+            Run on a synthetic pair
+          </button>
+          <span id="measure-state" class="state" aria-live="polite"></span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Pairs</th>
+                <th>Extract ms</th>
+                <th>Match ms</th>
+                <th>Matches (median)</th>
+              </tr>
+            </thead>
+            <tbody id="measure-rows"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <script src="zip.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

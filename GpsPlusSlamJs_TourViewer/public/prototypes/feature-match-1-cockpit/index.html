@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="robots" content="noindex" />
+    <meta name="color-scheme" content="dark" />
+    <title>Feature Match Cockpit</title>
+    <link rel="icon" href="data:," />
+    <!--
+  Throwaway prototype: the feature-match photo test page, direction "Cockpit".
+  The live viewfinder fills the screen; one fixed control dock (at the side on
+  a near-square or landscape screen, at the bottom on a tall phone) holds
+  everything a step needs. Photos take themselves once the motion sensor says
+  the phone is still; a tap with a 3 s countdown is the fallback. Each finished
+  pair is saved as one zip automatically. Measuring is faked; nothing is
+  uploaded. Linked from nothing in the app.
+-->
+    <link rel="stylesheet" href="cockpit.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <!-- The viewfinder and everything that may cover it (drawer, cards). The dock is never covered. -->
+      <section class="stage" id="stage" aria-label="Camera">
+        <video id="video" playsinline muted hidden></video>
+        <canvas
+          id="fake"
+          aria-label="Simulated camera view of a room with shelves"
+        ></canvas>
+        <img id="ghost" class="ghost" alt="" hidden />
+        <div class="frame" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="count" id="count" aria-hidden="true"></div>
+        <div class="flash" id="flash" aria-hidden="true"></div>
+        <div class="cover" id="cover" hidden>
+          <div class="cover-card">
+            <b id="coverTitle">Measuring</b>
+            <span id="coverText">Camera paused so the timing is fair.</span>
+            <div class="bar"><i id="coverBar"></i></div>
+          </div>
+        </div>
+        <div class="welcome" id="welcome" hidden>
+          <h1>Photo pairs for feature matching</h1>
+          <p>
+            You take 20 pairs of photos. In each pair ONE thing changes between
+            photo A and photo B (the light, a turn, the distance, a step to the
+            side). The phone measures how well three matching methods find the
+            same points in both, and saves each pair as one file on this phone.
+            Nothing is uploaded.
+          </p>
+          <ul>
+            <li>
+              Put the phone on a stand. Lock the screen rotation. Do not zoom.
+            </li>
+            <li>
+              Why still? A photo taken while the phone moves is blurred, and a
+              blurred pair measures the shake, not the method. The page waits
+              until the phone is still and takes the photo itself, so you do not
+              have to touch it.
+            </li>
+            <li>
+              Nothing personal in the picture: no faces, documents, screens,
+              letters, house numbers, and no window showing the outside.
+            </li>
+            <li>
+              Aim at something with detail (shelves, pictures, patterned
+              fabric).
+            </li>
+            <li>
+              Chrome may ask once whether this page may download several files.
+              Choose Allow, or switch to "save all at the end" under Settings.
+            </li>
+          </ul>
+          <p class="welcome-go">Tap the big button to start the camera.</p>
+        </div>
+        <aside class="drawer" id="drawer" aria-label="Details" hidden>
+          <nav class="tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              data-tab="pairs"
+              aria-selected="true"
+            >
+              Pairs
+            </button>
+            <button type="button" role="tab" data-tab="guide">Guide</button>
+            <button type="button" role="tab" data-tab="results">Results</button>
+            <button type="button" role="tab" data-tab="settings">
+              Settings
+            </button>
+            <button
+              type="button"
+              class="drawer-x"
+              id="drawerClose"
+              aria-label="Close details"
+            >
+              <svg viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 3l10 10M13 3L3 13" />
+              </svg>
+            </button>
+          </nav>
+          <div class="panel" data-panel="pairs">
+            <p class="hint" id="pairsSummary"></p>
+            <ol class="pairlist" id="pairList"></ol>
+            <div class="row">
+              <button type="button" class="btn" id="saveAllDrawer">
+                Download all
+              </button>
+              <span class="hint" id="saveAllNote"></span>
+            </div>
+            <p class="hint">
+              Tap a pair to take it (again). Every file is named by its running
+              number and pair, for example
+              <code>feature-match-03-1b-s2-light-dimmed.zip</code>.
+            </p>
+          </div>
+          <div class="panel" data-panel="guide" hidden>
+            <h2 id="guideTitle"></h2>
+            <p id="guidePurpose" class="guide-purpose"></p>
+            <ol id="guideSteps"></ol>
+            <p id="guideAvoid" class="guide-avoid"></p>
+            <p id="guideSpot" class="hint" hidden></p>
+            <details id="beforeStart">
+              <summary>Before you start</summary>
+              <ul id="beforeList"></ul>
+            </details>
+          </div>
+          <div class="panel" data-panel="results" hidden>
+            <p class="warn" id="lightWarn" role="alert" hidden></p>
+            <p class="hint" id="resultsFor">No pair measured yet.</p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Method</th>
+                    <th>Size</th>
+                    <th>Extract ms</th>
+                    <th>Match ms</th>
+                    <th>Matches</th>
+                  </tr>
+                </thead>
+                <tbody id="resultRows"></tbody>
+              </table>
+            </div>
+            <div class="row">
+              <button type="button" class="btn ghostbtn" id="copyLog">
+                Copy log
+              </button>
+              <span class="hint" id="copyState"></span>
+            </div>
+            <p class="hint">
+              Not needed for the photo tests - every saved zip already contains
+              the log. Use it to paste a quick timing run into a chat.
+            </p>
+            <pre id="log" aria-label="Log"></pre>
+          </div>
+          <div class="panel" data-panel="settings" hidden>
+            <fieldset>
+              <legend>Taking the photo</legend>
+              <label
+                ><input type="radio" name="mode" value="auto" checked /> By
+                itself when the phone is still</label
+              >
+              <label
+                ><input type="radio" name="mode" value="tap" /> Tap, then 3 s
+                countdown</label
+              >
+              <p class="hint" id="sensorNote"></p>
+            </fieldset>
+            <fieldset>
+              <legend>Saving</legend>
+              <label
+                ><input type="radio" name="save" value="each" checked /> Each
+                pair as one zip, by itself</label
+              >
+              <label
+                ><input type="radio" name="save" value="end" /> Keep them here,
+                download all at the end</label
+              >
+              <p class="hint">
+                Pairs are kept on this page until downloaded either way, so a
+                blocked download loses nothing: "Download all" saves every kept
+                pair in one zip.
+              </p>
+            </fieldset>
+            <fieldset>
+              <legend>Methods</legend>
+              <p class="hint">
+                Photo tests set these themselves (1 run, no warm-up, WebGPU, or
+                WASM where the phone has none, one XFeat file). Pick the pair
+                "none" under Pairs for a run with these options.
+              </p>
+              <label><input type="checkbox" checked disabled /> SIFT</label>
+              <label><input type="checkbox" checked disabled /> XFeat</label>
+              <label
+                ><input type="checkbox" checked disabled /> ALIKED +
+                LightGlue</label
+              >
+              <div class="row">
+                <button type="button" class="btn ghostbtn" id="synthetic">
+                  Run on a synthetic pair
+                </button>
+                <span class="hint" id="synthState"></span>
+              </div>
+            </fieldset>
+            <fieldset>
+              <legend>Prototype switches</legend>
+              <label
+                ><input type="checkbox" id="fakeSensor" /> Fake motion
+                sensor</label
+              >
+              <div class="row">
+                <button type="button" class="btn ghostbtn" id="fakeShake">
+                  Shake the phone
+                </button>
+                <button type="button" class="btn ghostbtn" id="fakeDim">
+                  Dim the room
+                </button>
+              </div>
+              <label
+                ><input type="checkbox" id="showGhost" checked /> Show photo A
+                faintly</label
+              >
+              <button type="button" class="btn ghostbtn" id="resetAll">
+                Forget progress
+              </button>
+            </fieldset>
+          </div>
+        </aside>
+      </section>
+
+      <!-- THE DOCK: fixed slots, fixed sizes; text changes inside boxes that never resize. -->
+      <section class="dock" id="dock" aria-label="Controls">
+        <button
+          type="button"
+          class="chip"
+          id="pairChip"
+          aria-label="Pair, open the pair list"
+        >
+          <b id="chipKey">1a</b>
+          <span id="chipLabel">light: control</span>
+          <span id="chipSpot" class="spot">spot 1</span>
+        </button>
+        <div class="progress" id="progress" aria-label="Progress">
+          <span id="progressText">0 / 20</span>
+        </div>
+        <div class="segs" id="segs" aria-hidden="true"></div>
+        <p class="instr" id="instr" aria-live="polite"></p>
+
+        <button type="button" class="shot" id="shotA" aria-label="Photo A">
+          <span class="shot-img"><img id="thumbA" alt="" hidden /></span>
+          <span class="shot-tag">A <i id="stateA">-</i></span>
+        </button>
+        <span class="change" id="change" aria-hidden="true">
+          <svg viewBox="0 0 24 12"><path d="M1 6h20M16 1l5 5-5 5" /></svg>
+          <span id="changeText">nothing</span>
+        </span>
+        <button type="button" class="shot" id="shotB" aria-label="Photo B">
+          <span class="shot-img"><img id="thumbB" alt="" hidden /></span>
+          <span class="shot-tag">B <i id="stateB">-</i></span>
+        </button>
+
+        <button type="button" class="side-btn" id="retake">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v4h4" />
+          </svg>
+          <span id="retakeLabel">Retake</span>
+        </button>
+        <div class="shutter-wrap">
+          <svg class="meter" viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="meter-bg" cx="50" cy="50" r="46" />
+            <circle class="meter-fg" id="meterFg" cx="50" cy="50" r="46" />
+          </svg>
+          <button type="button" class="shutter" id="shutter">
+            <span id="shutterText">Start</span>
+          </button>
+        </div>
+        <button type="button" class="side-btn" id="next">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 5l7 7-7 7M13 5l7 7-7 7" />
+          </svg>
+          <span>Next pair</span>
+        </button>
+
+        <div class="readouts">
+          <span class="readout" id="stillRead">still: -</span>
+          <span class="readout" id="lightRead">light: -</span>
+          <span class="readout" id="modeRead">auto</span>
+        </div>
+        <p class="status" id="status" aria-live="polite"></p>
+        <div class="dock-foot">
+          <button
+            type="button"
+            class="foot-btn"
+            id="drawerBtn"
+            aria-expanded="false"
+          >
+            Details
+          </button>
+          <button type="button" class="foot-btn" id="saveAll">
+            Download all
+          </button>
+        </div>
+      </section>
+    </div>
+    <script src="cockpit.js"></script>
+  </body>
+</html>
