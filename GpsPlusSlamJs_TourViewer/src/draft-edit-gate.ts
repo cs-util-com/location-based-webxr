@@ -14,6 +14,7 @@ import type { Middleware, UnknownAction } from "@reduxjs/toolkit";
 import { isAnyOf } from "@reduxjs/toolkit";
 
 import { tourDocumentActions } from "./tour-document.js";
+import { tourDraftActions } from "./tour-draft-slice.js";
 
 /** The question's words when an edit waits for it: said after the
  *  offer's own, on both pages. */
@@ -68,8 +69,9 @@ export interface DraftEditGate {
    *  so a held edit reaches neither the reducer nor the draft. */
   readonly middleware: Middleware;
   /** Edits wait from now on. `ask` runs at the first edit that waits
-   *  (again after each `drop`), inside that dispatch: it shows the
-   *  question and must not dispatch. */
+   *  (again after each `drop`), inside that dispatch, after the count
+   *  of waiting edits reached the store: it shows the question and must
+   *  not dispatch an edit of the document. */
   hold(ask: () => void): void;
   /** Holding stops, and the waiting edits are dispatched in the order
    *  they were made ("Delete it"). Their number. */
@@ -164,10 +166,20 @@ export function createDraftEditGate(): DraftEditGate {
   let dispatchOne: ((action: UnknownAction) => unknown) | null = null;
   let stateNow: (() => unknown) | null = null;
 
+  /** The count in the store's draft question (`tourDraft`): the pages
+   *  say an edit waits from there. The held actions and their promises
+   *  stay here - resources, not state. */
+  function report(): void {
+    dispatchOne?.(
+      tourDraftActions.editsWaitingChanged({ count: waiting.length }),
+    );
+  }
+
   function dropAll(): number {
     const dropped = waiting;
     waiting = [];
     for (const w of dropped) w.settle(null);
+    if (dropped.length > 0) report();
     return dropped.length;
   }
 
@@ -189,6 +201,7 @@ export function createDraftEditGate(): DraftEditGate {
       );
       const first = waiting.length === 0;
       waiting.push({ action, settle });
+      report();
       if (first) ask();
       const held: HeldEdit = { kind: "held", landed };
       return held;
@@ -204,6 +217,7 @@ export function createDraftEditGate(): DraftEditGate {
       ask = null;
       const replay = waiting;
       waiting = [];
+      if (replay.length > 0) report();
       for (const w of replay) {
         const before = stateNow?.();
         dispatchOne?.(w.action);

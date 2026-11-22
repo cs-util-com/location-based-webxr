@@ -269,6 +269,14 @@ unchanged across the split (the split's behaviour-neutrality proof).
   held by a scrub. Not persisted; the voice itself
   stays in its audio element.
 
+## The draft question
+
+- The store also mounts `tourDraft` (`tour-draft-slice.ts`): the open
+  tour's draft question, shared by the phone page and the desktop
+  editor, with the edit gate's count of waiting edits. Not persisted.
+  `TourViewerPageStore` names it and `subscribe`, which the phone's
+  offer is drawn by.
+
 ## The setup's start answer
 
 - The store also mounts `startQuestion` (`start-question-slice.ts`): the

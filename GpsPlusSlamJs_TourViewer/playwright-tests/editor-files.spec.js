@@ -262,7 +262,6 @@ function asksBeforeLeaving(page) {
   });
 }
 
-// bisect probe: this spec runs whole in the per-PR tier.
 test("an edit waiting for the offer asks before the tab closes, and Delete it says it runs with every answer off", async ({
   page,
   context,
