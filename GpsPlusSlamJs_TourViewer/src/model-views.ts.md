@@ -75,6 +75,13 @@ toyFactor()` capped at `TOY_MAX_SIZE_M`; a pinch re-clamps, so a
 
 ## Invariants
 
+- A model with no inner motion (no playing clip, not a toy, not a
+  cutaway) is marked
+  `mergeForAnchorBounds`: its station anchor's view test bounds it by one
+  sphere moved with the model, not a test per mesh. A playing clip, a
+  toy or a cutaway keeps its parts, since the sphere would stay where the
+  model (or the cutaway's frame) was.
+
 - Every view scales through the tour's `modelScale`: `baseScale` is the
   scale the renderer set; only a toy multiplies it, by its own factor.
 - Notes are in the model's space, so they survive an asset swap that keeps

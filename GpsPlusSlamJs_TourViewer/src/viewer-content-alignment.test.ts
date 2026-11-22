@@ -25,6 +25,14 @@
  * passes - and the content is placed - on the very first locked frame,
  * already through the corrected alignment.
  *
+ * Since then an AR visit hangs each station under the world group as a
+ * deferred anchor (`station-content.ts`): a GPS refinement waits while the
+ * station is looked at, and a code lock places it at once, so a scan's
+ * correction still reaches a station in view
+ * (`station-anchor.integration.test.ts`). This test keeps the stations on
+ * the scene root (no anchor parent, as in the e2e fakes) and pins the
+ * placement and alignment beneath that.
+ *
  * Scenario: exact odometry whose frame equals GPS-world NUE up to the
  * absolute altitude (the true alignment is a lift by the altitude), GPS
  * biased by B to the north-east, a ~40 m walk to a code minted at its true
@@ -35,7 +43,23 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { tourOf } from "./test-support/tour-of.js";
-import { Matrix4, Object3D, Scene, Vector3 } from "three";
+import {
+  Group,
+  Matrix4,
+  Object3D,
+  PerspectiveCamera,
+  Scene,
+  Vector3,
+} from "three";
+import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
+import {
+  clearSessionDisposers,
+  runSessionDisposers,
+} from "gps-plus-slam-app-framework/ar/session-disposers";
+import {
+  clearFrameUpdates,
+  runFrameUpdates,
+} from "gps-plus-slam-app-framework/ar/frame-loop";
 import { mintQrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-geo-pose-minting";
 import { qrWorldPoseFromOdom } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
@@ -188,6 +212,9 @@ async function visitorSession(
   /** Fields of the open tour's session over the default one (a tour
    *  without a recording whose photos cannot be read). */
   sessionOverrides: Record<string, unknown> = {},
+  /** The stations' anchor parent (the AR world group); null keeps them on
+   *  the scene root, as in the e2e fakes. */
+  stationAnchorParent: Object3D | null = null,
 ) {
   const bias = [biasM * 0.5, biasM * Math.sqrt(3) * 0.5] as const; // N, E
   // First: the store's construction activates the licence-gated geodesy.
@@ -208,6 +235,9 @@ async function visitorSession(
     (arStore.getState().gpsData?.gpsEvents?.gpsPositions ?? []).filter(
       (p) => gpsPointSourceOf(p) === GPS_POINT_SOURCE_SYNTHETIC_QR,
     ).length;
+  const viewerCamera = new PerspectiveCamera();
+  /** The page's camera seam, read only by an anchor commit's re-tick. */
+  const getViewerCamera = vi.fn(() => viewerCamera);
   /** The page timers (`seams.schedule`), fired by hand. */
   const timers: { fn: () => void; ms: number; cancelled: boolean }[] = [];
   const seams = {
@@ -238,6 +268,8 @@ async function visitorSession(
     }),
     getIntrinsics: () => ({ fx: 500, fy: 500, cx: 320, cy: 240 }),
     getScene: () => scene,
+    getStationAnchorParent: () => stationAnchorParent,
+    getViewerCamera,
     createLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
     canShareZip: () => false,
   } as unknown as TourViewerSeams;
@@ -333,6 +365,7 @@ async function visitorSession(
     fireAllTimers,
     hooks,
     placement,
+    getViewerCamera,
   };
 }
 
@@ -456,6 +489,49 @@ describe("viewer content follows the live alignment (D10a, M2d)", () => {
     // the first lock alone). The 0.3 m field acceptance is the vote-strength
     // harness's to measure (`viewer-vote-strength.test.ts`).
     expect(distance(inView(after, pinScene), PIN_TRUE_NUE)).toBeLessThan(0.01);
+  }, 60_000);
+
+  // Why: the page's own wiring of stations as anchors. Every other case
+  // here keeps them on the scene root (as the e2e fakes do), so without
+  // this one the AR path's anchor parent and its commit re-tick would
+  // reach the phone untested.
+  it("with the AR world group as the anchor parent, places the station under it at its NUE and re-ticks it on that commit", async () => {
+    const arWorldGroup = new Group();
+    const s = await visitorSession(8, true, {}, arWorldGroup);
+    s.scene.add(arWorldGroup);
+    enableArWorldGroupAlignment({
+      store: s.arStore,
+      arWorldGroup,
+    });
+    try {
+      walk(s);
+      let frames = 0;
+      while (s.syntheticVotes() === 0 && frames < 20) {
+        await s.frame();
+        frames += 1;
+      }
+      expect(s.label.parent).not.toBeNull();
+      await flush();
+      expect(hungUnder(s.label)).toBe(arWorldGroup);
+      expect(
+        s.getViewerCamera,
+        "the commit re-ticked against the viewer camera",
+      ).toHaveBeenCalled();
+      // One frame: the binding puts the group on T, the station holds T^-1.
+      runFrameUpdates(0.05, 1);
+      s.scene.updateMatrixWorld();
+      const placed = s.label.getWorldPosition(new Vector3());
+      expect(
+        distance(
+          [placed.x, placed.y, placed.z],
+          [PIN_TRUE_NUE[0], ALT + PIN_TRUE_NUE[1], PIN_TRUE_NUE[2]],
+        ),
+      ).toBeLessThan(1e-6);
+    } finally {
+      runSessionDisposers();
+      clearSessionDisposers();
+      clearFrameUpdates();
+    }
   }, 60_000);
 
   // Why (QR-first plan 2026-10-14-0445 §3 M1, the owner's field test): a

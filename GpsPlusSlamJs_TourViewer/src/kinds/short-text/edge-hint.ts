@@ -19,6 +19,7 @@
  */
 
 import type { TourBlockOfKind } from "gps-plus-slam-app-framework/ar/tour-kinds";
+import { ignoreForAnchorVisibility } from "gps-plus-slam-app-framework/ar/anchor-visibility";
 import {
   DoubleSide,
   Group,
@@ -536,6 +537,10 @@ export function edgeHintPart(
   chip.frustumCulled = false;
   chip.renderOrder = 1000;
   hide(chip);
+  // Placed in front of the camera every frame: counted, they would hold
+  // their station in view for good, so its anchor never re-placed it.
+  ignoreForAnchorVisibility(tag);
+  ignoreForAnchorVisibility(chip);
   object.add(tag, chip);
 
   const measure = canvasMeasure();

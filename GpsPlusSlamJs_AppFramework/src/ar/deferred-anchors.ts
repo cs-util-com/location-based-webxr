@@ -28,7 +28,8 @@
  * set's gate, budget, log, release and window: the member computes its
  * target position and threshold, the set decides when it lands. They take
  * no follow phase. A parent without a binding gets a set of its own for
- * them, with no window (its T is a fixed identity).
+ * them, with no window (its T is a fixed identity), until the parent gets
+ * one: that set's next pass then hands its members to the bound set.
  *
  * Deep import `gps-plus-slam-app-framework/ar/deferred-anchors`. Sidecar:
  * `deferred-anchors.ts.md`.
@@ -182,6 +183,9 @@ interface MemberEntry {
   readonly target: THREE.Vector3;
   pending: boolean;
   pendingSinceMs: number | null;
+  /** The membership's calls, re-pointed when the entry moves to a bound set. */
+  leave: () => void;
+  runPass: AnchorSetMembership['runPassForTests'];
 }
 
 type Deferred = KeyEntry | MemberEntry;
@@ -220,6 +224,7 @@ interface AnchorSet {
   readonly parent: THREE.Object3D;
   handle(key: string): DeferredAnchor;
   join(member: AnchorSetMember): AnchorSetMembership;
+  adopt(entry: MemberEntry): void;
   pass(
     view: AnchorView | THREE.Camera | null,
     dt: number,
@@ -257,10 +262,22 @@ export function deferredAnchor(
           'enableArWorldGroupAlignment for it first'
       );
     }
+    set = boundSetFor(parent, binding);
+  }
+  return set.handle(key);
+}
+
+/** The bound set of `parent`, created on first use. */
+function boundSetFor(
+  parent: THREE.Object3D,
+  binding: ArParentBinding
+): AnchorSet {
+  let set = sets.get(parent);
+  if (!set) {
     set = createAnchorSet(parent, binding);
     sets.set(parent, set);
   }
-  return set.handle(key);
+  return set;
 }
 
 /**
@@ -277,8 +294,7 @@ export function joinAnchorSet(
   if (!set) {
     const binding = getArParentBinding(parent);
     if (binding) {
-      set = createAnchorSet(parent, binding);
-      sets.set(parent, set);
+      set = boundSetFor(parent, binding);
     } else {
       set = unboundSets.get(parent);
       if (!set) {
@@ -401,6 +417,8 @@ function createAnchorSet(
   const keyOfRoot = new Map<THREE.Object3D, KeyEntry>();
   const members = new Set<MemberEntry>();
   let disposed = false;
+  /** An unbound set offers its members to a bound set once only. */
+  let handOverTried = false;
   let bound = binding !== null;
 
   // Views: the set owns two and swaps them after each pass.
@@ -574,7 +592,7 @@ function createAnchorSet(
       const ungated = m.member.ungated();
       if (releasing && delta > DEFERRED_ANCHOR_EPSILON_M) {
         commitMember(m, 'release:code-lock');
-      } else if (delta < threshold) {
+      } else if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
         m.pendingSinceMs = null;
       } else if (ungated !== null) {
         commitMember(m, ungated);
@@ -871,7 +889,7 @@ function createAnchorSet(
     counters.sphereTests = 0;
     counters.traversals = 0;
     followUpdates = 0;
-    if (disposed || !Number.isFinite(elapsedS))
+    if (disposed || !Number.isFinite(elapsedS) || handOver())
       return { ...counters, windowOpen, followUpdates };
     nowMs = elapsedS * 1000;
     const sessionS = target.sessionElapsedS(elapsedS);
@@ -955,15 +973,6 @@ function createAnchorSet(
   }
 
   function join(member: AnchorSetMember): AnchorSetMembership {
-    if (disposed) {
-      throw new Error('joinAnchorSet: the anchor set ended with its session');
-    }
-    if (nestsWithAny(member.object, keyOfRoot.keys())) {
-      throw new Error(
-        'joinAnchorSet: nested anchors are not supported; the object is ' +
-          "inside, or holds, a deferred anchor's root"
-      );
-    }
     const entry: MemberEntry = {
       member,
       root: member.object,
@@ -971,18 +980,65 @@ function createAnchorSet(
       target: new THREE.Vector3(),
       pending: false,
       pendingSinceMs: null,
+      leave: () => undefined,
+      runPass: () => ({ ...counters, windowOpen, followUpdates }),
+    };
+    adopt(entry);
+    return {
+      leave: () => entry.leave(),
+      runPassForTests: (view, dt, elapsedS) =>
+        entry.runPass(view, dt, elapsedS),
+    };
+  }
+
+  /** Take `entry` in: a new member, or one an unbound set hands over. */
+  function adopt(entry: MemberEntry): void {
+    if (nestsWithAny(entry.root, keyOfRoot.keys())) {
+      throw new Error(
+        'joinAnchorSet: nested anchors are not supported; the object is ' +
+          "inside, or holds, a deferred anchor's root"
+      );
+    }
+    entry.pending = false;
+    entry.pendingSinceMs = null;
+    entry.leave = () => {
+      members.delete(entry);
+      if (!binding && members.size === 0) dispose();
+    };
+    entry.runPass = (view, dt, elapsedS) => {
+      if (bound) binding?.step(dt, elapsedS);
+      return pass(view, dt, elapsedS);
     };
     members.add(entry);
-    return {
-      leave() {
-        members.delete(entry);
-        if (!binding && members.size === 0) dispose();
-      },
-      runPassForTests(view, dt, elapsedS) {
-        if (bound) binding?.step(dt, elapsedS);
-        return pass(view, dt, elapsedS);
-      },
-    };
+  }
+
+  /**
+   * An unbound set whose parent has since gained a binding moves its
+   * members to the bound set and ends, so one parent never runs two sets.
+   * True when it did. A member the bound set refuses (it nests with a key
+   * added meanwhile) is logged once and stays in this set, which goes on
+   * running it.
+   */
+  function handOver(): boolean {
+    if (binding || handOverTried) return false;
+    const now = getArParentBinding(parent);
+    if (!now) return false;
+    handOverTried = true;
+    const home = boundSetFor(parent, now);
+    for (const m of [...members]) {
+      try {
+        home.adopt(m);
+        members.delete(m);
+      } catch (error) {
+        log.error(
+          `${m.root.name || 'a position member'}: stays unbound`,
+          error
+        );
+      }
+    }
+    if (members.size > 0) return false;
+    dispose();
+    return true;
   }
 
   /** A key's first root: following in a follow phase, else at T^-1. */
@@ -1093,6 +1149,7 @@ function createAnchorSet(
     parent,
     handle,
     join,
+    adopt,
     pass,
     binding,
     isBound: () => bound,

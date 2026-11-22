@@ -20,10 +20,12 @@
  *   plane's rotation is the camera's, so it faces back toward where the
  *   creator stood (`placeCapturedImagePlanes`'s window-back-in-time rule).
  *
- * Rendering places everything at the SCENE ROOT in the session's NUE
- * (`calcRelativeCoordsInMeters(zero, geo, alt, 0)`), the photo planes'
- * parenting rule - unless the caller hands its own parent and a pose per
- * object in that parent's frame (`poseOf`): the creator's previews of
+ * Rendering places everything in the session's NUE
+ * (`calcRelativeCoordsInMeters(zero, geo, alt, 0)`) in a GPS-world frame
+ * (the scene root, or a station group anchored under the AR world group
+ * whose matrix cancels the alignment), the photo planes' parenting rule -
+ * unless the caller hands its own parent and a pose per object in that
+ * parent's frame (`poseOf`): the creator's previews of
  * THIS visit sit under the AR world group at their odometry pose, so they
  * stay rigid while GPS re-solves (authoring plan 2026-09-28-0953 §3.2, M2c).
  *
@@ -299,7 +301,8 @@ export interface RenderedTourObjects {
 }
 
 /**
- * Place `objects` at the scene root in the session's NUE. Photos are
+ * Place `objects` under their parent (the scene root unless given) in
+ * the session's NUE. Photos are
  * decoded first (async); a failed decode leaves that object out and names
  * it in `skipped` (the null-tolerance rule of the levels, made visible).
  */

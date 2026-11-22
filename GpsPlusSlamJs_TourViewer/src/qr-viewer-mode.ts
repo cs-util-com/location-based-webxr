@@ -383,12 +383,15 @@ export function buildViewerControllerConfig(
     },
     dispatchVotes: (votes) => {
       const text = lastDetectedText;
-      if (text === null || ignored(text)) return;
-      if (!deps.canAcceptVotes()) return; // budget untouched — see the dep
-      if (!voteBudget.tryConsume(text)) return;
+      // false tells the controller nothing was cast, so the code lock
+      // releases no deferred anchor.
+      if (text === null || ignored(text)) return false;
+      if (!deps.canAcceptVotes()) return false; // budget untouched, see the dep
+      if (!voteBudget.tryConsume(text)) return false;
       deps.dispatchVotes(votes);
       frameVoted = true;
       deps.onVotedLock?.(text, voteBudget.spentFor(text));
+      return true;
     },
     onDetection: (event) => {
       lastDetectedText = event.text;

@@ -25,4 +25,13 @@ describe("getSeams", () => {
     // P[0]; null without a camera (node has none), so the fallback cone.
     expect(realSeams.xrProjection0()).toBeNull();
   });
+
+  // Why: in production stations become deferred anchors under the AR world
+  // group; the parent seam must be that group itself, not a stand-in that
+  // happens to read null in node (a seam returning null would keep every
+  // station on the scene root on the phone too).
+  it("anchors stations under the AR world group", async () => {
+    const { getArWorldGroup } = await import("gps-plus-slam-app-framework/ar");
+    expect(realSeams.getStationAnchorParent).toBe(getArWorldGroup);
+  });
 });

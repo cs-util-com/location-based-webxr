@@ -393,6 +393,20 @@ function runScenario({ ops, matureAtStart, keys, devJump }: Scenario): void {
 beforeEach(() => __resetAnchorReleaseForTests());
 afterEach(() => __resetAnchorReleaseForTests());
 
+/** Mature, looking away, a 2 m T step: the key lands out of view. */
+const OUT_OF_VIEW_MOVE: Scenario = {
+  ops: [
+    { kind: 'look', dir: 'out' },
+    { kind: 'idle' },
+    { kind: 't', north: 2, east: 0, yawDeg: 0 },
+    { kind: 'idle' },
+    { kind: 'idle' },
+  ],
+  matureAtStart: true,
+  keys: 1,
+  devJump: false,
+};
+
 describe('deferred anchors (properties)', () => {
   it('move in view only to NUE or at a release, and land on T^-1 once out of view', () => {
     fc.assert(
@@ -408,7 +422,10 @@ describe('deferred anchors (properties)', () => {
           runScenario(scenario);
         }
       ),
-      { numRuns: 60 }
+      // The example moves a key out of view, so the out-of-view count below
+      // holds for every seed (random scenarios alone missed it for about
+      // one seed in 40).
+      { numRuns: 60, examples: [[OUT_OF_VIEW_MOVE]] }
     );
     expect(seenMoves.inView).toBeGreaterThan(0);
     expect(seenMoves.outOfView).toBeGreaterThan(0);

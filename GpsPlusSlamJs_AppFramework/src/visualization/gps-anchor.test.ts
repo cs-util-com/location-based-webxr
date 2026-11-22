@@ -659,9 +659,9 @@ describe('createGpsAnchor — steady state (snap-every-tick)', () => {
  * cache-hit hard-jump. See
  * gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md.
  *
- * Tests use a real `THREE.Mesh` (not `Object3D`) because the
- * frustum-visibility module's `isObjectInCameraFrustum` requires a
- * geometry/bounding-sphere to evaluate.
+ * Tests use a real `THREE.Mesh` (not `Object3D`) because the anchors'
+ * view gate (`isAnchorInView`, `ar/anchor-visibility`) tests the bounds of
+ * the drawable content, which a bare `Object3D` does not have.
  */
 function makeMeshAnchorEnv() {
   const arWorldGroup = new THREE.Group();

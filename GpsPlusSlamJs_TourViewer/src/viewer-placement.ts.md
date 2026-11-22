@@ -360,6 +360,20 @@ them.
   QR controller (which also pins the votes-before-lock order the gate
   relies on: the content is placed on the first voted lock, through that
   lock's votes); revisit only with that decision.
+  - **Stations are deferred anchors since then.** `stationContentFor` passes
+    `anchorParent: () => seams.getStationAnchorParent()` (the AR world
+    group; `null` in the e2e fakes, so stations stay on the scene root
+    there), so a station group in view holds its place through a GPS or
+    SLAM alignment change and lands once out of view. A code lock still
+    moves it in view: the QR controller releases every deferred anchor on a
+    lock that cast votes (the code-vote wrapper returns whether it cast).
+    `onAnchorCommit` re-ticks the committed group's world parts at once
+    (`tickWorldParts` with the viewer camera), so a tag or hint is never
+    drawn one frame against the old place. Pinned by
+    `station-anchor.integration.test.ts` (the rules) and by the
+    anchored-parent case of `viewer-content-alignment.test.ts` (this
+    wiring: the station under the world group at its NUE, the re-tick
+    reading the viewer camera on the commit).
 - **Drawn per station** (visitor plan 2026-10-18-2349 §3, M2;
   `station-content.ts`): everything placed is a part of its station in
   the session's side table (`ctx.stationContent`, created with the first
