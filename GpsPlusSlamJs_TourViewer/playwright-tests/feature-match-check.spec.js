@@ -141,6 +141,41 @@ async function dimCamera(page) {
 }
 
 /**
+ * The frames JSON inside a Download all zip.
+ *
+ * @param {import("@playwright/test").Download} download
+ */
+async function framesJsonOf(download) {
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(await readDownload(download))),
+  );
+  const entry = (await reader.getEntries()).find(
+    (e) => e.filename === "feature-match-frames.json",
+  );
+  if (!entry || entry.directory) {
+    throw new Error("no frames JSON in the zip");
+  }
+  const json = JSON.parse(await entry.getData(new TextWriter()));
+  await reader.close();
+  return json;
+}
+
+/**
+ * Save, then tap Download all; returns the download.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function saveAll(page) {
+  await page.locator("#save-frames").click();
+  await expect(page.locator("#save-links a")).toHaveCount(5);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#save-links a").first().click(),
+  ]);
+  return download;
+}
+
+/**
  * Steps 1 and 2: the first tap starts the camera, the second takes A,
  * then B (which starts the run by itself).
  *
@@ -463,8 +498,10 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "pair",
     "pairLabel",
     "sequence",
+    "session",
     "spot",
   ]);
+  expect(info.session).toMatch(/^[0-9a-f]{8}$/);
   expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
     "1b",
     "light: dimmed",
@@ -760,6 +797,9 @@ test("the feature matching benchmark guides each pair and the first visit", asyn
     "the Options decide what runs",
   );
   await expect(page.locator("#options-note")).toContainText(
+    "WASM where the phone has no WebGPU",
+  );
+  await expect(page.locator("#options-note")).toContainText(
     "Photo tests set these themselves",
   );
   await expect(page.locator("#copy-note")).toHaveText(
@@ -794,18 +834,31 @@ async function reportHeaders(page) {
  * load here (the network is refused), so their report headers name what
  * would have run.
  */
-for (const gpu of [true, false]) {
-  test(`the feature matching benchmark runs a photo test pair with its own settings (${gpu ? "WebGPU" : "no WebGPU"})`, async ({
+for (const gpuCase of /** @type {const} */ ([
+  "adapter",
+  "no adapter",
+  "no navigator.gpu",
+])) {
+  test(`the feature matching benchmark runs a photo test pair with its own settings (${gpuCase})`, async ({
     page,
   }) => {
     await routeNetwork(page, fulfillSift);
     await fakeCamera(page);
-    await page.addInitScript((hasGpu) => {
+    // A browser can offer navigator.gpu and still have no adapter: that is
+    // no WebGPU too, or every neural method fails on a WebGPU-only run.
+    await page.addInitScript((c) => {
       Object.defineProperty(navigator, "gpu", {
         configurable: true,
-        value: hasGpu ? { requestAdapter: async () => null } : undefined,
+        value:
+          c === "no navigator.gpu"
+            ? undefined
+            : {
+                requestAdapter: async () =>
+                  c === "adapter" ? { info: {}, features: [] } : null,
+              },
       });
-    }, gpu);
+    }, gpuCase);
+    const gpu = gpuCase === "adapter";
     await page.goto("/feature-match-check.html");
     await expect(page.locator("#log")).toContainText("ready");
     await page.locator("#pair").selectOption("2a");
@@ -845,8 +898,11 @@ test("the feature matching benchmark warns when the light did not change as the 
   await chooseSiftOnly(page);
   await page.locator("#pair").selectOption("1b");
   await takePhotos(page);
-  await expect(page.locator("#light-warning")).toHaveText(
+  await expect(page.locator("#light-warning")).toContainText(
     "Photo B is not darker than photo A - the light has to change BETWEEN the two photos. Take this pair again: photo A in normal light, then dim, then photo B.",
+  );
+  await expect(page.locator("#light-warning")).toContainText(
+    "dim further (switch off more lights)",
   );
   await expect(page.locator("#light-warning")).toBeVisible();
   await expect(page.locator("#log")).toContainText("light check: not-darker");
@@ -876,7 +932,30 @@ test("the feature matching benchmark warns when the light did not change as the 
   await expect(page.locator("#log")).toContainText("pair kept: take 1b again");
   await expect(page.locator("#pair")).toHaveValue("1b");
 
+  // Retaking only photo B after the save is a new take: a new running
+  // number, so its files never share the old ones' names.
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#capture-b")).toHaveText("Take photo B");
+  await dimCamera(page);
+  await page.locator("#capture-b").click();
+  await expect(page.locator("#pair-state")).toHaveText(
+    "now: pair 2, 1b light: dimmed, spot 1",
+  );
+  await expect(page.locator("#light-warning")).toBeHidden();
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  const retake = await saveAll(page);
+  expect(retake.suggestedFilename()).toBe(
+    "feature-match-02-1b-s1-light-dimmed.zip",
+  );
+  expect((await framesJsonOf(retake)).lightCheck).toBe("ok");
+  await expect(page.locator("#pair")).toHaveValue("1c");
+
   // The control pair: A in the normal light, B dimmed, is a changed light.
+  // The camera is off after the run, so the light goes back on without
+  // waiting for a frame: the next start paints fresh ones.
+  await page.evaluate(() => {
+    /** @type {Window & Record<string, unknown>} */ (window).__dim = false;
+  });
   await page.locator("#pair").selectOption("1a");
   await page.locator("#capture-a").click();
   await expect(page.locator("#capture-a")).toHaveText("Take photo A");
@@ -889,4 +968,76 @@ test("the feature matching benchmark warns when the light did not change as the 
     "the light changed during the control pair",
   );
   await expect(page.locator("#log")).toContainText("light check: changed");
+});
+
+/**
+ * Why this test matters: a reload or a discarded tab restarted the running
+ * number, and two downloads of one evening shared a name. The number, the
+ * pair and the spot carry over a reload; with storage blocked every load
+ * starts at 1, and the session token in the frames JSON keeps the two runs
+ * apart.
+ */
+test("the feature matching benchmark keeps the running number across a reload", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await chooseSiftOnly(page);
+  await page.locator("#pair").selectOption("2a");
+  await takePhotos(page);
+  await expect(page.locator("#pair-state")).toHaveText(
+    "now: pair 1, 2a rotation: control (both upright), spot 1",
+  );
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  const first = await saveAll(page);
+  await expect(page.locator("#pair")).toHaveValue("2b");
+
+  await page.reload();
+  await expect(page.locator("#log")).toContainText("ready");
+  await expect(page.locator("#pair")).toHaveValue("2b");
+  await chooseSiftOnly(page);
+  await takePhotos(page);
+  await expect(page.locator("#pair-state")).toHaveText(
+    "now: pair 2, 2b rotation: 90 deg, spot 1",
+  );
+  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+  const second = await saveAll(page);
+  expect(second.suggestedFilename()).toBe(
+    "feature-match-02-2b-s1-rotation-90-deg.zip",
+  );
+  const [a, b] = [await framesJsonOf(first), await framesJsonOf(second)];
+  expect(a.session).toMatch(/^[0-9a-f]{8}$/);
+  expect(b.session).not.toBe(a.session);
+});
+
+test("the feature matching benchmark tells two runs apart with storage blocked", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.addInitScript(() => {
+    for (const m of ["getItem", "setItem"]) {
+      Object.defineProperty(Storage.prototype, m, {
+        configurable: true,
+        value: () => {
+          throw new DOMException("blocked", "SecurityError");
+        },
+      });
+    }
+  });
+  const sessions = [];
+  for (let i = 0; i < 2; i++) {
+    await page.goto("/feature-match-check.html");
+    await expect(page.locator("#log")).toContainText("ready");
+    await chooseSiftOnly(page);
+    await takePhotos(page);
+    await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
+    const zip = await saveAll(page);
+    expect(zip.suggestedFilename()).toMatch(/^feature-match-01-1a-/);
+    sessions.push((await framesJsonOf(zip)).session);
+  }
+  expect(sessions[0]).toMatch(/^[0-9a-f]{8}$/);
+  expect(sessions[1]).not.toBe(sessions[0]);
 });

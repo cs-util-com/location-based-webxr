@@ -36,16 +36,20 @@ export const SPOT_NOTE =
 
 /** The order of light and photos, first and bold on the dimmed pairs. */
 const LIGHT_ON_A = "Photo A with the light ON as normal.";
-const DIM_THEN_B = "Then dim the light, then photo B.";
+const DIM_THEN_B = "Then dim the light, wait 2 seconds, then photo B.";
+/** The camera evens out a dimming a little; the light check allows for it. */
+const CAMERA_BRIGHTENS =
+  "The camera brightens a dim picture by itself a little; photo B only has to look clearly darker.";
+const DO_NOT_MOVE = "Do not move the phone (tap gently).";
 
 const FLAT_SURFACE =
-  "a FLAT surface with detail (a poster, a wall with pictures, a patterned door, a large book or map lying flat)";
+  "a FLAT surface with detail (a poster, a wall with pictures, a patterned door, a large book or map on the floor)";
 
 export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
   "1a": {
     purpose: "How many matches survive when nothing changes.",
     steps: [
-      "Lay the phone on a table or shelf, pointing at a detailed part of the room (or hold it very still).",
+      "Prop the phone up on a table or shelf, pointing at a detailed part of the room (or hold it very still).",
       "Photo A.",
       "Change nothing.",
       "Photo B.",
@@ -55,26 +59,26 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
     spotNote: true,
   },
   "1b": {
-    purpose: "Does a method still match when the light gets weaker?",
+    purpose:
+      "Same place as 1a: does a method still match when the light gets weaker?",
     steps: [
       LIGHT_ON_A,
       DIM_THEN_B,
-      "Same place as 1a, phone lying still.",
-      "To dim: switch off the main light, keep one small lamp, or use a dimmer. Do not touch the phone.",
-      "After dimming, wait 2 seconds for the camera to adjust, then photo B.",
+      `To dim: switch off the main light, keep one small lamp, or use a dimmer. ${DO_NOT_MOVE}`,
+      CAMERA_BRIGHTENS,
     ],
     strongSteps: 2,
     avoid: "Dimming before photo A, moving the phone between A and B.",
     spotNote: true,
   },
   "1c": {
-    purpose: "Does a method still match with very little light?",
+    purpose:
+      "Same place as 1a: does a method still match with very little light?",
     steps: [
       LIGHT_ON_A,
       DIM_THEN_B,
-      "Same place as 1a, phone lying still.",
-      "Dim as far as possible while the room's shapes are still visible on the screen. Do not touch the phone.",
-      "After dimming, wait 2 seconds for the camera to adjust, then photo B.",
+      `Dim as far as possible while the room's shapes are still visible on the screen. ${DO_NOT_MOVE}`,
+      CAMERA_BRIGHTENS,
     ],
     strongSteps: 2,
     avoid:
@@ -90,7 +94,7 @@ export const PAIR_GUIDE: Readonly<Record<PairKey, PairGuide>> = {
     ],
     strongSteps: 0,
     avoid:
-      "Deep scenes: turning the phone moves the lens a few cm, which does not matter on a flat surface only.",
+      "A deep scene: turning the phone also shifts the lens a few cm, which changes how near and far things line up; a flat surface does not notice.",
     spotNote: false,
   },
   "2b": {

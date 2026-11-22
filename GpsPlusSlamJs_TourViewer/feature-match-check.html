@@ -353,9 +353,9 @@
             <p class="hint">
               Starts by itself after photo B, with every method and size ticked
               in the options; a photo test pair sets the rest itself (1 run, no
-              warm-up, WebGPU, one XFeat file). The camera is off meanwhile. The
-              pictures under Results fill in as each one finishes. A full run
-              takes minutes.
+              warm-up, WebGPU, or WASM on a phone without WebGPU, one XFeat
+              file). The camera is off meanwhile. The pictures under Results
+              fill in as each one finishes. A full run takes minutes.
             </p>
             <div class="row">
               <button id="run" type="button" class="secondary" disabled>
@@ -392,8 +392,9 @@
           <summary>Options: everything is on, untick to leave out</summary>
           <p id="options-note" class="hint">
             Photo tests set these themselves: while a pair is picked, a camera
-            run uses 1 run, no warm-up, WebGPU only and xfeat_fp16.tflite only.
-            Pick the pair "none" for a camera run with these Options.
+            run uses 1 run, no warm-up, WebGPU only (WASM where the phone has no
+            WebGPU, named in the log) and xfeat_fp16.tflite only. Pick the pair
+            "none" for a camera run with these Options.
           </p>
           <fieldset>
             <legend>Methods</legend>

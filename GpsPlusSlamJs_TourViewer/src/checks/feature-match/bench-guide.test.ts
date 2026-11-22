@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BEFORE_YOU_START, PAIR_GUIDE, SPOT_NOTE } from "./bench-guide";
 import { NO_PAIR, PAIRS } from "./bench-export";
 
-const DASHES = /[‒-―]/;
+const DASHES = /[\u2012-\u2015]/;
 
 // Why this test matters: the guidance card is what the photo tests are taken
 // from on the phone; a pair without its purpose, steps or avoid line leaves
@@ -34,8 +34,13 @@ describe("PAIR_GUIDE", () => {
       expect(PAIR_GUIDE[key].strongSteps, key).toBe(2);
       expect(PAIR_GUIDE[key].steps.slice(0, 2), key).toEqual([
         "Photo A with the light ON as normal.",
-        "Then dim the light, then photo B.",
+        "Then dim the light, wait 2 seconds, then photo B.",
       ]);
+      expect(PAIR_GUIDE[key].purpose, key).toMatch(/^Same place as 1a/);
+      // The camera brightens a dim picture by itself: the card says so.
+      expect(PAIR_GUIDE[key].steps.join(" "), key).toContain(
+        "brightens a dim picture",
+      );
     }
     for (const key of keys.filter((k) => k !== "1b" && k !== "1c")) {
       expect(PAIR_GUIDE[key].strongSteps, key).toBe(0);
@@ -46,6 +51,17 @@ describe("PAIR_GUIDE", () => {
     for (const key of keys) {
       expect(PAIR_GUIDE[key].spotNote, key).toBe(key.startsWith("1"));
     }
+  });
+
+  // Why this test matters: "do not touch the phone" contradicts the photo
+  // tap, and a phone lying flat films the table; the steps must ask for
+  // what can be done.
+  it("asks for a propped-up phone that is not moved, never untouched", () => {
+    const all = Object.values(PAIR_GUIDE)
+      .flatMap((g) => [g.purpose, g.avoid, ...g.steps])
+      .join(" ");
+    expect(all).not.toMatch(/touch|lay the phone|lying/i);
+    expect(PAIR_GUIDE["1a"].steps[0]).toMatch(/^Prop the phone up/);
   });
 
   it("is plain text with plain hyphens", () => {

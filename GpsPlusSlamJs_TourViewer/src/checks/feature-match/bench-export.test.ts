@@ -12,12 +12,17 @@ import {
   LIGHT_CONTROL_TOLERANCE,
   LIGHT_DARKER_RATIO,
   lightCheck,
+  LIGHT_FLOOR_A,
+  LIGHT_FLOOR_B,
   matchesInfo,
   nextPair,
   pairFileNames,
   pairTag,
   parseSpot,
+  parseProgress,
   pngChunkTypes,
+  progressText,
+  sessionToken,
 } from "./bench-export";
 import { makeFrame, toFramePoint } from "./bench-image";
 import type { DeviceInfo } from "./bench-report";
@@ -145,7 +150,7 @@ describe("framesInfo", () => {
       DEVICE,
       1280,
       TAG,
-      "not-darker",
+      { light: "not-darker", session: "0a1b2c3d" },
     ),
   ) as Record<string, unknown>;
 
@@ -159,6 +164,7 @@ describe("framesInfo", () => {
         "lightCheck",
         "pair",
         "pairLabel",
+        "session",
         "spot",
         "sequence",
       ].sort(),
@@ -167,6 +173,7 @@ describe("framesInfo", () => {
     expect(info.captureMaxLongEdge).toBe(1280);
     expect(info.device).toEqual(DEVICE);
     expect(info.lightCheck).toBe("not-darker");
+    expect(info.session).toBe("0a1b2c3d");
   });
 
   // Why this test matters: the photos are scored offline per pair, and
@@ -212,7 +219,7 @@ describe("framesInfo", () => {
       DEVICE,
       1280,
       TAG,
-      null,
+      { light: null, session: "0a1b2c3d" },
     );
     const keys: string[] = [];
     const walk = (v: unknown): void => {
@@ -244,6 +251,8 @@ describe("lightCheck", () => {
   it("names the thresholds", () => {
     expect(LIGHT_DARKER_RATIO).toBe(0.8);
     expect(LIGHT_CONTROL_TOLERANCE).toBe(0.2);
+    expect(LIGHT_FLOOR_A).toBe(10);
+    expect(LIGHT_FLOOR_B).toBe(3);
   });
 
   it.each([
@@ -257,13 +266,28 @@ describe("lightCheck", () => {
     ["1b", 41.2, 41.2, "not-darker"],
     ["1c", 23.2, 23.3, "not-darker"],
     ["1b", 100, 130, "not-darker"],
-    ["1b", 0, 0, "ok"],
+    // The tester's real, correctly dimmed pairs: B at 0.68 and 0.45 of A.
+    ["1b", 107, 72.8, "ok"],
+    ["1c", 107, 48.2, "ok"],
+    // A black photo A measures no dimming; a black photo B nothing at all.
+    ["1b", 0, 0, "too-dark-a"],
+    ["1b", 9.9, 5, "too-dark-a"],
+    ["1b", 10, 5, "ok"],
+    ["1c", 9, 2, "too-dark-a"],
+    ["1c", 50, 2.9, "too-dark-b"],
+    ["1c", 50, 3, "ok"],
+    ["1b", 50, 2, "ok"],
     ["1a", 100, 100, "ok"],
     ["1a", 100, 80, "ok"],
     ["1a", 100, 120, "ok"],
     ["1a", 100, 79, "changed"],
     ["1a", 100, 121, "changed"],
+    // Below a mean of 10 the control allows 3 grey levels, not 20 %.
     ["1a", 0, 0, "ok"],
+    ["1a", 0, 3, "ok"],
+    ["1a", 0, 3.1, "changed"],
+    ["1a", 5, 8.5, "changed"],
+    ["1a", 9, 11.9, "ok"],
     ["1a", 0, 5, "changed"],
   ])("%s with grey means %d and %d is %s", (pair, a, b, result) => {
     expect(lightCheck(pair, a, b)).toBe(result);
@@ -598,6 +622,14 @@ describe("pairs", () => {
     expect(nextPair(NO_PAIR.key, 1)).toEqual({ key: "none", spot: 1 });
   });
 
+  // Why this test matters: only the light pairs are repeated at spots; a
+  // spot carried over from 1c into 2a would name a spot the pair has not.
+  it("records spot 1 for every pair that is not a light pair", () => {
+    expect(pairTag("1c", 3, 1).spot).toBe(3);
+    expect(pairTag("2a", 3, 1).spot).toBe(1);
+    expect(pairTag("x", 2, 1).spot).toBe(1);
+  });
+
   it("refuses an unknown key, a spot outside 1-3 and a bad running number", () => {
     expect(() => pairTag("9z", 1, 1)).toThrow("unknown pair 9z");
     expect(() => pairTag("1a", 4, 1)).toThrow("spot");
@@ -647,5 +679,64 @@ describe("pairs", () => {
     ]);
     expect(seen.at(-1)).toBe("x-s1");
     expect(new Set(seen).size).toBe(21);
+  });
+});
+
+// Why these tests matter: a reload or a discarded tab restarted the running
+// number, so two downloads of one evening shared a name; the progress is
+// kept across reloads, and anything unreadable starts over rather than
+// throwing on the page.
+describe("progress across reloads", () => {
+  it("reads back what it wrote", () => {
+    const p = { sequence: 7, pair: "2b", spot: 1 } as const;
+    expect(parseProgress(progressText(p))).toEqual(p);
+  });
+
+  it("starts over on nothing, garbage or a value out of range", () => {
+    const start = { sequence: 0, pair: "1a", spot: 1 };
+    for (const bad of [
+      null,
+      "",
+      "{",
+      "[]",
+      '{"sequence":-1,"pair":"1a","spot":1}',
+      '{"sequence":1.5,"pair":"1a","spot":1}',
+      '{"sequence":2,"pair":"9z","spot":1}',
+      '{"sequence":2,"pair":"1a","spot":4}',
+    ]) {
+      expect(parseProgress(bad), String(bad)).toEqual(start);
+    }
+  });
+
+  it("keeps the manual run as the selected pair", () => {
+    expect(parseProgress('{"sequence":3,"pair":"none","spot":1}').pair).toBe(
+      "none",
+    );
+  });
+});
+
+// Why this test matters: with storage blocked the running number starts at
+// 1 on every load; the session token keeps two such runs apart. It is
+// random bytes only, no time and no place.
+describe("sessionToken", () => {
+  it("is the bytes as hex", () => {
+    expect(sessionToken(new Uint8Array([0, 15, 160, 255]))).toBe("000fa0ff");
+  });
+
+  it("differs for different bytes", () => {
+    fc.assert(
+      fc.property(
+        fc.uint8Array({ minLength: 4, maxLength: 4 }),
+        fc.uint8Array({ minLength: 4, maxLength: 4 }),
+        (a, b) => {
+          fc.pre(a.some((v, i) => v !== b[i]));
+          expect(sessionToken(a)).not.toBe(sessionToken(b));
+        },
+      ),
+    );
+  });
+
+  it("refuses fewer than 4 bytes", () => {
+    expect(() => sessionToken(new Uint8Array(3))).toThrow(RangeError);
   });
 });

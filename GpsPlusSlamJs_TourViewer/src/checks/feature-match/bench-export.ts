@@ -52,18 +52,30 @@ export type PairKey = (typeof PAIRS)[number]["key"] | typeof NO_PAIR.key;
 
 /** Spots the light pairs are repeated at. */
 const SPOTS = 3;
+/** The pairs that are repeated at spots; every other pair is at spot 1. */
+const LIGHT_PAIRS: ReadonlySet<string> = new Set(["1a", "1b", "1c"]);
 
 /** A dimmed pair's photo B must be at most this share of A's grey mean. */
 export const LIGHT_DARKER_RATIO = 0.8;
 /** The control pair's photo B may differ from A's grey mean by this share. */
 export const LIGHT_CONTROL_TOLERANCE = 0.2;
+/**
+ * Below this grey mean photo A is too dark to measure a dimming against;
+ * the control pair then allows LIGHT_FLOOR_B grey levels instead of a share.
+ */
+export const LIGHT_FLOOR_A = 10;
+/** Below this grey mean the dark pair's photo B is black: nothing to match. */
+export const LIGHT_FLOOR_B = 3;
 
 /**
  * Whether the light changed as a light pair needs: "ok", "not-darker" (a
- * dimmed pair whose B is not clearly darker than A) or "changed" (the
- * control pair's light changed). Null for every other pair.
+ * dimmed pair whose B is not clearly darker than A), "too-dark-a" (a
+ * dimmed pair whose A is almost black), "too-dark-b" (the dark pair's B is
+ * black) or "changed" (the control pair's light changed). Null for every
+ * other pair.
  */
-export type LightCheck = "ok" | "not-darker" | "changed";
+export type LightCheck =
+  "ok" | "not-darker" | "too-dark-a" | "too-dark-b" | "changed";
 
 /**
  * @throws RangeError on a grey mean that is not a number from 0 to 255.
@@ -79,23 +91,34 @@ export function lightCheck(
     }
   }
   if (key === "1b" || key === "1c") {
-    return meanB > LIGHT_DARKER_RATIO * meanA ? "not-darker" : "ok";
+    return dimmedCheck(key === "1c", meanA, meanB);
   }
   if (key === "1a") {
-    return Math.abs(meanB - meanA) > LIGHT_CONTROL_TOLERANCE * meanA
-      ? "changed"
-      : "ok";
+    const tolerance =
+      meanA < LIGHT_FLOOR_A ? LIGHT_FLOOR_B : LIGHT_CONTROL_TOLERANCE * meanA;
+    return Math.abs(meanB - meanA) > tolerance ? "changed" : "ok";
   }
   return null;
+}
+
+/** A dimmed pair's check; only the dark pair has a floor for photo B. */
+function dimmedCheck(dark: boolean, meanA: number, meanB: number): LightCheck {
+  if (meanA < LIGHT_FLOOR_A) {
+    return "too-dark-a";
+  }
+  if (dark && meanB < LIGHT_FLOOR_B) {
+    return "too-dark-b";
+  }
+  return meanB > LIGHT_DARKER_RATIO * meanA ? "not-darker" : "ok";
 }
 
 /** Which pair a capture belongs to; fixed when photo A is taken. */
 export interface PairTag {
   readonly pair: string;
   readonly pairLabel: string;
-  /** 1 to SPOTS. */
+  /** 1 to SPOTS for a light pair, 1 for every other pair. */
   readonly spot: number;
-  /** Running number of the pair in this page session, from 1. */
+  /** Running number of the pair, from 1; kept across reloads. */
   readonly sequence: number;
 }
 
@@ -114,7 +137,78 @@ export function pairTag(key: string, spot: number, sequence: number): PairTag {
   if (!Number.isInteger(sequence) || sequence < 1) {
     throw new Error(`sequence must be 1 or more, got ${String(sequence)}`);
   }
-  return { pair: p.key, pairLabel: p.label, spot, sequence };
+  return {
+    pair: p.key,
+    pairLabel: p.label,
+    spot: LIGHT_PAIRS.has(p.key) ? spot : 1,
+    sequence,
+  };
+}
+
+/** What the page keeps across a reload: the running number and the selection. */
+export interface Progress {
+  readonly sequence: number;
+  readonly pair: PairKey;
+  readonly spot: number;
+}
+
+const START: Progress = { sequence: 0, pair: "1a", spot: 1 };
+
+/** The stored form of `p`. */
+export function progressText(p: Progress): string {
+  return JSON.stringify({ sequence: p.sequence, pair: p.pair, spot: p.spot });
+}
+
+/**
+ * The stored progress, or the start (no pair yet, 1a at spot 1) for
+ * nothing stored, unreadable text or a value out of range.
+ */
+export function parseProgress(text: string | null): Progress {
+  const v = jsonObject(text);
+  if (v === null) {
+    return START;
+  }
+  const { sequence, pair, spot } = v;
+  const key = [...PAIRS, NO_PAIR].find((q) => q.key === pair)?.key;
+  return key !== undefined &&
+    isIntIn(sequence, 0, Number.MAX_SAFE_INTEGER) &&
+    isIntIn(spot, 1, SPOTS)
+    ? { sequence, pair: key, spot }
+    : START;
+}
+
+/** The JSON object in `text`, or null for nothing, bad JSON or a non-object. */
+function jsonObject(text: string | null): Record<string, unknown> | null {
+  if (text === null || text === "") {
+    return null;
+  }
+  try {
+    const v: unknown = JSON.parse(text);
+    return typeof v === "object" && v !== null && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const isIntIn = (v: unknown, min: number, max: number): v is number =>
+  typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
+
+/**
+ * A page load's token for the frames JSON: random bytes as hex, no time
+ * and no place. It tells two runs apart when storage is blocked and the
+ * running number starts at 1 on every load.
+ *
+ * @throws RangeError for fewer than 4 bytes.
+ */
+export function sessionToken(bytes: Uint8Array): string {
+  if (bytes.length < 4) {
+    throw new RangeError(
+      `session token needs 4 bytes at least, got ${String(bytes.length)}`,
+    );
+  }
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** The spot field's value; anything but 1, 2 or 3 reads as 1. */
@@ -318,14 +412,15 @@ export function matchesInfo(
 
 /**
  * The JSON saved with the frames: a fixed list of fields (the pair, the
- * light check, sizes, grey values, the device), no time and no place.
+ * session token, the light check, sizes, grey values, the device), no time
+ * and no place.
  */
 export function framesInfo(
   frames: readonly SavedFrame[],
   device: DeviceInfo,
   captureMaxLongEdge: number,
   tag: PairTag,
-  light: LightCheck | null,
+  checks: { readonly light: LightCheck | null; readonly session: string },
 ): string {
   return `${JSON.stringify(
     {
@@ -334,7 +429,8 @@ export function framesInfo(
       pairLabel: tag.pairLabel,
       spot: tag.spot,
       sequence: tag.sequence,
-      lightCheck: light,
+      session: checks.session,
+      lightCheck: checks.light,
       captureMaxLongEdge,
       frames: frames.map((f) => {
         const g = greyStats(f.frame);
