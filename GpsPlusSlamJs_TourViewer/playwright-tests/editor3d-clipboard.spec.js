@@ -38,17 +38,6 @@ async function childCount(page, id) {
   return stations.find((s) => s.id === id)?.children.length ?? -1;
 }
 
-/**
- * Whether the Edit menu's item `id` is disabled the menu pattern's way.
- * @param {import("@playwright/test").Page} page
- * @param {string} id
- */
-async function itemDisabled(page, id) {
-  return (
-    (await page.locator(`#${id}`).getAttribute("aria-disabled")) === "true"
-  );
-}
-
 test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the Edit menu offering only what the selection allows", async ({
   page,
 }) => {
@@ -70,8 +59,14 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await expect(edit).toBeVisible();
   await edit.click();
   await expect(page.locator("#edit-copy")).toBeVisible();
-  expect(await itemDisabled(page, "edit-copy")).toBe(true);
-  expect(await itemDisabled(page, "edit-paste")).toBe(true);
+  await expect(page.locator("#edit-copy")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  await expect(page.locator("#edit-paste")).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   await page.keyboard.press("Escape");
   await expect(page.locator("#edit-menu")).toBeHidden();
 
@@ -99,9 +94,14 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await page.keyboard.press("Control+z");
   await expect.poll(() => childCount(page, to.id)).toBe(was + 1);
 
-  // The Edit menu's Paste does what Ctrl+V does.
+  // The Edit menu's Paste does what Ctrl+V does. The undo took the
+  // selected copy away, so the station is selected again as the target.
+  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
   await edit.click();
-  expect(await itemDisabled(page, "edit-paste")).toBe(false);
+  await expect(page.locator("#edit-paste")).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   await page.locator("#edit-paste").click();
   await expect.poll(() => childCount(page, to.id)).toBe(was + 2);
 
