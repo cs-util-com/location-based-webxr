@@ -347,6 +347,50 @@ describe('createGpsAnchor in the anchor set: events', () => {
     r.run(4);
     expect(object.position.x).toBeCloseTo(-5, 6);
   });
+
+  it('inside an open window, every further above-threshold correction lands in view too', () => {
+    // Why this test matters: a deferred key follows T for the whole window;
+    // a member follows it in steps of its own threshold (it never moves for
+    // less, in view or out). A member that landed only the window's first
+    // correction would be held at a stale place for the rest of the window.
+    const r = rig();
+    r.run(2);
+    const { object } = r.anchor(ZERO);
+    r.run(2);
+    r.store.bumpEpoch();
+    r.store.setT(tOf(5));
+    r.run(1);
+    expect(object.position.x).toBeCloseTo(-5, 6);
+    r.store.setT(tOf(9)); // 4 m more, still inside the window
+    r.run(1);
+    expect(object.position.x).toBeCloseTo(-9, 6);
+  });
+
+  it('an anchor that joined before the binding joins the bound set once it exists', () => {
+    // Why this test matters: an app may create a GPS anchor before it
+    // enables the alignment binding. Its set had no binding, so no window
+    // and no shared release; it must not stay that way for the session,
+    // nor may a second set appear beside it for the same parent.
+    const r = rig({ bound: false });
+    r.run(2);
+    const { object } = r.anchor(ZERO);
+    r.run(2);
+    expect(object.position.length()).toBeLessThan(1e-9);
+    enableArWorldGroupAlignment({ store: r.store, arWorldGroup: r.group });
+    runFrameUpdates(DT, 1); // the old set's own frame update hands it over
+    r.store.bumpEpoch();
+    r.store.setT(tOf(5));
+    r.run(1);
+    expect(object.position.x, "the bound set's window let it land").toBeCloseTo(
+      -5,
+      6
+    );
+    // One set: a deferred key of the same parent refuses to nest with it.
+    const holder = new THREE.Group();
+    r.group.add(holder);
+    holder.attach(object);
+    expect(() => deferredAnchor(r.group, 'k').add(holder)).toThrow(/nest/);
+  });
 });
 
 describe('createGpsAnchor in the anchor set: where the target comes from', () => {

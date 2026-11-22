@@ -58,7 +58,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
   `createGpsAnchor`): joins a position member to the parent's set. With a
   binding it is the same set the deferred keys use; without one the parent
   gets a set of its own with no window (T is a fixed identity), which runs on
-  its own frame-loop registration and ends with its last member. Throws for
+  its own frame-loop registration and ends with its last member, or hands
+  its members to the bound set once the parent gains a binding. Throws for
   a member object inside, or holding, a deferred root.
   - `AnchorSetMember`: `object` (the set writes its `position`), `camera`
     (the view when the session has no camera), `step(dt, elapsedS, target,
@@ -97,7 +98,13 @@ into)` (writes the target local position, returns the threshold below
    that member its frame). A difference below its threshold is not pending.
    Otherwise it commits now at a release (`release:code-lock`, even below the
    threshold), when ungated (`every-tick`, `first`) or while the window is
-   open (`window`); else it is pending. Members take no follow phase.
+   open (`window`); else it is pending. Members take no follow phase:
+   inside the window every pass whose difference passes the threshold
+   commits, so a member follows T in steps of its own threshold, the same
+   hysteresis it keeps out of view, where a key follows T exactly. Taking
+   only the window's first commit would hold the member at a stale place for
+   the rest of the window; following below its threshold would break the
+   member's own rule that it never moves for less.
 6. Deferred keys and pending members: each pending key is sorted into "cache invalid", "cached
    test says out", or "in, but the cache is stale"; one key is picked (out
    first, round robin), its bounds rebuilt if needed, and it commits
@@ -125,8 +132,16 @@ into)` (writes the target local position, returns the threshold below
   member's own choice to skip the view gate (`snap-every-tick`), not a
   bypass of the set.
 - Nesting is refused between keys, between a key and a member, in both
-  directions. Not checked across a bound and an unbound set of one parent
-  (an anchor created before the binding).
+  directions. One parent runs one set: a member that joined before the
+  parent had a binding is handed to the bound set by its unbound set's
+  next pass once the binding exists (that set then ends).
+- Known limit: a member's target is a position in the parent's frame, and
+  the set writes it as the object's local position and tests the view at it
+  the same way. That is exact for a direct child of the parent (every
+  current caller); for a deeper descendant, which `createGpsAnchor`
+  accepts, both the commit and the target-pose view test would be off by
+  the intermediate nodes' transform. A fix belongs in the member and the set
+  together (the member's own threshold check compares in that frame too).
 - Every commit logs `commit <kind>: <key>, waited <ms>, moved <m>`.
 
 ## Example
@@ -159,6 +174,8 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
 - `../visualization/gps-anchor.anchor-set.test.ts`: the position-member
   rules through `createGpsAnchor` (child and target pose in view, the
   previous view, threshold, ungated modes, immature, release, window, the
-  binding's T against the caller's alignment, nesting).
+  binding's T against the caller's alignment, nesting, a second
+  above-threshold correction inside one window, a member that joined before
+  the binding moved to the bound set).
 - `deferred-anchors.structure.test.ts`: no dispatch and no store slice
   imports in the anchor modules.
