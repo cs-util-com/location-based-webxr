@@ -367,17 +367,28 @@ test("in AR a delete is taken back by the strip's persistent Undo, which names i
 /** The stations tour whose gate stands every kind of free block. */
 const BLOCKS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/blocks-tour.zip";
 
-/** The object ids drawn anywhere in the fake scene, however deep. */
+/** The object ids drawn in the AR scene, however deep: under the fake
+ *  scene (earlier visits) or the world group (this visit). An id counts
+ *  only when something stands under it: a mesh, line, sprite or points,
+ *  or a child at all (the fixture model is an empty glb scene, drawn as
+ *  its loaded group). An empty preview root, as a kind nothing draws
+ *  leaves, does not count. */
 function drawnIds(page) {
   return page.evaluate((key) => {
+    const w = /** @type {any} */ (window);
+    /** @param {any} o @returns {boolean} */
+    const hasLook = (o) =>
+      Boolean(o.isMesh || o.isLine || o.isSprite || o.isPoints) ||
+      (o.children ?? []).length > 0;
     /** @param {any} o @returns {string[]} */
     const ids = (o) => [
-      ...(typeof o.userData?.objectId === "string"
+      ...(typeof o.userData?.objectId === "string" && hasLook(o)
         ? [o.userData.objectId]
         : []),
       ...(o.children ?? []).flatMap(ids),
     ];
-    return [...new Set(ids(/** @type {any} */ (window)[key].fakeScene))].sort();
+    const roots = [w[key].fakeScene, w.__tourViewerSeams.getArWorldGroup()];
+    return [...new Set(roots.filter(Boolean).flatMap(ids))].sort();
   }, TEST_KEY);
 }
 
@@ -396,6 +407,12 @@ test("in AR the creator sees every kind of item drawn, a tap selects the placed 
     "settled",
     { timeout: 15000 },
   );
+  // As `openFixtureTour` does for its own tour: the card shows one step,
+  // and AR is entered from the measure step.
+  const step = page.getByTestId("step-measure");
+  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+    await page.getByTestId("station-measure").click();
+  }
   await enterArAndMeasure(page);
   const items = [
     "gate-arch",
