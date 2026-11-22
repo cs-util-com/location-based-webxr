@@ -295,13 +295,16 @@ test("an edit waiting for the offer asks before the tab closes, and Delete it sa
   // reject the offered work (`editor-draft.ts` `discard`); the files go
   // after it, unawaited. So the meta write is what is held here, until the
   // test lets it go: holding only the removals held nothing, and the
-  // offer could go before its progress was looked at.
+  // offer could go before its progress was looked at. Only the meta file
+  // (`meta.blob`, the store's name for its key) is held; every other
+  // write goes through.
   await next.evaluate(() => {
     const proto = FileSystemFileHandle.prototype;
     const original = proto.createWritable;
     /** @type {(() => void)[]} */
     const queued = [];
     proto.createWritable = function (...args) {
+      if (this.name !== "meta.blob") return original.apply(this, args);
       return new Promise((resolve, reject) => {
         queued.push(() => {
           original.apply(this, args).then(resolve, reject);
