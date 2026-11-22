@@ -81,6 +81,8 @@ interface SurfacePhotos {
   /** Keyed `<pose>#<q>`. */
   readonly shots: Map<string, Frame>;
   original: File | null;
+  /** The camera stream's size when the reference was taken. */
+  camera: { width: number; height: number } | null;
 }
 
 const shotKey = (pose: PoseId, q: number): string => `${pose}#${String(q)}`;
@@ -121,6 +123,7 @@ function findUi(root: ParentNode) {
     accept: $<HTMLButtonElement>(root, "#flat-accept"),
     retake: $<HTMLButtonElement>(root, "#flat-retake"),
     download: $<HTMLButtonElement>(root, "#flat-download"),
+    saveLink: $<HTMLAnchorElement>(root, "#flat-save-link"),
     state: $(root, "#flat-state"),
   };
 }
@@ -156,6 +159,19 @@ export function startFlatCapture(
   let stream: MediaStream | null = null;
   let generation = 0;
   let liveTimer: number | null = null;
+  let wakeLock: WakeLockSentinel | null = null;
+  /** The user picked the next surface's class: no suggestion overwrites it. */
+  let classPicked = false;
+  /** Closed by pagehide, so a back-forward cache restore reopens it. */
+  let closedByPagehide = false;
+  /** A prepared zip waiting for its Save tap; stale once the surface changes. */
+  let prepared: {
+    readonly id: number;
+    readonly shots: number;
+    readonly url: string;
+    readonly name: string;
+    readonly text: string;
+  } | null = null;
 
   ui.newClass.replaceChildren(
     ...SURFACE_CLASSES.map((c) => {
@@ -174,6 +190,7 @@ export function startFlatCapture(
         rectified: null,
         shots: new Map(),
         original: null,
+        camera: null,
       };
       photos.set(id, p);
     }
@@ -189,6 +206,72 @@ export function startFlatCapture(
       localStorage.setItem(FLAT_PROGRESS, flatProgressText(progress));
     } catch {
       // Storage blocked: the progress lasts as long as the page.
+    }
+  };
+
+  /**
+   * Frees the photos of every other surface with nothing left to download,
+   * so a long session does not keep every surface's frames in memory. A
+   * later zip of such a surface lists its earlier photos with a null file,
+   * as after a reload.
+   */
+  const freeOtherPhotos = (keep: number): void => {
+    for (const s of progress.surfaces) {
+      if (s.id !== keep && surfaceSummary(s).unsaved === 0) {
+        photos.delete(s.id);
+      }
+    }
+  };
+
+  /** Photos that exist only in this page: leaving it would lose them. */
+  const hasUnsaved = (): boolean =>
+    still !== null ||
+    progress.surfaces.some((s) => surfaceSummary(s).unsaved > 0);
+
+  const dropPrepared = (): void => {
+    if (prepared) {
+      URL.revokeObjectURL(prepared.url);
+      prepared = null;
+    }
+    ui.saveLink.hidden = true;
+    ui.saveLink.removeAttribute("href");
+  };
+
+  // --- screen wake lock -------------------------------------------------
+
+  /** Keeps the screen on while the mode is open and the page visible. */
+  const holdWakeLock = async (): Promise<void> => {
+    if (
+      !isOpen ||
+      wakeLock !== null ||
+      document.visibilityState !== "visible" ||
+      !("wakeLock" in navigator)
+    ) {
+      return;
+    }
+    try {
+      const lock = await navigator.wakeLock.request("screen");
+      if (!isOpen || wakeLock !== null) {
+        void lock.release();
+        return;
+      }
+      wakeLock = lock;
+      // The browser releases it when the page is hidden.
+      lock.addEventListener("release", () => {
+        if (wakeLock === lock) {
+          wakeLock = null;
+        }
+      });
+    } catch (e) {
+      deps.log(`flat: screen wake lock refused: ${errorText(e)}`);
+    }
+  };
+
+  const releaseWakeLock = (): void => {
+    const lock = wakeLock;
+    wakeLock = null;
+    if (lock) {
+      lock.release().catch(() => undefined);
     }
   };
 
@@ -244,7 +327,7 @@ export function startFlatCapture(
     } catch (e) {
       if (g === generation) {
         deps.fail("flat camera", e);
-        ui.state.textContent = "camera unavailable (see log)";
+        ui.state.textContent = `camera unavailable: ${errorText(e)}`;
       }
     }
     render();
@@ -351,6 +434,7 @@ export function startFlatCapture(
           (sum.complete ? " - complete" : "");
         b.addEventListener("click", () => {
           dispatch({ type: "select", id: s.id });
+          freeOtherPhotos(s.id);
           pose = firstOpenPose(s);
           render();
         });
@@ -361,7 +445,7 @@ export function startFlatCapture(
     const fewest = classSummary(progress).sort(
       (a, b) => a.started - b.started,
     )[0];
-    if (fewest && document.activeElement !== ui.newClass) {
+    if (fewest && !classPicked && document.activeElement !== ui.newClass) {
       ui.newClass.value = fewest.cls;
     }
     ui.newSurface.textContent = `Start surface ${String(progress.surfaces.length + 1)}`;
@@ -460,6 +544,7 @@ export function startFlatCapture(
     ui.overviewOpen.disabled = counting || saving || ph === "overview";
     ui.hint.textContent = hintFor(ph, s);
     if (ph === "overview" || !s) {
+      dropPrepared();
       ui.where.textContent = "Overview";
       ui.guide.hidden = true;
       renderOverview();
@@ -471,12 +556,15 @@ export function startFlatCapture(
         ? `Surface ${String(s.id)}, ${cls}, pose ${POSES.find((p) => p.id === pose)!.label}`
         : `Surface ${String(s.id)}, ${cls}, reference`;
     const sumPose = ph === "poses" ? poseSummary(s, pose) : null;
+    // The pose is in the label: a shot is taken without looking elsewhere.
+    const poseNow = POSES.find((p) => p.id === pose)!;
+    const poseShort = `${String(poseNow.distance)} % ${String(poseNow.tilt)} deg`;
     ui.shoot.textContent = counting
       ? `Cancel (${String(countdown!.left)})`
       : ph === "poses"
         ? sumPose!.full
-          ? `Darker shot (${String(COUNTDOWN_S)} s)`
-          : `Full-light shot (${String(COUNTDOWN_S)} s)`
+          ? `Darker shot, ${poseShort} (${String(COUNTDOWN_S)} s)`
+          : `Full-light shot, ${poseShort} (${String(COUNTDOWN_S)} s)`
         : ph === "ref-live"
           ? `Take reference (${String(COUNTDOWN_S)} s)`
           : `Retake reference (${String(COUNTDOWN_S)} s)`;
@@ -489,6 +577,13 @@ export function startFlatCapture(
       const last = [...s.shots].reverse().find((x) => x.pose === pose);
       ui.retake.disabled = counting || saving || !last || last.saved;
       const sum = surfaceSummary(s);
+      if (
+        prepared &&
+        (prepared.id !== s.id || prepared.shots !== s.shots.length)
+      ) {
+        // A shot was added or removed after the zip was made: it is stale.
+        dropPrepared();
+      }
       ui.download.disabled = counting || saving;
       if (!saving) {
         ui.download.textContent =
@@ -498,6 +593,7 @@ export function startFlatCapture(
       }
       placeGuide(s);
     } else {
+      dropPrepared();
       ui.guide.hidden = true;
       drawStill();
     }
@@ -555,9 +651,24 @@ export function startFlatCapture(
       render();
       return;
     }
+    const track = stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== "live" || track.muted) {
+      // An ended or muted track still shows its last frame: a photo of it
+      // would be a stale picture tagged as new.
+      ui.state.textContent = "camera not live: wait a moment and tap again";
+      deps.log(
+        `flat: photo refused, track ${track ? `${track.readyState}${track.muted ? ", muted" : ""}` : "missing"}`,
+      );
+      render();
+      return;
+    }
     const f = captureFrame(ui.video, FLAT_CAPTURE_MAX);
     if (ph === "ref-live") {
       still = f;
+      photosOf(s.id).camera = {
+        width: ui.video.videoWidth,
+        height: ui.video.videoHeight,
+      };
       taps = [];
       preview = null;
       deps.log(
@@ -710,7 +821,7 @@ export function startFlatCapture(
   const surfaceZip = async (
     s: SurfaceProgress,
   ): Promise<{ blob: Blob; name: string; photos: number }> => {
-    const names = flatFileNames(s.id, s.cls);
+    const names = flatFileNames(s.id, s.cls, deps.session);
     const p = photosOf(s.id);
     const files: NamedBlob[] = [];
     if (p.reference) {
@@ -759,6 +870,7 @@ export function startFlatCapture(
             session: deps.session,
             original: { exists: s.original, file: originalName },
             captureMaxLongEdge: FLAT_CAPTURE_MAX,
+            camera: p.camera,
             reference: {
               file: p.reference ? names.reference : null,
               width: ref.width,
@@ -784,30 +896,48 @@ export function startFlatCapture(
       return;
     }
     saving = true;
+    dropPrepared();
     ui.download.textContent = "Preparing zip...";
     ui.state.textContent = "preparing the zip...";
     render();
     surfaceZip(s)
       .then(({ blob, name, photos: n }) => {
+        // A link the user taps, as the photo pairs do: a download started
+        // from script after an await can be blocked, and only the tap is
+        // proof enough to mark the photos downloaded.
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = name;
-        a.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-        dispatch({ type: "saved", id: s.id });
-        ui.state.textContent = `downloaded ${name}: ${String(n)} photos, ${formatBytes(blob.size)}`;
-        deps.log(`flat: ${name} saved, ${String(n)} photos`);
+        const text = `${String(n)} photos, ${formatBytes(blob.size)}`;
+        prepared = { id: s.id, shots: s.shots.length, url, name, text };
+        ui.saveLink.href = url;
+        ui.saveLink.download = name;
+        ui.saveLink.textContent = `Save ${name}`;
+        ui.saveLink.hidden = false;
+        ui.state.textContent = `ready: tap Save (${text})`;
+        deps.log(`flat: ${name} ready, ${String(n)} photos`);
       })
       .catch((e: unknown) => {
         deps.fail("flat save", e);
-        ui.state.textContent =
-          "zip failed (see log): nothing was marked downloaded";
+        ui.state.textContent = `zip failed: ${errorText(e)}; nothing was marked downloaded`;
       })
       .finally(() => {
         saving = false;
         render();
       });
+  });
+
+  ui.saveLink.addEventListener("click", () => {
+    const s = current();
+    if (!prepared || !s || prepared.id !== s.id) {
+      return;
+    }
+    dispatch({ type: "saved", id: s.id });
+    ui.state.textContent = `downloaded ${prepared.name}: ${prepared.text}`;
+    deps.log(`flat: ${prepared.name} saved`);
+    render();
+  });
+
+  ui.newClass.addEventListener("change", () => {
+    classPicked = true;
   });
 
   ui.newOriginal.addEventListener("change", () => {
@@ -829,7 +959,9 @@ export function startFlatCapture(
       original: ui.newOriginal.checked || file !== null,
     });
     const s = current()!;
+    freeOtherPhotos(s.id);
     photosOf(s.id).original = file;
+    classPicked = false;
     ui.newFile.value = "";
     ui.newOriginal.checked = false;
     still = null;
@@ -869,6 +1001,7 @@ export function startFlatCapture(
     isOpen = false;
     cancelCountdown();
     stopCamera();
+    releaseWakeLock();
     if (liveTimer !== null) {
       clearInterval(liveTimer);
       liveTimer = null;
@@ -889,6 +1022,7 @@ export function startFlatCapture(
       pose = firstOpenPose(s);
     }
     liveTimer = window.setInterval(readLive, LIVE_EVERY_MS);
+    void holdWakeLock();
     render();
     if (s) {
       void startCamera();
@@ -901,7 +1035,39 @@ export function startFlatCapture(
       void startCamera();
     }
   });
-  window.addEventListener("pagehide", close);
+  window.addEventListener("pagehide", () => {
+    if (isOpen) {
+      closedByPagehide = true;
+      close();
+    }
+  });
+  // A back-forward cache restore keeps the selector on the flat mode, so
+  // the mode comes back with it.
+  window.addEventListener("pageshow", (ev) => {
+    if (ev.persisted && closedByPagehide) {
+      closedByPagehide = false;
+      open();
+    }
+  });
+  window.addEventListener("beforeunload", (ev) => {
+    if (hasUnsaved()) {
+      ev.preventDefault();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!isOpen || document.visibilityState !== "visible") {
+      return;
+    }
+    void holdWakeLock();
+    // A camera ended in the background (another app took it) restarts.
+    const track = stream?.getVideoTracks()[0];
+    if (stream && (!track || track.readyState === "ended")) {
+      stream = null;
+      ui.video.srcObject = null;
+      deps.log("flat: camera ended while hidden, restarting");
+      void startCamera();
+    }
+  });
 
   return { open, close };
 }

@@ -275,8 +275,11 @@
       }
 
       /* Flat target capture: one screen, every control without scrolling. */
+      /* No pull-to-refresh or overscroll bounce while the phone rests still. */
+      html:has(body.flat-open),
       body.flat-open {
         overflow: hidden;
+        overscroll-behavior: none;
       }
       .flat {
         position: fixed;
@@ -434,9 +437,21 @@
         flex-wrap: wrap;
         gap: 6px;
       }
-      .flat-actions button {
+      .flat-actions button,
+      .flat-actions a {
         flex: 1 1 auto;
         padding: 8px 10px;
+      }
+      .flat-actions a {
+        border-radius: 6px;
+        background: #ffd400;
+        color: #111;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+      }
+      .flat-actions a[hidden] {
+        display: none;
       }
     </style>
   </head>
@@ -745,6 +760,7 @@
           <button id="flat-download" type="button" class="secondary">
             Download zip
           </button>
+          <a id="flat-save-link" hidden>Save zip</a>
         </div>
         <p id="flat-state" class="flat-state" aria-live="polite"></p>
       </div>

@@ -501,7 +501,9 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "session",
     "spot",
   ]);
-  expect(info.session).toMatch(/^[0-9a-f]{8}$/);
+  expect(info.session).toBe(session);
+  expect(info.capture).toBe("getUserMedia");
+  expect(info.camera).toEqual({ width: 320, height: 240 });
   expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
     "1b",
     "light: dimmed",
@@ -1134,12 +1136,13 @@ async function tapCorners(page, points) {
 }
 
 /**
- * The visible buttons of the flat mode that are not wholly on screen.
+ * The visible buttons and links of the flat mode that are not wholly on
+ * screen.
  *
  * @param {import("@playwright/test").Page} page
  */
 async function offscreenFlatButtons(page) {
-  return page.locator("#flat button").evaluateAll((buttons) =>
+  return page.locator("#flat button, #flat a").evaluateAll((buttons) =>
     buttons
       .filter((b) => b.getClientRects().length > 0)
       .filter((b) => {
@@ -1155,11 +1158,16 @@ async function offscreenFlatButtons(page) {
   );
 }
 
-/** Phone portrait, a small tablet's landscape and its portrait. */
+/**
+ * Phone portrait, a foldable's inner screen both ways, and two short
+ * windows (the inner screen with browser bars, a split screen).
+ */
 const FLAT_VIEWPORTS = [
   { width: 412, height: 915 },
   { width: 880, height: 790 },
   { width: 790, height: 880 },
+  { width: 830, height: 600 },
+  { width: 750, height: 700 },
 ];
 
 /**
@@ -1272,7 +1280,7 @@ test("the feature matching page captures a flat target surface end to end", asyn
   );
   await expect(page.locator("#flat-poses button")).toHaveCount(6);
   await expect(page.locator("#flat-guide")).toBeVisible();
-  await expect(shoot).toHaveText("Full-light shot (3 s)");
+  await expect(shoot).toHaveText("Full-light shot, 40 % 0 deg (3 s)");
   await shoot.click();
   await expect(page.locator("#flat-state")).toHaveText(
     "taken: w40-t0 q1: full light, bin b1",
@@ -1292,7 +1300,7 @@ test("the feature matching page captures a flat target surface end to end", asyn
     "data-live",
     "true",
   );
-  await expect(shoot).toHaveText("Darker shot (3 s)");
+  await expect(shoot).toHaveText("Darker shot, 40 % 0 deg (3 s)");
   await shoot.click();
   await expect(page.locator("#flat-state")).toHaveText(
     /^taken: w40-t0 q2: 0\.[12]\d of full, bin b4$/,
@@ -1314,13 +1322,27 @@ test("the feature matching page captures a flat target surface end to end", asyn
   // New captures, not files: the reference (with its straightened copy)
   // and the two shots.
   await expect(download).toHaveText("Download zip (3 new)");
+  // Prepared first, then a link the user taps: only that tap marks the
+  // photos downloaded.
+  await download.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^ready: tap Save \(4 photos, /,
+  );
+  await expect(download).toHaveText("Download zip (3 new)");
+  const saveLink = page.locator("#flat-save-link");
+  await expect(saveLink).toHaveText(
+    /^Save flat-target-s01-busy-[0-9a-f]{8}\.zip$/,
+  );
+  await expectFlatControlsOnScreen(page, "save link");
   const [zipFile] = await Promise.all([
     page.waitForEvent("download"),
-    download.click(),
+    saveLink.click(),
   ]);
-  expect(zipFile.suggestedFilename()).toBe("flat-target-s01-busy.zip");
+  const zipName = zipFile.suggestedFilename();
+  expect(zipName).toMatch(/^flat-target-s01-busy-[0-9a-f]{8}\.zip$/);
+  const session = zipName.slice("flat-target-s01-busy-".length, -".zip".length);
   await expect(page.locator("#flat-state")).toHaveText(
-    /^downloaded flat-target-s01-busy\.zip: 4 photos, /,
+    new RegExp(`^downloaded ${zipName.replace(/\./g, "\\.")}: 4 photos, `),
   );
   await expect(download).toHaveText("Download zip");
   const reader = new ZipReader(
@@ -1329,13 +1351,15 @@ test("the feature matching page captures a flat target surface end to end", asyn
   const entries = await reader.getEntries();
   expect(entries.map((e) => e.filename).sort()).toEqual([
     "feature-match-log.txt",
-    "s01-info.json",
+    `s01-${session}-info.json`,
     "s01-reference-rectified.png",
     "s01-reference.png",
     "s01-w40-t0-q1-b1.png",
     "s01-w40-t0-q2-b4.png",
   ]);
-  const infoEntry = entries.find((e) => e.filename === "s01-info.json");
+  const infoEntry = entries.find(
+    (e) => e.filename === `s01-${session}-info.json`,
+  );
   if (!infoEntry || infoEntry.directory) {
     throw new Error("no info JSON in the zip");
   }
@@ -1408,5 +1432,97 @@ test("the feature matching page captures a flat target surface end to end", asyn
     "camera on: aim, then tap Take photo A",
   );
   expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: the photos exist only in the page until their zip
+ * is saved, so a failed zip must say why, mark nothing downloaded and leave
+ * the button ready for another try; a "downloaded" there would let the user
+ * walk away from photos that were never saved. It also proves the original
+ * file a surface was printed from is attached by picking it, and ends up in
+ * the zip under the surface's name.
+ */
+test("the flat target capture keeps the photos when the zip fails, and attaches the original", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.setViewportSize(FLAT_VIEWPORTS[0]);
+  await page.goto("/feature-match-check.html");
+  await expect(page.locator("#log")).toContainText("ready");
+  await page.locator("#pair").selectOption("flat");
+
+  await page.locator("#flat-new-file").setInputFiles({
+    name: "Poster.PNG",
+    mimeType: "image/png",
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47]),
+  });
+  await expect(page.locator("#flat-new-original")).toBeChecked();
+  await page.locator("#flat-new").click();
+  await expect(page.locator("#log")).toContainText(
+    "flat: surface 1 started, busy, original attached",
+  );
+  const shoot = page.locator("#flat-shoot");
+  await expect(shoot).toBeEnabled();
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    "reference taken, 320x240",
+    AFTER_COUNTDOWN,
+  );
+  await tapCorners(page, [
+    [0.1, 0.1],
+    [0.9, 0.1],
+    [0.9, 0.9],
+    [0.1, 0.9],
+  ]);
+  await page.locator("#flat-accept").click();
+  await shoot.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    "taken: w40-t0 q1: full light, bin b1",
+    AFTER_COUNTDOWN,
+  );
+
+  const download = page.locator("#flat-download");
+  await expect(download).toHaveText("Download zip (2 new)");
+  // Every PNG encode fails, as an out-of-memory canvas would.
+  await page.evaluate(() => {
+    /** @type {Window & Record<string, unknown>} */ (window).__toBlob =
+      HTMLCanvasElement.prototype.toBlob;
+    HTMLCanvasElement.prototype.toBlob = function (callback) {
+      callback(null);
+    };
+  });
+  await download.click();
+  await expect(page.locator("#flat-state")).toHaveText(
+    /^zip failed: Error: reference: PNG encoding failed; nothing was marked downloaded$/,
+  );
+  await expect(download).toBeEnabled();
+  await expect(download).toHaveText("Download zip (2 new)");
+  await expect(page.locator("#flat-save-link")).toBeHidden();
+
+  // The encoder back: the same photos save, the original among them.
+  await page.evaluate(() => {
+    const w = /** @type {Window & Record<string, unknown>} */ (window);
+    HTMLCanvasElement.prototype.toBlob =
+      /** @type {HTMLCanvasElement["toBlob"]} */ (w.__toBlob);
+  });
+  await download.click();
+  const saveLink = page.locator("#flat-save-link");
+  await expect(saveLink).toBeVisible();
+  const [zipFile] = await Promise.all([
+    page.waitForEvent("download"),
+    saveLink.click(),
+  ]);
+  const reader = new ZipReader(
+    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
+  );
+  const names = (await reader.getEntries()).map((e) => e.filename);
+  await reader.close();
+  expect(names).toContain("s01-original.png");
+  await expect(download).toHaveText("Download zip");
   expect(errors).toEqual([]);
 });
