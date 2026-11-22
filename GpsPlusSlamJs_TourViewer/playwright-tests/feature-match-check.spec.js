@@ -501,9 +501,7 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "session",
     "spot",
   ]);
-  expect(info.session).toBe(session);
-  expect(info.capture).toBe("getUserMedia");
-  expect(info.camera).toEqual({ width: 320, height: 240 });
+  expect(info.session).toMatch(/^[0-9a-f]{8}$/);
   expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
     "1b",
     "light: dimmed",
@@ -1370,7 +1368,9 @@ test("the feature matching page captures a flat target surface end to end", asyn
     1,
     "busy",
   ]);
-  expect(info.session).toMatch(/^[0-9a-f]{8}$/);
+  expect(info.session).toBe(session);
+  expect(info.capture).toBe("getUserMedia");
+  expect(info.camera).toEqual({ width: 320, height: 240 });
   expect(info.original).toEqual({ exists: false, file: null });
   expect(info.reference.file).toBe("s01-reference.png");
   expect([info.reference.width, info.reference.height]).toEqual([320, 240]);
