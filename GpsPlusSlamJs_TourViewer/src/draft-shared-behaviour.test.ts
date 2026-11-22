@@ -61,7 +61,7 @@ import {
   selectTourDocument,
   tourDocumentActions,
 } from "./tour-document.js";
-import { CODES_KEY, META_KEY } from "./draft-persistence.js";
+import { META_KEY } from "./draft-persistence.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import { editorStore } from "./test-support/editor-store.js";
 import {
@@ -245,11 +245,23 @@ function idsOf(shape: DocumentShape): string[] {
 type PageName = "phone" | "desktop";
 
 /** A new load of the tour over `browser`'s drafts, the offer unanswered. */
-type OpenPage = (browser: MemoryDraftStores) => Promise<DraftPage>;
+type OpenPage = (
+  browser: MemoryDraftStores,
+  options?: OpenOptions,
+) => Promise<DraftPage>;
+
+interface OpenOptions {
+  /** The desktop lets the open's unawaited writes (its meta) land before
+   *  it offers the draft: nothing orders them after the offer, and this is
+   *  the order in which a refused one is reported while the draft is read.
+   *  Off, the page takes production's order (`edit-main.ts`): the offer
+   *  first. The phone awaits its open as a whole either way. */
+  readonly openWritesLand?: boolean;
+}
 
 // --- the desktop editor -----------------------------------------------------
 
-const openDesktop: OpenPage = async (browser) => {
+const openDesktop: OpenPage = async (browser, options = {}) => {
   const session = await openTourFile(await tourFile());
   const manifest = openedTour();
   let warned = false;
@@ -271,11 +283,7 @@ const openDesktop: OpenPage = async (browser) => {
     },
   });
   const opened = await draft.open(session.archive.url, manifest);
-  // The open's unawaited writes (its meta) may settle before the page
-  // offers the draft: nothing orders them after it, so the harness lets
-  // them land first - the order in which a refused one reaches the store
-  // during the read.
-  await settle(() => [memoryDraftOps()]);
+  if (options.openWritesLand === true) await settle(() => [memoryDraftOps()]);
   const editor = createEditorSession({
     session,
     manifest,
@@ -977,7 +985,7 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     const { browser, page } = await freshPage(open);
     await page.edit("a", "The gate");
     browser.failMetaPuts = 1;
-    const next = await reopen(open, browser);
+    const next = await open(browser, { openWritesLand: true });
     expect(browser.refused, "the open's meta write was refused").toContain(
       META_KEY,
     );
@@ -1779,8 +1787,9 @@ function stationKeyOf(shape: DocumentShape, key: string): string | undefined {
  *  object back with its station, at a pose the record no longer holds (the
  *  removal took it off the record). The page said the write was refused,
  *  so that is a said loss, not a draft defect: the station is tainted.
- *  `lostRecord`: among the step's refused writes is the settings or the
- *  codes record, the only writes that carry a station's pose. */
+ *  `lostRecord`: among the step's refused writes is the settings record,
+ *  the only write that carries a station's pose (the codes record holds
+ *  levels, and no fault refuses it). */
 function follow(
   expected: Expected,
   before: DocumentShape,
@@ -1987,7 +1996,7 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     const lostWrite = browser.refused.length > refusedBefore;
     const lostRecord = browser.refused
       .slice(refusedBefore)
-      .some((key) => key === SETTINGS_KEY || key === CODES_KEY);
+      .some((key) => key === SETTINGS_KEY);
     const after = page.shape();
     saw(after);
     if (fault.kind === "crash") {
