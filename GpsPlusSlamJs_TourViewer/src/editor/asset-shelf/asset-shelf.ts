@@ -281,15 +281,32 @@ export function createAssetShelf(deps: AssetShelfDeps): AssetShelf {
     }
     pump();
   }
+  /** Whether the model import converts a model now: no model starts
+   *  meanwhile (a phone holds one large model at a time; the import waits
+   *  the same way for a model being optimized). */
+  const modelConverting = () =>
+    Object.values(store.getState().assetShelf.imports).some(
+      (i) => i.status === "converting",
+    );
+  let wasConverting = false;
   const unsubscribe = store.subscribe(() => {
     freeOriginals();
     putBackNamed();
+    const converting = modelConverting();
+    if (wasConverting && !converting) pump();
+    wasConverting = converting;
   });
 
   function pump(): void {
     if (closed) return;
+    const converting = modelConverting();
     const waiting = Object.values(entries())
-      .filter((e) => e.phase === "queued" && !running.has(e.id))
+      .filter(
+        (e) =>
+          e.phase === "queued" &&
+          !running.has(e.id) &&
+          !(converting && e.kind === "model"),
+      )
       .sort((a, b) => a.seq - b.seq);
     for (const entry of waiting) {
       if (running.size >= slots) return;

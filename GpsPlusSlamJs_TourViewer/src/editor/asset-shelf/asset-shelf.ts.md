@@ -12,7 +12,7 @@
 
 ## Invariants
 
-- First in, first out by arrival (`seq`), at most `slots` jobs at once; each end starts the next.
+- First in, first out by arrival (`seq`), at most `slots` jobs at once; each end starts the next. No model starts while the model import converts one (an import row `converting` in the slice; `model-import-runner.ts` waits the same way for a model being optimized), so a phone never holds two large models; other kinds still run, and the end of the conversion starts the waiting model.
 - A result is judged here, not by the optimizer:
   - "over the cap" means over the entry cap in bytes OR over `TOUR_MAX_IMAGE_PIXELS` (width x height, one known side counted as a square of it, neither side meaning no picture; a result that declares no size keeps the original's): the two caps a save refuses, so a file over either would block every save;
   - a result over the cap, or a "kept", for an original over the cap: failed, NOT retryable, with words telling the author to use a smaller file or remove it;
@@ -44,7 +44,7 @@
 
 ## Tests
 
-`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, progress, the swap, the 10 % rule, refused swaps and retry, crash retry, a Worker that never answers (through the real client, fake timers) failing its card after the watchdog, over-cap failures (a half-known picture size too), no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
+`asset-shelf.test.ts` with `test-support/fake-optimizer.ts`: order and slots, no model started while a model converts (a picture still runs), progress, the swap, the 10 % rule, refused swaps and retry, crash retry, a Worker that never answers (through the real client, fake timers) failing its card after the watchdog, over-cap failures (a half-known picture size too), no optimizer, use the original, optimize this tour, remove with undo, close, unreadable bytes; the keep
 rule at add, before a run and before a swap (a fake optimizer); a card
 put back when the document names its file again; a file kept as made.
 `asset-shelf-detail.test.ts`: a made model's detail and when it is adjustable, none without levels, a re-make from the original at a share (busy, a second request refused, the swap), back to the default, the tour's file kept when the result is no smaller, failed, kept or refused at the swap, no offer once the original is let go or for a share out of range, the detail dropped by "use the original", the level handed to the swap for the draft to keep, and the slider offered again for a made model a reload put back.
