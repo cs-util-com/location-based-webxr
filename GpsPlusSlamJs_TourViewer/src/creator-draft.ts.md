@@ -423,10 +423,14 @@ phone offers and restores the WHOLE record, by the desktop's rule
   refuses the record it read once its `readDraft` sees it rejected
   (`rejectedOnDisk`), so the deleted record is never offered alone; that
   open sweeps it.
-- **The codes record goes with the draft too**: the commit names
-  `CODES_REJECTED`, so a tab closed right after it leaves the old codes
-  inert. The codes write queued at the tap then writes this page's codes
-  (an empty record when it holds none), claiming the record back; every
+- **The codes record goes with the draft too**: while the page holds no
+  code, the commit names `CODES_REJECTED`, so a tab closed right after it
+  leaves the old codes inert. While it holds one, the record holds the
+  page's codes beside the draft's, so the commit does not name it: a tab
+  closed before the rewrite would otherwise lose the page's codes; it
+  offers the deleted draft's codes again instead, beside the page's. The
+  codes write queued at the tap then writes this page's codes (an empty
+  record when it holds none), claiming the record back; every
   later `writeCodes` claims it first by the same rule. An interrupted
   removal of a spent record is safe: a record the opened tour carries is
   spent again at the next open.
@@ -517,7 +521,8 @@ reported; nothing opened for the same key; two follows to the same key at
 once both true, to two keys the later one false; and "Delete it"'s commit point holding the settings and codes records, all seen red first: a
 settings write that runs after the tour closed or after a `follow` claims
 the rejection, a reopen the commit lands in the middle of offers nothing,
-a tab closed right after the commit leaves the codes inert, and a code
+a tab closed right after the commit leaves the codes inert but keeps a
+code the page measured, and a code
 written after "Delete it" claims the codes record); composed, two Finishes and the
 reopen of the saved file: `tour-document-parity.test.ts`. The gate: `draft-edit-gate.test.ts` (rows and a property);
 the rule across both pages, with random view / "Not now" / edit /

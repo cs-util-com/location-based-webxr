@@ -139,12 +139,16 @@ are the framework's.
   A meta that does not read, or does not read as one (`isMeta`,
   `readDraft`'s rule), rejects nothing.
 - `CODES_REJECTED` (`":codes"`) - the codes record's entry, by the same
-  rule: "Delete it" names it in its commit, `readDraftCodes` (and so
+  rule: the phone's "Delete it" names it in its commit while the page
+  holds no code of its own, `readDraftCodes` (and so
   `readDraft`'s `level` and `levels`) reads no codes the meta rejects,
   and `rejectedIds` keeps it while `CODES_KEY` is on disk.
-- A discard always names both entries, whether or not a record is on disk;
-  `readDraft` keeps an entry in `rejectedIds` only while its record's
-  file is there, so the next meta write prunes it.
+- The phone's discard (`creator-draft.ts`) names `SETTINGS_REJECTED`
+  always and `CODES_REJECTED` while the page holds no code, whether or not
+  a record is on disk; the desktop's (`editor/editor-draft.ts`) names
+  `SETTINGS_REJECTED` only when a settings record was offered, and never
+  `CODES_REJECTED`. `readDraft` keeps an entry in `rejectedIds` only
+  while its record's file is there, so the next meta write prunes it.
 - `metaRejectedIds(store)` - every id the store's meta rejects (none for
   a missing meta or one that does not read as one).
 - `writeMetaWithout(store, id)` - rewrite the store's meta without `id`

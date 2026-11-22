@@ -1080,15 +1080,21 @@ export function wireCreatorDraft(deps: {
     // next read refuses them whether or not their files are still there,
     // and the deletes after it are housekeeping. Nothing is removed BEFORE
     // the write lands, so a reload during it sees the draft as it was.
-    // The settings and codes records go with the draft: every edit
-    // waited, so nothing of this page's is in the settings record, and
-    // this page's codes are written again below. Named whether or not a
-    // record is on disk; the next read prunes an entry once no file is
-    // left.
+    // The settings record goes with the draft: every edit waited, so
+    // nothing of this page's is in it. The codes record goes with it too
+    // while this page holds no code; once it does, the record holds this
+    // page's codes beside the draft's, so it is not rejected (a crash
+    // before its rewrite below would lose this page's codes) and the
+    // rewrite drops the draft's. A crash in between then offers the
+    // deleted draft's codes again, beside this page's: visible, never
+    // lost. Named whether or not a record is on disk; the next read
+    // prunes an entry once no file is left.
+    const codesAtTap = pageCodes();
+    const rejectsCodes = !hasPageCodes();
     const rejectedIds = [
       ...notLive(waiting.storedIds),
       SETTINGS_REJECTED,
-      CODES_REJECTED,
+      ...(rejectsCodes ? [CODES_REJECTED] : []),
     ];
     // In progress (async-ui-feedback): the offer stays, its buttons off,
     // until the commit says how it went. Edits keep waiting meanwhile.
@@ -1104,15 +1110,13 @@ export function wireCreatorDraft(deps: {
     // chain guarantees ordering, not immediacy: the `put` itself is issued
     // from a `then`, so it is a microtask away at best (PR #457 review).
     const committed = recordMeta(tourUrl);
-    // The draft's codes go with it once the commit LANDED (the commit
-    // rejects the record, so a crash right after it leaves the old codes
-    // inert): this page's only, as they stood at the tap - an empty record
-    // when it holds none - claiming the record back. Queued NOW, so a
+    // The draft's codes go with it once the commit LANDED: this page's
+    // only, as they stood at the tap - an empty record when it holds none,
+    // claiming the record back. Queued NOW, so a
     // write of the codes issued after the tap - live work, newer - lands
     // after it, without the rejected ones. A commit that did not land
     // writes nothing: the draft is still there, its codes with it.
     const held = undecided;
-    const codesAtTap = pageCodes();
     void draftWrites
       .run(codesChainKey(tourUrl), async () => {
         if (!(await committed)) return false;

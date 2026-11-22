@@ -91,10 +91,14 @@ function flush(): Promise<void> {
   return settle(() => [memoryDraftOps()]);
 }
 
+/** A code this page measured: what its codes facade holds. */
+type PageCode = { id: string; json: string };
+
 async function wired(
   ns: ReturnType<typeof namespaces>,
   tour = tourOf([pin("a")]),
   url = OLD,
+  pageCode: PageCode | null = null,
 ) {
   const store = createTourViewerStore();
   const ctx = createTourViewerSession(store);
@@ -113,10 +117,10 @@ async function wired(
     openDraftStore: ns.open,
     visitLog: createVisitLog(),
     codes: {
-      inHand: () => null,
+      inHand: () => pageCode,
       restoreInHand: () => undefined,
       restoreLevels: () => undefined,
-      notHosted: () => [],
+      notHosted: () => (pageCode === null ? [] : [pageCode]),
     } as never,
     wizard: { revealStep: () => undefined },
     sessionLive: () => false,
@@ -591,6 +595,34 @@ describe("Delete it's commit point holds the settings and codes records", () => 
     ).not.toContain('"old"');
   });
 
+  // Why: the codes record holds the page's own codes beside the waiting
+  // draft's. Named in the commit while the page held a code, a tab closed
+  // between the commit and the record's rewrite left the page's code
+  // inert, and the next open dropped it: a code measured while the offer
+  // waited, lost without a word. With page codes the record is rewritten
+  // after the commit instead; a crash then offers the deleted draft's
+  // codes again, beside the page's, which is visible and recoverable.
+  it("a tab closed right after the commit keeps a code the page measured", async () => {
+    const ns = await seeded({
+      [CODES_KEY]: JSON.stringify({ level: LEVEL, levels: [LEVEL] }),
+    });
+    const mine = { id: "mine", json: "{}" };
+    const page = await wired(ns, tourOf([pin("a")]), OLD, mine);
+    expect(page.dom.draftOffer.hidden, "the code is offered").toBe(false);
+    expect(ns.files(OLD).get(CODES_KEY) as string).toContain('"mine"');
+    ns.crashAfter = 1;
+    page.dom.draftDiscard.click();
+    await flush();
+    ns.crashAfter = null;
+    const next = await wired(ns);
+    await flush();
+    expect(
+      (ns.files(OLD).get(CODES_KEY) as string | undefined) ?? "",
+      "the page's code is still on disk",
+    ).toContain('"mine"');
+    expect(next.dom.draftOffer.hidden, "and offered").toBe(false);
+  });
+
   // Why: a code measured after "Delete it" is newer than the rejection:
   // its write claims the codes record, or the next open would hide it.
   it("a code measured after Delete it claims the codes record, and the next open offers it", async () => {
@@ -633,3 +665,4 @@ describe("Delete it's commit point holds the settings and codes records", () => 
     expect(next.dom.draftOffer.hidden, "the new code is offered").toBe(false);
   });
 });
+
