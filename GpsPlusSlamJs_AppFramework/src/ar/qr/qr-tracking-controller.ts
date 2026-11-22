@@ -26,6 +26,7 @@ import type { CornerOrderSource } from './qr-corner-order.js';
 import type { CapturedCameraFrame } from '../captured-camera-frame.js';
 import type { QrLevel } from './qr-level.js';
 import { buildQrGpsVotes } from './qr-gps-vote.js';
+import { requestAnchorRelease } from '../anchor-release.js';
 import { validateQuad } from './qr-pose.js';
 import {
   createDetectionScheduler,
@@ -120,9 +121,11 @@ export interface QrTrackingControllerConfig {
   /**
    * Dispatch the synthetic GPS votes (production: the Recorder dispatches
    * `recordGpsEvent` per payload, the Tour Viewer one `recordGpsEventBatch`
-   * per lock).
+   * per lock). Return `false` when no vote was cast (a spent budget, no
+   * session zero): only a lock whose votes were cast asks the deferred
+   * anchors to re-place at once (`requestAnchorRelease('code-lock')`).
    */
-  dispatchVotes: (votes: RecordGpsEventPayload[]) => void;
+  dispatchVotes: (votes: RecordGpsEventPayload[]) => boolean | void;
   /**
    * Emitted on every lock, independent of the vote (Note 3). Apps wire this to
    * `dispatch(recordQrDetection(event))`. The vote is conditional on `geo`;
@@ -444,7 +447,10 @@ export function createQrTrackingController(
                 : {}),
               ...(voteCount !== undefined ? { count: voteCount } : {}),
             });
-            dispatchVotes(votes);
+            const cast = dispatchVotes(votes);
+            // The code's correction lands on the anchors at once, before
+            // the app's own lock handling runs.
+            if (cast !== false) requestAnchorRelease('code-lock');
           }
         }
 

@@ -74,6 +74,15 @@ const AR_CAMERA_FAR = 200;
  * GPS repeatedly → under arWorldGroup**, and then the alignment⁻¹ rule below
  * applies. Use `createGpsAnchor`, which does the conversion for you.
  *
+ * **GPS-world content that should follow alignment corrections without
+ * visible jumps → under arWorldGroup through `deferredAnchor`**
+ * (`ar/deferred-anchors`). It sits at its NUE pose, keeps still relative to
+ * the camera while any of it is in view, and re-places to the latest
+ * correction once it is out of view. Content that must stay rigid in
+ * odometry for one visit may use a static inverse-alignment container (the
+ * Tour Viewer's creator previews do); never re-solve content outside
+ * arWorldGroup.
+ *
  * The trade, so the choice is informed rather than copied: scene-root content
  * is geographically truthful but appears to shift against the camera
  * passthrough as the fusion refines the alignment (the lerp is what smooths

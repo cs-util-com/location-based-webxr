@@ -293,6 +293,49 @@ describe('wireQrRecording', () => {
     expect(store.dispatch).toHaveBeenCalledTimes(MAX_VOTED_LOCKS_PER_CODE * 4);
   });
 
+  it('tells the controller whether the votes were cast', () => {
+    // Why this test matters: the controller asks the deferred anchors to
+    // re-place at once only when a lock's votes were cast. A dropped batch
+    // (no code named yet, no session zero, a spent budget) corrected
+    // nothing, so answering "cast" for it would move content in view for
+    // no reason.
+    const answer = (zero: { lat: number; lon: number } | null) => {
+      const store = makeStore(null, zero);
+      const { ref } = makeStoreRef(store);
+      wireQrRecording({
+        storeRef: ref as never,
+        getArWorldGroup: () => null,
+        qr: { ...qr, useLevels: true },
+        setProducer: vi.fn(),
+        readAlignment: NO_ALIGNMENT,
+      });
+      const config = capturedTrackingConfig.current!;
+      const dispatchVotes = config.dispatchVotes as (v: unknown[]) => unknown;
+      return { config, dispatchVotes };
+    };
+
+    const unnamed = answer({ lat: 50.1, lon: 8.2 });
+    expect(unnamed.dispatchVotes([{}, {}, {}, {}])).toBe(false);
+
+    const noZero = answer(null);
+    (noZero.config.onDetection as (e: { text: string }) => void)({
+      text: 'code-a',
+    });
+    expect(noZero.dispatchVotes([{}, {}, {}, {}])).toBe(false);
+
+    const budget = answer({ lat: 50.1, lon: 8.2 });
+    (budget.config.onDetection as (e: { text: string }) => void)({
+      text: 'code-a',
+    });
+    const answers = Array.from({ length: MAX_VOTED_LOCKS_PER_CODE + 1 }, () =>
+      budget.dispatchVotes([{}, {}, {}, {}])
+    );
+    expect(answers.slice(0, MAX_VOTED_LOCKS_PER_CODE)).toEqual(
+      Array.from({ length: MAX_VOTED_LOCKS_PER_CODE }, () => true)
+    );
+    expect(answers[MAX_VOTED_LOCKS_PER_CODE]).toBe(false);
+  });
+
   it('lets the frame stamp the record and the frame source own the cadence', () => {
     // Why this test matters: since QR perf plan M4 the record's timestamp is the
     // FRAME's epoch capture time (performance.timeOrigin + xrTime, the depth

@@ -21,9 +21,13 @@ import type * as THREE from 'three';
 import { createAlignmentLerper } from './alignment-lerper.js';
 import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { registerSessionDisposer } from '../ar/session-disposers.js';
-import { subscribeToSelector } from '../state/subscribe-to-selector.js';
 import type { SubscribableStore } from '../state/subscribe-to-selector.js';
-import { selectAlignmentMatrix } from '../state/app-selectors.js';
+import {
+  createArParentTarget,
+  devWorldJumpFromPage,
+  registerArParentBinding,
+  type ArParentBinding,
+} from '../ar/ar-parent-target.js';
 
 export interface ArWorldGroupAlignmentOptions {
   /** The store whose alignment selector drives the lerper. */
@@ -68,26 +72,49 @@ export function enableArWorldGroupAlignment(
 ): ArWorldGroupAlignmentHandle {
   const lerper = createAlignmentLerper(options.arWorldGroup, options.lerpRate);
 
-  // Adopt an alignment that is already present when we enable. `subscribeToSelector`
-  // only fires on *change*, so an app that enables after the first fix would
-  // otherwise never register the view until the next alignment update.
-  const current = selectAlignmentMatrix(options.store.getState());
-  if (current !== null && current !== undefined) {
-    lerper.setTarget(current);
-  }
+  // T (the store's alignment, plus the development-only synthetic jump) is
+  // composed ONCE, in the parent target, and both the lerper and the deferred
+  // anchors under this group read it: two readers composing it separately
+  // could disagree, and content would then carry the alignment twice.
+  const target = createArParentTarget(options.store, {
+    devJump: devWorldJumpFromPage(),
+  });
+  // Adopt an alignment that is already present when we enable: the target
+  // reports only later changes, so an app that enables after the first fix
+  // would otherwise never register the view until the next alignment update.
+  if (target.version() > 0) lerper.setTarget(target.target().toArray());
+  const unsubscribe = target.onTargetChange((t) => lerper.setTarget(t));
 
-  const unsubscribe = subscribeToSelector(
-    options.store,
-    selectAlignmentMatrix,
-    (matrix) => {
-      if (matrix !== null && matrix !== undefined) {
-        lerper.setTarget(matrix);
-      }
-    }
-  );
-
-  const unregister = registerFrameUpdate((dt) => {
+  // The group's anchor set (if any) runs its pass in this same callback,
+  // right after the lerp step, so it reads this frame's lerped matrix.
+  let pass: ((dt: number, elapsedS: number) => void) | null = null;
+  const disposeListeners = new Set<() => void>();
+  const step = (dt: number, elapsedS: number): void => {
+    target.tick(elapsedS);
     lerper.update(dt);
+  };
+  const binding: ArParentBinding = {
+    group: options.arWorldGroup,
+    target,
+    step,
+    attachPass(fn) {
+      pass = fn;
+      return () => {
+        if (pass === fn) pass = null;
+      };
+    },
+    onDispose(listener) {
+      disposeListeners.add(listener);
+      return () => {
+        disposeListeners.delete(listener);
+      };
+    },
+  };
+  const unregisterBinding = registerArParentBinding(binding);
+
+  const unregister = registerFrameUpdate((dt, elapsed) => {
+    step(dt, elapsed);
+    pass?.(dt, elapsed);
   });
 
   let disposed = false;
@@ -97,7 +124,12 @@ export function enableArWorldGroupAlignment(
       disposed = true;
       unsubscribe();
       unregister();
+      unregisterBinding();
+      target.dispose();
       lerper.dispose();
+      // An anchor set driven by this binding goes back to its own tick.
+      for (const listener of [...disposeListeners]) listener();
+      disposeListeners.clear();
       // Remove ourselves from the session registry so the teardown flush won't
       // re-run this (and so an early manual dispose doesn't leave a dead entry).
       deregisterSessionDisposer();

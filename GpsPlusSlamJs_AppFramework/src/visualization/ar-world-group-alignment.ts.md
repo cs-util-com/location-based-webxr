@@ -24,14 +24,24 @@
       self-deregistering so the manual `dispose()` and the teardown flush never
       double-run.
 
+- **The parent binding (deferred anchors):** T is composed once, in
+  `ar/ar-parent-target.ts` (the store alignment plus, in development builds
+  only, the `?devWorldJumpM` / `?devWorldJumpDeg` synthetic jump), and the
+  helper registers a binding for the group (`registerArParentBinding`). The
+  lerper and the deferred anchors under the group (`ar/deferred-anchors.ts`)
+  both read that one T, so content never carries the alignment twice. The
+  group's anchor set runs its pass inside this helper's frame update, right
+  after the lerp step, so it reads the frame's lerped matrix. `dispose()`
+  unregisters the binding, disposes the target and tells the binding's
+  dispose listeners (the anchor set then ticks itself).
+
 - **Invariants & assumptions:**
   - The first alignment target is applied **instantly** (via the lerper's
     first-target rule) so the view never slides from identity; subsequent targets
     ease toward their value.
-  - An alignment already present at enable time is adopted immediately
-    (`selectAlignmentMatrix(store.getState())`), because `subscribeToSelector`
-    only fires on change.
-  - `null` alignment is ignored (no spurious identity target).
+  - An alignment already present at enable time is adopted immediately,
+    because the parent target's `onTargetChange` only fires on change.
+  - `null` (or non-finite) alignment is ignored (no spurious identity target).
   - **Single-driver rule:** the helper owns its lerper and drives it from the
     frame loop. Do **not** call it for a group that already has an externally
     driven lerper (the recorder owns its own and must not be double-lerped).
@@ -50,7 +60,9 @@
   `dispose()`-after-flush is an idempotent no-op, and a manual `dispose()`
   deregisters so the later flush is a no-op). Driven with the real `frame-loop`
   (`runFrameUpdates`) + `session-disposers` (`runSessionDisposers`) + a minimal
-  fake `SubscribableStore`.
+  fake `SubscribableStore`. The parent binding: registered with the lerper's
+  target, pass after the lerp step, unregistered on dispose with its
+  listeners told.
 
 - **Related:** `alignment-lerper.ts` (the smoothing primitive),
   `ar/session-disposers.ts` (the teardown registry this binds to),

@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Content anchors that re-place only while none of it is in view**, at
+  its current and its new pose, after two frames out of view. Until the
+  alignment is mature and while no code has voted, it follows the alignment
+  as scene-root content does. After an odometry frame switch (a frame-epoch
+  change, or a camera position step above 1 m between two frames) it
+  follows the alignment for a short window, whose longest span grows with
+  the session's length. A code lock re-places it once, at once.
+  - **`ar/deferred-anchors`** (deep import): `deferredAnchor`.
 - **Is any part of an anchor's subtree in view?** A conservative test that
   never says "out" while a drawn part is in view (CSS3D objects count as
   their origin point only), so content can re-place only while none of it is
@@ -200,6 +208,13 @@
 
 ### Changed
 
+- `ar/qr/qr-tracking-controller`: `dispatchVotes` may return `false` to say
+  it cast no votes. Otherwise the controller asks every deferred anchor to
+  re-place once. Returning nothing keeps today's meaning. Its type is now
+  `(votes) => boolean | void`: a callback whose expression body returns
+  another value (`(v) => list.push(...v)`) needs braces.
+- `visualization/ar-world-group-alignment`: the binding drives the deferred
+  anchors under its group right after its lerp step. Options unchanged.
 - `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
   `utils/data-uri`, strictly: a payload with whitespace or without its
   padding, which plain `atob` accepted, is now an image that cannot be

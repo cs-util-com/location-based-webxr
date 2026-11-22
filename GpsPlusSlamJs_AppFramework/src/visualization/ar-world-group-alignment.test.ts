@@ -21,6 +21,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { enableArWorldGroupAlignment } from './ar-world-group-alignment.js';
+import { getArParentBinding } from '../ar/ar-parent-target.js';
 import { runFrameUpdates, clearFrameUpdates } from '../ar/frame-loop.js';
 import {
   runSessionDisposers,
@@ -230,5 +231,49 @@ describe('enableArWorldGroupAlignment', () => {
       check();
     }
     handle.dispose();
+  });
+});
+
+// Why: the deferred anchors under the group read T from this binding and
+// run their pass inside its frame update. A pass that ran before the lerp
+// step, or a binding that outlived its dispose, would place content
+// against a stale or dead T.
+describe('enableArWorldGroupAlignment: the parent binding', () => {
+  it('registers a binding whose target is the lerper target, and runs the pass after the lerp step', () => {
+    const a = makeNonTrivialAlignment(7);
+    const store = makeFakeStore(a);
+    const group = new THREE.Group();
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+    const binding = getArParentBinding(group);
+    expect(binding).not.toBeNull();
+    expectMatrixClose(binding!.target.target().toArray(), a);
+    const seen: number[][] = [];
+    binding!.attachPass(() => seen.push(group.matrix.toArray()));
+    const b = makeNonTrivialAlignment(8);
+    store.setAlignment(b);
+    runFrameUpdates(1 / 30, 0);
+    expect(seen).toHaveLength(1);
+    // The pass saw this frame's lerped matrix, not the one before it.
+    expect(seen[0]).toEqual(group.matrix.toArray());
+    expectMatrixClose(binding!.target.target().toArray(), b);
+    handle.dispose();
+  });
+
+  it('unregisters on dispose, stops the pass and tells its listeners', () => {
+    const store = makeFakeStore(makeNonTrivialAlignment(9));
+    const group = new THREE.Group();
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+    const binding = getArParentBinding(group)!;
+    let passes = 0;
+    let disposed = 0;
+    binding.attachPass(() => (passes += 1));
+    binding.onDispose(() => (disposed += 1));
+    handle.dispose();
+    runFrameUpdates(1 / 30, 0);
+    expect(getArParentBinding(group)).toBeNull();
+    expect(passes).toBe(0);
+    expect(disposed).toBe(1);
+    handle.dispose();
+    expect(disposed).toBe(1);
   });
 });
