@@ -4,10 +4,8 @@
 
 The one allowlist of media a tour archive may carry - extensions and the
 MIME types they are served as - plus the inertness check for `.glb`
-models. Tour kit plan K0
-(`GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`,
-review finding D12: content stays inert, because the page that opens a
-tour from any link is the origin that will hold a creator's signing key).
+models. Tour content stays inert, because the page that opens a tour from
+any link is the origin that will hold a creator's signing key.
 
 ## Public API
 
@@ -60,15 +58,14 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   is fetched as the page itself, and the meshopt plugin loads the buffer
   its extension names before it looks for a decoder, declared or not.
   Behaviour checked in three 0.170.0, 0.180.0 and 0.185.1.
-- **The chunk structure is exactly what the format allows** (K0 milestone
-  review R8): one JSON chunk, an optional binary chunk, then the end, with
+- **The chunk structure is exactly what the format allows**: one JSON chunk, an optional binary chunk, then the end, with
   the header's length equal to the data's. three.js's loader walks EVERY
   chunk and takes a later JSON chunk over the first, so a check of the
   first chunk alone passed a model whose second JSON chunk points at an
   http URL. The chunks are read by the shared `utils/glb-chunks.ts`
   (`readGlbChunks`), the reader the Tour Viewer's model optimizer and its
   check page use too; its reasons are the ones this check returns.
-- **The pixel cap (K4 review R2):** an image is decoded at the size its
+- **The pixel cap:** an image is decoded at the size its
   file states, so a few kilobytes of crafted header can make a phone
   allocate gigabytes. `TOUR_MAX_IMAGE_PIXELS` is 4096 x 4096 (16.8 MP, 64
   MiB once decoded, also iOS Safari's largest canvas): it admits a 12 MP
@@ -111,7 +108,7 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 ## Who uses it
 
 - `tour-archive.ts`: `tourContentEntryName` accepts only allowlisted
-  extensions (before K0: any 1-5 characters).
+  extensions (before this allowlist, any 1-5 characters).
 - `tour-manifest.ts`: a photo's `content/<id>.<ext>` must be an image.
 - The Tour Viewer's `tour-session.ts`: the gallery's image test, the Blob
   type of every entry, and `loadContentEntry`, which refuses a

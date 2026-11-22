@@ -788,16 +788,10 @@ function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
   if (r.isCSS3DObject) {
     return [nodeEntry(object, ORIGIN, 0, false)];
   }
-  if (r.isSkinnedMesh) {
-    const mesh = object as THREE.SkinnedMesh;
-    if (skinsFromGenericValues(mesh)) {
-      return [nodeEntry(object, ORIGIN, Infinity, false)];
-    }
-    const bound = skinBound(mesh, bind);
-    if (bound) return [{ kind: 'skinned', mesh, bound }];
-    // No skeleton, or no positive weight: still drawn (zero weights collapse
-    // it onto its origin), so bounded like a plain mesh rather than dropped.
-  }
+  const skinned = r.isSkinnedMesh
+    ? skinnedEntry(object as THREE.SkinnedMesh, bind)
+    : null;
+  if (skinned) return [skinned];
   const morphed = morphBound(r, bind);
   if (morphed) {
     return [
@@ -818,6 +812,22 @@ function entriesFor(object: THREE.Object3D, bind: BindLookup): BoundEntry[] {
   return [
     nodeEntry(object, ORIGIN, local.center.length() + local.radius, false),
   ];
+}
+
+/**
+ * A skinned mesh's entry: endless when its skin is unknown, else its skinned
+ * bound. null with no skeleton (three cannot draw it: its renderer calls
+ * `skeleton.update()`) or no positive weight (still drawn, collapsed onto
+ * its origin): it is then bounded like a plain mesh rather than dropped.
+ */
+function skinnedEntry(
+  mesh: THREE.SkinnedMesh,
+  bind: BindLookup
+): BoundEntry | null {
+  const skin = skinAttributes(mesh);
+  if (skin === 'unknown') return nodeEntry(mesh, ORIGIN, Infinity, false);
+  const bound = skin && skinBound(mesh, skin, bind);
+  return bound ? { kind: 'skinned', mesh, bound } : null;
 }
 
 const ORIGIN = new THREE.Vector3();
@@ -860,10 +870,11 @@ const BIND_ATTRIBUTES = ['position', 'skinIndex', 'skinWeight'] as const;
  * else `compute()`. An edit with `needsUpdate` bumps an attribute's version,
  * a replaced attribute or geometry brings other ids, and a rebind changes
  * `toBone`; each of these recomputes. An edit in place without
- * `needsUpdate` is not seen, even where three uploads it anyway (an edit
- * before the part's first render, `normalizeSkinWeights()` included, and
- * morph targets rebuilt after `geometry.dispose()`): such a caller sets `needsUpdate` or calls
- * `markAnchorBoundsChanged` (sidecar, Known limits). Without a lookup
+ * `needsUpdate` is not seen, even where three uploads it anyway: an edit
+ * before the part's first render (`normalizeSkinWeights()` is one, as it
+ * writes the weights in place without `needsUpdate`) and morph targets
+ * rebuilt after `geometry.dispose()`. Such a caller sets `needsUpdate` or
+ * calls `markAnchorBoundsChanged` (sidecar, Known limits). Without a lookup
  * (merge roots, built once until the bounds change) it always computes.
  */
 function keptBind<T extends SkinBound | MorphBound>(
@@ -1052,10 +1063,11 @@ function sphereInRoot(
   }
   if (r.isSkinnedMesh) {
     const mesh = r as unknown as THREE.SkinnedMesh;
-    if (skinsFromGenericValues(mesh)) {
+    const skin = skinAttributes(mesh);
+    if (skin === 'unknown') {
       return new THREE.Sphere(new THREE.Vector3(), Infinity);
     }
-    const bound = skinBound(mesh, null);
+    const bound = skin && skinBound(mesh, skin, null);
     if (bound) {
       const centre = new THREE.Vector3();
       skinnedWorldSphere(mesh, bound, centre);
@@ -1185,12 +1197,14 @@ function isMergeable(entry: BoundEntry): entry is NodeEntry {
  * Merge the two alive clusters whose centres are nearest until `target`
  * remain. Each cluster keeps its nearest alive neighbour. A cluster whose
  * neighbour was merged is only marked stale (its recorded distance is then
- * a lower bound) and rescanned when it is picked, so a merge costs
- * amortized O(n) even when many clusters share one neighbour: in 3-D a
- * point is the nearest neighbour of a bounded number of points, so a merge
- * leaves O(1) stale clusters behind, and coincident centres keep the
- * recorded distance exact (zero), so a stale pick is rescanned once and
- * taken. The whole run is O(n^2) time and O(n) memory.
+ * a lower bound) and rescanned when it is picked. A merge scans the table
+ * once and rescans, at O(n) each, only the stale clusters it picks: with
+ * distinct centres a merge leaves a bounded number of clusters stale (in
+ * 3-D a point is the nearest neighbour of a bounded number of points), and
+ * coincident centres keep the recorded distance exact (zero), so a stale
+ * pick is rescanned once and taken. That is O(n) per merge on average over
+ * the run, not for every merge; the whole run is O(n^2) time and O(n)
+ * memory.
  */
 function mergeNearestPairs(clusters: Cluster[], target: number): void {
   let alive = clusters.length;
@@ -1321,10 +1335,9 @@ interface SkinBound {
 
 function skinBound(
   mesh: THREE.SkinnedMesh,
+  attrs: SkinAttributes,
   bind: BindLookup | null
 ): SkinBound | null {
-  const attrs = skinAttributes(mesh);
-  if (!attrs) return null;
   const skeleton = attrs.skeleton;
   const toBone = skeleton.bones.map((_, i) =>
     new THREE.Matrix4().multiplyMatrices(
@@ -1338,7 +1351,7 @@ function skinBound(
 }
 
 function skinBoundOf(
-  attrs: NonNullable<ReturnType<typeof skinAttributes>>,
+  attrs: SkinAttributes,
   toBone: readonly THREE.Matrix4[]
 ): SkinBound | null {
   const { geometry, position, skinIndex, skinWeight } = attrs;
@@ -1369,39 +1382,39 @@ function skinBoundOf(
 
 type Attribute = THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
 
-/**
- * A bound skinned mesh with a position but no `skinIndex` or `skinWeight`.
- * three still skins it, reading the missing attribute from the generic
- * vertex attribute value at its location, which another program may have
- * set: its weights and bone indices are unknown, so it has no finite bound
- * and counts as in view wherever it is.
- */
-function skinsFromGenericValues(mesh: THREE.SkinnedMesh): boolean {
-  const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
-  if (!geometry || !mesh.skeleton || !geometry.getAttribute('position')) {
-    return false;
-  }
-  return (
-    !geometry.getAttribute('skinIndex') || !geometry.getAttribute('skinWeight')
-  );
+/** The geometry, skeleton and skinning attributes a skinned bound is walked from. */
+interface SkinAttributes {
+  readonly geometry: THREE.BufferGeometry;
+  readonly skeleton: THREE.Skeleton;
+  readonly position: Attribute;
+  readonly skinIndex: Attribute;
+  readonly skinWeight: Attribute;
 }
 
-/** The geometry, skeleton and skinning attributes, or null when one is missing. */
-function skinAttributes(mesh: THREE.SkinnedMesh): {
-  geometry: THREE.BufferGeometry;
-  skeleton: THREE.Skeleton;
-  position: Attribute;
-  skinIndex: Attribute;
-  skinWeight: Attribute;
-} | null {
+/**
+ * What a skinned mesh is skinned from. null without a geometry, a skeleton
+ * or a position. 'unknown' for a bound mesh whose `skinIndex` or
+ * `skinWeight` is missing or not four components wide: three still skins
+ * it, reading four of each per vertex, a missing attribute from the generic
+ * vertex attribute value at its location (which another program may have
+ * set) and a narrower one's missing components as (0, 0, 0, 1), so its
+ * weights and bone indices are not what the attribute holds and it has no
+ * finite bound: it counts as in view wherever it is.
+ */
+function skinAttributes(
+  mesh: THREE.SkinnedMesh
+): SkinAttributes | 'unknown' | null {
   const geometry = mesh.geometry as THREE.BufferGeometry | undefined;
   const skeleton = mesh.skeleton as THREE.Skeleton | undefined;
   if (!geometry || !skeleton) return null;
   const position = geometry.getAttribute('position') as Attribute | undefined;
+  if (!position) return null;
   const skinIndex = geometry.getAttribute('skinIndex') as Attribute | undefined;
   const skinWeight = geometry.getAttribute('skinWeight') as
     Attribute | undefined;
-  if (!position || !skinIndex || !skinWeight) return null;
+  if (skinIndex?.itemSize !== 4 || skinWeight?.itemSize !== 4) {
+    return 'unknown';
+  }
   return { geometry, skeleton, position, skinIndex, skinWeight };
 }
 
@@ -1435,7 +1448,7 @@ function accumulateSkinVertex(
     acc.reach[t] = skinQ.length();
   }
   let sum = 0;
-  for (let c = 0; c < skinWeight.itemSize; c += 1) {
+  for (let c = 0; c < 4; c += 1) {
     const w = Math.max(0, skinWeight.getComponent(vi, c));
     if (w === 0) continue;
     const bone = skinIndex.getComponent(vi, c);

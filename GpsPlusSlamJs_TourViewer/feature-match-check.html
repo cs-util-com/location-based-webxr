@@ -217,6 +217,55 @@
       textarea {
         height: 30vh;
       }
+      .pick {
+        flex: 1 1 12rem;
+        min-width: 0;
+        max-width: 100%;
+        margin-right: 0;
+      }
+      .pick select {
+        flex: 1;
+        min-width: 0;
+        max-width: 100%;
+        min-height: 44px;
+      }
+      .guide {
+        margin: 8px 0;
+        padding: 8px 10px;
+        border-left: 4px solid #2f5d78;
+        background: #eef3f6;
+        border-radius: 6px;
+      }
+      .guide p,
+      .guide ol,
+      .guide ul {
+        margin: 4px 0;
+      }
+      .guide ol,
+      .guide ul {
+        padding-left: 1.4em;
+      }
+      .guide li {
+        margin: 2px 0;
+      }
+      .guide-purpose {
+        font-weight: 600;
+      }
+      .guide-avoid {
+        color: #8a3b12;
+      }
+      #before-start {
+        margin: 0 0 8px;
+      }
+      .light-warning {
+        margin: 0 0 10px;
+        padding: 10px 12px;
+        border: 2px solid #a02020;
+        border-radius: 8px;
+        background: #fdecea;
+        color: #7a1616;
+        font-weight: 600;
+      }
       .row {
         display: flex;
         flex-wrap: wrap;
@@ -244,6 +293,36 @@
               <span class="num">1</span> Take photo A
               <span class="step-mark"></span>
             </h2>
+            <details id="before-start" open>
+              <summary>Before you start</summary>
+              <ul id="before-start-list" class="guide"></ul>
+            </details>
+            <p class="hint">
+              Pick the pair, follow its steps below, then take photo A.
+            </p>
+            <div class="row">
+              <label class="pick"
+                >Pair
+                <select id="pair"></select>
+              </label>
+              <label
+                >Spot
+                <input
+                  id="spot"
+                  type="number"
+                  min="1"
+                  max="3"
+                  value="1"
+                  size="2"
+              /></label>
+            </div>
+            <div id="pair-guide" class="guide" aria-live="polite">
+              <p id="guide-purpose" class="guide-purpose"></p>
+              <ol id="guide-steps"></ol>
+              <p id="guide-avoid" class="guide-avoid"></p>
+              <p id="guide-spot" class="hint" hidden></p>
+            </div>
+            <p id="pair-state" class="hint" aria-live="polite"></p>
             <div class="row">
               <button id="capture-a" type="button">Start camera</button>
               <span id="state-a" aria-live="polite">not taken</span>
@@ -255,8 +334,9 @@
               <span class="step-mark"></span>
             </h2>
             <p class="hint">
-              Hold the phone the same way as for A, step about 1 m to the side,
-              and keep most of what A shows in view.
+              Follow the pair's steps above: change only what the pair names
+              (the light, the turn, the distance or the side step), and keep
+              most of what A shows in view.
             </p>
             <div class="row">
               <button id="capture-b" type="button" disabled>
@@ -272,8 +352,10 @@
             </h2>
             <p class="hint">
               Starts by itself after photo B, with every method and size ticked
-              in the options; the camera is off meanwhile. The pictures under
-              Results fill in as each one finishes. A full run takes minutes.
+              in the options; a photo test pair sets the rest itself (1 run, no
+              warm-up, WebGPU, or WASM on a phone without WebGPU, one XFeat
+              file). The camera is off meanwhile. The pictures under Results
+              fill in as each one finishes. A full run takes minutes.
             </p>
             <div class="row">
               <button id="run" type="button" class="secondary" disabled>
@@ -295,18 +377,25 @@
             </div>
             <p id="save-links" class="row"></p>
             <p class="hint">
-              Offers one zip holding everything, this page's log and report
-              included, and each file on its own, to save on this device only:
-              the two photos as PNG, a JSON of their sizes, grey values and this
-              device's browser, OS version, model, cores, memory, screen and
-              GPU, and a JSON of every method's keypoints and matches. The
-              photos carry pixels only, no location, time or EXIF data. Nothing
-              is uploaded.
+              Every file is named by its running number and pair, and after
+              Download all the pair moves on to the next one. Offers one zip
+              holding everything, this page's log and report included, and each
+              file on its own, to save on this device only: the two photos as
+              PNG, a JSON of their sizes, grey values and this device's browser,
+              OS version, model, cores, memory, screen and GPU, and a JSON of
+              every method's keypoints and matches. The photos carry pixels
+              only, no location, time or EXIF data. Nothing is uploaded.
             </p>
           </li>
         </ol>
         <details id="options">
           <summary>Options: everything is on, untick to leave out</summary>
+          <p id="options-note" class="hint">
+            Photo tests set these themselves: while a pair is picked, a camera
+            run uses 1 run, no warm-up, WebGPU only (WASM where the phone has no
+            WebGPU, named in the log) and xfeat_fp16.tflite only. Pick the pair
+            "none" for a camera run with these Options.
+          </p>
           <fieldset>
             <legend>Methods</legend>
             <label
@@ -385,6 +474,7 @@
         </details>
       </section>
       <section aria-label="Results">
+        <p id="light-warning" class="light-warning" role="alert" hidden></p>
         <div class="table-wrap">
           <table id="results">
             <thead>
@@ -408,6 +498,10 @@
           <button id="copy" type="button" class="secondary">Copy log</button>
           <span id="copy-state" aria-live="polite"></span>
         </div>
+        <p id="copy-note" class="hint">
+          Not needed for the photo tests - the zip already contains the log. Use
+          it to paste a quick timing run into a chat.
+        </p>
         <div id="pictures" aria-label="Result pictures"></div>
         <textarea id="report" readonly aria-label="Report"></textarea>
         <pre id="log" aria-label="Log"></pre>

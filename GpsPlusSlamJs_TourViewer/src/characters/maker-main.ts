@@ -269,8 +269,16 @@ function renderDraftRow(): void {
     ? `&ldquo;${esc(t.length > 60 ? `${t.slice(0, 58)}...` : t)}&rdquo; - `
     : "";
   // Discard waits while the draft is saved: an Undo of it would bring back
-  // a draft the library saved without marking it, and save it twice.
-  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${draft().step + 1} of 6: ${esc((MAKER_STEPS[draft().step] ?? "").toLowerCase())}.</p></div><div class="row"><button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard ${isSaving(page()) ? "disabled" : ""}>Discard</button></div>`;
+  // a draft the library saved without marking it, and save it twice. The
+  // row says why the button is greyed.
+  const waiting = isSaving(page());
+  const discardState = waiting
+    ? 'disabled title="Discard waits until the character is saved"'
+    : "";
+  const savingWord = waiting
+    ? '<span class="small dim" data-saving>Saving...</span>'
+    : "";
+  dr.innerHTML = `<div><b>Unfinished character</b><p class="small dim">${said}you stopped at step ${draft().step + 1} of 6: ${esc((MAKER_STEPS[draft().step] ?? "").toLowerCase())}.</p></div><div class="row">${savingWord}<button class="btn primary small" type="button" data-continue>Continue</button><button class="btn small" type="button" data-discard ${discardState}>Discard</button></div>`;
   $("[data-continue]", dr).addEventListener("click", () => setView("steps"));
   $("[data-discard]", dr).addEventListener("click", () => {
     const before = draft();
@@ -1103,7 +1111,10 @@ async function save(): Promise<void> {
   // this draft: Discard or a new picture can put another in its place.
   const steady = draft().choice === "steady";
   const generation = page().generation;
-  // Start over and Discard wait; the generation guards a new picture.
+  // Start over and Discard wait; the generation guards a new picture. No
+  // render: the save starts on step 6, where only Start over (set below)
+  // reads the flag; the library view's Discard reads it when that view is
+  // drawn, and the save draws it again when it ends.
   makerStore.dispatch(A.saveStarted());
   restartBtn.disabled = true;
   await busy(nextBtn, "Saving...", async () => {

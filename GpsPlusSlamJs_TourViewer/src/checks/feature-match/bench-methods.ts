@@ -94,6 +94,60 @@ export function precisionsFrom(values: readonly string[]): XFeatPrecision[] {
   return ticked(values, PRECISIONS, "model file");
 }
 
+/** What a run uses, and the log line that says so. */
+export interface RunSettings {
+  readonly photoTest: boolean;
+  readonly backends: readonly Backend[];
+  readonly precisions: readonly XFeatPrecision[];
+  readonly runs: number;
+  readonly warmup: boolean;
+  /** Starts with "runs:"; logged before the run. */
+  readonly line: string;
+}
+
+/** The one XFeat model file a photo test runs. */
+const PHOTO_TEST_PRECISION: XFeatPrecision = "fp16";
+
+const listText = (values: readonly string[]): string =>
+  values.length === 0 ? "none" : values.join("+");
+
+/**
+ * The settings of a run. A protocol pair (any key but "none") is a photo
+ * test and sets the run itself: one run, no warm-up, WebGPU only (WASM
+ * where the browser has no WebGPU) and one XFeat model file, whatever the
+ * Options say. "none" or no pair (the synthetic run) uses the Options.
+ */
+export function runSettings(
+  options: {
+    readonly pair: string | null;
+    readonly backends: readonly Backend[];
+    readonly precisions: readonly XFeatPrecision[];
+    readonly runs: number;
+  },
+  webgpuAvailable: boolean,
+): RunSettings {
+  const { pair } = options;
+  if (pair === null || pair === "none") {
+    return {
+      photoTest: false,
+      backends: options.backends,
+      precisions: options.precisions,
+      runs: options.runs,
+      warmup: true,
+      line: `runs: ${String(options.runs)} after 1 warm-up, backends ${listText(options.backends)}, XFeat files ${listText(options.precisions)} (Options)`,
+    };
+  }
+  const backend: Backend = webgpuAvailable ? "webgpu" : "wasm";
+  return {
+    photoTest: true,
+    backends: [backend],
+    precisions: [PHOTO_TEST_PRECISION],
+    runs: 1,
+    warmup: false,
+    line: `runs: 1, no warm-up, backends ${backend}${webgpuAvailable ? "" : " (no WebGPU on this device)"}, XFeat files ${PHOTO_TEST_PRECISION} (photo test ${pair})`,
+  };
+}
+
 /** The runs field: a whole number from 1 to 50, else the default 5. */
 export function parseRuns(value: string): number {
   const n = Number(value);
