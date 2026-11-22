@@ -5,14 +5,24 @@
 The desktop editor's draft offer: what its three answers (Restore, Not
 now, Delete it) do, apart from the toast that shows them. `edit-main.ts`
 wires it to the session and renders its view; the logic lives here so it
-can be tested without a page.
+can be tested without a page. Its status is the store's draft question
+(`tour-draft-slice.ts`), shared with the phone page, and the view is drawn
+from that slice.
 
 ## Public API
 
-- `createDraftOffer(deps): DraftOfferAnswers` - shows the offer at once
-  and holds the store's draft gate (`draft-edit-gate.ts`) with a question
-  that shows it again, its words then ending in `DRAFT_EDIT_WAITS`.
-  - `deps.gate` - the gate's `hold`, `release` and `drop`.
+- `createDraftOffer(deps): DraftOfferAnswers` - dispatches the offer
+  (`found`) into the question `deps.question` names and holds the store's
+  draft gate (`draft-edit-gate.ts`); it draws the view from the store on
+  every change of the slice, its words ending in `DRAFT_EDIT_WAITS` while
+  an edit waits (the gate's count shows a put-off offer again). An offer
+  the slice refuses (its question moved on while the draft was read: the
+  question ended, or the next read started) holds nothing, shows nothing,
+  and its answers do nothing: no answer of it could release the gate.
+  - `deps.store` - the page's store: `dispatch`, `getState`, `subscribe`
+    and its `draftGate` (`hold`, `release`, `drop`).
+  - `deps.question` - the slice's `generation` the page read when it
+    started reading the draft (`readStarted`, in `edit-main.ts`).
   - `deps.text` - the offer's own words.
   - `deps.render(view | null)` - shows `DraftOfferView { text, deleting }`
     or hides the offer.
@@ -25,33 +35,40 @@ can be tested without a page.
   - `deps.changed(count, restored)` - work landed (the undo step and the
     unsaved mark).
 - `DraftOfferAnswers`:
-  - `restore()` - hides the offer, drops what waited (each waiting edit
-    was built from the document before the draft came back), restores,
-    releases the gate and says the restore's line, with
-    `draftEditsMakeAgain(dropped)` appended when something was dropped.
-  - `notNow()` - hides the offer and drops what waited, saying
-    `DRAFT_EDIT_NOT_APPLIED` when something was; the gate keeps holding,
-    so the next edit asks again.
-  - `deleteIt(): Promise<void>` - shows the offer with `deleting` (every
-    answer off, the label `DRAFT_DELETING`), awaits the removal; landed:
-    hides it and replays what waited (`release`, built from the state
-    that stays); not landed: shows the offer again, says
-    `discardFailed` as an error, and what waited keeps waiting.
+  - `restore()` - drops what waited (each waiting edit was built from the
+    document before the draft came back), dispatches `restored` (the
+    offer goes), restores, releases the gate and says the restore's line,
+    with `draftEditsMakeAgain(dropped)` appended when something was
+    dropped.
+  - `notNow()` - dispatches `declined` (the offer goes) and drops what
+    waited, saying `DRAFT_EDIT_NOT_APPLIED` when something was; the gate
+    keeps holding, so the next edit asks again.
+  - `deleteIt(): Promise<void>` - dispatches `deleteStarted` (every answer
+    off, the label `DRAFT_DELETING`), awaits the removal and dispatches
+    `deleteEnded`; landed: the offer goes and what waited is replayed
+    (`release`, built from the state that stays); not landed: the offer
+    shows with its answers on again, `discardFailed` is said as an error,
+    and what waited keeps waiting.
 
 ## Invariants & assumptions
 
 - No answer runs while "Delete it" runs or while the offer is hidden; a
   re-show meanwhile (an edit that waits) keeps `deleting` on.
 - An answer after the tour was left only hides the offer: the gate was
-  already ended by the document's `closed` / `opened`.
-- The offer's status lives in this closure, not in the store; the
-  deviation and its follow-up are named in `draft-edit-gate.ts.md`.
+  already ended by the document's `closed` / `opened`. A read of the next
+  tour (a new `generation`) hides it too and unsubscribes it; its answers
+  change nothing then.
+- No status in this closure: the view is drawn from `selectDraftOffer`
+  and redrawn only when what it shows changed.
 
 ## Examples
 
 ```ts
+store.dispatch(tourDraftActions.readStarted());
+const question = selectTourDraft(store.getState()).generation;
 const offer = createDraftOffer({
-  gate: store.draftGate,
+  store,
+  question,
   text: "2 earlier changes were not saved.",
   render: renderToast,
   say: toast,
@@ -70,5 +87,7 @@ restoreButton.onclick = () => offer.restore();
   dropping the waiting edit and saying so (and saying only its line with
   nothing waiting), Not now dropping and saying so with the next edit
   asking again, Delete it's progress and replay, a failed Delete it, a
-  re-show while it runs, and an answer after the tour was left.
+  re-show while it runs, an answer after the tour was left, each answer
+  moving the slice's status with the view following it, the next
+  tour's read hiding it, and an offer the store refuses holding no edit.
 - `draft-shared-behaviour.test.ts` - the same rule against the phone's.

@@ -291,13 +291,20 @@ test("an edit waiting for the offer asks before the tab closes, and Delete it sa
   );
   await expect(offer).toContainText("Your change waits for this choice");
   expect(await asksBeforeLeaving(next), "an edit waits").toBe(true);
-  // The draft's files are removed only when the test lets them go.
+  // "Delete it" ends at its commit point, the draft's meta written to
+  // reject the offered work (`editor-draft.ts` `discard`); the files go
+  // after it, unawaited. So the meta write is what is held here, until the
+  // test lets it go: holding only the removals held nothing, and the
+  // offer could go before its progress was looked at. Only the meta file
+  // (`meta.blob`, the store's name for its key) is held; every other
+  // write goes through.
   await next.evaluate(() => {
-    const proto = FileSystemDirectoryHandle.prototype;
-    const original = proto.removeEntry;
+    const proto = FileSystemFileHandle.prototype;
+    const original = proto.createWritable;
     /** @type {(() => void)[]} */
     const queued = [];
-    proto.removeEntry = function (...args) {
+    proto.createWritable = function (...args) {
+      if (this.name !== "meta.blob") return original.apply(this, args);
       return new Promise((resolve, reject) => {
         queued.push(() => {
           original.apply(this, args).then(resolve, reject);
@@ -305,8 +312,8 @@ test("an edit waiting for the offer asks before the tab closes, and Delete it sa
       });
     };
     // @ts-expect-error - read by the test below.
-    window.__letRemovesGo = () => {
-      proto.removeEntry = original;
+    window.__letWritesGo = () => {
+      proto.createWritable = original;
       for (const go of queued.splice(0)) go();
     };
   });
@@ -319,7 +326,7 @@ test("an edit waiting for the offer asks before the tab closes, and Delete it sa
     await expect(button).toBeDisabled();
   }
   // @ts-expect-error - set above.
-  await next.evaluate(() => window.__letRemovesGo());
+  await next.evaluate(() => window.__letWritesGo());
   await expect(offer).toBeHidden();
   await expectCaption(next, TOWN_HALL, "Waits for the answer");
 });

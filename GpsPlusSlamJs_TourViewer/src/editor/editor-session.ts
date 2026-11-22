@@ -75,12 +75,7 @@ import {
 import { scanEntryNames } from "../tour-read-set.js";
 import type { DraftObjectWrites } from "../draft-actions.js";
 import type { TourSession } from "../tour-session.js";
-import {
-  checkDetailsForm,
-  DETAIL_FIELDS,
-  type DetailsForm,
-  type TourDetailFields,
-} from "../tour-details-form.js";
+import { DETAIL_FIELDS, type DetailsForm } from "../tour-details-form.js";
 import { isHeldEdit } from "../draft-edit-gate.js";
 import {
   canStep,
@@ -130,7 +125,8 @@ import {
   STATION_RADIUS_MAX_M,
   STATION_RADIUS_MIN_M,
 } from "../station-geometry.js";
-import { changedStations, followDocument } from "../tour-document-draft.js";
+import { followDocument } from "../tour-document-draft.js";
+import { restoreWithSettings } from "../settings-record-offer.js";
 import { blockFileKind, withBlockFile } from "../block-file.js";
 import { sameJson } from "../same-json.js";
 import { newTourId } from "../tour-file-key.js";
@@ -1649,31 +1645,6 @@ export function createEditorSession(input: {
         : tourDocumentActions.redone(),
     );
     return { kind: which === "undo" ? "undone" : "redone", what: next.what };
-  }
-
-  /** A draft's details put back by the dialog's own checks (a record
-   *  whose details the format would drop leaves them as they are), against
-   *  `state` (the draft's objects already put back: a cover may name one). */
-  function restoredDetails(
-    state: TourDocumentState,
-    offered: TourDetailFields,
-  ): TourDetailFields | null {
-    const was = effectiveDetails(state);
-    const checked = checkDetailsForm(
-      {
-        name: offered.title ?? "",
-        description: offered.description ?? "",
-        cover: offered.cover ?? null,
-        contact: offered.contact ?? "",
-      },
-      coverIds(state),
-      was,
-      "drop",
-    );
-    if (!checked.ok) return null;
-    return DETAIL_FIELDS.some((f) => checked.details[f] !== was[f])
-      ? checked.details
-      : null;
   }
 
   /** A free pin's text typed (`editText`, and `editBlockField`'s caption
@@ -3673,14 +3644,6 @@ export function createEditorSession(input: {
       // document holds no work of this open's, so the whole draft comes
       // back, and the edits that waited land on it afterwards.
       const settings = work.settings;
-      // The draft's station poses: only
-      // a station the tour carries, at a pose other than its own.
-      const moved = new Set(
-        changedStations(settings?.stations, state.stations),
-      );
-      const stations = (settings?.stations ?? []).filter((p) =>
-        moved.has(p.id),
-      );
       // An object its station cannot carry (the station is gone, or an
       // older draft) is seated by the rule as the restore puts it back
       // (`restored`), never skipped. One the tour
@@ -3720,72 +3683,25 @@ export function createEditorSession(input: {
         ),
         ...made,
       ];
-      // The stations edited, added, deleted, reordered or copied there,
-      // whole.
-      const framesWork =
-        settings === undefined
-          ? {}
-          : {
-              ...(settings.frames === undefined
-                ? {}
-                : { frames: settings.frames }),
-              ...(settings.order === undefined
-                ? {}
-                : { order: settings.order }),
-              ...(settings.deletedStations === undefined
-                ? {}
-                : { deletedStations: settings.deletedStations }),
-            };
       const deleted = work.deleted.filter((id) => find(id) !== undefined);
-      // The tour's characters there, whole.
-      const characterWork =
-        settings?.characters === undefined
-          ? {}
-          : { characters: settings.characters };
-      // The stations the draft's objects were seated in that the tour
-      // lacks ("Move to a new station" started one), whole: back before
-      // the objects.
-      const created = settings?.createdStations ?? [];
-      // With the stations added by hand there: untitled and empty, each
-      // keeps itself here as it did there.
-      const handMade = settings?.handMadeStations ?? [];
-      const createdStations = {
-        ...(created.length === 0 ? {} : { createdStations: created }),
-        ...(handMade.length === 0 ? {} : { handMadeStations: handMade }),
-      };
-      const needsNoGps =
-        settings !== undefined && settings.needsNoGps !== state.needsNoGps
-          ? settings.needsNoGps
-          : undefined;
-      // The details against the tour with the draft's objects back: a
-      // cover may name a photo they bring.
-      const withObjects = tourDocumentReducer(
+      // The settings record's part, by the rule both pages share
+      // (`settings-record-offer.ts`).
+      const { work: restore, withObjects } = restoreWithSettings(
         state,
-        tourDocumentActions.restored({
-          objects,
-          deleted,
-          ...(assets.length === 0 ? {} : { assets }),
-          ...(stations.length === 0 ? {} : { stations }),
-          ...createdStations,
-          ...framesWork,
-          ...characterWork,
-          what: "",
-        }),
+        { objects, deleted, assets },
+        settings,
       );
-      const details =
-        settings?.details === undefined
-          ? null
-          : restoredDetails(withObjects, settings.details);
+      const details = restore.details;
       const was = effectiveDetails(withObjects);
       const detailFields =
-        details === null
+        details === undefined
           ? 0
           : DETAIL_FIELDS.filter((f) => details[f] !== was[f]).length;
       const changed =
         objects.length +
-        stations.length +
+        (restore.stations?.length ?? 0) +
         stationEditsBetween(state, withObjects) +
-        (needsNoGps === undefined ? 0 : 1) +
+        (restore.needsNoGps === undefined ? 0 : 1) +
         detailFields +
         characterChanges(state.characters, withObjects.characters);
       if (changed + deleted.length > 0) {
@@ -3799,15 +3715,7 @@ export function createEditorSession(input: {
         for (const { asset, blob } of offeredFiles) files.set(asset.id, blob);
         store.dispatch(
           tourDocumentActions.restored({
-            objects,
-            deleted,
-            ...(assets.length === 0 ? {} : { assets }),
-            ...(needsNoGps === undefined ? {} : { needsNoGps }),
-            ...(details === null ? {} : { details }),
-            ...(stations.length === 0 ? {} : { stations }),
-            ...createdStations,
-            ...framesWork,
-            ...characterWork,
+            ...restore,
             what: "the restored changes",
           }),
         );

@@ -21,7 +21,7 @@
  */
 import { stationBlocks } from "./test-support/station-content.js";
 import { describe, expect, it } from "vitest";
-import { Group, Matrix4, Vector3 } from "three";
+import { Group, Matrix4, Object3D, Vector3 } from "three";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
   AUTHOR_DEFAULT_SIZE_M,
@@ -41,6 +41,7 @@ import {
   parseDraftObject,
   photoKey,
   readDraft,
+  SETTINGS_REJECTED,
   visitKey,
 } from "./draft-persistence.js";
 import { serializeVisitLogEntry, type VisitLogEntry } from "./visit-log.js";
@@ -374,6 +375,8 @@ function wire(
     arStatus?: { value: string };
     /** Every draft store open waits for this (a slow OPFS open). */
     openGate?: Promise<void>;
+    /** A scene the previews render into (none: no previews at all). */
+    scene?: Object3D;
   } = {},
 ) {
   let opens = 0;
@@ -426,8 +429,9 @@ function wire(
       // never fired here - these tests are about what reaches disk.
       schedule: () => () => undefined,
       canShareZip: () => false,
-      getScene: () => null,
+      getScene: () => options.scene ?? null,
       getArWorldGroup: () => worldGroup,
+      createLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
     } as never,
     wizard: { openStep: () => undefined, revealStep: () => undefined } as never,
     dom: dom as unknown as CreatorSetupDom,
@@ -472,7 +476,8 @@ async function settle(): Promise<void> {
 const TOUR = "https://example.test/tour.zip";
 const OTHER_TOUR = "https://example.test/other-tour.zip";
 
-/** The `rejected` list of a written meta payload. */
+/** The `rejected` list of a written meta payload. A "Delete it" names the
+ *  settings record (`SETTINGS_REJECTED`) beside the draft's ids. */
 function rejectedOf(json: string | undefined): readonly string[] {
   return (
     (JSON.parse(String(json)) as { rejected?: readonly string[] }).rejected ??
@@ -709,6 +714,7 @@ describe("the rejection is committed by the meta write", () => {
     // the fix (PR #458 review).
     expect(rejectedOf(metaPuts.at(-2)), "the attempt that failed").toEqual([
       "old-pin",
+      SETTINGS_REJECTED,
     ]);
     expect(
       rejectedOf(metaPuts.at(-1)),
@@ -796,7 +802,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       written.rejected,
       "a stale write must not overwrite the committed rejection",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("does not let a stalled tour block a DIFFERENT tour's discard", async () => {
@@ -872,7 +878,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "the write from before the close must not land last",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("keeps a tour's ordering across ANOTHER tour opened in between", async () => {
@@ -920,7 +926,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "A's stalled first write must still land BEFORE A's reopened ones",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("treats two urls that differ only in whitespace as ONE namespace", async () => {
@@ -960,7 +966,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "one directory must mean one chain, however the url was spelled",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
@@ -2022,6 +2028,74 @@ describe("work made before the tour's draft opened reaches it", () => {
     expect(files.has(objectKey(id))).toBe(true);
   });
 
+  /** A placeable wiring with a scene, in an author visit, its draft
+   *  read let go only when the test says. */
+  function previewed(store: DraftFileStore) {
+    let open: () => void = () => undefined;
+    let fail: (e: Error) => void = () => undefined;
+    const openGate = new Promise<void>((resolve, reject) => {
+      open = resolve;
+      fail = reject;
+    });
+    const wired = wire(store, {
+      placeable: true,
+      openGate,
+      scene: new Group(),
+    });
+    wired.setup.beginAuthorVisit();
+    return { ...wired, open, fail };
+  }
+
+  /** A pin placed while the draft is read: it waits for the read. */
+  async function pinWhileRead(w: ReturnType<typeof previewed>) {
+    w.setup.presentDraftForTour(TOUR);
+    w.dom.pinLabel.value = "Gate";
+    w.dom.pinSave.click();
+    await settle();
+    expect(w.ctx.tourDocument.entries(), "the pin waits").toHaveLength(0);
+  }
+
+  // Why the next three matter: a pin placed while the draft is read waits
+  // for the answer, so its own placement drew no preview. Each way the
+  // wait ends lands it, and every one must draw it and the readout: a
+  // landed pin with no preview reads as a lost tap, and the creator places
+  // it again - a duplicate at the same spot in the published tour.
+  it("draws a pin that waited once the read found no draft", async () => {
+    const w = previewed(memoryStore().store);
+    await pinWhileRead(w);
+    w.open();
+    await settle();
+    const id = String(w.ctx.tourDocument.entries()[0]?.object.id);
+    expect(w.ctx.placedPreviews.has(id)).toBe(true);
+  });
+
+  it("draws a pin that waited once the read threw", async () => {
+    const w = previewed(memoryStore().store);
+    await pinWhileRead(w);
+    w.fail(new Error("no private file system"));
+    await settle();
+    const id = String(w.ctx.tourDocument.entries()[0]?.object.id);
+    expect(w.ctx.placedPreviews.has(id)).toBe(true);
+  });
+
+  it("draws a pin that waited once Delete it decided the draft", async () => {
+    const w = previewed(
+      memoryStore({
+        [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+        [objectKey("old-pin")]: recordText(pin("old-pin")),
+      }).store,
+    );
+    await pinWhileRead(w);
+    w.open();
+    await settle();
+    expect(w.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    w.dom.draftDiscard.click();
+    await settle();
+    const id = String(w.ctx.tourDocument.entries()[0]?.object.id);
+    expect(id).not.toBe("old-pin");
+    expect(w.ctx.placedPreviews.has(id)).toBe(true);
+  });
+
   it("records a level measured before the open, even beside an older draft", async () => {
     // The offer branch wrote no meta: an older draft waiting to be restored
     // left this session's measurement only in memory.
@@ -2999,7 +3073,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     expect(discarded.levels, "the rejected draft's code b is gone").toEqual([
       liveA,
     ]);
-    expect(lastMeta(metaPuts).rejected).toEqual(["placed"]);
+    expect(lastMeta(metaPuts).rejected).toEqual(["placed", SETTINGS_REJECTED]);
   });
 
   // Why (plan M3b): with no code measured on this page, "Delete it"
@@ -3871,6 +3945,57 @@ describe("'New station here' (D8)", () => {
     expect(stationsOf(ctx)).toHaveLength(2);
     expect(ctx.tourDocument.undo()).toMatchObject({ kind: "undone" });
     expect(stationsOf(ctx)).toEqual([["pin hosted"]]);
+  });
+
+  /** `placeable` with an older draft on offer, armed, and a pin placed
+   *  that waits for the answer. */
+  async function armedWhileOffered() {
+    const { store } = memoryStore({
+      [META_KEY]: JSON.stringify({ tourUrl: TOUR, sizeM: 0.16, level: null }),
+      [objectKey("old-pin")]: recordText(pin("old-pin")),
+    });
+    const wired = wire(store, { placeable: true });
+    wired.ctx.tourDocument.open(tourOf([pin("hosted")]));
+    wired.setup.presentDraftForTour(TOUR);
+    await settle();
+    expect(wired.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    wired.dom.newStationButton.click();
+    wired.dom.pinLabel.value = "Own";
+    wired.dom.pinSave.click();
+    await settle();
+    expect(stationsOf(wired.ctx), "the pin waits").toEqual([["pin hosted"]]);
+    expect(wired.ctx.tourDocument.newStationArmed(), "taken").toBe(false);
+    return wired;
+  }
+
+  // Why the next three matter: the pin took the arm at its tap, and a pin
+  // that waits for the draft question keeps it taken while it waits. When
+  // the answer drops it (Not now, Restore) it was never placed, so the arm
+  // comes back as for any placement that did not happen; left taken, the
+  // creator's next pin silently joins a station they asked not to join.
+  it("comes back when Not now drops the pin that waited", async () => {
+    const { ctx, dom } = await armedWhileOffered();
+    dom.draftDismiss.click();
+    await settle();
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    expect(dom.newStationButton.attributes["aria-pressed"]).toBe("true");
+  });
+
+  it("comes back when Restore drops the pin that waited", async () => {
+    const { ctx, dom } = await armedWhileOffered();
+    dom.draftRestore.click();
+    await settle();
+    expect(ctx.tourDocument.newStationArmed()).toBe(true);
+    expect(dom.newStationButton.attributes["aria-pressed"]).toBe("true");
+  });
+
+  it("stays taken when Delete it lands the pin that waited, in its own station", async () => {
+    const { ctx, dom } = await armedWhileOffered();
+    dom.draftDiscard.click();
+    await settle();
+    expect(stationsOf(ctx)).toEqual([["pin hosted"], ["Own"]]);
+    expect(ctx.tourDocument.newStationArmed()).toBe(false);
+    expect(dom.newStationButton.attributes["aria-pressed"]).toBe("false");
   });
 
   it("is disarmed when the AR visit ends: the chip is the session's", async () => {

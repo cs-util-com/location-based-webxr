@@ -312,12 +312,13 @@ changes`; a label is cut at 40 characters (`truncated`, split-safe), a label-les
   - `pictureOf(id)` (W2) - the kept picture of a photo brought back by an
     undo after a save; the card draws it, since the file no longer carries
     it.
-  - `restore({ objects, deleted, settings? })` (M6 E2c) - a draft's work
-    put back by the session's own rules: an object the tour carries takes
-    the draft's version (`upsertPlaced`), a deletion its tombstone
-    (`deleteObject`); the whole draft comes back (every edit waits
-    while the offer is undecided, `draft-edit-gate.ts`, so none is
-    outranked here); an id the tour no longer
+  - `restore({ objects, deleted, settings? })` (the record's part built
+    by `../settings-record-offer.ts`'s `restoreWithSettings`, the phone's
+    rule too) - a draft's work put back by the session's own rules: an
+    object the tour carries takes the draft's version (`upsertPlaced`), a
+    deletion its tombstone (`deleteObject`); the whole draft comes back
+    (every edit waits while the offer is undecided, `draft-edit-gate.ts`,
+    so none is outranked here); an id the tour no longer
     carries is skipped; an object its station cannot carry (a draft
     of an older build, or whose station is gone) is seated by the
     rule, never skipped; the stations the draft's objects were seated in

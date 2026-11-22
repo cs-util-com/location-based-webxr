@@ -234,7 +234,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   author pipeline starts). In AR the offer is out of sight, and an edit
   there would wait for a question nobody sees. `readyForAr` answers at
   once and never waits (WebXR starts only inside the tap's own user
-  activation): while the read runs (`readRunning`) it says
+  activation): while the read runs (the store's `tourDraft` is
+  `reading`) it says
   `DRAFT_BEING_READ`, while "Delete it" runs `DRAFT_DELETE_RUNS`, with an
   offer open it shows it again with `DRAFT_DECIDE_BEFORE_AR`; each keeps
   AR unstarted, and the next tap asks again. The read's end, a throw and
@@ -256,7 +257,10 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   printed at 20. A live measurement wins over a drafted one - it is newer.
 - **"Delete it" is committed by ONE meta write, and undone by a second if
   that one fails.** The handler records the rejected ids in the meta file
-  and only then removes their object files. If the write does not land, the
+  and only then removes their object files, unawaited: a tab closed
+  before they went leaves them inert, because the next read refuses every
+  rejected id (`draft-shared-behaviour.test.ts`, "discard: a tab closed
+  right after the rejection landed ..."). If the write does not land, the
   in-memory rejection is restored AND re-written behind any snapshot a mint
   or finish already took - best-effort, since the store that refused may
   refuse again - so a queued write cannot commit a discard the creator was
@@ -358,23 +362,39 @@ no word at all); a record with a station that did not read is kept
 though spent, since a corrected file reads it again, until the next whole
 write. The
 document's listener writes it whole on each change, in its own queue. The
-phone reads its STATION POSES and its CREATED STATIONS back:
+phone offers and restores the WHOLE record, by the desktop's rule
+(`settings-record-offer.ts`, one module for both pages):
 
-- **Created stations** (every object belongs to a station from its
-  placement on): the offer carries the record's created frames, and the
-  restore hands them to the document before the objects, so a pin comes
-  back in the station it was placed in - not seated anew because the tour
-  file lacks it. A frame of an id the document carries is left as it is.
-  They are not work of their own (the objects naming them are).
-
-- **Offered**: the poses that differ from the opened tour's
-  (`changedStations`) are work like any object - the draft is not spent
-  while one waits, and each such station counts as one change in the
-  offer.
-- **Restored** frames first (the slice's `restored` moves them before the
-  objects), so the moved items' records land inside their moved stations.
-  A station moved while the offer stood waited, and Restore dropped it:
-  made again, it lands on the restored pose.
+- **Offered** when it changes anything the opened tour holds (the details,
+  a station's pose, a station's own fields, the order, a deleted or an
+  added station, the characters: `changesSettings`), or holds a station
+  the draft's objects name that the tour lacks (`addsStations`). Such a
+  record is work like any object: the draft is not spent while it waits.
+  The offer counts it as the desktop does (`settingsChangeCount`) and
+  names its parts after the objects' words ("Changed: the tour's details
+  (name), and the order of the stations."); an item a recorded frame moves
+  between a story and the free items counts with that frame
+  (`movedIds`), never as a thing placed, a change or a deletion of its
+  own (a new item's record left behind by a broken removal included). The
+  offer's words and Restore's line read the same `counts`.
+- **The "needs no GPS" setting is never the phone's**: the record's copy
+  is read as the opened tour's, so an older copy written here never undoes
+  a change of it made in the editor.
+- **A recorded cover naming no image of the tour** (a photo deleted
+  since) is no opinion about the cover (`heldAgainst`), as on the
+  desktop.
+- **Restored** through `restoreWithSettings`, as the desktop restores:
+  the moved poses, the created and hand-made stations and the recorded
+  frames before the objects (the slice's `restored` puts them first), so
+  each item's record lands in its own station; then the order, the deleted
+  stations, the characters, and the details as the details form checks
+  them. A station moved while the offer stood waited, and Restore dropped
+  it: made again, it lands on the restored pose.
+- **Remaining risk, the desktop's too**: the record has no base, so its
+  details or frames restored over a newer change of them made in the
+  editor since (the tour file moved on) put the older values back; the
+  offer names what it would change, so the creator sees it before saying
+  Restore.
 - **Read first, in the record's own queue**: the edits made meanwhile
   wait, so the page's first write of the record follows the read.
 - **No pose rides along**: no edit lands while the stored record is
@@ -385,19 +405,47 @@ phone reads its STATION POSES and its CREATED STATIONS back:
   tour's codes.
 - **Removed** with a spent draft (after its meta commit; not while a
   station in it did not read, which a corrected file reads again) and by
-  "Delete it" (after the rejection lands), queued before the waiting edits
-  land, whose own record follows. A commit that lands after a close
-  removes the record unless the tour was reopened (that open read the
-  record and owns it). An interrupted removal is safe: a record the
-  opened tour carries is spent again at the next open.
-- The record's details and setting are not offered on the phone (it edits
-  only the tour's name; its "needs no GPS" is the editor's). Nor are a
-  station's own fields, the order, the deleted stations or the
-  characters: a draft holding only those reads as spent on the phone and
-  is swept. A known gap, kept visible by the `settingsGap` rows in
-  `draft-shared-behaviour.test.ts`, which assert the phone's exact
-  failure (nothing offered, or the rename not offered), so a row turns red
-  once the phone offers it.
+  "Delete it", whose rejection always names the record
+  (`SETTINGS_REJECTED`, in the same meta write as the objects' ids; the
+  next read prunes the entry once no file is left): a
+  tab closed before the removal leaves it inert, never offered again, and
+  the next open sweeps it. The removal is queued before the waiting edits
+  land, whose own record claims the rejection first (`writeSettings`:
+  removed, the meta rewritten without the entry, then written). A commit
+  that lands after a close removes the record unless the tour was
+  reopened (that open read the rejection and sweeps it). An interrupted
+  removal of a spent record is safe: a record the opened tour carries is
+  spent again at the next open.
+
+## The question in the store
+
+The draft question's status, the offer's words, "Delete it"'s progress and
+the count of waiting edits are the store's `tourDraft` slice
+(`tour-draft-slice.ts`), shared with the desktop editor. `present`
+starts a question (`readStarted`) and keeps its `generation` (`asked`);
+the read ends it as `found`, `noneFound` or `unavailable` (`storage` with
+no draft store, `read-failed` for a read that threw); the answers
+dispatch `restored`, `declined`, `deleteStarted` / `deleteEnded`, and
+`reset` dispatches `questionEnded`. The offer's DOM is drawn from
+`selectDraftOffer` by a store subscription (`drawOffer`), which draws
+only when the slice changed. What stays in this module: `offered`, the
+side table of the offer's records and photo bytes, and the guards
+(`presentEpoch`, `ctx.openGeneration`).
+
+## Every end of the wait draws what waited
+
+An edit made while the draft is read or offered waits in the gate
+(`draft-edit-gate.ts`), so its own preview sync and readout ran while it
+was held and drew nothing. Every way the wait ends lets the waiting edits
+through by one function (`released`), which then syncs the previews and
+renders the readout: a read that found no draft or nothing to offer, a
+read that threw, Restore and "Delete it" (`decided`). A landed pin with
+no preview reads as a lost tap, and the creator places it again - a
+duplicate at the same spot in the published tour
+(`creator-setup.test.ts`, "draws a pin that waited ..."). "Not now" and
+a tour change drop the waiting edits instead; a dropped placement gives
+its "New station here" arm back (`creator-placement.ts.md`) and frees its
+photo's bytes (`creator-document.ts.md`).
 
 ## Visits in the draft (authoring plan 2026-09-28-0953 M3b)
 

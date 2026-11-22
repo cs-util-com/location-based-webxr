@@ -44,7 +44,9 @@ createdStations?, handMadeStations?, frames?, order?, deletedStations? }`
   `draft-persistence.ts`'s `CODES_KEY` file. Built inside the module
   (`codesRecord(state, hand)`, not exported).
 - `SETTINGS_KEY` (`"settings"`) - the record's file in a draft
-  namespace, on both pages; `readDraft` skips it.
+  namespace, on both pages; `readDraft` skips it. Defined in
+  `draft-persistence.ts` beside the meta whose rejection can name the
+  record (`SETTINGS_REJECTED`), re-exported here.
 - `settingsRecordText(record)` - the text a draft stores for a settings
   record (both pages write through it): `JSON.stringify` of the record
   as it is. Its `createdStations` and `frames` are already in the tour

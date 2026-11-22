@@ -79,10 +79,9 @@ export interface TourSettingsRecord {
   readonly characters?: readonly TourCharacter[];
 }
 
-/** The settings record's file in a draft namespace, on both pages. Not a
- *  prefix `readDraft` (`draft-persistence.ts`) reads, so the objects'
- *  reader skips it. */
-export const SETTINGS_KEY = "settings";
+/** The settings record's file in a draft namespace, on both pages
+ *  (defined beside the meta whose rejection can name it). */
+export { SETTINGS_KEY } from "./draft-persistence.js";
 
 /** What both pages tell an author when a stored record, or a station in
  *  it, did not read (`parseSettingsRecord`'s `onLost`). */

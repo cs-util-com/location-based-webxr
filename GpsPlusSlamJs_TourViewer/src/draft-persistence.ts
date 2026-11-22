@@ -87,6 +87,19 @@ export const META_KEY = "meta";
  * file that does not read costs the codes, never the walk.
  */
 export const CODES_KEY = "codes";
+/** The settings record's file in a draft namespace, on both pages
+ *  (`tour-document-draft.ts` writes and reads it). Not a prefix this
+ *  module reads as objects, so the objects' reader skips it. */
+export const SETTINGS_KEY = "settings";
+/**
+ * The settings record's entry in a meta's `rejected` list: "Delete it"
+ * throws the record away with the objects, so the commit point names it
+ * too, and both pages refuse a record the meta rejects
+ * (`readSettingsText`). Not a valid object id (ids never hold a colon,
+ * `TOUR_ID_PATTERN`), so no object of a tour can share it. Pruned like
+ * an object's id: kept in the list while the record's file is on disk.
+ */
+export const SETTINGS_REJECTED = ":settings";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 const DELETED_PREFIX = "deleted:";
@@ -324,6 +337,31 @@ interface DraftMeta {
 function rejectedIdsOf(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((id): id is string => typeof id === "string");
+}
+
+/**
+ * The settings record's text, or undefined when there is none or the
+ * meta rejects it (`SETTINGS_REJECTED`): a record "Delete it" threw away
+ * is inert whether or not its file is still on disk. A meta that does
+ * not read rejects nothing (`rejectedIdsOf`'s rule).
+ */
+export async function readSettingsText(
+  store: DraftFileStore,
+): Promise<string | undefined> {
+  const metaText = await store.getText(META_KEY);
+  if (metaText !== undefined) {
+    try {
+      const parsed: unknown = JSON.parse(metaText);
+      const rejected =
+        typeof parsed === "object" && parsed !== null
+          ? rejectedIdsOf((parsed as { rejected?: unknown }).rejected)
+          : [];
+      if (rejected.includes(SETTINGS_REJECTED)) return undefined;
+    } catch {
+      // Not JSON: no rejection.
+    }
+  }
+  return store.getText(SETTINGS_KEY);
 }
 
 /** Validate one object by the manifest's own rules. Returns null for
@@ -713,6 +751,7 @@ export async function readDraft(
   }
   const visits = await readVisits(store, keys, rejected);
   const onDisk = new Set(storedIds);
+  if (keys.includes(SETTINGS_KEY)) onDisk.add(SETTINGS_REJECTED);
   return {
     draft: {
       tourUrl: meta.tourUrl,

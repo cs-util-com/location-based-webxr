@@ -94,12 +94,18 @@ editor's own namespace, one tab at a time. Design:
   - `restored()` - the session applied the offer (its writes rewrote what
     it applied).
   - `discard()` - "Delete it": the offer's ids, minus those written since
-    the open, rejected in the meta (the commit point), then the offered
-    settings record removed (awaited, unless the setting was changed since
-    the open) and the ids' files removed; false when the meta write or the
-    settings removal did not land - the meta is put back and the offer
-    re-armed, so a key move before the next open still carries it (M1b-2
-    milestone review #4).
+    the open, and an offered settings record (`SETTINGS_REJECTED`),
+    rejected in the meta (the commit point), then the record and the ids'
+    files removed; false when the meta write did not land - the meta is
+    put back and the offer re-armed, so a key move before the next open
+    still carries it. The removals are not awaited, and that is safe: once
+    the meta rejects them, the next read refuses the record and the files
+    whether or not they were removed (the next open removes what is left),
+    and a removal that throws is caught (pinned in
+    `draft-shared-behaviour.test.ts`, "discard: a tab closed right after
+    the rejection landed ..."). A setting saved afterwards claims the
+    record first (`settingsIn`: removed, the meta rewritten without the
+    entry, then written), as an edit claims a rejected object id.
   - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
     base's `written` list; the setting's keep is decided again against the
@@ -138,7 +144,10 @@ editor's own namespace, one tab at a time. Design:
   tour's "needs no GPS" setting, or both (M1b-2 milestone review #6).
 - `editorDraftKey(fileKey)` - `editor:<fileKey>`; `NoBackupReason`,
   `EditorDraftDeps`, `EditorDraftOffer`, `EditorTourSettings` (`open`'s result type stays
-  module-private).
+  module-private). How a settings record is compared, counted, named and
+  restored is `../settings-record-offer.ts`, shared with the phone's
+  draft (`creator-draft.ts`), so the two pages offer one record by one
+  rule.
 
 ## Invariants & assumptions
 
@@ -248,9 +257,9 @@ editor's own namespace, one tab at a time. Design:
   lasts until the next whole write of the record, which holds only what read;
   a landed write that carries it clears it; a key move carries it (and an
   unanswered offer's), and the old namespace's goes with it; "Delete it"
-  removes an offered one after the meta's commit point, awaited, failing
-  the discard when it does not land (no write of this page's can have
-  replaced it meanwhile: the edits wait for the answer).
+  rejects an offered one in the meta's commit point and removes it after,
+  unawaited: a rejected record is never offered again, and a setting
+  saved later claims it.
   **The value last set here is kept** (`settingsWanted`), whether or not
   its record is, and the keep is decided again by each build and each
   landed write (M1b-2 milestone review #1): turned on, a save started, and
@@ -302,6 +311,16 @@ editor's own namespace, one tab at a time. Design:
   closed tab only when its record carries no `seen` base (above).
 
 ## The files
+
+- **A file listed while the offer stands, whose item Restore drops**: the
+  listing (`assetsAdded`) passes the draft question and its bytes are
+  saved at once, so the file stays listed and on the shelf as an unused
+  file; the dropped item is made again or the file deleted from the shelf
+  by hand. It offers nothing at the next open of its own
+  (`draft-shared-behaviour.test.ts`, "a photo dropped by Restore ...").
+  Kept rather than removed: removing it would need a second path back
+  through the shelf, the draft and the document for a file the creator
+  just brought in and may still want.
 
 - A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
 - `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose last write did not land in this open: a key move that carries the file counts as its write, and a close forgets it (the same bytes kept by another tour's draft are held there). The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
@@ -389,6 +408,7 @@ A smaller file replaces an asset's bytes under the same id. The key lifecycle:
 
 `EditorTourSettings.characters` is part of the settings a draft records
 and restores; `settingsOf(manifest)` reads them, `settingsChanges` counts
-them (`characters`), the restore offer names "the tour's characters" and
-the restored line "the characters". Compared per declaration
+them (`characters`), the restore offer names "the tour's characters,
+replacing the current ones" (Restore puts the recorded list in place of
+the document's) and the restored line "the characters". Compared per declaration
 (`changedCharacters`), so an unchanged list writes nothing.

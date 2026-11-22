@@ -43,8 +43,8 @@ import {
   type LevelText,
   type SettleChange,
   type StationFrame,
-  type StationPose,
   type TourDocumentState,
+  type TourRestore,
   type TourSaveProgress,
 } from "./tour-document.js";
 import {
@@ -104,6 +104,9 @@ export interface DocumentChange {
    *  question is put off. `backedUp` then settles after its landing (true
    *  for a dropped one: nothing of it was left unsaved). */
   readonly held?: true;
+  /** A held change's end: true once it landed, false when it was
+   *  dropped. Absent for a change the document took at once. */
+  readonly landed?: Promise<boolean>;
 }
 
 /** A placement the document took: `object` as the document holds it, and
@@ -270,15 +273,7 @@ export interface CreatorDocument {
   /** A draft's work put back, already filtered by the page's rules, with
    *  its photos' pictures: one step. */
   restore(
-    work: {
-      readonly objects: readonly TourObject[];
-      readonly deleted: readonly string[];
-      readonly pictures: ReadonlyMap<string, Blob>;
-      readonly stations?: readonly StationPose[];
-      /** Whole frames of stations a draft's objects name that the tour
-       *  lacks (`TourSettingsRecord.createdStations`). */
-      readonly createdStations?: readonly StationFrame[];
-    },
+    work: TourRestore & { readonly pictures: ReadonlyMap<string, Blob> },
     what: string,
   ): DocumentChange;
   /** One step back, unless a write runs (`canStep`) or a photo it brings
@@ -365,6 +360,7 @@ export function createCreatorDocument(
     heldWrites.set(action, writes);
     const taken: DocumentChange = {
       held: true,
+      landed: out.landed.then((landed) => landed !== null),
       backedUp: out.landed.then((landed) => {
         heldWrites.delete(action);
         return landed === null ? true : all();
@@ -560,6 +556,15 @@ export function createCreatorDocument(
         void heldLanding(placed, (landedBefore) =>
           anchorStarted(landedBefore, [given.id]),
         );
+        // Dropped, it never lands: its bytes and AR placement go with it,
+        // or they stay in memory for the rest of the tour, named by
+        // nothing.
+        void placed.landed?.then((landed) => {
+          if (landed) return;
+          pictures.delete(given.id);
+          placements.delete(given.id);
+          sideVersion += 1;
+        });
         return { ...placed, object: given, ownStation };
       }
       anchorStarted(before, [given.id]);
@@ -678,18 +683,8 @@ export function createCreatorDocument(
     tourChanged: () => tourFieldChanges(state()) > 0,
     restore(work, what) {
       for (const [id, blob] of work.pictures) setPicture(id, blob);
-      return change(
-        tourDocumentActions.restored({
-          objects: work.objects,
-          deleted: work.deleted,
-          ...(work.stations === undefined ? {} : { stations: work.stations }),
-          ...(work.createdStations === undefined ||
-          work.createdStations.length === 0
-            ? {}
-            : { createdStations: work.createdStations }),
-          what,
-        }),
-      );
+      const { pictures: _pictures, ...restore } = work;
+      return change(tourDocumentActions.restored({ ...restore, what }));
     },
     undo() {
       const s = state();

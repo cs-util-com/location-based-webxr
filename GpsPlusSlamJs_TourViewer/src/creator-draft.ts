@@ -11,9 +11,10 @@
 import { qrLevelIdFromEntryName } from "gps-plus-slam-app-framework/ar/qr/qr-level-archive";
 import { AUTHOR_DEFAULT_SIZE_M } from "gps-plus-slam-app-framework/ar/qr/qr-mint-level";
 import { readSideM, writeSideM } from "./printed-side.js";
-import type {
-  TourManifest,
-  TourObject,
+import {
+  createEmptyTourManifest,
+  type TourManifest,
+  type TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { DraftFileStore } from "gps-plus-slam-app-framework/storage";
 import {
@@ -36,7 +37,9 @@ import {
   photoKey,
   readDraft,
   readDraftCodes,
+  readSettingsText,
   removeDraftObject,
+  SETTINGS_REJECTED,
   addDraftBaseKey,
   writeDraftCodes,
   writeDraftLiveRecord,
@@ -57,9 +60,7 @@ import {
 } from "./draft-edit-gate.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { isTourContentKey } from "./tour-file-key.js";
-import type { StationFrame, StationPose } from "./tour-document.js";
 import {
-  changedStations,
   DRAFT_PART_UNREAD,
   parseSettingsRecord,
   settingsRecordText,
@@ -67,6 +68,25 @@ import {
   type TourCodesRecord,
   type TourSettingsRecord,
 } from "./tour-document-draft.js";
+import {
+  addsStations,
+  changesSettings,
+  heldAgainst,
+  joinedParts,
+  movedIds,
+  restoreWithSettings,
+  settingsChangeCount,
+  settingsChanges,
+  settingsOf,
+  settingsParts,
+} from "./settings-record-offer.js";
+import {
+  selectDraftOffer,
+  selectDraftUndecided,
+  selectEditWaitsForRead,
+  tourDraftActions,
+  type TourDraftState,
+} from "./tour-draft-slice.js";
 import type { TourSession } from "./tour-session.js";
 import type { TourViewerSession } from "./tour-viewer-session.js";
 import type { VisitLog, VisitLogEntry } from "./visit-log.js";
@@ -131,8 +151,9 @@ export interface CreatorDraft {
   ): Promise<boolean>;
   /** Remove object `id`'s draft files, after any write queued for it. */
   forgetObject(id: string): Promise<void>;
-  /** Write the tour document's settings record (`tour-document-draft.ts`:
-   *  the moved stations' poses, the details once set), in its own queue.
+  /** Write the tour document's settings record (`tour-document-draft.ts`,
+   *  whole: the setting, the details once set, the stations and the
+   *  characters once changed), in its own queue.
    *  True with no tour's draft open yet (nothing of the document can have
    *  changed before it: every edit waits from `present` on). */
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
@@ -341,7 +362,10 @@ export function wireCreatorDraft(deps: {
    *  tour's. */
   let undecided: CodesHolder | null = null;
   /** What a draft is offering, until the creator answers: kept while the
-   *  question is put off ("Not now"), so an edit can ask it again. */
+   *  question is put off ("Not now"), so an edit can ask it again. The
+   *  page's side table of the offer (its records and photo bytes); the
+   *  question's status, words and progress are the store's `tourDraft`
+   *  (`tour-draft-slice.ts`), shared with the desktop editor. */
   let offered: {
     objects: readonly TourObject[];
     /** EVERY id the READ saw on disk - not just the unhosted ones the
@@ -362,32 +386,54 @@ export function wireCreatorDraft(deps: {
      *  §3.4, M4). */
     deleted: readonly string[];
     /** How `objects` splits into new placements and changes of objects
-     *  the hosted zip carries - the offer's and the restore's words. */
-    counts: { placed: number; changed: number };
+     *  the hosted zip carries, and the deletions counted on their own -
+     *  the offer's and the restore's words. An id a recorded frame moves
+     *  is counted with that frame's change, never here. */
+    counts: { placed: number; changed: number; deleted: number };
     /** The draft's AR visits (M3b), for the summary after Finish. */
     visits: readonly VisitLogEntry[];
-    /** The station poses the settings record holds that differ from the
-     *  opened tour's (D17): a restore moves those frames first, so their
-     *  items' records land inside them. */
-    stations: readonly StationPose[];
-    /** The stations this draft's objects were placed in that the opened
-     *  tour lacks, whole (the settings record's `createdStations`): put
-     *  back before the objects, so each comes back in its own station. */
-    createdStations: readonly StationFrame[];
-    /** The offer's words. */
-    text: string;
+    /** The settings record offered beside the objects (the tour's
+     *  details, its stations - poses, frames, order, created and deleted
+     *  ones - and its characters), or none: put back by the same rule as
+     *  the desktop's (`settings-record-offer.ts`), the frames before the
+     *  objects so each item's record lands in its own station. */
+    settings: TourSettingsRecord | undefined;
   } | null = null;
   /** The draft question's gate (`draft-edit-gate.ts`): every edit of the
    *  tour document waits from `present` until the draft is decided. */
   const gate = ctx.store.draftGate;
-  /** An edit waits for the answer: the offer says so when it shows. */
-  let editWaits = false;
-  /** A "Delete it" in progress: the offer's buttons are disabled. */
-  let discarding = false;
+  /** The store's draft question as it stands. */
+  const question = (): TourDraftState => ctx.store.getState().tourDraft;
+  /** The question `present` started (its `generation`): what this
+   *  page's answers name, so one of a tour gone changes nothing. */
+  let asked = -1;
   /** "Delete it"'s own label, put back when it is no longer in progress. */
   const discardLabel = dom.draftDiscard.textContent;
-  /** The open tour's draft read (`present`) runs: AR does not start. */
-  let readRunning = false;
+  /** The question the offer was drawn from last. */
+  let drawnFrom: TourDraftState | null = null;
+  /** The offer from the store (`selectDraftOffer`): its words - with the
+   *  waiting line while an edit waits - and "Delete it"'s progress, which
+   *  turns every answer off (async-ui-feedback). Every dispatch reaches
+   *  it; it draws only when the question moved. */
+  function drawOffer(): void {
+    const now = question();
+    if (now === drawnFrom) return;
+    drawnFrom = now;
+    const shown =
+      now.generation === asked ? selectDraftOffer(ctx.store.getState()) : null;
+    dom.draftOffer.hidden = shown === null;
+    if (shown !== null) {
+      dom.draftOfferText.textContent = shown.waits
+        ? `${shown.text} ${EDIT_WAITS}`
+        : shown.text;
+    }
+    const deleting = shown?.deleting === true;
+    dom.draftDiscard.textContent = deleting ? DRAFT_DELETING : discardLabel;
+    dom.draftRestore.disabled = deleting;
+    dom.draftDismiss.disabled = deleting;
+    dom.draftDiscard.disabled = deleting;
+  }
+  ctx.store.subscribe(drawOffer);
   /** Said once, not per placement: a creator mid-walk cannot act on it. */
   let warnedAboutPersistence = false;
   /** The open tour's draft took the page's earlier work: its `present`
@@ -492,18 +538,34 @@ export function wireCreatorDraft(deps: {
 
   /** The settings record's write in its queue: the whole record, or its
    *  removal (`null`). Every edit of the document waits while a draft is
-   *  undecided, so a record written is always decided work. */
+   *  undecided, so a record written is always decided work. A record the
+   *  meta rejects (`SETTINGS_REJECTED`) is CLAIMED first, as an object's
+   *  id is (`writeForObject`): the rejected file removed, the meta
+   *  rewritten without it, then the write. */
   function writeSettings(
     store: DraftFileStore,
     tourUrl: string,
     record: TourSettingsRecord | null,
   ): Promise<boolean> {
     return draftWrites
-      .run(settingsChainKey(tourUrl), () =>
-        record === null
-          ? store.remove(SETTINGS_KEY).then(() => true)
-          : store.put(SETTINGS_KEY, settingsRecordText(record)),
-      )
+      .run(settingsChainKey(tourUrl), async () => {
+        if (record === null) {
+          await store.remove(SETTINGS_KEY);
+          return true;
+        }
+        let claimed = true;
+        if (
+          draftStore === store &&
+          (draftRejected.includes(SETTINGS_REJECTED) ||
+            diskRejected.has(SETTINGS_REJECTED))
+        ) {
+          await store.remove(SETTINGS_KEY);
+          draftRejected = draftRejected.filter((r) => r !== SETTINGS_REJECTED);
+          claimed = await recordMeta(tourUrl);
+        }
+        const wrote = await store.put(SETTINGS_KEY, settingsRecordText(record));
+        return claimed && wrote;
+      })
       .catch(() => false);
   }
 
@@ -599,17 +661,25 @@ export function wireCreatorDraft(deps: {
    * when its turn comes: a change made since claimed it, and the file on
    * disk is that change now (`writeForObject`). Skipped too once another
    * tour is open: the next open of this one sweeps what the meta rejects.
+   * The settings record's entry (`SETTINGS_REJECTED`) removes the record,
+   * in the record's own queue.
    */
   function sweepRejected(
     store: DraftFileStore,
     tourUrl: string,
     id: string,
   ): void {
-    void draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      if (draftStore === store && draftRejected.includes(id)) {
-        await removeDraftObject(store, id);
-      }
-    });
+    const settings = id === SETTINGS_REJECTED;
+    void draftWrites
+      .run(
+        settings ? settingsChainKey(tourUrl) : objectChainKey(tourUrl, id),
+        async () => {
+          if (draftStore !== store || !draftRejected.includes(id)) return;
+          if (settings) await store.remove(SETTINGS_KEY);
+          else await removeDraftObject(store, id);
+        },
+      )
+      .catch(() => undefined);
   }
 
   /** `ids` minus this page's visits (M3b: a read racing their first write
@@ -756,17 +826,17 @@ export function wireCreatorDraft(deps: {
     changed: number;
     deleted: number;
   } {
-    const { objects, stations, deleted } = waiting;
+    const { objects, deleted } = waiting;
+    // The deletions come back as the tombstones they are; the record's
+    // frames come before the objects, whose records stand in them.
+    const { work } = restoreWithSettings(
+      ctx.tourDocument.state(),
+      { objects, deleted },
+      waiting.settings,
+    );
     ctx.tourDocument.restore(
       {
-        // The frames before the objects, whose records stand in them.
-        ...(stations.length === 0 ? {} : { stations }),
-        ...(waiting.createdStations.length === 0
-          ? {}
-          : { createdStations: waiting.createdStations }),
-        objects,
-        // The deletions come back as the tombstones they are (plan §3.4).
-        deleted,
+        ...work,
         pictures: new Map(
           objects.flatMap((o) => {
             const blob = waiting.photos.get(o.id);
@@ -779,24 +849,22 @@ export function wireCreatorDraft(deps: {
     return {
       placed: waiting.counts.placed,
       changed: waiting.counts.changed,
-      deleted: deleted.length,
+      deleted: waiting.counts.deleted,
     };
   }
 
-  /** The offer as it shows: its own words, and when an edit waits for the
-   *  answer, that it does. */
-  function showOffer(waiting: NonNullable<typeof offered>): void {
-    dom.draftOfferText.textContent = editWaits
-      ? `${waiting.text} ${EDIT_WAITS}`
-      : waiting.text;
-    dom.draftOffer.hidden = false;
+  /** The offer shows (a put-off one again): drawn from the store, with
+   *  what the page says around it. */
+  function showOffer(): void {
+    ctx.store.dispatch(tourDraftActions.reshown({ generation: asked }));
+    const waits = question().editsWaiting > 0;
     // The offer is outside the AR overlay, so a creator whose scan opened
     // the tour mid-session would not see it and would place the same
     // content again - or would not know why a tap placed nothing.
     if (deps.sessionLive()) {
       // With the superseded line, which this note must not hide.
       ctx.placementNote = [
-        editWaits ? EDIT_WAITS_IN_AR : OFFER_IN_AR,
+        waits ? EDIT_WAITS_IN_AR : OFFER_IN_AR,
         ...(supersededNote === null ? [] : [supersededNote]),
         ...(unreadNote === null ? [] : [unreadNote]),
       ].join(" ");
@@ -810,15 +878,16 @@ export function wireCreatorDraft(deps: {
     deps.wizard.revealStep("measure");
   }
 
-  /** The gate's question (`DraftEditGate.hold`): an edit waits. Before the
-   *  offer is ready (the draft still reading) a note says so, and the
-   *  offer's words say it once it shows. */
+  /** The gate's question (`DraftEditGate.hold`): an edit waits (its
+   *  count is in the store already). Before the offer is ready (the draft
+   *  still reading) a note says so, and the offer's words say it once it
+   *  shows. */
   function askAboutEdit(): void {
-    editWaits = true;
-    if (offered !== null) {
-      showOffer(offered);
+    if (selectDraftUndecided(ctx.store.getState())) {
+      showOffer();
       return;
     }
+    if (!selectEditWaitsForRead(ctx.store.getState())) return;
     ctx.placementNote = DRAFT_BEING_READ;
     deps.render();
   }
@@ -827,31 +896,42 @@ export function wireCreatorDraft(deps: {
    *  goes and the edits still waiting land, in the order they were made
    *  (none after a Restore, which dropped them first). */
   function decided(): void {
-    dom.draftOffer.hidden = true;
     offered = null;
-    editWaits = false;
-    gate.release();
+    released();
   }
 
-  /** "Delete it" in progress (async-ui-feedback): no second answer
-   *  meanwhile, and its label says it runs. */
-  function setDiscarding(on: boolean): void {
-    discarding = on;
-    dom.draftDiscard.textContent = on ? DRAFT_DELETING : discardLabel;
-    dom.draftRestore.disabled = on;
-    dom.draftDismiss.disabled = on;
-    dom.draftDiscard.disabled = on;
+  /** The edits that waited land: drawn and read out, as each one's own
+   *  placement would have done had it not waited (its own preview sync
+   *  ran while it was held, and drew nothing). Every way a wait ends comes
+   *  here. The sync guards against a dead scene, so it is safe outside a
+   *  session too. */
+  function released(): void {
+    gate.release();
+    deps.syncPreviews();
+    deps.render();
+  }
+
+  /** This page's question waits for an answer, and "Delete it" is not
+   *  running: an answer may start. */
+  function answerable(): boolean {
+    const now = question();
+    return (
+      now.generation === asked &&
+      selectDraftUndecided(ctx.store.getState()) &&
+      !now.deleting
+    );
   }
 
   dom.draftRestore.addEventListener("click", () => {
     const waiting = offered;
-    if (waiting === null || discarding) return;
+    if (waiting === null || !answerable()) return;
     // Decided: the codes become this page's below (`restoreLevels`).
     if (undecided !== null) undecided.codes = null;
     // An edit that waited was built from the document before the draft
     // came back: replayed after it, it would write its old values over the
     // draft's. Dropped before anything is put back, and the note says so.
     const dropped = gate.drop();
+    ctx.store.dispatch(tourDraftActions.restored({ generation: asked }));
     // Into the SAME document a live placement changes, so the finish needs
     // no second path: it writes these into the manifest exactly as it
     // writes anything else (an edit of a hosted object replaces it by id),
@@ -881,13 +961,11 @@ export function wireCreatorDraft(deps: {
       writeSideM(dom.sizeInput, waiting.sizeM);
       ctx.activeSizeM = waiting.sizeM;
     }
-    // The draft is the document's now; new edits land on it.
-    decided();
-    // Render them, or the readout says "5 objects placed" over an empty
+    // The draft is the document's now; new edits land on it. Drawn by
+    // `decided`, or the readout says "5 objects placed" over an empty
     // scene and the creator places them again - new ids, real duplicates
-    // at the same spot in the published zip. The sync guards against a
-    // dead scene, so this is safe outside a session too.
-    deps.syncPreviews();
+    // at the same spot in the published zip.
+    decided();
     // What was put back, not what was offered: a code measured here kept
     // its place, and a visit already held stayed.
     const back = restoredText(restored.placed, levelBack, {
@@ -901,14 +979,13 @@ export function wireCreatorDraft(deps: {
   });
 
   dom.draftDismiss.addEventListener("click", () => {
-    if (discarding) return;
+    if (!answerable()) return;
     // Declining is NOT deleting: a mis-tap must not become the loss this
     // whole feature exists to prevent. The draft stays undecided: it is
     // offered again next time, and the next edit asks again. An edit that
     // waited is dropped - it was made over a draft nobody decided on - and
     // the creator is told.
-    dom.draftOffer.hidden = true;
-    editWaits = false;
+    ctx.store.dispatch(tourDraftActions.declined({ generation: asked }));
     if (gate.drop() > 0) {
       ctx.placementNote = DRAFT_EDIT_NOT_APPLIED;
       deps.render();
@@ -924,7 +1001,7 @@ export function wireCreatorDraft(deps: {
     // commit point, and deleting without one is the shape that lost work
     // four times.
     const tourUrl = draftTourUrl;
-    if (waiting === null || discarding) return;
+    if (waiting === null || !answerable()) return;
     if (store === undefined || tourUrl === null) return;
     // The one way a creator can throw a draft away deliberately - and the
     // escape hatch for a draft that would otherwise be offered forever.
@@ -945,10 +1022,16 @@ export function wireCreatorDraft(deps: {
     // next read refuses them whether or not their files are still there,
     // and the deletes after it are housekeeping. Nothing is removed BEFORE
     // the write lands, so a reload during it sees the draft as it was.
-    const rejectedIds = notLive(waiting.storedIds);
+    // The settings record goes with the draft: every edit waited, so
+    // nothing of this page's is in it. Named whether or not a record is on
+    // disk; the next read prunes the entry once no file is left.
+    const rejectedIds = [...notLive(waiting.storedIds), SETTINGS_REJECTED];
     // In progress (async-ui-feedback): the offer stays, its buttons off,
     // until the commit says how it went. Edits keep waiting meanwhile.
-    setDiscarding(true);
+    const deleting = asked;
+    ctx.store.dispatch(
+      tourDraftActions.deleteStarted({ generation: deleting }),
+    );
     // Assigned BEFORE the call, not after: a mint or finish issued in the
     // same tick must carry the rejection too, or its write would drop it.
     const wasRejected = draftRejected;
@@ -974,7 +1057,10 @@ export function wireCreatorDraft(deps: {
     void (async () => {
       const landed = await committed;
       const stillOpen = draftStore === store && draftTourUrl === tourUrl;
-      if (stillOpen) setDiscarding(false);
+      // The question's own: an answer of a tour gone changes nothing.
+      ctx.store.dispatch(
+        tourDraftActions.deleteEnded({ generation: deleting, landed }),
+      );
       if (!landed) {
         // The rejection is not on disk, so it must not stay in memory: a
         // later mint or finish would write it and commit a discard this
@@ -997,12 +1083,13 @@ export function wireCreatorDraft(deps: {
         deps.render();
         return;
       }
-      for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
-      // The record goes with the draft: every edit waited, so nothing of
-      // this page's is in it. Queued before the waiting edits land, whose
-      // own record lands after it.
-      // Closed since the tap and opened again: that open read the record
-      // and owns it now.
+      for (const id of rejectedIds) {
+        if (id !== SETTINGS_REJECTED) sweepRejected(store, tourUrl, id);
+      }
+      // The record goes with the draft, queued before the waiting edits
+      // land, whose own record lands after it. Not swept like an object:
+      // a tour closed since the tap still loses it, unless it was opened
+      // again, since that open read the record and owns it now.
       const reopened =
         !stillOpen &&
         draftTourUrl !== null &&
@@ -1038,9 +1125,10 @@ export function wireCreatorDraft(deps: {
     // draft is decided (`draft-edit-gate.ts`): no edit lands on a draft
     // nobody chose between. With nothing to offer the gate lets them
     // through at the end below.
-    editWaits = false;
+    ctx.store.dispatch(tourDraftActions.readStarted());
+    asked = question().generation;
+    const thisQuestion = asked;
     gate.hold(askAboutEdit);
-    readRunning = true;
     void (async (): Promise<boolean> => {
       const store = await deps.openDraftStore(draftKeyForTour(tourUrl));
       if (stale()) return false;
@@ -1056,6 +1144,12 @@ export function wireCreatorDraft(deps: {
         // is the path where they are least protected and least likely to
         // notice, because no write ever fails to tell them so.
         noteNoPersistence();
+        ctx.store.dispatch(
+          tourDraftActions.unavailable({
+            generation: thisQuestion,
+            reason: "storage",
+          }),
+        );
         return false;
       }
       // The stored codes FIRST, in their own queue and synchronously
@@ -1073,7 +1167,7 @@ export function wireCreatorDraft(deps: {
         settingsChainKey(tourUrl),
         async () => {
           const read = parseSettingsRecord(
-            await store.getText(SETTINGS_KEY),
+            await readSettingsText(store),
             opened ?? undefined,
             (what) => {
               lost = true;
@@ -1156,15 +1250,27 @@ export function wireCreatorDraft(deps: {
       }
       const waiting = draftObjectsNotYetHosted(stored.draft, opened);
       const waitingDeletions = draftDeletionsNotYetHosted(stored.draft, opened);
-      // The station poses the record holds that the opened tour does not
-      // (D17): work like any other, so the draft is not spent while one
-      // is waiting.
-      const moved = new Set(
-        changedStations(storedSettings?.stations, opened?.stations ?? []),
-      );
-      const waitingStations = (storedSettings?.stations ?? []).filter((p) =>
-        moved.has(p.id),
-      );
+      // The settings record by the desktop's rule: offered when it changes
+      // anything the opened tour holds, or holds a station the draft's
+      // objects name that the tour lacks - work like any other, so the
+      // draft is not spent while it waits. The phone never edits the "no
+      // GPS" setting, so a record's copy of it is no change: the tour's
+      // own stands (an older copy would undo a change made elsewhere).
+      const tour = opened ?? createEmptyTourManifest();
+      const file = settingsOf(tour);
+      const record =
+        storedSettings === undefined
+          ? undefined
+          : heldAgainst(
+              { ...storedSettings, needsNoGps: file.needsNoGps },
+              tour,
+            );
+      const waitingSettings =
+        record !== undefined &&
+        (changesSettings(record, file) ||
+          (waiting.length > 0 && addsStations(record, file)))
+          ? record
+          : undefined;
       // What the hosted zip stores for each of the draft's codes (M4c-1):
       // the content, read one by one like the one level was.
       const hostedTexts = new Map<string, string | null>();
@@ -1175,7 +1281,7 @@ export function wireCreatorDraft(deps: {
         hostedTexts.get(id) ?? null;
       if (stale()) return false;
       if (
-        waitingStations.length === 0 &&
+        waitingSettings === undefined &&
         draftIsSpent(stored.draft, opened, hostedLevel, stored.visits.length)
       ) {
         // SPENT: the hosted zip carries every object AND the measurement,
@@ -1205,7 +1311,11 @@ export function wireCreatorDraft(deps: {
         // Minus this page's visits (`notLive`); the edits made during the
         // awaits above waited, so none of them is in this list.
         const sweep = notLive(stored.storedIds);
-        draftRejected = sweep;
+        // A settings record the meta already rejects stays rejected: its
+        // file may still be on disk.
+        draftRejected = draftRejected.includes(SETTINGS_REJECTED)
+          ? [...sweep, SETTINGS_REJECTED]
+          : sweep;
         // Same commit point as the discard, for the same reason: an
         // interrupted sweep must not bring a spent draft back - and the
         // same notice when it does not land.
@@ -1242,13 +1352,30 @@ export function wireCreatorDraft(deps: {
       const hasLevel = draftHasUnhostedLevel(stored.draft, hostedLevel);
       // New placements, and changes of objects the hosted zip carries.
       const hosted = hostedObjects(opened);
+      // An item a recorded frame moves between a story and the free items
+      // is part of that frame's change, counted there (as on the desktop).
+      const moved = movedIds(waitingSettings, tour);
       const edits = waiting.filter(
-        (o) => hosted.key(o.id) !== undefined,
+        (o) => hosted.key(o.id) !== undefined && !moved.has(o.id),
       ).length;
-      // A moved station is one change, as on the desktop.
+      const newOnes = waiting.filter(
+        (o) => hosted.key(o.id) === undefined && !moved.has(o.id),
+      ).length;
+      // The setting is never the phone's (read as the tour's above), so
+      // it is never a change here: no count, and no part, whose name the
+      // phone has none for (`settingsParts` gets "").
+      const recordChanges =
+        waitingSettings === undefined
+          ? undefined
+          : { ...settingsChanges(waitingSettings, tour), noGps: false };
       const counts = {
-        placed: waiting.length - edits,
-        changed: edits + waitingStations.length,
+        placed: newOnes,
+        changed:
+          edits +
+          (recordChanges === undefined
+            ? 0
+            : settingsChangeCount(recordChanges)),
+        deleted: waitingDeletions.filter((id) => !moved.has(id)).length,
       };
       // A code measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a measurement
@@ -1271,47 +1398,62 @@ export function wireCreatorDraft(deps: {
         deleted: waitingDeletions,
         counts,
         visits: stored.visits,
-        stations: waitingStations,
-        // Whatever this page did meanwhile: a frame of an id the document
-        // carries is left as it is (`restored`).
-        createdStations: storedSettings?.createdStations ?? [],
-        text: "",
+        settings: waitingSettings,
       };
-      offered.text = restoreOfferText(counts.placed, hasLevel, {
+      // The record's parts named as the desktop names them.
+      const parts =
+        recordChanges === undefined ? [] : settingsParts(recordChanges, "");
+      const words = restoreOfferText(counts.placed, hasLevel, {
         changed: counts.changed,
-        deleted: waitingDeletions.length,
+        deleted: counts.deleted,
         visits: stored.visits.length,
       });
-      showOffer(offered);
+      ctx.store.dispatch(
+        tourDraftActions.found({
+          generation: thisQuestion,
+          text:
+            parts.length > 0
+              ? `${words} Changed: ${joinedParts(parts)}.`
+              : words,
+        }),
+      );
+      showOffer();
       return true;
     })().then(
-      (asked) => {
+      (offers) => {
         // A stale open's end says nothing about the open tour: its gate
         // ended with it (`opened`, `closed`, `reset`).
         if (stale()) {
           // A teardown's read: nothing reads now unless a newer open does.
-          if (!readRunning) clearBeingRead();
+          if (question().status !== "reading") clearBeingRead();
           return;
         }
-        readRunning = false;
         caughtUp = true;
         // Nothing to decide: the edits that waited land, into this store,
         // and a note that the page was reading goes.
-        if (asked) return;
+        if (offers) return;
+        ctx.store.dispatch(
+          tourDraftActions.noneFound({ generation: thisQuestion }),
+        );
         clearBeingRead();
-        gate.release();
+        released();
       },
       () => {
         if (stale()) {
-          if (!readRunning) clearBeingRead();
+          if (question().status !== "reading") clearBeingRead();
           return;
         }
-        readRunning = false;
+        ctx.store.dispatch(
+          tourDraftActions.unavailable({
+            generation: thisQuestion,
+            reason: "read-failed",
+          }),
+        );
         // A read that threw offers nothing: the waiting edits must not be
         // stranded behind a question nobody can see, nor the note that
         // said it was reading stand.
         clearBeingRead();
-        gate.release();
+        released();
       },
     );
   }
@@ -1324,15 +1466,19 @@ export function wireCreatorDraft(deps: {
   }
 
   function readyForAr(): boolean {
-    const note = readRunning
-      ? DRAFT_BEING_READ
-      : discarding
-        ? DRAFT_DELETE_RUNS
-        : offered !== null
-          ? DRAFT_DECIDE_BEFORE_AR
-          : null;
+    const now = question();
+    const note =
+      now.generation !== asked
+        ? null
+        : now.status === "reading"
+          ? DRAFT_BEING_READ
+          : now.deleting
+            ? DRAFT_DELETE_RUNS
+            : selectDraftUndecided(ctx.store.getState())
+              ? DRAFT_DECIDE_BEFORE_AR
+              : null;
     if (note === null) return true;
-    if (note === DRAFT_DECIDE_BEFORE_AR && offered !== null) showOffer(offered);
+    if (note === DRAFT_DECIDE_BEFORE_AR) showOffer();
     ctx.placementNote = note;
     deps.render();
     return false;
@@ -1350,16 +1496,13 @@ export function wireCreatorDraft(deps: {
       caughtUp = false;
       // A continuation of the closing tour's `present` ends here.
       presentEpoch += 1;
-      readRunning = false;
       // And its question: what waited for it is dropped with the tour.
       gate.drop();
       gate.release();
-      editWaits = false;
-      setDiscarding(false);
+      ctx.store.dispatch(tourDraftActions.questionEnded());
       finishedIds.clear();
       knownKeys.clear();
       forgottenIds.clear();
-      dom.draftOffer.hidden = true;
       offered = null;
       draftStore = undefined;
       draftTourUrl = null;
@@ -1442,8 +1585,9 @@ export function wireCreatorDraft(deps: {
     saveSettings: (settings) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;
-      // No draft namespace yet: `present` writes the record when it
-      // opens, as it does the objects - nothing failed.
+      // No draft namespace yet: nothing of the document can have changed
+      // (every edit waits from `present` on, and the document's listener
+      // writes the record once one lands) - nothing failed.
       if (tourUrl === null) return Promise.resolve(true);
       if (store === undefined) {
         noteNoPersistence();
