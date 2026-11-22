@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 
 import { expect, test } from "@playwright/test";
+import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
 
 import {
   installTourViewerArFakes,
@@ -30,7 +31,8 @@ import { stationBlocks } from "./tour-fixture.mjs";
  * with the text, the tour's write, and the inspector following it. The
  * walk pins the promise the section makes: an edited word marks the
  * read-along stale, and lining the voice up again makes it read along
- * once more without touching the text. The layout test pins the rows'
+ * once more without touching the text, and the choice of where the
+ * words show while the voice plays is one saved, undoable change. The layout test pins the rows'
  * measures from the prototype's CSS at three desktop sizes. The last
  * walk follows who speaks the voice from the switch and the field to the
  * visitor: only a browser shows the saved tour opened by the viewer and
@@ -96,6 +98,20 @@ async function essayNow(page) {
   return stationBlocks(gate).find(
     (/** @type {any} */ b) => b.id === "gate-essay",
   );
+}
+
+/** The tour.json of a saved zip, as text.
+ * @param {string} path */
+async function savedTourText(path) {
+  const bytes = new Uint8Array(readFileSync(path));
+  const reader = new ZipReader(new Uint8ArrayReader(bytes));
+  const entry = (await reader.getEntries()).find(
+    (e) => e.filename === "tour.json",
+  );
+  if (entry?.getData === undefined) throw new Error("no tour.json");
+  const text = await entry.getData(new TextWriter());
+  await reader.close();
+  return text;
 }
 
 /** The session's read of the essay's narration (its timing text).
@@ -190,6 +206,32 @@ test("a voice and its timing are imported, a word is edited, and lining the voic
   const imported = JSON.parse((await narrationNow(page)).timingText);
   expect(imported.segments).toHaveLength(2);
   await page.locator('[data-ln="last-ok"]').click();
+
+  // Where the words show while the voice plays: on the screen until the
+  // creator puts them on the sign, one change of the tour, saved in its
+  // file and taken back by one undo.
+  const words = page.getByTestId("narration-words");
+  await expect(words).toBeVisible();
+  const onSign = words.locator('input[value="sign"]');
+  await expect(words.locator('input[value="screen"]')).toBeChecked();
+  await onSign.check();
+  await expect
+    .poll(async () => (await essayNow(page)).narration.words)
+    .toBe("sign");
+  await expect(onSign).toBeChecked();
+  const download = page.waitForEvent("download");
+  await save(page);
+  expect(await savedTourText(await (await download).path())).toContain(
+    '"words":"sign"',
+  );
+  await page.evaluate(() => {
+    /** @type {HTMLElement | null} */ (document.activeElement)?.blur();
+  });
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => (await essayNow(page)).narration.words)
+    .toBeUndefined();
+  await expect(words.locator('input[value="screen"]')).toBeChecked();
 
   // A word edited: the read-along no longer fits, and says why.
   const area = page.getByTestId("long-text-writer");

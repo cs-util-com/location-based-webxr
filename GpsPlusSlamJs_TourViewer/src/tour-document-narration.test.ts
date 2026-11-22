@@ -481,6 +481,34 @@ describe("narrationEdited: who speaks the voice", () => {
     expect(changeCount(twice)).toBe(0);
   });
 
+  // Why: where the words show while the voice plays is the creator's
+  // choice for a reading sign; putting them on the sign and back is one
+  // undo step each, written with the tour, and the box is the absence of
+  // the field (never a stored "screen").
+  it("puts the words on the sign and back as one step each, undone in turn", () => {
+    const before = opened();
+    const onSign = reduce(
+      before,
+      act.narrationEdited({
+        object: credited({ ...N, words: "sign" }),
+        what: "where the words show",
+      }),
+    );
+    expect(essay(onSign)).toMatchObject({ narration: { words: "sign" } });
+    expect(manifestToWrite(onSign)).not.toBeNull();
+    const back = reduce(
+      onSign,
+      act.narrationEdited({
+        object: credited(N),
+        what: "where the words show",
+      }),
+    );
+    expect(essay(back)).not.toHaveProperty("narration.words");
+    const undone = reduce(back, act.undone());
+    expect(essay(undone)).toMatchObject({ narration: { words: "sign" } });
+    expect(changeCount(reduce(undone, act.undone()))).toBe(0);
+  });
+
   // Why: the reducer is the document's last guard - a credit the format
   // would not take (blank, over its cap, not text) or a mark that is not
   // true or false would make the next save fail or show a visitor a
@@ -498,6 +526,10 @@ describe("narrationEdited: who speaks the voice", () => {
       { ...N, voiceCredit: 7 },
       { ...N, synthetic: "yes" },
       { audio: "voice", timing: ENTRY },
+      // `words` is "sign" or absent: "screen" is the absence, never stored.
+      { ...N, words: "screen" },
+      { ...N, words: true },
+      { ...N, words: null },
     ]) {
       expect(
         reduce(

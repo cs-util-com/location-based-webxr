@@ -28,6 +28,10 @@ description, offerNarration }`; `asked` is the dimmed segment last
 - A stored lectern or card presses no segment and says so.
 - Nothing here writes; the writer calls `writeView` only for a segment
   that is not dimmed.
+- Captions show in the box at the bottom. With a narration, the
+  Captions line points to the Narration section's words row (on the
+  box or on the sign), the one choice about the words a tour stores
+  (`narration.words`).
 
 ## Tests
 

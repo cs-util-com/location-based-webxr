@@ -70,8 +70,8 @@ export function segmentRefusal(
     return "Screen only is each visitor's own choice for now: a tour cannot set it yet. Visitors pick it from the view menu at the station.";
   }
   return hasNarration
-    ? "Captions are each visitor's own choice for now: a tour cannot set them yet. Visitors who listen pick them from the view menu."
-    : "Captions show the sentence being spoken in a strip at the bottom, so they need a narration.";
+    ? "Captions are each visitor's own choice. On a reading sign the words show in the box at the bottom while the voice plays, unless you put them on the sign: the Narration section below has that choice."
+    : "Captions show the sentence being spoken in the box at the bottom, so they need a narration.";
 }
 
 /**

@@ -38,6 +38,8 @@ describe("viewPickerModel", () => {
       asked: "captions",
     });
     expect(noVoice.description).toMatch(/need a narration/);
+    // Captions now show in the box at the bottom, not in a strip.
+    expect(noVoice.description).toMatch(/in the box at the bottom/);
     expect(noVoice.offerNarration).toBe(true);
     const voice = viewPickerModel({
       view: "reading",
@@ -46,6 +48,10 @@ describe("viewPickerModel", () => {
     });
     expect(voice.offerNarration).toBe(false);
     expect(voice.description).toMatch(/own choice/);
+    // With a voice the line points to the Narration section's words row,
+    // the one choice about the words a tour can store.
+    expect(voice.description).toMatch(/Narration section/);
+    expect(voice.description).toMatch(/on the sign/);
     const silent = viewPickerModel({
       view: "reading",
       hasNarration: false,

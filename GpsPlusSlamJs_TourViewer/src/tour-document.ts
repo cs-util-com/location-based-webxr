@@ -2388,13 +2388,16 @@ function withTimingListed(
 
 /** Whether a narration's synthetic mark is true or false and its credit,
  *  when it has one, is in the form the editor stores (`normalVoiceCredit`):
- *  never blank, within the format's cap. */
+ *  never blank, within the format's cap; and its `words`, when present,
+ *  is "sign" (the box is the field's absence). */
 function speakerFieldsHold(narration: TourNarration): boolean {
-  const { synthetic, voiceCredit } = narration as {
+  const { synthetic, voiceCredit, words } = narration as {
     readonly synthetic: unknown;
     readonly voiceCredit?: unknown;
+    readonly words?: unknown;
   };
   if (typeof synthetic !== "boolean") return false;
+  if (words !== undefined && words !== "sign") return false;
   return (
     voiceCredit === undefined ||
     (typeof voiceCredit === "string" &&
@@ -2410,7 +2413,7 @@ function speakerFieldsHold(narration: TourNarration): boolean {
  * the document, a change of anything but its narration, a voice the tour
  * does not hold, a synthetic mark that is not true or false, a credit
  * that is blank, over the format's cap or not in its stored form
- * (`voice-credit.ts`), a read-along entry other than its own
+ * (`voice-credit.ts`), a `words` other than "sign" or absent, a read-along entry other than its own
  * (`timing/<id>.json`), a text where the narration names no entry or none
  * where it does, and a change that changes nothing.
  */
