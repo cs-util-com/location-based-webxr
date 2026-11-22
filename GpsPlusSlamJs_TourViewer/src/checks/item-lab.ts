@@ -589,6 +589,10 @@ function runItemLab(kind: ItemKind, folder: URL): ItemLab {
     stop() {
       second = "off";
     },
+    // Let go while held: it stays paused, so it reads as held.
+    forget() {
+      return undefined;
+    },
   };
 
   const hook: ItemLab = {

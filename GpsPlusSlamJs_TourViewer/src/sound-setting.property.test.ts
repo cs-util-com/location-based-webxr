@@ -33,6 +33,7 @@ describe("silencedFocus (properties)", () => {
             sounding.add(i);
           },
           stop: () => sounding.delete(i),
+          forget: () => undefined,
         }));
         const focus = silencedFocus(createVoiceFocus(), setting);
         for (const { who, what } of events) {

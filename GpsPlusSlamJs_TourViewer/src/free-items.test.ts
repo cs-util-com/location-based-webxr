@@ -398,6 +398,7 @@ describe("createFreeItems", () => {
       hold: () => undefined,
       carryOn: () => undefined,
       stop: () => undefined,
+      forget: () => undefined,
     });
     t.free.follow(t.here);
     expect(player.playing()).toBe(false);
