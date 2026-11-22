@@ -31,10 +31,7 @@ import type {
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import {
-  localPoseOf,
-  tourObjectBlock,
-} from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   mintPhoto,
