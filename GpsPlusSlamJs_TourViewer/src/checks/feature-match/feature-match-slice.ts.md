@@ -40,6 +40,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `runZipStarted()`: refused unless idle with at least one complete pair; sets busy `saving` and phase `preparing`.
 - `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation, so a camera save's end does not end it.
 - An accepted plan photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
+- An accepted plan photo, lost photo, move, resize or reset clears the single-file line (`fileSave.text`) unless a single-file save is in preparation: the line named the pair or the photos it was about.
 
 ### Guided single files, camera start and photo store
 

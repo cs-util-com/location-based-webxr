@@ -410,12 +410,28 @@ type RotationRate = {
 
 /** The next smoothed motion level from a `devicemotion` rotation rate. */
 export function motionStep(level: number, r: RotationRate): number {
-  if (!r || (r.alpha === null && r.beta === null && r.gamma === null)) {
-    return level;
-  }
-  const m =
-    Math.abs(r.alpha ?? 0) + Math.abs(r.beta ?? 0) + Math.abs(r.gamma ?? 0);
+  if (!r) return level;
+  // A value that is not a finite number counts as missing: one NaN would
+  // latch the level to NaN for good.
+  const rates = [r.alpha, r.beta, r.gamma].filter(
+    (v): v is number => typeof v === "number" && Number.isFinite(v),
+  );
+  if (rates.length === 0) return level;
+  const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
+  // Absurdly large rates can sum past the largest number: ignore that too.
+  if (!Number.isFinite(m)) return level;
   return level * 0.8 + m * 0.2;
 }
 
 export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;
+
+/** The intro's "Keep the phone still" text for the countdown and sound settings. */
+export function introCountdownText(s: {
+  readonly countdown: number;
+  readonly sound: boolean;
+}): string {
+  if (s.countdown <= 0) {
+    return "A tap shakes the phone, and the countdown is off: each photo is taken at your tap. Rest the phone on something steady, or set a countdown under Pairs.";
+  }
+  return `A tap shakes the phone, so each photo is taken ${String(s.countdown)} seconds after your tap${s.sound ? ", with a beep per second" : ""}. Hands off until the click.`;
+}

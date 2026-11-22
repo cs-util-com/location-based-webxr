@@ -502,7 +502,25 @@ const planCase =
     ) {
       s.runZip = { phase: "idle", text: "" };
     }
+    // The single-file line names one pair's file; a file being prepared
+    // keeps its own line until it ends.
+    if (
+      FILE_LINE_STALE.has(action.type) &&
+      !s.fileSave.preparing &&
+      s.fileSave.text !== ""
+    ) {
+      s.fileSave = { preparing: false, text: "" };
+    }
   };
+
+/** Plan actions after which the single-file line names another pair's file. */
+const FILE_LINE_STALE: ReadonlySet<PlanAction["type"]> = new Set([
+  "photo",
+  "lost",
+  "move",
+  "size",
+  "reset",
+]);
 
 /** Plan actions after which a zip made before holds other photos. */
 const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([

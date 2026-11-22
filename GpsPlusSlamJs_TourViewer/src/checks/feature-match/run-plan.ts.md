@@ -19,7 +19,7 @@ The photo test run as plain data, shared by every view of the feature matching c
   - `photo {slot, which, photo}` - a listed slot, a valid photo, B only after A. A slot's first photo, and the first photo after its take was downloaded, start a new take with `sequence + 1`. A new A after a download clears B; a retake of A before it keeps B; a new B keeps A. The light check is redone whenever both photos exist. `shots` counts every photo.
   - `lost {slot, which}` - a photo the browser no longer holds (after a reload): set to null, the light check with it.
   - `keep {id, name, slot}` - a complete pair's zip, under a fresh id and a name.
-  - `downloaded {ids}` - those kept files, and their slots when the file holds the slot's newest take, are downloaded; `downloads` + 1.
+  - `downloaded {ids}` - those kept files, and their slots when the file holds the slot's newest take, are downloaded; `downloads` stays: it counts the run zip only, so a single file never reads as "Download again" or drops "(not downloaded yet)".
   - `run-downloaded` - the guided view's one zip: every complete pair is downloaded; `downloads` + 1; refused with no complete pair.
   - `drop-downloaded` - forgets downloaded kept files (frees their Blobs).
   - `settings {settings}` - known values only; one unknown value refuses the whole change.

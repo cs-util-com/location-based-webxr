@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 
 import {
   featureMatchActions as A,
@@ -9,6 +10,7 @@ import {
 } from "./feature-match-slice";
 import {
   deviceSummary,
+  introCountdownText,
   endView,
   isMoving,
   measureText,
@@ -397,6 +399,34 @@ describe("the steady hint", () => {
     expect(motionStep(5, { alpha: null, beta: null, gamma: null })).toBe(5);
   });
 
+  // Why: one NaN reading would latch the smoothed level to NaN for good
+  // (NaN > threshold is false), pinning the chip to "steady" and hiding
+  // the "phone moved during countdown" note. A value that is not a finite
+  // number counts as missing.
+  it("ignores rotation rates that are not finite numbers", () => {
+    expect(
+      motionStep(5, { alpha: Number.NaN, beta: Infinity, gamma: -Infinity }),
+    ).toBe(5);
+    expect(motionStep(5, { alpha: Number.NaN, beta: 10, gamma: null })).toBe(6);
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            alpha: fc.oneof(fc.double(), fc.constant(null)),
+            beta: fc.oneof(fc.double(), fc.constant(null)),
+            gamma: fc.oneof(fc.double(), fc.constant(null)),
+          }),
+          { maxLength: 30 },
+        ),
+        (readings) => {
+          let l = 0;
+          for (const r of readings) l = motionStep(l, r);
+          return Number.isFinite(l) || l === 0;
+        },
+      ),
+    );
+  });
+
   // The sweep: every threshold from 3 to 12 calls the table and the hand
   // steady and the pan moving (the hand peaks at about 2.6); the threshold
   // only moves how long a tap reads moving: 28 readings at 3, 17 at 6, 11
@@ -447,5 +477,22 @@ describe("measureText", () => {
     expect(measureText(run([]), null)).toBe(
       "the current pair has no two photos yet",
     );
+  });
+});
+
+// Why this test matters: the intro's "Keep the phone still" fact named a
+// fixed 3 s countdown with beeps; with the countdown at 5 s, off, or the
+// sound off it told the tester something the page then did not do.
+describe("introCountdownText", () => {
+  it("follows the countdown and sound settings", () => {
+    expect(introCountdownText({ countdown: 3, sound: true })).toBe(
+      "A tap shakes the phone, so each photo is taken 3 seconds after your tap, with a beep per second. Hands off until the click.",
+    );
+    expect(introCountdownText({ countdown: 5, sound: false })).toBe(
+      "A tap shakes the phone, so each photo is taken 5 seconds after your tap. Hands off until the click.",
+    );
+    const off = introCountdownText({ countdown: 0, sound: true });
+    expect(off).toContain("the countdown is off");
+    expect(off).not.toMatch(/\d seconds/);
   });
 });

@@ -328,11 +328,17 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   const inDb = new Set<string>();
   /** Plan photo ids whose write is in flight. */
   const writing = new Set<string>();
-  /** Plan photo ids whose last write failed; retried at the next plan change. */
+  /**
+   * Plan photo ids whose last write failed, oldest first. Retried one at a
+   * time: the oldest when a new photo comes, the next after any write
+   * succeeds. A refusing database (quota) is so not tried again for every
+   * photo at every plan change, each try a full copy of the photo.
+   */
   const unstored = new Set<string>();
+  /** Unstored ids whose failure was reported; each is reported once. */
+  const reported = new Set<string>();
   const named = (): Set<string> => new Set(planPhotoIds(store.getState().plan));
-  const flagUnstored = (): void => {
-    const failing = unstored.size > 0;
+  const flagFailing = (failing: boolean): void => {
     if (store.getState().photoStoreFailing !== failing) {
       store.dispatch(A.photoStoreChanged(failing));
     }
@@ -343,36 +349,63 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
       return;
     }
     writing.add(id);
+    let stored = false;
     try {
       await db.put(id, saved);
-      unstored.delete(id);
-      if (named().has(id)) {
-        inDb.add(id);
-      } else {
-        // Retaken or reset while it was written.
-        await db.delete(id);
-      }
+      stored = true;
     } catch (e) {
       // The photo stays in memory for this page, and is tried again.
       unstored.add(id);
-      dbFailed(e);
-    } finally {
-      writing.delete(id);
-      flagUnstored();
+      if (!reported.has(id)) {
+        reported.add(id);
+        dbFailed(e);
+      }
+    }
+    writing.delete(id);
+    if (stored) {
+      unstored.delete(id);
+      reported.delete(id);
+      if (named().has(id)) {
+        inDb.add(id);
+      } else {
+        // Retaken or reset while it was written. A failed delete leaves
+        // an orphan for the next start's sweep, not an unstored photo.
+        db.delete(id).catch(dbFailed);
+      }
+      retryOldest();
+    }
+    flagFailing(unstored.size > 0);
+  }
+  /** Writes the oldest unstored photo still named, unless one is in flight. */
+  function retryOldest(): void {
+    if ([...unstored].some((id) => writing.has(id))) {
+      return;
+    }
+    const ids = named();
+    for (const id of unstored) {
+      const saved = sides.frames.get(id);
+      if (ids.has(id) && saved) {
+        void storePhoto(id, saved);
+        return;
+      }
     }
   }
   /**
    * Writes the plan's new photos to the database and deletes the ones it
-   * no longer names.
+   * no longer names. Without a database no photo outlives a reload, which
+   * the state says while the plan names one.
    */
   function mirror(s: FeatureMatchState): void {
+    const ids = new Set(planPhotoIds(s.plan));
     if (!db) {
+      flagFailing(ids.size > 0);
       return;
     }
-    const ids = new Set(planPhotoIds(s.plan));
+    let fresh = false;
     for (const id of ids) {
       const saved = sides.frames.get(id);
-      if (saved && !inDb.has(id) && !writing.has(id)) {
+      if (saved && !inDb.has(id) && !writing.has(id) && !unstored.has(id)) {
+        fresh = true;
         void storePhoto(id, saved);
       }
     }
@@ -385,9 +418,13 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     for (const id of unstored) {
       if (!ids.has(id)) {
         unstored.delete(id);
+        reported.delete(id);
       }
     }
-    flagUnstored();
+    if (fresh) {
+      retryOldest();
+    }
+    flagFailing(unstored.size > 0);
   }
 
   /**

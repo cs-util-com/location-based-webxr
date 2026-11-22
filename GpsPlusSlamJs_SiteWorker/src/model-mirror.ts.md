@@ -12,7 +12,7 @@ A same-origin mirror for pinned model files whose host sends no CORS headers (Gi
   - 404 for a name not in the allowlist, without any upstream request;
   - 405 (with `allow: GET, HEAD`) for any other method;
   - 502 when the upstream is unreachable, answers non-2xx, or sends a `content-length` other than the pinned size (the body is cancelled);
-  - else 200 with the upstream body streamed, `content-type: application/octet-stream`, the pinned `content-length` and `cache-control: public, max-age=31536000, immutable`; HEAD gets no body.
+  - else 200 with the upstream body streamed, `content-type: application/octet-stream`, the upstream's `content-length` when it sent one (it was checked against the pinned size; without one none is claimed, and the page's sha256 check still guards the bytes) and `cache-control: public, max-age=31536000, immutable`; HEAD gets no body.
 
 ## Invariants and assumptions
 

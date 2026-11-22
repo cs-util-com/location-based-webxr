@@ -1691,7 +1691,8 @@ test("the feature matching speed test reports an arm that cannot load", async ({
 /**
  * A stand-in save dialog: `window.__saveAnswer` "save" (the default)
  * keeps the written bytes in `window.__saved` by suggested name, "cancel"
- * dismisses the dialog as a user would.
+ * dismisses the dialog as a user would, "hold" keeps it open until
+ * `window.__releaseSave()` (then it saves).
  *
  * @param {import("@playwright/test").Page} page
  */
@@ -1703,6 +1704,11 @@ async function savePicker(page) {
     w.showSaveFilePicker = async (/** @type {any} */ opts) => {
       if (w.__saveAnswer === "cancel") {
         throw new DOMException("The user aborted a request.", "AbortError");
+      }
+      if (w.__saveAnswer === "hold") {
+        await new Promise((resolve) => {
+          w.__releaseSave = resolve;
+        });
       }
       const parts = /** @type {Blob[]} */ ([]);
       return {
@@ -2072,6 +2078,178 @@ test("the guided finder says the camera is starting while it waits", async ({
 });
 
 /**
+ * Why this test matters: leaving the run screen (the help) while the camera
+ * permission prompt is still open stops that start; coming back must start
+ * the camera again, not wait for a start that was stopped. The intro then
+ * also names the countdown as it is set, not a fixed 3 s.
+ */
+test("the guided view starts the camera again after the help while the prompt was open", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page, "hold");
+  await page.goto("/feature-match-check.html");
+  await page.locator("#g-intro-start").click();
+  const chip = page.locator("#g-cam-chip");
+  await expect(chip).toHaveText("starting camera...");
+  await page.locator("#g-open-help").click();
+  await expect(page.locator("#g-intro")).toBeVisible();
+  await page.locator("#g-intro-start").click();
+  await expect(page.locator("#g-run")).toBeVisible();
+  for (let i = 0; i < 2; i++) {
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__releaseCamera();
+    });
+  }
+  await expect(chip).toBeHidden();
+  await expect(page.locator("#g-intro-still")).toContainText(
+    "3 seconds after your tap",
+  );
+  await countdownOff(page);
+  await page.locator("#g-open-help").click();
+  await expect(page.locator("#g-intro-still")).toContainText(
+    "the countdown is off",
+  );
+});
+
+/**
+ * Pair 1 complete with the countdown off, then the countdown back at 3 s
+ * and photo A marked for a retake: the next tap starts a countdown on a
+ * pair whose single files can be saved.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function retakeCountdownReady(page) {
+  await guidedFirstPair(page);
+  await page.locator("#g-open-pairs").click();
+  await page.locator('#g-sheet-pairs [data-countdown="3"]').click();
+  await page.locator("#g-close-pairs").click();
+  await page.locator("#g-slot-a").click();
+  await expect(page.locator("#g-primary-label")).toHaveText("Retake A");
+}
+
+/**
+ * Why this test matters: a save that starts while a countdown runs makes
+ * the page busy, and the reducer then refuses the next second and the
+ * photo. A refused second must end the countdown (logged "refused"), not
+ * leave a frozen digit; a refused photo at the end must say so in the
+ * finder, not vanish in the log alone. The page clock drives the seconds;
+ * the held save dialog keeps the page busy. The file button is clicked by
+ * a dispatched event: it sits in the measure sheet, which a tester opens
+ * from the end screen, and leaving the run screen would cancel the
+ * countdown first; the event stands in for any save under a countdown.
+ */
+test("the guided countdown ends when the page turns busy under it", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await savePicker(page);
+  await page.goto("/feature-match-check.html");
+  await retakeCountdownReady(page);
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__saveAnswer = "hold";
+  });
+
+  // A refused second.
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-count-num")).toHaveText("3");
+  await page.locator("#g-file-a").dispatchEvent("click");
+  await page.clock.runFor(1000);
+  await expect(page.locator("#g-count")).toBeHidden();
+  await expect(page.locator("#log")).toContainText("countdown: refused");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__releaseSave();
+  });
+  await expect(page.locator("#g-primary")).toBeEnabled();
+
+  // A refused photo at the end of the countdown.
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-count-num")).toHaveText("3");
+  await page.clock.runFor(2000);
+  await expect(page.locator("#g-count-num")).toHaveText("1");
+  await page.locator("#g-file-a").dispatchEvent("click");
+  await page.clock.runFor(1000);
+  await page.clock.runFor(10);
+  await expect(page.locator("#g-count")).toBeHidden();
+  await expect(page.locator("#log")).toContainText(
+    "capture: photo A of 1a-s1 refused",
+  );
+  await expect(page.locator("#g-shot-note")).toHaveText(
+    "No photo A: the page was busy. Tap again.",
+  );
+});
+
+/**
+ * Why this test matters: Download all is the one file a tester sends, so
+ * its failure path must be as clear as its success: while packing the
+ * button says so and is off, a PNG that cannot be encoded ends in a
+ * "Could not prepare the zip" line with the button back on, and the run
+ * goes on (the next photo can still be taken). The canvas encoder is
+ * replaced: held once, then answering null.
+ */
+test("the guided Download all shows packing, then a failure that loses nothing", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await savePicker(page);
+  await page.addInitScript(() => {
+    const w = /** @type {any} */ (window);
+    const real = HTMLCanvasElement.prototype.toBlob;
+    w.__toBlob = "ok";
+    HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
+      if (w.__toBlob === "hold") {
+        w.__toBlob = "null";
+        w.__releaseBlob = () => setTimeout(() => cb(null), 0);
+        return;
+      }
+      if (w.__toBlob === "null") {
+        setTimeout(() => cb(null), 0);
+        return;
+      }
+      real.call(this, cb, ...rest);
+    };
+  });
+  await page.goto("/feature-match-check.html");
+  await guidedFirstPair(page);
+  await page.locator("#g-open-pairs").click();
+  await page.locator("#g-go-end").click();
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__toBlob = "hold";
+  });
+  const button = page.locator("#g-download-all");
+  await button.click();
+  await expect(button).toHaveText("Preparing the zip...");
+  await expect(button).toBeDisabled();
+  // The label turns before the first PNG is encoded: wait for the held one.
+  await page.waitForFunction(
+    () => typeof (/** @type {any} */ (window).__releaseBlob) === "function",
+  );
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__releaseBlob();
+  });
+  const state = page.locator("#g-download-state");
+  await expect(state).toHaveText(
+    /^Could not prepare the zip: .*PNG encoding failed.*. Nothing was lost; try again.$/,
+  );
+  await expect(state).toHaveClass(/err/);
+  await expect(button).toBeEnabled();
+  await expect(button).toHaveText("Download all");
+  await expect(page.locator("#log")).toContainText("ERROR download:");
+
+  await page.locator("#g-end-back").click();
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-head-pos")).toHaveText(/^Pair 2 of/);
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+});
+
+/**
  * Why this test matters: the measure sheet is where the guided view keeps
  * the benchmark. A run on the current pair must use the pair's two photos
  * and fill the moved Results, and the pair's matches file is offered only
@@ -2080,6 +2258,7 @@ test("the guided finder says the camera is starting while it waits", async ({
 test("the guided measure sheet runs the benchmark on the current pair", async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 412, height: 915 });
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await page.addInitScript(() => {
@@ -2101,6 +2280,24 @@ test("the guided measure sheet runs the benchmark on the current pair", async ({
   await page.locator("#g-measure-run").click();
   await expect(page.locator("#g-measure-state")).toHaveText("done: 1 methods");
   await expect(page.locator("#results tbody tr")).toHaveCount(1);
+  // On a phone a results table wider than the sheet scrolls in its own
+  // box, its header with it, and the page never scrolls sideways.
+  const t = await page.evaluate(() => {
+    const wrap = /** @type {HTMLElement} */ (
+      document.querySelector("#g-sheet-measure .table-wrap")
+    );
+    const head = /** @type {HTMLElement} */ (
+      document.querySelector("#results thead")
+    );
+    return {
+      inWrap: wrap.contains(head),
+      overflowX: getComputedStyle(wrap).overflowX,
+      pageW: document.documentElement.scrollWidth,
+    };
+  });
+  expect(t.inWrap).toBe(true);
+  expect(t.overflowX).toBe("auto");
+  expect(t.pageW).toBeLessThanOrEqual(412);
   await expect(page.locator("#g-file-matches")).toBeEnabled();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -2124,6 +2321,8 @@ test("the guided measure sheet runs the benchmark on the current pair", async ({
 for (const vp of [
   { width: 412, height: 915 },
   { width: 915, height: 412 },
+  // A common Android phone on its side, shorter than 915x412.
+  { width: 800, height: 360 },
   { width: 880, height: 790 },
 ]) {
   test(`the guided run screen fits ${String(vp.width)}x${String(vp.height)}`, async ({
