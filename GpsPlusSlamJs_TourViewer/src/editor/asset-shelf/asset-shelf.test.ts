@@ -33,7 +33,11 @@ import {
   createAssetShelf,
   type AssetShelfDeps,
 } from "./asset-shelf.js";
-import { assetShelfReducer, selectShelfRows } from "./asset-shelf-slice.js";
+import {
+  assetShelfActions as shelfAct,
+  assetShelfReducer,
+  selectShelfRows,
+} from "./asset-shelf-slice.js";
 import {
   createOptimizerHost,
   OPTIMIZER_SILENCE_MS,
@@ -126,6 +130,43 @@ describe("the shelf's runner", () => {
       swaps: 1,
     });
     expect(row(B)?.status).toBe("running");
+  });
+
+  // Why: a phone holds one large model at a time. The model import's
+  // runner waits while a model optimizes; the shelf must wait as well
+  // while a model converts, or the two Workers hold two models at once.
+  // A picture does not wait: it is small.
+  it("starts no model while a model converts, a picture still runs, and the model once the conversion ends", async () => {
+    const M = "d".repeat(64);
+    const model: TourAsset = { id: M, path: `content/${M}.glb`, kind: "model" };
+    const images = fakeOptimizer();
+    const models = fakeOptimizer();
+    const { store, shelf, row, settle, bytes } = setup({
+      optimizers: { ...ASSET_OPTIMIZERS, image: images, model: models },
+      slots: 2,
+    });
+    bytes.set(M, new Blob([new Uint8Array(1000)]));
+    store.dispatch(doc.assetsAdded({ assets: [model] }));
+    store.dispatch(
+      shelfAct.importQueued({
+        id: "import:1",
+        name: "bust.gltf",
+        format: "gltf",
+        bytes: 9,
+      }),
+    );
+    store.dispatch(shelfAct.importStarted({ id: "import:1" }));
+    shelf.add(model, "rock.glb", 1000, "added");
+    shelf.add(image(A), "a.png", 1000, "added");
+    await settle();
+    expect(row(M)?.status).toBe("queued");
+    expect(models.calls).toHaveLength(0);
+    expect(row(A)?.status).toBe("running");
+    expect(images.calls).toHaveLength(1);
+    store.dispatch(shelfAct.importRemoved({ id: "import:1" }));
+    await settle();
+    expect(row(M)?.status).toBe("running");
+    expect(models.calls).toHaveLength(1);
   });
 
   it("keeps the original of a result not at least 10 % smaller", async () => {

@@ -20,6 +20,7 @@ import {
   filteredRows,
   formatBytes,
   gainPercent,
+  madeFromLines,
   pillView,
   RAIL_RINGS,
   railView,
@@ -95,6 +96,23 @@ describe("the card", () => {
       "3D model · FILE · 9.0 MB",
     );
     expect(fileExt("photo.Large.jpeg")).toBe("JPEG");
+  });
+
+  // Why: a converted model's notes (what the conversion left out) are
+  // read only on its opened card; its closed card's kind line counts them
+  // so they are not missed.
+  it("counts a converted model's notes on its kind line", () => {
+    const made = (notes: string[]) =>
+      cardKindLine(
+        row({
+          kind: "model",
+          name: "bust.glb",
+          madeFrom: { from: "bust.gltf", notes },
+        }),
+      );
+    expect(made(["a", "b"])).toBe("3D model · GLB · 9.0 MB · 2 notes");
+    expect(made(["a"])).toBe("3D model · GLB · 9.0 MB · 1 note");
+    expect(made([])).toBe("3D model · GLB · 9.0 MB");
   });
 
   // Why: a character's entry holds his files; its kind line names him a
@@ -518,6 +536,74 @@ describe("shelfSqueezed", () => {
           expect(shelfSqueezed(w, open)).toBe(open && w > 700 && w <= 900);
         },
       ),
+    );
+  });
+});
+
+// Why: a model being converted is not in the tour yet; its card must say
+// it is being converted (not "made smaller"), that nothing was added when
+// it failed, and a converted model must say what it was made from and
+// what the conversion left out, or the creator would look for a part of
+// the model that was never there.
+describe("an import's card", () => {
+  const importing = (over: Parameters<typeof row>[0] = {}) =>
+    row({
+      id: "import:1",
+      kind: "model",
+      name: "bust.gltf",
+      status: "running",
+      progress: 0.4,
+      placesInUse: 0,
+      canUseOriginal: false,
+      optimizedBytes: undefined,
+      import: { format: "gltf" },
+      ...over,
+    });
+
+  it("says it converts, and that nothing is added until it is done", () => {
+    expect(stateLine(importing())).toEqual({
+      kind: "processing",
+      phase: "Converting to a tour model",
+      percent: 40,
+    });
+    expect(cardMore(importing())).toBe(
+      "Being converted into a model the tour can show. Nothing is added until it is done.",
+    );
+    expect(cardKindLine(importing())).toBe("3D model · GLTF · 9.0 MB");
+  });
+
+  it("says it was not converted, with Retry only where Retry may help", () => {
+    const failed = importing({
+      status: "failed",
+      reason: "It names bust.bin.",
+      retryable: false,
+    });
+    expect(stateLine(failed)).toEqual({
+      kind: "failed",
+      title: "Not converted",
+      retry: false,
+      why: "It names bust.bin.",
+    });
+    expect(cardMore(failed)).toBe("Nothing was added.");
+    expect(cardMore({ ...failed, retryable: true })).toBe(
+      "Nothing was added. Retry converts it again.",
+    );
+    expect(railView([failed]).rings[0]?.tip).toBe("bust.gltf: not converted");
+  });
+
+  it("names what a converted model was made from and what was left out", () => {
+    const madeRow = row({
+      kind: "model",
+      name: "bust.glb",
+      madeFrom: { from: "bust.gltf", notes: ["Made without x.png."] },
+    });
+    expect(madeFromLines(madeRow)).toEqual([
+      'Converted from "bust.gltf".',
+      "Made without x.png.",
+    ]);
+    expect(madeFromLines(row())).toBeNull();
+    expect(shapeKey([madeRow])).not.toBe(
+      shapeKey([{ ...madeRow, madeFrom: { from: "bust.gltf", notes: [] } }]),
     );
   });
 });

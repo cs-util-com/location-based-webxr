@@ -163,7 +163,7 @@ import {
   createShelfPanel,
   type ShelfPanel,
 } from "./asset-shelf/shelf-panel.js";
-import { shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
+import { notesWord, shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -277,8 +277,15 @@ import {
   fileAddKindOf,
   fileAddKindOfAsset,
   fileDropTarget,
+  type FileDropTarget,
 } from "./file-drop.js";
-import { useInChoices, useInTarget } from "./asset-shelf/use-in-choices.js";
+import {
+  useInChoices,
+  useInTarget,
+  type UseInTarget,
+} from "./asset-shelf/use-in-choices.js";
+import { importDelivery } from "./model-convert/import-delivery.js";
+import { planImport } from "./model-convert/import-plan.js";
 import { fileBlockOf } from "./editor-shell/inspector-file.js";
 import { blockFileKind } from "../block-file.js";
 import { fileItemTitle, type FileItemSource } from "./new-file-item.js";
@@ -1983,6 +1990,12 @@ function openShelfPanel(open: EditorSession): void {
     rows: () => selectShelfRows(store.getState()),
     subscribe: (listener) => store.subscribe(listener),
     retry: (id) => open.shelf.retry(id),
+    imports: {
+      retry: (id) => {
+        open.imports.retry(id);
+      },
+      remove: (id) => open.imports.remove(id),
+    },
     useOriginal: (id) => open.shelf.useOriginal(id),
     setDetail: (id, share) => open.shelf.setDetail(id, share),
     remove: (id) => open.shelf.remove(id),
@@ -1999,8 +2012,10 @@ function openShelfPanel(open: EditorSession): void {
       run: (id) => shelfActions.replaceEverywhere(open, id),
     },
     optimizeTour: () => open.shelf.optimizeTour(),
+    // Picked files go the way dropped ones on no row do: a model to
+    // convert among them is converted first.
     addFiles: () => {
-      void shelfActions.addFiles(open);
+      void shelfActions.addFiles(open, (files) => dropFiles(files, null));
     },
     thumbOf: (row) =>
       open.addedFileOf(row.kind === "video" ? (row.posterId ?? "") : row.id),
@@ -2148,8 +2163,19 @@ function useShelfFileIn(
   key: string,
 ): void {
   const chosen = useInTarget(key);
+  if (chosen !== null) useFileAt(open, assetId, chosen);
+}
+
+/** The file `assetId` the tour lists used at `chosen`: an item made
+ *  from it at a station or a story, or an item of its kind showing it.
+ *  One step; the outcome or the refusal is said. */
+function useFileAt(
+  open: EditorSession,
+  assetId: string,
+  chosen: UseInTarget,
+): void {
   const asset = open.assetOf(assetId);
-  if (chosen === null || asset === undefined) return;
+  if (asset === undefined) return;
   const fileName =
     store.getState().assetShelf.entries[assetId]?.name ?? "the file";
   if (chosen.kind === "item") {
@@ -2237,17 +2263,72 @@ async function replaceItemFile(id: string): Promise<void> {
  * Files dropped in the open editor (`file-drop.ts`): each onto the shelf,
  * and used where it was dropped - a station's or a story's row adds the
  * item there (`addFromFile`, one step each), an item's file field gives
- * the item that file (`useAsItemFile`). A file a tour does not take is
- * said by name and left out.
+ * the item that file (`useAsItemFile`). A model to convert (a glTF with
+ * its parts, a zip of its folder; `import-plan.ts`) is converted first,
+ * shown on the shelf while it is, then goes the same way
+ * (`import-delivery.ts`); the pictures dropped with it wait for it. A
+ * part dropped alone, or a file a tour does not take, is said by name and
+ * left out.
  */
 async function dropFiles(
   files: readonly File[],
   at: Element | null,
 ): Promise<void> {
-  if (editor === null) return;
+  const open = editor;
+  if (open === null) return;
   const dropTarget = fileDropTarget(at, shellTree);
+  const plan = planImport(files.map((f) => f.name));
+  for (const refused of plan.refused) toast(refused.reason);
+  if (plan.imports.length > 0) {
+    const [first] = open.imports.start({
+      files,
+      plan,
+      deliver: importDelivery(dropTarget, {
+        open: () => editor === open,
+        addFile: (file) => open.addFile(file, file.name, ["model"]),
+        use: (where, assetId) => {
+          useFileAt(open, assetId, where);
+        },
+        shelved: (assetId, fileName, notes) => {
+          shelfPanel?.reveal(assetId);
+          toast(
+            notes > 0
+              ? `"${fileName}" is on the shelf, with ${notesWord(notes)} on its card.`
+              : `"${fileName}" is on the shelf.`,
+          );
+        },
+        notKept: () => {
+          toast(FILE_NOT_KEPT);
+        },
+      }),
+      // The pictures the model did not use go where the drop was made,
+      // as a plain drop's would.
+      release: (pictures) => {
+        void placeDropped(open, pictures, dropTarget);
+      },
+    });
+    if (first !== undefined) shelfPanel?.reveal(first);
+  }
+  const taken = [...plan.plain, ...plan.unknown].sort((a, b) => a - b);
+  await placeDropped(
+    open,
+    taken.map((i) => files[i]!),
+    dropTarget,
+  );
+}
+
+/** Dropped files a tour takes as they are, each where the drop was made
+ *  (`dropFiles`): onto the shelf for a drop on no row, else into the row
+ *  or the item's file field; a file of no kind a tour takes is said. Does
+ *  nothing once `open` is no longer the open tour. */
+async function placeDropped(
+  open: EditorSession,
+  files: readonly File[],
+  dropTarget: FileDropTarget | null,
+): Promise<void> {
   const loose: File[] = [];
   for (const file of files) {
+    if (editor !== open) return;
     const kind = fileAddKindOf(file.name);
     if (kind === null) {
       toast(`"${file.name}" is not a picture, sound, video or 3D model.`);
@@ -2258,7 +2339,7 @@ async function dropFiles(
       await useAsItemFile(dropTarget.id, file);
     } else await addFromFile(kind, dropTarget, file);
   }
-  if (editor !== null) await shelfActions.addToShelf(editor, loose);
+  await shelfActions.addToShelf(open, loose);
 }
 
 /** A station made in this session (added, split off, copied) starts
@@ -2735,7 +2816,8 @@ function renderStartCard(): void {
 /** The opened file's hold and target, and the written bytes' session, go
  *  with the tour they belong to. */
 function leaveFile(): void {
-  // The shelf's jobs belong to the tour that leaves.
+  // The shelf's jobs and the model import's belong to the tour that leaves.
+  editor?.imports.close();
   editor?.shelf.close();
   const was = lock;
   lock = null;

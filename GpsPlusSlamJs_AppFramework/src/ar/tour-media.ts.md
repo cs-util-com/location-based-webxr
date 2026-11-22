@@ -16,6 +16,7 @@ any link is the origin that will hold a creator's signing key.
   `null`. `JPG`, `.jpg`, `__proto__` and non-strings are `null`.
 - `tourMediaTypeOfEntry(name)` - by an entry name's last extension, case
   folded (a recording's `frame.JPG` is a JPEG); `null` without one.
+- `glbReferencesProblem(json)` - the part of `checkGlbInert` that says whether the model's lists, URIs or buffer names would let three.js reach outside the file (the lists must be lists; every buffer but the first and every image a `data:` URI or in the file; each view's `buffer`, and each of its extensions' `buffer`, a whole number below the buffer count), as words or null. Exported so a reader that measures a `.glb` without the rest of the check (the Tour Viewer's optimizer check page, `glbByteShares`) refuses the same files; `glb-chunk-readers.test.ts` holds them to one verdict.
 - `checkGlbInert(bytes, { maxImagePixels? })` - `{ ok: true }` or
   `{ ok: false, reason }` in plain words; every image of the model is also
   measured from its header against the cap, and its accessors' memory
@@ -40,7 +41,9 @@ maxPixels?)` - the pixel cap every tour image is measured against before
 
 - A `.glb` is inert when it is glTF 2.0 binary, every `buffers[].uri` and
   `images[].uri` is absent or a `data:` URI three.js reads as data (it
-  must match `/^data:.*,.*$/`, three's own test: a comma, no line break;
+  must match `/^data:.*,.*$/i`, three's own test, asked through the shared
+  `isDataUri` of `utils/data-uri.ts`: the scheme in any letter case, a
+  comma, no line break;
   any other is resolved against the loader's path and fetched) - never a
   relative path or an http URL the page would fetch - and it uses none of
   the extensions that need a decoder from outside (`KHR_draco_mesh_compression`,
@@ -54,7 +57,8 @@ maxPixels?)` - the pixel cap every tour image is measured against before
   when present: an object `buffers` with an http URI under key `0` passed
   the check and made every open of the tour fetch it. Every buffer view's
   `buffer`, and the `buffer` of any of its extensions, must be a whole
-  number of at least 0: `"0"` is not buffer 0 to three's `=== 0`, so it
+  number of at least 0 and below the length of `buffers` (no list counts
+  as none): `"0"` is not buffer 0 to three's `=== 0`, so it
   is fetched as the page itself, and the meshopt plugin loads the buffer
   its extension names before it looks for a decoder, declared or not.
   Behaviour checked in three 0.170.0, 0.180.0 and 0.185.1.
@@ -128,8 +132,9 @@ refused; the binary chunk holding a readable header beside an unreadable
 three.js reads them (an object in place of `buffers`, `bufferViews`,
 `accessors` or `images` refused; a view whose `buffer`, or whose
 extension's `buffer`, is `"0"`, `"length"`, `"constructor"`, fractional,
-negative or null refused; `data:x` and a line break before or after the
-comma refused for buffers and images); the accessor memory cap (a
+negative or null refused, and one past the buffer list, plain or through
+an extension; `data:x` and a line break before or after the comma refused
+for buffers and images, an upper-case `DATA:` and `;BASE64` read); the accessor memory cap (a
 1.6 GB accessor refused; 64 MiB admitted in a small file and one byte
 more refused; 8 times the length of a 9 MiB file admitted and one byte
 more refused; sparse accessors summed; an unreadable count, type or

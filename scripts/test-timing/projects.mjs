@@ -622,6 +622,7 @@ export const PROJECTS = [
         "./src/workers/occlusion-mesher.worker.ts",
         "./src/editor3d/globe-city-worker.ts",
         "./src/editor/asset-shelf/asset-optimizer.worker.ts",
+        "./src/editor/model-convert/model-import.worker.ts",
         "./src/characters/character-cut.worker.ts",
       ]).map((stage) =>
         stage.name === "lint:css"

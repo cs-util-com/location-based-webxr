@@ -163,6 +163,74 @@ describe("the GLB chunk readers on the same bytes", () => {
     expect(verdicts(build([json([1, 2])]))).toEqual(NONE);
     expect(verdicts(build([json(null)]))).toEqual(NONE);
   });
+
+  // The property below found this one (a "buffer" key changed by one byte
+  // to "#uffer"): the tour refused a view that names no buffer while the
+  // check page measured it. A view must name a buffer of the file, by a
+  // whole number below the buffer count, for every reader.
+  it("all refuse a buffer view that names no buffer of the file", () => {
+    const viewOver = (view: object, buffers: object[] = [{ byteLength: 0 }]) =>
+      build([
+        json({ asset: { version: "2.0" }, buffers, bufferViews: [view] }),
+        bin(0),
+      ]);
+    // The shrunk counterexample of seed -1948290153.
+    expect(
+      verdicts(viewOver({ "#uffer": 0, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(NONE);
+    // The shrunk counterexample of seed -845185933: the same class over a
+    // 16-byte binary chunk its one buffer covers.
+    expect(
+      verdicts(
+        build([
+          json({
+            asset: { version: "2.0" },
+            buffers: [{ byteLength: 16 }],
+            bufferViews: [{ " uffer": 0, byteOffset: 0, byteLength: 16 }],
+          }),
+          bin(16),
+        ]),
+      ),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 1, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 0, byteOffset: 0, byteLength: 0 }, [])),
+    ).toEqual(NONE);
+    expect(
+      verdicts(viewOver({ buffer: 0, byteOffset: 0, byteLength: 0 })),
+    ).toEqual(ALL);
+  });
+
+  // The tour refuses a buffer or a picture that points outside the file
+  // (three.js would fetch it); the check page must not measure one either,
+  // or the two disagree on a file the tour never takes.
+  it("the tour and the check page refuse a buffer or a picture that points outside the file", () => {
+    const outside = { inert: false, shares: false };
+    expect(
+      verdicts(
+        build([
+          json({ ...MODEL, buffers: [{ byteLength: 8, uri: "model.bin" }] }),
+          bin(),
+        ]),
+      ),
+    ).toMatchObject(outside);
+    expect(
+      verdicts(
+        build([
+          json({
+            ...MODEL,
+            images: [{ uri: "https://example.invalid/a.png" }],
+          }),
+          bin(),
+        ]),
+      ),
+    ).toMatchObject(outside);
+    expect(
+      verdicts(build([json({ ...MODEL, images: {} }), bin()])),
+    ).toMatchObject(outside);
+  });
 });
 
 /** A well-formed GLB: an object JSON chunk (padded to `pad`) naming

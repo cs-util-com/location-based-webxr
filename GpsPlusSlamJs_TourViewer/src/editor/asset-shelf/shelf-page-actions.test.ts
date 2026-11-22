@@ -118,6 +118,34 @@ describe("the shelf's add", () => {
     expect(p.busy).toEqual([]);
   });
 
+  // Why: the page hands "Add files..." its drop (`take`) so a picked glTF
+  // folder or zip is converted like a dropped one; the picked files must
+  // reach `take` whole and only there, or a model's parts land on the
+  // shelf one by one. Without `take` they go onto the shelf.
+  it("hands the picked files to `take` when given, and onto the shelf when not", async () => {
+    const picked = [new File(["{}"], "bust.gltf"), new File(["b"], "bust.bin")];
+    const addFile = vi.fn(() =>
+      Promise.resolve({
+        kind: "added",
+        asset: { id: "a1", kind: "image" },
+        backedUp: true,
+      }),
+    );
+    const open = session({ addFile });
+    const p = page(open, { pickMany: () => Promise.resolve(picked) });
+    const take = vi.fn((_files: readonly File[]) => Promise.resolve());
+    await p.actions.addFiles(open, take);
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take.mock.calls[0]?.[0]).toEqual(picked);
+    expect(addFile).not.toHaveBeenCalled();
+
+    await p.actions.addFiles(open);
+    expect(addFile.mock.calls.map((c) => (c as unknown[])[1])).toEqual([
+      "bust.gltf",
+      "bust.bin",
+    ]);
+  });
+
   // Why: a file the draft could not keep must be said, or a reload loses it.
   it("says a file the browser could not keep", async () => {
     const open = session({

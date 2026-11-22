@@ -18,6 +18,16 @@ function megabytes(bytes: number): string {
   return mb < 10 ? String(Math.round(mb * 10) / 10) : String(Math.round(mb));
 }
 
+/** Up to five quoted names, then how many more. */
+function listOf(names: readonly string[]): string {
+  const shown = names
+    .slice(0, 5)
+    .map((n) => `"${n}"`)
+    .join(", ");
+  const more = names.length - 5;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
 /** The compression families a tour cannot open, by the glTF extension
  *  that declares them. */
 const COMPRESSION_OF: ReadonlyMap<string, string> = new Map([
@@ -65,6 +75,33 @@ export const refusal = {
     `The picture "${picture}" of "${model}" cannot go into a tour: ${why}. Make it smaller and drop the model again.`,
   notInert: (model: string, why: string): string =>
     `"${model}" could not be made into a tour model: ${why}.`,
+  loneModelPart: (part: string): string =>
+    `"${part}" is a part of a 3D model and cannot be used alone. Drop it together with the model's .gltf file, or drop a zip of the model's folder.`,
+  lonePictureKind: (picture: string): string =>
+    `"${picture}" is a kind of picture a tour does not show. Save it as PNG or JPEG, or drop it together with the 3D model that uses it.`,
+  zipIsTour: (zip: string): string =>
+    `"${zip}" is a tour, not a 3D model. Open it from the editor's start page.`,
+  zipNoModel: (zip: string): string =>
+    `"${zip}" holds no glTF model (a .gltf or .glb file). A zip inside a zip is not opened.`,
+  zipUnreadable: (zip: string): string =>
+    `"${zip}" could not be read as a zip. Is the file complete?`,
+  zipTooManyFiles: (zip: string, count: number, cap: number): string =>
+    `"${zip}" holds ${count} model files and pictures, more than the ${cap} a model may have. Zip the model's own folder only.`,
+  zipTooManyEntries: (zip: string, cap: number): string =>
+    `"${zip}" holds more than ${cap} files, more than a zip may hold here. Zip the model's own folder only.`,
+  zipTooLarge: (zip: string, cap: number): string =>
+    `"${zip}" is too large to convert here (more than ${megabytes(cap)} MB unpacked). Zip the model's own folder only.`,
+  zipNamedTwice: (zip: string, name: string): string =>
+    `"${zip}" holds two files named "${name}", so which one the model uses is unclear. Zip the model's folder again.`,
+} as const;
+
+/** Sentences for a conversion that did not finish: the model is not
+ *  added, and trying again may help. */
+export const failure = {
+  crashed: (model: string, why: string): string =>
+    `"${model}" could not be converted: ${why}. The model may be too large for this device; try again, or export it smaller.`,
+  broken: (model: string, why: string): string =>
+    `"${model}" could not be converted: ${why}. Try again.`,
 } as const;
 
 /** Sentences that tell what a conversion left out: the model is added. */
@@ -85,6 +122,10 @@ export const note = {
     `Made without its picture "${picture}": the model points to a file on another computer. To have it, drop the model again with that picture.`,
   otherPictureShown: (picture: string): string =>
     `Without "${picture}", the model shows another picture it carries in its place.`,
+  otherModels: (model: string, others: readonly string[]): string =>
+    `The zip holds more than one model; "${model}" was made. To have ${listOf(others)} as well, drop each in a zip of its own.`,
+  unusedFiles: (files: readonly string[]): string =>
+    `Not used by the model: ${listOf(files)}.`,
   stoodIn: (named: string, used: string): string =>
     `The model names "${named}", which was not among the files as written; "${used}" was used for it.`,
 } as const;

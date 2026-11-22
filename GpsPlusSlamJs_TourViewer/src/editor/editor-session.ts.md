@@ -645,6 +645,7 @@ examples).
 ## The asset shelf
 
 - `shelf: AssetShelf` (`asset-shelf/asset-shelf.ts`), created per session on the session's store. Input `optimizers?` (default `ASSET_OPTIMIZERS`) and `optimizerHost?` (default a lazy Worker host, `createOptimizerHost(spawnOptimizerWorker)`, which spawns nothing until a row runs).
+- `imports: ModelImportRunner` (`model-convert/model-import-runner.ts`), on the same store: a glTF or zip dropped is converted in its own Worker (input `importHost?`, default `createModelImportHost()`, spawned on the first conversion and let go after each), shown as an import row on the shelf. The page closes it with the shelf.
 - Creating the session clears the shelf and adds every asset of the written tour as `opened`, idle, sized from its archive entry: an opened tour's files are made smaller only on `shelf.optimizeTour()`.
 - `addFile` puts a NEW file on the shelf as `added` (a file already in the tour is not added twice), unless it is kept as made (`asMade`).
 - A declared character's pictures go on the shelf kept, never queued (`shelf.addAsMade`): when declared, from an opened tour, from a restored draft (`keptAsMade`). The shelf shows them as ONE entry named after him (`selectShelfRows`). Its Delete (`deletePlan` / `deleteFileAndUses` on either of his files) takes him out with his files as one step, "Deletes the character and its 2 pictures.", refused in `characterRemoveRefusal`'s words while an item names him; it offers no Replace.
