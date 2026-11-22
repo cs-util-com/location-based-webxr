@@ -85,8 +85,8 @@ export const refusal = {
     `"${zip}" holds no glTF model (a .gltf or .glb file). A zip inside a zip is not opened.`,
   zipUnreadable: (zip: string): string =>
     `"${zip}" could not be read as a zip. Is the file complete?`,
-  zipTooManyFiles: (zip: string, count: number, cap: number): string =>
-    `"${zip}" holds ${count} model files and pictures, more than the ${cap} a model may have. Zip the model's own folder only.`,
+  zipTooManyFiles: (zip: string, cap: number): string =>
+    `The model in "${zip}" names more than the ${cap} files and pictures a model may have. Zip the model's own folder only.`,
   zipTooManyEntries: (zip: string, cap: number): string =>
     `"${zip}" holds more than ${cap} files, more than a zip may hold here. Zip the model's own folder only.`,
   zipTooLarge: (zip: string, cap: number): string =>

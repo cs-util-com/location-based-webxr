@@ -261,13 +261,78 @@ describe("readZipBundle", () => {
     const total = text.length + 16;
     expect(
       await readZipBundle(zip, "m.zip", { maxFiles: 2, maxBytes: 1000 }),
-    ).toEqual({ ok: false, reason: refusal.zipTooManyFiles("m.zip", 3, 2) });
+    ).toEqual({ ok: false, reason: refusal.zipTooManyFiles("m.zip", 2) });
     expect(
       await readZipBundle(zip, "m.zip", { maxFiles: 10, maxBytes: total - 1 }),
     ).toEqual({
       ok: false,
       reason: refusal.tooLarge("m.zip", total, total - 1),
     });
+  });
+
+  // Why: the model's text is untrusted and may name a part thousands of
+  // times or name thousands of parts; a name given twice is one part, and
+  // the reader stops once the named parts pass its file cap.
+  it("counts a part named many times once, and refuses once the named parts pass the file cap", async () => {
+    const parts = Object.fromEntries(
+      Array.from({ length: 50 }, (_, i) => [`p${i}.bin`, "B"]),
+    );
+    const repeated = await zipOf({
+      "m.gltf": gltfNaming(Array.from({ length: 5000 }, () => "p0.bin")),
+      ...parts,
+    });
+    expect(
+      await readZipBundle(repeated, "m.zip", { maxFiles: 2 }),
+    ).toMatchObject({ ok: true, kind: "gltf" });
+    const many = await zipOf({
+      "m.gltf": gltfNaming(
+        Array.from({ length: 5000 }, (_, i) => `p${i % 50}.bin`),
+        Array.from({ length: 5000 }, (_, i) => `missing${i}.png`),
+      ),
+      ...parts,
+    });
+    expect(await readZipBundle(many, "m.zip", { maxFiles: 10 })).toEqual({
+      ok: false,
+      reason: refusal.zipTooManyFiles("m.zip", 10),
+    });
+  });
+
+  // Why: the converter finds a buffer only by its path, never by its file
+  // name alone (a wrong .bin would look like a broken model); the reader
+  // must name the parts the converter will take, or a stray .bin of the
+  // same name would be read and then called "not used".
+  it("finds a buffer by its path only, and a picture by its file name too", async () => {
+    const zip = await zipOf({
+      "m.gltf": gltfNaming(["data/x.bin"], ["tex/wood.png"]),
+      "x.bin": "XBIN",
+      "wood.png": "WOOD",
+    });
+    const bundle = await readZipBundle(zip, "m.zip");
+    expect(bundle).toMatchObject({
+      ok: true,
+      kind: "gltf",
+      skipped: ["x.bin"],
+    });
+    expect(
+      bundle.ok && bundle.kind === "gltf" && [...bundle.files.keys()],
+    ).toEqual(["m.gltf", "wood.png"]);
+  });
+
+  // Why: the converter refuses a model whose text (its embedded data left
+  // aside) is past its text cap; the reader must not parse such a text
+  // first, which a structure-heavy text could make exhaust memory.
+  it("refuses a model text past the text cap before it parses it", async () => {
+    const text = gltfNaming(["a.bin"]);
+    const zip = await zipOf({ "m.gltf": text, "a.bin": "ABIN" });
+    expect(
+      await readZipBundle(zip, "m.zip", { maxTextBytes: text.length - 1 }),
+    ).toEqual({
+      ok: false,
+      reason: refusal.textTooLarge("m.gltf", text.length, text.length - 1),
+    });
+    expect(
+      await readZipBundle(zip, "m.zip", { maxTextBytes: text.length }),
+    ).toMatchObject({ ok: true });
   });
 
   it("stops when it is aborted", async () => {

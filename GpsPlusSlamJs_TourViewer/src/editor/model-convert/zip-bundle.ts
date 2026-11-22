@@ -10,12 +10,16 @@
  *
  * @see zip-bundle.ts.md
  */
-import { ArchiveLimitError } from "gps-plus-slam-app-framework/storage";
+import {
+  ArchiveLimitError,
+  DEFAULT_ARCHIVE_LIMITS,
+} from "gps-plus-slam-app-framework/storage";
 import { isMacOsMetadataName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { withZipBlobDirectory } from "../../zip-blob.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
-import { resolveReference } from "./bundle-paths.js";
+import { referenceResolver } from "./bundle-paths.js";
+import { dataLiteralBytes } from "./gltf-repack.js";
 import { importRoleOf } from "./import-formats.js";
 import { note, refusal } from "./model-import-words.js";
 
@@ -30,11 +34,14 @@ interface ZipBundleLimits {
   readonly maxFiles: number;
   /** Their bytes together, as the directory declares and as inflated. */
   readonly maxBytes: number;
+  /** The model's text, its embedded data aside: the converter's cap. */
+  readonly maxTextBytes: number;
 }
 
 const DEFAULT_LIMITS: ZipBundleLimits = Object.freeze({
   maxFiles: 1000,
   maxBytes: ASSET_CEILING_BYTES,
+  maxTextBytes: DEFAULT_ARCHIVE_LIMITS.maxTextEntryBytes,
 });
 
 /** What a bundle names besides its model, for the notes. */
@@ -113,31 +120,51 @@ const isPart = (path: string) => {
 };
 
 /** The parts `model`'s `text` names (its buffers' and pictures' uris)
- *  among `parts`, as the converter resolves them; none for a text that is
- *  no JSON (the converter then refuses it in words). */
+ *  among `parts`, as the converter resolves them: a buffer by its path
+ *  only, a picture by its file name too. None for a text that is no JSON
+ *  (the converter then refuses it in words). Refuses a text past the
+ *  converter's text cap before parsing it, and stops once the parts named
+ *  with the model pass `caps.maxFiles`. */
 function partsNamedBy(
   model: string,
   text: Uint8Array,
   parts: readonly string[],
+  caps: ZipBundleLimits,
+  zipName: string,
 ): string[] {
+  const textOnly = text.length - dataLiteralBytes(text);
+  if (textOnly > caps.maxTextBytes) {
+    throw new Refused(
+      refusal.textTooLarge(baseOf(model), textOnly, caps.maxTextBytes),
+    );
+  }
   let json: unknown;
   try {
     json = JSON.parse(new TextDecoder().decode(text));
   } catch {
     return [];
   }
-  const urisOf = (key: string): unknown[] => {
+  const urisOf = (key: string): Set<unknown> => {
     const list = (json as Partial<Record<string, unknown>> | null)?.[key];
-    return Array.isArray(list)
-      ? list.map((e) => (e as { uri?: unknown } | null)?.uri)
-      : [];
+    return new Set(
+      Array.isArray(list)
+        ? list.map((e) => (e as { uri?: unknown } | null)?.uri)
+        : [],
+    );
   };
+  const resolve = referenceResolver(parts);
   const named = new Set<string>();
-  for (const uri of [...urisOf("buffers"), ...urisOf("images")]) {
-    if (typeof uri !== "string") continue;
-    const ref = resolveReference(uri, model, parts);
-    if (ref.kind === "file") named.add(ref.path);
-  }
+  const name = (uri: unknown, byBasename: boolean) => {
+    if (typeof uri !== "string") return;
+    const ref = resolve(uri, model, { byBasename });
+    if (ref.kind !== "file") return;
+    named.add(ref.path);
+    if (named.size + 1 > caps.maxFiles) {
+      throw new Refused(refusal.zipTooManyFiles(zipName, caps.maxFiles));
+    }
+  };
+  for (const uri of urisOf("buffers")) name(uri, false);
+  for (const uri of urisOf("images")) name(uri, true);
   return [...named];
 }
 
@@ -204,7 +231,10 @@ export async function readZipBundle(
       const parts = names.filter(isPart);
       const wanted = glb
         ? [model]
-        : [model, ...partsNamedBy(model, files.get(model)!, parts)];
+        : [
+            model,
+            ...partsNamedBy(model, files.get(model)!, parts, caps, zipName),
+          ];
       // An entry of a kind no model uses is named once, on the zip's first
       // model; a part this model does not name may be another model's, so
       // it is named only when the zip holds no other model.
@@ -215,11 +245,6 @@ export async function readZipBundle(
           !models.includes(n) &&
           (isPart(n) ? models.length === 1 : first),
       );
-      if (wanted.length > caps.maxFiles) {
-        throw new Refused(
-          refusal.zipTooManyFiles(zipName, wanted.length, caps.maxFiles),
-        );
-      }
       refuseIfDeclaredPast(wanted);
       for (const name of wanted) {
         if (!files.has(name)) await read(name);
