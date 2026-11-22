@@ -10,12 +10,21 @@
 
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-assets";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  localPoseOf,
+  tourFreeEntries,
+  tourObjectBlock,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, type Object3D } from "three";
 import {
+  renderStationBlocks,
   renderTourObjects,
+  type RenderedTourObjects,
   type TourObjectRendererDeps,
 } from "./content-placement.js";
 import type { VisitPlacement } from "./creator-document.js";
@@ -267,10 +276,15 @@ export function wireCreatorPreviews(deps: {
       placement !== undefined && placement.visit === ctx.arSessionGeneration;
     // The whole object: any field may be part of its look now that every
     // kind is drawn (a view, a size, a clip). A rigid preview is placed
-    // from its local pose, so its geo is not part of the key.
-    return JSON.stringify(
-      rigid ? [{ ...object, geo: null }, placement.local] : [object, null],
-    );
+    // from its local pose, so its geo is not part of the key; one drawn in
+    // its station adds the station's pose and its folders' scale.
+    if (rigid)
+      return JSON.stringify([{ ...object, geo: null }, placement.local]);
+    const hosting = stationOf(entry);
+    return JSON.stringify([
+      object,
+      hosting === null ? null : [hosting.station.geo, hosting.scale],
+    ]);
   }
 
   /** Dispose every preview and forget what they were made from. */
@@ -331,15 +345,19 @@ export function wireCreatorPreviews(deps: {
    * device's bytes first (a picture placed here is in no zip yet), else
    * through the session; a model by the page's glb reader.
    */
+  function assetsOf(object: AuthoringObject["object"]): TourAsset[] {
+    return [
+      ...(ctx.tourDocument.manifest()?.assets ?? []),
+      ...(object.kind === "picture" ? [object.imageAsset] : []),
+    ];
+  }
+
   function envFor(
     object: AuthoringObject["object"],
     blob: Blob | undefined,
   ): WorldEnv {
     const own = object.kind === "picture" ? object.imageAsset : null;
-    const assets = [
-      ...(ctx.tourDocument.manifest()?.assets ?? []),
-      ...(own === null ? [] : [own]),
-    ];
+    const assets = assetsOf(object);
     const session = ctx.session;
     return worldEnv(
       "edit",
@@ -361,6 +379,30 @@ export function wireCreatorPreviews(deps: {
     );
   }
 
+  /**
+   * The station an object not rigid in AR is drawn in, as the visitor
+   * draws it (`renderStationBlocks`): a world part reads its parent as its
+   * station's frame (a viewpoint, a point an arrow or pin aims at, the
+   * ground under a framed picture), and its folders' scale. Null for a
+   * rigid object (only a pin or a photo is placed in AR, under the world
+   * group at its odometry pose) and for one no station of the open tour
+   * holds: those are drawn at their own pose (`renderTourObjects`).
+   */
+  function stationOf(
+    entry: AuthoringObject,
+  ): { readonly station: TourStation; readonly scale: number } | null {
+    const id = entry.object.station;
+    if (id === undefined || isRigid(entry)) return null;
+    const station = ctx.tourDocument
+      .manifest()
+      ?.stations.find((s) => s.id === id);
+    if (station === undefined) return null;
+    const own = tourFreeEntries(station).find(
+      (e) => e.block.id === entry.object.id,
+    );
+    return { station, scale: own?.scale ?? 1 };
+  }
+
   function renderPreview(
     entry: AuthoringObject,
     zero: LatLong,
@@ -374,8 +416,7 @@ export function wireCreatorPreviews(deps: {
     const session = ctx.session;
     const env = envFor(entry.object, blob);
     const parts: WorldPart[] = [];
-    void renderTourObjects([entry.object], {
-      ...previewFrame(entry.placed?.placement, fromGeo),
+    const drawing: Omit<TourObjectRendererDeps, "scene" | "poseOf"> = {
       zero,
       makeLabel: (text) => seams.createLabel(text),
       makeLectern: drawings.makeLectern,
@@ -395,7 +436,36 @@ export function wireCreatorPreviews(deps: {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,
         });
       },
-    }).then(
+    };
+    const hosting = stationOf(entry);
+    const { object } = entry;
+    const render: Promise<RenderedTourObjects> =
+      hosting === null
+        ? renderTourObjects([object], {
+            ...previewFrame(entry.placed?.placement, fromGeo),
+            ...drawing,
+          })
+        : // Its station's frame is the root `attach` moves, as the plain
+          // root was: both stand in the same GPS-world frame.
+          renderStationBlocks(
+            { geo: hosting.station.geo },
+            [
+              tourObjectBlock(
+                object,
+                localPoseOf(object.geo, hosting.station.geo),
+              ),
+            ],
+            {
+              ...drawing,
+              scene: fromGeo,
+              assets: assetsOf(object),
+              alive: () =>
+                generation === ctx.arSessionGeneration &&
+                previewKeys.get(id) === key,
+            },
+            new Map([[id, hosting.scale]]),
+          );
+    void render.then(
       (rendered) => {
         // The session may have ended while the photo decoded, or the
         // object changed or went away meanwhile.

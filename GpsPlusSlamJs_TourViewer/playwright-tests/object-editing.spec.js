@@ -364,7 +364,8 @@ test("in AR a delete is taken back by the strip's persistent Undo, which names i
   ).toHaveText("Fixture pin");
 });
 
-/** The stations tour whose gate stands every kind of free block. */
+/** The stations tour whose gate stands a pin, two plane pictures, a model
+ *  and two characters as free items. */
 const BLOCKS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/blocks-tour.zip";
 
 /** The object ids drawn in the AR scene, however deep: under the fake
@@ -392,13 +393,16 @@ function drawnIds(page) {
   }, TEST_KEY);
 }
 
-test("in AR the creator sees every kind of item drawn, a tap selects the placed model and Delete takes it out of the scene", async ({
+test("in AR the creator sees the pin, pictures, model and characters drawn, a tap selects the model, Delete takes it out and Undo brings it back", async ({
   page,
 }) => {
   // Why this test matters: the creator's AR previews drew only pins and
   // photos, so a model, a framed picture or a character could be neither
   // seen nor tapped in AR, and so never deleted there. Every free item of
-  // the tour must stand in the scene by its id, and a deleted one must go.
+  // this tour (a pin, two plane pictures, a model, two characters) must
+  // stand in the scene by its id, a deleted one must go and come back on
+  // Undo. The other kinds and views are unit-tested
+  // (`creator-previews.test.ts`, `content-placement.test.ts`).
   await page.goto("/?nocache=1");
   await page.getByTestId("link-input").fill(BLOCKS_ARCHIVE);
   await page.getByTestId("open-button").click();
@@ -453,4 +457,11 @@ test("in AR the creator sees every kind of item drawn, a tap selects the placed 
     })
     .toBe(false);
   expect(await drawnIds(page)).toContain("gate-pin");
+  // The strip's Undo renders it again.
+  await page.getByTestId("setup-undo").click();
+  await expect
+    .poll(async () => (await drawnIds(page)).includes("gate-arch"), {
+      timeout: 10000,
+    })
+    .toBe(true);
 });

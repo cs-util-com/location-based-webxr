@@ -7,6 +7,10 @@ view. These items were left open when it was built.
 
 ## Creator previews still draw the plain label
 
+- **Status: done.** The creator's AR previews pass the world door to the
+  object renderer, draw a pin as the head on a stem and tick every part
+  from the creator's camera frame (`src/creator-previews.ts`, its
+  sidecar; pinned by `creator-previews.test.ts`).
 - **What:** while a creator places a pin on the phone, the preview
   (`src/creator-previews.ts`, `renderTourObjects`) draws the old pill
   label (`src/pin-label.ts`), not the head on a stem the visitor will

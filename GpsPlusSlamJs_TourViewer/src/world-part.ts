@@ -335,6 +335,8 @@ export function mountedWorldPartSet(): ReadonlySet<WorldPart> {
   return mounted;
 }
 
+const viewerWorld = new Vector3();
+const facingWorld = new Vector3();
 const viewerLocal = new Vector3();
 const facingLocal = new Vector3();
 const parentTurn = new Quaternion();
@@ -386,7 +388,9 @@ interface TickOptions {
  * and its lens over `viewHeightPx` when the viewer is one, and the
  * selection when given. The visitor's `tickWorldParts` names the parts
  * under a station's content; the AR creator names its previews' parts
- * (`creator-previews.ts`). Allocates nothing per part.
+ * (`creator-previews.ts`). The viewer's world pose is read once per
+ * tick; per part it allocates only the frame it hands over (one object
+ * and its two 3-element arrays), since a part may keep it.
  */
 export function tickEachWorldPart(
   parts: Iterable<WorldPart>,
@@ -405,11 +409,13 @@ export function tickEachWorldPart(
     lens > 0
       ? 2 / (lens * viewHeightPx)
       : undefined;
+  viewer.getWorldPosition(viewerWorld);
+  viewer.getWorldDirection(facingWorld);
   for (const part of parts) {
     if (part.update === undefined || shown?.(part) === false) continue;
     const parent = part.object.parent;
-    viewer.getWorldPosition(viewerLocal);
-    viewer.getWorldDirection(facingLocal);
+    viewerLocal.copy(viewerWorld);
+    facingLocal.copy(facingWorld);
     if (parent !== null) {
       parent.worldToLocal(viewerLocal);
       parent.getWorldQuaternion(parentTurn);

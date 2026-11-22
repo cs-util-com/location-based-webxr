@@ -88,8 +88,10 @@ the reading sign (`reading-sign.ts`) are world parts too.
   (when given) accepts gets the frame below, plus `selected` when given.
   `tickWorldParts` builds on it with `shown` = under a station's content
   group; the creator's AR previews (`creator-previews.ts` `tick`) with
-  `shown` = still has a parent and the editing selection. No allocation
-  per part beyond the frame object.
+  `shown` = still has a parent and the editing selection. The viewer's
+  world pose is read once per tick; per part it allocates only the frame
+  it hands over (one object and its two 3-element arrays), since a part
+  may keep it.
 - `tickWorldParts(scene, viewer, nowMs, parts = mountedWorldParts())` - every
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world

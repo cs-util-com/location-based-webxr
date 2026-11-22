@@ -9,19 +9,30 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  BoxGeometry,
   type Camera,
   Group,
+  Mesh,
+  MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
   Texture,
+  Vector3,
 } from "three";
 import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-assets";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import {
   createEmptyTourManifest,
+  type TourManifest,
   type TourObject,
   type TourPicture,
+  type TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
+import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
+import { objectPoseNue, renderTourStation } from "./content-placement.js";
+import { pickObject } from "./object-pick.js";
 import {
   wireCreatorPreviews,
   type CreatorPreviewDrawings,
@@ -35,12 +46,17 @@ import {
 } from "./tour-viewer-session.js";
 import {
   mountedWorldPartSet,
+  worldEnv,
   unmountWorldPart,
   type WorldEnv,
   type WorldPart,
 } from "./world-part.js";
 
 const ZERO = { lat: 47.5, lon: 8.7 };
+
+// A hosted item is placed through its station's frame, whose geodesy the
+// core's licence gates (as `main.ts` activates it at boot).
+createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
 function photo(id: string): TourPicture {
   return {
@@ -72,13 +88,19 @@ function harness(
   options: {
     drawings?: CreatorPreviewDrawings;
     assets?: readonly TourAsset[];
+    /** The open tour (its stations hold the hosted items); else one
+     *  with `assets` and no station. */
+    manifest?: TourManifest;
+    modelScene?: Object3D;
     camera?: Camera;
     selected?: string;
     viewHeightPx?: number;
   } = {},
 ) {
   const ctx = createTourViewerSession();
-  if (options.assets !== undefined) {
+  if (options.manifest !== undefined) {
+    ctx.tourDocument.open(options.manifest);
+  } else if (options.assets !== undefined) {
     ctx.tourDocument.open({
       ...createEmptyTourManifest(),
       assets: [...options.assets],
@@ -86,7 +108,7 @@ function harness(
   }
   const camera = { value: options.camera ?? null };
   const models: Blob[] = [];
-  const modelScene = new Object3D();
+  const modelScene = options.modelScene ?? new Object3D();
   const zipBytes = new Blob(["zip"]);
   const zipReads: string[] = [];
   ctx.session = {
@@ -131,6 +153,7 @@ function harness(
   };
   return {
     ctx,
+    scene,
     previews,
     decoded,
     zipBytes,
@@ -432,3 +455,185 @@ describe("creator-previews: every kind through the world door", () => {
     expect(door.parts.get("sign")!.frames).toHaveLength(1);
   });
 });
+
+describe("creator-previews: a hosted item is drawn in its station's frame", () => {
+  /** A station high above the zero and turned, holding a ground arrow
+   *  with a point to aim at and a then-and-now picture with its viewpoint
+   *  inside a folder drawn twice as large, and a model at its top. */
+  const station: TourStation = {
+    id: "gate",
+    geo: {
+      lat: 47.5002,
+      lon: 8.7003,
+      alt: 400,
+      rotation: [0, 0.3826834, 0, 0.9238795],
+    },
+    activateRadiusM: 50,
+    foundRadiusM: 25,
+    hint: "arrow",
+    children: [
+      {
+        id: "arch",
+        kind: "model",
+        view: "placed",
+        asset: "arch",
+        sizeM: 2,
+        pose: { position: [0, 0, 4], rotation: [0, 0, 0, 1] },
+      },
+      {
+        id: "folder",
+        kind: "folder",
+        pose: { position: [2, 0, 1], rotation: [0, 0, 0, 1] },
+        scale: 2,
+        children: [
+          {
+            id: "arrow",
+            kind: "shortText",
+            view: "ground",
+            caption: "This way",
+            pointsTo: [6, 0, 5],
+            pose: { position: [1, 0, 0], rotation: [0, 0, 0, 1] },
+          },
+          {
+            id: "then",
+            kind: "picture",
+            view: "thenNow",
+            image: "old",
+            widthM: 1,
+            viewpoint: {
+              position: [0, 1.6, -3],
+              rotation: [0, 0, 0, 1],
+              hfovDeg: 60,
+              distanceM: 3,
+            },
+            pose: { position: [0, 1.6, 0], rotation: [0, 0, 0, 1] },
+          },
+        ],
+      },
+    ],
+  } as unknown as TourStation;
+  const assets: TourAsset[] = [
+    { id: "arch", path: "content/arch.glb", kind: "model" },
+    { id: "old", path: "content/old.jpg", kind: "image" },
+  ];
+  const manifest: TourManifest = {
+    ...createEmptyTourManifest(),
+    assets,
+    stations: [station],
+  };
+
+  /** The visitor's drawing of the same station, through a door that
+   *  records as the creator's does. */
+  async function visitorParts() {
+    const door = recordingDoor();
+    const scene = new Group();
+    await renderTourStation(station, {
+      scene,
+      zero: ZERO,
+      assets,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      worldPart: (block) =>
+        door.drawings.worldPart(
+          block,
+          worldEnv("edit", assets, () => {
+            return Promise.reject(new Error("unused"));
+          }),
+        ),
+    });
+    scene.updateMatrixWorld(true);
+    return door;
+  }
+
+  // Why this test matters: a world part reads its parent as its station's
+  // frame - a viewpoint, the point an arrow or a pin aims at, the ground
+  // under a framed picture or a video. Drawn at its own pose inside the
+  // GPS-world frame (where up is the altitude), a viewpoint picture of a
+  // station at 400 m hung 400 m underground and an arrow aimed near the
+  // session's zero. The creator must hand every part the block and the
+  // parent frame the visitor's station renderer hands it, so any part,
+  // however it reads its frame, draws the same.
+  it("hands each part the visitor's block and frame, so a viewpoint stays at the station's ground and its folder's scale holds", async () => {
+    const door = recordingDoor();
+    const h = harness(tourObjects(manifest).map(hosted), {
+      drawings: door.drawings,
+      manifest,
+    });
+    h.previews.sync();
+    await h.settled();
+    h.scene.updateMatrixWorld(true);
+    const visitor = await visitorParts();
+    for (const id of ["arch", "arrow", "then"]) {
+      const creator = door.asked.find((a) => a.block.id === id)!.block;
+      const seen = visitor.asked.find((a) => a.block.id === id)!.block;
+      const { pose, ...fields } = creator;
+      const { pose: seenPose, ...seenFields } = seen;
+      expect(fields, id).toEqual(seenFields);
+      pose.position.forEach((v, i) => {
+        expect(v, `${id} position ${i}`).toBeCloseTo(seenPose.position[i]!, 4);
+      });
+      const mine = door.parts.get(id)!.object;
+      const theirs = visitor.parts.get(id)!.object;
+      mine.matrixWorld.elements.forEach((v, i) => {
+        expect(v, `${id} matrix ${i}`).toBeCloseTo(
+          theirs.matrixWorld.elements[i]!,
+          3,
+        );
+      });
+      theirs.parent!.matrixWorld.elements.forEach((v, i) => {
+        expect(
+          mine.parent!.matrixWorld.elements[i]!,
+          `${id} frame ${i}`,
+        ).toBeCloseTo(v, 3);
+      });
+    }
+    // The viewpoint, in the frame its part stands in, is 1.6 m above the
+    // station's ground, not 1.6 m above the session's zero.
+    const then = door.parts.get("then")!.object;
+    const eye = then.parent!.localToWorld(new Vector3(0, 1.6, -3));
+    const ground = objectPoseNue(station.geo, ZERO).positionNue[1];
+    expect(eye.y).toBeCloseTo(ground + 1.6, 2);
+    // The folder draws its arrow twice as large; the model at the top at 1.
+    expect(door.parts.get("arrow")!.object.scale.x).toBeCloseTo(2, 6);
+    expect(door.parts.get("arch")!.object.scale.x).toBeCloseTo(1, 6);
+  });
+
+  // Why this test matters: a tap selects by casting the camera's ray at
+  // each preview's root (`object-pick.ts`); the e2e's pick is scripted, so
+  // only here does a real ray meet a real part. A model's preview must
+  // hold its mesh where the ray can hit it, and a root the door drew
+  // nothing into must not be hit.
+  it("is hit by a real ray at its drawn model, and an empty root is not", async () => {
+    const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+    const modelScene = new Group();
+    modelScene.add(mesh);
+    const arch = tourObjects(manifest).find((o) => o.id === "arch")!;
+    const h = harness([hosted(arch)], { manifest, modelScene });
+    h.previews.sync();
+    await h.settled();
+    await modelLoaded(h);
+    h.scene.updateMatrixWorld(true);
+    const root = h.ctx.placedPreviews.get("arch")!.root;
+    const at = mesh.getWorldPosition(new Vector3());
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(at.x - 6, at.y, at.z);
+    camera.lookAt(at);
+    camera.updateMatrixWorld(true);
+    expect(pickObject(camera, new Map([["arch", root]]))).toBe("arch");
+    // The control: the same item where the door draws nothing.
+    const none = harness([hosted(arch)], {
+      manifest,
+      drawings: { ...recordingDoor().drawings, worldPart: () => null },
+    });
+    none.previews.sync();
+    await none.settled();
+    none.scene.updateMatrixWorld(true);
+    const empty = none.ctx.placedPreviews.get("arch")!.root;
+    expect(pickObject(camera, new Map([["arch", empty]]))).toBeNull();
+  });
+});
+
+/** Lets a model part's load land (its `ready`, a few awaits deep). */
+async function modelLoaded(h: { settled(): Promise<void> }): Promise<void> {
+  for (let i = 0; i < 4; i += 1) await h.settled();
+}

@@ -46,7 +46,7 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
-  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's: without a door it is left out quietly). With a door (`worldPart`, one field the station renderer shares) an object goes to it exactly as its block (`tourObjectBlock`at the local origin) would at a station: a pin as its head on a stem and every view no drawing here has, placed at the object's pose with its id in`userData.objectId`; the creator's AR previews (`creator-previews.ts`) pass the door in the edit mode, the visitor's other callers pass none and keep pins as labels;
+  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's: without a door it is left out quietly). With a door (`worldPart`, one field the station renderer shares) an object goes to it exactly as its block (`tourObjectBlock`at the local origin) would at a station: a pin as its head on a stem and every view no drawing here has, placed at the object's pose with its id in`userData.objectId`; the creator's AR previews (`creator-previews.ts`) pass the door in the edit mode for an item placed in this visit or held by no station (a hosted item goes through `renderStationBlocks` in its station's frame, as the visitor draws it), the visitor's other callers pass none and keep pins as labels;
 a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
 picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model
@@ -165,6 +165,8 @@ visitor's view. At B = 8 m the hard trim makes the result exact (the case
 pins that the whole correction arrives, not an accuracy); at B = 3 m over a
 longer walk the pin shows the alignment's GPS/vote compromise (between 5 mm
 and 0.1 m, measured 24 mm).
+
+`content-placement.test.ts` "renderTourObjects with a world door" - which items the door is asked for, at the object's pose under its id, mounted and unmounted; every kind in every free view (and `captions`), with and without a viewpoint, drawn by the format's rule written in the test (property over `TOUR_FREE_BLOCK_VIEWS`); without a door only labels and planes.
 
 `content-placement.test.ts` - the pin round trip (mint → NUE) as a property
 over positions; the photo's frame direction pinned by bearing against the

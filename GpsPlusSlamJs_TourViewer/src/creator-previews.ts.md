@@ -55,8 +55,8 @@ photo is decoded from.
   - `tick(nowMs)` - one frame of every drawn world part that takes one,
     through `tickEachWorldPart` (`world-part.ts`, the visitor's own frame
     builder): the viewer camera, its lens over `viewHeightPx()`, the
-    selection. Called from `creator-setup.ts`'s `tickStations` (each camera
-    frame and store dispatch of a creator's session). No camera, a
+    selection. Called from `creator-setup.ts`'s `tickStations`, which the
+    page runs from its camera frame (`onFrame`) only. No camera, a
     visitor, or no part: nothing. A part with no parent (a failed load took
     it out) is skipped.
   - `keepFinishedPhoto(id, blob)`, `reset()` - a finished photo's bytes,
@@ -92,6 +92,21 @@ photo is decoded from.
   in THIS visit is rigid in AR, under the world group at its odometry pose;
   anything else has only its geo and is placed from it in the earlier
   visits' frame (the scene root outside a visit).
+- **A hosted item is drawn in its station's frame** (`stationOf`): an
+  item not rigid in AR whose station the open tour holds goes through
+  `renderStationBlocks`, as the visitor draws it: the station's group at
+  its geo pose, the item at its pose in it (`localPoseOf`), its folders'
+  scale (`tourFreeEntries`). A world part reads its parent as its
+  station's frame (a viewpoint, the point an arrow or pin aims at, the
+  ground under a framed picture or a video); drawn at its own pose in the
+  GPS-world frame, where up is the altitude, a viewpoint picture of a
+  station at 400 m hung 400 m underground. The station's group is the
+  root `attach` moves into a code's frame, as the plain root was: both
+  stand in the same GPS-world frame, so no frame is applied twice. A rigid
+  item (only a pin or a photo is placed in AR) and one no station holds
+  are drawn at their own pose (`renderTourObjects`); a pin there aims at
+  nothing (a pin placed in AR has no `pointsTo`). The preview key adds
+  the station's pose and the scale.
 - **Incremental, by id** (`previewKey`: the whole object - any field may
   be part of its look now that every kind is drawn, a view, a size, a
   clip - and the local pose when rigid): a preview whose object changed
@@ -124,9 +139,16 @@ photo is decoded from.
   delete disposes and unmounts; `tick` hands the camera, lens, viewer and
   selection, skips a detached or deleted part, and ticks nothing without
   a camera or after the visit.
-- e2e `object-editing.spec.js` "in AR the creator sees every kind of item
-  drawn...": the blocks tour's every free item in the fake scene, a tap
-  selects the model, Delete takes it out.
+- `creator-previews.test.ts` "a hosted item is drawn in its station's
+  frame": each part gets the visitor's block and parent frame
+  (`renderTourStation` as the oracle), a viewpoint 1.6 m above the
+  station's ground at 400 m, a folder's scale of 2; a real ray
+  (`pickObject`) hits a drawn model's preview and misses an empty root.
+- e2e `object-editing.spec.js` "in AR the creator sees the pin, pictures,
+  model and characters drawn...": the blocks tour's free items (a pin, two
+  plane pictures, a model, two characters) in the AR scene, a tap selects
+  the model, Delete takes it out, the strip's Undo brings it back. The
+  other kinds and views are covered by the unit tests above.
 - Composed: `creator-finish.test.ts` "a finished photo keeps its bytes for
   its preview" (the Finish's hand-over), `authoring-settle.test.ts` (rigid
   previews, the earlier visits' frame, the wait for the zero), and the

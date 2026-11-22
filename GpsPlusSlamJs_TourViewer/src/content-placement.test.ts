@@ -1,4 +1,8 @@
-import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
+import {
+  TOUR_FREE_BLOCK_VIEWS,
+  type TourBlock,
+} from "gps-plus-slam-app-framework/ar/tour-blocks";
+import { TOUR_PICTURE_VIEWPOINT_VIEWS } from "gps-plus-slam-app-framework/ar/tour-kinds";
 import { describe, expect, it } from "vitest";
 import { withFreeBlocks } from "./test-support/station-content.js";
 import fc from "fast-check";
@@ -2115,37 +2119,85 @@ describe("renderTourObjects with a world door", () => {
     expect(d.parts[0]?.object.position.toArray()).toEqual([1, 2, 3]);
   });
 
-  it("draws an object as the station renderer draws the same block (property)", async () => {
+  it("draws every kind in every free view by the format's rule: a pin and each view only a part has go to the door (property)", async () => {
     // Why this test matters: the creator sees in AR what the visitor sees
-    // at the station. The object renderer and the station renderer make
-    // the door choice by one rule; this holds them to it for any mix of
-    // kinds and views.
+    // at the station, so no kind or view may fall out of the door. The
+    // expected drawing is written here from the format's rules, not from
+    // the renderer's own table: a long text stands as its stand or sign,
+    // a picture is a plane in `plane` or a viewpoint view without its
+    // viewpoint, everything else (a pin included) is the door's.
+    const combos = (
+      Object.entries(TOUR_FREE_BLOCK_VIEWS) as [string, readonly string[]][]
+    ).flatMap(([kind, views]) => [
+      ...views.map((view) => ({ kind, view })),
+      // A visitor's captions view draws a long text's reading sign.
+      ...(kind === "longText" ? [{ kind, view: "captions" }] : []),
+    ]);
+    const viewpoint = {
+      position: [0, 1.6, -3],
+      rotation: [0, 0, 0, 1],
+      hfovDeg: 60,
+      distanceM: 3,
+    };
+    const expected = (kind: string, view: string, seen: boolean) => {
+      if (kind === "longText") {
+        return view === "lectern" ? "stand" : "sign";
+      }
+      if (kind === "picture") {
+        const fromViewpoint = (
+          TOUR_PICTURE_VIEWPOINT_VIEWS as readonly string[]
+        ).includes(view);
+        if (view === "plane" || (fromViewpoint && !seen)) return "plane";
+      }
+      return "door";
+    };
     await fc.assert(
       fc.asyncProperty(
-        fc.subarray([...every], { minLength: 1 }),
-        async (objects) => {
-          const viaObjects = door();
-          await renderTourObjects(
-            objects,
-            deps(new Group(), viaObjects.worldPart),
-          );
-          const viaStation = door();
-          const blocks = objects.map((o) =>
-            tourObjectBlock(o, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
-          );
-          await renderStationBlocks({ geo }, blocks, {
-            ...deps(new Group(), viaStation.worldPart),
-            assets: [
-              { id: "knight", path: "content/knight.png", kind: "image" },
-              { id: "plane", path: "content/plane.jpg", kind: "image" },
-            ],
+        fc.constantFrom(...combos),
+        fc.boolean(),
+        async ({ kind, view }, seen) => {
+          const object = {
+            ...base,
+            id: "item",
+            kind,
+            view,
+            caption: "C",
+            title: "T",
+            body: "B",
+            name: "N",
+            image: "knight",
+            imageAsset: {
+              id: "knight",
+              path: "content/knight.png",
+              kind: "image",
+            },
+            widthM: 1,
+            sizeM: 1,
+            asset: "arch",
+            video: "clip",
+            audio: "voice",
+            ...(seen ? { viewpoint } : {}),
+          } as unknown as TourObject;
+          const d = door();
+          const drawn: string[] = [];
+          const stand = (name: string) => () => {
+            drawn.push(name);
+            return { object: new Object3D(), dispose: () => undefined };
+          };
+          await renderTourObjects([object], {
+            ...deps(new Group(), d.worldPart),
+            makeLectern: stand("stand"),
+            makeReadingSign: stand("sign"),
+            loadPhotoTexture: () => {
+              drawn.push("plane");
+              return Promise.resolve(new Texture());
+            },
           });
-          expect(viaObjects.asked.map((b) => b.id)).toEqual(
-            viaStation.asked.map((b) => b.id),
-          );
+          if (d.asked.length > 0) drawn.push("door");
+          expect(drawn).toEqual([expected(kind, view, seen)]);
         },
       ),
-      { numRuns: 60 },
+      { numRuns: 200 },
     );
   });
 

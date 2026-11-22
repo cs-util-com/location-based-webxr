@@ -253,7 +253,7 @@ export interface TourObjectRendererDeps {
   /**
    * A long text's reading stand (`lectern` view), built by the page
    * (`mountLectern`: a canvas texture, so node has none). Absent: a stand
-   * is left out quietly (the creator's previews draw none yet).
+   * is left out quietly.
    */
   readonly makeLectern?: (block: {
     readonly id: string;
