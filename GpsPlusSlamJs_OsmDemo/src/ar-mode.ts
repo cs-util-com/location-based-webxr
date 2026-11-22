@@ -772,7 +772,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
   try {
     // THE SCENE ROOT, NOT `arWorldGroup`. The root IS the GPS-world frame, so
     // map-derived content built once belongs there with no inverse-alignment
-    // container; the lerped alignment on `arWorldGroup` moves the CAMERA through
+    // container; the alignment on `arWorldGroup` moves the CAMERA through
     // a world that stands still. Two independent readers previously concluded
     // the opposite, which is why `ar-scene-hierarchy.ts` now says so at the top.
     //
@@ -1599,7 +1599,7 @@ export async function startArMode(deps: ArModeDeps): Promise<ArMode> {
             fps,
             sunShadowLine,
             // THE VERTICAL TERM §4 PREDICTS WILL JUMP. `arWorldGroup.matrix` is
-            // written directly by the alignment lerper with `matrixAutoUpdate =
+            // written directly by the alignment binding with `matrixAutoUpdate =
             // false`, so element 13 is the live baseline rather than a stale copy.
             //
             // UNDEFINED UNTIL AN ALIGNMENT EXISTS (r511 review).

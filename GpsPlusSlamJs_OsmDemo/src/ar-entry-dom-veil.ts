@@ -104,8 +104,8 @@ export interface EntryFadeGate {
    * `gps-registration.ts`'s words about the bug it was written to fix — so
    * uncovering shows a correctly-placed, wrongly-rotated city.
    *
-   * Not weakened by the alignment lerper: the framework applies the FIRST
-   * target instantly rather than animating out of identity, so "not identity"
+   * The framework applies every alignment in the frame it arrives, never
+   * animating out of identity, so "not identity"
    * means a fully-applied solve rather than a half-rotated city.
    */
   readonly aligned: boolean;

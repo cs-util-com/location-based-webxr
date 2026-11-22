@@ -67,7 +67,7 @@ Treat global placement as GPS-accurate and local stability as motion-dependent r
 - **Just a URL, no app install:** The whole experience runs in the mobile browser through WebXR, so end users open a link and are in AR within seconds. There is no app-store gate, no native build per platform, and authors can iterate on the live URL while users keep using the same link.
 - **Heading does not depend only on the compass:** Phone compass data can be noisy, biased, or temporarily wrong enough to make a naive AR overlay rotate in the wrong direction. GPS+SLAM can infer the world heading from how the user actually moves through space, so after the user has walked a few meters the overlay no longer has to trust the device-orientation readings.
 - **Session-local objects stay fixed:** Objects created directly in the AR scene can stay at the same 3D position for the current session, independent of later GPS alignment updates. This is ideal for content the user creates live, such as a 3D trail of the path they walked, temporary markers, or objects they place by hand in the world.
-- **Anchors make placed content shareable:** When an object should also be tied to a GPS coordinate for replay, persistence, or sharing with other users, `createGpsAnchor` bootstraps from median GPS samples, keeps the Three.js object positioned from its GPS target inside `arWorldGroup`, and defers corrections until the object is off-screen. That deferral is **not** size-limited — a large alignment jump does not force an on-screen correction, because the jump is already absorbed smoothly for the whole view by the lerped `arWorldGroup.matrix` rather than by snapping one object under the user's gaze.
+- **Anchors make placed content shareable:** When an object should also be tied to a GPS coordinate for replay, persistence, or sharing with other users, `createGpsAnchor` bootstraps from median GPS samples, keeps the Three.js object positioned from its GPS target inside `arWorldGroup`, and defers corrections until the object is off-screen. That deferral is **not** size-limited - a large alignment jump does not force an on-screen correction, because the jump moves the whole view together (`arWorldGroup.matrix` lands on it in one frame) rather than snapping one object under the user's gaze.
 - **Use exact paths and POIs, not only blobs:** Proximity zones remain a good UX for letting users enter an experience from any direction, but they do not have to be the only interaction model. The framework is designed for route-following cues, authored POI objects, precise areas of interest, and other content that benefits from being visibly tied to a real-world path or location.
 
 Don't take any of this on trust. Because everything runs in the browser, the fastest review is to open one of the [live demos](https://gps.csutil.com) on your own phone, step outside, drop an object, walk around it, and judge for yourself whether the stability holds up for your use case.
@@ -240,24 +240,26 @@ scene                             ← GPS-aligned (NUE) space, the scene root
                                     (waypoints, POIs, navigation arrows, …)
 ```
 
-When the alignment solver produces a new matrix, the framework writes it to `arWorldGroup.matrix` (smoothly lerped — see `enableArWorldGroupAlignment` below). The camera moves with `arWorldGroup`; objects parented directly to `scene` do not.
+When the alignment solver produces a new matrix, the framework writes it to `arWorldGroup.matrix` in the frame it arrives (see `enableArWorldGroupAlignment` below). The camera moves with `arWorldGroup`; objects parented directly to `scene` do not.
 
 > **Apply alignment to `arWorldGroup` — the framework default.** Call
 > [`enableArWorldGroupAlignment({ store, arWorldGroup })`](https://github.com/cs-util-com/location-based-webxr/blob/main/GpsPlusSlamJs_AppFramework/src/visualization/ar-world-group-alignment.ts.md)
-> once after AR starts. It subscribes to the store's alignment matrix, lerps it
-> onto `arWorldGroup.matrix` each frame, and thereby **GPS-registers the view**:
+> once after AR starts. It reads the store's alignment matrix each frame, sets
+> `arWorldGroup.matrix` to its newest value, and thereby **GPS-registers the view**:
 > the camera and every object parented under `arWorldGroup` (including GPS
 > anchors) shift together as alignment refines, so anchors stay stable in the AR
-> overlay and only ever correct a small residual. The recorder wires its own
-> lerper; the simpler apps use this helper. Forgetting it leaves the camera
+> overlay and only ever correct a small residual. The framework does not
+> smooth the alignment; an app that wants smoothing adds it above this layer
+> (the recorder wires its own lerper). The simpler apps use this helper. Forgetting it leaves the camera
 > pure-VIO and forces each anchor to absorb the full alignment delta on every
 > re-registration.
 
-**Three options for placing your own `Object3D`:**
+**Four options for placing your own `Object3D`:**
 
 1. **Add it to `scene`** (with NUE-meter coordinates from `calcRelativeCoordsInMeters(zeroRef, …)`, importable from `gps-plus-slam-app-framework/core`). The object's world pose stays at the correct latitude/longitude/altitude forever, but every time the alignment matrix is corrected the camera shifts inside `arWorldGroup`, so from the user's AR view the object visually "floats". Cheap and correct, but ugly during corrections — fine for small markers (e.g. ref-point spheres), not great for richer GPS-anchored content.
 2. **Add it to `arWorldGroup`** with a fixed local transform. The object is frozen relative to AR-tracked content and stays visually fixed at the same 3D position for this session. This is a good fit for user-created local content such as a walked path, a temporary marker, a hit-test reticle, or an object the user placed by hand. The tradeoff is that its world / GPS pose drifts every time alignment is corrected, so this mode is not enough when the object must be replayed or shared by GPS coordinate.
-3. **Use `createGpsAnchor` for objects that should stay visually stable at a GPS target.** The anchor owns a single `Object3D` **inside `arWorldGroup`** (the factory throws if `object3D` is not a descendant of the `arWorldGroup` you pass — placing an anchor under the scene root defeats AR stability), bootstraps from median samples unless `skipBootstrap` is set, and re-derives the object's local pose from the current GPS target and alignment state each tick. Because the object rides the (lerped) `arWorldGroup` alignment, its motion relative to the camera between re-registrations is small. In the default `snap-when-offscreen` mode an accepted correction is committed **instantly** while the object is outside the camera frustum, making the (now small, residual) correction hard to notice; while the object is **on-screen the commit is suppressed regardless of the correction's size** — there is no large-jump escape, and the sole on-screen exception is the one-time initial placement of a `skipBootstrap` anchor, which must escape the AR origin even while the user is looking. A per-anchor large-jump bypass existed until 2026-06-06 and was **removed**: once the whole frame rides one lerped `arWorldGroup.matrix`, a large alignment jump is already absorbed smoothly for the entire view, so an on-screen per-anchor snap only manufactured a visible hard jump (see `gps-anchor.ts.md`). Use `snap-every-tick` when correctness is more important than hiding visible position changes. Smoothing is **not** per-anchor: it lives once in the lerped `arWorldGroup.matrix` (`enableArWorldGroupAlignment`), so the whole AR world eases together. This is how the MinimalExample and AnchorStarter get the smooth alignment feel.
+3. **Use `createGpsAnchor` for objects that should stay visually stable at a GPS target.** The anchor owns a single `Object3D` **inside `arWorldGroup`** (the factory throws if `object3D` is not a descendant of the `arWorldGroup` you pass - placing an anchor under the scene root defeats AR stability), bootstraps from median samples unless `skipBootstrap` is set, and re-derives the object's local pose from the current GPS target and alignment state each tick. Because the object rides the `arWorldGroup` alignment, its motion relative to the camera between re-registrations is small. In the default `snap-when-offscreen` mode an accepted correction is committed **instantly** while the object is outside the camera frustum, making the (now small, residual) correction hard to notice; while the object is **on-screen the commit is suppressed regardless of the correction's size** - there is no large-jump escape, and the sole on-screen exception is the one-time initial placement of a `skipBootstrap` anchor, which must escape the AR origin even while the user is looking. A per-anchor large-jump bypass existed until 2026-06-06 and was **removed**: once the whole frame rides one `arWorldGroup.matrix`, a large alignment jump already moves the entire view together, so an on-screen per-anchor snap only manufactured a visible hard jump of one object against the rest (see `gps-anchor.ts.md`). Use `snap-every-tick` when correctness is more important than hiding visible position changes. The alignment is applied once, to `arWorldGroup.matrix` (`enableArWorldGroupAlignment`), so the whole AR world moves together: every alignment change, large or small, lands in one frame. The framework does not smooth it; an app that wants smoothing adds it above this layer. This is how the MinimalExample and AnchorStarter keep the camera and their anchors registered together.
+4. **Use `deferredAnchor` (deep import `gps-plus-slam-app-framework/ar/deferred-anchors`) for GPS-world content that should follow corrections without moving while you look at it, except at the events below.** Content added through `deferredAnchor(arWorldGroup, key).add(root)` sits **inside `arWorldGroup`** at its NUE pose (local matrix alignment⁻¹). When the alignment changes, the world moves in one frame and the anchor keeps its pose relative to the camera while any part of it is in view; it re-places to the latest alignment⁻¹ once it has been out of view. Until the alignment is mature and no code has voted, it follows the alignment like scene-root content; after an odometry frame switch it follows for a short window; a code lock re-places it once, at once. Requires `enableArWorldGroupAlignment` for the group, which drives it each frame. Content that must stay rigid in odometry for one visit may instead sit in a static inverse-alignment container; never re-solve content outside `arWorldGroup`.
 
 A pure-function `syncGpsAnchoredMeshes` reconciler (option 1, bulk markers) is shipped by the RecorderApp. Use `createGpsAnchor` when a single visible object, route cue, or POI needs the more careful bootstrap and correction policy.
 
@@ -341,7 +343,8 @@ WebXR session lifecycle, Three.js renderer setup, image/depth capture, occupancy
   - `bresenham3d(...)` — Voxel ray traversal.
 - **Replay scene**
   - `initReplayScene(container)` / `disposeReplayScene()` — Create and tear down a 3D replay scene with orbit/FPS controls.
-  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` / `getAlignmentLerper()` — Replay scene controls.
+  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` - Replay scene controls.
+  - `applyReplayAlignment()` - Writes an alignment to the replay scene's `arWorldGroup`, exactly, in the frame it arrives (no smoothing).
 - **Constants**
   - `WEBXR_TO_NUE` — The WebXR → NUE basis change.
 
@@ -458,8 +461,8 @@ H3-based proximity matching for GPS-anchored points.
 ### `visualization/` — Three.js & Maps
 
 - **Alignment**
-  - `enableArWorldGroupAlignment(options)` — Subscribe the `arWorldGroup` to the store's alignment matrix and lerp it each frame. **Call this once after AR starts** (see [Scene-Graph Convention](#scene-graph-convention)).
-  - `createAlignmentLerper()` — The lower-level smooth alignment-matrix interpolation.
+  - `enableArWorldGroupAlignment(options)` - Set the `arWorldGroup` to the store's newest alignment matrix, in the frame it arrives. **Call this once after AR starts** (see [Scene-Graph Convention](#scene-graph-convention)).
+  - `createAlignmentLerper()` - A smoothing alignment-matrix interpolation for an app that drives its own group (the recorder does); the framework's binding does not use it.
   - `clampedAlpha(...)` / `DEFAULT_LERP_RATE` — Frame-rate-independent lerp helpers.
 - **Placement**
   - `createGpsAnchor(options)` — GPS-anchored placement helper for one Three.js object.

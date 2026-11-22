@@ -64,7 +64,8 @@ export default defineConfig(
       'vitest/expect-expect': [
         'error',
         {
-          assertFunctionNames: ['expect', 'expectTypeOf'],
+          // `expect*`: test helpers such as `expectMatrixClose` assert.
+          assertFunctionNames: ['expect', 'expectTypeOf', 'expect*'],
         },
       ],
     },

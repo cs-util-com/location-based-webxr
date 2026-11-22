@@ -361,7 +361,7 @@ function slowDraftStore() {
 /**
  * A creator in a running AR session: the real store with a GPS alignment
  * laid over it that a test can change, a real scene root with the AR world
- * group under it (its matrix IS the alignment, as the lerp settles to), a
+ * group under it (its matrix IS the alignment, as the real binding lands it), a
  * reticle at a chosen odometry spot, and labels that are real Object3Ds.
  */
 function authoring(

@@ -28,7 +28,7 @@ import {
   initReplayScene,
   disposeReplayScene,
   updateOrbitTarget,
-  getAlignmentLerper,
+  applyReplayAlignment,
 } from 'gps-plus-slam-app-framework/ar/replay-scene';
 import { wireStoreSubscribers } from 'gps-plus-slam-app-framework/state/store-subscribers';
 import type { MapData } from 'gps-plus-slam-app-framework/visualization/map-data';
@@ -249,10 +249,6 @@ export async function startReplayMode(
     log.warn('Stats overlay skipped; replay continues without it', err);
   }
 
-  // Get the alignment lerper (Issue 4) — store subscribers route alignment
-  // updates through the lerper for smooth interpolation instead of snapping.
-  const alignmentLerper = getAlignmentLerper();
-
   // Map overlay proxy — delegates to a late-bound real overlay so the
   // store subscriber can update the map even though it is created later.
   let mapOverlayTarget: ReplayMapOverlay | null = null;
@@ -274,7 +270,8 @@ export async function startReplayMode(
   // updates the orbit target only when alignment snapshots are created,
   // centering the orbit camera on the system's best-estimate GPS position.
   const unsubscribe = wireStoreSubscribers(store, {
-    applyAlignmentMatrix: (matrix) => alignmentLerper?.setTarget(matrix),
+    // Each alignment lands exactly, in the frame it arrives (no smoothing).
+    applyAlignmentMatrix: applyReplayAlignment,
     gpsEventVisualizer,
     mapOverlay: mapOverlayProxy, // Proxy delegates to real overlay once set via setMapOverlay()
     // 6.2: Update arpose Object3D with recorded odom pose during replay.

@@ -33,13 +33,14 @@ arWorldGroup, arpose, camera, renderer}`), `getOccupancyGrid()` (or `null`),
 ## Invariants & assumptions
 
 - **Composes existing pieces only:** `initReplayScene` (non-WebXR desktop scene),
-  `wireStoreSubscribers` (alignment lerp + GPS event markers + recorded odom pose
+  `wireStoreSubscribers` (each alignment applied exactly, in the frame it
+  arrives, through `applyReplayAlignment` + GPS event markers + recorded odom pose
   → `arpose`), `OccupancyGrid` + `OccupancyCubesVisualizer` + `OcclusionMesh` fed
   by the replayed depth stream (`subscribeReplayOccupancy`), and a `ReplayEngine`.
 - **GPS-marker singleton:** points `gpsEventVisualizer` at the replay scene on
   start and restores it (`setSceneSource(null)`) on `dispose`, so a later live AR
   session is unaffected. Only one replay session may be active at a time (the
-  scene + lerper + marker singletons are module-global — same constraint as the
+  scene + marker singletons are module-global, the same constraint as the
   RecorderApp's replay mode).
 - **Coordinate frames:** cubes/occlusion mesh carry `WEBXR_TO_NUE` under
   `arWorldGroup` (raw-WebXR cells in an NUE-aligned node); `onNewOdomPose`

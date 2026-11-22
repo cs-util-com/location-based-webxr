@@ -6,14 +6,15 @@ Sets up a standard Three.js rendering environment for desktop replay mode (no We
 
 ## Public API
 
-| Symbol                 | Signature                                                                       | Description                                    |
-| ---------------------- | ------------------------------------------------------------------------------- | ---------------------------------------------- |
-| `initReplayScene()`    | `(container: HTMLElement) => { scene, arWorldGroup, arpose, camera, renderer }` | Initialize scene, renderer, controls, rAF loop |
-| `disposeReplayScene()` | `() => void`                                                                    | Clean up all resources (idempotent)            |
-| `getReplayState()`     | `() => ReplaySceneState \| null`                                                | Internal state for testing/introspection       |
-| `updateOrbitTarget()`  | `(position: THREE.Vector3) => void`                                             | Set orbit center + translate camera to follow  |
-| `getCameraMode()`      | `() => 'orbit' \| 'fps'`                                                        | Current camera mode                            |
-| `toggleCameraMode()`   | `() => void`                                                                    | Switch between orbit and FPS modes             |
+| Symbol                   | Signature                                                                       | Description                                    |
+| ------------------------ | ------------------------------------------------------------------------------- | ---------------------------------------------- |
+| `initReplayScene()`      | `(container: HTMLElement) => { scene, arWorldGroup, arpose, camera, renderer }` | Initialize scene, renderer, controls, rAF loop |
+| `disposeReplayScene()`   | `() => void`                                                                    | Clean up all resources (idempotent)            |
+| `getReplayState()`       | `() => ReplaySceneState \| null`                                                | Internal state for testing/introspection       |
+| `updateOrbitTarget()`    | `(position: THREE.Vector3) => void`                                             | Set orbit center + translate camera to follow  |
+| `getCameraMode()`        | `() => 'orbit' \| 'fps'`                                                        | Current camera mode                            |
+| `toggleCameraMode()`     | `() => void`                                                                    | Switch between orbit and FPS modes             |
+| `applyReplayAlignment()` | `(matrix: readonly number[]) => void`                                           | Write an alignment to `arWorldGroup`, exactly  |
 
 ## Types
 
@@ -33,6 +34,7 @@ Sets up a standard Three.js rendering environment for desktop replay mode (no We
   the target moves (it recomputes offset = camera.position - target, which is a no-op without user input).
   Without explicit camera translation, the camera would sit still while the trajectory moves away.
 - **Scene ownership (surface-reduction step 2, replaces the Risk R1 injection):** `initReplayScene()` keeps its own `scene`/`arWorldGroup`/`arpose`/`camera` references and never writes into `webxr-session.ts` — the live getters (`getScene()` etc.) stay `null` during replay. Replay consumers read the init return value / `getReplayState()`, and the replay orchestrator points scene-reading visualizers at these references explicitly (e.g. `gpsEventVisualizer.setSceneSource(...)`). The historical `setScene`/`setArWorldGroup`/`setCamera`/`setArPose`/`getArPose` exports were deleted.
+- **Alignment lands exactly, in the frame it arrives:** `applyReplayAlignment()` copies the 16-element column-major matrix into `arWorldGroup.matrix` (`matrixAutoUpdate = false`, world matrix updated at once), the same rule as the live binding; there is no smoothing and nothing in the render loop moves the group afterwards. Smoothing, if an app wants it, is the app's. A matrix that is not 16 finite numbers is refused with a warning and the last good alignment stays; before init and after dispose the call is a no-op. Pass it as `applyAlignmentMatrix` to `wireStoreSubscribers`.
 - **No WebXR:** Renderer has `xr.enabled === false`. Uses `requestAnimationFrame` loop, not WebXR's `setAnimationLoop`.
 - **Idempotent dispose:** `disposeReplayScene()` can be called multiple times safely. Clears all module state and DOM references.
 - **Single instance:** Only one replay scene can be active. Calling `initReplayScene()` while one exists throws.
@@ -96,13 +98,14 @@ disposeReplayScene();
 
 ## Tests
 
-- [replay-scene.test.ts](replay-scene.test.ts) — 60 tests covering:
+- [replay-scene.test.ts](replay-scene.test.ts) covers:
   - **3a (core):** camera reparented to scene root (Issue 5), scene ownership (webxr-session live getters stay null — the R1 injection is gone), arpose exposed via return value/state, renderer config, canvas insertion, sizing, rAF loop, lighting, arWorldGroup parent, double-init guard, dispose cleanup (canvas removal, module state, rAF cancel, renderer disposal), idempotent dispose
   - **3b (orbit):** default mode, updateOrbitTarget sets center, updateOrbitTarget translates camera to follow trajectory, incremental deltas across multiple calls, safe before init
   - **3c (FPS toggle):** orbit→fps, fps→orbit, safe before init, default mode before init, dispose cleans both, tabindex save/restore (single + multi round-trip, pre-existing values, dispose-from-FPS, dispose-without-FPS)
   - **Issue 5:** arpose remains in hierarchy after reparent, camera world position unaffected by arpose changes, camera starts elevated
   - **Issue 6 (drag-based mouse look):** pointer listeners registered on canvas, left-click-drag rotates yaw, left-click-drag rotates pitch, pitch clamping, orientation preserved on mode switch, pointer listener cleanup on mode switch, pointer listener cleanup on dispose, stops rotating after release
   - **Issue 8:** camera-follower at scene root (not arWorldGroup), compass cubes, getCameraFollower getter, dispose cleanup, follower placement
+  - **Alignment:** each alignment lands exactly (matrix and world matrix, the first and the next), render frames leave it untouched, a property over random rigid sequences, malformed matrices refused, no-op before init and after dispose
   - **Frame-rate independence:** FPS movement scales with delta time, not frame count
   - **P3 (DOM hardcoding audit):** FPS keyboard listeners are scoped to container (not document), container gets `tabindex` when FPS mode activates
 

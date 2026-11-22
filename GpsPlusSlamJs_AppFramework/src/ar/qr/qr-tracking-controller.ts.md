@@ -62,6 +62,12 @@ imageHeight, intrinsics, orderSource? }`, emitted via `onDetection` on every loc
   scheduler locks (≥ `requiredLockCount` consecutive solves) and votes are
   dispatched; `error` on a level fetch / detect rejection; a miss while
   `tracking` drops back to `scanning`. `onStatus` fires only on change.
+- **A cast vote releases the deferred anchors** (`ar/anchor-release.ts`):
+  right after `dispatchVotes(votes)`, unless it returned `false` (the app
+  cast none: a spent budget, no session zero), the controller calls
+  `requestAnchorRelease('code-lock')`, before `setStatus('tracking')` and
+  `onLocked`. No vote, no release: a geo-less level and a pose not yet stable
+  never ask. `dispatchVotes` returns `boolean | void`; `void` counts as cast.
 - **One detection in flight** (the scheduler coalesces), so the closure
   `active` — `{ level, text, sizeM, corners, cameraPose, imageWidth,
 imageHeight, intrinsics }`, eight fields (seven until M3b b3; the line
@@ -113,7 +119,9 @@ imageHeight, intrinsics }`, eight fields (seven until M3b b3; the line
 
 ## Tests
 
-- `qr-tracking-controller.test.ts` — happy-path status progression + 4 votes
+- `qr-tracking-controller.test.ts` - the anchor release (once after a cast
+  vote, ordered votes, release, onLocked; none for `false`, geo-less or
+  unstable), happy-path status progression + 4 votes
   dispatched, level cached once per URL, error path on fetch failure, stays
   scanning on no-detection, plausibility gate blocks the lock, `reset()` clears
   cache + returns to idle; after `dispose()`, a lock completing, a level

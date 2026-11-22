@@ -15,6 +15,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as THREE from 'three';
+import fc from 'fast-check';
 import { getScene, getArWorldGroup, getCamera } from './webxr-session.js';
 import { SCENE_NODE } from './scene-node-names.js';
 
@@ -87,7 +88,7 @@ import {
   getCameraMode,
   toggleCameraMode,
   getCameraFollower,
-  getAlignmentLerper,
+  applyReplayAlignment,
   getCss3dManager,
 } from './replay-scene.js';
 
@@ -1106,35 +1107,139 @@ describe('replay-scene', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Issue 4: AlignmentLerper wiring
+  // Alignment: every change lands exactly, in the frame it arrives
   // -----------------------------------------------------------------------
 
-  describe('AlignmentLerper wiring (Issue 4)', () => {
+  describe('applyReplayAlignment', () => {
+    /** A rigid alignment (rotation about an arbitrary axis plus translation). */
+    function rigid(
+      axis: readonly [number, number, number],
+      angle: number,
+      t: readonly [number, number, number]
+    ): number[] {
+      const q = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(...axis).normalize(),
+        angle
+      );
+      return new THREE.Matrix4()
+        .compose(new THREE.Vector3(...t), q, new THREE.Vector3(1, 1, 1))
+        .toArray();
+    }
+
+    /** Element-wise exact equality (`toEqual` would tell +0 from -0). */
+    function expectExact(
+      actual: readonly number[],
+      expected: readonly number[]
+    ): void {
+      for (let i = 0; i < 16; i++) expect(actual[i]! - expected[i]!).toBe(0);
+    }
+
+    const A = rigid([0, 1, 0], 0.4, [3, -1, 7]);
+    const B = rigid([1, 2, -1], -1.1, [-12, 0.5, 4]);
+
     /**
      * Why this test matters:
-     * The alignment lerper must exist after init so that store subscribers
-     * can call setTarget() to queue smooth alignment transitions.
+     * Replay follows the same rule as the live binding: the world shows the
+     * newest alignment at once. A smoothing step (half the way, an easing
+     * rate) would leave the group between two alignments and turn this red,
+     * for the first alignment and for the one that follows it.
      */
-    it('getAlignmentLerper returns a lerper after init', () => {
+    it('lands each alignment exactly, in the call, and keeps the world matrix in step', () => {
       initReplayScene(container);
+      const group = getReplayState()!.arWorldGroup;
 
-      const lerper = getAlignmentLerper();
-      expect(lerper).not.toBeNull();
-      expect(lerper).toHaveProperty('setTarget');
-      expect(lerper).toHaveProperty('update');
-      expect(lerper).toHaveProperty('dispose');
+      applyReplayAlignment(A);
+      expectExact(group.matrix.elements, A);
+      expect(group.matrixAutoUpdate).toBe(false);
+      expectExact(group.matrixWorld.elements, A);
+
+      applyReplayAlignment(B);
+      expectExact(group.matrix.elements, B);
+      expectExact(group.matrixWorld.elements, B);
     });
 
     /**
      * Why this test matters:
-     * After dispose, the lerper getter should return null to prevent
-     * stale references and dangling updates.
+     * Nothing in the render loop may move the group after an alignment
+     * landed: no per-frame easing is left that could pull it elsewhere.
      */
-    it('getAlignmentLerper returns null after dispose', () => {
+    it('render frames leave a landed alignment untouched', () => {
+      let animateFn: FrameRequestCallback | null = null;
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        animateFn = cb;
+        return 42;
+      });
+      initReplayScene(container);
+      const group = getReplayState()!.arWorldGroup;
+
+      applyReplayAlignment(A);
+      for (let i = 0; i < 5; i++) animateFn!(performance.now());
+      expectExact(group.matrix.elements, A);
+      expectExact(group.matrixWorld.elements, A);
+    });
+
+    /**
+     * Why this test matters:
+     * Whatever sequence of alignments a recording replays, the group shows
+     * exactly the last one after each call: no step depends on the one
+     * before it.
+     */
+    it('property: after any sequence of rigid alignments the group shows the last one exactly', () => {
+      initReplayScene(container);
+      const group = getReplayState()!.arWorldGroup;
+      const coord = fc.double({ min: -1000, max: 1000, noNaN: true });
+      const unit = fc.double({ min: -1, max: 1, noNaN: true });
+      const alignment = fc
+        .tuple(
+          fc
+            .tuple(unit, unit, unit)
+            .filter(([x, y, z]) => x * x + y * y + z * z > 1e-6),
+          fc.double({ min: -Math.PI, max: Math.PI, noNaN: true }),
+          fc.tuple(coord, coord, coord)
+        )
+        .map(([axis, angle, t]) => rigid(axis, angle, t));
+      fc.assert(
+        fc.property(
+          fc.array(alignment, { minLength: 1, maxLength: 6 }),
+          (seq) => {
+            for (const m of seq) {
+              applyReplayAlignment(m);
+              expectExact(group.matrix.elements, m);
+            }
+          }
+        )
+      );
+    });
+
+    /**
+     * Why this test matters:
+     * The matrix comes from the store, a module boundary: a short or
+     * non-finite one must not blank the world, so it is refused and the
+     * last good alignment stays.
+     */
+    it('refuses a malformed matrix and keeps the last good alignment', () => {
+      initReplayScene(container);
+      const group = getReplayState()!.arWorldGroup;
+      applyReplayAlignment(A);
+
+      applyReplayAlignment(A.slice(0, 15));
+      applyReplayAlignment(A.map((v, i) => (i === 12 ? Number.NaN : v)));
+      applyReplayAlignment(A.map((v, i) => (i === 0 ? Infinity : v)));
+
+      expectExact(group.matrix.elements, A);
+    });
+
+    /**
+     * Why this test matters:
+     * A store subscriber may fire after the scene was disposed; the call
+     * must be a silent no-op, not a crash in the dispatch chain.
+     */
+    it('is a no-op before init and after dispose', () => {
+      expect(() => applyReplayAlignment(A)).not.toThrow();
       initReplayScene(container);
       disposeReplayScene();
-
-      expect(getAlignmentLerper()).toBeNull();
+      expect(() => applyReplayAlignment(A)).not.toThrow();
+      expect(getReplayState()).toBeNull();
     });
   });
 

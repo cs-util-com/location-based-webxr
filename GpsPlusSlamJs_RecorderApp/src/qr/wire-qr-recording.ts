@@ -249,21 +249,24 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
       // The source owns the retry timing; without this the controller's own
       // cache would keep the first failure for the whole session.
       shouldCacheLevel: (level) => levelSource.shouldCacheLevel(level),
+      // Answers whether the votes were cast: only a cast batch releases the
+      // deferred anchors (the controller re-places them at once).
       dispatchVotes: (votes) => {
         const text = lastVotedText;
-        if (text === null) return;
+        if (text === null) return false;
         // ACCEPTANCE first, budget second (the shared contract's order):
         // `recordGpsEvent` silently no-ops until the session zero exists, so
         // charging the budget for dropped votes would spend it on nothing -
         // and `syntheticVotes` would over-report, permanently understating
         // `alignmentSampleCount` and risking a false decline at the
         // MIN_ALIGNMENT_SAMPLES gate (PR #385 review).
-        if (storeRef.get().getState().gpsData?.zero == null) return;
-        if (!voteBudget.tryConsume(text)) return;
+        if (storeRef.get().getState().gpsData?.zero == null) return false;
+        if (!voteBudget.tryConsume(text)) return false;
         for (const vote of votes) {
           storeRef.get().dispatch(recordGpsEvent(vote));
           syntheticVotes += 1;
         }
+        return true;
       },
       // The RAW record rides the validated DECODE, not the solved pose:
       // decision D-A says a recording stays algorithm-agnostic whatever else

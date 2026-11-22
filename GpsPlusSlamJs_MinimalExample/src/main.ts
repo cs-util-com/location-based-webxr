@@ -236,14 +236,14 @@ function main(): void {
           startTime: Date.now(),
         })
       );
-      // GPS-register the AR view: lerp the store's alignment onto arWorldGroup
+      // GPS-register the AR view: apply the store's alignment to arWorldGroup
       // so the camera and every anchored child ride the alignment together (the
       // scene-root contrast cube deliberately does NOT, so it visibly slides).
       // Without this the camera is pure-VIO and anchors must absorb the full
       // alignment delta on each re-registration. Fire-and-forget: the framework
       // ties this binding's disposal to the AR session teardown (it registers a
       // session disposer that `resetWebXRState()` flushes), so re-entering AR
-      // never leaks the previous session's lerp + store subscription.
+      // never leaks the previous session's binding + store subscription.
       const arWorldGroup = getArWorldGroup();
       if (arWorldGroup) {
         enableArWorldGroupAlignment({

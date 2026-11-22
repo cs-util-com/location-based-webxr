@@ -4,6 +4,14 @@
 
 ### Added
 
+- **Content anchors that re-place only while none of it is in view**, at
+  its current and its new pose, after two frames out of view. Until the
+  alignment is mature and while no code has voted, it follows the alignment
+  as scene-root content does. After an odometry frame switch (a frame-epoch
+  change, or a camera position step above 1 m between two frames) it
+  follows the alignment for a short window, whose longest span grows with
+  the session's length. A code lock re-places it once, at once.
+  - **`ar/deferred-anchors`** (deep import): `deferredAnchor`.
 - **Is any part of an anchor's subtree in view?** A conservative test that
   never says "out" while a drawn part is in view (CSS3D objects count as
   their origin point only), so content can re-place only while none of it is
@@ -200,6 +208,8 @@
 
 ### Changed
 
+- `visualization/ar-world-group-alignment`: the binding drives the deferred
+  anchors under its group right after its alignment step.
 - `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
   `utils/data-uri`, strictly: a payload with whitespace or without its
   padding, which plain `atob` accepted, is now an image that cannot be
@@ -259,6 +269,30 @@
   (`parseTourObject`).
 
 ### ⚠️ Breaking changes
+
+- `visualization/ar-world-group-alignment`: **alignment changes land in
+  the frame they arrive.** `enableArWorldGroupAlignment` no longer eases
+  the group over about 0.3 s: every new alignment, large or small, is
+  copied exactly into `arWorldGroup.matrix` in the frame it is read, so the
+  world under the group jumps at once instead of sliding. Smoothing, if an
+  app wants it, belongs to the app. The `lerpRate` option is removed (it
+  has nothing left to set); `createAlignmentLerper` is unchanged and stays
+  for apps that drive their own group.
+- `ar/replay-scene`: **replay follows the same rule.** The desktop replay
+  scene no longer eases `arWorldGroup` toward each alignment; the new
+  `applyReplayAlignment(matrix)` writes it exactly, in the frame it
+  arrives, and `startReplaySession` uses it. `getAlignmentLerper()` is
+  removed: wire `applyAlignmentMatrix: applyReplayAlignment` into
+  `wireStoreSubscribers` instead. An app that wants smoothing adds it
+  itself, as the RecorderApp does for its live AR view (it drives its own
+  `createAlignmentLerper` from `ar/wire-ar-scene.ts`).
+- `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
+  `(votes) => boolean | void`. Returning `false` says it cast no votes;
+  otherwise the controller asks every deferred anchor to re-place once, and
+  returning nothing keeps today's meaning. A callback whose expression body
+  returns another value (`(v) => list.push(...v)`) no longer type-checks and
+  needs braces. The type is not `unknown` on purpose: `unknown` would also
+  accept `async () => false`, whose Promise would release silently.
 
 - **`tour.json` version 5: stations hold children, stories hold their own**
   (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,

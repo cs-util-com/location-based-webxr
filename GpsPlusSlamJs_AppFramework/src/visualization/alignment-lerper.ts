@@ -97,7 +97,7 @@ export function createAlignmentLerper(
       }
 
       if (isFirstTarget) {
-        // First alignment — apply instantly, no lerp from identity
+        // First alignment: apply instantly, no lerp from identity
         applyTargetExactly();
         isFirstTarget = false;
         converged = true;

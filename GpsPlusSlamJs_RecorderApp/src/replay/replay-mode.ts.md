@@ -33,6 +33,7 @@ Orchestrates all replay building blocks (Iterations 1-5) into a single entry poi
 
 ## Invariants & Assumptions
 
+- **Alignment lands exactly:** `applyAlignmentMatrix` is the framework's `applyReplayAlignment`, so each alignment lands in the frame it arrives with no smoothing; replay adds none of its own. (The live AR view's alignment lerper in `ar/wire-ar-scene.ts` is the app's own choice and does not touch replay.)
 - **R6 (Store identity):** The same `RecorderStore` instance is passed to `wireStoreSubscribers()` and `ReplayEngine.play()`. This ensures dispatched actions trigger visualization updates.
 - **R7 (Error handling):** `onError` from config is wired to `ReplayEngine.onError()`. Dispatch errors don't crash the loop.
 - **R8 (Data flow):** `loadActionsFromZip(zipData)` → maps each entry's `.action` → `ReplayAction[]` → `engine.play()`.
