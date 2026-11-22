@@ -689,3 +689,58 @@ describe("the guided view's run zip", () => {
     expect(moved.runZip.phase).toBe("saved");
   });
 });
+
+describe("the guided view's single-file save and camera start", () => {
+  const withPair = (): FeatureMatchState =>
+    run([
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+    ]);
+
+  // Why: a single file of the measure sheet is prepared asynchronously; it
+  // must hold the page busy like Download all, or Download all, a plan run
+  // or Start over could start under it.
+  it("holds the page busy while one file is prepared", () => {
+    const going = run([A.planFileSaveStarted()], withPair());
+    expect(going.busy).toBe("saving");
+    expect(going.fileSave).toEqual({ preparing: true, text: "preparing..." });
+    expect(featureMatchReducer(going, A.planFileSaveStarted())).toBe(going);
+    expect(featureMatchReducer(going, A.runZipStarted())).toBe(going);
+    expect(featureMatchReducer(going, A.runStarted("plan"))).toBe(going);
+    expect(featureMatchReducer(going, A.planReset())).toBe(going);
+    const busy = run([A.runStarted("plan")], withPair());
+    expect(featureMatchReducer(busy, A.planFileSaveStarted())).toBe(busy);
+    const done = run([A.planFileSaveEnded("saved x")], going);
+    expect(done.busy).toBe("idle");
+    expect(done.fileSave).toEqual({ preparing: false, text: "saved x" });
+    // Only a file save in preparation ends; a zip being packed stays.
+    const zip = run([A.runZipStarted()], withPair());
+    expect(featureMatchReducer(zip, A.planFileSaveEnded("x"))).toBe(zip);
+    const idle = withPair();
+    expect(featureMatchReducer(idle, A.planFileSaveEnded("x"))).toBe(idle);
+  });
+
+  // Why: "starting" and "failed" are what the finder chip says; a photo, a
+  // move or a reset must not wipe them, and nothing else may be stored.
+  it("keeps the camera start status through plan changes", () => {
+    const s = run([A.cameraStartSet("starting")]);
+    expect(s.cameraStart).toBe("starting");
+    expect(run([A.planMoved(3), A.planReset()], s).cameraStart).toBe(
+      "starting",
+    );
+    expect(run([A.cameraStartSet("failed")], s).cameraStart).toBe("failed");
+    const bad = featureMatchReducer(
+      s,
+      A.cameraStartSet("on" as unknown as "idle"),
+    );
+    expect(bad).toBe(s);
+  });
+
+  // Why: a photo the browser's database refused is lost at a reload; the
+  // page must be able to say so until a later write succeeds.
+  it("records whether the photo database is failing", () => {
+    const s = run([A.photoStoreChanged(true)]);
+    expect(s.photoStoreFailing).toBe(true);
+    expect(run([A.photoStoreChanged(false)], s).photoStoreFailing).toBe(false);
+  });
+});

@@ -11,6 +11,7 @@ import {
   deviceSummary,
   endView,
   isMoving,
+  measureText,
   motionStep,
   pairRows,
   planPairOf,
@@ -422,5 +423,29 @@ describe("the steady hint", () => {
     expect(settledAfter(6)).toBeLessThan(30);
     expect(settledAfter(4)).toBeGreaterThan(settledAfter(6));
     expect(settledAfter(12)).toBeLessThan(settledAfter(6));
+  });
+});
+
+// Why this test matters: a finished plan run stays in the state after a
+// move, so the measure sheet of another pair must not show its "done" line.
+describe("measureText", () => {
+  it("shows a run's status only on the pair it measured", () => {
+    const done = run([
+      shot("1a-s1", "a"),
+      shot("1a-s1", "b"),
+      A.runStarted("plan"),
+      A.runFinished({ text: "done: 1 methods", resultsId: "r1" }),
+    ]);
+    expect(measureText(done, null)).toBe("done: 1 methods");
+    const moved = run([A.planMoved(1)], done);
+    expect(measureText(moved, null)).toBe(
+      "the current pair has no two photos yet",
+    );
+    expect(measureText(run([A.planMoved(0)], moved), null)).toBe(
+      "done: 1 methods",
+    );
+    expect(measureText(run([]), null)).toBe(
+      "the current pair has no two photos yet",
+    );
   });
 });

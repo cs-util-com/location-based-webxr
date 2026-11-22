@@ -10,7 +10,7 @@ import {
   type KeyValueStorage,
 } from "./feature-match-store";
 import { SURFACE_CLASSES } from "./flat-target";
-import type { PhotoMeta } from "./run-plan";
+import { planPhotoIds, type PhotoMeta } from "./run-plan";
 
 const memory = (init: Record<string, string> = {}) => {
   const data = new Map(Object.entries(init));
@@ -471,5 +471,99 @@ describe("the run plan's storage", () => {
     store.dispatch(A.planFilesDownloaded(["k1"]));
     store.dispatch(A.planKeptDropped());
     expect(sides.blobs.size).toBe(0);
+  });
+
+  // Why: the plan and its photos outlive a reload, but the side table key
+  // counter did not: a new photo after a reload got a stored photo's id,
+  // overwrote that slot's frame and was never written to the database.
+  it("never gives a new photo the id of a photo the stored plan names", () => {
+    const { storage } = memory();
+    const first = createFeatureMatchStore({
+      storage,
+      session: "s1",
+      revokeUrl: () => undefined,
+    });
+    const id = first.newId("photo");
+    first.put(
+      first.sides.frames,
+      [[id, saved("A")]],
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo(id) }),
+    );
+    const again = createFeatureMatchStore({
+      storage,
+      session: "s2",
+      revokeUrl: () => undefined,
+    });
+    const named = planPhotoIds(again.store.getState().plan);
+    expect(named).toEqual([id]);
+    for (let i = 0; i < 5; i++) {
+      expect(named).not.toContain(again.newId("photo"));
+    }
+  });
+
+  // Why: a failed database write (quota, a closing tab) used to count as
+  // written, so the photo was never retried and came back missing after a
+  // reload with no word; it must be retried and the page must say so.
+  it("retries a photo whose write failed, and says while one is unstored", async () => {
+    const { data, db } = mapDb();
+    let refuse = true;
+    const flaky = {
+      ...db,
+      put: (k: string, v: unknown) =>
+        refuse ? Promise.reject(new Error("quota")) : db.put(k, v),
+    };
+    const { put, sides, store, failed } = makeWith(memory().storage, flaky);
+    put(
+      sides.frames,
+      [["p1", saved("A")]],
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    );
+    await settle();
+    expect(failed).toHaveBeenCalledTimes(1);
+    expect(store.getState().photoStoreFailing).toBe(true);
+    expect(data.size).toBe(0);
+    // A failure's own log line or any other action is no plan change, so
+    // a refusing database is not hammered in a loop.
+    store.dispatch(A.logged("x"));
+    await settle();
+    expect(failed).toHaveBeenCalledTimes(1);
+    refuse = false;
+    put(
+      sides.frames,
+      [["p2", saved("B")]],
+      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+    );
+    await settle();
+    expect([...data.keys()].sort()).toEqual(["p1", "p2"]);
+    expect(store.getState().photoStoreFailing).toBe(false);
+  });
+
+  // Why: the orphan sweep after a reload must never delete a photo taken
+  // while it waited for the database's key list.
+  it("keeps a photo taken while the orphan sweep reads the keys", async () => {
+    const { data, db } = mapDb({ orphan: saved("B") });
+    let listKeys: () => void = () => undefined;
+    const slow = {
+      ...db,
+      keys: () =>
+        new Promise<string[]>((r) => {
+          listKeys = () => {
+            r([...data.keys()]);
+          };
+        }),
+    };
+    const { put, sides, restorePhotos } = makeWith(memory().storage, slow);
+    const restoring = restorePhotos();
+    put(
+      sides.frames,
+      [["p1", saved("A")]],
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    );
+    await settle();
+    expect(data.has("p1")).toBe(true);
+    listKeys();
+    await restoring;
+    expect([...data.keys()]).toEqual(["p1"]);
+    expect(sides.frames.has("p1")).toBe(true);
   });
 });

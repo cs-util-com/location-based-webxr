@@ -309,6 +309,13 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     predicate: () => true,
     effect: (_a, api) => {
       reconcile(api.getState(), sides, deps.revokeUrl);
+    },
+  });
+  // Only a plan change can name a new photo; a failure's own log line is
+  // none, so a refusing database is not retried in a loop.
+  listener.startListening({
+    predicate: (_a, cur, prev) => cur.plan !== prev.plan,
+    effect: (_a, api) => {
       mirror(api.getState());
     },
   });
@@ -319,29 +326,68 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   };
   /** Plan photo ids written to the database (or found there). */
   const inDb = new Set<string>();
+  /** Plan photo ids whose write is in flight. */
+  const writing = new Set<string>();
+  /** Plan photo ids whose last write failed; retried at the next plan change. */
+  const unstored = new Set<string>();
+  const named = (): Set<string> => new Set(planPhotoIds(store.getState().plan));
+  const flagUnstored = (): void => {
+    const failing = unstored.size > 0;
+    if (store.getState().photoStoreFailing !== failing) {
+      store.dispatch(A.photoStoreChanged(failing));
+    }
+  };
+  /** Writes one photo; it counts as stored only once the write succeeded. */
+  async function storePhoto(id: string, saved: SavedFrame): Promise<void> {
+    if (!db) {
+      return;
+    }
+    writing.add(id);
+    try {
+      await db.put(id, saved);
+      unstored.delete(id);
+      if (named().has(id)) {
+        inDb.add(id);
+      } else {
+        // Retaken or reset while it was written.
+        await db.delete(id);
+      }
+    } catch (e) {
+      // The photo stays in memory for this page, and is tried again.
+      unstored.add(id);
+      dbFailed(e);
+    } finally {
+      writing.delete(id);
+      flagUnstored();
+    }
+  }
   /**
    * Writes the plan's new photos to the database and deletes the ones it
-   * no longer names. A failed write is reported once and not retried: the
-   * photo stays in memory for this page.
+   * no longer names.
    */
   function mirror(s: FeatureMatchState): void {
     if (!db) {
       return;
     }
-    const named = new Set(planPhotoIds(s.plan));
-    for (const id of named) {
+    const ids = new Set(planPhotoIds(s.plan));
+    for (const id of ids) {
       const saved = sides.frames.get(id);
-      if (saved && !inDb.has(id)) {
-        inDb.add(id);
-        db.put(id, saved).catch(dbFailed);
+      if (saved && !inDb.has(id) && !writing.has(id)) {
+        void storePhoto(id, saved);
       }
     }
     for (const id of inDb) {
-      if (!named.has(id)) {
+      if (!ids.has(id)) {
         inDb.delete(id);
         db.delete(id).catch(dbFailed);
       }
     }
+    for (const id of unstored) {
+      if (!ids.has(id)) {
+        unstored.delete(id);
+      }
+    }
+    flagUnstored();
   }
 
   /**
@@ -361,9 +407,9 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     });
     if (db) {
       try {
-        const ids = new Set(wanted.map((w) => w.id));
         for (const key of await db.keys()) {
-          if (!ids.has(key)) {
+          // Read now, not before the wait: a photo taken meanwhile stays.
+          if (!named().has(key) && !writing.has(key)) {
             await db.delete(key);
           }
         }
@@ -394,8 +440,13 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   }
 
   let nextId = 0;
-  /** A fresh side table key. */
-  const newId = (prefix: string): string => `${prefix}${String(++nextId)}`;
+  /**
+   * A fresh side table key. The page load's session token is part of it:
+   * plan photo ids outlive a reload (the stored plan, the database), and a
+   * count from 0 alone would hand out a stored photo's id again.
+   */
+  const newId = (prefix: string): string =>
+    `${prefix}-${deps.session}-${String(++nextId)}`;
 
   /** The photos of surface `id`, created empty on first use. */
   const photosOf = (id: number): SurfacePhotos => {

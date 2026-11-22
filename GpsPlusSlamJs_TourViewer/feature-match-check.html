@@ -981,6 +981,9 @@
           <div class="finder-chips">
             <span id="g-steady" class="chip" hidden>steady</span>
             <span id="g-cam-chip" class="chip dim" hidden></span>
+            <span id="g-store-chip" class="chip warn" hidden
+              >not stored on this phone: download soon</span
+            >
             <button
               id="g-ghost-toggle"
               type="button"
@@ -1040,6 +1043,10 @@
             Download all
           </button>
           <p id="g-download-state" class="state" aria-live="polite"></p>
+          <p id="g-store-state" class="state err" hidden>
+            Some photos could not be stored on this phone, so a reload would
+            lose them: download now.
+          </p>
         </div>
         <div class="end-summary">
           <label for="g-summary" class="label">Summary to paste back</label>
@@ -1155,14 +1162,15 @@
             </button>
           </div>
           <p class="hint">
-            Optional. Runs the matchers here on a pair's photos and times them.
-            Downloads up to 66 MB of models once. A run on a pair uses 1 run, no
-            warm-up, WebGPU (WASM where the phone has none) and one XFeat file;
-            the options below apply to a synthetic run.
+            Optional. Runs the matchers here on the current pair's photos and
+            times them. Downloads up to 66 MB of models once. A run on a pair
+            uses 1 run, no warm-up, WebGPU (WASM where the phone has none) and
+            one XFeat file; the methods and sizes ticked under Options apply to
+            it too, and every option to a synthetic run.
           </p>
           <div class="row">
             <button id="g-measure-run" type="button" class="primary">
-              Run on this pair
+              <span id="g-measure-run-label">Run on this pair</span>
             </button>
             <span id="g-measure-state" class="state" aria-live="polite"></span>
           </div>

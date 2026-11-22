@@ -68,4 +68,35 @@ describe("createCameraControl", () => {
     expect(await cam.start()).toBe("failed");
     expect(gum).toHaveBeenCalledTimes(2);
   });
+
+  // Why: a stop while the permission prompt is still open, then a start
+  // again (leaving and re-entering the run screen), must open a new stream;
+  // handing back the old start would resolve "stopped" and leave the
+  // camera off on the run screen.
+  it("starts again after a stop that came during a pending start", async () => {
+    const first = fakeStream();
+    const second = fakeStream();
+    const releases: ((s: MediaStream) => void)[] = [];
+    const gum = vi.fn(
+      () =>
+        new Promise<MediaStream>((r) => {
+          releases.push(r);
+        }),
+    );
+    const { cam, video } = setup(gum);
+    const old = cam.start();
+    cam.stop();
+    const again = cam.start();
+    expect(gum).toHaveBeenCalledTimes(2);
+    releases[0]!(first.stream);
+    expect(await old).toBe("stopped");
+    expect(first.track.stop).toHaveBeenCalled();
+    releases[1]!(second.stream);
+    expect(await again).toBe("on");
+    expect(video.srcObject).toBe(second.stream);
+    // The old start settling must not forget the new one: a tap while the
+    // second runs gets "on" without a third stream.
+    expect(await cam.start()).toBe("on");
+    expect(gum).toHaveBeenCalledTimes(2);
+  });
 });

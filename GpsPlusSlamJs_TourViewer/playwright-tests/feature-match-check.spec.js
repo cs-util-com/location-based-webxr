@@ -1,6 +1,11 @@
 // @ts-check
 import { expect, test } from "@playwright/test";
-import { TextWriter, Uint8ArrayReader, ZipReader } from "@zip.js/zip.js";
+import {
+  TextWriter,
+  Uint8ArrayReader,
+  Uint8ArrayWriter,
+  ZipReader,
+} from "@zip.js/zip.js";
 
 /** The pinned sift.js URL the page imports (kept in step with method-sift.ts). */
 const SIFT_URL =
@@ -1922,10 +1927,49 @@ test("the guided photo test runs from the intro to a saved zip", async ({
 });
 
 /**
+ * Download all through the link fallback; returns the zip's bytes.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function downloadAllBytes(page) {
+  await page.locator("#g-open-pairs").click();
+  await page.locator("#g-go-end").click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#g-download-all").click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^feature-match-run-.+\.zip$/);
+  await expect(page.locator("#g-download-state")).toHaveText(/^Saved /);
+  return readDownload(download);
+}
+
+/**
+ * The bytes of the zip entry whose name matches `pattern`.
+ *
+ * @param {Buffer} zip
+ * @param {RegExp} pattern
+ */
+async function zipEntryBytes(zip, pattern) {
+  const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(zip)));
+  const entry = (await reader.getEntries()).find((e) =>
+    pattern.test(e.filename),
+  );
+  if (!entry || entry.directory || !entry.getData) {
+    throw new Error(`no ${String(pattern)} in the zip`);
+  }
+  const bytes = await entry.getData(new Uint8ArrayWriter());
+  await reader.close();
+  return Buffer.from(bytes);
+}
+
+/**
  * Why this test matters: without a save dialog (most phones) the zip
  * goes out through a download link, and the photos of the run live in
  * the page's database: after a reload the run continues where it was,
- * with the taken photos drawn again from storage.
+ * with the taken photos drawn again from storage. A photo taken after the
+ * reload must get an id of its own: one handed out again would overwrite
+ * a restored pair's photo in the zip (the camera is dimmed for it, so a
+ * swapped photo has other pixels).
  */
 test("the guided photo test downloads through a link and keeps its photos across a reload", async ({
   page,
@@ -1938,22 +1982,93 @@ test("the guided photo test downloads through a link and keeps its photos across
   });
   await page.goto("/feature-match-check.html");
   await guidedFirstPair(page);
+  const pair1A = /^feature-match-01-1a-s1-.*-frame-a\.png$/;
+  const before = await zipEntryBytes(await downloadAllBytes(page), pair1A);
   await page.reload();
   await expect(page.locator("#g-run")).toBeVisible();
   await expect(page.locator("#g-intro")).toBeHidden();
   await expect(page.locator("#g-review-a")).toBeVisible();
   await expect(page.locator("#g-slot-b canvas")).toBeVisible();
-  await page.locator("#g-open-pairs").click();
-  await page.locator("#g-go-end").click();
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#g-download-all").click(),
-  ]);
-  expect(download.suggestedFilename()).toMatch(/^feature-match-run-.+\.zip$/);
-  const { names } = await zipContents(await readDownload(download));
+
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-head-pos")).toHaveText(/^Pair 2 of/);
+  await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        /** @type {Window & Record<string, unknown>} */ (window).__dim = true;
+        const video = /** @type {HTMLVideoElement} */ (
+          document.querySelector("#g-video")
+        );
+        video.requestVideoFrameCallback(() =>
+          video.requestVideoFrameCallback(() => resolve(undefined)),
+        );
+      }),
+  );
+  await page.locator("#g-primary").click();
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+  const zip = await downloadAllBytes(page);
+  const { names } = await zipContents(zip);
+  // Pair 2 holds only photo A, so the zip still holds pair 1 alone.
   expect(names.filter((n) => n.endsWith(".png"))).toHaveLength(2);
   expect(names).toContain("feature-match-summary.txt");
-  await expect(page.locator("#g-download-state")).toHaveText(/^Saved /);
+  expect((await zipEntryBytes(zip, pair1A)).equals(before)).toBe(true);
+});
+
+/**
+ * Why this test matters: the default capture path is the 3 s countdown,
+ * one digit a second and then the photo; with the page clock driven by
+ * the test it takes no real time and is proven to end in the photo.
+ */
+test("the guided countdown counts 3, 2, 1 and then takes the photo", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await page.locator("#g-intro-start").click();
+  await expect(page.locator("#g-cam-chip")).toBeHidden();
+  await page.locator("#g-primary").click();
+  const num = page.locator("#g-count-num");
+  await expect(num).toHaveText("3");
+  await page.clock.runFor(1000);
+  await expect(num).toHaveText("2");
+  await page.clock.runFor(1000);
+  await expect(num).toHaveText("1");
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "false",
+  );
+  await page.clock.runFor(1000);
+  await expect(page.locator("#g-count")).toBeHidden();
+  await expect(page.locator("#g-slot-a")).toHaveAttribute(
+    "data-filled",
+    "true",
+  );
+  await expect(page.locator("#log")).toContainText("photo A: 1a-s1 #1 320x240");
+  await expect(page.locator("#g-primary-label")).toHaveText("Capture B");
+});
+
+/**
+ * Why this test matters: while the camera permission prompt is open the
+ * finder must say the camera is starting, not that it is off.
+ */
+test("the guided finder says the camera is starting while it waits", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page, "hold");
+  await page.goto("/feature-match-check.html");
+  await page.locator("#g-intro-start").click();
+  const chip = page.locator("#g-cam-chip");
+  await expect(chip).toHaveText("starting camera...");
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__releaseCamera();
+  });
+  await expect(chip).toBeHidden();
 });
 
 /**
@@ -2038,6 +2153,8 @@ for (const vp of [
         finder: box("#g-finder"),
         actions: box("#g-run .actions"),
         primary: box("#g-primary"),
+        seqB: box("#g-seq-b"),
+        foot: box("#g-run .foot-lines"),
         chip: getComputedStyle(
           /** @type {Element} */ (document.querySelector("#g-card-shot")),
         ).backgroundColor,
@@ -2046,7 +2163,7 @@ for (const vp of [
     });
     const near = (/** @type {number} */ got, /** @type {number} */ want) =>
       expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
-    const { head, card, finder, actions, primary } = m;
+    const { head, card, finder, actions, primary, seqB, foot } = m;
     near(head.left, 16);
     near(head.top, 12);
     near(card.top - head.bottom, 10);
@@ -2069,6 +2186,13 @@ for (const vp of [
       near(finder.top, 12);
       near(finder.bottom, vp.height - 12);
     }
+    // The step card's whole sequence is on screen, inside the card and
+    // above the action bar, and the foot lines sit below it, not over it
+    // (a phone on its side once clipped "then" and B).
+    expect(seqB.bottom).toBeLessThanOrEqual(card.bottom + 0.5);
+    expect(seqB.bottom).toBeLessThanOrEqual(actions.top + 0.5);
+    expect(foot.top).toBeGreaterThanOrEqual(seqB.bottom - 0.5);
+    expect(foot.bottom).toBeLessThanOrEqual(card.bottom + 0.5);
     expect(m.scrollW).toBeLessThanOrEqual(vp.width);
     expect(m.chip).not.toBe("rgba(0, 0, 0, 0)");
   });

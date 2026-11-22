@@ -324,6 +324,24 @@ export function planPairOf(
   return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
 }
 
+/**
+ * The measure sheet's status line: a plan run's status only on the pair it
+ * measured (a finished run stays in the state after a move), else whether
+ * the current pair has its two photos.
+ */
+export function measureText(
+  s: FeatureMatchState,
+  pair: PlanPair | null,
+): string {
+  const slot = planSlots(s.plan)[s.plan.current];
+  if (slot && s.planRun?.slot === slot.id) {
+    return s.status.run;
+  }
+  return pair
+    ? `pair ${pair.slot.id}: photos A and B ready`
+    : "the current pair has no two photos yet";
+}
+
 /** One complete pair of the run zip, with the names its files get. */
 export interface RunPair {
   readonly slot: Slot;

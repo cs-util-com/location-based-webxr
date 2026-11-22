@@ -17,7 +17,7 @@ The measuring block of the feature matching page, shared by its views: the Optio
 
 - The pair a run measures: the synthetic pair (seed 1, known warp); the cockpit's camera pair (`photos.a/b`, settings from the pair in progress); or the plan's current pair (`planPairOf`, settings from the slot's protocol key). A missing frame is an `ERROR input:` line and "not run: no input".
 - A camera or plan run keeps its results in `sides.results` under a fresh id named by `runFinished`, in the same step (`put`); other runs keep none. A run that is not the camera run withdraws the camera run first (`cameraRunWithdrawn`).
-- The speed test uses the camera pair when both photos exist, else the plan's complete current pair, else the synthetic pair.
+- The speed test uses the camera pair when both photos exist, else the plan's complete current pair, else the synthetic pair. The plan pair counts in both views: the plan and its photos are restored at every load, so with no camera pair the cockpit view (`?ui=cockpit`) times the guided view's current pair too.
 - `stopCamera` is called before anything is timed; the speed test holds `guardRun` (wake lock, hidden-page report line).
 - WebGPU counts only when `requestAdapter()` gives an adapter, asked once per page.
 

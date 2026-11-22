@@ -19,6 +19,7 @@ The guided view's screens as plain data, read from the page state (`FeatureMatch
 - `runPairs(state, frames)`: every complete pair (done or retake) in run order as `{ slot, tag, names, light, a, b }`, the names from `pairFileNames`; throws `photo A of <slot> is not loaded` when a frame is missing from the side table, so a zip is never silently short.
 - `deviceSummary(device)`: the summary's phone line, "model, OS version, N cores", dashes for the unknown.
 - `STEADY_THRESHOLD` (6 degrees per second), `motionStep(level, rotationRate)` (an 0.8/0.2 moving average of the summed absolute rotation rates; a reading without one keeps the level) and `isMoving(level)`: the steady chip.
+- `measureText(state, pair)`: the measure sheet's state line: the run's status line only while `planRun` is the current slot, else "pair <slot>: photos A and B ready" or "the current pair has no two photos yet".
 - `planPairOf(state, frames)`: the current slot's `{ slot, seq, a, b }` (frames from the side table), or null for a half pair or a frame the side table does not hold; a plan run and the single-file exports read it.
 
 ## Invariants
@@ -34,4 +35,4 @@ primary.textContent = v.primary.label;
 
 ## Tests
 
-`guided-model.test.ts`: the first pair, the lit steps after photo A, countdown labels and Cancel, the review and the next pair, a failed light check, a retake, the missing pair and Finish, busy, the place line; the pairs rows and the end screen, the download label per zip phase, `runPairs` (run order, names, distinct names of the other pairs, the missing frame), `deviceSummary`, and the steady hint: a threshold sweep 3 to 12 over assumed profiles (table, hand, tap, pan; synthetic, not recordings) in which every value keeps the table and the hand steady and the pan moving, and the tap settles in about 0.3 s at 6 (28 readings at 3, 11 at 12).
+`guided-model.test.ts`: the first pair, the lit steps after photo A, countdown labels and Cancel, the review and the next pair, a failed light check, a retake, the missing pair and Finish, busy, the place line; the pairs rows and the end screen, the download label per zip phase, `runPairs` (run order, names, distinct names of the other pairs, the missing frame), `deviceSummary`, `measureText` (the run's line only for its own pair), and the steady hint: a threshold sweep 3 to 12 over assumed profiles (table, hand, tap, pan; synthetic, not recordings) in which every value keeps the table and the hand steady and the pan moving, and the tap settles in about 0.3 s at 6 (28 readings at 3, 11 at 12).

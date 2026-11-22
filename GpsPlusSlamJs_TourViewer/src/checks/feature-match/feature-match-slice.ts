@@ -172,6 +172,20 @@ interface RunZip {
   readonly text: string;
 }
 
+/**
+ * A single file of the guided view's measure sheet: "preparing" holds the
+ * page busy ("saving") like the run zip; the text is the line beside the
+ * file buttons.
+ */
+interface FileSave {
+  readonly preparing: boolean;
+  readonly text: string;
+}
+
+/** Where the page's last camera start stands, for the finder chip. */
+type CameraStart = "idle" | "starting" | "failed";
+const CAMERA_STARTS: readonly string[] = ["idle", "starting", "failed"];
+
 /** The take a plan run measured, and its results once it ended. */
 interface PlanRun {
   readonly slot: string;
@@ -224,6 +238,10 @@ export interface FeatureMatchState {
   readonly guided: GuidedState;
   readonly planRun: PlanRun | null;
   readonly runZip: RunZip;
+  readonly fileSave: FileSave;
+  readonly cameraStart: CameraStart;
+  /** A plan photo the browser's database refused is not stored yet. */
+  readonly photoStoreFailing: boolean;
 }
 
 /** The options as the page's controls start. */
@@ -286,6 +304,9 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     guided: { retake: null, count: null },
     planRun: null,
     runZip: { phase: "idle", text: "" },
+    fileSave: { preparing: false, text: "" },
+    cameraStart: "idle",
+    photoStoreFailing: false,
     progress: {
       sequence,
       pair: p.pair,
@@ -842,6 +863,30 @@ const slice = createSlice({
       }
       s.busy = "idle";
       s.runZip = { phase: a.payload.phase, text: a.payload.text };
+    },
+    /** One file of the measure sheet is prepared; refused unless idle. */
+    planFileSaveStarted(s: Draft) {
+      if (s.busy !== "idle") {
+        return;
+      }
+      s.busy = "saving";
+      s.fileSave = { preparing: true, text: "preparing..." };
+    },
+    /** That file was saved, not saved or failed, as the text says. */
+    planFileSaveEnded(s: Draft, a: PayloadAction<string>) {
+      if (s.busy !== "saving" || !s.fileSave.preparing) {
+        return;
+      }
+      s.busy = "idle";
+      s.fileSave = { preparing: false, text: a.payload };
+    },
+    cameraStartSet(s: Draft, a: PayloadAction<CameraStart>) {
+      if (CAMERA_STARTS.includes(a.payload)) {
+        s.cameraStart = a.payload;
+      }
+    },
+    photoStoreChanged(s: Draft, a: PayloadAction<boolean>) {
+      s.photoStoreFailing = a.payload;
     },
     optionsChanged(s: Draft, a: PayloadAction<BenchOptions>) {
       s.options = a.payload;

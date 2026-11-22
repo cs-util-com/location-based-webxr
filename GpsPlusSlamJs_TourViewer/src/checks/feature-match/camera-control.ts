@@ -49,6 +49,8 @@ export function createCameraControl(
 
   const stop = (): void => {
     generation++;
+    // The pending start resolves "stopped"; the next start opens anew.
+    starting = null;
     if (!stream) {
       return;
     }
@@ -91,13 +93,20 @@ export function createCameraControl(
     if (stream) {
       return Promise.resolve("on");
     }
-    // Forgotten once settled. The callback runs in a later microtask, after
-    // the assignment, so a start that fails before awaiting anything (no
-    // camera API at all) is forgotten too and the next tap tries again.
-    starting ??= open().finally(() => {
-      starting = null;
+    if (starting) {
+      return starting;
+    }
+    // Forgotten once settled, unless a stop and a newer start replaced it.
+    // The callback runs in a later microtask, after the assignment, so a
+    // start that fails before awaiting anything (no camera API at all) is
+    // forgotten too and the next tap tries again.
+    const mine: Promise<CameraStart> = open().finally(() => {
+      if (starting === mine) {
+        starting = null;
+      }
     });
-    return starting;
+    starting = mine;
+    return mine;
   };
 
   return { start, stop, on: () => stream !== null };

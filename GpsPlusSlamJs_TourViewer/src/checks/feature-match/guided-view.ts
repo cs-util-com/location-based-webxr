@@ -8,8 +8,8 @@
  * Every screen is drawn from `guided-model.ts`; taps only dispatch
  * actions. Kept outside the store, as browser resources or transient UI
  * nobody else reads: the screen and sheet shown, the countdown timer, the
- * audio context, the motion level, the ghost toggle, the file buttons'
- * note and what the canvases last drew.
+ * audio context, the motion level, the ghost toggle, the camera start's
+ * generation guard and what the canvases last drew.
  *
  * @see guided-view.ts.md
  */
@@ -43,6 +43,7 @@ import {
   deviceSummary,
   endView,
   isMoving,
+  measureText,
   motionStep,
   pairRows,
   planPairOf,
@@ -136,6 +137,8 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     reviewNote: el("review-note"),
     steady: el("steady"),
     camChip: el("cam-chip"),
+    storeChip: el("store-chip"),
+    storeState: el("store-state"),
     ghostToggle: el<HTMLButtonElement>("ghost-toggle"),
     count: el("count"),
     countNum: el("count-num"),
@@ -159,6 +162,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     addOther: el<HTMLButtonElement>("add-other"),
     startOver: el<HTMLButtonElement>("start-over"),
     measureRun: el<HTMLButtonElement>("measure-run"),
+    measureRunLabel: el("measure-run-label"),
     measureState: el("measure-state"),
     fileA: el<HTMLButtonElement>("file-a"),
     fileB: el<HTMLButtonElement>("file-b"),
@@ -188,15 +192,14 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   let screen: Screen = state().plan.shots === 0 ? "intro" : "run";
   let sheet: Sheet = null;
   let ghostOn = false;
-  let camFailed = false;
+  /** Raised by every camera start, so only the newest one reports back. */
+  let camTry = 0;
   let motion = { level: 0, seen: false, moving: false };
   /** The phone moved while the countdown ran; named in the photo's log line. */
   let movedDuringCount = false;
   let countTimer: ReturnType<typeof setInterval> | null = null;
   let audio: AudioContext | null = null;
   let deviceLine = "-";
-  let filesNote = "";
-  let filing = false;
   /** The pair grid's rows as last drawn, so a render keeps the buttons. */
   let gridKey = "";
 
@@ -243,9 +246,12 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   // --- camera and screens -----------------------------------------------------
 
   const startCamera = async (): Promise<void> => {
+    const mine = ++camTry;
+    store.dispatch(A.cameraStartSet("starting"));
     const r = await camera.start();
-    camFailed = r === "failed";
-    render();
+    if (mine === camTry) {
+      store.dispatch(A.cameraStartSet(r === "failed" ? "failed" : "idle"));
+    }
   };
 
   const stopTimer = (): void => {
@@ -270,7 +276,11 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     }
     screen = next;
     if (next === "run") {
-      if (!camera.on() && !camFailed && state().busy === "idle") {
+      if (
+        !camera.on() &&
+        state().cameraStart === "idle" &&
+        state().busy === "idle"
+      ) {
         void startCamera();
       }
     } else {
@@ -348,7 +358,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       shoot(c.shot);
       return;
     }
-    store.dispatch(A.guidedCountSet({ shot: c.shot, left: c.left - 1 }));
+    if (!accepted(A.guidedCountSet({ shot: c.shot, left: c.left - 1 }))) {
+      cancelCount("refused");
+      return;
+    }
     beep(660, 90);
   };
 
@@ -493,12 +506,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   const saveFile = async (kind: FileKind): Promise<void> => {
     const s = state();
     const pair = planPairOf(s, sides.frames);
-    if (filing || !pair || s.busy !== "idle") {
+    if (!pair || !accepted(A.planFileSaveStarted())) {
       return;
     }
-    filing = true;
-    filesNote = "preparing...";
-    render();
+    let note: string;
     try {
       const rec = s.plan.slots[pair.slot.id];
       const tag = pairTag(pair.slot.key, pair.slot.spot, pair.seq);
@@ -539,18 +550,16 @@ export function startGuidedView(deps: GuidedDeps): () => void {
         );
         store.dispatch(A.planFilesDownloaded([id]));
         store.dispatch(A.planKeptDropped());
-        filesNote = `saved ${name} (${formatBytes(blob.size)})`;
+        note = `saved ${name} (${formatBytes(blob.size)})`;
         log(`file saved: ${name}`);
       } else {
-        filesNote = "not saved: the save dialog was closed";
+        note = "not saved: the save dialog was closed";
       }
     } catch (e) {
       fail("save", e);
-      filesNote = `could not save: ${errorText(e)}`;
-    } finally {
-      filing = false;
-      render();
+      note = `could not save: ${errorText(e)}`;
     }
+    store.dispatch(A.planFileSaveEnded(note));
   };
 
   // --- copy -------------------------------------------------------------------
@@ -612,9 +621,13 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       drawFrame(ui.reviewB, rec?.b?.id ?? null);
     }
     ui.camChip.hidden = v.reviewing || s.camera;
-    ui.camChip.textContent = camFailed
-      ? "camera unavailable: tap Capture to retry"
-      : "camera off: tap Capture";
+    ui.camChip.textContent =
+      s.cameraStart === "starting"
+        ? "starting camera..."
+        : s.cameraStart === "failed"
+          ? "camera unavailable: tap Capture to retry"
+          : "camera off: tap Capture";
+    ui.storeChip.hidden = !s.photoStoreFailing;
     ui.ghostToggle.hidden = !v.ghost;
     ui.ghostToggle.setAttribute("aria-pressed", String(ghostOn));
     if (ghostOn && v.ghost) {
@@ -697,24 +710,21 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ui.downloadState.className = `state ${v.download.tone}`.trim();
     ui.downloadState.textContent = v.download.text;
     ui.summary.value = summaryOf(s);
+    ui.storeState.hidden = !s.photoStoreFailing;
   };
 
   const renderMeasure = (s: FeatureMatchState): void => {
     const pair = planPairOf(s, sides.frames);
     const idle = s.busy === "idle";
     ui.measureRun.disabled = !idle || !pair;
-    ui.measureState.textContent =
-      s.running === "plan" || s.planRun
-        ? s.status.run
-        : pair
-          ? `pair ${pair.slot.id}: photos A and B ready`
-          : "the current pair has no two photos yet";
-    const off = !idle || !pair || filing;
+    ui.measureRunLabel.textContent = `Run on pair ${runView(s).slot}`;
+    ui.measureState.textContent = measureText(s, pair);
+    const off = !idle || !pair;
     ui.fileA.disabled = off;
     ui.fileB.disabled = off;
     ui.fileInfo.disabled = off;
     ui.fileMatches.disabled = off || !matchesOf(s, pair);
-    ui.filesState.textContent = filesNote;
+    ui.filesState.textContent = s.fileSave.text;
   };
 
   const render = (): void => {

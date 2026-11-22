@@ -305,7 +305,7 @@
 :where(html[data-ui="guided"]) .card {
   grid-area: card;
   min-height: 0;
-  overflow: hidden;
+  overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -359,8 +359,8 @@
 }
 :where(html[data-ui="guided"]) .card-body {
   display: grid;
+  flex: none;
   gap: 8px;
-  min-height: 0;
 }
 @media (orientation: portrait) and (min-width: 600px),
   (orientation: landscape) and (max-width: 699px) {
@@ -378,6 +378,15 @@
 @media (orientation: landscape) and (min-width: 700px) {
   :where(html[data-ui="guided"]) .diagram svg {
     max-height: 150px;
+  }
+}
+/* A phone on its side leaves the card about the screen height less 180 px:
+   below 560 px the diagram (up to 150 px) would push the sequence under the
+   action bar, so it goes and the A / then / B text carries the step. The
+   card scrolls as the last resort instead of letting its parts overlap. */
+@media (orientation: landscape) and (min-width: 700px) and (max-height: 559px) {
+  :where(html[data-ui="guided"]) .diagram {
+    display: none;
   }
 }
 :where(html[data-ui="guided"]) .seq {
@@ -490,6 +499,9 @@
 }
 :where(html[data-ui="guided"]) .chip.dim {
   color: var(--ink-2);
+}
+:where(html[data-ui="guided"]) .chip.warn {
+  color: var(--warn);
 }
 :where(html[data-ui="guided"]) .chip-btn {
   pointer-events: auto;
