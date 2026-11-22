@@ -9,7 +9,7 @@
  * @see asset-optimizer-check.ts.md
  */
 
-import { bufferViewsProblem } from "gps-plus-slam-app-framework/ar/tour-media";
+import { glbReferencesProblem } from "gps-plus-slam-app-framework/ar/tour-media";
 import { readGlbChunks } from "gps-plus-slam-app-framework/utils/glb-chunks";
 import { mulberry32 } from "gps-plus-slam-app-framework/utils/mulberry32";
 
@@ -477,9 +477,9 @@ export function bestLag(
 /** A model file's bytes by kind: `textures` are the buffer views its
  *  images name (a view two images share counts once), `geometry` is the
  *  rest (vertices, indices, the saved coarser levels, the JSON). Throws
- *  with words on a file that is no GLB, whose buffer views name no buffer
- *  of the file (the tour's own rule, `bufferViewsProblem`), or whose images
- *  name a buffer view it does not have. */
+ *  with words on a file that is no GLB, whose buffers, pictures or buffer
+ *  views reach outside it (the tour's own rule, `glbReferencesProblem`),
+ *  or whose images name a buffer view it does not have. */
 export function glbByteShares(bytes: Uint8Array): {
   readonly total: number;
   readonly textures: number;
@@ -487,8 +487,10 @@ export function glbByteShares(bytes: Uint8Array): {
 } {
   const chunks = readGlbChunks(bytes);
   if (!chunks.ok) throw new Error(`the file is no GLB: ${chunks.reason}`);
-  const views = bufferViewsProblem(chunks.json);
-  if (views !== null) throw new Error(`the file is no tour model: ${views}`);
+  const reaches = glbReferencesProblem(chunks.json);
+  if (reaches !== null) {
+    throw new Error(`the file is no tour model: ${reaches}`);
+  }
   const json = chunks.json as {
     bufferViews?: { byteLength?: number }[];
     images?: unknown[];

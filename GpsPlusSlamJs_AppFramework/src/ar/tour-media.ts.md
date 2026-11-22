@@ -18,7 +18,7 @@ tour from any link is the origin that will hold a creator's signing key).
   `null`. `JPG`, `.jpg`, `__proto__` and non-strings are `null`.
 - `tourMediaTypeOfEntry(name)` - by an entry name's last extension, case
   folded (a recording's `frame.JPG` is a JPEG); `null` without one.
-- `bufferViewsProblem(json)` - the part of `checkGlbInert` that says whether every buffer view names a buffer of the file (the lists must be lists; each view's `buffer`, and each of its extensions' `buffer`, a whole number below the buffer count), as words or null. Exported so a reader that measures a `.glb` without the rest of the check (the Tour Viewer's optimizer check page, `glbByteShares`) refuses the same views; `glb-chunk-readers.test.ts` holds them to one verdict.
+- `glbReferencesProblem(json)` - the part of `checkGlbInert` that says whether the model's lists, URIs or buffer names would let three.js reach outside the file (the lists must be lists; every buffer but the first and every image a `data:` URI or in the file; each view's `buffer`, and each of its extensions' `buffer`, a whole number below the buffer count), as words or null. Exported so a reader that measures a `.glb` without the rest of the check (the Tour Viewer's optimizer check page, `glbByteShares`) refuses the same files; `glb-chunk-readers.test.ts` holds them to one verdict.
 - `checkGlbInert(bytes, { maxImagePixels? })` - `{ ok: true }` or
   `{ ok: false, reason }` in plain words; every image of the model is also
   measured from its header against the cap, and its accessors' memory

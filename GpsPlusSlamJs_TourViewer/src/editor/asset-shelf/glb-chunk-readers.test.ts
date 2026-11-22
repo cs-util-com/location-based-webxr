@@ -202,6 +202,35 @@ describe("the GLB chunk readers on the same bytes", () => {
       verdicts(viewOver({ buffer: 0, byteOffset: 0, byteLength: 0 })),
     ).toEqual(ALL);
   });
+
+  // The tour refuses a buffer or a picture that points outside the file
+  // (three.js would fetch it); the check page must not measure one either,
+  // or the two disagree on a file the tour never takes.
+  it("the tour and the check page refuse a buffer or a picture that points outside the file", () => {
+    const outside = { inert: false, shares: false };
+    expect(
+      verdicts(
+        build([
+          json({ ...MODEL, buffers: [{ byteLength: 8, uri: "model.bin" }] }),
+          bin(),
+        ]),
+      ),
+    ).toMatchObject(outside);
+    expect(
+      verdicts(
+        build([
+          json({
+            ...MODEL,
+            images: [{ uri: "https://example.invalid/a.png" }],
+          }),
+          bin(),
+        ]),
+      ),
+    ).toMatchObject(outside);
+    expect(
+      verdicts(build([json({ ...MODEL, images: {} }), bin()])),
+    ).toMatchObject(outside);
+  });
 });
 
 /** A well-formed GLB: an object JSON chunk (padded to `pad`) naming

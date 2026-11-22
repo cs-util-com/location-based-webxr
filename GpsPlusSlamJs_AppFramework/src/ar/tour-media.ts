@@ -244,19 +244,6 @@ function viewsProblem(views: unknown, buffers: unknown): string | null {
   return null;
 }
 
-/** Why a glTF's buffer views do not each name a buffer of the file (by a
- *  whole number below the buffer count, plain and in every extension), or
- *  null. Part of `checkGlbInert`, exported so a reader that measures a
- *  `.glb` without the rest of that check (the Tour Viewer's optimizer
- *  check page) refuses the same views. `json` is a parsed glTF object. */
-export function bufferViewsProblem(
-  json: Record<string, unknown>
-): string | null {
-  const lists = listsProblem(json);
-  if (lists !== null) return lists;
-  return viewsProblem(json['bufferViews'], json['buffers']);
-}
-
 /** The `buffer` of every extension object in `extensions` that has one. */
 function extensionBuffers(extensions: unknown): unknown[] {
   if (typeof extensions !== 'object' || extensions === null) return [];
@@ -285,12 +272,20 @@ function extensionProblem(json: Record<string, unknown>): string | null {
 }
 
 /** Why the model's lists, URIs or buffer names would let three.js reach
- *  outside the file, or null. */
-function referencesProblem(json: Record<string, unknown>): string | null {
+ *  outside the file, or null: the lists must be lists, every buffer but
+ *  the first and every image a `data:` URI or in the file, and every
+ *  buffer view (plain and in each extension) must name a buffer of the
+ *  file by a whole number below the buffer count. Part of `checkGlbInert`,
+ *  exported so a reader that measures a `.glb` without the rest of that
+ *  check (the Tour Viewer's optimizer check page) refuses the same files.
+ *  `json` is a parsed glTF object. */
+export function glbReferencesProblem(
+  json: Record<string, unknown>
+): string | null {
   return (
     listsProblem(json) ??
     uriProblem('buffer', json['buffers']) ??
-    bufferViewsProblem(json) ??
+    viewsProblem(json['bufferViews'], json['buffers']) ??
     uriProblem('image', json['images'])
   );
 }
@@ -312,7 +307,7 @@ export function checkGlbInert(
   if (!chunks.ok) return { ok: false, reason: chunks.reason };
   const { json, bin } = chunks;
   const problem =
-    referencesProblem(json) ??
+    glbReferencesProblem(json) ??
     accessorsProblem(json['accessors'], bytes.length) ??
     extensionProblem(json) ??
     imagesProblem(
