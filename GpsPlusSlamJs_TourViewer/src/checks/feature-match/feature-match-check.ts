@@ -1,8 +1,10 @@
 /**
  * The feature matching benchmark page: the guided steps (photo A, photo
  * B, run, save), the camera, the options, the results table, the result
- * pictures and the copyable log. All measuring is in `bench-run.ts`; this
- * file only touches the DOM and browser APIs.
+ * pictures and the copyable log. It is a view on the page's store
+ * (`feature-match-store.ts`): taps dispatch actions, `render` draws the
+ * state. All measuring is in `bench-run.ts`; this file only touches the
+ * DOM and browser APIs.
  *
  * @see feature-match-check.ts.md
  */
@@ -13,22 +15,14 @@ import {
   FLAT_MODE,
   FRAME_FILES,
   framesInfo,
-  lightCheck,
   matchesInfo,
-  nextPair,
   NO_PAIR,
   PAIRS,
   pairFileNames,
-  pairTag,
-  parseProgress,
   parseSpot,
-  progressText,
   sessionToken,
   type LightCheck,
   type PairKey,
-  type PairTag,
-  type SavedFrame,
-  type SelectorKey,
 } from "./bench-export";
 import { BEFORE_YOU_START, PAIR_GUIDE, SPOT_NOTE } from "./bench-guide";
 import { describeGrey, greyStats, type Frame } from "./bench-image";
@@ -47,6 +41,7 @@ import {
   tableRows,
   UNKNOWN_DEVICE,
   type DeviceInfo,
+  type TableRow,
 } from "./bench-report";
 import {
   runBenchmark,
@@ -55,7 +50,7 @@ import {
   type SizeResult,
 } from "./bench-run";
 import { formatMs } from "./bench-stats";
-import { stepStates, type FlowState } from "./bench-steps";
+import { stepStates } from "./bench-steps";
 import { syntheticPair } from "./bench-synthetic";
 import {
   formatTimingReport,
@@ -63,6 +58,22 @@ import {
   runTimingByGroup,
   timingBackends,
 } from "./bench-timing";
+import {
+  canSave,
+  featureMatchActions as A,
+  flowState,
+  logText,
+  type BenchOptions,
+  type FeatureMatchState,
+  type Offered,
+  type PairNote,
+  type SpeedOptions,
+  type StatusSlot,
+} from "./feature-match-slice";
+import {
+  createFeatureMatchStore,
+  type KeyValueStorage,
+} from "./feature-match-store";
 import { startFlatCapture } from "./flat-capture";
 import { ortWasmThreads } from "./method-aliked";
 import type { DinoVariant } from "./method-dino";
@@ -83,12 +94,8 @@ const PICTURE_MAX_WIDTH = 640;
 /** Match lines drawn per picture at most (spread evenly over all). */
 const PICTURE_LINE_CAP = 200;
 const PICTURE_GAP = 8;
-/** Save's label after a camera run that measured nothing. */
-const NOTHING_MEASURED = "nothing measured: tap to save the photos anyway";
 /** Set once "Before you start" has been shown open; it then starts closed. */
 const BEFORE_START_SEEN = "feature-match-check.before-start-seen";
-/** The running number, pair and spot, kept across a reload. */
-const PROGRESS = "feature-match-check.progress";
 
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -179,6 +186,14 @@ const browserDeps: LoadDeps = {
     performance.getEntriesByType("resource") as PerformanceResourceTiming[],
 };
 
+/** `localStorage` behind calls, so a blocked storage throws inside them. */
+const pageStorage: KeyValueStorage = {
+  getItem: (key) => localStorage.getItem(key),
+  setItem: (key, value) => {
+    localStorage.setItem(key, value);
+  },
+};
+
 interface UaData {
   getHighEntropyValues?(hints: string[]): Promise<Record<string, unknown>>;
 }
@@ -258,11 +273,34 @@ const tickedValues = (root: ParentNode, name: string): string[] =>
     (i) => i.value,
   );
 
-function chosenSizes(root: ParentNode): number[] {
-  return tickedValues(root, "size")
-    .map(Number)
-    .filter((v) => Number.isFinite(v) && v > 0);
-}
+/** The benchmark's options as the controls hold them now. */
+const readOptions = (root: ParentNode): BenchOptions => ({
+  methods: {
+    sift: checked(root, "#m-sift"),
+    xfeat: checked(root, "#m-xfeat"),
+    aliked: checked(root, "#m-aliked"),
+    siftLightGlue: checked(root, "#m-siftlg"),
+  },
+  backends: tickedValues(root, "backend"),
+  models: tickedValues(root, "model"),
+  sizes: tickedValues(root, "size"),
+  runs: valueOf(root, "#runs"),
+});
+
+/** The speed test's options as the controls hold them now. */
+const readSpeedOptions = (root: ParentNode): SpeedOptions => ({
+  xfeat: checked(root, "#t-xfeat"),
+  siftLightGlue: checked(root, "#t-siftlg"),
+  dinoInt8: checked(root, "#t-dino-int8"),
+  dinoQ4f16: checked(root, "#t-dino-q4f16"),
+  backends: tickedValues(root, "t-backend"),
+  edge: valueOf(root, "#t-edge"),
+  cap: valueOf(root, "#t-cap"),
+  runs: valueOf(root, "#t-runs"),
+});
+
+const chosenSizes = (o: BenchOptions): number[] =>
+  o.sizes.map(Number).filter((v) => Number.isFinite(v) && v > 0);
 
 let webGpuProbe: Promise<boolean> | null = null;
 
@@ -316,6 +354,19 @@ const LIGHT_WARNINGS: Readonly<Record<Exclude<LightCheck, "ok">, string>> = {
     "Photo B is more than 20 % brighter or darker than photo A - the light changed during the control pair. Take this pair again without changing the light.",
 };
 
+/** The pair line under the selector. */
+function pairNoteText(n: PairNote): string {
+  const t = n.tag;
+  switch (n.kind) {
+    case "now":
+      return `now: pair ${String(t.sequence)}, ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`;
+    case "kept":
+      return `saved pair ${String(t.sequence)}; the light check failed: take ${t.pair} again`;
+    case "next":
+      return `saved pair ${String(t.sequence)}; next: ${n.next.key}, spot ${String(n.next.spot)}`;
+  }
+}
+
 /** What a camera start came to: running, refused, or stopped meanwhile. */
 type CameraStart = "on" | "failed" | "stopped";
 
@@ -328,34 +379,21 @@ interface RunPair {
 /** Starts the page on `root` (the document in the HTML entry). */
 export function startFeatureMatchCheck(root: ParentNode = document): void {
   const ui = findUi(root);
-  const errors: string[] = [];
-  const captures: { a: SavedFrame | null; b: SavedFrame | null } = {
-    a: null,
-    b: null,
-  };
-  /** The run on the current camera pair, its results, and the save. */
-  let cameraRun: FlowState["run"] = "none";
-  let cameraResults: readonly MethodResult[] = [];
-  let saved = false;
-  /** One action at a time: a run or a save; captures wait for both. */
-  let busy: "idle" | "running" | "saving" = "idle";
-  /** Blob URLs of the offered files; revoked when they are withdrawn. */
-  let savedUrls: string[] = [];
+  const fm = createFeatureMatchStore({
+    storage: pageStorage,
+    // This page load's token for the frames JSON (no time, no place).
+    session: sessionToken(crypto.getRandomValues(new Uint8Array(4))),
+    revokeUrl: (url) => URL.revokeObjectURL(url),
+  });
+  const { store, sides, newId } = fm;
+  const state = (): FeatureMatchState => store.getState();
+  // The camera, its start in flight and the pictures stay here: they are
+  // browser resources, not state.
   let stream: MediaStream | null = null;
   /** The camera start in flight, so a second tap does not open a second stream. */
   let starting: Promise<CameraStart> | null = null;
   /** Raised by every stop, so a start still pending learns it was stopped. */
   let cameraGeneration = 0;
-  /** The newest pair's running number; kept across reloads. */
-  let sequence = 0;
-  /** This page load's token for the frames JSON (no time, no place). */
-  const session = sessionToken(crypto.getRandomValues(new Uint8Array(4)));
-  /** The pair of the current photos, fixed at photo A. */
-  let pairInProgress: PairTag | null = null;
-  /** The newest pair any of whose files was downloaded. */
-  let advancedFor = 0;
-  /** The current pair's light check, set at photo B; null for other pairs. */
-  let light: LightCheck | null = null;
 
   ui.pair.replaceChildren(
     ...[...PAIRS, NO_PAIR, FLAT_MODE].map((p) => {
@@ -373,68 +411,18 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   ui.beforeStartList.replaceChildren(...listItems(BEFORE_YOU_START));
   openBeforeStartOnce(ui.beforeStart);
 
-  // A reload or a discarded tab continues the numbering and the selection.
-  // With storage blocked it starts over; the session token tells such
-  // runs apart.
-  try {
-    const p = parseProgress(localStorage.getItem(PROGRESS));
-    sequence = p.sequence;
-    advancedFor = p.sequence;
-    ui.pair.value = p.pair;
-    ui.spot.value = String(p.spot);
-  } catch {
-    // Storage blocked: start at pair 1.
-  }
-  const saveProgress = (): void => {
-    try {
-      localStorage.setItem(
-        PROGRESS,
-        progressText({
-          sequence,
-          pair: ui.pair.value as SelectorKey,
-          spot: parseSpot(ui.spot.value),
-        }),
-      );
-    } catch {
-      // Storage blocked: the numbering starts over on the next load.
-    }
-  };
-  ui.pair.addEventListener("change", saveProgress);
-  ui.spot.addEventListener("change", saveProgress);
-
-  /** The guidance card follows the selector. */
-  const showGuide = (): void => {
-    if (ui.pair.value === FLAT_MODE.key) {
-      return;
-    }
-    const g = PAIR_GUIDE[ui.pair.value as PairKey];
-    ui.guidePurpose.textContent = g.purpose;
-    ui.guideSteps.replaceChildren(
-      ...listItems(g.steps).map((li, i) => {
-        if (i < g.strongSteps) {
-          const strong = document.createElement("strong");
-          strong.textContent = li.textContent;
-          li.replaceChildren(strong);
-        }
-        return li;
-      }),
-    );
-    ui.guideAvoid.textContent = `Avoid: ${g.avoid}`;
-    ui.guideSpot.textContent = SPOT_NOTE;
-    ui.guideSpot.hidden = !g.spotNote;
-  };
-  ui.pair.addEventListener("change", showGuide);
-  showGuide();
-
+  /** A log line with the page time in front. */
+  const stamp = (line: string): string =>
+    `[${(performance.now() / 1000).toFixed(1)}s] ${line}`;
   const log = (line: string): void => {
-    const t = (performance.now() / 1000).toFixed(1);
-    ui.log.textContent += `[${t}s] ${line}\n`;
-    ui.log.scrollTop = ui.log.scrollHeight;
+    store.dispatch(A.logged(stamp(line)));
   };
   const fail = (where: string, e: unknown): void => {
     const line = `${where}: ${errorText(e)}`;
-    errors.push(line);
-    log(`ERROR ${line}`);
+    store.dispatch(A.failed({ line, stamped: stamp(`ERROR ${line}`) }));
+  };
+  const status = (slot: StatusSlot, text: string): void => {
+    store.dispatch(A.statusSet({ slot, text }));
   };
   window.addEventListener("error", (ev) =>
     fail("page", ev.error ?? ev.message),
@@ -456,27 +444,114 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       return UNKNOWN_DEVICE;
     });
 
-  /** Buttons, labels and step marks from the current state. */
-  const refresh = (): void => {
-    const idle = busy === "idle";
-    const pair = captures.a !== null && captures.b !== null;
+  // --- render -----------------------------------------------------------
+
+  const idleLabels = {
+    run: ui.run.textContent,
+    synthetic: ui.runSynthetic.textContent,
+    speed: ui.runSpeed.textContent,
+  };
+  const statusEls: Readonly<Record<StatusSlot, HTMLElement>> = {
+    a: ui.stateA,
+    b: ui.stateB,
+    run: ui.runState,
+    synthetic: ui.syntheticState,
+    speed: ui.speedState,
+    save: ui.saveState,
+    copy: ui.copyState,
+  };
+
+  /** The guidance card follows the selector. */
+  const showGuide = (pair: string): void => {
+    if (pair === FLAT_MODE.key) {
+      return;
+    }
+    const g = PAIR_GUIDE[pair as PairKey];
+    ui.guidePurpose.textContent = g.purpose;
+    ui.guideSteps.replaceChildren(
+      ...listItems(g.steps).map((li, i) => {
+        if (i < g.strongSteps) {
+          const strong = document.createElement("strong");
+          strong.textContent = li.textContent;
+          li.replaceChildren(strong);
+        }
+        return li;
+      }),
+    );
+    ui.guideAvoid.textContent = `Avoid: ${g.avoid}`;
+    ui.guideSpot.textContent = SPOT_NOTE;
+    ui.guideSpot.hidden = !g.spotNote;
+  };
+
+  const renderTable = (rows: readonly TableRow[]): void => {
+    ui.table.replaceChildren(
+      ...rows.map((r) => {
+        const tr = document.createElement("tr");
+        for (const v of [
+          r.method,
+          r.backend,
+          r.size,
+          r.extract,
+          r.match,
+          r.keypoints,
+          r.descriptorBytes,
+          r.matches,
+          r.correct,
+          r.error,
+        ]) {
+          const td = document.createElement("td");
+          td.textContent = v;
+          tr.append(td);
+        }
+        if (r.error !== "") {
+          tr.className = "row-error";
+        }
+        return tr;
+      }),
+    );
+  };
+
+  /** The offered files as links; any tap counts as downloaded. */
+  const renderLinks = (offered: readonly Offered[]): void => {
+    ui.saveLinks.replaceChildren(
+      ...offered.map((o) => {
+        const link = document.createElement("a");
+        link.href = sides.urls.get(o.id) ?? "";
+        link.download = o.file;
+        link.textContent = o.text;
+        // Any link counts as saved, the single files too: a retake of
+        // photo B must then get a new running number.
+        link.addEventListener("click", downloaded);
+        return link;
+      }),
+    );
+  };
+
+  /** What was drawn last, so only what changed is drawn again. */
+  let drawn: FeatureMatchState | null = null;
+
+  /** Buttons, labels, step marks and texts from the state. */
+  const render = (): void => {
+    const s = state();
+    const was = drawn;
+    drawn = s;
+    const idle = s.busy === "idle";
     ui.captureA.disabled = !idle;
-    ui.captureB.disabled = !idle || captures.a === null;
-    ui.captureA.textContent = stream ? "Take photo A" : "Start camera";
+    ui.captureB.disabled = !idle || s.photos.a === null;
+    ui.captureA.textContent = s.camera ? "Take photo A" : "Start camera";
     ui.captureB.textContent =
-      stream || captures.a === null ? "Take photo B" : "Start camera";
-    ui.run.disabled = !idle || !pair;
+      s.camera || s.photos.a === null ? "Take photo B" : "Start camera";
+    ui.run.disabled = !idle || s.photos.a === null || s.photos.b === null;
     ui.runSynthetic.disabled = !idle;
     ui.runSpeed.disabled = !idle;
-    ui.saveFrames.disabled =
-      !idle || !pair || (cameraRun !== "done" && cameraRun !== "failed");
-    ui.cameraBox.hidden = stream === null;
-    const states = stepStates({
-      a: captures.a !== null,
-      b: captures.b !== null,
-      run: cameraRun,
-      saved,
-    });
+    ui.saveFrames.disabled = !canSave(s);
+    ui.run.textContent = s.running === "camera" ? "Running..." : idleLabels.run;
+    ui.runSynthetic.textContent =
+      s.running === "synthetic" ? "Running..." : idleLabels.synthetic;
+    ui.runSpeed.textContent =
+      s.running === "speed" ? "Timing..." : idleLabels.speed;
+    ui.cameraBox.hidden = !s.camera;
+    const states = stepStates(flowState(s));
     for (const [i, li] of ui.steps.entries()) {
       li.dataset.state = states[i];
       if (states[i] === "current") {
@@ -485,7 +560,69 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         li.removeAttribute("aria-current");
       }
     }
+    for (const [slot, el] of Object.entries(statusEls)) {
+      el.textContent = s.status[slot as StatusSlot];
+    }
+    ui.lightWarning.hidden = s.light === null || s.light === "ok";
+    if (s.light !== null && s.light !== "ok") {
+      ui.lightWarning.textContent = LIGHT_WARNINGS[s.light];
+    }
+    if (s.pairNote !== null) {
+      ui.pairState.textContent = pairNoteText(s.pairNote);
+    }
+    // The selector and the spot field are drawn only when the state
+    // moved them, so a field being typed in is never overwritten.
+    if (was?.progress.pair !== s.progress.pair) {
+      ui.pair.value = s.progress.pair;
+      showGuide(s.progress.pair);
+    }
+    if (was?.progress.spot !== s.progress.spot) {
+      ui.spot.value = String(s.progress.spot);
+    }
+    if (was?.offered !== s.offered) {
+      renderLinks(s.offered);
+    }
+    if (was?.table !== s.table) {
+      renderTable(s.table);
+    }
+    if (was?.report !== s.report) {
+      ui.report.value = s.report;
+    }
+    if (was?.log !== s.log) {
+      const from = was?.log.length ?? 0;
+      ui.log.textContent += s.log
+        .slice(from)
+        .map((l) => `${l}\n`)
+        .join("");
+      ui.log.scrollTop = ui.log.scrollHeight;
+    }
   };
+
+  // --- selector and options ----------------------------------------------
+
+  const selectorChanged = (): void => {
+    store.dispatch(
+      A.selectorChanged({
+        pair: ui.pair.value,
+        spot: parseSpot(ui.spot.value),
+      }),
+    );
+  };
+  ui.pair.addEventListener("change", selectorChanged);
+  ui.spot.addEventListener("change", selectorChanged);
+
+  /** The options follow the controls; a run reads them from the state. */
+  const optionsChanged = (): void => {
+    store.dispatch(A.optionsChanged(readOptions(root)));
+    store.dispatch(A.speedOptionsChanged(readSpeedOptions(root)));
+  };
+  for (const sel of ["#options", "#speed"]) {
+    const box = root.querySelector(sel);
+    box?.addEventListener("change", optionsChanged);
+    box?.addEventListener("input", optionsChanged);
+  }
+
+  // --- camera -------------------------------------------------------------
 
   /**
    * Stops the camera: it must not run beside the timed runs (it costs the
@@ -503,7 +640,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     stream = null;
     ui.video.srcObject = null;
     log("camera off");
-    refresh();
+    store.dispatch(A.cameraChanged(false));
   };
 
   /** Opens the camera stream and plays it; never rejects. */
@@ -526,7 +663,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       }
       stream = s;
       ui.video.srcObject = s;
-      refresh();
+      store.dispatch(A.cameraChanged(true));
       await ui.video.play();
       if (stoppedMeanwhile()) {
         return "stopped";
@@ -553,21 +690,11 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     // camera API at all) is forgotten too and the next tap tries again.
     starting ??= openCamera().finally(() => {
       starting = null;
-      refresh();
     });
     return starting;
   };
 
-  /** Withdraws the offered files (their URLs revoked). */
-  const clearSaved = (state: string): void => {
-    for (const u of savedUrls) {
-      URL.revokeObjectURL(u);
-    }
-    savedUrls = [];
-    ui.saveLinks.replaceChildren();
-    ui.saveState.textContent = state;
-    saved = false;
-  };
+  // --- photos ---------------------------------------------------------------
 
   /**
    * A capture tap: with the camera off it only starts the camera (so the
@@ -575,126 +702,83 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
    * the photo. Photo A starts a new pair; photo B starts the run.
    */
   const capture = (which: "a" | "b") => async (): Promise<void> => {
-    const state = which === "a" ? ui.stateA : ui.stateB;
     const name = which === "a" ? "A" : "B";
     if (!stream) {
-      state.textContent = "starting camera...";
+      status(which, "starting camera...");
       const started = await startCamera();
-      state.textContent =
+      status(
+        which,
         started === "on"
           ? `camera on: aim, then tap Take photo ${name}`
           : started === "failed"
             ? "camera unavailable (see log)"
-            : "camera stopped: tap again";
+            : "camera stopped: tap again",
+      );
       return;
     }
-    if (busy !== "idle") {
+    if (state().busy !== "idle") {
       return;
     }
     if (ui.video.videoWidth === 0) {
-      state.textContent = "camera not ready yet: tap again";
+      status(which, "camera not ready yet: tap again");
       log("capture: the camera has no picture yet");
       return;
     }
     const f = captureFrame(ui.video, CAPTURE_MAX);
-    captures[which] = {
-      name,
-      frame: f,
-      source: { width: ui.video.videoWidth, height: ui.video.videoHeight },
+    const source = {
+      width: ui.video.videoWidth,
+      height: ui.video.videoHeight,
     };
+    const grey = greyStats(f);
     log(
-      `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(ui.video.videoWidth)}x${String(ui.video.videoHeight)}), ${describeGrey(greyStats(f))}`,
+      `captured ${name} ${String(f.width)}x${String(f.height)} (camera ${String(source.width)}x${String(source.height)}), ${describeGrey(grey)}`,
     );
-    state.textContent = `taken, ${String(f.width)}x${String(f.height)}`;
-    cameraRun = "none";
-    cameraResults = [];
-    clearSaved("after the run");
-    light = null;
-    ui.lightWarning.hidden = true;
-    if (which === "a") {
-      sequence++;
-      pairInProgress = pairTag(
-        ui.pair.value,
-        parseSpot(ui.spot.value),
-        sequence,
+    const id = newId("photo");
+    sides.frames.set(id, { name, frame: f, source });
+    const before = state();
+    store.dispatch(
+      A.photoTaken({
+        which,
+        photo: {
+          id,
+          width: f.width,
+          height: f.height,
+          source,
+          greyMean: grey.mean,
+        },
+      }),
+    );
+    const after = state();
+    const t = after.pairInProgress;
+    if (t && after.pairNote !== before.pairNote) {
+      log(
+        `pair ${String(t.sequence)}: ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`,
       );
-      showPairInProgress();
-      captures.b = null;
-      ui.stateB.textContent = "not taken";
-      ui.runState.textContent = "waiting for photo B";
-      refresh();
-      return;
     }
-    retagRetake();
-    checkLight();
-    refresh();
-    startRun("camera");
-  };
-
-  /**
-   * A photo B taken again after any of the pair's files was downloaded is
-   * a new take: a new running number, so its files never reuse the saved
-   * names.
-   */
-  const retagRetake = (): void => {
-    if (pairInProgress && pairInProgress.sequence <= advancedFor) {
-      sequence++;
-      pairInProgress = { ...pairInProgress, sequence };
-      showPairInProgress();
+    if (which === "b" && after.photos.b?.id === id) {
+      if (after.light !== null) {
+        log(`light check: ${after.light}`);
+      }
+      startRun("camera");
     }
   };
 
-  /** Shows, logs and stores the pair fixed at photo A. */
-  const showPairInProgress = (): void => {
-    const t = pairInProgress;
-    if (!t) {
-      return;
-    }
-    ui.pairState.textContent = `now: pair ${String(t.sequence)}, ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`;
-    log(
-      `pair ${String(t.sequence)}: ${t.pair} ${t.pairLabel}, spot ${String(t.spot)}`,
-    );
-    saveProgress();
-  };
-
-  /**
-   * Photo B of a light pair against photo A: a dimmed pair must be darker,
-   * the control pair the same. A failed check is shown above the results
-   * and keeps the selector on the pair after Download all.
-   */
-  const checkLight = (): void => {
-    const { a, b } = captures;
-    if (!a || !b || !pairInProgress) {
-      return;
-    }
-    light = lightCheck(
-      pairInProgress.pair,
-      greyStats(a.frame).mean,
-      greyStats(b.frame).mean,
-    );
-    if (light === null) {
-      return;
-    }
-    log(`light check: ${light}`);
-    if (light !== "ok") {
-      ui.lightWarning.textContent = LIGHT_WARNINGS[light];
-      ui.lightWarning.hidden = false;
-    }
-  };
-
-  const saveFiles = async (): Promise<void> => {
-    const { a, b } = captures;
-    const tag = pairInProgress;
+  /** The pair's files: [download name, link text, bytes], the zip first. */
+  const saveFiles = async (): Promise<[string, string, Blob][]> => {
+    const s = state();
+    const a = s.photos.a ? sides.frames.get(s.photos.a.id) : undefined;
+    const b = s.photos.b ? sides.frames.get(s.photos.b.id) : undefined;
+    const tag = s.pairInProgress;
     if (!a || !b || !tag) {
-      return;
+      throw new Error("no photo pair to save");
     }
     const names = pairFileNames(tag);
-    const lightResult = light;
     const info = framesInfo([a, b], await deviceInfo(), CAPTURE_MAX, tag, {
-      light: lightResult,
-      session,
+      light: s.light,
+      session: s.session,
     });
-    const matches = matchesInfo(cameraResults, { a: a.frame, b: b.frame });
+    const results = s.resultsId ? sides.results.get(s.resultsId) : undefined;
+    const matches = matchesInfo(results ?? [], { a: a.frame, b: b.frame });
     const json = (text: string) =>
       new Blob([text], { type: "application/json" });
     // [download name, name inside the zip, link text, bytes]
@@ -720,80 +804,64 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       ],
     ];
     // The zip comes first: one tap saves everything, the log included.
+    const now = state();
     const zip = await allFilesZip(
       files.map(([, name, , blob]) => ({ name, blob })),
-      { log: ui.log.textContent ?? "", report: ui.report.value },
+      { log: logText(now), report: now.report },
     );
     files.unshift([names.all, FRAME_FILES.all, "Download all (zip)", zip]);
-    ui.saveLinks.replaceChildren(
-      ...files.map(([file, , text, blob]) => {
-        const url = URL.createObjectURL(blob);
-        savedUrls.push(url);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = file;
-        link.textContent = `${text}, ${formatBytes(blob.size)}`;
-        return link;
-      }),
-    );
-    // Any link counts as saved, the single files too: a retake of photo B
-    // must then get a new running number.
-    for (const link of ui.saveLinks.children) {
-      link.addEventListener("click", () => {
-        advancePair(tag, lightResult);
-      });
-    }
+    return files.map(([file, , text, blob]) => [file, text, blob]);
   };
 
   /**
    * After the first download of the pair's files (the zip or any single
    * file), the selector moves on to the next pair (once per pair; a later
-   * tap saves again but moves nothing). A pair
-   * whose light check failed stays selected, to be taken again.
+   * tap saves again but moves nothing). A pair whose light check failed
+   * stays selected, to be taken again.
    */
-  const advancePair = (tag: PairTag, lightResult: LightCheck | null): void => {
-    if (tag.sequence <= advancedFor) {
+  function downloaded(): void {
+    const before = state().pairNote;
+    store.dispatch(A.filesDownloaded());
+    const s = state();
+    const n = s.pairNote;
+    if (n === before || n === null) {
       return;
     }
-    if (lightResult !== null && lightResult !== "ok") {
-      advancedFor = tag.sequence;
-      ui.pairState.textContent = `saved pair ${String(tag.sequence)}; the light check failed: take ${tag.pair} again`;
-      log(`pair kept: take ${tag.pair} again (light check ${lightResult})`);
-      return;
+    if (n.kind === "kept") {
+      log(
+        `pair kept: take ${n.tag.pair} again (light check ${String(s.light)})`,
+      );
+    } else if (n.kind === "next") {
+      log(`next pair: ${n.next.key}, spot ${String(n.next.spot)}`);
     }
-    advancedFor = tag.sequence;
-    const next = nextPair(tag.pair, tag.spot);
-    ui.pair.value = next.key;
-    ui.spot.value = String(next.spot);
-    showGuide();
-    saveProgress();
-    ui.pairState.textContent = `saved pair ${String(tag.sequence)}; next: ${next.key}, spot ${String(next.spot)}`;
-    log(`next pair: ${next.key}, spot ${String(next.spot)}`);
-  };
+  }
+
   ui.saveFrames.addEventListener("click", () => {
-    if (busy !== "idle") {
+    store.dispatch(A.saveStarted());
+    if (state().busy !== "saving") {
       return;
     }
-    clearSaved("preparing...");
-    busy = "saving";
-    refresh();
     saveFiles()
-      .then(() => {
-        saved = true;
-        ui.saveState.textContent = `ready: tap Download all (zip), or each file`;
+      .then((files) => {
+        // The URLs and the action in one step: an action between them
+        // would revoke URLs the state does not name yet.
+        const offered: Offered[] = files.map(([file, text, blob]) => {
+          const id = newId("url");
+          sides.urls.set(id, URL.createObjectURL(blob));
+          return { id, file, text: `${text}, ${formatBytes(blob.size)}` };
+        });
+        store.dispatch(A.saveFinished(offered));
         log("files ready to save");
       })
       .catch((e: unknown) => {
         fail("save", e);
-        clearSaved("failed (see log)");
-      })
-      .finally(() => {
-        busy = "idle";
-        refresh();
+        store.dispatch(A.saveFailed());
       });
   });
   ui.captureA.addEventListener("click", () => void capture("a")());
   ui.captureB.addEventListener("click", () => void capture("b")());
+
+  // --- runs -------------------------------------------------------------------
 
   const pairOf = (kind: "camera" | "synthetic"): RunPair | null => {
     if (kind === "synthetic") {
@@ -803,7 +871,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         text: `synthetic (seed ${String(SYNTHETIC_SEED)}, known warp) ${frameText("A", p.a)}; ${frameText("B", p.b)}`,
       };
     }
-    const { a, b } = captures;
+    const { photos } = state();
+    const a = photos.a ? sides.frames.get(photos.a.id) : undefined;
+    const b = photos.b ? sides.frames.get(photos.b.id) : undefined;
     if (!a || !b) {
       fail("input", new Error("take photo A and B first"));
       return null;
@@ -812,34 +882,6 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       input: { a: a.frame, b: b.frame, warp: null },
       text: `camera ${frameText("A", a.frame)}; ${frameText("B", b.frame)}`,
     };
-  };
-
-  const renderTable = (rows: ReturnType<typeof tableRows>): void => {
-    ui.table.replaceChildren(
-      ...rows.map((r) => {
-        const tr = document.createElement("tr");
-        for (const v of [
-          r.method,
-          r.backend,
-          r.size,
-          r.extract,
-          r.match,
-          r.keypoints,
-          r.descriptorBytes,
-          r.matches,
-          r.correct,
-          r.error,
-        ]) {
-          const td = document.createElement("td");
-          td.textContent = v;
-          tr.append(td);
-        }
-        if (r.error !== "") {
-          tr.className = "row-error";
-        }
-        return tr;
-      }),
-    );
   };
 
   /** A result card below the earlier ones: its caption, and later a picture. */
@@ -907,28 +949,25 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   const runOnce = async (
     kind: "camera" | "synthetic",
-    state: HTMLElement,
   ): Promise<{ text: string; results: MethodResult[] | null }> => {
-    errors.length = 0;
+    store.dispatch(A.errorsCleared());
     const pair = pairOf(kind);
     if (!pair) {
       return { text: "not run: no input", results: null };
     }
+    const o = state().options;
     // A protocol pair sets runs, warm-up, backend and model file itself.
     const settings = runSettings(
       {
-        pair: kind === "camera" ? (pairInProgress?.pair ?? null) : null,
-        backends: backendsFrom(tickedValues(root, "backend")),
-        precisions: precisionsFrom(tickedValues(root, "model")),
-        runs: parseRuns(valueOf(root, "#runs")),
+        pair: kind === "camera" ? (state().pairInProgress?.pair ?? null) : null,
+        backends: backendsFrom(o.backends),
+        precisions: precisionsFrom(o.models),
+        runs: parseRuns(o.runs),
       },
       await hasWebGpu(),
     );
     const selection = {
-      sift: checked(root, "#m-sift"),
-      xfeat: checked(root, "#m-xfeat"),
-      aliked: checked(root, "#m-aliked"),
-      siftLightGlue: checked(root, "#m-siftlg"),
+      ...o.methods,
       backends: settings.backends,
       precisions: settings.precisions,
     };
@@ -941,7 +980,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       };
     }
     const methods = buildMethods(selection, browserDeps);
-    const sizes = chosenSizes(root);
+    const sizes = chosenSizes(o);
     if (methods.length === 0 || sizes.length === 0) {
       fail(
         "options",
@@ -953,11 +992,11 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     stopCamera();
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
-    ui.table.replaceChildren();
+    store.dispatch(A.tableSet([]));
     ui.pictures.replaceChildren();
-    ui.report.value = "";
+    store.dispatch(A.reportSet(""));
     if (kind === "synthetic") {
-      withdrawCameraRun();
+      store.dispatch(A.cameraRunWithdrawn());
     }
     const images = {
       a: frameCanvas(pair.input.a),
@@ -976,7 +1015,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
         log: (line) => {
           log(line);
-          state.textContent = `running: ${line}`;
+          store.dispatch(A.runProgressed(line));
         },
         onSize: (m, s) => {
           try {
@@ -992,17 +1031,21 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         addCard(`${r.label}: ERROR ${r.error}`, true);
       }
     }
-    renderTable(tableRows(results));
-    ui.report.value = formatReport({
-      startedAt,
-      device,
-      input: pair.text,
-      sizes,
-      runs,
-      warmup,
-      results,
-      errors,
-    });
+    store.dispatch(A.tableSet(tableRows(results)));
+    store.dispatch(
+      A.reportSet(
+        formatReport({
+          startedAt,
+          device,
+          input: pair.text,
+          sizes,
+          runs,
+          warmup,
+          results,
+          errors: state().errors,
+        }),
+      ),
+    );
     const failed = results.filter(
       (r) => r.error !== null || r.sizes.some((s) => s.error !== null),
     ).length;
@@ -1013,20 +1056,14 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     return { text, results };
   };
 
-  /**
-   * A synthetic run replaces what Results shows, so the camera run it
-   * hides is withdrawn with its offered files: Save must never describe
-   * results no longer on screen.
-   */
-  const withdrawCameraRun = (): void => {
-    if (cameraRun !== "done" && cameraRun !== "failed") {
-      return;
+  /** Ends the run in progress, its camera results kept beside the state. */
+  const finishRun = (text: string, results: MethodResult[] | null): void => {
+    let resultsId: string | null = null;
+    if (results && state().running === "camera") {
+      resultsId = newId("results");
+      sides.results.set(resultsId, results);
     }
-    cameraRun = "none";
-    cameraResults = [];
-    clearSaved("after the run");
-    ui.runState.textContent = "replaced by the synthetic run: tap Run again";
-    refresh();
+    store.dispatch(A.runFinished({ text, resultsId }));
   };
 
   /**
@@ -1034,46 +1071,20 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
    * camera pair's run is step 3; one run or save at a time.
    */
   function startRun(kind: "camera" | "synthetic"): void {
-    if (busy !== "idle") {
+    // A control set by script fires no event: read them all once more.
+    optionsChanged();
+    store.dispatch(A.runStarted(kind));
+    if (state().running !== kind) {
       return;
     }
-    const button = kind === "camera" ? ui.run : ui.runSynthetic;
-    const state = kind === "camera" ? ui.runState : ui.syntheticState;
-    const idleLabel = button.textContent;
-    busy = "running";
-    if (kind === "camera") {
-      cameraRun = "running";
-      cameraResults = [];
-      clearSaved("after the run");
-    }
-    button.textContent = "Running...";
-    state.textContent = "running";
-    refresh();
-    runOnce(kind, state)
+    runOnce(kind)
       .then(({ text, results }) => {
-        state.textContent = text;
         log(text);
-        if (kind === "camera") {
-          cameraRun = results ? "done" : "failed";
-          cameraResults = results ?? [];
-          ui.saveState.textContent = results
-            ? "ready: tap to prepare the files"
-            : NOTHING_MEASURED;
-        }
+        finishRun(text, results);
       })
       .catch((e: unknown) => {
         fail("run", e);
-        state.textContent = "failed (see log)";
-        if (kind === "camera") {
-          cameraRun = "failed";
-          cameraResults = [];
-          ui.saveState.textContent = NOTHING_MEASURED;
-        }
-      })
-      .finally(() => {
-        busy = "idle";
-        button.textContent = idleLabel;
-        refresh();
+        finishRun("failed (see log)", null);
       });
   }
   ui.run.addEventListener("click", () => startRun("camera"));
@@ -1092,43 +1103,45 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
    * the report text, so a camera run it hides is withdrawn first.
    */
   const runSpeedOnce = async (): Promise<string> => {
-    errors.length = 0;
+    store.dispatch(A.errorsCleared());
+    const { photos } = state();
     const pair = pairOf(
-      captures.a !== null && captures.b !== null ? "camera" : "synthetic",
+      photos.a !== null && photos.b !== null ? "camera" : "synthetic",
     );
     if (!pair) {
       return "not run: no input";
     }
+    const o = state().speedOptions;
     const { backends, note } = timingBackends(
-      backendsFrom(tickedValues(root, "t-backend")),
+      backendsFrom(o.backends),
       await hasWebGpu(),
     );
     const dino: DinoVariant[] = [];
-    if (checked(root, "#t-dino-int8")) {
+    if (o.dinoInt8) {
       dino.push("int8");
     }
-    if (checked(root, "#t-dino-q4f16")) {
+    if (o.dinoQ4f16) {
       dino.push("q4f16");
     }
     const choice: SpeedTestChoice = {
-      xfeat: checked(root, "#t-xfeat"),
-      siftLightGlue: checked(root, "#t-siftlg"),
+      xfeat: o.xfeat,
+      siftLightGlue: o.siftLightGlue,
       dino,
       backends,
-      longEdge: pickNumber(SPEED_LONG_EDGES, valueOf(root, "#t-edge"), 640),
-      siftCap: pickNumber(SPEED_SIFT_CAPS, valueOf(root, "#t-cap"), 512),
+      longEdge: pickNumber(SPEED_LONG_EDGES, o.edge, 640),
+      siftCap: pickNumber(SPEED_SIFT_CAPS, o.cap, 512),
     };
     const arms = speedTestArms(choice, pair.input, browserDeps);
     if (arms.length === 0) {
       fail("speed test", new Error("tick at least one arm and backend"));
       return "not run: nothing ticked";
     }
-    const runs = parseTimingRuns(valueOf(root, "#t-runs"));
+    const runs = parseTimingRuns(o.runs);
     stopCamera();
-    withdrawCameraRun();
+    store.dispatch(A.cameraRunWithdrawn());
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
-    ui.report.value = "";
+    store.dispatch(A.reportSet(""));
     const settingsLine = speedTestSettings(
       choice,
       pair.input,
@@ -1158,7 +1171,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
           yieldToUi: () => new Promise((r) => setTimeout(r, 0)),
           log: (line) => {
             log(line);
-            ui.speedState.textContent = `running: ${line}`;
+            store.dispatch(A.runProgressed(line));
           },
         },
       );
@@ -1166,18 +1179,26 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
       guard.end();
     }
     if (guard.wasHidden()) {
-      errors.push(HIDDEN_DURING_RUNS);
-      log(`ERROR speed test: ${HIDDEN_DURING_RUNS}`);
+      store.dispatch(
+        A.failed({
+          line: HIDDEN_DURING_RUNS,
+          stamped: stamp(`ERROR speed test: ${HIDDEN_DURING_RUNS}`),
+        }),
+      );
     }
-    ui.report.value = formatTimingReport({
-      startedAt,
-      device,
-      input: pair.text,
-      settings: settingsLine,
-      runs,
-      results,
-      errors,
-    });
+    store.dispatch(
+      A.reportSet(
+        formatTimingReport({
+          startedAt,
+          device,
+          input: pair.text,
+          settings: settingsLine,
+          runs,
+          results,
+          errors: state().errors,
+        }),
+      ),
+    );
     const failed = results.filter((r) => r.error !== null).length;
     return failed === 0
       ? `done: ${String(results.length)} arms: tap Copy log`
@@ -1185,77 +1206,67 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   };
 
   ui.runSpeed.addEventListener("click", () => {
-    if (busy !== "idle") {
+    optionsChanged();
+    store.dispatch(A.runStarted("speed"));
+    if (state().running !== "speed") {
       return;
     }
-    const idleLabel = ui.runSpeed.textContent;
-    busy = "running";
-    ui.runSpeed.textContent = "Timing...";
-    ui.speedState.textContent = "running";
-    refresh();
     runSpeedOnce()
       .then((text) => {
-        ui.speedState.textContent = text;
         log(text);
+        finishRun(text, null);
       })
       .catch((e: unknown) => {
         fail("speed test", e);
-        ui.speedState.textContent = `failed: ${errorText(e)}`;
-      })
-      .finally(() => {
-        busy = "idle";
-        ui.runSpeed.textContent = idleLabel;
-        refresh();
+        finishRun(`failed: ${errorText(e)}`, null);
       });
   });
 
   ui.copy.addEventListener("click", () => {
-    const text = ui.report.value || ui.log.textContent || "";
+    const s = state();
+    const text = s.report || logText(s);
     navigator.clipboard
       .writeText(text)
       .then(() => {
-        ui.copyState.textContent = "copied";
+        status("copy", "copied");
       })
       .catch(() => {
         ui.report.focus();
         ui.report.select();
-        ui.copyState.textContent =
-          "copy blocked: the text is selected, copy it by hand";
+        status("copy", "copy blocked: the text is selected, copy it by hand");
       });
   });
+
+  // --- flat target mode ---------------------------------------------------------
 
   /**
    * The flat target mode is picked in the pair selector and covers the
    * page with its own capture steps and camera; Exit returns to the pair
    * picked before it.
    */
-  let lastPair: string =
-    ui.pair.value === FLAT_MODE.key ? PAIRS[0].key : ui.pair.value;
   const flat = startFlatCapture(root, {
-    session,
+    store: fm,
     log,
     fail,
-    pageLog: () => ui.log.textContent ?? "",
     onExit: () => {
-      ui.pair.value = lastPair;
-      showGuide();
-      saveProgress();
+      store.dispatch(A.flatExited());
       applyMode();
     },
   });
   const applyMode = (): void => {
-    if (ui.pair.value === FLAT_MODE.key) {
+    if (state().progress.pair === FLAT_MODE.key) {
       stopCamera();
       flat.open();
     } else {
-      lastPair = ui.pair.value;
       flat.close();
     }
   };
   ui.pair.addEventListener("change", applyMode);
 
   window.addEventListener("pagehide", stopCamera);
-  refresh();
+  store.subscribe(render);
+  optionsChanged();
+  render();
   log("ready");
   applyMode();
 }

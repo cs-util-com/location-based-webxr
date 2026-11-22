@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The page module of `feature-match-check.html`: the guided steps (photo A, photo B, run, save), the camera, the options, the results table, the result pictures and the copyable log. All measuring lives in `bench-run.ts`.
+The page module of `feature-match-check.html`: the guided steps (photo A, photo B, run, save), the camera, the options, the results table, the result pictures and the copyable log. All measuring lives in `bench-run.ts`. It is a view on the page store (`feature-match-store.ts`, state in `feature-match-slice.ts`): taps and option changes dispatch actions, `render` draws the state on every change, and the flat target mode (`flat-capture.ts`) is a second view on the same store.
 
 ## Public API
 
@@ -27,7 +27,9 @@ The page module of `feature-match-check.html`: the guided steps (photo A, photo 
 - Device facts that cannot be read fall back to `UNKNOWN_DEVICE` with a log line; they never stop a run.
 - Every failure (camera refused, nothing ticked, a method that fails, a page error, an unhandled rejection) becomes an `ERROR ...` log line and goes into the report; buttons come back in a `finally`.
 - Resource timing's buffer is raised to 1000 entries so a long run keeps the download sizes.
-- No app state in a store: the page is a standalone measurement tool with one transient run at a time; its captures, offered blob URLs, stream and generation counter are imperative resources local to the page's closure.
+- **State in the store.** The pair flow (numbering, retake rule, the advance after a download, the light check), one action at a time, the run and save status, the status lines, table, report, log and errors, and the options all live in the slice; its reducers hold the rules. The options are mirrored from the controls on every `input`/`change` and read from the state at run time. Log lines are stamped with the page time here and stored finished.
+- **Outside the store**, as browser resources: the camera stream, its start in flight and its generation counter, the result pictures (canvases drawn during a run), and, in the store's side tables keyed by the ids the state holds, the photo frames, the run's results and the offered Blob URLs. A side table entry is put in place in the same step as the action that names it, since the store drops every entry the state does not name.
+- **Drawn only when moved:** the selector and the spot field are written only when the state changed them (a field being typed in is never overwritten), and the links, table, report and log only when their part of the state changed.
 
 ## Example
 

@@ -3,9 +3,10 @@
  * head-on reference with four corner taps and a rectified check, then
  * query photos per pose (3 distances x 2 tilts) at falling light, each
  * tagged with a light bin from its luma ratio against the pose's
- * full-light shot, and one zip per surface. This file only touches the
- * DOM and browser APIs; the rules are in flat-target.ts and
- * flat-progress.ts.
+ * full-light shot, and one zip per surface. It is a view on the page's
+ * store: its state is the slice's `flat` part, its photos the store's side
+ * tables. This file only touches the DOM and browser APIs; the rules are
+ * in feature-match-slice.ts, flat-target.ts and flat-progress.ts.
  *
  * @see flat-capture.ts.md
  */
@@ -14,21 +15,26 @@ import { allFilesZip, type NamedBlob } from "./bench-export";
 import { greyStats, type Frame } from "./bench-image";
 import { errorText, formatBytes } from "./bench-net";
 import {
-  afterReload,
+  currentSurface,
+  featureMatchActions as A,
+  flatPhase,
+  logText,
+  type FlatPhase,
+  type FlatState,
+} from "./feature-match-slice";
+import {
+  flatHasUnsaved,
+  shotKey,
+  type FeatureMatchStore,
+} from "./feature-match-store";
+import {
   classSummary,
-  flatProgressText,
-  flatReducer,
-  parseFlatProgress,
   poseSummary,
   surfaceSummary,
-  unsavedCount,
   usableFullLight,
-  type FlatAction,
-  type FlatProgress,
   type SurfaceProgress,
 } from "./flat-progress";
 import {
-  CORNERS,
   cornersProblem,
   cropFrame,
   flatFileNames,
@@ -42,8 +48,6 @@ import {
   rectify,
   SURFACE_CLASSES,
   toImagePoint,
-  type Point,
-  type PoseId,
   type ShotInfo,
   type SurfaceClass,
 } from "./flat-target";
@@ -55,17 +59,13 @@ const COUNTDOWN_S = 3;
 /** Long edge of the frames the live light reading samples. */
 const LIVE_SAMPLE_MAX = 256;
 const LIVE_EVERY_MS = 500;
-/** The flat target progress, kept across reloads. */
-const FLAT_PROGRESS = "feature-match-check.flat-progress";
 
 /** What the flat mode needs from the page. */
 export interface FlatDeps {
-  /** The page load's session token, written into every surface's JSON. */
-  readonly session: string;
+  /** The page's store; the flat state is its `flat` part. */
+  readonly store: FeatureMatchStore;
   log(line: string): void;
   fail(where: string, e: unknown): void;
-  /** The page log as it reads now, packed into each zip. */
-  pageLog(): string;
   /** Called after Exit, with the mode already closed. */
   onExit(): void;
 }
@@ -74,19 +74,6 @@ export interface FlatCapture {
   open(): void;
   close(): void;
 }
-
-/** One surface's photos, in memory only until downloaded. */
-interface SurfacePhotos {
-  reference: Frame | null;
-  rectified: Frame | null;
-  /** Keyed `<pose>#<q>`. */
-  readonly shots: Map<string, Frame>;
-  original: File | null;
-  /** The camera stream's size when the reference was taken. */
-  camera: { width: number; height: number } | null;
-}
-
-const shotKey = (pose: PoseId, q: number): string => `${pose}#${String(q)}`;
 
 const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -129,16 +116,7 @@ function findUi(root: ParentNode) {
   };
 }
 
-/** Which step of a surface is on screen. */
-type Phase = "overview" | "ref-live" | "corners" | "check" | "poses";
-
-function readStored(): FlatProgress {
-  try {
-    return afterReload(parseFlatProgress(localStorage.getItem(FLAT_PROGRESS)));
-  } catch {
-    return parseFlatProgress(null);
-  }
-}
+const poseOf = (f: FlatState) => POSES.find((x) => x.id === f.pose)!;
 
 /** Starts the mode on `root`; it stays hidden until `open()`. */
 export function startFlatCapture(
@@ -146,33 +124,21 @@ export function startFlatCapture(
   deps: FlatDeps,
 ): FlatCapture {
   const ui = findUi(root);
-  let progress = readStored();
-  const photos = new Map<number, SurfacePhotos>();
-  /** The reference photo being marked, before it is accepted. */
-  let still: Frame | null = null;
-  let taps: Point[] = [];
-  /** The rectified preview of four good taps. */
-  let preview: Frame | null = null;
-  let pose: PoseId = POSES[0]!.id;
-  let countdown: { timer: number; left: number } | null = null;
-  let saving = false;
-  let isOpen = false;
+  const { store, sides, newId, photosOf } = deps.store;
+  const flat = (): FlatState => store.getState().flat;
+  const current = (): SurfaceProgress | null => currentSurface(flat());
+  const status = (text: string): void => {
+    store.dispatch(A.flatStatus(text));
+  };
+  // The camera, the timers and the wake lock stay here: they are browser
+  // resources, not state.
   let stream: MediaStream | null = null;
   let generation = 0;
   let liveTimer: number | null = null;
+  let countdownTimer: number | null = null;
   let wakeLock: WakeLockSentinel | null = null;
-  /** The user picked the next surface's class: no suggestion overwrites it. */
-  let classPicked = false;
   /** Closed by pagehide, so a back-forward cache restore reopens it. */
   let closedByPagehide = false;
-  /** A prepared zip waiting for its Save tap; stale once the surface changes. */
-  let prepared: {
-    readonly id: number;
-    readonly shots: number;
-    readonly url: string;
-    readonly name: string;
-    readonly text: string;
-  } | null = null;
 
   ui.newClass.replaceChildren(
     ...SURFACE_CLASSES.map((c) => {
@@ -183,70 +149,16 @@ export function startFlatCapture(
     }),
   );
 
-  const photosOf = (id: number): SurfacePhotos => {
-    let p = photos.get(id);
-    if (!p) {
-      p = {
-        reference: null,
-        rectified: null,
-        shots: new Map(),
-        original: null,
-        camera: null,
-      };
-      photos.set(id, p);
-    }
-    return p;
-  };
-
-  const current = (): SurfaceProgress | null =>
-    progress.surfaces.find((s) => s.id === progress.current) ?? null;
-
-  const dispatch = (a: FlatAction): void => {
-    progress = flatReducer(progress, a);
-    try {
-      localStorage.setItem(FLAT_PROGRESS, flatProgressText(progress));
-    } catch {
-      // Storage blocked: the progress lasts as long as the page.
-    }
-  };
-
-  /**
-   * Frees the photos of every other surface with nothing left to download,
-   * so a long session does not keep every surface's frames in memory. A
-   * later zip of such a surface lists its earlier photos with a null file,
-   * as after a reload.
-   */
-  const freeOtherPhotos = (keep: number): void => {
-    for (const s of progress.surfaces) {
-      if (s.id !== keep && unsavedHere(s) === 0) {
-        photos.delete(s.id);
-      }
-    }
-  };
-
-  /** What of a surface exists only in this page, its original included. */
-  const unsavedHere = (s: SurfaceProgress): number =>
-    unsavedCount(s, (photos.get(s.id)?.original ?? null) !== null);
-
   /** Photos that exist only in this page: leaving it would lose them. */
   const hasUnsaved = (): boolean =>
-    still !== null || progress.surfaces.some((s) => unsavedHere(s) > 0);
-
-  const dropPrepared = (): void => {
-    if (prepared) {
-      URL.revokeObjectURL(prepared.url);
-      prepared = null;
-    }
-    ui.saveLink.hidden = true;
-    ui.saveLink.removeAttribute("href");
-  };
+    flat().still !== null || flatHasUnsaved(store.getState(), sides);
 
   // --- screen wake lock -------------------------------------------------
 
   /** Keeps the screen on while the mode is open and the page visible. */
   const holdWakeLock = async (): Promise<void> => {
     if (
-      !isOpen ||
+      !flat().open ||
       wakeLock !== null ||
       document.visibilityState !== "visible" ||
       !("wakeLock" in navigator)
@@ -255,7 +167,7 @@ export function startFlatCapture(
     }
     try {
       const lock = await navigator.wakeLock.request("screen");
-      if (!isOpen || wakeLock !== null) {
+      if (!flat().open || wakeLock !== null) {
         lock.release().catch(() => undefined);
         return;
       }
@@ -279,20 +191,6 @@ export function startFlatCapture(
     }
   };
 
-  const phase = (): Phase => {
-    const s = current();
-    if (!s) {
-      return "overview";
-    }
-    if (s.reference !== null) {
-      return "poses";
-    }
-    if (still === null) {
-      return "ref-live";
-    }
-    return preview ? "check" : "corners";
-  };
-
   // --- camera ---------------------------------------------------------
 
   const stopCamera = (): void => {
@@ -306,6 +204,7 @@ export function startFlatCapture(
     stream = null;
     ui.video.srcObject = null;
     deps.log("flat: camera off");
+    store.dispatch(A.flatCameraChanged(false));
   };
 
   const startCamera = async (): Promise<void> => {
@@ -331,21 +230,24 @@ export function startFlatCapture(
     } catch (e) {
       if (g === generation) {
         deps.fail("flat camera", e);
-        ui.state.textContent = `camera unavailable: ${errorText(e)}`;
+        status(`camera unavailable: ${errorText(e)}`);
       }
     }
+    store.dispatch(A.flatCameraChanged(stream !== null));
     render();
   };
 
   // --- drawing ----------------------------------------------------------
 
   /** The still with its taps, or the rectified preview, on the canvas. */
-  const drawStill = (): void => {
-    const f = preview ?? still;
-    if (!f) {
+  const drawStill = (f: FlatState): void => {
+    const preview = f.preview ? sides.flatFrames.get(f.preview.id) : undefined;
+    const still = f.still ? sides.flatFrames.get(f.still.id) : undefined;
+    const frame = preview ?? still;
+    if (!frame) {
       return;
     }
-    frameCanvas(f, ui.still);
+    frameCanvas(frame, ui.still);
     if (preview) {
       return;
     }
@@ -353,8 +255,9 @@ export function startFlatCapture(
     if (!ctx) {
       return;
     }
-    const r = Math.max(4, f.width / 120);
-    ctx.lineWidth = Math.max(2, f.width / 400);
+    const taps = f.taps;
+    const r = Math.max(4, frame.width / 120);
+    ctx.lineWidth = Math.max(2, frame.width / 400);
     ctx.strokeStyle = "#ffd400";
     ctx.fillStyle = "#ffd400";
     ctx.font = `${String(Math.round(r * 3))}px system-ui, sans-serif`;
@@ -379,16 +282,15 @@ export function startFlatCapture(
   };
 
   /** The guide frame over the video for the selected pose. */
-  const placeGuide = (s: SurfaceProgress): void => {
+  const placeGuide = (f: FlatState, s: SurfaceProgress): void => {
     const vw = ui.video.videoWidth;
     const vh = ui.video.videoHeight;
     if (!s.reference || vw === 0 || vh === 0) {
       ui.guide.hidden = true;
       return;
     }
-    const p = POSES.find((x) => x.id === pose)!;
     const aspect = s.reference.rectified.width / s.reference.rectified.height;
-    const g = guideRect(vw, vh, p.distance, aspect);
+    const g = guideRect(vw, vh, poseOf(f).distance, aspect);
     const box = ui.video.getBoundingClientRect();
     const stage = ui.stage.getBoundingClientRect();
     const scale = Math.min(box.width / vw, box.height / vh);
@@ -401,19 +303,26 @@ export function startFlatCapture(
     ui.guide.hidden = false;
   };
 
-  /** The guide region's grey mean in `f`, the light reading of a pose. */
-  const regionMean = (f: Frame, s: SurfaceProgress): number => {
-    const p = POSES.find((x) => x.id === pose)!;
+  /** The guide region's grey mean in `frame`, the light reading of a pose. */
+  const regionMean = (
+    frame: Frame,
+    f: FlatState,
+    s: SurfaceProgress,
+  ): number => {
     const ref = s.reference!;
     const aspect = ref.rectified.width / ref.rectified.height;
     return greyStats(
-      cropFrame(f, guideRect(f.width, f.height, p.distance, aspect)),
+      cropFrame(
+        frame,
+        guideRect(frame.width, frame.height, poseOf(f).distance, aspect),
+      ),
     ).mean;
   };
 
   // --- rendering --------------------------------------------------------
 
-  const renderOverview = (): void => {
+  const renderOverview = (f: FlatState): void => {
+    const progress = f.progress;
     ui.classes.replaceChildren(
       ...classSummary(progress).map((c) => {
         const li = document.createElement("li");
@@ -437,10 +346,7 @@ export function startFlatCapture(
           (sum.unsaved > 0 ? `, ${String(sum.unsaved)} not downloaded` : "") +
           (sum.complete ? " - complete" : "");
         b.addEventListener("click", () => {
-          dispatch({ type: "select", id: s.id });
-          freeOtherPhotos(s.id);
-          pose = firstOpenPose(s);
-          render();
+          store.dispatch(A.flatSurfaceSelected(s.id));
         });
         return b;
       }),
@@ -449,13 +355,13 @@ export function startFlatCapture(
     const fewest = classSummary(progress).sort(
       (a, b) => a.started - b.started,
     )[0];
-    if (fewest && !classPicked && document.activeElement !== ui.newClass) {
+    if (fewest && !f.classPicked && document.activeElement !== ui.newClass) {
       ui.newClass.value = fewest.cls;
     }
     ui.newSurface.textContent = `Start surface ${String(progress.surfaces.length + 1)}`;
   };
 
-  const renderPoses = (s: SurfaceProgress): void => {
+  const renderPoses = (f: FlatState, s: SurfaceProgress): void => {
     ui.poses.replaceChildren(
       ...POSES.map((p) => {
         const sum = poseSummary(s, p.id);
@@ -463,17 +369,16 @@ export function startFlatCapture(
         b.type = "button";
         b.className = "flat-pose";
         b.dataset.pose = p.id;
-        b.setAttribute("aria-pressed", String(p.id === pose));
+        b.setAttribute("aria-pressed", String(p.id === f.pose));
         b.textContent = `${String(p.distance)}% ${String(p.tilt)}deg ${sum.complete ? "done" : String(sum.shots)}`;
-        b.disabled = countdown !== null || saving;
+        b.disabled = f.countdown !== null || f.saving;
         b.addEventListener("click", () => {
-          pose = p.id;
-          render();
+          store.dispatch(A.flatPoseChosen(p.id));
         });
         return b;
       }),
     );
-    const sum = poseSummary(s, pose);
+    const sum = poseSummary(s, f.pose);
     ui.bins.replaceChildren(
       ...LIGHT_BINS.map((b) => {
         const chip = document.createElement("span");
@@ -486,7 +391,11 @@ export function startFlatCapture(
     );
   };
 
-  const hintFor = (ph: Phase, s: SurfaceProgress | null): string => {
+  const hintFor = (
+    ph: FlatPhase,
+    f: FlatState,
+    s: SurfaceProgress | null,
+  ): string => {
     switch (ph) {
       case "overview":
         return "Pick a surface to continue, or start a new one below.";
@@ -494,20 +403,20 @@ export function startFlatCapture(
         return "Reference: face the surface straight on in good light, the surface about half the frame wide. Rest the phone, tap Take reference and let go.";
       case "corners": {
         const problem =
-          taps.length === 4 && still
-            ? cornersProblem(taps, still.width, still.height)
+          f.taps.length === 4 && f.still
+            ? cornersProblem(f.taps, f.still.width, f.still.height)
             : null;
         if (problem) {
           return `${problem}. Tap Redo corners.`;
         }
-        const next = nextCorner(taps);
-        return `Tap corner ${String(taps.length + 1)} of 4 on the photo: ${next ?? ""}.`;
+        const next = nextCorner(f.taps);
+        return `Tap corner ${String(f.taps.length + 1)} of 4 on the photo: ${next ?? ""}.`;
       }
       case "check":
         return "Check the straightened surface: whole and upright? Use it, or redo the corners.";
       case "poses": {
-        const p = POSES.find((x) => x.id === pose)!;
-        const sum = poseSummary(s!, pose);
+        const p = poseOf(f);
+        const sum = poseSummary(s!, f.pose);
         const tilt =
           p.tilt === 0
             ? "straight on"
@@ -527,13 +436,34 @@ export function startFlatCapture(
     el.hidden = !on;
   };
 
-  function render(): void {
-    if (!isOpen) {
+  /** The prepared zip's Save link, or none. */
+  const renderSaveLink = (f: FlatState): void => {
+    const url = f.prepared ? sides.urls.get(f.prepared.urlId) : undefined;
+    if (!f.prepared || url === undefined) {
+      ui.saveLink.hidden = true;
+      ui.saveLink.removeAttribute("href");
       return;
     }
-    const ph = phase();
-    const s = current();
-    const counting = countdown !== null;
+    ui.saveLink.href = url;
+    ui.saveLink.download = f.prepared.name;
+    ui.saveLink.textContent = `Save ${f.prepared.name}`;
+    ui.saveLink.hidden = false;
+  };
+
+  function render(): void {
+    const f = flat();
+    ui.countdown.hidden = f.countdown === null;
+    if (f.countdown !== null) {
+      ui.countdown.textContent = String(f.countdown);
+    }
+    ui.state.textContent = f.status;
+    renderSaveLink(f);
+    if (!f.open) {
+      return;
+    }
+    const ph = flatPhase(f);
+    const s = currentSurface(f);
+    const counting = f.countdown !== null;
     show(ui.overview, ph === "overview");
     show(ui.video, ph === "ref-live" || ph === "poses");
     show(ui.still, ph === "corners" || ph === "check");
@@ -545,26 +475,25 @@ export function startFlatCapture(
     show(ui.accept, ph === "check");
     show(ui.retake, ph === "poses");
     show(ui.download, ph === "poses");
-    ui.overviewOpen.disabled = counting || saving || ph === "overview";
-    ui.hint.textContent = hintFor(ph, s);
+    ui.overviewOpen.disabled = counting || f.saving || ph === "overview";
+    ui.hint.textContent = hintFor(ph, f, s);
     if (ph === "overview" || !s) {
-      dropPrepared();
       ui.where.textContent = "Overview";
       ui.guide.hidden = true;
-      renderOverview();
+      renderOverview(f);
       return;
     }
     const cls = SURFACE_CLASSES.find((c) => c.id === s.cls)!.label;
+    const poseNow = poseOf(f);
     ui.where.textContent =
       ph === "poses"
-        ? `Surface ${String(s.id)}, ${cls}, pose ${POSES.find((p) => p.id === pose)!.label}`
+        ? `Surface ${String(s.id)}, ${cls}, pose ${poseNow.label}`
         : `Surface ${String(s.id)}, ${cls}, reference`;
-    const sumPose = ph === "poses" ? poseSummary(s, pose) : null;
+    const sumPose = ph === "poses" ? poseSummary(s, f.pose) : null;
     // The pose is in the label: a shot is taken without looking elsewhere.
-    const poseNow = POSES.find((p) => p.id === pose)!;
     const poseShort = `${String(poseNow.distance)} % ${String(poseNow.tilt)} deg`;
     ui.shoot.textContent = counting
-      ? `Cancel (${String(countdown!.left)})`
+      ? `Cancel (${String(f.countdown)})`
       : ph === "poses"
         ? sumPose!.full
           ? `Darker shot, ${poseShort} (${String(COUNTDOWN_S)} s)`
@@ -573,51 +502,40 @@ export function startFlatCapture(
           ? `Take reference (${String(COUNTDOWN_S)} s)`
           : `Retake reference (${String(COUNTDOWN_S)} s)`;
     ui.shoot.disabled =
-      saving || (!counting && (ph === "ref-live" || ph === "poses") && !stream);
-    ui.redo.disabled = counting || taps.length === 0;
+      f.saving ||
+      (!counting && (ph === "ref-live" || ph === "poses") && !f.camera);
+    ui.redo.disabled = counting || f.taps.length === 0;
     ui.accept.disabled = counting;
     if (ph === "poses") {
-      renderPoses(s);
-      const last = [...s.shots].reverse().find((x) => x.pose === pose);
-      ui.retake.disabled = counting || saving || !last || last.saved;
+      renderPoses(f, s);
+      const last = [...s.shots].reverse().find((x) => x.pose === f.pose);
+      ui.retake.disabled = counting || f.saving || !last || last.saved;
       const sum = surfaceSummary(s);
-      if (
-        prepared &&
-        (prepared.id !== s.id || prepared.shots !== s.shots.length)
-      ) {
-        // A shot was added or removed after the zip was made: it is stale.
-        dropPrepared();
-      }
-      ui.download.disabled = counting || saving;
-      if (!saving) {
-        ui.download.textContent =
-          sum.unsaved > 0
-            ? `Download zip (${String(sum.unsaved)} new)`
-            : "Download zip";
-      }
-      placeGuide(s);
+      ui.download.disabled = counting || f.saving;
+      ui.download.textContent = f.saving
+        ? "Preparing zip..."
+        : sum.unsaved > 0
+          ? `Download zip (${String(sum.unsaved)} new)`
+          : "Download zip";
+      placeGuide(f, s);
     } else {
-      dropPrepared();
       ui.guide.hidden = true;
-      drawStill();
+      drawStill(f);
     }
   }
-
-  /** The first pose not yet complete, else the first. */
-  const firstOpenPose = (s: SurfaceProgress): PoseId =>
-    (POSES.find((p) => !poseSummary(s, p.id).complete) ?? POSES[0]!).id;
 
   // --- live light reading -------------------------------------------------
 
   const readLive = (): void => {
-    const s = current();
-    if (phase() !== "poses" || !s || ui.video.videoWidth === 0) {
+    const f = flat();
+    const s = currentSurface(f);
+    if (flatPhase(f) !== "poses" || !s || ui.video.videoWidth === 0) {
       ui.live.textContent = "";
       return;
     }
     try {
-      const mean = regionMean(captureFrame(ui.video, LIVE_SAMPLE_MAX), s);
-      const full = poseSummary(s, pose).fullMean;
+      const mean = regionMean(captureFrame(ui.video, LIVE_SAMPLE_MAX), f, s);
+      const full = poseSummary(s, f.pose).fullMean;
       for (const chip of ui.bins.children) {
         (chip as HTMLElement).dataset.live = "false";
       }
@@ -640,110 +558,105 @@ export function startFlatCapture(
   // --- capture ------------------------------------------------------------
 
   const takePhoto = (): void => {
-    const s = current();
-    const ph = phase();
+    const f = flat();
+    const s = currentSurface(f);
+    const ph = flatPhase(f);
     if (!s || ui.video.videoWidth === 0) {
-      ui.state.textContent = "camera not ready yet: tap again";
+      status("camera not ready yet: tap again");
       return;
     }
     if (ph === "corners" || ph === "check") {
       // A retake of the reference shows the live camera first.
-      still = null;
-      taps = [];
-      preview = null;
-      ui.state.textContent = "aim again, then tap Take reference";
-      render();
+      store.dispatch(A.flatReferenceDropped());
       return;
     }
     const track = stream?.getVideoTracks()[0];
     if (!track || track.readyState !== "live" || track.muted) {
       // An ended or muted track still shows its last frame: a photo of it
       // would be a stale picture tagged as new.
-      ui.state.textContent = "camera not live: wait a moment and tap again";
+      status("camera not live: wait a moment and tap again");
       deps.log(
         `flat: photo refused, track ${track ? `${track.readyState}${track.muted ? ", muted" : ""}` : "missing"}`,
       );
-      render();
       return;
     }
-    const f = captureFrame(ui.video, FLAT_CAPTURE_MAX);
+    const frame = captureFrame(ui.video, FLAT_CAPTURE_MAX);
     if (ph === "ref-live") {
-      still = f;
+      const id = newId("flat");
+      sides.flatFrames.set(id, frame);
       photosOf(s.id).camera = {
         width: ui.video.videoWidth,
         height: ui.video.videoHeight,
       };
-      taps = [];
-      preview = null;
-      deps.log(
-        `flat: surface ${String(s.id)} reference ${String(f.width)}x${String(f.height)}`,
+      // Into the state at once: any other action first would drop the
+      // frame from the side table as unnamed.
+      store.dispatch(
+        A.flatReferenceTaken({ id, width: frame.width, height: frame.height }),
       );
-      ui.state.textContent = `reference taken, ${String(f.width)}x${String(f.height)}`;
-      render();
+      deps.log(
+        `flat: surface ${String(s.id)} reference ${String(frame.width)}x${String(frame.height)}`,
+      );
       return;
     }
-    const mean = regionMean(f, s);
+    const mean = regionMean(frame, f, s);
     const before = s.shots.length;
-    dispatch({ type: "add-shot", id: s.id, pose, greyMean: mean });
+    store.dispatch(A.flatShotTaken(mean));
     const after = current()!;
     if (after.shots.length === before) {
-      ui.state.textContent = `too dark for the full-light shot (grey ${mean.toFixed(0)}): switch all lamps on and take it again`;
+      status(
+        `too dark for the full-light shot (grey ${mean.toFixed(0)}): switch all lamps on and take it again`,
+      );
       deps.log(`flat: full-light shot refused, grey ${mean.toFixed(1)}`);
-      render();
       return;
     }
     const shot = after.shots.at(-1)!;
-    photosOf(s.id).shots.set(shotKey(shot.pose, shot.q), f);
+    photosOf(s.id).shots.set(shotKey(shot.pose, shot.q), frame);
     const text = `${shot.pose} q${String(shot.q)}: ${shot.fullLight ? "full light" : `${shot.lumaRatio.toFixed(2)} of full`}, bin ${shot.bin}`;
     deps.log(`flat: surface ${String(s.id)} ${text}, grey ${mean.toFixed(1)}`);
-    ui.state.textContent = `taken: ${text}`;
+    status(`taken: ${text}`);
     readLive();
-    render();
   };
 
   const cancelCountdown = (): void => {
-    if (countdown) {
-      clearInterval(countdown.timer);
-      countdown = null;
-      ui.countdown.hidden = true;
+    if (countdownTimer !== null) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    if (flat().countdown !== null) {
+      store.dispatch(A.flatCountdown(null));
     }
   };
 
   ui.shoot.addEventListener("click", () => {
-    if (countdown) {
+    if (flat().countdown !== null) {
       cancelCountdown();
-      ui.state.textContent = "cancelled";
-      render();
+      status("cancelled");
       return;
     }
-    const ph = phase();
+    const ph = flatPhase(flat());
     if (ph === "corners" || ph === "check") {
       takePhoto();
       return;
     }
-    countdown = {
-      left: COUNTDOWN_S,
-      timer: window.setInterval(() => {
-        if (!countdown) {
-          return;
-        }
-        countdown.left--;
-        ui.countdown.textContent = String(countdown.left);
-        if (countdown.left <= 0) {
-          cancelCountdown();
-          takePhoto();
-          return;
-        }
-        render();
-      }, 1000),
-    };
-    ui.countdown.textContent = String(COUNTDOWN_S);
-    ui.countdown.hidden = false;
-    render();
+    countdownTimer = window.setInterval(() => {
+      const left = flat().countdown;
+      if (left === null) {
+        return;
+      }
+      if (left - 1 <= 0) {
+        cancelCountdown();
+        takePhoto();
+        return;
+      }
+      store.dispatch(A.flatCountdown(left - 1));
+    }, 1000);
+    store.dispatch(A.flatCountdown(COUNTDOWN_S));
   });
 
   ui.still.addEventListener("click", (ev) => {
-    if (phase() !== "corners" || !still || taps.length >= 4) {
+    const f = flat();
+    const still = f.still ? sides.flatFrames.get(f.still.id) : undefined;
+    if (flatPhase(f) !== "corners" || !still || f.taps.length >= 4) {
       return;
     }
     const p = toImagePoint(
@@ -756,76 +669,75 @@ export function startFlatCapture(
     if (!p) {
       return;
     }
-    taps = [...taps, p];
+    store.dispatch(A.flatTapped(p));
+    const taps = flat().taps;
     if (
       taps.length === 4 &&
       cornersProblem(taps, still.width, still.height) === null
     ) {
       try {
-        preview = rectify(still, taps, rectifiedSize(taps, FLAT_CAPTURE_MAX));
-        ui.state.textContent = `straightened: ${String(preview.width)}x${String(preview.height)}`;
+        const preview = rectify(
+          still,
+          taps,
+          rectifiedSize(taps, FLAT_CAPTURE_MAX),
+        );
+        const id = newId("flat");
+        sides.flatFrames.set(id, preview);
+        store.dispatch(
+          A.flatPreviewMade({
+            id,
+            width: preview.width,
+            height: preview.height,
+          }),
+        );
       } catch (e) {
         deps.fail("flat corners", e);
       }
     }
-    render();
   });
 
   ui.redo.addEventListener("click", () => {
-    taps = [];
-    preview = null;
-    ui.state.textContent = `tap the ${CORNERS[0]} corner`;
-    render();
+    store.dispatch(A.flatCornersRedone());
   });
 
   ui.accept.addEventListener("click", () => {
-    const s = current();
+    const f = flat();
+    const s = currentSurface(f);
+    const still = f.still ? sides.flatFrames.get(f.still.id) : undefined;
+    const preview = f.preview ? sides.flatFrames.get(f.preview.id) : undefined;
     if (!s || !still || !preview) {
       return;
     }
-    dispatch({
-      type: "set-reference",
-      id: s.id,
-      reference: {
-        corners: taps,
-        width: still.width,
-        height: still.height,
-        rectified: { width: preview.width, height: preview.height },
-      },
-    });
+    // The frames move to the surface's photos before the state lets go
+    // of them.
     const p = photosOf(s.id);
     p.reference = still;
     p.rectified = preview;
     deps.log(
-      `flat: surface ${String(s.id)} corners ${taps.map((t) => `${t.x.toFixed(0)},${t.y.toFixed(0)}`).join(" ")}, rectified ${String(preview.width)}x${String(preview.height)}`,
+      `flat: surface ${String(s.id)} corners ${f.taps.map((t) => `${t.x.toFixed(0)},${t.y.toFixed(0)}`).join(" ")}, rectified ${String(preview.width)}x${String(preview.height)}`,
     );
-    still = null;
-    taps = [];
-    preview = null;
-    pose = POSES[0]!.id;
-    ui.state.textContent = "reference kept: now the poses";
-    render();
+    store.dispatch(A.flatReferenceAccepted());
   });
 
   ui.retake.addEventListener("click", () => {
-    const s = current();
+    const f = flat();
+    const s = currentSurface(f);
     if (!s) {
       return;
     }
-    const last = [...s.shots].reverse().find((x) => x.pose === pose);
-    dispatch({ type: "remove-last-shot", id: s.id, pose });
+    const last = [...s.shots].reverse().find((x) => x.pose === f.pose);
+    store.dispatch(A.flatShotRemoved());
     if (last && current()!.shots.length < s.shots.length) {
-      photosOf(s.id).shots.delete(shotKey(last.pose, last.q));
-      ui.state.textContent = `removed ${last.pose} q${String(last.q)}: take it again`;
+      status(`removed ${last.pose} q${String(last.q)}: take it again`);
     }
-    render();
   });
 
   /** One surface's zip: every photo in memory, the original, the JSON and the log. */
   const surfaceZip = async (
     s: SurfaceProgress,
   ): Promise<{ blob: Blob; name: string; photos: number }> => {
-    const names = flatFileNames(s.id, s.cls, deps.session);
+    const session = store.getState().session;
+    const names = flatFileNames(s.id, s.cls, session);
     const p = photosOf(s.id);
     const files: NamedBlob[] = [];
     if (p.reference) {
@@ -842,10 +754,10 @@ export function startFlatCapture(
     }
     const shots: ShotInfo[] = [];
     for (const x of s.shots) {
-      const f = p.shots.get(shotKey(x.pose, x.q)) ?? null;
-      const file = f ? names.query(x.pose, x.q, x.bin) : null;
-      if (f && file) {
-        files.push({ name: file, blob: await framePng(f, file) });
+      const frame = p.shots.get(shotKey(x.pose, x.q)) ?? null;
+      const file = frame ? names.query(x.pose, x.q, x.bin) : null;
+      if (frame && file) {
+        files.push({ name: file, blob: await framePng(frame, file) });
       }
       shots.push({
         file,
@@ -855,8 +767,8 @@ export function startFlatCapture(
         greyMean: x.greyMean,
         lumaRatio: x.lumaRatio,
         bin: x.bin,
-        width: f?.width ?? null,
-        height: f?.height ?? null,
+        width: frame?.width ?? null,
+        height: frame?.height ?? null,
       });
     }
     const originalName = p.original ? names.original(p.original.name) : null;
@@ -871,7 +783,7 @@ export function startFlatCapture(
           flatInfo({
             surface: s.id,
             cls: s.cls,
-            session: deps.session,
+            session,
             original: { exists: s.original, file: originalName },
             captureMaxLongEdge: FLAT_CAPTURE_MAX,
             camera: p.camera,
@@ -889,59 +801,66 @@ export function startFlatCapture(
         { type: "application/json" },
       ),
     });
-    const blob = await allFilesZip(files, { log: deps.pageLog(), report: "" });
+    const blob = await allFilesZip(files, {
+      log: logText(store.getState()),
+      report: "",
+    });
     const photoCount = files.filter((f) => f.name.endsWith(".png")).length;
     return { blob, name: names.zip, photos: photoCount };
   };
 
   ui.download.addEventListener("click", () => {
-    const s = current();
-    if (!s || !s.reference || saving) {
+    store.dispatch(A.flatSavingStarted());
+    const f = flat();
+    const s = currentSurface(f);
+    if (!f.saving || !s) {
       return;
     }
-    saving = true;
-    dropPrepared();
-    ui.download.textContent = "Preparing zip...";
-    ui.state.textContent = "preparing the zip...";
-    render();
     surfaceZip(s)
       .then(({ blob, name, photos: n }) => {
         // A link the user taps, as the photo pairs do: a download started
         // from script after an await can be blocked, and only the tap is
         // proof enough to mark the photos downloaded.
-        const url = URL.createObjectURL(blob);
+        const urlId = newId("url");
+        sides.urls.set(urlId, URL.createObjectURL(blob));
         const text = `${String(n)} photos, ${formatBytes(blob.size)}`;
-        prepared = { id: s.id, shots: s.shots.length, url, name, text };
-        ui.saveLink.href = url;
-        ui.saveLink.download = name;
-        ui.saveLink.textContent = `Save ${name}`;
-        ui.saveLink.hidden = false;
-        ui.state.textContent = `ready: tap Save (${text})`;
+        store.dispatch(
+          A.flatSavingEnded({
+            prepared: {
+              surface: s.id,
+              shots: s.shots.length,
+              urlId,
+              name,
+              text,
+            },
+            status: `ready: tap Save (${text})`,
+          }),
+        );
         deps.log(`flat: ${name} ready, ${String(n)} photos`);
       })
       .catch((e: unknown) => {
         deps.fail("flat save", e);
-        ui.state.textContent = `zip failed: ${errorText(e)}; nothing was marked downloaded`;
-      })
-      .finally(() => {
-        saving = false;
-        render();
+        store.dispatch(
+          A.flatSavingEnded({
+            prepared: null,
+            status: `zip failed: ${errorText(e)}; nothing was marked downloaded`,
+          }),
+        );
       });
   });
 
   ui.saveLink.addEventListener("click", () => {
-    const s = current();
-    if (!prepared || !s || prepared.id !== s.id) {
+    const f = flat();
+    const s = currentSurface(f);
+    if (!f.prepared || !s || f.prepared.surface !== s.id) {
       return;
     }
-    dispatch({ type: "saved", id: s.id });
-    ui.state.textContent = `downloaded ${prepared.name}: ${prepared.text}`;
-    deps.log(`flat: ${prepared.name} saved`);
-    render();
+    store.dispatch(A.flatSaved());
+    deps.log(`flat: ${f.prepared.name} saved`);
   });
 
   ui.newClass.addEventListener("change", () => {
-    classPicked = true;
+    store.dispatch(A.flatClassPicked());
   });
 
   ui.newOriginal.addEventListener("change", () => {
@@ -957,37 +876,29 @@ export function startFlatCapture(
 
   ui.newSurface.addEventListener("click", () => {
     const file = ui.newFile.files?.[0] ?? null;
-    dispatch({
-      type: "add-surface",
-      cls: ui.newClass.value as SurfaceClass,
-      original: ui.newOriginal.checked || file !== null,
-    });
-    const s = current()!;
-    freeOtherPhotos(s.id);
+    store.dispatch(
+      A.flatSurfaceAdded({
+        cls: ui.newClass.value as SurfaceClass,
+        original: ui.newOriginal.checked || file !== null,
+      }),
+    );
+    const s = current();
+    if (!s) {
+      return;
+    }
     photosOf(s.id).original = file;
-    classPicked = false;
     ui.newFile.value = "";
     ui.newOriginal.checked = false;
-    still = null;
-    taps = [];
-    preview = null;
     deps.log(
       `flat: surface ${String(s.id)} started, ${s.cls}${file ? ", original attached" : ""}`,
     );
-    ui.state.textContent = "";
     void startCamera();
-    render();
   });
 
   ui.overviewOpen.addEventListener("click", () => {
     cancelCountdown();
-    still = null;
-    taps = [];
-    preview = null;
-    dispatch({ type: "select", id: null });
+    store.dispatch(A.flatOverview());
     stopCamera();
-    ui.state.textContent = "";
-    render();
   });
 
   ui.exit.addEventListener("click", () => {
@@ -999,11 +910,14 @@ export function startFlatCapture(
   window.addEventListener("resize", () => render());
 
   function close(): void {
-    if (!isOpen) {
+    if (!flat().open) {
       return;
     }
-    isOpen = false;
-    cancelCountdown();
+    if (countdownTimer !== null) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    store.dispatch(A.flatClosed());
     stopCamera();
     releaseWakeLock();
     if (liveTimer !== null) {
@@ -1015,23 +929,30 @@ export function startFlatCapture(
   }
 
   function open(): void {
-    if (isOpen) {
+    if (flat().open) {
       return;
     }
-    isOpen = true;
     ui.section.hidden = false;
     document.body.classList.add("flat-open");
-    const s = current();
-    if (s) {
-      pose = firstOpenPose(s);
-    }
+    store.dispatch(A.flatOpened());
     liveTimer = window.setInterval(readLive, LIVE_EVERY_MS);
     void holdWakeLock();
-    render();
-    if (s) {
+    if (current()) {
       void startCamera();
     }
   }
+
+  // The flat part of the state is drawn when it changed; the page's other
+  // actions (log lines above all) leave it alone, so a button is never
+  // replaced under a finger.
+  let drawn: FlatState | null = null;
+  store.subscribe(() => {
+    const f = flat();
+    if (f !== drawn) {
+      drawn = f;
+      render();
+    }
+  });
 
   // Opening a surface from the overview starts the camera too.
   ui.surfaces.addEventListener("click", () => {
@@ -1040,7 +961,7 @@ export function startFlatCapture(
     }
   });
   window.addEventListener("pagehide", () => {
-    if (isOpen) {
+    if (flat().open) {
       closedByPagehide = true;
       close();
     }
@@ -1059,7 +980,7 @@ export function startFlatCapture(
     }
   });
   document.addEventListener("visibilitychange", () => {
-    if (!isOpen || document.visibilityState !== "visible") {
+    if (!flat().open || document.visibilityState !== "visible") {
       return;
     }
     void holdWakeLock();
@@ -1068,6 +989,7 @@ export function startFlatCapture(
     if (stream && (!track || track.readyState === "ended")) {
       stream = null;
       ui.video.srcObject = null;
+      store.dispatch(A.flatCameraChanged(false));
       deps.log("flat: camera ended while hidden, restarting");
       void startCamera();
     }
