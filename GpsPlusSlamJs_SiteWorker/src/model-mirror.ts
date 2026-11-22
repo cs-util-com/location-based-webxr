@@ -83,7 +83,8 @@ export async function handleModelMirror(
   }
   const headers = new Headers(cors);
   headers.set("content-type", "application/octet-stream");
-  headers.set("content-length", String(model.bytes));
+  // Only a size the upstream sent, and so checked above, is passed on.
+  if (length !== null) headers.set("content-length", length);
   headers.set("cache-control", "public, max-age=31536000, immutable");
   return new Response(request.method === "HEAD" ? null : upstream.body, {
     status: 200,

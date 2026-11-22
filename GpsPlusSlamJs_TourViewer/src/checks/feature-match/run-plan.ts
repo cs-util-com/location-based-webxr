@@ -343,7 +343,6 @@ function apply(p: RunPlan, a: PlanAction): RunPlan | null {
         kept: p.kept.map((k) =>
           now.includes(k) ? { ...k, downloaded: true } : k,
         ),
-        downloads: p.downloads + 1,
       };
     }
     case "run-downloaded": {

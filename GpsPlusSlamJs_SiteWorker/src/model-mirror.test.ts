@@ -83,6 +83,24 @@ describe("handleModelMirror", () => {
     },
   );
 
+  // Why: with no upstream content-length the size was never checked, so
+  // the answer must not claim the pinned size either; the page's sha256
+  // check still guards the bytes.
+  it("claims no size the upstream did not send", async () => {
+    const r = await handleModelMirror(
+      req(`${MODEL_MIRROR_PREFIX}${NAME}`),
+      upstream("model bytes").fetch,
+    );
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-length")).toBeNull();
+    expect(await r.text()).toBe("model bytes");
+    const pinned = await handleModelMirror(
+      req(`${MODEL_MIRROR_PREFIX}${NAME}`),
+      upstream("x", { "content-length": String(PINNED.bytes) }).fetch,
+    );
+    expect(pinned.headers.get("content-length")).toBe(String(PINNED.bytes));
+  });
+
   it("answers HEAD without a body", async () => {
     const up = upstream("x");
     const r = await handleModelMirror(

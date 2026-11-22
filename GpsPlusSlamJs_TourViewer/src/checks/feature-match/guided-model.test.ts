@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import fc from "fast-check";
 
 import {
   featureMatchActions as A,
@@ -396,6 +397,34 @@ describe("the steady hint", () => {
   it("ignores a reading without a rotation rate", () => {
     expect(motionStep(5, null)).toBe(5);
     expect(motionStep(5, { alpha: null, beta: null, gamma: null })).toBe(5);
+  });
+
+  // Why: one NaN reading would latch the smoothed level to NaN for good
+  // (NaN > threshold is false), pinning the chip to "steady" and hiding
+  // the "phone moved during countdown" note. A value that is not a finite
+  // number counts as missing.
+  it("ignores rotation rates that are not finite numbers", () => {
+    expect(
+      motionStep(5, { alpha: Number.NaN, beta: Infinity, gamma: -Infinity }),
+    ).toBe(5);
+    expect(motionStep(5, { alpha: Number.NaN, beta: 10, gamma: null })).toBe(6);
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            alpha: fc.oneof(fc.double(), fc.constant(null)),
+            beta: fc.oneof(fc.double(), fc.constant(null)),
+            gamma: fc.oneof(fc.double(), fc.constant(null)),
+          }),
+          { maxLength: 30 },
+        ),
+        (readings) => {
+          let l = 0;
+          for (const r of readings) l = motionStep(l, r);
+          return Number.isFinite(l) || l === 0;
+        },
+      ),
+    );
   });
 
   // The sweep: every threshold from 3 to 12 calls the table and the hand

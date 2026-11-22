@@ -193,7 +193,10 @@ describe("the run plan's kept files", () => {
     }).plan;
     expect(done.kept[0]?.downloaded).toBe(true);
     expect(done.slots["1a-s1"]?.downloaded).toBe(true);
-    expect(done.downloads).toBe(1);
+    // A single file is not the run zip: `downloads` counts zips only, so
+    // the end screen still offers "Download all" and the summary still
+    // says the zip was not downloaded yet.
+    expect(done.downloads).toBe(0);
     expect(keptState(done, "1a-s1")).toBe("saved");
     expect(
       planReducer(done, sequence, { type: "downloaded", ids: ["k1"] }).plan,
