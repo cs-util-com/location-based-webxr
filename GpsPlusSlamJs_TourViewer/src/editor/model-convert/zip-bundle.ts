@@ -93,7 +93,9 @@ export async function readZipBundle(
       if (model === undefined) throw new Refused(refusal.zipNoModel(zipName));
       const others = models.slice(1);
       const glb = /\.glb$/i.test(model);
-      const wanted = glb ? [model] : names.filter((n) => n === model || isPart(n));
+      const wanted = glb
+        ? [model]
+        : names.filter((n) => n === model || isPart(n));
       const skipped = names.filter(
         (n) => !wanted.includes(n) && !others.includes(n),
       );
@@ -119,7 +121,14 @@ export async function readZipBundle(
       }
       signal?.throwIfAborted();
       return glb
-        ? { ok: true, kind: "glb", model, glb: files.get(model)!, others, skipped }
+        ? {
+            ok: true,
+            kind: "glb",
+            model,
+            glb: files.get(model)!,
+            others,
+            skipped,
+          }
         : { ok: true, kind: "gltf", model, files, others, skipped };
     });
   } catch (error) {

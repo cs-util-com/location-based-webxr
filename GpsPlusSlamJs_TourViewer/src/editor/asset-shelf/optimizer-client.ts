@@ -36,7 +36,6 @@ import type {
  *  long run that keeps reporting is never cut. */
 export const OPTIMIZER_SILENCE_MS = 120_000;
 
-
 /** The part of the page the watchdog reads, so a test can fake it: the
  *  wait pauses while the page is hidden. */
 export interface OptimizerPage extends EventTarget {

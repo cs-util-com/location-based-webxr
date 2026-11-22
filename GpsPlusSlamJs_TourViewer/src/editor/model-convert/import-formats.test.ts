@@ -26,7 +26,14 @@ describe("importRoleOf", () => {
   });
 
   it("calls a tour picture a picture, and every other tour file plain", () => {
-    for (const name of ["a.png", "a.JPG", "a.jpeg", "a.webp", "a.gif", "a.avif"]) {
+    for (const name of [
+      "a.png",
+      "a.JPG",
+      "a.jpeg",
+      "a.webp",
+      "a.gif",
+      "a.avif",
+    ]) {
       expect(importRoleOf(name), name).toBe("picture");
     }
     for (const name of ["a.glb", "a.mp3", "a.wav", "a.mp4"]) {

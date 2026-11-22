@@ -26,7 +26,10 @@ export interface ImportPlan {
   /** Pictures a loose model may name: added on their own only once every
    *  model of the drop is done and none used them. */
   readonly held: readonly number[];
-  readonly refused: readonly { readonly index: number; readonly reason: string }[];
+  readonly refused: readonly {
+    readonly index: number;
+    readonly reason: string;
+  }[];
   /** Files neither the import nor the tour knows. */
   readonly unknown: readonly number[];
 }

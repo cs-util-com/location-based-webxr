@@ -41,7 +41,13 @@ describe("planImport", () => {
   });
 
   it("refuses a model part dropped without its model, in words", () => {
-    const plan = planImport(["bust.bin", "wood.mtl", "skin.tga", "x.bmp", "b.zip"]);
+    const plan = planImport([
+      "bust.bin",
+      "wood.mtl",
+      "skin.tga",
+      "x.bmp",
+      "b.zip",
+    ]);
     expect(plan.imports).toEqual([{ primary: 4, format: "zip", parts: [] }]);
     expect(plan.refused).toEqual([
       { index: 0, reason: refusal.loneModelPart("bust.bin") },
@@ -61,8 +67,19 @@ describe("planImport, properties", () => {
     .tuple(
       fc.constantFrom("a", "B", "model", "x y"),
       fc.constantFrom(
-        "gltf", "GLTF", "zip", "bin", "mtl", "tga", "bmp",
-        "png", "jpg", "glb", "mp3", "txt", "",
+        "gltf",
+        "GLTF",
+        "zip",
+        "bin",
+        "mtl",
+        "tga",
+        "bmp",
+        "png",
+        "jpg",
+        "glb",
+        "mp3",
+        "txt",
+        "",
       ),
     )
     .map(([stem, ext]) => (ext === "" ? stem : `${stem}.${ext}`));

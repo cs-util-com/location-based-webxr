@@ -15,9 +15,7 @@ import { readZipBundle, zipBundleNotes } from "./zip-bundle.js";
 
 const bytes = (text: string) => new TextEncoder().encode(text);
 const zipOf = (files: Record<string, string>) =>
-  packFilesAsZip(
-    Object.entries(files).map(([path, data]) => ({ path, data })),
-  );
+  packFilesAsZip(Object.entries(files).map(([path, data]) => ({ path, data })));
 
 describe("readZipBundle", () => {
   it("finds the .gltf and reads its parts, leaving out what no model uses", async () => {
@@ -137,7 +135,12 @@ describe("zipBundleNotes", () => {
   it("says nothing when the model used every file", () => {
     expect(
       zipBundleNotes(
-        { model: "a.gltf", files: new Map([["a.gltf", bytes("{}")]]), others: [], skipped: [] },
+        {
+          model: "a.gltf",
+          files: new Map([["a.gltf", bytes("{}")]]),
+          others: [],
+          skipped: [],
+        },
         [],
       ),
     ).toEqual([]);
@@ -163,7 +166,11 @@ describe("readZipBundle, properties", () => {
           const isTour = names.some(
             (n) => n.endsWith("tour.json") && !/__MACOSX\/|\/\._/.test(n),
           );
-          expect(bundle.ok || !isTour || bundle.reason === refusal.zipIsTour("p.zip")).toBe(true);
+          expect(
+            bundle.ok ||
+              !isTour ||
+              bundle.reason === refusal.zipIsTour("p.zip"),
+          ).toBe(true);
           if (!bundle.ok) return;
           const kept =
             bundle.kind === "gltf" ? [...bundle.files.keys()] : [bundle.model];

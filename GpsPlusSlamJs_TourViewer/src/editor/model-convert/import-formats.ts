@@ -10,11 +10,7 @@ import { tourMediaTypeOf } from "gps-plus-slam-app-framework/ar/tour-media";
  * - `plain`: any other tour file, taken as it is.
  */
 export type ImportRole =
-  | "primary"
-  | "container"
-  | "companion"
-  | "picture"
-  | "plain";
+  "primary" | "container" | "companion" | "picture" | "plain";
 
 const PRIMARY: ReadonlySet<string> = new Set(["gltf"]);
 const CONTAINER: ReadonlySet<string> = new Set(["zip"]);

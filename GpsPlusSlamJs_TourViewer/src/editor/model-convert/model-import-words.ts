@@ -20,7 +20,10 @@ function megabytes(bytes: number): string {
 
 /** Up to five quoted names, then how many more. */
 function listOf(names: readonly string[]): string {
-  const shown = names.slice(0, 5).map((n) => `"${n}"`).join(", ");
+  const shown = names
+    .slice(0, 5)
+    .map((n) => `"${n}"`)
+    .join(", ");
   const more = names.length - 5;
   return more > 0 ? `${shown} and ${more} more` : shown;
 }
