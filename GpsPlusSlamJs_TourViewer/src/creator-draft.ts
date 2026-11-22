@@ -727,7 +727,14 @@ export function wireCreatorDraft(deps: {
     write: (store: DraftFileStore) => Promise<boolean>,
   ): Promise<boolean> {
     return draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      const claimed = await claimObject(store, tourUrl, id);
+      // Nothing to claim, the common case: the write is issued in this
+      // same turn, as before claims followed the store.
+      const claimed =
+        draftStore === store &&
+        !draftRejected.includes(id) &&
+        !diskRejected.has(id)
+          ? true
+          : await claimObject(store, tourUrl, id);
       const wrote = await write(store);
       return claimed && wrote;
     });
