@@ -8,23 +8,42 @@
  * @see creator-previews.ts.md
  */
 
+import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
+import type { TourAsset } from "gps-plus-slam-app-framework/ar/tour-assets";
+import type { TourStation } from "gps-plus-slam-app-framework/ar/tour-manifest";
+import {
+  localPoseOf,
+  tourFreeEntries,
+  tourObjectBlock,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import { selectZeroReference } from "gps-plus-slam-app-framework/state";
 import { decodeFrameTexture } from "gps-plus-slam-app-framework/visualization/frame-texture-decoder";
 import { Group, type Object3D } from "three";
 import {
+  renderStationBlocks,
   renderTourObjects,
+  type RenderedTourObjects,
   type TourObjectRendererDeps,
 } from "./content-placement.js";
 import type { VisitPlacement } from "./creator-document.js";
+import { mountLectern } from "./lectern-view.js";
 import { horizontalM } from "./move-with-code.js";
 import type { AuthoringObject } from "./object-editing.js";
+import { worldPartOf } from "./play-kinds.js";
+import { mountReadingSign } from "./reading-sign.js";
 import type { TourViewerSeams } from "./seams.js";
 import type {
   TourViewerSession,
   TourViewerStore,
 } from "./tour-viewer-session.js";
+import {
+  tickEachWorldPart,
+  worldEnv,
+  type WorldEnv,
+  type WorldPart,
+} from "./world-part.js";
 
 /**
  * A code this visit sighted or measured (code book plan M5b): the earlier
@@ -41,27 +60,26 @@ interface EarlierCodeFrame {
   readonly geo: LatLong;
 }
 
-/** What a preview's look is made from: a pin's text, a picture's file, a
- *  placed model's asset and size (drawn by no renderer yet, but a change
- *  of either is a new look). */
-function lookOf(object: AuthoringObject["object"]): unknown {
-  switch (object.kind) {
-    case "shortText":
-      return object.caption;
-    case "longText":
-      return [object.title, object.body];
-    case "picture":
-      return object.imageAsset.path;
-    case "model":
-      return [object.asset, object.sizeM];
-    case "video":
-      return object.video;
-    case "audio":
-      return object.audio;
-    case "character":
-      return object.image;
-  }
+/**
+ * How the previews draw what the renderer does not draw itself: the
+ * world door (`worldPartOf` of `play-kinds.ts`, asked in the edit mode)
+ * and a long text's reading stand and reading sign - the desktop
+ * editor's builders, so an item looks in AR as it does there.
+ */
+export interface CreatorPreviewDrawings {
+  readonly worldPart: (block: TourBlock, env: WorldEnv) => WorldPart | null;
+  readonly makeLectern: NonNullable<TourObjectRendererDeps["makeLectern"]>;
+  readonly makeReadingSign: NonNullable<
+    TourObjectRendererDeps["makeReadingSign"]
+  >;
 }
+
+const PAGE_DRAWINGS: CreatorPreviewDrawings = {
+  worldPart: worldPartOf,
+  makeLectern: mountLectern,
+  // No tap: the creator's sign opens no reader (a tap selects it).
+  makeReadingSign: (block) => mountReadingSign(block),
+};
 
 export interface CreatorPreviews {
   /** Bring the previews in line with the tour's objects now. */
@@ -81,6 +99,10 @@ export interface CreatorPreviews {
   placeEarlier(frames: readonly EarlierCodeFrame[]): void;
   /** Keep a finished photo's bytes for its preview. */
   keepFinishedPhoto(id: string, blob: Blob): void;
+  /** One frame of every drawn item that takes one (an icon that keeps its
+   *  size on the screen, a figure turning to the camera, a selected
+   *  character's bubble), seen from the viewer's camera; none: nothing. */
+  tick(nowMs: number): void;
   /** A tour closed: its previews and kept photo bytes go. */
   reset(): void;
 }
@@ -88,17 +110,51 @@ export interface CreatorPreviews {
 export function wireCreatorPreviews(deps: {
   ctx: TourViewerSession;
   arStore: Pick<TourViewerStore, "getState">;
-  seams: Pick<TourViewerSeams, "getScene" | "getArWorldGroup" | "createLabel">;
+  seams: Pick<
+    TourViewerSeams,
+    | "getScene"
+    | "getArWorldGroup"
+    | "createLabel"
+    | "getViewerCamera"
+    | "loadGlbModel"
+    | "enableClipping"
+  >;
   /** A visitor renders no previews. */
   creator: boolean;
   /** The tour's objects now (`object-editing.ts`'s `objects`). */
   objects: () => readonly AuthoringObject[];
+  /** The selected item's id (`object-editing.ts`'s `selected`); none:
+   *  nothing is selected. */
+  selected?: () => string | null;
+  /** The view's height in CSS px, for the camera's lens; the window's
+   *  unless a test injects one. */
+  viewHeightPx?: () => number;
   /** Decodes a photo's bytes into a texture; `decodeFrameTexture` unless a
    *  test injects one (node cannot decode). */
   decodePhoto?: typeof decodeFrameTexture;
+  /** The door and the stands; the page's own unless a test injects them
+   *  (node has no canvas). */
+  drawings?: CreatorPreviewDrawings;
 }): CreatorPreviews {
   const { ctx, arStore, seams, creator } = deps;
   const decodePhoto = deps.decodePhoto ?? decodeFrameTexture;
+  const drawings = deps.drawings ?? PAGE_DRAWINGS;
+  const viewHeightPx =
+    deps.viewHeightPx ??
+    (() => (typeof window === "undefined" ? 0 : window.innerHeight));
+  /**
+   * The world parts each preview drew, by object id: what `tick` frames.
+   * three.js objects, so a side table beside the store, emptied with the
+   * previews (a part's own dispose comes with its preview's).
+   */
+  const partsById = new Map<string, readonly WorldPart[]>();
+  /** Every part of `partsById`, the one set a frame walks (no copy per
+   *  frame). */
+  const ticked = new Set<WorldPart>();
+  function forgetParts(id: string): void {
+    for (const part of partsById.get(id) ?? []) ticked.delete(part);
+    partsById.delete(id);
+  }
   /** A preview sync found no zero yet (see `syncPreviews`): the store
    *  subscription runs it again once the zero lands. */
   let previewsWaitForZero = false;
@@ -218,16 +274,24 @@ export function wireCreatorPreviews(deps: {
     const placement = entry.placed?.placement;
     const rigid =
       placement !== undefined && placement.visit === ctx.arSessionGeneration;
+    // The whole object: any field may be part of its look now that every
+    // kind is drawn (a view, a size, a clip). A rigid preview is placed
+    // from its local pose, so its geo is not part of the key; one drawn in
+    // its station adds the station's pose and its folders' scale.
+    if (rigid)
+      return JSON.stringify([{ ...object, geo: null }, placement.local]);
+    const hosting = stationOf(entry);
     return JSON.stringify([
-      object.kind,
-      lookOf(object),
-      rigid ? placement.local : object.geo,
+      object,
+      hosting === null ? null : [hosting.station.geo, hosting.scale],
     ]);
   }
 
   /** Dispose every preview and forget what they were made from. */
   function clearPreviews(): void {
     previewKeys.clear();
+    partsById.clear();
+    ticked.clear();
     for (const preview of ctx.placedPreviews.values()) preview.dispose();
     ctx.placedPreviews.clear();
   }
@@ -269,9 +333,74 @@ export function wireCreatorPreviews(deps: {
       const entry = desired.get(id);
       if (entry !== undefined && previewKey(entry) === key) continue;
       previewKeys.delete(id);
+      forgetParts(id);
       ctx.placedPreviews.get(id)?.dispose();
       ctx.placedPreviews.delete(id);
     }
+  }
+
+  /**
+   * The door's environment for one object: the editor's still, silent
+   * look; the tour's files plus the object's own picture, read from this
+   * device's bytes first (a picture placed here is in no zip yet), else
+   * through the session; a model by the page's glb reader.
+   */
+  function assetsOf(object: AuthoringObject["object"]): TourAsset[] {
+    return [
+      ...(ctx.tourDocument.manifest()?.assets ?? []),
+      ...(object.kind === "picture" ? [object.imageAsset] : []),
+    ];
+  }
+
+  function envFor(
+    object: AuthoringObject["object"],
+    blob: Blob | undefined,
+  ): WorldEnv {
+    const own = object.kind === "picture" ? object.imageAsset : null;
+    const assets = assetsOf(object);
+    const session = ctx.session;
+    return worldEnv(
+      "edit",
+      assets,
+      (path) => {
+        if (blob !== undefined && own?.path === path) {
+          return Promise.resolve(blob);
+        }
+        return session === null
+          ? Promise.reject(new Error("no tour is open"))
+          : session.loadContentEntry(path);
+      },
+      {
+        parseModel: (file) => seams.loadGlbModel(file),
+        enableClipping: () => {
+          seams.enableClipping();
+        },
+      },
+    );
+  }
+
+  /**
+   * The station an object not rigid in AR is drawn in, as the visitor
+   * draws it (`renderStationBlocks`): a world part reads its parent as its
+   * station's frame (a viewpoint, a point an arrow or pin aims at, the
+   * ground under a framed picture), and its folders' scale. Null for a
+   * rigid object (only a pin or a photo is placed in AR, under the world
+   * group at its odometry pose) and for one no station of the open tour
+   * holds: those are drawn at their own pose (`renderTourObjects`).
+   */
+  function stationOf(
+    entry: AuthoringObject,
+  ): { readonly station: TourStation; readonly scale: number } | null {
+    const id = entry.object.station;
+    if (id === undefined || isRigid(entry)) return null;
+    const station = ctx.tourDocument
+      .manifest()
+      ?.stations.find((s) => s.id === id);
+    if (station === undefined) return null;
+    const own = tourFreeEntries(station).find(
+      (e) => e.block.id === entry.object.id,
+    );
+    return { station, scale: own?.scale ?? 1 };
   }
 
   function renderPreview(
@@ -285,10 +414,18 @@ export function wireCreatorPreviews(deps: {
     const generation = ctx.arSessionGeneration;
     const blob = entry.placed?.blob ?? finishedPhotoBlobs.get(id);
     const session = ctx.session;
-    void renderTourObjects([entry.object], {
-      ...previewFrame(entry.placed?.placement, fromGeo),
+    const env = envFor(entry.object, blob);
+    const parts: WorldPart[] = [];
+    const drawing: Omit<TourObjectRendererDeps, "scene" | "poseOf"> = {
       zero,
       makeLabel: (text) => seams.createLabel(text),
+      makeLectern: drawings.makeLectern,
+      makeReadingSign: drawings.makeReadingSign,
+      worldPart: (block) => {
+        const part = drawings.worldPart(block, env);
+        if (part !== null) parts.push(part);
+        return part;
+      },
       loadPhotoTexture: async (image) => {
         // This device's bytes first; a hosted photo's come from the zip,
         // through the session (it knows the folder the manifest sits in).
@@ -299,7 +436,36 @@ export function wireCreatorPreviews(deps: {
           maxPixels: TOUR_MAX_IMAGE_PIXELS,
         });
       },
-    }).then(
+    };
+    const hosting = stationOf(entry);
+    const { object } = entry;
+    const render: Promise<RenderedTourObjects> =
+      hosting === null
+        ? renderTourObjects([object], {
+            ...previewFrame(entry.placed?.placement, fromGeo),
+            ...drawing,
+          })
+        : // Its station's frame is the root `attach` moves, as the plain
+          // root was: both stand in the same GPS-world frame.
+          renderStationBlocks(
+            { geo: hosting.station.geo },
+            [
+              tourObjectBlock(
+                object,
+                localPoseOf(object.geo, hosting.station.geo),
+              ),
+            ],
+            {
+              ...drawing,
+              scene: fromGeo,
+              assets: assetsOf(object),
+              alive: () =>
+                generation === ctx.arSessionGeneration &&
+                previewKeys.get(id) === key,
+            },
+            new Map([[id, hosting.scale]]),
+          );
+    void render.then(
       (rendered) => {
         // The session may have ended while the photo decoded, or the
         // object changed or went away meanwhile.
@@ -312,6 +478,10 @@ export function wireCreatorPreviews(deps: {
         }
         ctx.placedPreviews.get(id)?.dispose();
         ctx.placedPreviews.set(id, rendered);
+        forgetParts(id);
+        const framed = parts.filter((part) => part.update !== undefined);
+        partsById.set(id, framed);
+        for (const part of framed) ticked.add(part);
         // Its code's frame may have changed while it rendered.
         attach(entry, rendered.root);
       },
@@ -395,6 +565,8 @@ export function wireCreatorPreviews(deps: {
       // (`placedPreviews`); what they were made from goes now, so the next
       // visit renders everything again. The frame itself is this module's.
       previewKeys.clear();
+      partsById.clear();
+      ticked.clear();
       earlierFrame?.removeFromParent();
       earlierFrame = null;
       for (const anchor of anchors.values()) dropFrame(anchor.frame);
@@ -404,6 +576,17 @@ export function wireCreatorPreviews(deps: {
     placeEarlier,
     keepFinishedPhoto: (id, blob) => {
       finishedPhotoBlobs.set(id, blob);
+    },
+    tick: (nowMs) => {
+      if (!creator || ticked.size === 0) return;
+      const camera = seams.getViewerCamera();
+      if (camera === null) return;
+      tickEachWorldPart(ticked, camera, nowMs, {
+        viewHeightPx: viewHeightPx(),
+        selected: deps.selected?.() ?? null,
+        // A part a failed load took out has no parent.
+        shown: (part) => part.object.parent !== null,
+      });
     },
     reset: () => {
       clearPreviews();

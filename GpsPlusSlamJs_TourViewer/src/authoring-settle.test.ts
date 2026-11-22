@@ -50,6 +50,7 @@ import {
 } from "gps-plus-slam-app-framework/storage";
 import { Group, Matrix4, Object3D, Quaternion, Vector3 } from "three";
 
+import { worldPartOf } from "./play-kinds.js";
 import { writeSideM } from "./printed-side.js";
 import { SELECTION_MARK_NAME } from "./selection-mark.js";
 import { wireCreatorSetup, type CreatorSetupDom } from "./creator-setup.js";
@@ -535,6 +536,25 @@ function authoring(
       revealStep: () => undefined,
     } as never,
     dom: { ...dom, scanCard } as unknown as CreatorSetupDom,
+    // A pin's preview is the world door's head on a stem, whose caption
+    // node cannot draw: here a node named by its caption, kept with the
+    // labels, so each render of a pin stays countable by its text.
+    previewDrawings: {
+      worldPart: (block, env) => {
+        if (block.kind !== "shortText" || block.view !== "pin") {
+          return worldPartOf(block, env);
+        }
+        const object = new Object3D();
+        object.name = block.caption;
+        labels.push(object);
+        return { object, dispose: () => undefined };
+      },
+      makeLectern: () => ({ object: new Object3D(), dispose: () => undefined }),
+      makeReadingSign: () => ({
+        object: new Object3D(),
+        dispose: () => undefined,
+      }),
+    },
     openDraftStore: () =>
       (options.storeOpens ?? Promise.resolve()).then(() => options.store),
     ...(options.summary === undefined ? {} : { summary: options.summary }),
