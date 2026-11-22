@@ -136,8 +136,13 @@ const makerSlice = createSlice({
       s.cut = "ready";
       s.version += 1;
     },
-    /** Kept to `TEXT_MAX` characters, as a stored draft is read back. */
+    /**
+     * The running cut failed; kept to `TEXT_MAX` characters, as a stored
+     * draft is read back. Ignored while no cut runs: the failure is of no
+     * cut on screen, and dropping that cut would lose it.
+     */
     cutFailed(s, a: PayloadAction<string>) {
+      if (s.cut !== "cutting") return;
       s.cut = "none";
       s.draft.failure =
         typeof a.payload === "string" && a.payload

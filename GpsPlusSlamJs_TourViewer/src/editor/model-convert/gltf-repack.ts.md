@@ -5,9 +5,10 @@
 ## Public API
 
 - `repackGltf(gltfPath, files, limits?): RepackResult`
-  - `files`: every file the creator gave, keyed by its path in the bundle (the `.gltf` among them); references are resolved by `bundle-paths.ts`.
+  - `files`: every file the creator gave, keyed by its path in the bundle (the `.gltf` among them); references are resolved by `bundle-paths.ts` (one `referenceResolver` per model, so the files are indexed once).
   - `{ ok: true, glb, notes, used }`: `notes` in words for what was left out or guessed; `used` the given files the model carries, besides the `.gltf`: a buffer file or a picture file that went into the `.glb`. A given file that was left out (a picture of a kind a `.glb` cannot carry, unreadable bytes) is not in it, so a caller that adds unused pictures as pictures of their own loses none.
   - `{ ok: false, reason }`: a refusal in words (`model-import-words.ts`).
+- `dataLiteralBytes(text): number`: the bytes inside the raw text's string literals that start with `data:`, found without parsing; the text cap is checked on the text less this before any parse (also by `zip-bundle.ts`, which applies the same cap before it parses a zipped model's text).
 - `RepackLimits` (a partial one overrides the module-private defaults):
   - `maxTextBytes` (16 MiB, the archive reader's `maxTextEntryBytes`): the text WITHOUT its `data:` URIs;
   - `maxBytes` (`ASSET_CEILING_BYTES` of `tour-files.ts`, 512 MiB): the `.gltf` file, and separately all its buffers and pictures together;

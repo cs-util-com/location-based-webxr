@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 import type { ShelfPhase } from "./asset-jobs.js";
 import type { ShelfRow } from "./asset-shelf-slice.js";
 import {
+  shelvedWords,
   cardKindLine,
   cardMore,
   cardState,
@@ -113,6 +114,32 @@ describe("the card", () => {
     expect(made(["a", "b"])).toBe("3D model · GLB · 9.0 MB · 2 notes");
     expect(made(["a"])).toBe("3D model · GLB · 9.0 MB · 1 note");
     expect(made([])).toBe("3D model · GLB · 9.0 MB");
+  });
+
+  // Why: a converted model's notes are read only on its card, so the
+  // toast that says it is on the shelf counts them, in the card's words.
+  it("says a converted model is on the shelf, counting its notes", () => {
+    expect(shelvedWords("bust.glb", 0)).toBe('"bust.glb" is on the shelf.');
+    expect(shelvedWords("bust.glb", 1)).toBe(
+      '"bust.glb" is on the shelf, with 1 note on its card.',
+    );
+    expect(shelvedWords("bust.glb", 3)).toBe(
+      '"bust.glb" is on the shelf, with 3 notes on its card.',
+    );
+  });
+
+  // Why: each model of a zip of several is a row of its own; the zip's
+  // size is no one model's, so its kind line says which zip it is from.
+  it("says a model of a zip of several is part of that zip, not its size", () => {
+    expect(
+      cardKindLine(
+        row({
+          kind: "model",
+          name: "a.gltf",
+          import: { format: "zip", partOf: "set.zip" },
+        }),
+      ),
+    ).toBe("3D model · GLTF · part of set.zip");
   });
 
   // Why: a character's entry holds his files; its kind line names him a

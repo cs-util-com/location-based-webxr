@@ -164,7 +164,10 @@ import {
   createShelfPanel,
   type ShelfPanel,
 } from "./asset-shelf/shelf-panel.js";
-import { notesWord, shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
+import {
+  shelfSqueezed,
+  shelvedWords,
+} from "./asset-shelf/shelf-panel-model.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -278,6 +281,7 @@ import {
   fileAddKindOf,
   fileAddKindOfAsset,
   fileDropTarget,
+  leftoverTarget,
   type FileDropTarget,
 } from "./file-drop.js";
 import {
@@ -2298,20 +2302,17 @@ async function dropFiles(
         },
         shelved: (assetId, fileName, notes) => {
           shelfPanel?.reveal(assetId);
-          toast(
-            notes > 0
-              ? `"${fileName}" is on the shelf, with ${notesWord(notes)} on its card.`
-              : `"${fileName}" is on the shelf.`,
-          );
+          toast(shelvedWords(fileName, notes));
         },
         notKept: () => {
           toast(FILE_NOT_KEPT);
         },
       }),
       // The pictures the model did not use go where the drop was made,
-      // as a plain drop's would.
+      // as a plain drop's would; onto the shelf from an item's file
+      // field, which took the model.
       release: (pictures) => {
-        void placeDropped(open, pictures, dropTarget);
+        void placeDropped(open, pictures, leftoverTarget(dropTarget));
       },
     });
     if (first !== undefined) shelfPanel?.reveal(first);

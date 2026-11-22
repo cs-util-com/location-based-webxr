@@ -109,6 +109,21 @@ describe("maker-slice properties", () => {
         );
         expect(entered).toEqual(entered.map(() => "ready"));
       }),
+      {
+        // Found on a CI run (seed 765501718): a failure reported with no
+        // cut running dropped the cut an Undo had brought back, and left
+        // the check step showing without one.
+        examples: [
+          [
+            [
+              A.restored({ draft: freshDraft(), hadCut: true }),
+              A.reached(4),
+              A.cutFailed("  "),
+              A.went(4),
+            ],
+          ],
+        ],
+      },
     );
   });
 
