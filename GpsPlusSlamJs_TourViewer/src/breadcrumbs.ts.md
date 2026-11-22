@@ -15,8 +15,9 @@ session's GPS-world NUE. Plan:
   `BREADCRUMB_COUNT`, on the ground (`EYE_HEIGHT_M` below `from`), none
   within `stopM` of the station.
 - `createBreadcrumbTrail({ getScene })` - `update(visitor, target)`: lays
-  the dots again only when the visitor moved `BREADCRUMB_RELAY_M` or the
-  target changed; a null visitor or target clears them.
+  the dots again only when the visitor or the target moved
+  `BREADCRUMB_RELAY_M` or the station changed; a null visitor or target
+  clears them.
 - Constants: `BREADCRUMB_SPACING_M` (4), `BREADCRUMB_COUNT` (6),
   `EYE_HEIGHT_M` (1.5; also the guide's ground rule for a code-only
   station, K4 review R6); the relay distance (1 m) is module-internal.
@@ -33,6 +34,15 @@ session's GPS-world NUE. Plan:
 - The target is the guide's focus (the nearest offered station not yet
   found, `station-guide.ts`); a found station, a session end or no position
   clears the trail.
+- In AR, the target's spot is where the focus's beacon stands
+  (`walk-focus-cues.ts` `shownAt`, wired in `visitor-stations.ts`
+  `wireSceneMarks`), not the station's corrected pose: while the beacon
+  holds its place in view against an alignment change, the dots lead to
+  it; once it landed, the next guide render moves the target and the
+  dots are laid again. The dots themselves stand on the scene root, not
+  in an anchor: they are nearly always in view and would hold the
+  beacon's landing for good. A dot short of the target moves less than
+  it does, so no dot errs by more than the 1 m relay distance.
 
 ## Examples
 
@@ -45,5 +55,6 @@ trail.update(visitorNue, { id: "well", to: wellNue, stopM: bands.foundExitM });
 
 - `breadcrumbs.test.ts` - the dots' spacing, ground and direction; the stop
   short of the band; a property that every dot is on the way and outside the
-  band; laying again only after a metre or a new target; clearing.
+  band; laying again only after the visitor or the target moved a metre (swept
+  at 0.5, 0.99, 1 and 2 m) or a new station; clearing.
 - `station-guide.test.ts` - the guide's target.

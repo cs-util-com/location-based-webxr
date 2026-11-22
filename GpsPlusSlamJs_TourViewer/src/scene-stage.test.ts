@@ -102,6 +102,28 @@ describe("createSceneStage", () => {
     expect(inheritedScaleOf(root)).toBe(2);
   });
 
+  // Why: the AR world group can exist before its alignment binding does;
+  // a figure must still stand (on the scene, at its spot) rather than vanish.
+  it("stands on the scene when its anchor parent has no binding yet", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const h = harness();
+      const parent = new Group();
+      const stage = createSceneStage({
+        ...h.deps,
+        getAnchorParent: () => parent,
+      });
+      await stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);
+      expect(parent.children).toHaveLength(0);
+      expect(h.scene.children).toHaveLength(1);
+      expect(h.scene.children[0]!.position.toArray()).toEqual([10, 400, -5]);
+      stage.clear();
+      expect(h.scene.children).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("stands a character on the station's spot, feet on its altitude, his height kept", async () => {
     const h = harness();
     await h.stage.showCharacter("gate", new Blob(["png"]), undefined, ANN);

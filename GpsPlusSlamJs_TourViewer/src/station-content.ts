@@ -139,6 +139,12 @@ export function contentStatus(
   return { kind: "placed", count: shown.count, skipped: shown.skipped.length };
 }
 
+/** A station's deferred-anchor key: its content's, and its story
+ *  figure's (`scene-stage.ts`), which share one matrix. */
+export function stationAnchorKey(stationId: string): string {
+  return `station:${stationId}`;
+}
+
 /** The name of a station's group in the scene (what the e2e suite reads). */
 function stationContentName(stationId: string): string {
   return `station-content:${stationId}`;
@@ -316,7 +322,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     try {
       const parent = deps.anchorParent?.() ?? null;
       if (parent !== null) {
-        const anchor = deferredAnchor(parent, `station:${entry.id}`);
+        const anchor = deferredAnchor(parent, stationAnchorKey(entry.id));
         anchor.add(group, {
           onCommit: (root) => deps.onAnchorCommit?.(root),
         });

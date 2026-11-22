@@ -1,8 +1,11 @@
 /**
  * What a story shows in AR at its station: a character
  * (a PNG figure such as the castle's knight) standing at his place in the
- * station. At the SCENE ROOT in the session's GPS-world NUE, as the tour's
- * other content (`content-placement.ts`). A model in a story is not the
+ * station, at his pose in the session's GPS-world NUE. On the scene root,
+ * or, given an anchor parent (the AR world group), in a pose-free wrapper
+ * that shares his station's deferred anchor (`anchor-root.ts`,
+ * `stationAnchorKey`): he holds his place in view and lands with his
+ * station's content in the same pass. A model in a story is not the
  * stage's: it stands placed in the world through its row once reached.
  *
  * One thing at a time: a new figure replaces the previous one, and
@@ -22,9 +25,7 @@
  *
  * The character's size and placement are the K4 build agent's choice, not
  * the owner's (the plan leaves them open; revised by K4 review R6): 1.7 m
- * tall, its feet at the station's altitude plus his pose's height. A
- * code-only station's pose (from the guide) stands on the estimated ground
- * below the code and is turned about the vertical only.
+ * tall, its feet at the station's altitude plus his pose's height.
  *
  * A character in one of his views (`bubble`, `speak`, `two-stations`,
  * `portrait`, `popup`; tour format 4.2) stands as a character LOOK
@@ -58,6 +59,8 @@ import type { FigureSource, PaintedFigure } from "./character-canvas.js";
 import type { FigureMemo } from "./figure-memo.js";
 import { restYawOf, type StageCharacterView } from "./character-views.js";
 import { drawInherited } from "./placement/place-scale.js";
+import { anchorRoot, type AnchoredRoot } from "./anchor-root.js";
+import { stationAnchorKey } from "./station-content.js";
 import {
   Group,
   Quaternion,
@@ -101,6 +104,10 @@ export interface StagePose {
 
 export interface SceneStageDeps {
   getScene(): Object3D | null;
+  /** Where a figure stands as his station's deferred anchor instead of on
+   *  the scene: the AR world group; read each time he enters. Absent or
+   *  null: on the scene, as a plain child. */
+  getAnchorParent?(): Object3D | null;
   /** The station's pose at the scene root, or null when it cannot be
    *  placed yet (no GPS zero, or no heading yet: the guide's
    *  `figurePoseOf`). */
@@ -172,9 +179,12 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   const fadeMs = deps.fadeMs ?? CONTENT_FADE_MS;
   /** The scene it was added to, kept: the e2e scene root is a stub that
    *  sets no `parent`. `inScene` and `alpha`: the presence fade. */
-  let shown: {
+  let shown: Shown | null = null;
+  interface Shown {
     root: Object3D;
     scene: Object3D;
+    /** Its wrapper while it stands as its station's anchor. */
+    anchored: AnchoredRoot | null;
     stationId: string;
     inScene: boolean;
     alpha: number;
@@ -186,7 +196,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     offset: Vector3;
     /** Released (`release`): it goes for good once faded out. */
     released: boolean;
-  } | null = null;
+  }
   /** Which stations' content shows (`follow`); everything until told. */
   let isShown: (stationId: string) => boolean = () => true;
   let unregisterFrame: (() => void) | null = null;
@@ -195,8 +205,8 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
   let voice: CharacterVoice = "idle";
   let voiceMs: number | undefined;
   let token = 0;
-  /** Decoded and waiting for the station's position (no GPS zero yet, or a
-   *  code-only station before the visitor's height is known): mounted on
+  /** Decoded and waiting for the station's position (no GPS zero yet, or
+   *  no heading yet): mounted on
    *  the next visitor update that has one (K4 review R8: it used to fail
    *  for good, and the story said "could not be loaded"). */
   let waiting: {
@@ -216,13 +226,36 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       waiting = null;
     }
     if (shown === null) return;
-    if (shown.inScene) shown.scene.remove(shown.root);
+    if (shown.inScene) leave(shown);
     shown.look.dispose();
     disposeObject3D(shown.root);
     shown = null;
     stopFrames();
     unregisterLook?.();
     unregisterLook = null;
+  }
+
+  /** Into the scene: in a wrapper of his station's anchor under the
+   *  anchor parent, else (or when it refuses) on the scene. */
+  function enter(s: Shown): void {
+    const parent = deps.getAnchorParent?.() ?? null;
+    if (parent !== null) {
+      const wrapper = new Group();
+      wrapper.name = `station-stage-anchor:${s.stationId}`;
+      wrapper.add(s.root);
+      s.anchored = anchorRoot(parent, stationAnchorKey(s.stationId), wrapper);
+      if (s.anchored !== null) return;
+    }
+    s.scene.add(s.root);
+  }
+
+  function leave(s: Shown): void {
+    if (s.anchored === null) {
+      s.scene.remove(s.root);
+      return;
+    }
+    s.anchored.release();
+    s.anchored = null;
   }
 
   function stopFrames(): void {
@@ -270,7 +303,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       shown.lastMs = t;
     }
     if (target === 1 && !shown.inScene) {
-      shown.scene.add(shown.root);
+      enter(shown);
       shown.inScene = true;
     }
     const before = shown.alpha;
@@ -283,7 +316,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
         clear();
         return;
       }
-      shown.scene.remove(shown.root);
+      leave(shown);
       shown.inScene = false;
     }
     if (shown.alpha === target) {
@@ -346,12 +379,12 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
     // At once where its station shows (the story's start); off the scene,
     // faded out, where it does not.
     const visible = isShown(stationId);
-    if (visible) scene.add(holder);
-    else look.setPresence(0);
+    if (!visible) look.setPresence(0);
     look.setVoice(voice, voiceMs);
     shown = {
       root: holder,
       scene,
+      anchored: null,
       stationId,
       inScene: visible,
       alpha: visible ? 1 : 0,
@@ -361,6 +394,7 @@ export function createSceneStage(deps: SceneStageDeps): SceneStage {
       offset,
       released: false,
     };
+    if (visible) enter(shown);
     // The first frame snaps: the look opens where it stands, no ease-in.
     const camera = deps.getCamera?.() ?? null;
     if (camera !== null) {

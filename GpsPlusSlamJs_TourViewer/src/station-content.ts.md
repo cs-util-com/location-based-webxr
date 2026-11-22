@@ -10,10 +10,14 @@ under "show all"); this module never reads the store.
 
 ## Public API
 
+- `stationAnchorKey(stationId)` - `station:<id>`, the deferred-anchor key
+  a shown station stands under; the story figure (`scene-stage.ts`) stands
+  under the same key.
 - `createStationContent(deps): StationContent`
   - `deps.scene` - where a shown station's group is added (the scene root).
   - `deps.anchorParent?()` - where a shown station stands as a deferred
-    anchor instead (`deferredAnchor(parent, "station:<id>")` of
+    anchor instead (`deferredAnchor(parent, stationAnchorKey(id))`, key
+    `station:<id>`, which the story figure shares, `scene-stage.ts`; of
     `gps-plus-slam-app-framework/ar/deferred-anchors`): the AR world group
     once its alignment binding exists. Read as each station enters; absent
     or null, the station goes on `scene` as a plain group (non-AR callers,

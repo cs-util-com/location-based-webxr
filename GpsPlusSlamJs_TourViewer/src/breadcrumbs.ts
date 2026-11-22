@@ -8,7 +8,11 @@
  * The dots run straight towards the station (the tour carries no paths),
  * start one spacing ahead of the visitor, and stop short of the station's
  * found radius - inside it the station itself is the guide. They are laid
- * again only when the visitor moved or the station changed, never per frame.
+ * again only when the visitor or the target moved a metre or the station
+ * changed, never per frame. The target is where the focus's beacon stands
+ * (`walk-focus-cues.ts` `shownAt`): while it holds its place in view
+ * against an alignment change, the dots lead to it, and once it landed
+ * they are laid towards its new place.
  *
  * The look is the K4 build agent's choice, not the owner's: 6 dots, 4 m
  * apart (24 m of way ahead), 0.25 m across, at the ground 1.5 m below the
@@ -28,7 +32,9 @@ export const BREADCRUMB_SPACING_M = 4;
 export const BREADCRUMB_COUNT = 6;
 /** The phone's usual height above the ground while walking. */
 export const EYE_HEIGHT_M = 1.5;
-/** Laid again once the visitor moved this far (or the target changed). */
+/** Laid again once the visitor or the target moved this far (or the
+ *  station changed): a dot short of the target moves less than it does,
+ *  so either way no dot errs by more. */
 const BREADCRUMB_RELAY_M = 1;
 const DOT_RADIUS_M = 0.125;
 /** The design system's accent, as the HUD's indicators use it. */
@@ -79,7 +85,7 @@ export function createBreadcrumbTrail(deps: {
 }): BreadcrumbTrail {
   let group: Group | null = null;
   let scene: Object3D | null = null;
-  let laid: { id: string; from: Nue } | null = null;
+  let laid: { id: string; from: Nue; to: Nue } | null = null;
   const geometry = new CircleGeometry(DOT_RADIUS_M, 16);
   // Flat on the ground: the circle lies in XY, the ground plane is XZ.
   geometry.rotateX(-Math.PI / 2);
@@ -108,6 +114,8 @@ export function createBreadcrumbTrail(deps: {
         laid !== null &&
         laid.id === target.id &&
         Math.hypot(visitor[0] - laid.from[0], visitor[2] - laid.from[2]) <
+          BREADCRUMB_RELAY_M &&
+        Math.hypot(target.to[0] - laid.to[0], target.to[2] - laid.to[2]) <
           BREADCRUMB_RELAY_M
       ) {
         return;
@@ -129,7 +137,7 @@ export function createBreadcrumbTrail(deps: {
       }
       root.add(group);
       scene = root;
-      laid = { id: target.id, from: visitor };
+      laid = { id: target.id, from: visitor, to: target.to };
     },
   };
 }

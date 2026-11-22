@@ -5,8 +5,14 @@
 The character a story shows in AR at its station: a character look
 (`character-look.ts`, painted from his PNG figure or frames sheet) standing
 at his block's place in the station's frame, turning toward the visitor by
-itself. At the scene root in the session's GPS-world NUE, like the tour's
-other content (`content-placement.ts`). A model in a story is not the
+itself. In the session's GPS-world NUE, like the tour's other content
+(`content-placement.ts`): given an anchor parent (the AR world group),
+the figure's holder stands in a pose-free wrapper that is a root of its
+station's deferred anchor (key `station:<id>`, `stationAnchorKey` of
+`station-content.ts`, through `anchor-root.ts`), so figure and station
+share one matrix, hold their place together while either is in view and
+land in one pass; without one (non-AR callers, the e2e fakes) or when the
+anchor refuses (no binding yet), on the scene root. A model in a story is not the
 stage's: it stands in the world through its row, as every placed model
 does. Plan:
 `GpsPlusSlamJs_Docs/docs/2026-10-03-2219-tour-kit-stations-scenes-quiz-and-signed-tours-plan.md`.
@@ -54,7 +60,8 @@ does. Plan:
     `selectStationContentShown` every tick): the figure fades with its
     station.
 - Deps: `getScene()`, `poseOf(stationId)`, `decodeTexture(blob)`;
-  optional `now()` (default `Date.now`), `fadeMs` (default
+  optional `getAnchorParent()` (read as the figure enters the scene; see
+  Purpose), `now()` (default `Date.now`), `fadeMs` (default
   `CONTENT_FADE_MS`, as the station's own content) and
   `registerFrame(fn)` (the AR frame loop, registered only while a fade
   runs, and while a look stands); optional `getCamera()` (the viewer's
@@ -76,7 +83,13 @@ does. Plan:
   is disposed, never shown; so is a look still waiting for its position
   (its show settles).
 - The scene it was added to is kept for removal (the e2e scene root is a
-  stub that sets no `parent`).
+  stub that sets no `parent`). An anchored figure leaves through its
+  wrapper's `release`: a fade-out, a step on, `clear`. Its key goes with
+  its last root, so a figure alone at its station re-enters as a first
+  placement, and one beside its station's content joins the key's matrix.
+- The figure's taps (`characterTapTargets`) read world matrices, so a tap
+  finds him where the anchor stands him; `tappablePins` ignores him (he
+  carries no pin name).
 - **The figure follows its station's presence** (the figure fades, the
   audio plays on): a look whose station stops showing fades out
   (`content-fade.ts`, through the look's own `setPresence`) and leaves the
@@ -114,7 +127,8 @@ stage.follow((id) => id === "gate");
 
 ## Tests
 
-- `scene-stage.test.ts` - his spot, feet and height; replace and dispose;
+- `scene-stage.test.ts` - a parent without an alignment binding: the
+  figure stands on the scene; his spot, feet and height; replace and dispose;
   a late decode dropped; a figure that does not decode rejects; a mount
   waits for its position and is mounted once it has one, or freed by the
   next step; `onWaiting` once when a look waits, never when it stands at
@@ -134,3 +148,9 @@ stage.follow((id) => id === "gate");
   and its length reaching a released look; a frames sheet sliced by the
   look only when the spec says `sheet`; a figure painted before is
   neither decoded nor painted again.
+- `station-anchor.integration.test.ts` "a story figure shares its
+  station's anchor" (through `wireSceneMarks` and a bound world group):
+  one key and one commit pass with the station, checked in the commit
+  frame; the figure in view holds the station; a figure alone; a tap at
+  the new place; `tappablePins` ignoring him; a presence re-entry at the
+  key's matrix; a code lock snapping both in view.

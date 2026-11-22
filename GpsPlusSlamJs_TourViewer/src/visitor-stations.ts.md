@@ -75,6 +75,16 @@ VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   image inside it.
 - The breadcrumbs (`breadcrumbs.ts`) follow the guide's `onGuide`, one
   trail for the page.
+- `wireSceneMarks(seams)` builds what stands in the AR scene beside the
+  station content, through the seams `getScene` and
+  `getStationAnchorParent` (null in the e2e fakes, so there everything
+  stays on the scene root): `stageScene` (spread into every stage
+  `makeStage` builds, the story's and the free figures', so a figure
+  shares its station's anchor), `onGuide` (the breadcrumbs, aimed at the
+  focus beacon's shown place, `walk-focus-cues.ts` `shownAt`) and
+  `onFocusCue` (the beacon and ring, their own anchor). Tests:
+  `station-anchor.integration.test.ts` drives it with a bound world
+  group.
 - The guide's `guideStore` is `arStore`: the present station lands in its
   `visitorGuide` slice. Its `walkStore`
   is `arStore` too: the visitor's walk lives in its `visitorWalk` slice

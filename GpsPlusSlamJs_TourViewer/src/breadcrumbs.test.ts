@@ -74,6 +74,33 @@ describe("breadcrumbPoints", () => {
 });
 
 describe("createBreadcrumbTrail", () => {
+  // Why this test matters: the trail aims at the focus as its beacon
+  // stands (`walk-focus-cues.ts` `shownAt`), which jumps when the beacon
+  // lands. Laid again only on the visitor's own metre, the dots would keep
+  // leading to the place the beacon left. A move under the same metre the
+  // visitor's own walk needs is no new trail: the dots never err by more
+  // than that metre either way (a dot short of the station moves less
+  // than its target does).
+  it("lays the trail again once its target moved a metre, not for less", () => {
+    for (const [movedM, relaid] of [
+      [0.5, false],
+      [0.99, false],
+      [1, true],
+      [2, true],
+    ] as const) {
+      const scene = new Group();
+      const trail = createBreadcrumbTrail({ getScene: () => scene });
+      trail.update([0, 401.5, 0], { id: "well", to: [50, 400, 0], stopM: 5 });
+      const first = scene.children[0];
+      trail.update([0, 401.5, 0], {
+        id: "well",
+        to: [50, 400, movedM],
+        stopM: 5,
+      });
+      expect(scene.children[0] !== first).toBe(relaid);
+    }
+  });
+
   it("lays the trail once, again only after a metre's walk or a new station, and clears it", () => {
     const scene = new Group();
     const trail = createBreadcrumbTrail({ getScene: () => scene });
