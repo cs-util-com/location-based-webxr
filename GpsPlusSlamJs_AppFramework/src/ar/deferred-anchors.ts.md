@@ -54,6 +54,21 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
   - `WINDOW_SESSION_SHARE = 0.2`, `WINDOW_MIN_S = 10`, `WINDOW_MAX_S = 120`:
     the window's longest span after its last trigger,
     `clamp(0.2 * session seconds, 10, 120)`.
+- `joinAnchorSet(parent, member): AnchorSetMembership` (`@internal`, for
+  `createGpsAnchor`): joins a position member to the parent's set. With a
+  binding it is the same set the deferred keys use; without one the parent
+  gets a set of its own with no window (T is a fixed identity), which runs on
+  its own frame-loop registration and ends with its last member. Throws for
+  a member object inside, or holding, a deferred root, and after teardown.
+  - `AnchorSetMember`: `object` (the set writes its `position`), `camera`
+    (the view when the session has no camera), `step(dt, elapsedS, target,
+into)` (writes the target local position, returns the threshold below
+    which a difference is not worth a commit, or null for no target this
+    frame; `target` is the binding's target while bound, else null),
+    `ungated()` (`'every-tick'`, `'first'` or null) and `placed()` (after each
+    commit).
+  - `AnchorSetMembership`: `leave()` and the test seam
+    `runPassForTests(view, dt, elapsedS)`.
 - `__runPassForTests(parent, cameraOrView, dt, elapsedS)`: test only. Runs
   the binding's alignment step and one pass; returns
   `{ sphereTests, traversals, windowOpen, followUpdates }`.
@@ -78,12 +93,18 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
    epsilon). After the phase ends a key keeps following until it is within
    epsilon of T^-1. A follow step is skipped while the parent's matrix is
    unchanged (`followUpdates` counts the steps that ran).
-5. Deferred keys: each pending key is sorted into "cache invalid", "cached
+5. Position members: each member's `step` runs (a throw is logged and costs
+   that member its frame). A difference below its threshold is not pending.
+   Otherwise it commits now at a release (`release:code-lock`, even below the
+   threshold), when ungated (`every-tick`, `first`) or while the window is
+   open (`window`); else it is pending. Members take no follow phase.
+6. Deferred keys and pending members: each pending key is sorted into "cache invalid", "cached
    test says out", or "in, but the cache is stale"; one key is picked (out
    first, round robin), its bounds rebuilt if needed, and it commits
    `out-of-view` only when a fresh test agrees. A commit needs the content
    out of view at its current pose in this and the previous view, and at
-   its new pose in this view (three tests). The picked key's fresh traversal
+   its new pose in this view (three tests). A member is tested at its target
+   position with its own rotation and scale. The picked key's fresh traversal
    also renews its corners (the box the epsilon and the window step are
    measured over), so a part mounted without `boundsChanged()` counts from
    that pass on.
@@ -99,6 +120,13 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
   key is at T^-1 its world pose is its NUE pose.
 - The set runs inside the binding's frame update, after the alignment step. When
   the binding is disposed first, the set falls back to its own frame update.
+- A position member moves only to its target: out of view (the three
+  tests), at a release, in the window, or ungated. `'every-tick'` is the
+  member's own choice to skip the view gate (`snap-every-tick`), not a
+  bypass of the set.
+- Nesting is refused between keys, between a key and a member, in both
+  directions. Not checked across a bound and an unbound set of one parent
+  (an anchor created before the binding).
 - Every commit logs `commit <kind>: <key>, waited <ms>, moved <m>`.
 
 ## Example
@@ -128,5 +156,9 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   release, or to the NUE pose while the oracle's own model says a follow is
   due or still running), liveness (k + 2 passes) and the NUE pose after
   convergence.
+- `../visualization/gps-anchor.anchor-set.test.ts`: the position-member
+  rules through `createGpsAnchor` (child and target pose in view, the
+  previous view, threshold, ungated modes, immature, release, window, the
+  binding's T against the caller's alignment, nesting).
 - `deferred-anchors.structure.test.ts`: no dispatch and no store slice
   imports in the anchor modules.

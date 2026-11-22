@@ -208,6 +208,22 @@
 
 ### Changed
 
+- **A GPS anchor waits like a deferred anchor** (`visualization`,
+  `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in
+  `snap-when-offscreen` a correction above its threshold is held while any
+  drawable part of it (children included) is in view at its current pose,
+  was in view in the previous frame, or would be in view at its new pose.
+  A code-lock release commits it at once, and with an alignment binding
+  (`enableArWorldGroupAlignment` before the anchor is created) a frame
+  switch opens the same window as for deferred anchors. With that binding
+  its target is read from the group's own transform, so under the dev world
+  jump it lands where scene-root content of the same point lands. The
+  bootstrap, the threshold, `markMovedExternally` and the one-time first
+  placement are unchanged; `snap-every-tick` stays ungated. Commits are
+  instant, as before. Throws now also for an object that holds an anchored
+  object, or that is inside or holds a deferred anchor's root (and
+  `deferredAnchor(...).add` for a root holding a GPS-anchored object).
+
 - `visualization/ar-world-group-alignment`: the binding drives the deferred
   anchors under its group right after its alignment step.
 - `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
