@@ -32,16 +32,19 @@ too. Without a parent, or when it refuses, on the scene root.
   radius, the horizontal distance.
 - Their deferred-anchor key is the focus station's, `station:<id>`.
 - `createWalkFocusCues({ getScene, getAnchorParent? }) => { update(cue |
-null), shownAt(nue) }`
+null), shownAt(id, nue) }`
   - `update` shows the cues for `cue`, or hides them for null:
     anchored, the wrapper stays in its key, hidden (so a short gap is no
     new placement); on the scene root they leave it. `getAnchorParent`
     is read on each update; a new parent or a new focus id releases the
     wrapper and stands it in the new key, at that key's matrix.
-  - `shownAt(nue)` - where a scene-root NUE point stands as the cues
+  - `shownAt(id, nue)` - where station `id`'s scene-root NUE spot stands as the cues
     show it, through their anchor's correction still waiting in view
     (the breadcrumbs aim at it, `visitor-stations.ts` `wireSceneMarks`);
-    `nue` itself without an anchor.
+    `nue` itself without an anchor, or while the cues stand in another
+    station's key (the guide hands the breadcrumbs a new focus before
+    its cue; a null cue keeps the old key), so the dots never take one
+    station's held correction for another's spot.
 
 ## Invariants & assumptions
 
@@ -62,8 +65,11 @@ null), shownAt(nue) }`
   correction an earlier focus held back; the anchor's bounds are read
   again only when the radius changed (the anchor reads matrices live). `shownAt` costs two
   world-matrix updates and two matrix-vector products per guide render.
-- A parent that refused (no alignment binding yet) is not asked again,
-  so the refusal is logged once, until the cues are taken away.
+- A parent that refused (no alignment binding yet) is asked again on each
+  update, quietly (`anchorRoot`'s `warn: false`), so the cues move into
+  their key once the binding exists and the refusal is logged once, until
+  the cues are taken away. Before the binding each update costs one
+  thrown and caught refusal.
 - Never a tap target: the beacon's `raycast` is a no-op, and the ring is
   `station-ring.ts`'s, which takes no taps either.
 - The look (the colour `WALK_RADAR_COLOURS.accent`, opacity 0.28 for the
@@ -103,6 +109,8 @@ cues.update(null); // both gone
   on the new station's matrix in the frame of the change; a null cue
   keeping them in their key, hidden, landing unseen, and holding while
   their station's content is in view; the breadcrumbs led to the
-  beacon's shown place.
+  beacon's shown place, and to the new focus's own place while the cues
+  still stand in the old one's key (the change's frame, a null cue); a
+  first cue before the binding moving into the key once it exists.
 - `playwright-tests/visitor-walk-radar.spec.js` - the cues stand at the
   focus, move to the next one when it is found, and go with the session.

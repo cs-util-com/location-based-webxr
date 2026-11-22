@@ -198,7 +198,7 @@ describe("the cues without a usable anchor parent", () => {
       const refusals = warn.mock.calls.filter((c) => c[0] === "[AnchorRoot]");
       expect(refusals).toHaveLength(1);
       // Without an anchor, a point stands where it is.
-      expect(cues.shownAt([1, 2, 3])).toEqual([1, 2, 3]);
+      expect(cues.shownAt(CUE.id, [1, 2, 3])).toEqual([1, 2, 3]);
     } finally {
       warn.mockRestore();
     }
