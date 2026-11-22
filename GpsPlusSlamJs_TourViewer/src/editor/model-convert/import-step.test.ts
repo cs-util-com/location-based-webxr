@@ -71,10 +71,11 @@ describe("convertImport", () => {
     expect(fractions.every((f) => f >= 0 && f <= 1)).toBe(true);
   });
 
-  // Why: a part dropped with a model that the model does not use would
-  // otherwise vanish without a word: it is no file of the tour alone. A
-  // picture it does not use is no part: it goes on to the shelf.
-  it("names the loose parts the model did not use, never a picture", async () => {
+  // Why: every loose model of a drop is handed all the drop's parts, so
+  // the step cannot know whether a part it did not use is another
+  // model's: it reports what it used, and the runner names a part no
+  // model of the drop used (model-import-runner).
+  it("names no loose part it did not use, and reports the parts it used", async () => {
     const files = new Map(await model())
       .set("stray.bin", new Uint8Array(4))
       .set("wood.tga", new Uint8Array(4))
@@ -87,9 +88,29 @@ describe("convertImport", () => {
     expect(answer).toMatchObject({
       type: "done",
       conversion: {
-        notes: [note.unusedFiles(["stray.bin", "wood.tga"])],
+        notes: [],
         used: ["bust.bin"],
       },
+    });
+  });
+
+  // Why: a dropped folder arrives flat, by file name only, so
+  // textures/diffuse.png and normals/diffuse.png both arrive as
+  // diffuse.png. Taking one of them would give the model the wrong
+  // picture without a word; a zip of the folder keeps both apart.
+  it("refuses two loose files of the same name, as the zip reader does", async () => {
+    const payload = loose(await model());
+    const twice: ImportPayload = {
+      ...payload,
+      files: [
+        ...(payload.format === "gltf" ? payload.files : []),
+        { path: "diffuse.png", blob: blobOf(new Uint8Array(4)) },
+        { path: "diffuse.png", blob: blobOf(new Uint8Array(8)) },
+      ],
+    };
+    expect(await convertImport(twice, OPTIMIZER_SETTINGS, control())).toEqual({
+      type: "kept",
+      reason: refusal.namedTwice("bust.gltf", "diffuse.png"),
     });
   });
 

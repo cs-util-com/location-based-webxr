@@ -91,6 +91,8 @@ export const refusal = {
     `"${zip}" holds more than ${cap} files, more than a zip may hold here. Zip the model's own folder only.`,
   zipTooLarge: (zip: string, cap: number): string =>
     `"${zip}" is too large to convert here (more than ${megabytes(cap)} MB unpacked). Zip the model's own folder only.`,
+  namedTwice: (model: string, name: string): string =>
+    `Two of the files dropped with "${model}" are named "${name}", so which one the model uses is unclear. Drop a zip of the model's folder instead.`,
   zipNamedTwice: (zip: string, name: string): string =>
     `"${zip}" holds two files named "${name}", so which one the model uses is unclear. Zip the model's folder again.`,
 } as const;
@@ -122,8 +124,6 @@ export const note = {
     `Made without its picture "${picture}": the model points to a file on another computer. To have it, drop the model again with that picture.`,
   otherPictureShown: (picture: string): string =>
     `Without "${picture}", the model shows another picture it carries in its place.`,
-  otherModels: (model: string, others: readonly string[]): string =>
-    `The zip holds more than one model; "${model}" was made. To have ${listOf(others)} as well, drop each in a zip of its own.`,
   unusedFiles: (files: readonly string[]): string =>
     `Not used by the model: ${listOf(files)}.`,
   stoodIn: (named: string, used: string): string =>

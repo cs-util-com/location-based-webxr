@@ -35,7 +35,7 @@ import {
   createModelImportRunner,
   type ImportDelivery,
 } from "./model-import-runner.js";
-import { failure } from "./model-import-words.js";
+import { failure, note } from "./model-import-words.js";
 
 createSlamAppStore({ storageBackend: new NullStorageBackend() });
 
@@ -198,16 +198,20 @@ describe("the model import runner", () => {
   });
 
   // Why: a zip of several models makes each of them, one card each; none
-  // is left behind with only a note naming it.
+  // is left behind with only a note naming it. Each row is named by its
+  // model and says it is part of the zip, whose size it shows once: every
+  // row showing the whole zip's size counted it once per model.
   it("makes every model of a zip, one import each, named by its model", async () => {
     const t = setup((zip) =>
       Promise.resolve(zip.size === 4 ? ["a/a.gltf", "b/b.glb"] : []),
     );
     t.drop([file("set.zip")]);
     await t.settle();
-    expect(t.rows().map((r) => [r.name, r.status])).toEqual([
-      ["set.zip", "running"],
-      ["b.glb", "queued"],
+    expect(
+      t.rows().map((r) => [r.name, r.status, r.import, r.originalBytes]),
+    ).toEqual([
+      ["a.gltf", "running", { format: "zip", partOf: "set.zip" }, 4],
+      ["b.glb", "queued", { format: "zip", partOf: "set.zip" }, 0],
     ]);
     expect(t.runs[0]!.payload).toMatchObject({
       format: "zip",
@@ -229,6 +233,31 @@ describe("the model import runner", () => {
     ]);
     expect(t.rows().filter((r) => r.import !== undefined)).toEqual([]);
   });
+
+  // Why: listing a zip's models is awaited before the first conversion;
+  // a remove or a close meanwhile must leave nothing behind: no other
+  // model of the zip queued, no conversion started.
+  it.each(["remove", "close"] as const)(
+    "a %s while the zip's models are listed queues and converts none of them",
+    async (how) => {
+      let listed: (models: readonly string[]) => void = () => {};
+      const t = setup(
+        () =>
+          new Promise<readonly string[]>((resolve) => {
+            listed = resolve;
+          }),
+      );
+      const [id] = t.drop([file("set.zip")]);
+      await t.settle();
+      if (how === "remove") expect(t.runner.remove(id!)).toBe(true);
+      else t.runner.close();
+      listed(["a/a.gltf", "b/b.glb"]);
+      await t.settle();
+      expect(t.runs).toEqual([]);
+      expect(t.rows()).toEqual([]);
+      expect(t.deliver).not.toHaveBeenCalled();
+    },
+  );
 
   it("waits while the optimizer works on a model, and starts once it is done", () => {
     const t = setup();
@@ -340,6 +369,41 @@ describe("the model import runner", () => {
     expect(t.released.map((p) => p.map((f) => f.name))).toEqual([
       ["photo.jpg"],
     ]);
+  });
+
+  // Why: every loose model of a drop is handed all the drop's parts, so
+  // whether a part went unused is known only once the whole drop is done:
+  // naming it per model put "not used: b.bin" on a's card although b used
+  // it. A part no model used is named once, on the drop's last model.
+  it("names a loose part no model of the drop used, once, after the last model", async () => {
+    const t = setup();
+    t.drop([
+      file("a.gltf"),
+      file("a.bin"),
+      file("b.gltf"),
+      file("b.bin"),
+      file("stray.bin"),
+    ]);
+    t.runs[0]!.resolve(made([], ["a.bin"]));
+    await t.settle();
+    t.runs[1]!.resolve(made(["kept short"], ["b.bin"]));
+    await t.settle();
+    const notesOf = (n: number) =>
+      t.store.getState().assetShelf.entries[`${n}`.padStart(64, "0")]?.madeFrom
+        ?.notes;
+    expect(notesOf(1)).toEqual([]);
+    expect(notesOf(2)).toEqual(["kept short", note.unusedFiles(["stray.bin"])]);
+  });
+
+  it("names no part when every part of the drop was used by one of its models", async () => {
+    const t = setup();
+    t.drop([file("a.gltf"), file("a.bin"), file("b.gltf"), file("b.bin")]);
+    t.runs[0]!.resolve(made([], ["a.bin"]));
+    await t.settle();
+    t.runs[1]!.resolve(made([], ["b.bin"]));
+    await t.settle();
+    const entries = Object.values(t.store.getState().assetShelf.entries);
+    expect(entries.map((e) => e.madeFrom?.notes)).toEqual([[], []]);
   });
 
   it("holds a failed model's pictures until it is removed", async () => {

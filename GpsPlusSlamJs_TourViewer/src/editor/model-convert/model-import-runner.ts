@@ -18,7 +18,10 @@
  *   makes the first, and each other is queued as an import of its own.
  * - The pictures a drop held back for its models (`ImportPlan.held`) go
  *   to the drop's `release` once each of its models was added or removed,
- *   less those a model carries.
+ *   less those a model carries. A loose part (a `.bin`, a picture kind a
+ *   tour does not show) no model of the drop used is named then, once, in
+ *   a note on the drop's last added model: each loose model is handed all
+ *   the drop's parts, so only the whole drop can tell.
  *
  * @see model-import-runner.ts.md
  */
@@ -42,7 +45,8 @@ import {
 } from "../asset-shelf/optimizer-settings.js";
 import type { ImportPlan, PlannedImport } from "./import-plan.js";
 import type { ImportPayload } from "./import-step.js";
-import { failure } from "./model-import-words.js";
+import { importRoleOf } from "./import-formats.js";
+import { failure, note } from "./model-import-words.js";
 import { listZipModels } from "./zip-bundle.js";
 
 /** What a delivery made of a converted model. */
@@ -101,12 +105,21 @@ interface Group {
   readonly open: Set<string>;
   /** The file names its added models carry. */
   readonly used: Set<string>;
+  /** Its loose parts that are no picture: named once its models are
+   *  done, when none used them. */
+  readonly parts: readonly File[];
+  /** Its last added model, which carries that note. */
+  lastAdded: {
+    readonly id: string;
+    readonly from: string;
+    notes: readonly string[];
+  } | null;
 }
 
 interface Job {
   readonly id: string;
-  /** What the row shows. */
-  readonly name: string;
+  /** What the row shows (a zip's model's name once the zip is listed). */
+  name: string;
   /** The file the model came in (a zip's name for each of its models). */
   readonly from: string;
   /** Set once a zip's models are listed: the model it makes. */
@@ -195,6 +208,17 @@ export function createModelImportRunner(
     const { group } = job;
     group.open.delete(job.id);
     if (group.open.size > 0 || closed) return;
+    const unused = group.parts.filter((f) => !group.used.has(f.name));
+    if (unused.length > 0 && group.lastAdded !== null) {
+      const { id, from, notes } = group.lastAdded;
+      store.dispatch(
+        act.madeFromSet({
+          id,
+          from,
+          notes: [...notes, note.unusedFiles(unused.map((f) => f.name))],
+        }),
+      );
+    }
     const pictures = group.held.filter((f) => !group.used.has(f.name));
     if (pictures.length > 0) group.release(pictures);
   }
@@ -202,12 +226,14 @@ export function createModelImportRunner(
   const owns = (job: Job, stop: AbortController) =>
     !closed && !stop.signal.aborted && jobs.get(job.id) === job;
 
-  /** Queues one import of `group`, shown as `name`. */
+  /** Queues one import of `group`, shown as `name`; a later model of a
+   *  zip of several shows no bytes of its own (`partOf` the zip). */
   function queue(
     group: Group,
     deliver: ImportDelivery,
     payload: ImportPayload,
     name: string,
+    partOf?: string,
   ): string {
     const id = `import:${++seq}`;
     jobs.set(id, { id, name, from: payload.name, payload, deliver, group });
@@ -217,7 +243,8 @@ export function createModelImportRunner(
         id,
         name,
         format: payload.format,
-        bytes: bytesOf(payload),
+        bytes: partOf === undefined ? bytesOf(payload) : 0,
+        ...(partOf === undefined ? {} : { partOf }),
       }),
     );
     return id;
@@ -232,8 +259,19 @@ export function createModelImportRunner(
     const [first, ...others] = await listModels(payload.zip);
     if (!owns(job, stop) || first === undefined) return;
     job.payload = { ...payload, model: first };
+    if (others.length === 0) return;
+    job.name = baseOf(first);
+    store.dispatch(
+      act.importSplit({ id: job.id, name: job.name, partOf: payload.name }),
+    );
     for (const model of others) {
-      queue(job.group, job.deliver, { ...payload, model }, baseOf(model));
+      queue(
+        job.group,
+        job.deliver,
+        { ...payload, model },
+        baseOf(model),
+        payload.name,
+      );
     }
   }
 
@@ -273,7 +311,9 @@ export function createModelImportRunner(
         type: "model/gltf-binary",
       });
       // The model leaves the converter here: its Worker goes before the
-      // model is added, which may optimize it at once.
+      // model is added, so its memory is given back first. The shelf
+      // optimizes the added model only once this import's row leaves
+      // below (it makes no model while an import row is converting).
       host.close();
       workerGone = true;
       const result = await job.deliver(made, { from: job.from, notes });
@@ -287,6 +327,7 @@ export function createModelImportRunner(
         store.dispatch(
           act.madeFromSet({ id: result.id, from: job.from, notes }),
         );
+        job.group.lastAdded = { id: result.id, from: job.from, notes };
         leave(job);
       } else if (result.kind === "refused") {
         store.dispatch(
@@ -334,6 +375,16 @@ export function createModelImportRunner(
         release: input.release,
         open: new Set(),
         used: new Set(),
+        parts: [
+          ...new Set(
+            input.plan.imports.flatMap((p) =>
+              p.format === "gltf" ? p.parts : [],
+            ),
+          ),
+        ]
+          .map((i) => input.files[i]!)
+          .filter((f) => importRoleOf(f.name) === "companion"),
+        lastAdded: null,
       };
       const ids = input.plan.imports.map((planned) => {
         const payload = payloadOf(input.files, planned);
