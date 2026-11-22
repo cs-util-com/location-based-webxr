@@ -195,6 +195,9 @@ codeSeen, dismissed })` - the AR visit's first hint, on the creator's
 
 ## Invariants & assumptions
 
+- The config's `dispatchVotes` returns `false`: authoring casts no votes,
+  so a lock never releases the deferred anchors.
+
 - **The synthetic level is GEO-LESS and local** (plan deltas #1/#8): the
   decoded QR text is a printed launch URL (an HTML page); a real fetch
   would fail validation and flap the status at the detection cadence. A
