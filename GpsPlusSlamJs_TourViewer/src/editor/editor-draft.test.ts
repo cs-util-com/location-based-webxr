@@ -1350,7 +1350,7 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     await first.idle();
     first.close();
     expect((await draftIn(b).open(K1, tour(pin("a")))).offer?.text).toBe(
-      "Unsaved work from this tour is still on this device: 1 change. Add it back? Changed: the tour's characters.",
+      "Unsaved work from this tour is still on this device: 1 change. Add it back? Changed: the tour's characters, replacing the current ones.",
     );
   });
 
@@ -1369,9 +1369,12 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 
-  it("a removal of the offered setting that does not land fails Delete it, and everything is offered again", async () => {
+  it("a removal of the offered setting that does not land still deletes it: the meta rejects the record", async () => {
     // Why (#4): a failed removal was ignored, so the page said the earlier
-    // changes were deleted while the setting stayed - and the notes went.
+    // changes were deleted while the setting stayed. The meta's rejection
+    // names the record (`SETTINGS_REJECTED`), so once it landed the
+    // record is inert whether or not its removal ran: Delete it is done,
+    // nothing is offered again, and the next open removes the file.
     const b = memoryDraftStores();
     const original = tour(pin("a"));
     const earlier = draftIn(b);
@@ -1383,13 +1386,16 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     const draft = draftIn(b);
     await draft.open(K1, original);
     b.failRemoveOf.add(SETTINGS);
-    expect(await draft.discard()).toBe(false);
+    expect(await draft.discard()).toBe(true);
     await draft.idle();
     draft.close();
     b.failRemoveOf.clear();
-    const { offer } = await draftIn(b).open(K1, original);
-    expect(offer?.objects.map((o) => o.id)).toEqual(["a"]);
-    expect(offer?.settings).toEqual({ needsNoGps: true });
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(true);
+    const next = draftIn(b);
+    const { offer } = await next.open(K1, original);
+    expect(offer).toBeNull();
+    await next.idle();
+    expect(b.spaces.get(editorDraftKey(K1))?.has(SETTINGS)).toBe(false);
   });
 
   it("a Delete it that did not land re-arms the offer: a key move still carries it", async () => {
@@ -1732,21 +1738,27 @@ describe("createEditorDraft, the stations the page created", () => {
     return { second, at, stored };
   }
 
-  // Why: "Delete it" commits with the meta, then removes the offered
-  // record. When that removal does not land the offer is armed again and
-  // the record stays as offered: no write of this page's can have changed
-  // it meanwhile, since every edit waits for the answer.
-  it("a Delete it whose record removal is refused leaves the offered record, and a second one removes it", async () => {
+  // Why: "Delete it" commits with the meta, whose rejection names the
+  // offered record, then removes it. A removal that does not land leaves
+  // the file inert: a station moved afterwards claims the record, so the
+  // new move is written whole, without a pose of the deleted offer.
+  it("a Delete it whose record removal is refused: a later move claims the record, without the deleted poses", async () => {
     const b = memoryDraftStores();
     const { second, at, stored } = await offeredStB(b);
     b.failRemoveOf.add(SETTINGS);
-    expect(await second.discard()).toBe(false);
-    b.failRemoveOf.clear();
-    await second.idle();
-    expect(stored()).toEqual([at("st-a", 48.5), at("st-b", 48.504)]);
     expect(await second.discard()).toBe(true);
     await second.idle();
-    expect(stored()).toBeUndefined();
+    b.failRemoveOf.clear();
+    expect(stored()).toEqual([at("st-a", 48.5), at("st-b", 48.504)]);
+    void second.saveSettings({
+      needsNoGps: false,
+      stations: [at("st-a", 48.503)],
+    });
+    await second.idle();
+    expect(stored()).toEqual([at("st-a", 48.503)]);
+    second.close();
+    const { offer } = await draftIn(b).open(K1, tour(pin("a"), pin("b")));
+    expect(offer?.settings?.stations).toEqual([at("st-a", 48.503)]);
   });
 
   // Why: Restore decides the offer: from then on the record holds what

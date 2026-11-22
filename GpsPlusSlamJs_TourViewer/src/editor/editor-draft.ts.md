@@ -94,16 +94,18 @@ editor's own namespace, one tab at a time. Design:
   - `restored()` - the session applied the offer (its writes rewrote what
     it applied).
   - `discard()` - "Delete it": the offer's ids, minus those written since
-    the open, rejected in the meta (the commit point), then the offered
-    settings record removed (awaited, unless the setting was changed since
-    the open) and the ids' files removed; false when the meta write or the
-    settings removal did not land - the meta is put back and the offer
-    re-armed, so a key move before the next open still carries it (M1b-2
-    milestone review #4). The ids' file removals are not awaited, and that
-    is safe: once the meta rejects the ids, the next read refuses their
-    files whether or not they were removed, and a removal that throws is
-    caught (both pinned in `draft-shared-behaviour.test.ts`, "discard: a
-    tab closed right after the rejection landed ...").
+    the open, and an offered settings record (`SETTINGS_REJECTED`),
+    rejected in the meta (the commit point), then the record and the ids'
+    files removed; false when the meta write did not land - the meta is
+    put back and the offer re-armed, so a key move before the next open
+    still carries it. The removals are not awaited, and that is safe: once
+    the meta rejects them, the next read refuses the record and the files
+    whether or not they were removed (the next open removes what is left),
+    and a removal that throws is caught (pinned in
+    `draft-shared-behaviour.test.ts`, "discard: a tab closed right after
+    the rejection landed ..."). A setting saved afterwards claims the
+    record first (`settingsIn`: removed, the meta rewritten without the
+    entry, then written), as an edit claims a rejected object id.
   - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
     base's `written` list; the setting's keep is decided again against the
@@ -255,9 +257,9 @@ editor's own namespace, one tab at a time. Design:
   lasts until the next whole write of the record, which holds only what read;
   a landed write that carries it clears it; a key move carries it (and an
   unanswered offer's), and the old namespace's goes with it; "Delete it"
-  removes an offered one after the meta's commit point, awaited, failing
-  the discard when it does not land (no write of this page's can have
-  replaced it meanwhile: the edits wait for the answer).
+  rejects an offered one in the meta's commit point and removes it after,
+  unawaited: a rejected record is never offered again, and a setting
+  saved later claims it.
   **The value last set here is kept** (`settingsWanted`), whether or not
   its record is, and the keep is decided again by each build and each
   landed write (M1b-2 milestone review #1): turned on, a save started, and
@@ -406,6 +408,7 @@ A smaller file replaces an asset's bytes under the same id. The key lifecycle:
 
 `EditorTourSettings.characters` is part of the settings a draft records
 and restores; `settingsOf(manifest)` reads them, `settingsChanges` counts
-them (`characters`), the restore offer names "the tour's characters" and
-the restored line "the characters". Compared per declaration
+them (`characters`), the restore offer names "the tour's characters,
+replacing the current ones" (Restore puts the recorded list in place of
+the document's) and the restored line "the characters". Compared per declaration
 (`changedCharacters`), so an unchanged list writes nothing.

@@ -553,7 +553,7 @@ export function wireCreatorPlacement(deps: {
           {
             blob: jpeg.blob,
             // The capture pose is RAW WebXR: through the one conversion into
-            // the world group's frame, never composed by hand (plan §3.2).
+            // the world group's frame, never composed by hand.
             placement: { visit, local: odomNueFromWebXr(cameraPose) },
             ownStation,
           },

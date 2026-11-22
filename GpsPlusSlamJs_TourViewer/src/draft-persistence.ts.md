@@ -127,6 +127,18 @@ are the framework's.
     tour;
   - **the sweep** - those are deletes that did not finish, and with
     `clear` uncalled nothing else would ever reclaim them.
+- `SETTINGS_KEY` (`"settings"`) - the settings record's file
+  (`tour-document-draft.ts` writes and parses it), and
+  `SETTINGS_REJECTED` (`":settings"`) - its entry in a meta's
+  `rejected` list: "Delete it" throws the record away with the objects,
+  so the commit point names it too. Not a valid object id (ids never hold
+  a colon, `TOUR_ID_PATTERN`), so no object can share it. Pruned like an
+  id: `rejectedIds` keeps it while the record's file is on disk.
+- `readSettingsText(store)` - the record's text, or undefined when there
+  is none or the meta rejects it; both pages read the record through it.
+  A meta that does not read rejects nothing.
+- `StoredDraft.settingsStored` - whether the record's file was on disk at
+  read time: what a discard names with `SETTINGS_REJECTED`.
 - `StoredDraft.rejectedOnDisk` (M6 E2c review #3) - EVERY id the meta on
   disk rejects, files or not. Until the next meta write lands, the pruned
   ids are still rejected on disk, so a change of one must be claimed

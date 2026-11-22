@@ -41,6 +41,7 @@ import {
   parseDraftObject,
   photoKey,
   readDraft,
+  SETTINGS_REJECTED,
   visitKey,
 } from "./draft-persistence.js";
 import { serializeVisitLogEntry, type VisitLogEntry } from "./visit-log.js";
@@ -475,7 +476,8 @@ async function settle(): Promise<void> {
 const TOUR = "https://example.test/tour.zip";
 const OTHER_TOUR = "https://example.test/other-tour.zip";
 
-/** The `rejected` list of a written meta payload. */
+/** The `rejected` list of a written meta payload. A "Delete it" names the
+ *  settings record (`SETTINGS_REJECTED`) beside the draft's ids. */
 function rejectedOf(json: string | undefined): readonly string[] {
   return (
     (JSON.parse(String(json)) as { rejected?: readonly string[] }).rejected ??
@@ -712,6 +714,7 @@ describe("the rejection is committed by the meta write", () => {
     // the fix (PR #458 review).
     expect(rejectedOf(metaPuts.at(-2)), "the attempt that failed").toEqual([
       "old-pin",
+      SETTINGS_REJECTED,
     ]);
     expect(
       rejectedOf(metaPuts.at(-1)),
@@ -799,7 +802,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       written.rejected,
       "a stale write must not overwrite the committed rejection",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("does not let a stalled tour block a DIFFERENT tour's discard", async () => {
@@ -875,7 +878,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "the write from before the close must not land last",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("keeps a tour's ordering across ANOTHER tour opened in between", async () => {
@@ -923,7 +926,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "A's stalled first write must still land BEFORE A's reopened ones",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("treats two urls that differ only in whitespace as ONE namespace", async () => {
@@ -963,7 +966,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(
       rejectedOf(String(files.get(META_KEY))),
       "one directory must mean one chain, however the url was spelled",
-    ).toEqual(["old-pin"]);
+    ).toEqual(["old-pin", SETTINGS_REJECTED]);
   });
 
   it("sweeps a rejection whose deletes never finished, on the next open", async () => {
@@ -3070,7 +3073,7 @@ describe("the waiting draft's codes and the spent rule (characterization, codes-
     expect(discarded.levels, "the rejected draft's code b is gone").toEqual([
       liveA,
     ]);
-    expect(lastMeta(metaPuts).rejected).toEqual(["placed"]);
+    expect(lastMeta(metaPuts).rejected).toEqual(["placed", SETTINGS_REJECTED]);
   });
 
   // Why (plan M3b): with no code measured on this page, "Delete it"

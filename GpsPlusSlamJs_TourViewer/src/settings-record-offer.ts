@@ -245,7 +245,8 @@ export function settingsParts(
   if (added.length > 0) parts.push(`${stationsWord(added.length)} added`);
   if (deleted.length > 0) parts.push(`${stationsWord(deleted.length)} deleted`);
   if (reordered) parts.push("the order of the stations");
-  if (changes.characters > 0) parts.push("the tour's characters");
+  if (changes.characters > 0)
+    parts.push("the tour's characters, replacing the current ones");
   return parts;
 }
 

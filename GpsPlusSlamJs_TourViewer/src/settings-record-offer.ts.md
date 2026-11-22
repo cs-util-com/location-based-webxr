@@ -7,8 +7,8 @@ One rule for both pages' drafts on what a stored settings record
 opened tour and what its restore puts back. The desktop editor
 (`editor/editor-draft.ts` builds the offer, `editor/editor-session.ts`
 restores it) and the phone (`creator-draft.ts`) both call it, so a record
-written on one page is offered and restored whole on the other - the
-setting, the details, the station poses, a station's own fields, the
+is offered and restored whole by the same rule on either page, whichever
+page wrote it - the setting, the details, the station poses, a station's own fields, the
 order, the deleted and the created stations, and the characters. The
 pages keep their own words around it and their own stores.
 

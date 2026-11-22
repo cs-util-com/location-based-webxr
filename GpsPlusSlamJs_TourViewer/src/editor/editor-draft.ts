@@ -95,6 +95,8 @@ import {
   writeDraftMeta,
   discardOlderFormatDraft,
   isOlderVersionDraft,
+  readSettingsText,
+  SETTINGS_REJECTED,
 } from "../draft-persistence.js";
 import { createKeyedChain } from "gps-plus-slam-app-framework/utils/keyed-chain";
 import { crc32 } from "../characters/png-text.js";
@@ -907,7 +909,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
   }
 
   /** `s`'s settings record written (`value`) or removed (null), in its
-   *  own queue; whether it landed. Not said: callers say what they ask. */
+   *  own queue; whether it landed. Not said: callers say what they ask. A
+   *  record the meta rejects (`SETTINGS_REJECTED`) is CLAIMED first, as
+   *  an object's id is (`inQueue`). */
   function settingsIn(
     s: Space,
     value: EditorTourSettings | null,
@@ -923,9 +927,33 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
           await store.remove(SETTINGS_KEY);
           return true;
         }
-        return store.put(SETTINGS_KEY, settingsRecordText(value));
+        let claimed = true;
+        if (
+          s.rejected.includes(SETTINGS_REJECTED) ||
+          s.rejectedOnDisk.has(SETTINGS_REJECTED)
+        ) {
+          await store.remove(SETTINGS_KEY);
+          s.rejected = s.rejected.filter((r) => r !== SETTINGS_REJECTED);
+          claimed = await writeMeta(s);
+        }
+        const wrote = await store.put(SETTINGS_KEY, settingsRecordText(value));
+        return claimed && wrote;
       }),
     ).catch(() => false);
+  }
+
+  /** The settings record removed while the meta still rejects it ("Delete
+   *  it", or an earlier one whose removal did not run): housekeeping
+   *  after the commit point, in the record's queue. */
+  function sweepSettings(s: Space): void {
+    void inSpace(
+      s,
+      chain.run(settingsChain(s), async () => {
+        if (!s.rejected.includes(SETTINGS_REJECTED)) return;
+        const store = await s.store;
+        if (store !== undefined) await store.remove(SETTINGS_KEY);
+      }),
+    ).catch(() => undefined);
   }
 
   /** `settingsIn`, and a write that did not land said, once. */
@@ -1260,7 +1288,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // The settings record (THE SETTINGS), read whether or not a meta
       // landed: its namespace already names the tour. Offered while the
       // file does not carry it; spent or unreadable, it goes.
-      const settingsText = await store.getText(SETTINGS_KEY);
+      const settingsText = await readSettingsText(store);
       if (mine !== generation) return none;
       let lost = false;
       // The files brought in: one the file on disk lists is
@@ -1484,6 +1512,8 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // (`rejectedOnDisk`), and a write that did not land is said.
       s.rejected = stored.rejectedIds;
       s.rejectedOnDisk = new Set(stored.rejectedOnDisk);
+      // A settings record an earlier "Delete it" rejected, still on disk.
+      sweepSettings(s);
       // Tracked with its line, so `idle()` covers the saying too.
       void track(
         writeMeta(s).then((ok) => {
@@ -1650,7 +1680,9 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
       // (`draft-edit-gate.ts`), so none of these is this page's work.
       const ids = [...was.objects.map((o) => o.id), ...was.deleted];
       const before = s.rejected;
-      s.rejected = [...new Set([...before, ...ids])];
+      // The offered settings record is rejected with them.
+      const settings = was.settings === undefined ? [] : [SETTINGS_REJECTED];
+      s.rejected = [...new Set([...before, ...ids, ...settings])];
       // THE COMMIT POINT: once the meta rejects them, the next read
       // refuses them whether or not the removals below ran.
       // A rejection that did not land throws nothing away: the meta is
@@ -1663,12 +1695,7 @@ export function createEditorDraft(deps: EditorDraftDeps): EditorDraft {
         return false;
       };
       if (!(await writeMeta(s))) return fail();
-      // The offered settings record goes too: awaited, inside the
-      // namespace's work, so "Delete it" is done only once it went, and a
-      // removal that did not land fails it like the meta.
-      if (was.settings !== undefined && !(await settingsIn(s, null))) {
-        return fail();
-      }
+      sweepSettings(s);
       // The offered files go with it, minus those brought in since.
       dropFiles(
         s,

@@ -37,7 +37,9 @@ import {
   photoKey,
   readDraft,
   readDraftCodes,
+  readSettingsText,
   removeDraftObject,
+  SETTINGS_REJECTED,
   addDraftBaseKey,
   writeDraftCodes,
   writeDraftLiveRecord,
@@ -384,8 +386,10 @@ export function wireCreatorDraft(deps: {
      *  §3.4, M4). */
     deleted: readonly string[];
     /** How `objects` splits into new placements and changes of objects
-     *  the hosted zip carries - the offer's and the restore's words. */
-    counts: { placed: number; changed: number };
+     *  the hosted zip carries, and the deletions counted on their own -
+     *  the offer's and the restore's words. An id a recorded frame moves
+     *  is counted with that frame's change, never here. */
+    counts: { placed: number; changed: number; deleted: number };
     /** The draft's AR visits (M3b), for the summary after Finish. */
     visits: readonly VisitLogEntry[];
     /** The settings record offered beside the objects (the tour's
@@ -534,18 +538,34 @@ export function wireCreatorDraft(deps: {
 
   /** The settings record's write in its queue: the whole record, or its
    *  removal (`null`). Every edit of the document waits while a draft is
-   *  undecided, so a record written is always decided work. */
+   *  undecided, so a record written is always decided work. A record the
+   *  meta rejects (`SETTINGS_REJECTED`) is CLAIMED first, as an object's
+   *  id is (`writeForObject`): the rejected file removed, the meta
+   *  rewritten without it, then the write. */
   function writeSettings(
     store: DraftFileStore,
     tourUrl: string,
     record: TourSettingsRecord | null,
   ): Promise<boolean> {
     return draftWrites
-      .run(settingsChainKey(tourUrl), () =>
-        record === null
-          ? store.remove(SETTINGS_KEY).then(() => true)
-          : store.put(SETTINGS_KEY, settingsRecordText(record)),
-      )
+      .run(settingsChainKey(tourUrl), async () => {
+        if (record === null) {
+          await store.remove(SETTINGS_KEY);
+          return true;
+        }
+        let claimed = true;
+        if (
+          draftStore === store &&
+          (draftRejected.includes(SETTINGS_REJECTED) ||
+            diskRejected.has(SETTINGS_REJECTED))
+        ) {
+          await store.remove(SETTINGS_KEY);
+          draftRejected = draftRejected.filter((r) => r !== SETTINGS_REJECTED);
+          claimed = await recordMeta(tourUrl);
+        }
+        const wrote = await store.put(SETTINGS_KEY, settingsRecordText(record));
+        return claimed && wrote;
+      })
       .catch(() => false);
   }
 
@@ -641,17 +661,25 @@ export function wireCreatorDraft(deps: {
    * when its turn comes: a change made since claimed it, and the file on
    * disk is that change now (`writeForObject`). Skipped too once another
    * tour is open: the next open of this one sweeps what the meta rejects.
+   * The settings record's entry (`SETTINGS_REJECTED`) removes the record,
+   * in the record's own queue.
    */
   function sweepRejected(
     store: DraftFileStore,
     tourUrl: string,
     id: string,
   ): void {
-    void draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      if (draftStore === store && draftRejected.includes(id)) {
-        await removeDraftObject(store, id);
-      }
-    });
+    const settings = id === SETTINGS_REJECTED;
+    void draftWrites
+      .run(
+        settings ? settingsChainKey(tourUrl) : objectChainKey(tourUrl, id),
+        async () => {
+          if (draftStore !== store || !draftRejected.includes(id)) return;
+          if (settings) await store.remove(SETTINGS_KEY);
+          else await removeDraftObject(store, id);
+        },
+      )
+      .catch(() => undefined);
   }
 
   /** `ids` minus this page's visits (M3b: a read racing their first write
@@ -821,7 +849,7 @@ export function wireCreatorDraft(deps: {
     return {
       placed: waiting.counts.placed,
       changed: waiting.counts.changed,
-      deleted: deleted.length,
+      deleted: waiting.counts.deleted,
     };
   }
 
@@ -994,7 +1022,10 @@ export function wireCreatorDraft(deps: {
     // next read refuses them whether or not their files are still there,
     // and the deletes after it are housekeeping. Nothing is removed BEFORE
     // the write lands, so a reload during it sees the draft as it was.
-    const rejectedIds = notLive(waiting.storedIds);
+    // The settings record goes with the draft: every edit waited, so
+    // nothing of this page's is in it. Named whether or not a record is on
+    // disk; the next read prunes the entry once no file is left.
+    const rejectedIds = [...notLive(waiting.storedIds), SETTINGS_REJECTED];
     // In progress (async-ui-feedback): the offer stays, its buttons off,
     // until the commit says how it went. Edits keep waiting meanwhile.
     const deleting = asked;
@@ -1052,12 +1083,13 @@ export function wireCreatorDraft(deps: {
         deps.render();
         return;
       }
-      for (const id of rejectedIds) sweepRejected(store, tourUrl, id);
-      // The record goes with the draft: every edit waited, so nothing of
-      // this page's is in it. Queued before the waiting edits land, whose
-      // own record lands after it.
-      // Closed since the tap and opened again: that open read the record
-      // and owns it now.
+      for (const id of rejectedIds) {
+        if (id !== SETTINGS_REJECTED) sweepRejected(store, tourUrl, id);
+      }
+      // The record goes with the draft, queued before the waiting edits
+      // land, whose own record lands after it. Not swept like an object:
+      // a tour closed since the tap still loses it, unless it was opened
+      // again, since that open read the record and owns it now.
       const reopened =
         !stillOpen &&
         draftTourUrl !== null &&
@@ -1135,7 +1167,7 @@ export function wireCreatorDraft(deps: {
         settingsChainKey(tourUrl),
         async () => {
           const read = parseSettingsRecord(
-            await store.getText(SETTINGS_KEY),
+            await readSettingsText(store),
             opened ?? undefined,
             (what) => {
               lost = true;
@@ -1279,7 +1311,11 @@ export function wireCreatorDraft(deps: {
         // Minus this page's visits (`notLive`); the edits made during the
         // awaits above waited, so none of them is in this list.
         const sweep = notLive(stored.storedIds);
-        draftRejected = sweep;
+        // A settings record the meta already rejects stays rejected: its
+        // file may still be on disk.
+        draftRejected = draftRejected.includes(SETTINGS_REJECTED)
+          ? [...sweep, SETTINGS_REJECTED]
+          : sweep;
         // Same commit point as the discard, for the same reason: an
         // interrupted sweep must not bring a spent draft back - and the
         // same notice when it does not land.
@@ -1323,12 +1359,15 @@ export function wireCreatorDraft(deps: {
         (o) => hosted.key(o.id) !== undefined && !moved.has(o.id),
       ).length;
       const newOnes = waiting.filter(
-        (o) => hosted.key(o.id) === undefined,
+        (o) => hosted.key(o.id) === undefined && !moved.has(o.id),
       ).length;
+      // The setting is never the phone's (read as the tour's above), so
+      // it is never a change here: no count, and no part, whose name the
+      // phone has none for (`settingsParts` gets "").
       const recordChanges =
         waitingSettings === undefined
           ? undefined
-          : settingsChanges(waitingSettings, tour);
+          : { ...settingsChanges(waitingSettings, tour), noGps: false };
       const counts = {
         placed: newOnes,
         changed:
@@ -1336,6 +1375,7 @@ export function wireCreatorDraft(deps: {
           (recordChanges === undefined
             ? 0
             : settingsChangeCount(recordChanges)),
+        deleted: waitingDeletions.filter((id) => !moved.has(id)).length,
       };
       // A code measured before this open is newer than the offered
       // draft's and would otherwise live only in memory; a measurement
@@ -1365,7 +1405,7 @@ export function wireCreatorDraft(deps: {
         recordChanges === undefined ? [] : settingsParts(recordChanges, "");
       const words = restoreOfferText(counts.placed, hasLevel, {
         changed: counts.changed,
-        deleted: waitingDeletions.filter((id) => !moved.has(id)).length,
+        deleted: counts.deleted,
         visits: stored.visits.length,
       });
       ctx.store.dispatch(

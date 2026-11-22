@@ -874,6 +874,57 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(after.shape()).toEqual(opened);
   }, 60_000);
 
+  // Why: the settings record is part of the draft "Delete it" throws
+  // away, so the rejection must name it too. A tab closed right after the
+  // rejection landed, before the record was removed, must not offer the
+  // record again: Restore would bring a deleted rename back. (A rename,
+  // not a station move: on the phone a move also writes the codes
+  // record, which this row does not cover.)
+  it("discard: a tab closed right after the rejection landed leaves the settings record inert", async () => {
+    const { browser, page, opened } = await freshPage(open);
+    await page.edit("a", "The gate");
+    await page.act(
+      tourDocumentActions.detailsChanged({
+        details: { title: "The castle walk" },
+        what: "the tour's name",
+      }),
+    );
+    const offered = await reopen(open, browser);
+    expect(offered.space().has(SETTINGS_KEY)).toBe(true);
+    const from = browser.log.length;
+    browser.crashAfter = 1;
+    await offered.discard();
+    const landed = browser.log.slice(from);
+    expect(landed).toHaveLength(1);
+    expect(landed[0]).toMatch(/^put /);
+    const after = await reopen(open, browser, offered);
+    expect(after.offer()).toBe("");
+    expect(after.shape()).toEqual(opened);
+    // And the open after that: the record went, or stays refused.
+    const later = await reopen(open, browser, after);
+    expect(later.offer()).toBe("");
+  }, 60_000);
+
+  // Why: a station moved after "Delete it" is newer than the rejection,
+  // so its settings record must be claimed from it: the next open offers
+  // the move, never hides it behind the rejection of the record.
+  it("discard, then a station moved again: the next open offers the new move", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.moveStation("st-a", MOVED);
+    const offered = await reopen(open, browser);
+    await offered.discard();
+    await offered.moveStation("st-b", MOVED);
+    const left = offered.shape();
+    expect(offered.saidNotKept()).toBe(false);
+    const next = await reopen(open, browser, offered);
+    expect(next.offer()).not.toBe("");
+    await next.restore();
+    expect(next.shape()).toEqual(left);
+    expect(next.shape().stations).not.toContain(
+      JSON.stringify({ id: "st-a", geo: MOVED }),
+    );
+  }, 60_000);
+
   // Why: the unawaited removals after "Delete it" must not surface as an
   // unhandled rejection when a store breaks its never-throws contract; the
   // rejection already landed, so the next open still offers nothing.
@@ -2082,6 +2133,45 @@ describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
     const next = await reopen(open, browser, offered);
     await next.restore();
     expect(entriesOf(next.shape())).toEqual(entriesOf(both));
+  }, 60_000);
+
+  // Why: an item a recorded frame moves into a story is part of that
+  // frame's change, named with it (`movedIds`); counted again as a thing
+  // placed, the offer and the restore's line would count one change twice.
+  // A new item moved into a story of a station the tour carries, whose own
+  // record outlived the move (its removal broke), is the case: the desktop
+  // already left such an id out of its counts.
+  it("a new item moved into a station's story, its record left behind, is counted with that station, not as a thing placed", async () => {
+    const { browser, page } = await freshPage(open);
+    const placed = await page.place(0);
+    await page.act(
+      tourDocumentActions.storyAdded({
+        stationId: "st-a",
+        id: "tale",
+        title: "The tale",
+        what: "the story",
+      }),
+    );
+    await page.act(
+      tourDocumentActions.childMoved({
+        id: placed,
+        to: { place: "station", station: "st-a" },
+        what: "the move to the station",
+      }),
+    );
+    browser.failRemoveOf.add(`object:${placed}`);
+    await page.act(
+      tourDocumentActions.childMoved({
+        id: placed,
+        to: { place: "story", story: "tale", index: 0 },
+        what: "the move",
+      }),
+    );
+    browser.failRemoveOf.clear();
+    const next = await reopen(open, browser, page);
+    expect(next.offer()).not.toMatch(/placed/);
+    await next.restore();
+    expect(next.said()).not.toMatch(/placed/);
   }, 60_000);
 
   // Why: a placement may start a station of its own, which the settings
