@@ -20,7 +20,7 @@
   - `descChanged(text)`: cut to `DESC_MAX` (2000) characters, as `draftOf` reads a stored one back; a different text clears the copy time; the same text is a no-op.
   - `copied(at)` (a finite time >= 0, else ignored), `copyRefused()`.
   - `cutStarted()`: ignored while a cut runs; otherwise clears the failure, the talk choice and the saved id, goes to step 4, sets `cutting` and moves the generation.
-  - `cutFinished()` (`ready`, version + 1), `cutFailed(message)` (`none`, the failure kept to `TEXT_MAX` characters; an empty message becomes "Something went wrong"), `cutAborted()` (`cutting` becomes `none`, else nothing), `cutReplaced()` (version + 1, only with a cut).
+  - `cutFinished()` (`ready`, version + 1), `cutFailed(message)` (only while a cut runs: `none`, the failure kept to `TEXT_MAX` characters, an empty message becoming "Something went wrong"; with no cut running it is ignored, so a stale failure never drops the cut on screen, which would lose the author's picture and leave the check step showing without a cut), `cutAborted()` (`cutting` becomes `none`, else nothing), `cutReplaced()` (version + 1, only with a cut).
   - `talkChosen("drawn" | "steady")` (version + 1; anything else ignored), `groundChosen(id)` (an unknown backdrop ignored), `cutChanged(choice)` (through `cutChoiceOf`: a value outside its slider's range takes its default), `cutReset()`.
   - `named(name)`: kept to `TEXT_MAX` (200) characters, as `draftOf` reads a stored name back.
   - `saved({ id, name, generation })`: the library saved the draft of `generation`; ignored when the generation has moved since (that draft was replaced while it was written) or for a non-string id or name; id and name kept to `TEXT_MAX`.
