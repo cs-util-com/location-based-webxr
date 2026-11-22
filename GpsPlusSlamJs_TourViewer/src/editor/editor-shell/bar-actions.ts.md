@@ -5,7 +5,8 @@
 The bottom bar's power actions for the selection, as data, pure: what
 the inspector does not offer (the Studio 3 prototype's rule) -
 Duplicate, Align to station and Copy position. The buttons are
-`editor-shell.ts`'s.
+`editor-shell.ts`'s. The actions are `duplicate`, `align` and `copyPosition`
+(named apart from the Edit menu's Copy, which copies a note itself).
 
 ## Public API
 

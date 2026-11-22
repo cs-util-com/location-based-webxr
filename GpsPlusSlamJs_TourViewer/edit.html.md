@@ -101,8 +101,13 @@ AR (tour editor plan 2026-10-17-1816, W1).
     saved" while changes are not saved (the status's words its `title`);
     the one warning in the bar against losing work.
   - **Edit** (`#edit-menu-wrap`, `#edit-menu-btn`, `#edit-menu`, shown at
-    a phone's width): Undo (`#edit-undo`), Redo (`#edit-redo`) and Add…
-    (`#edit-add`, Ctrl+K), where the bar's buttons fold.
+    every width): Undo (`#edit-undo`), Redo (`#edit-redo`), Copy
+    (`#edit-copy`, Ctrl+C), Paste (`#edit-paste`, Ctrl+V), Duplicate
+    (`#edit-duplicate`, Ctrl+D), Delete (`#edit-delete`, Del) and Add…
+    (`#edit-add`, Ctrl+K); each item carries its `aria-keyshortcuts`, and
+    Copy to Delete start disabled (`aria-disabled`) until the shell draws
+    them for the selection. Undo, Redo and Add are also the bar's own
+    buttons until they fold.
   - **View** (`#view-menu-btn`, `#view-menu`): Top view (`#studio-top`,
     T, a `menuitemcheckbox`), Frame (`#studio-frame`, F), Real time
     (`#view-realtime`, the globe's clock), Clouds (`#view-clouds`, its

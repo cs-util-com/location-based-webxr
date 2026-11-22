@@ -852,7 +852,7 @@ test("an item's actions: turned to its station's way, its position copied, moved
   await expect.poll(() => changes(page)).toBe(steps + 1);
   expect(turnDeg(straight, await pose())).toBeGreaterThan(1);
 
-  await page.locator('#shell-acts [data-bar="copy"]').click();
+  await page.locator('#shell-acts [data-bar="copyPosition"]').click();
   const copied = await page.evaluate(() => navigator.clipboard.readText());
   expect(copied).toMatch(
     /^-?\d+\.\d\d m north, -?\d+\.\d\d m east, -?\d+\.\d\d m up of its station, heading \d+ deg$/,

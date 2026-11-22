@@ -3463,32 +3463,34 @@ body[data-view="3d"] #view3d .view3d-canvas {
  * Each step starts where the bar, in its most crowded state (the unsaved
  * mark shown) in a wide face (Verdana, with DejaVu Sans' metrics), would
  * no longer hold every control with the tour's name at its floor (96, 56,
- * 40 and 20 px; `editor3d-shell.spec.js`, FOLD_STEPS). The bar's least
- * width, measured with the name at its floor: 747 px unfolded, 686 after
- * the first step, 475 after the second, 359 after the third (343 with a
- * 40 px name) and 266 after the last (246 with a 20 px name).
- * - 820 px: the unsaved mark keeps its dot (its words are its title, and
+ * 40 and 20 px; `editor3d-shell.spec.js`, FOLD_STEPS). The Edit menu
+ * stands at every width, and the steps above 420 px stand where its
+ * button left them: the bar's least width, measured with every button
+ * inside the window, is 832 px unfolded, 772 after the 840 px step and
+ * 601 after the 720 px one; each fold stands 8 or 9 px above the least
+ * width it follows (840 = 832 + 8, 780 = 772 + 8, 610 = 601 + 9).
+ * - 840 px: the unsaved mark keeps its dot (its words are its title, and
  *   the save status a screen reader hears);
- * - 720 px: the buttons drop their icons, keeping words;
- * - 560 px: Undo, Redo and Add fold into the Edit menu;
- * - 420 px: the menus' carets go and the groups close up.
- * The two lower steps stand 40 and 20 px above where they stood before a
- * phone's List button joined the bar; the widths above are from then. */
+ * - 780 px: the buttons drop their icons, keeping words;
+ * - 720 px: the tour's name may narrow further (its floor lowered);
+ * - 610 px: Undo, Redo and Add are the Edit menu's alone;
+ * - 420 px: the menus' carets go and the groups close up. */
 #edit-menu-wrap {
   display: none;
 }
 
-@media (width <= 820px) {
+/* Undo, Redo and Add are its items at every width as well. */
+body[data-view="3d"] #edit-menu-wrap {
+  display: flex;
+}
+
+@media (width <= 840px) {
   body[data-view="3d"] .unsaved-mark .lbl {
     display: none;
   }
 }
 
-@media (width <= 720px) {
-  :root {
-    --s-name-min: 94px;
-  }
-
+@media (width <= 780px) {
   /* Its key is a keyboard's: a narrow screen keeps the word. */
   body[data-view="3d"] #studio-add kbd {
     display: none;
@@ -3499,7 +3501,13 @@ body[data-view="3d"] #view3d .view3d-canvas {
   }
 }
 
-@media (width <= 560px) {
+@media (width <= 720px) {
+  :root {
+    --s-name-min: 94px;
+  }
+}
+
+@media (width <= 610px) {
   body[data-view="3d"] #topbar .studio.grp:not(#studio-help-group) {
     display: none;
   }
@@ -3507,10 +3515,6 @@ body[data-view="3d"] #view3d .view3d-canvas {
   /* No room for Add beside Help: it is the Edit menu's. */
   body[data-view="3d"] #studio-add {
     display: none;
-  }
-
-  body[data-view="3d"] #edit-menu-wrap {
-    display: flex;
   }
 }
 
