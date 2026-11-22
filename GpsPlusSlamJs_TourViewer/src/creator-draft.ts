@@ -351,26 +351,40 @@ export function wireCreatorDraft(deps: {
   const claimedElsewhere = new WeakMap<DraftFileStore, Set<string>>();
 
   /**
-   * Claim `id` by `store`'s own meta, which is no longer the open tour's:
-   * `remove` its rejected files, then rewrite the meta without it,
-   * directly - never through the meta's queue, which a `follow` holds
-   * (`exclusive`) until the claiming write ends. True when the meta did
-   * not reject it or the rewrite landed.
+   * The claims made by a namespace's own meta (`claimElsewhere`), one
+   * queue per namespace key. Each claim reads that meta and rewrites it,
+   * and they are issued from every id's queue and from the records', so
+   * without this queue two claims for one namespace ran at once and the
+   * later rewrite put the other's entry back. Not `draftWrites`: a
+   * `follow` holds all of its queues (`exclusive`) until the claiming
+   * write ends, so a claim queued there would wait for the move while the
+   * move waits for it.
    */
-  async function claimElsewhere(
+  const claims = createKeyedChain();
+
+  /**
+   * Claim `id` by `store`'s own meta, which is no longer the open tour's:
+   * `remove` its rejected files, then rewrite the meta without it, in the
+   * namespace's claims queue (`claims`). True when the meta did not reject
+   * it or the rewrite landed.
+   */
+  function claimElsewhere(
     store: DraftFileStore,
+    tourUrl: string,
     id: string,
     remove: () => Promise<void>,
   ): Promise<boolean> {
-    if (!(await metaRejectedIds(store)).includes(id)) return true;
-    await remove();
-    let claimed = claimedElsewhere.get(store);
-    if (claimed === undefined) {
-      claimed = new Set();
-      claimedElsewhere.set(store, claimed);
-    }
-    claimed.add(id);
-    return writeMetaWithout(store, id);
+    return claims.run(draftKeyForTour(tourUrl), async () => {
+      if (!(await metaRejectedIds(store)).includes(id)) return true;
+      await remove();
+      let claimed = claimedElsewhere.get(store);
+      if (claimed === undefined) {
+        claimed = new Set();
+        claimedElsewhere.set(store, claimed);
+      }
+      claimed.add(id);
+      return writeMetaWithout(store, id);
+    });
   }
 
   function metaChainKey(tourUrl: string): string {
@@ -593,12 +607,16 @@ export function wireCreatorDraft(deps: {
     entry: string,
   ): Promise<boolean> {
     const remove = () => store.remove(fileKey);
-    if (draftStore !== store) return claimElsewhere(store, entry, remove);
+    if (draftStore !== store) {
+      return claimElsewhere(store, tourUrl, entry, remove);
+    }
     if (!draftRejected.includes(entry) && !diskRejected.has(entry)) {
       return true;
     }
     await remove();
-    if (draftStore !== store) return claimElsewhere(store, entry, remove);
+    if (draftStore !== store) {
+      return claimElsewhere(store, tourUrl, entry, remove);
+    }
     draftRejected = draftRejected.filter((r) => r !== entry);
     return recordMeta(tourUrl);
   }
@@ -712,10 +730,10 @@ export function wireCreatorDraft(deps: {
     id: string,
   ): Promise<boolean> {
     const remove = () => removeDraftObject(store, id);
-    if (draftStore !== store) return claimElsewhere(store, id, remove);
+    if (draftStore !== store) return claimElsewhere(store, tourUrl, id, remove);
     if (!draftRejected.includes(id) && !diskRejected.has(id)) return true;
     await remove();
-    if (draftStore !== store) return claimElsewhere(store, id, remove);
+    if (draftStore !== store) return claimElsewhere(store, tourUrl, id, remove);
     draftRejected = draftRejected.filter((rejected) => rejected !== id);
     return recordMeta(tourUrl);
   }
@@ -1306,6 +1324,7 @@ export function wireCreatorDraft(deps: {
       if (stored?.rejectedOnDisk.includes(SETTINGS_REJECTED) === true) {
         storedSettings = undefined;
         lost = false;
+        frameLost = false;
       }
       if (lost) {
         unreadNote = DRAFT_PART_UNREAD;
