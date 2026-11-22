@@ -257,7 +257,7 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   printed at 20. A live measurement wins over a drafted one - it is newer.
 - **"Delete it" is committed by ONE meta write, and undone by a second if
   that one fails.** The handler records the rejected ids in the meta file
-  and only then removes their object files. If the write does not land, the
+  and only then removes their object files, unawaited: a tab closed before they went leaves them inert, because the next read refuses every rejected id (`draft-shared-behaviour.test.ts`, "discard: a tab closed right after the rejection landed ..."). If the write does not land, the
   in-memory rejection is restored AND re-written behind any snapshot a mint
   or finish already took - best-effort, since the store that refused may
   refuse again - so a queued write cannot commit a discard the creator was

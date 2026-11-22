@@ -855,6 +855,40 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(later.offer()).toBe("");
   }, 60_000);
 
+  // Why: "Delete it" is done once its rejection is written; the rejected
+  // files are removed after it, unawaited. A tab closed right after the
+  // rejection landed leaves those files on disk, and they must stay
+  // inert: the next open offers nothing.
+  it("discard: a tab closed right after the rejection landed leaves its files inert", async () => {
+    const { browser, page, opened } = await freshPage(open);
+    await page.edit("a", "The gate");
+    const offered = await reopen(open, browser);
+    const from = browser.log.length;
+    browser.crashAfter = 1;
+    await offered.discard();
+    const landed = browser.log.slice(from);
+    expect(landed).toHaveLength(1);
+    expect(landed[0]).toMatch(/^put /);
+    const after = await reopen(open, browser, offered);
+    expect(after.offer()).toBe("");
+    expect(after.shape()).toEqual(opened);
+  }, 60_000);
+
+  // Why: the unawaited removals after "Delete it" must not surface as an
+  // unhandled rejection when a store breaks its never-throws contract; the
+  // rejection already landed, so the next open still offers nothing.
+  it("discard: a removal that throws after the rejection is caught, and nothing is offered again", async () => {
+    const { browser, page, opened } = await freshPage(open);
+    await page.edit("a", "The gate");
+    const offered = await reopen(open, browser);
+    browser.failRemoveOf.add("object:a");
+    await offered.discard();
+    const after = await reopen(open, browser, offered);
+    browser.failRemoveOf.clear();
+    expect(after.offer()).toBe("");
+    expect(after.shape()).toEqual(opened);
+  }, 60_000);
+
   // Why: a rejection whose meta write did not land must not be half
   // done: the work stays whole and is offered again (the safe side),
   // never lost without the creator's answer having landed.

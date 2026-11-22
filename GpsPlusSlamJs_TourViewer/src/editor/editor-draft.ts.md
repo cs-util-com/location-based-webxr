@@ -99,7 +99,11 @@ editor's own namespace, one tab at a time. Design:
     the open) and the ids' files removed; false when the meta write or the
     settings removal did not land - the meta is put back and the offer
     re-armed, so a key move before the next open still carries it (M1b-2
-    milestone review #4).
+    milestone review #4). The ids' file removals are not awaited, and that
+    is safe: once the meta rejects the ids, the next read refuses their
+    files whether or not they were removed, and a removal that throws is
+    caught (both pinned in `draft-shared-behaviour.test.ts`, "discard: a
+    tab closed right after the rejection landed ...").
   - `writes().built(written)` - a save was built: each pending record's version in
     the written manifest (as a reader parses it, `manifestAsRead`) joins its
     base's `written` list; the setting's keep is decided again against the
