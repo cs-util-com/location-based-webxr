@@ -95,6 +95,13 @@ const made = (notes: string[] = [], used: string[] = []): OptimizeOutcome => ({
 
 const file = (name: string, size = 4) => new File([new Uint8Array(size)], name);
 
+/** The shelf id of the `n`-th model the test's delivery added. */
+const entryId = (n: number) => `${n}`.padStart(64, "0");
+
+/** The notes on the card of the `n`-th model added. */
+const notesOf = (t: ReturnType<typeof setup>, n: number) =>
+  t.store.getState().assetShelf.entries[entryId(n)]?.madeFrom?.notes;
+
 function setup(listModels?: (zip: Blob) => Promise<readonly string[]>) {
   const store = configureStore({
     reducer: {
@@ -405,6 +412,78 @@ describe("the model import runner", () => {
     await t.settle();
     const entries = Object.values(t.store.getState().assetShelf.entries);
     expect(entries.map((e) => e.madeFrom?.notes)).toEqual([[], []]);
+  });
+
+  // Why: a zip's model never takes a loose part of the drop, so the note
+  // about the drop's unused loose parts belongs on a loose model's card,
+  // never on a model made from a zip dropped with them.
+  it("names an unused loose part on the drop's loose model, not on a zip's model added after it", async () => {
+    const t = setup(() => Promise.resolve([]));
+    t.drop([file("a.gltf"), file("a.bin"), file("stray.bin"), file("set.zip")]);
+    expect(t.runs[0]!.payload).toMatchObject({ format: "gltf" });
+    t.runs[0]!.resolve(made([], ["a.bin"]));
+    await t.settle();
+    t.runs[1]!.resolve(made());
+    await t.settle();
+    expect(t.delivered.map((d) => d.from)).toEqual(["a.gltf", "set.zip"]);
+    expect(notesOf(t, 1)).toEqual([note.unusedFiles(["stray.bin"])]);
+    expect(notesOf(t, 2)).toEqual([]);
+  });
+
+  // Why: the drop ends when its last model leaves, which may be a failed
+  // one removed; the note then goes on the model that was added, and
+  // names the failed model's own part too, since no model took it.
+  it("names the unused part on the added model when the drop's last model failed and was removed", async () => {
+    const t = setup();
+    const [, second] = t.drop([
+      file("a.gltf"),
+      file("a.bin"),
+      file("b.gltf"),
+      file("b.bin"),
+      file("stray.bin"),
+    ]);
+    t.runs[0]!.resolve(made([], ["a.bin"]));
+    await t.settle();
+    t.runs[1]!.resolve({ kind: "kept", reason: "no" });
+    await t.settle();
+    expect(notesOf(t, 1)).toEqual([]);
+    t.runner.remove(second!);
+    expect(notesOf(t, 1)).toEqual([note.unusedFiles(["b.bin", "stray.bin"])]);
+  });
+
+  // Why: with no model added there is no card to carry the note; the drop
+  // ends without one and without an error.
+  it("names nothing when no model of the drop was added", async () => {
+    const t = setup();
+    const [id] = t.drop([file("a.gltf"), file("stray.bin")]);
+    t.runs[0]!.resolve({ kind: "kept", reason: "no" });
+    await t.settle();
+    expect(t.runner.remove(id!)).toBe(true);
+    expect(t.store.getState().assetShelf.entries).toEqual({});
+  });
+
+  // Why: the creator may delete the last added model from the shelf while
+  // the drop still converts; the note then goes on the last added model
+  // still on the shelf rather than being lost.
+  it("names the unused part on the last added model still on the shelf", async () => {
+    const t = setup();
+    const [, , third] = t.drop([
+      file("a.gltf"),
+      file("a.bin"),
+      file("b.gltf"),
+      file("b.bin"),
+      file("c.gltf"),
+      file("stray.bin"),
+    ]);
+    t.runs[0]!.resolve(made([], ["a.bin"]));
+    await t.settle();
+    t.runs[1]!.resolve(made([], ["b.bin"]));
+    await t.settle();
+    t.store.dispatch(shelfAct.entryRemoved({ id: entryId(2) }));
+    t.runs[2]!.resolve({ kind: "kept", reason: "no" });
+    await t.settle();
+    t.runner.remove(third!);
+    expect(notesOf(t, 1)).toEqual([note.unusedFiles(["stray.bin"])]);
   });
 
   it("holds a failed model's pictures until it is removed", async () => {

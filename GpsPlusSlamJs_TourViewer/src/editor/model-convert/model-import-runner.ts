@@ -20,7 +20,8 @@
  *   to the drop's `release` once each of its models was added or removed,
  *   less those a model carries. A loose part (a `.bin`, a picture kind a
  *   tour does not show) no model of the drop used is named then, once, in
- *   a note on the drop's last added model: each loose model is handed all
+ *   a note on the drop's last loose model added and still on the shelf
+ *   (a zip's model never takes a loose part): each loose model is handed all
  *   the drop's parts, so only the whole drop can tell.
  *
  * @see model-import-runner.ts.md
@@ -108,12 +109,13 @@ interface Group {
   /** Its loose parts that are no picture: named once its models are
    *  done, when none used them. */
   readonly parts: readonly File[];
-  /** Its last added model, which carries that note. */
-  lastAdded: {
+  /** Its loose models added, in order: the last still on the shelf
+   *  carries that note (a zip's model never takes a loose part). */
+  readonly added: {
     readonly id: string;
     readonly from: string;
-    notes: readonly string[];
-  } | null;
+    readonly notes: readonly string[];
+  }[];
 }
 
 interface Job {
@@ -209,8 +211,12 @@ export function createModelImportRunner(
     group.open.delete(job.id);
     if (group.open.size > 0 || closed) return;
     const unused = group.parts.filter((f) => !group.used.has(f.name));
-    if (unused.length > 0 && group.lastAdded !== null) {
-      const { id, from, notes } = group.lastAdded;
+    const { entries } = store.getState().assetShelf;
+    const carrier = [...group.added]
+      .reverse()
+      .find((a) => entries[a.id] !== undefined);
+    if (unused.length > 0 && carrier !== undefined) {
+      const { id, from, notes } = carrier;
       store.dispatch(
         act.madeFromSet({
           id,
@@ -327,7 +333,9 @@ export function createModelImportRunner(
         store.dispatch(
           act.madeFromSet({ id: result.id, from: job.from, notes }),
         );
-        job.group.lastAdded = { id: result.id, from: job.from, notes };
+        if (job.payload.format === "gltf") {
+          job.group.added.push({ id: result.id, from: job.from, notes });
+        }
         leave(job);
       } else if (result.kind === "refused") {
         store.dispatch(
@@ -384,7 +392,7 @@ export function createModelImportRunner(
         ]
           .map((i) => input.files[i]!)
           .filter((f) => importRoleOf(f.name) === "companion"),
-        lastAdded: null,
+        added: [],
       };
       const ids = input.plan.imports.map((planned) => {
         const payload = payloadOf(input.files, planned);
