@@ -134,14 +134,14 @@ export interface CreatorDraft {
   /** One awaited write of an object's record, with its base (M6 E2p):
    *  the object list's edits, moves and undos. */
   writeObject(object: TourObject, blob?: Blob): Promise<boolean>;
-  /** A Finish wrote these objects into `written` (M6 E2p re-review #1):
+  /** A Finish wrote these objects into `written` (M6 E2p):
    *  their versions there are this device's own work, whether or not the
    *  creator uploads the file. */
   finished(ids: readonly string[], written: TourManifest): void;
   /**
    * The creator said a Finish's file was uploaded (follow-up F19):
    * `written` is the tour.json of THAT file, captured when the question
-   * was asked (F19 review #2) - never a later Finish's that was not
+   * was asked - never a later Finish's that was not
    * saved. Every object a Finish of this load wrote gets its version in
    * `written` as SEEN hosted, so a delete made elsewhere afterwards is
    * honoured rather than offered back. Whether every note landed; true
@@ -213,8 +213,8 @@ export async function hostedLevelJson(
   );
   if (entry === undefined) return null;
   try {
-    // Under the text cap, like every JSON the session reads (K0
-    // milestone review R10): a level file is text on the JS heap.
+    // Under the text cap, like every JSON the session reads: a level file
+    // is text on the JS heap.
     return await session.loadEntryText(entry.filename);
   } catch {
     // Unreadable is not proof of anything, and the safe direction is to
@@ -227,8 +227,7 @@ export async function hostedLevelJson(
  *  are not edits of the tour document, so the draft question's gate does
  *  not hold them (`draft-edit-gate.ts`). */
 interface CodesHolder {
-  /** The stored draft's codes while nobody decided on them (plan M3b, the
-   *  M6 E2c review #3 before it): from the open's read until Restore
+  /** The stored draft's codes while nobody decided on them (plan M3b): from the open's read until Restore
    *  brings them in or a rejection of the draft lands. A write of the
    *  codes meanwhile - a measurement, a settle - re-states them after the
    *  page's own, or the draft's measured code would be gone from disk at
@@ -297,7 +296,7 @@ export function wireCreatorDraft(deps: {
    */
   let draftRejected: readonly string[] = [];
   /**
-   * The ids the meta ON DISK rejects (M6 E2c review #3): the read's raw
+   * The ids the meta ON DISK rejects: the read's raw
    * list, then each landed meta write's. `draftRejected` is pruned to ids
    * with files, but until a meta write lands the disk still rejects the
    * rest - and a change of one of those, not claimed, would be hidden by
@@ -313,11 +312,11 @@ export function wireCreatorDraft(deps: {
    * The meta: every write for a tour targets one key in one directory, and
    * the mint and finish ones are unawaited - so an earlier write landing
    * later would overwrite a newer one, including a rejection or a measured
-   * level (PR #456 review).
+   * level.
    *
    * An object: a placement's write is unawaited too, so without the queue a
    * quick delete of it could land first and the placement come back on the
-   * next open (M4 review #7; the M2c review's filed #7). Queued per id, an
+   * next open. Queued per id, an
    * operation that takes several steps - a claim of a rejected id, then
    * the write (see `writeForObject`) - is also never interleaved with
    * another operation on the same id.
@@ -328,13 +327,13 @@ export function wireCreatorDraft(deps: {
    * independent chains, which is the same clobber through another door,
    * and it is reachable: the paste paths trim before opening, but the
    * `?qr=` boot passes the decoded payload through untouched, and that is
-   * external data (PR #460 review). That makes
+   * external data. That makes
    * both properties structural rather than remembered: a tour that stalls
    * blocks only itself, and the ordering survives any interleaving of
    * opens. Two earlier shapes each held only half of that - one chain per
    * session blocked every tour behind a stall, and one chain plus "the
    * last tour seen" lost the ordering for A after B was opened in between
-   * (PR #457 and #459 reviews).
+   *.
    *
    * A key is dropped once its queue drains, so this holds only work in
    * flight.
@@ -493,10 +492,10 @@ export function wireCreatorDraft(deps: {
     deps.render();
   }
 
-  /** The tour as it was OPENED (M6 E2p review #2): a Finish advances the
+  /** The tour as it was OPENED: a Finish advances the
    *  tour document to what this page wrote, which is not what is hosted
    *  until the creator uploads it. Every hosted comparison of `present`
-   *  uses it (re-review #3). The document keeps it (`opened()`), so the
+   *  uses it. The document keeps it (`opened()`), so the
    *  draft holds no copy of its own. */
   const openedTour = (): TourManifest | null => ctx.tourDocument.opened();
   /** The line saying the draft gave way to newer edits, for the open. */
@@ -551,8 +550,7 @@ export function wireCreatorDraft(deps: {
   /** The opened tour's version of an object, recorded as seen with each
    *  draft write of it (M6 E2p); none for an object it does not carry.
    *  Taken when the write is QUEUED: a queued write can run after another
-   *  open (`reset`, `present`), whose tour is not the one edited (third
-   *  review #1). */
+   *  open (`reset`, `present`), whose tour is not the one edited. */
   function seenKey(id: string): string | undefined {
     return hostedObjects(openedTour()).key(id);
   }
@@ -687,7 +685,7 @@ export function wireCreatorDraft(deps: {
   /**
    * Write something FOR object `id` - its record and bytes, or its
    * tombstone - in that id's queue, and only once the meta no longer
-   * rejects the id (M4 review #1).
+   * rejects the id.
    *
    * THE META OUTRANKS AN OBJECT'S FILES (`readDraft`), so a change to an
    * id the meta rejects - a published tour reopened and its spent draft
@@ -820,7 +818,7 @@ export function wireCreatorDraft(deps: {
       // rewritten on each mint, each finish and each tour open, and one
       // that omitted the list would hand a rejected draft back on the next
       // read. (NOT on each placement - a placement's write is the object
-      // file only and never reaches here; PR #456 review.)
+      // file only and never reaches here.)
       rejected: draftRejected,
     };
     // Values captured NOW, write ordered by call within this tour. The
@@ -1141,7 +1139,7 @@ export function wireCreatorDraft(deps: {
     draftRejected = rejectedIds;
     // ENQUEUED synchronously, with the values captured at the tap. The
     // chain guarantees ordering, not immediacy: the `put` itself is issued
-    // from a `then`, so it is a microtask away at best (PR #457 review).
+    // from a `then`, so it is a microtask away at best.
     const committed = recordMeta(tourUrl);
     // The draft's codes go with it once the commit LANDED: this page's
     // only, as they stood at the tap - an empty record when it holds none,
@@ -1309,7 +1307,7 @@ export function wireCreatorDraft(deps: {
       }
       // A captured photo whose bytes did not read is dropped by the read
       // (its restore would name a content entry the zip lacks); the
-      // creator is told, never left to find it gone (PR #876 review).
+      // creator is told, never left to find it gone.
       if ((stored?.photosUnread ?? 0) > 0 && unreadNote === null) {
         unreadNote = DRAFT_PART_UNREAD;
         ctx.placementNote = unreadNote;
@@ -1350,8 +1348,7 @@ export function wireCreatorDraft(deps: {
         if (hasPageCodes()) void writeCodes(store, tourUrl, pageCodes(), held);
         return false;
       }
-      // A newer edit elsewhere wins (M6 E2p, owner question Q-E2-2's
-      // default): those records are not offered back, and the page says
+      // A newer edit elsewhere wins (M6 E2p): those records are not offered back, and the page says
       // so once.
       const superseded = draftObjectsSuperseded(stored.draft, opened);
       supersededNote =
@@ -1405,8 +1402,8 @@ export function wireCreatorDraft(deps: {
         draftIsSpent(stored.draft, opened, hostedLevel, stored.visits.length)
       ) {
         // SPENT: the hosted zip carries every object AND the measurement,
-        // and the draft holds no AR visit (the zip never carries those,
-        // M3a/M3b review #5). That is the only proof the content reached
+        // and the draft holds no AR visit (the zip never carries those).
+        // That is the only proof the content reached
         // the file the world sees, and the only thing that deletes a
         // draft.
         // No re-open. It existed only because `clear` used to remove the
@@ -1414,8 +1411,7 @@ export function wireCreatorDraft(deps: {
         // empties in place and stays usable. Re-opening would carry the
         // same failure forward: `openDraftStore` returns undefined on any
         // transient refusal, and assigning that over a WORKING store turns
-        // persistence off for the rest of the tour, silently (PR #443
-        // review).
+        // persistence off for the rest of the tour, silently.
         // Same rule as the discard: delete exactly what `readDraft`
         // returned. A spent draft is one the hosted zip already carries
         // in full, so every id here is safe to drop - and anything this
@@ -1658,7 +1654,7 @@ export function wireCreatorDraft(deps: {
       const store = draftStore;
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return;
-      // As a reader of the written file sees it (third review #5).
+      // As a reader of the written file sees it.
       const read = hostedObjects(manifestAsRead(written));
       for (const id of ids) {
         const key = read.key(id);
@@ -1673,12 +1669,12 @@ export function wireCreatorDraft(deps: {
       // No draft here (no persistence, or no tour's namespace yet): there
       // is nothing a later open could offer back, so nothing to note and
       // nothing failed - never "could not note it", asked again on every
-      // Save again (PR #626 bot finding 3).
+      // Save again.
       if (draftStore === undefined || draftTourUrl === null) return true;
       // The file asked about: an earlier Finish's objects are in it too, in
       // the version the creator just said is hosted (a later Finish carries
       // them on); an object absent from it is not noted. As a reader of
-      // that file sees them (third review #5).
+      // that file sees them.
       const read = hostedObjects(manifestAsRead(written));
       const notes = [...finishedIds].flatMap((id) => {
         const key = read.key(id);
@@ -1693,7 +1689,7 @@ export function wireCreatorDraft(deps: {
       const tourUrl = draftTourUrl;
       if (store === undefined || tourUrl === null) return Promise.resolve();
       // In the id's queue: a placement's write still in flight lands first,
-      // and this removal after it (M4 review #7).
+      // and this removal after it.
       return draftWrites.run(objectChainKey(tourUrl, id), async () => {
         await removeDraftObject(store, id);
         forgottenIds.add(id);
