@@ -21,7 +21,8 @@ The guided view's screens as plain data, read from the page state (`FeatureMatch
 - `STEADY_THRESHOLD` (6 degrees per second), `motionStep(level, rotationRate)` (an 0.8/0.2 moving average of the summed absolute rotation rates; a rate that is null or not a finite number counts as missing, and a reading without any, or whose sum overflows, keeps the level, so one NaN cannot latch the level) and `isMoving(level)`: the steady chip. `rateSum(rotationRate)` is the summed absolute finite rates, or null for a reading without one or whose sum overflows; `motionStep` and `still-detector.ts` share it. `hasRate(rotationRate)` says whether a reading carries any finite rate; the views mark motion as seen only then, so an all-NaN reading never makes the readout claim "steady".
 - `measureText(state, pair)`: the measure sheet's state line: the run's status line only while `planRun` is the current slot, else "pair <slot>: photos A and B ready" or "the current pair has no two photos yet".
 - `introCountdownText(settings)`: the intro's hands-off line for `{ countdown, sound }`: the countdown in seconds, ", with a beep per second" when the sound is on, or, with the countdown off, that each photo is taken at the tap.
-- `planPairOf(state, frames)`: the current slot's `{ slot, seq, a, b }` (frames from the side table), or null for a half pair or a frame the side table does not hold; a plan run and the single-file exports read it.
+- `planPairOf(state, frames)`: the current slot's `{ slot, seq, a, b }` (frames from the side table), or null for a half pair or a frame the side table does not hold; a plan run and the single-file exports read it. `pairAt(state, frames, slotId)` is the same for any slot.
+- `speedPairOf(state, frames)`: the pair the speed test times: the current pair, else the pair the last plan run measured while that take is unchanged (the cockpit has moved on by then), else null (the synthetic pair).
 
 ## Invariants
 

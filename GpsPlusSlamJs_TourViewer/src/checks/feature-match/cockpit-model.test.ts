@@ -3,13 +3,18 @@ import fc from "fast-check";
 
 import {
   downloadCount,
+  handsOffResult,
   instrView,
   meterFill,
   nextAfterPair,
   nightOn,
+  NOT_MEASURED,
+  pairMeasured,
   progressText,
   readoutView,
   retakeView,
+  runStatusText,
+  sameDrawing,
   segClasses,
   shutterView,
   statusView,
@@ -315,6 +320,132 @@ describe("dock lines", () => {
   });
 });
 
+describe("cockpit model: status order and the run's own line", () => {
+  // Why: the dock's line follows the run that is going, so a speed test or
+  // the synthetic pair never shows the last photo pair's status.
+  it("reads the running kind's own status", () => {
+    const plan = run([
+      camOn,
+      shot("1a-s1", "a"),
+      shot("1a-s1", "b"),
+      A.runStarted("plan"),
+      A.runProgressed("plan 1"),
+    ]);
+    expect(runStatusText(plan)).toBe("running: plan 1");
+    const done = run(
+      [A.runFinished({ text: "done: 1", resultsId: "r" })],
+      plan,
+    );
+    const speed = run(
+      [A.runStarted("speed"), A.runProgressed("speed 1")],
+      done,
+    );
+    expect(runStatusText(speed)).toBe("running: speed 1");
+    expect(statusView(speed).text).toBe("running: speed 1");
+    const syn = run([A.runStarted("synthetic")], done);
+    expect(statusView(syn).text).toBe(runStatusText(syn));
+    expect(statusView(syn).text).not.toBe("done: 1");
+  });
+
+  // Why: the newest line wins in a fixed order, each with its tone; a
+  // camera that failed outranks a stale save line, and a pair packed
+  // without a measurement says so in red.
+  it("orders the status lines and their tones", () => {
+    const saved = run([
+      camOn,
+      A.planFileSaveStarted(),
+      A.planFileSaveEnded("Kept x.zip here."),
+    ]);
+    expect(statusView(saved)).toEqual({ text: "Kept x.zip here.", tone: "" });
+    expect(statusView(run([A.cameraStartSet("failed")], saved)).text).toBe(
+      "Camera unavailable: tap Retry camera.",
+    );
+    expect(statusView(run([A.cameraStartSet("starting")], saved)).text).toBe(
+      "Starting the camera...",
+    );
+    const bad = run([
+      A.planFileSaveStarted(),
+      A.planFileSaveEnded(`Kept x.zip here. ${NOT_MEASURED}`),
+    ]);
+    expect(statusView(bad).tone).toBe("bad");
+    expect(statusView(run([A.photoStoreChanged(true)], saved)).tone).toBe(
+      "bad",
+    );
+    expect(
+      statusView(run([A.guidedCountSet({ shot: "a", left: 2 })], saved)).text,
+    ).toBe("Countdown: photo A in 2 s.");
+  });
+
+  // Why: "Not measured" must catch a run that failed, was refused, or
+  // measured nothing (every method in error, as with sift.js missing).
+  it("knows whether a packed pair was measured", () => {
+    const ok = { error: null, sizes: [{ error: null }] };
+    const err = { error: "no sift", sizes: [] };
+    const s = (resultsId: string | null) =>
+      run([
+        camOn,
+        shot("1a-s1", "a"),
+        shot("1a-s1", "b"),
+        A.runStarted("plan"),
+        A.runFinished({ text: "done", resultsId }),
+      ]);
+    expect(pairMeasured(s("r1"), [ok], "1a-s1", 1)).toBe(true);
+    expect(pairMeasured(s("r1"), [err], "1a-s1", 1)).toBe(false);
+    expect(pairMeasured(s("r1"), [ok], "1a-s1", 2)).toBe(false);
+    expect(pairMeasured(s("r1"), [ok], "2a-s1", 1)).toBe(false);
+    expect(pairMeasured(s(null), undefined, "1a-s1", 1)).toBe(false);
+  });
+
+  // Why: with "each pair by itself" every pair already went out, so the
+  // last line must not send the tester to Download all for them.
+  it("does not send to Download all when every pair is downloaded", () => {
+    const list = ["1a", "1b", "1c", "2a", "2b", "2c", "2d"]
+      .concat(["3a", "3b", "3c", "4a", "4b", "4c", "4d"])
+      .map((k) => `${k}-s1`);
+    const actions: FeatureMatchAction[] = [
+      camOn,
+      A.planSettingsChanged({ save: "each" }),
+    ];
+    list.forEach((id, i) => {
+      const dim = id.startsWith("1b") || id.startsWith("1c") ? 40 : 120;
+      actions.push(A.planMoved(i), shot(id, "a"), shot(id, "b", dim));
+      actions.push(
+        A.planFileKept({ id: `k${id}`, name: `${id}.zip`, slot: id }),
+      );
+    });
+    const left = run(actions);
+    expect(instrView(left).text).toMatch(/Download all/);
+    const all = run([A.planFilesDownloaded(list.map((id) => `k${id}`))], left);
+    expect(downloadCount(all)).toBe(0);
+    expect(instrView(all).text).toBe("All pairs done and downloaded.");
+  });
+
+  // Why: as in the prototype, the instruction marks the word to tap.
+  it("marks Start bold while the camera is off", () => {
+    const v = instrView(run([]));
+    expect(v.bold).toBe("Start");
+    expect(v.text).toContain("tap Start");
+    expect(instrView(run([camOn])).bold).toBeUndefined();
+  });
+
+  // Why: the hands-off photo's outcome is what the status line reports;
+  // a capture with no picture yet is refused, one that throws failed.
+  it("maps a hands-off capture to taken, refused or failed", () => {
+    expect(handsOffResult(() => true)).toBe("taken");
+    expect(handsOffResult(() => false)).toBe("refused");
+    const seen: unknown[] = [];
+    expect(
+      handsOffResult(
+        () => {
+          throw new Error("no canvas");
+        },
+        (e) => seen.push(e),
+      ),
+    ).toBe("failed");
+    expect(seen).toHaveLength(1);
+  });
+});
+
 describe("cockpit model: hands-off photo B", () => {
   const rest = { alpha: 0.2, beta: -0.1, gamma: 0.3 };
   const samples = (t0: number, ms: number): FeatureMatchAction[] => {
@@ -392,6 +523,27 @@ describe("cockpit model: hands-off photo B", () => {
     expect(meterFill(run([camOn]))).toBe(0);
   });
 
+  // Why: a reading at 60 Hz writes the store each time; the page redraws
+  // only when what it shows changes (the phase, or the meter by 1/50).
+  it("redraws a run of still readings only when the meter moves", () => {
+    let drawn = waiting;
+    let draws = 0;
+    let s = waiting;
+    for (const a of samples(520, 1200)) {
+      s = featureMatchReducer(s, a);
+      if (!sameDrawing(drawn, s)) {
+        drawn = s;
+        draws += 1;
+      }
+    }
+    expect(draws).toBeGreaterThan(10);
+    expect(draws).toBeLessThanOrEqual(52);
+    expect(sameDrawing(waiting, waiting)).toBe(true);
+    expect(sameDrawing(waiting, run([A.cameraChanged(false)], waiting))).toBe(
+      false,
+    );
+  });
+
   // Why: the mode readout says "auto" only while B is really waiting to
   // take itself, so a tester never waits for a photo that will not come.
   it("reads auto while photo B waits to take itself", () => {
@@ -449,6 +601,7 @@ describe("cockpit model property", () => {
         const rv = retakeView(s, { index: 0, seq: 1 });
         expect(rv.label.length).toBeGreaterThan(0);
         expect(rv.disabled).toBe(rv.action === null);
+        expect(downloadCount(s)).toBeGreaterThanOrEqual(0);
         const fill = meterFill(s);
         expect(fill).toBeGreaterThanOrEqual(0);
         expect(fill).toBeLessThanOrEqual(1);

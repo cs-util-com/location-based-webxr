@@ -318,10 +318,37 @@ export function planPairOf(
   frames: ReadonlyMap<string, SavedFrame>,
 ): PlanPair | null {
   const slot = planSlots(s.plan)[s.plan.current];
-  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  return slot ? pairAt(s, frames, slot.id) : null;
+}
+
+/** The pair of `slotId`, or null for a half pair or a frame not loaded. */
+export function pairAt(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+  slotId: string,
+): PlanPair | null {
+  const slot = planSlots(s.plan).find((sl) => sl.id === slotId);
+  const rec = s.plan.slots[slotId];
   const a = rec?.a ? frames.get(rec.a.id) : undefined;
   const b = rec?.b ? frames.get(rec.b.id) : undefined;
   return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
+}
+
+/**
+ * The speed test's photo pair: the current one, else the take the last
+ * photo-pair run measured (after the automatic move the current pair is
+ * empty), else null for the synthetic pair.
+ */
+export function speedPairOf(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+): PlanPair | null {
+  const now = planPairOf(s, frames);
+  if (now || !s.planRun) {
+    return now;
+  }
+  const last = pairAt(s, frames, s.planRun.slot);
+  return last && last.seq === s.planRun.seq ? last : null;
 }
 
 /**

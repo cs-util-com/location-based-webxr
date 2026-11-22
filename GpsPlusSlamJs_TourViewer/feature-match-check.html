@@ -251,170 +251,160 @@
   </head>
   <body>
     <div class="layout">
-      <section aria-label="Steps">
-        <details id="options">
-          <summary>Options: everything is on, untick to leave out</summary>
-          <p id="options-note" class="hint">
-            The methods apply to every run. A run on a photo pair sets the rest
-            itself: 1 run, no warm-up, WebGPU only (WASM where the phone has no
-            WebGPU, named in the log) and xfeat_fp16.tflite only. Runs, warm-up,
-            backends and model files apply to the synthetic run.
-          </p>
-          <fieldset>
-            <legend>Methods</legend>
-            <label
-              ><input id="m-sift" type="checkbox" checked /> SIFT (plain
-              JS)</label
-            >
-            <label
-              ><input id="m-xfeat" type="checkbox" checked /> XFeat (LiteRT.js,
-              1.4 MB)</label
-            >
-            <label
-              ><input id="m-aliked" type="checkbox" checked /> ALIKED +
-              LightGlue (onnxruntime-web, 13 MB + 51 MB)</label
-            >
-            <label
-              ><input id="m-siftlg" type="checkbox" /> SIFT + LightGlue
-              (onnxruntime-web, 46 MB)</label
-            >
-          </fieldset>
-          <fieldset>
-            <legend>Backends (XFeat, ALIKED, SIFT + LightGlue)</legend>
-            <label
-              ><input type="checkbox" name="backend" value="webgpu" checked />
-              WebGPU</label
-            >
-            <label
-              ><input type="checkbox" name="backend" value="wasm" checked />
-              WASM</label
-            >
-          </fieldset>
-          <fieldset>
-            <legend>XFeat model files</legend>
-            <label
-              ><input type="checkbox" name="model" value="fp16" checked />
-              xfeat_fp16.tflite</label
-            >
-            <label
-              ><input type="checkbox" name="model" value="fp32" checked />
-              xfeat.tflite</label
-            >
-          </fieldset>
-          <fieldset>
-            <legend>Sizes and runs</legend>
-            <label
-              ><input type="checkbox" name="size" value="320" checked />
-              320</label
-            >
-            <label
-              ><input type="checkbox" name="size" value="480" checked />
-              480</label
-            >
-            <label
-              ><input type="checkbox" name="size" value="640" checked />
-              640</label
-            >
-            <label
-              >Runs
-              <input
-                id="runs"
-                type="number"
-                min="1"
-                max="50"
-                value="5"
-                size="3"
-            /></label>
-            <p class="hint">
-              Long edge in pixels; one warm-up before the runs.
-            </p>
-          </fieldset>
-          <div class="row">
-            <button id="run-synthetic" type="button" class="secondary">
-              Run on a synthetic pair
-            </button>
-            <span id="synthetic-state" aria-live="polite"></span>
-          </div>
-          <p class="hint">
-            A generated pair with a known warp, no camera: it also counts the
-            matches that land within 3 px of where they should.
-          </p>
-        </details>
-        <details id="speed">
-          <summary>Speed test: download, start-up and steady times</summary>
-          <p class="hint">
-            Rest the phone, tap Run speed test and do not touch it until it says
-            done. Uses the camera pair when photos A and B are taken, else the
-            synthetic pair. One first run per arm, then the runs interleaved;
-            XFeat fp16 is the reference the others are divided by.
-          </p>
-          <fieldset>
-            <legend>Arms</legend>
-            <label
-              ><input id="t-xfeat" type="checkbox" checked /> XFeat fp16
-              (reference)</label
-            >
-            <label
-              ><input id="t-siftlg" type="checkbox" checked /> SIFT +
-              LightGlue</label
-            >
-            <label
-              ><input id="t-dino-int8" type="checkbox" checked /> DINOv2-S/14
-              int8</label
-            >
-            <label
-              ><input id="t-dino-q4f16" type="checkbox" checked /> DINOv2-S/14
-              q4f16</label
-            >
-          </fieldset>
-          <fieldset>
-            <legend>Backends</legend>
-            <label
-              ><input type="checkbox" name="t-backend" value="webgpu" checked />
-              WebGPU</label
-            >
-            <label
-              ><input type="checkbox" name="t-backend" value="wasm" checked />
-              WASM</label
-            >
-          </fieldset>
-          <fieldset>
-            <legend>Settings</legend>
-            <label
-              >Long edge
-              <select id="t-edge">
-                <option value="480">480</option>
-                <option value="640" selected>640</option>
-                <option value="960">960</option>
-              </select></label
-            >
-            <label
-              >SIFT cap
-              <select id="t-cap">
-                <option value="512" selected>512</option>
-                <option value="1024">1024</option>
-              </select></label
-            >
-            <label
-              >Runs
-              <input
-                id="t-runs"
-                type="number"
-                min="1"
-                max="50"
-                value="10"
-                size="3"
-            /></label>
-          </fieldset>
-          <div class="row">
-            <button id="run-speed" type="button">Run speed test</button>
-            <span id="speed-state" aria-live="polite"></span>
-          </div>
-          <p class="hint">
-            The result goes to the report below: tap Copy log and paste it.
-          </p>
-        </details>
-      </section>
+      <details id="options">
+        <summary>Options: everything is on, untick to leave out</summary>
+        <p id="options-note" class="hint">
+          The methods apply to every run. A run on a photo pair sets the rest
+          itself: 1 run, no warm-up, WebGPU only (WASM where the phone has no
+          WebGPU, named in the log) and xfeat_fp16.tflite only. Runs, warm-up,
+          backends and model files apply to the synthetic run.
+        </p>
+        <fieldset>
+          <legend>Methods</legend>
+          <label
+            ><input id="m-sift" type="checkbox" checked /> SIFT (plain
+            JS)</label
+          >
+          <label
+            ><input id="m-xfeat" type="checkbox" checked /> XFeat (LiteRT.js,
+            1.4 MB)</label
+          >
+          <label
+            ><input id="m-aliked" type="checkbox" checked /> ALIKED + LightGlue
+            (onnxruntime-web, 13 MB + 51 MB)</label
+          >
+          <label
+            ><input id="m-siftlg" type="checkbox" /> SIFT + LightGlue
+            (onnxruntime-web, 46 MB)</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>Backends (XFeat, ALIKED, SIFT + LightGlue)</legend>
+          <label
+            ><input type="checkbox" name="backend" value="webgpu" checked />
+            WebGPU</label
+          >
+          <label
+            ><input type="checkbox" name="backend" value="wasm" checked />
+            WASM</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>XFeat model files</legend>
+          <label
+            ><input type="checkbox" name="model" value="fp16" checked />
+            xfeat_fp16.tflite</label
+          >
+          <label
+            ><input type="checkbox" name="model" value="fp32" checked />
+            xfeat.tflite</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>Sizes and runs</legend>
+          <label
+            ><input type="checkbox" name="size" value="320" checked />
+            320</label
+          >
+          <label
+            ><input type="checkbox" name="size" value="480" checked />
+            480</label
+          >
+          <label
+            ><input type="checkbox" name="size" value="640" checked />
+            640</label
+          >
+          <label
+            >Runs
+            <input id="runs" type="number" min="1" max="50" value="5" size="3"
+          /></label>
+          <p class="hint">Long edge in pixels; one warm-up before the runs.</p>
+        </fieldset>
+        <div class="row">
+          <button id="run-synthetic" type="button" class="secondary">
+            Run on a synthetic pair
+          </button>
+          <span id="synthetic-state" aria-live="polite"></span>
+        </div>
+        <p class="hint">
+          A generated pair with a known warp, no camera: it also counts the
+          matches that land within 3 px of where they should.
+        </p>
+      </details>
+      <details id="speed">
+        <summary>Speed test: download, start-up and steady times</summary>
+        <p class="hint">
+          Rest the phone, tap Run speed test and do not touch it until it says
+          done. Uses the current photo pair, else the pair measured last, else
+          the synthetic pair. One first run per arm, then the runs interleaved;
+          XFeat fp16 is the reference the others are divided by.
+        </p>
+        <fieldset>
+          <legend>Arms</legend>
+          <label
+            ><input id="t-xfeat" type="checkbox" checked /> XFeat fp16
+            (reference)</label
+          >
+          <label
+            ><input id="t-siftlg" type="checkbox" checked /> SIFT +
+            LightGlue</label
+          >
+          <label
+            ><input id="t-dino-int8" type="checkbox" checked /> DINOv2-S/14
+            int8</label
+          >
+          <label
+            ><input id="t-dino-q4f16" type="checkbox" checked /> DINOv2-S/14
+            q4f16</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>Backends</legend>
+          <label
+            ><input type="checkbox" name="t-backend" value="webgpu" checked />
+            WebGPU</label
+          >
+          <label
+            ><input type="checkbox" name="t-backend" value="wasm" checked />
+            WASM</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>Settings</legend>
+          <label
+            >Long edge
+            <select id="t-edge">
+              <option value="480">480</option>
+              <option value="640" selected>640</option>
+              <option value="960">960</option>
+            </select></label
+          >
+          <label
+            >SIFT cap
+            <select id="t-cap">
+              <option value="512" selected>512</option>
+              <option value="1024">1024</option>
+            </select></label
+          >
+          <label
+            >Runs
+            <input
+              id="t-runs"
+              type="number"
+              min="1"
+              max="50"
+              value="10"
+              size="3"
+          /></label>
+        </fieldset>
+        <div class="row">
+          <button id="run-speed" type="button">Run speed test</button>
+          <span id="speed-state" aria-live="polite"></span>
+        </div>
+        <p class="hint">
+          The result goes to the report below: tap Copy log and paste it.
+        </p>
+      </details>
       <section aria-label="Results">
         <div class="table-wrap">
           <table id="results">
@@ -607,8 +597,9 @@
                 tap</label
               >
               <p class="c-hint">
-                Pairs that change the light are always taken at a tap. A tap on
-                the big button takes B at once while it waits.
+                Pairs that change the light, the steps and your own pair are
+                always taken at a tap. While B waits, a tap on the big button
+                takes it after the countdown.
               </p>
             </fieldset>
             <fieldset>

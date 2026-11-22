@@ -31,13 +31,17 @@ import { errorText, formatBytes } from "./bench-net";
 import type { CameraControl } from "./camera-control";
 import {
   downloadCount,
+  handsOffResult,
   instrView,
   meterFill,
   nextAfterPair,
   nightOn,
+  NOT_MEASURED,
+  pairMeasured,
   progressText,
   readoutView,
   retakeView,
+  runStatusText,
   segClasses,
   shutterView,
   statusView,
@@ -56,8 +60,8 @@ import {
   isMoving,
   measureText,
   motionStep,
+  pairAt,
   planPairOf,
-  type PlanPair,
 } from "./guided-model";
 import { guidedCard } from "./guided-texts";
 import { createPlanIo } from "./plan-io";
@@ -131,19 +135,6 @@ function markSeen(): void {
   }
 }
 
-/** The pair of `slotId`, or null for a half pair or a frame not loaded. */
-function pairAt(
-  s: FeatureMatchState,
-  frames: Parameters<typeof planPairOf>[1],
-  slotId: string,
-): PlanPair | null {
-  const slot = planSlots(s.plan).find((sl) => sl.id === slotId);
-  const rec = s.plan.slots[slotId];
-  const a = rec?.a ? frames.get(rec.a.id) : undefined;
-  const b = rec?.b ? frames.get(rec.b.id) : undefined;
-  return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
-}
-
 /** Wires the cockpit found under `root`; returns its render. */
 export function startCockpitView(deps: CockpitDeps): () => void {
   const { root, fm, engine, camera, log, fail } = deps;
@@ -211,6 +202,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     status: el("status"),
     details: el<HTMLButtonElement>("details"),
     downloadAll: el<HTMLButtonElement>("download-all"),
+    openFlat: el<HTMLButtonElement>("open-flat"),
   };
 
   // The measuring block keeps its own elements and listeners; it moves
@@ -312,17 +304,22 @@ export function startCockpitView(deps: CockpitDeps): () => void {
       );
     };
     let text: string;
+    const measured = pairMeasured(
+      s,
+      s.planRun?.resultsId ? sides.results.get(s.planRun.resultsId) : undefined,
+      p.slot,
+      p.seq,
+    );
     try {
       const zip = await io.pairZip(state(), pair);
       const id = newId("file");
       if (state().plan.settings.save === "each") {
         if (await downloadBlob(zip, names.all, ZIP_FILE_TYPE)) {
-          store.dispatch(
-            A.planFileKept({ id, name: names.all, slot: pair.slot.id }),
-          );
+          // Kept, marked downloaded, until Download all: a browser that
+          // blocked the second download still has it to give.
+          keep(id, zip);
           store.dispatch(A.planFilesDownloaded([id]));
-          store.dispatch(A.planKeptDropped());
-          text = `Saved ${names.all} (${formatBytes(zip.size)}).`;
+          text = `Download started: ${names.all} (allow multiple downloads if Chrome asks).`;
         } else {
           keep(id, zip);
           text =
@@ -331,6 +328,9 @@ export function startCockpitView(deps: CockpitDeps): () => void {
       } else {
         keep(id, zip);
         text = `Kept ${names.all} here (${formatBytes(zip.size)}).`;
+      }
+      if (!measured) {
+        text = `${text} ${NOT_MEASURED}`;
       }
       log(`pair zip: ${text}`);
     } catch (e) {
@@ -351,7 +351,12 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     }
     store.dispatch(A.planFileSaveEnded(text));
     note.show(text);
-    if (!camera.on() && state().cameraStart !== "failed") {
+    // The flat target has the camera now: it starts again when that closes.
+    if (
+      !camera.on() &&
+      state().cameraStart !== "failed" &&
+      !state().flat.open
+    ) {
       void startCamera();
     }
   }
@@ -452,13 +457,12 @@ export function startCockpitView(deps: CockpitDeps): () => void {
 
   /** The phone rested for the dwell: photo B, and how it went. */
   const takeHandsOff = (): void => {
-    let r: "taken" | "refused" | "failed";
-    try {
-      r = io.shoot("b") ? "taken" : "refused";
-    } catch (e) {
-      fail("capture", e);
-      r = "failed";
-    }
+    const r = handsOffResult(
+      () => io.shoot("b"),
+      (e) => {
+        fail("capture", e);
+      },
+    );
     store.dispatch(A.handsOffShot(r));
     log(`hands-off photo B: ${r}`);
   };
@@ -503,6 +507,15 @@ export function startCockpitView(deps: CockpitDeps): () => void {
       const b = document.createElement("b");
       b.textContent = `${instr.label}:`;
       ui.instr.replaceChildren(b, ` ${instr.text}`);
+    } else if (instr.bold && instr.text.includes(instr.bold)) {
+      const at = instr.text.indexOf(instr.bold);
+      const b = document.createElement("b");
+      b.textContent = instr.bold;
+      ui.instr.replaceChildren(
+        instr.text.slice(0, at),
+        b,
+        instr.text.slice(at + instr.bold.length),
+      );
     } else {
       ui.instr.textContent = instr.text;
     }
@@ -560,7 +573,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     ui.count.textContent = c ? String(c.left) : "";
     ui.cover.hidden = s.running === null;
     ui.coverText.textContent =
-      s.status.run || "Camera paused so the timing is fair.";
+      runStatusText(s) || "Camera paused so the timing is fair.";
     ui.welcome.hidden = !welcome;
     const ghost =
       ui.showGhost.checked &&
@@ -669,6 +682,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     ui.fileB.disabled = off;
     ui.fileInfo.disabled = off;
     ui.fileMatches.disabled = off || !io.matchesOf(s, pair);
+    ui.openFlat.disabled = !idle;
     ui.filesState.textContent = s.fileSave.text;
   };
 
@@ -827,7 +841,12 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     fail,
     onExit: render,
   });
-  el("open-flat").addEventListener("click", () => {
+  ui.openFlat.addEventListener("click", () => {
+    // Not while a run or a save goes: the run needs the page, and a
+    // pack would start the camera under the flat target.
+    if (state().busy !== "idle") {
+      return;
+    }
     cancelCount("flat target opened");
     camera.stop();
     tab = null;

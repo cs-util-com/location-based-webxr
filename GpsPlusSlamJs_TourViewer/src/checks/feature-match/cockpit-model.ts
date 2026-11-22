@@ -254,6 +254,8 @@ export function tileView(s: FeatureMatchState): Record<Shot, TileView> {
 export function instrView(s: FeatureMatchState): {
   readonly label: "A" | "B" | null;
   readonly text: string;
+  /** A word of `text` shown bold, as the prototype marks the action. */
+  readonly bold?: string;
 } {
   if (s.running !== null) {
     return {
@@ -266,6 +268,7 @@ export function instrView(s: FeatureMatchState): {
     return {
       label: null,
       text: "Put the phone on its stand, then tap Start to turn the camera on.",
+      bold: "Start",
     };
   }
   const card = guidedCard(slot.key);
@@ -284,7 +287,10 @@ export function instrView(s: FeatureMatchState): {
   return nextStep(list, s.plan.slots, index).kind === "end"
     ? {
         label: null,
-        text: "All pairs done. Download all saves them in one zip.",
+        text:
+          downloadCount(s) === 0
+            ? "All pairs done and downloaded."
+            : "All pairs done. Download all saves them in one zip.",
       }
     : {
         label: null,
@@ -398,6 +404,85 @@ export function meterFill(s: FeatureMatchState): number {
   return s.handsOff.phase === "waiting" && st ? stillProgress(st) : 0;
 }
 
+/** The status text of the run going (its own slot), else the photo pair's. */
+export function runStatusText(s: FeatureMatchState): string {
+  const k = s.running;
+  return k === null || k === "plan" ? s.status.run : s.status[k];
+}
+
+/** Added to a packed pair's save line when no measurement went with it. */
+export const NOT_MEASURED = "Not measured: see Results.";
+
+/** What a pair's zip needs to know of one method's result. */
+interface Measured {
+  readonly error: string | null;
+  readonly sizes: readonly { readonly error?: string | null }[];
+}
+
+/**
+ * Whether the last photo-pair run measured take `seq` of `slot`: it
+ * finished with results for that take, and at least one method measured
+ * at least one size (a missing sift.js leaves every method in error).
+ */
+export function pairMeasured(
+  s: FeatureMatchState,
+  results: readonly Measured[] | undefined,
+  slot: string,
+  seq: number,
+): boolean {
+  const r = s.planRun;
+  return (
+    r !== null &&
+    r.resultsId !== null &&
+    r.slot === slot &&
+    r.seq === seq &&
+    (results ?? []).some(
+      (m) => m.error === null && m.sizes.some((z) => !z.error),
+    )
+  );
+}
+
+/** How a hands-off capture went: a throw is "failed", no picture "refused". */
+export function handsOffResult(
+  shoot: () => boolean,
+  onError: (e: unknown) => void = () => undefined,
+): "taken" | "refused" | "failed" {
+  try {
+    return shoot() ? "taken" : "refused";
+  } catch (e) {
+    onError(e);
+    return "failed";
+  }
+}
+
+/**
+ * Whether `next` draws the same page as `prev`: only the hands-off
+ * detector moved, in the same phase and the same 1/50 of the meter. A
+ * reading at 60 Hz then redraws only when something visible changes.
+ */
+export function sameDrawing(
+  prev: FeatureMatchState,
+  next: FeatureMatchState,
+): boolean {
+  if (prev === next) {
+    return true;
+  }
+  for (const k of Object.keys(next) as (keyof FeatureMatchState)[]) {
+    if (k !== "handsOff" && prev[k] !== next[k]) {
+      return false;
+    }
+  }
+  const a = prev.handsOff;
+  const b = next.handsOff;
+  return (
+    a.phase === b.phase &&
+    a.text === b.text &&
+    a.slot === b.slot &&
+    a.a === b.a &&
+    Math.round(meterFill(prev) * 50) === Math.round(meterFill(next) * 50)
+  );
+}
+
 /** The status line: the newest workflow line, with its tone. */
 export function statusView(s: FeatureMatchState): Line {
   if (s.photoStoreFailing) {
@@ -407,7 +492,7 @@ export function statusView(s: FeatureMatchState): Line {
     };
   }
   if (s.running !== null) {
-    return { text: s.status.run, tone: "" };
+    return { text: runStatusText(s), tone: "" };
   }
   const c = s.guided.count;
   if (c) {
@@ -423,8 +508,17 @@ export function statusView(s: FeatureMatchState): Line {
       tone: z === "saved" ? "ok" : z === "failed" ? "bad" : "",
     };
   }
+  if (s.cameraStart === "starting") {
+    return { text: "Starting the camera...", tone: "" };
+  }
+  if (s.cameraStart === "failed") {
+    return { text: "Camera unavailable: tap Retry camera.", tone: "bad" };
+  }
   if (s.fileSave.text) {
-    return { text: s.fileSave.text, tone: "" };
+    return {
+      text: s.fileSave.text,
+      tone: s.fileSave.text.includes(NOT_MEASURED) ? "bad" : "",
+    };
   }
   const h = s.handsOff;
   if (h.phase !== "off" && h.text) {
@@ -437,12 +531,6 @@ export function statusView(s: FeatureMatchState): Line {
             ? "bad"
             : "",
     };
-  }
-  if (s.cameraStart === "starting") {
-    return { text: "Starting the camera...", tone: "" };
-  }
-  if (s.cameraStart === "failed") {
-    return { text: "Camera unavailable: tap Retry camera.", tone: "bad" };
   }
   return { text: "", tone: "" };
 }

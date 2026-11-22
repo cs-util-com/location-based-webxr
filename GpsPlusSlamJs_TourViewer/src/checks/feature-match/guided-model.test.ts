@@ -19,6 +19,7 @@ import {
   pairRows,
   planPairOf,
   runPairs,
+  speedPairOf,
   runView,
   STEADY_THRESHOLD,
 } from "./guided-model";
@@ -291,6 +292,33 @@ describe("planPairOf", () => {
     expect(planPairOf(half, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
     const full = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
     expect(planPairOf(full, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
+  });
+});
+
+// Why this test matters: the speed test times a photo pair when there is
+// one; after the automatic move the current pair is empty, so it falls back
+// to the pair measured last, and only then to the synthetic pair.
+describe("speedPairOf", () => {
+  it("takes the current pair, else the last measured one, else none", () => {
+    const frames = new Map([
+      ["1a-s1-a", saved("A")],
+      ["1a-s1-b", saved("B")],
+    ]);
+    const s = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    expect(speedPairOf(s, frames)?.slot.id).toBe("1a-s1");
+    const measured = run(
+      [A.runStarted("plan"), A.runFinished({ text: "done", resultsId: "r" })],
+      s,
+    );
+    const moved = run([A.planMoved(1)], measured);
+    expect(planPairOf(moved, frames)).toBeNull();
+    expect(speedPairOf(moved, frames)?.slot.id).toBe("1a-s1");
+    const retaken = run(
+      [A.planMoved(0), A.guidedRetakeToggled("b"), shot("1a-s1", "b")],
+      measured,
+    );
+    expect(speedPairOf(run([A.planMoved(1)], retaken), frames)).toBeNull();
+    expect(speedPairOf(run([A.planMoved(1)], s), frames)).toBeNull();
   });
 });
 

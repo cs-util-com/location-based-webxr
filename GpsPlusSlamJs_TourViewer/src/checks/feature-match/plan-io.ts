@@ -94,7 +94,10 @@ export interface PlanIo {
   readonly cancelCount: (why: string) => void;
   /** Stops the count timer when the state says no count runs. */
   syncTimer(): void;
-  /** Takes `shot` of the current slot now; true when the store took it. */
+  /**
+   * Takes `shot` of the current slot now; true when the store took it.
+   * The cockpit's hands-off photo B calls it directly, without a count.
+   */
   shoot(shot: Shot): boolean;
   /** The phone moved: named in the photo's log line if a count runs. */
   moved(): void;

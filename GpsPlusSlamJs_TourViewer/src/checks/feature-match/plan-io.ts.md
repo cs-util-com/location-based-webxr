@@ -11,7 +11,7 @@ The photo test's browser side, shared by both views of the feature matching page
   - `startCamera()`: `cameraStartSet("starting")`, then `idle` or `failed`; only the newest start reports back.
   - `beginCount(shot)`: vibrates 30 ms (only at the tap), then shoots at once with the countdown off, else sets `guidedCountSet({ shot, left })`, beeps and ticks once a second; at 1 the count ends and the photo is taken. A tick the reducer refuses cancels it as `refused`.
   - `cancelCount(why)`: ends a running countdown without a photo, logged `countdown: <why>`. `syncTimer()`: stops the timer when the state's count is null (a move, a reset).
-  - `shoot(shot)`: captures the video (at most `CAPTURE_MAX`), puts the frame with `planPhotoTaken` in one `put`, beeps, flashes and logs `photo A: <slot> #<seq> WxH grey mean M` (with " (phone moved during countdown)"), and `light check <slot>: <result>` for a complete light pair. No picture yet, or a refused photo, is a note and `false`.
+  - `shoot(shot)`: captures the video (at most `CAPTURE_MAX`), puts the frame with `planPhotoTaken` in one `put`, beeps, flashes and logs `photo A: <slot> #<seq> WxH grey mean M` (with " (phone moved during countdown)"), and `light check <slot>: <result>` for a complete light pair. No picture yet, or a refused photo, is a note and `false`. The cockpit's hands-off photo B calls it directly, without a countdown.
   - `moved()`: the phone moved; named in the photo's log line if a count runs.
   - `summaryOf(s)`: `summaryText` with the device line.
   - `matchesOf(s, pair)`: the results of a plan run on exactly this take, else undefined.

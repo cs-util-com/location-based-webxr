@@ -50,7 +50,7 @@ import {
   type SpeedOptions,
 } from "./feature-match-slice";
 import type { FeatureMatchStore } from "./feature-match-store";
-import { planPairOf } from "./guided-model";
+import { planPairOf, speedPairOf, type PlanPair } from "./guided-model";
 import { ortWasmThreads } from "./method-aliked";
 import type { DinoVariant } from "./method-dino";
 import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
@@ -371,7 +371,10 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
 
   // --- runs -------------------------------------------------------------------
 
-  const pairOf = (kind: BenchKind): RunPair | null => {
+  const pairOf = (
+    kind: BenchKind,
+    plan: PlanPair | null = planPairOf(state(), sides.frames),
+  ): RunPair | null => {
     if (kind === "synthetic") {
       const p = syntheticPair(640, 480, SYNTHETIC_SEED);
       return {
@@ -380,7 +383,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
         pair: null,
       };
     }
-    const p = planPairOf(state(), sides.frames);
+    const p = plan;
     if (!p) {
       fail("input", new Error("take photo A and B of this pair first"));
       return null;
@@ -597,9 +600,11 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fallback: T,
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
-  /** The speed test's pair: the plan's current pair, else synthetic. */
-  const speedPair = (): RunPair | null =>
-    pairOf(planPairOf(state(), sides.frames) ? "plan" : "synthetic");
+  /** The speed test's pair: a photo pair (`speedPairOf`), else synthetic. */
+  const speedPair = (): RunPair | null => {
+    const p = speedPairOf(state(), sides.frames);
+    return p ? pairOf("plan", p) : pairOf("synthetic");
+  };
 
   /**
    * The speed test: the ticked arms per backend on a photo pair when one

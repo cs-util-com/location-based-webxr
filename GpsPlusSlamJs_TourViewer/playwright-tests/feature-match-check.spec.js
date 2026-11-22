@@ -442,6 +442,10 @@ test("the feature matching cockpit measures a pair by itself and saves its zip",
   }
   await expect(page.locator("#c-cover")).toBeVisible();
   await expect(page.locator("#log")).toContainText("camera off");
+  // The flat target cannot open over a run: it would take the camera.
+  await openTab(page, "results");
+  await expect(page.locator("#c-open-flat")).toBeDisabled();
+  await closeDrawer(page);
   expect(
     await page.evaluate(
       () =>
@@ -456,7 +460,7 @@ test("the feature matching cockpit measures a pair by itself and saves its zip",
   const zipFile = await saved;
   expect(zipFile.suggestedFilename()).toBe(`${stem}.zip`);
   await expect(page.locator("#c-status")).toHaveText(
-    new RegExp(`^Saved ${stem}\\.zip \\(.+\\)\\.$`),
+    `Download started: ${stem}.zip (allow multiple downloads if Chrome asks).`,
   );
   await expect(page.locator("#c-chip-key")).toHaveText("1b");
   await expect(page.locator("#c-retake-label")).toHaveText("Retake B of 01");
@@ -591,6 +595,75 @@ test("the feature matching cockpit keeps each pair for Download all", async ({
 });
 
 /**
+ * Why this test matters: a pair already kept for Download all, then its
+ * photo B taken again, must not ship the old zip with the old photo B:
+ * the retake drops the take's kept zip, and Download all packs the new
+ * photo (here a dimmed B, which fails the same-light check, so no new
+ * pair zip is made and the loose files carry it).
+ */
+test("the feature matching cockpit ships the retaken photo B, not the old zip", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitPair(page);
+  const stem = "feature-match-01-1a-s1-light-control-same-light";
+  await expect(page.locator("#c-status")).toContainText(
+    `Kept ${stem}.zip here`,
+  );
+  await expect(page.locator("#c-retake-label")).toHaveText("Retake B of 01");
+  await page.locator("#c-retake").click();
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
+  await expect(page.locator("#c-shutter-text")).toHaveText("Retake B");
+  await dimCamera(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-read-light")).toHaveText("light changed");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#c-download-all").click(),
+  ]);
+  const { names, texts } = await zipContents(await readDownload(download));
+  expect(names).not.toContain(`${stem}.zip`);
+  const info = JSON.parse(texts[`${stem}-frames.json`] ?? "null");
+  expect(info.frames[0].greyMean).toBeGreaterThan(100);
+  expect(info.frames[1].greyMean).toBeLessThan(60);
+});
+
+/**
+ * Why this test matters: two save paths that lose nothing but say so. A
+ * method that cannot load (sift.js missing) leaves the pair unmeasured,
+ * and its zip line says "Not measured" in red; a save dialog closed in
+ * "each pair by itself" keeps the zip for Download all.
+ */
+test("the feature matching cockpit says when a pair was not measured or not saved", async ({
+  page,
+}) => {
+  await routeNetwork(page, (route) =>
+    route.fulfill({ status: 404, body: "not found" }),
+  );
+  await fakeCamera(page);
+  await savePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "each" });
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__saveAnswer = "cancel";
+  });
+  await takeCockpitPair(page);
+  const status = page.locator("#c-status");
+  await expect(status).toHaveText(
+    "Not saved: the save dialog was closed. The pair is kept here for Download all. Not measured: see Results.",
+  );
+  await expect(status).toHaveClass(/bad/);
+  await expect(page.locator("#c-segs i").first()).toHaveClass("kept");
+  await expect(page.locator("#c-download-all")).toHaveText("Download all (1)");
+});
+
+/**
  * Starts synthetic `devicemotion` readings at about 60 a second with the
  * rotation rate `rate` (deg/s per axis); a new call replaces the old feed,
  * and `null` stops it, as a sensor that falls silent.
@@ -606,6 +679,7 @@ async function motionFeed(page, rate) {
       return;
     }
     w.__motionFeed = setInterval(() => {
+      w.__motionCount = (w.__motionCount ?? 0) + 1;
       window.dispatchEvent(
         new DeviceMotionEvent("devicemotion", {
           rotationRate: { alpha: r, beta: -r, gamma: r / 2 },
@@ -613,6 +687,22 @@ async function motionFeed(page, rate) {
       );
     }, 16);
   }, rate);
+}
+
+/**
+ * Waits until the feed has sent `n` more readings (about 16 ms each).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+async function motionReadings(page, n) {
+  const from = await page.evaluate(
+    () => /** @type {any} */ (window).__motionCount ?? 0,
+  );
+  await page.waitForFunction(
+    (f) => /** @type {any} */ (window.__motionCount ?? 0) >= f,
+    from + n,
+  );
 }
 
 /**
@@ -658,10 +748,23 @@ test("the feature matching cockpit takes photo B by itself once the phone is sti
   await expect(text).toHaveText("Hold still");
   await expect(page.locator("#c-read-mode")).toHaveText("auto");
   await expect(page.locator("#c-status")).toHaveText(
-    "Hold still: photo B takes itself.",
+    "Hold still, or tap: photo B takes itself.",
   );
   await expect(page.locator("#c-read-still")).toHaveText("moving");
   await expect(page.locator("#c-state-b")).toHaveText("now");
+  // About 2.5 s of shaking: B keeps waiting.
+  await motionReadings(page, 150);
+  await expect(text).toHaveText("Hold still");
+  expect(await logLines(page, "hands-off photo B")).toBe(0);
+  // The drawer pauses the wait for as long; closing it waits again, and
+  // the pause does not count as readings lost.
+  await openTab(page, "settings");
+  await motionReadings(page, 150);
+  await closeDrawer(page);
+  await expect(text).toHaveText("Hold still");
+  await expect(page.locator("#c-status")).toHaveText(
+    "Hold still, or tap: photo B takes itself.",
+  );
   await motionFeed(page, 0.3);
   // B is packed and the next pair comes up at once, so the durable end
   // state is the status line, not tile B.
@@ -765,11 +868,22 @@ test("the feature matching cockpit shows packing, then a failed pack that loses 
   );
   await expect(page.locator("#log")).toContainText("ERROR save:");
 
+  // Download all fails the same way, says so in red, and loses nothing.
+  const all = page.locator("#c-download-all");
+  await expect(all).toBeEnabled();
+  await all.click();
+  await expect(page.locator("#c-status")).toContainText(
+    "Could not prepare the zip:",
+  );
+  await expect(page.locator("#c-status")).toContainText(
+    "Nothing was lost; try again.",
+  );
+  await expect(page.locator("#c-status")).toHaveClass(/bad/);
+  await expect(all).toBeEnabled();
+
   await page.evaluate(() => {
     /** @type {any} */ (window).__toBlob = "ok";
   });
-  const all = page.locator("#c-download-all");
-  await expect(all).toBeEnabled();
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     all.click(),
@@ -1225,12 +1339,15 @@ test("the feature matching benchmark tells two runs apart with storage blocked",
  * foot with Details and Download all), the controls are apart and wholly
  * on screen, and the page never scrolls. A phone on its side is short: the
  * prototype cut its foot off there, so the foot must keep room for the
- * taller fonts of other systems (about 30 px).
+ * taller fonts of other systems (about 30 px). Below 360 px of height the
+ * dock alone scrolls, the big button still on screen without scrolling.
  */
 for (const vp of [
   { width: 412, height: 915 },
+  { width: 360, height: 740 },
   { width: 915, height: 412 },
   { width: 800, height: 360 },
+  { width: 800, height: 300 },
   { width: 880, height: 790 },
 ]) {
   test(`the cockpit dock fits ${String(vp.width)}x${String(vp.height)}`, async ({
@@ -1269,6 +1386,16 @@ for (const vp of [
         download: box("#c-download-all"),
         scrollW: document.documentElement.scrollWidth,
         scrollH: document.documentElement.scrollHeight,
+        dockScroll: (() => {
+          const d = /** @type {HTMLElement} */ (
+            document.querySelector("#c-dock")
+          );
+          const range = d.scrollHeight - d.clientHeight;
+          d.scrollTop = d.scrollHeight;
+          const foot = box("#c-details").bottom;
+          d.scrollTop = 0;
+          return { range, foot };
+        })(),
       };
     });
     const near = (/** @type {number} */ got, /** @type {number} */ want) =>
@@ -1307,8 +1434,15 @@ for (const vp of [
       expect(r.left).toBeGreaterThanOrEqual(dock.left - 0.5);
       expect(r.right).toBeLessThanOrEqual(dock.right + 0.5);
       expect(r.top).toBeGreaterThanOrEqual(dock.top - 0.5);
-      expect(r.bottom).toBeLessThanOrEqual(vp.height + 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(
+        vp.height + m.dockScroll.range + 0.5,
+      );
     }
+    // Only a very short dock scrolls, and the big button stays on screen
+    // without scrolling; scrolled to its end, the foot is on screen.
+    if (vp.height >= 360) expect(m.dockScroll.range).toBeLessThanOrEqual(0);
+    expect(shutter.bottom).toBeLessThanOrEqual(vp.height + 0.5);
+    expect(m.dockScroll.foot).toBeLessThanOrEqual(vp.height + 0.5);
     // Top to bottom.
     above(chip, instr);
     above(instr, shotA);
@@ -1339,7 +1473,7 @@ for (const vp of [
     // The foot: two buttons side by side, on screen.
     near(details.top, download.top);
     leftOf(details, download);
-    if (vp.height <= 560) {
+    if (vp.height <= 560 && m.dockScroll.range <= 0) {
       expect(details.bottom + 30).toBeLessThanOrEqual(vp.height);
     }
   });

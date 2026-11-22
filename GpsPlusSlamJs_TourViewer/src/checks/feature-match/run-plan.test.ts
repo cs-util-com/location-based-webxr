@@ -209,6 +209,44 @@ describe("the run plan's kept files", () => {
     expect(keptState(dropped, "1a-s1")).toBe("saved");
   });
 
+  // Why: a retake continues the take, so its kept zip holds the old photo;
+  // left in the list, Download all would ship that old zip and silently
+  // drop the new photo. A downloaded file is history and stays.
+  it("drops a take's kept zip when the take gets a new photo", () => {
+    const kept = run([
+      ...pair,
+      { type: "keep", id: "k1", name: "pair-1.zip", slot: "1a-s1" },
+    ]);
+    const retaken = planReducer(
+      kept.plan,
+      kept.sequence,
+      shoot("1a-s1", "b", "p3"),
+    ).plan;
+    expect(retaken.kept).toEqual([]);
+    expect(keptState(retaken, "1a-s1")).toBe("done");
+    const other = run(
+      [
+        shoot("2a-s1", "a", "q1"),
+        shoot("2a-s1", "b", "q2"),
+        { type: "keep", id: "k2", name: "pair-2.zip", slot: "2a-s1" },
+        shoot("1a-s1", "a", "p4"),
+      ],
+      kept.plan,
+      kept.sequence,
+    ).plan;
+    expect(other.kept.map((k) => k.id)).toEqual(["k2"]);
+    const saved = planReducer(kept.plan, kept.sequence, {
+      type: "downloaded",
+      ids: ["k1"],
+    });
+    const next = planReducer(
+      saved.plan,
+      saved.sequence,
+      shoot("1a-s1", "a", "p5"),
+    ).plan;
+    expect(next.kept.map((k) => k.id)).toEqual(["k1"]);
+  });
+
   // Why: a file for a half pair or under a reused id would name a zip that
   // does not hold what it says.
   it("refuses a file for an incomplete pair, a reused id or no name", () => {
@@ -369,16 +407,17 @@ describe("the run plan across reloads", () => {
 
 describe("which pairs take photo B by themselves", () => {
   // Why: B right after A is only right where nothing changes; a pair that
-  // moves the phone needs the move first, and a light change or the
-  // tester's own pair cannot be seen by the motion sensor at all.
+  // turns the phone needs the turn first. A light change, a step (a
+  // gyroscope sees rotation, not translation) or the tester's own pair
+  // cannot be judged by the motion sensor at all.
   it("sorts every pair into still, move or by tap", () => {
     for (const k of ["1a", "2a", "3a", "4a", "4c"]) {
       expect(handsOffKind(k), k).toBe("still");
     }
-    for (const k of ["2b", "2c", "2d", "3b", "3c", "4b", "4d"]) {
+    for (const k of ["2b", "2c", "2d"]) {
       expect(handsOffKind(k), k).toBe("move");
     }
-    for (const k of ["1b", "1c", "x", "", "9z"]) {
+    for (const k of ["1b", "1c", "3b", "3c", "4b", "4d", "x", "", "9z"]) {
       expect(handsOffKind(k), k).toBeNull();
     }
   });
