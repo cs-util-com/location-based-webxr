@@ -58,7 +58,7 @@ import {
   type PlanAction,
   type RunPlan,
 } from "./run-plan";
-import { shotDue, slotStatus } from "./plan-slots";
+import { doneCount, shotDue, slotStatus } from "./plan-slots";
 
 /** Save's label after a camera run that measured nothing. */
 export const NOTHING_MEASURED =
@@ -162,6 +162,16 @@ interface GuidedState {
   readonly count: { readonly shot: "a" | "b"; readonly left: number } | null;
 }
 
+/**
+ * The guided view's Download all: "preparing" while the zip is packed,
+ * then saved, failed, or "idle" again (the save dialog was closed).
+ */
+interface RunZip {
+  readonly phase: "idle" | "preparing" | "saved" | "failed";
+  /** The line under the button; empty shows the estimate. */
+  readonly text: string;
+}
+
 /** The take a plan run measured, and its results once it ended. */
 interface PlanRun {
   readonly slot: string;
@@ -213,6 +223,7 @@ export interface FeatureMatchState {
   readonly plan: RunPlan;
   readonly guided: GuidedState;
   readonly planRun: PlanRun | null;
+  readonly runZip: RunZip;
 }
 
 /** The options as the page's controls start. */
@@ -274,6 +285,7 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     plan,
     guided: { retake: null, count: null },
     planRun: null,
+    runZip: { phase: "idle", text: "" },
     progress: {
       sequence,
       pair: p.pair,
@@ -461,7 +473,23 @@ const planCase =
     ) {
       s.planRun = null;
     }
+    // A saved or failed zip no longer holds the plan's photos.
+    if (
+      STALE_ZIP.has(action.type) &&
+      s.runZip.phase !== "preparing" &&
+      (s.runZip.phase !== "idle" || s.runZip.text !== "")
+    ) {
+      s.runZip = { phase: "idle", text: "" };
+    }
   };
+
+/** Plan actions after which a zip made before holds other photos. */
+const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([
+  "photo",
+  "lost",
+  "size",
+  "reset",
+]);
 
 /** Plan actions after which a retake target or countdown means another photo. */
 const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
@@ -789,6 +817,31 @@ const slice = createSlice({
         return;
       }
       s.guided = { ...s.guided, count: { shot: c.shot, left: c.left } };
+    },
+    /** Download all starts packing; refused unless idle with a complete pair. */
+    runZipStarted(s: Draft) {
+      if (
+        s.busy !== "idle" ||
+        doneCount(planSlots(s.plan), s.plan.slots) === 0
+      ) {
+        return;
+      }
+      s.busy = "saving";
+      s.runZip = {
+        phase: "preparing",
+        text: "Packing the photos. Keep this page open.",
+      };
+    },
+    /** The zip was saved, failed, or not saved ("idle": the dialog was closed). */
+    runZipEnded(
+      s: Draft,
+      a: PayloadAction<{ phase: "idle" | "saved" | "failed"; text: string }>,
+    ) {
+      if (s.busy !== "saving" || s.runZip.phase !== "preparing") {
+        return;
+      }
+      s.busy = "idle";
+      s.runZip = { phase: a.payload.phase, text: a.payload.text };
     },
     optionsChanged(s: Draft, a: PayloadAction<BenchOptions>) {
       s.options = a.payload;

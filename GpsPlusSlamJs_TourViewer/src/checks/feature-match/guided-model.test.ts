@@ -7,7 +7,18 @@ import {
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
-import { endView, pairRows, planPairOf, runView } from "./guided-model";
+import {
+  deviceSummary,
+  endView,
+  isMoving,
+  motionStep,
+  pairRows,
+  planPairOf,
+  runPairs,
+  runView,
+  STEADY_THRESHOLD,
+} from "./guided-model";
+import type { DeviceInfo } from "./bench-report";
 import type { SavedFrame } from "./bench-export";
 import type { PhotoMeta } from "./run-plan";
 
@@ -205,6 +216,47 @@ describe("endView", () => {
     });
     expect(endView(run([])).canDownload).toBe(false);
   });
+
+  // Why: the download button and its line say what the zip did, so a
+  // tester knows whether the file reached the phone.
+  it("labels the download by the zip's phase", () => {
+    const pair = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    expect(endView(pair).download).toEqual({
+      label: "Download all",
+      text: "One zip with 1 pair, saved to this phone only.",
+      tone: "",
+    });
+    const going = run([A.runZipStarted()], pair);
+    expect(endView(going).download).toEqual({
+      label: "Preparing the zip...",
+      text: "Packing the photos. Keep this page open.",
+      tone: "",
+    });
+    expect(endView(going).canDownload).toBe(false);
+    const saved = run(
+      [
+        A.runZipEnded({ phase: "saved", text: "Saved z" }),
+        A.planRunDownloaded(),
+      ],
+      going,
+    );
+    expect(endView(saved).download).toEqual({
+      label: "Download again",
+      text: "Saved z",
+      tone: "ok",
+    });
+    const failed = run([A.runZipEnded({ phase: "failed", text: "no" })], going);
+    expect(endView(failed).download).toEqual({
+      label: "Download all",
+      text: "no",
+      tone: "err",
+    });
+    const closed = run(
+      [A.runZipEnded({ phase: "idle", text: "closed" })],
+      going,
+    );
+    expect(endView(closed).download.text).toBe("closed");
+  });
 });
 
 const saved = (name: "A" | "B"): SavedFrame => ({
@@ -235,5 +287,140 @@ describe("planPairOf", () => {
     expect(planPairOf(half, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
     const full = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
     expect(planPairOf(full, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
+  });
+});
+
+// Why this test matters: Download all packs every complete pair under its
+// own file names; a pair whose frame is gone must stop the zip rather than
+// send a pair with one photo or none.
+describe("runPairs", () => {
+  const framesOf = (ids: readonly string[]): Map<string, SavedFrame> =>
+    new Map(ids.map((id) => [id, saved(id.endsWith("a") ? "A" : "B")]));
+
+  it("lists every complete pair in run order with its file names", () => {
+    const s = run([
+      shot("2a-s1", "a"),
+      shot("2a-s1", "b"),
+      shot("1a-s1", "a"),
+      shot("1a-s1", "b"),
+      shot("1b-s1", "a"),
+    ]);
+    const frames = framesOf([
+      "2a-s1-a",
+      "2a-s1-b",
+      "1a-s1-a",
+      "1a-s1-b",
+      "1b-s1-a",
+    ]);
+    const pairs = runPairs(s, frames);
+    expect(pairs.map((p) => p.slot.id)).toEqual(["1a-s1", "2a-s1"]);
+    const first = pairs[0]!;
+    expect(first.tag).toMatchObject({ pair: "1a", spot: 1, sequence: 2 });
+    expect(first.names.A).toBe(
+      "feature-match-02-1a-s1-light-control-same-light-frame-a.png",
+    );
+    expect(first.light).toBe(s.plan.slots["1a-s1"]!.light);
+  });
+
+  it("names the other pairs apart and throws on a missing frame", () => {
+    const s = run([
+      A.planSized({ spots: 1, extra: 2 }),
+      shot("x1-s1", "a"),
+      shot("x1-s1", "b"),
+      shot("x2-s1", "a"),
+      shot("x2-s1", "b"),
+    ]);
+    const all = framesOf(["x1-s1-a", "x1-s1-b", "x2-s1-a", "x2-s1-b"]);
+    const names = runPairs(s, all).flatMap((p) => Object.values(p.names));
+    expect(new Set(names).size).toBe(names.length);
+    all.delete("x2-s1-b");
+    expect(() => runPairs(s, all)).toThrow("photo B of x2-s1 is not loaded");
+  });
+});
+
+// Why this test matters: the summary's phone line is pasted into a chat;
+// it names the model, the OS version and the cores, and nothing else.
+describe("deviceSummary", () => {
+  const d: DeviceInfo = {
+    userAgent: "UA",
+    model: "Pixel 9",
+    platformVersion: "16.0.0",
+    hardwareConcurrency: 8,
+    deviceMemoryGb: 8,
+    crossOriginIsolated: false,
+    jspi: true,
+    screen: "412x915",
+    webgpu: "none",
+  };
+  it("names model, OS version and cores, with dashes for the unknown", () => {
+    expect(deviceSummary(d)).toBe("Pixel 9, OS 16.0.0, 8 cores");
+    expect(
+      deviceSummary({
+        ...d,
+        model: null,
+        platformVersion: null,
+        hardwareConcurrency: null,
+      }),
+    ).toBe("unknown model, OS -, - cores");
+  });
+});
+
+// Why this test matters: the steady chip tells the tester to keep still
+// before a photo. Its level is a smoothed rotation rate (degrees per
+// second, ~60 readings a second). The profiles below are assumptions, not
+// recordings: a phone on a table (0.3 deg/s of sensor noise), held still
+// in the hand (2-3 deg/s), the shake of a tap (a 40 deg/s spike that dies
+// out over about a third of a second) and a slow pan (15 deg/s).
+describe("the steady hint", () => {
+  const level = (rates: readonly number[]): number[] => {
+    const out: number[] = [];
+    let l = 0;
+    for (const r of rates) {
+      l = motionStep(l, { alpha: r, beta: 0, gamma: 0 });
+      out.push(l);
+    }
+    return out;
+  };
+  const table = Array.from({ length: 120 }, (_, i) => 0.3 * Math.sin(i));
+  const hand = Array.from({ length: 120 }, (_, i) => 2 + Math.sin(i / 3));
+  const pan = Array.from({ length: 120 }, () => 15);
+  const tap = [
+    ...Array.from({ length: 20 }, (_, i) => 40 * Math.exp(-i / 6)),
+    ...hand,
+  ];
+  const settledAfter = (threshold: number): number =>
+    level(tap).findIndex((l, i) => i > 0 && l <= threshold);
+
+  it("ignores a reading without a rotation rate", () => {
+    expect(motionStep(5, null)).toBe(5);
+    expect(motionStep(5, { alpha: null, beta: null, gamma: null })).toBe(5);
+  });
+
+  // The sweep: every threshold from 3 to 12 calls the table and the hand
+  // steady and the pan moving (the hand peaks at about 2.6); the threshold
+  // only moves how long a tap reads moving: 28 readings at 3, 17 at 6, 11
+  // at 12. 6 sits at twice the hand peak, short of the pan by half.
+  it("keeps the verdicts across thresholds 3 to 12, and 6 has margin", () => {
+    for (let t = 3; t <= 12; t++) {
+      expect(level(table).every((l) => l <= t)).toBe(true);
+      expect(
+        level(hand)
+          .slice(30)
+          .every((l) => l <= t),
+      ).toBe(true);
+      expect(
+        level(pan)
+          .slice(30)
+          .every((l) => l > t),
+      ).toBe(true);
+    }
+    expect(STEADY_THRESHOLD).toBe(6);
+    expect(isMoving(6.01)).toBe(true);
+    expect(isMoving(6)).toBe(false);
+    // About 0.3 s to settle at 6, slower at a lower threshold.
+    expect(settledAfter(6)).toBeGreaterThan(10);
+    expect(settledAfter(6)).toBeLessThan(30);
+    expect(settledAfter(4)).toBeGreaterThan(settledAfter(6));
+    expect(settledAfter(12)).toBeLessThan(settledAfter(6));
   });
 });

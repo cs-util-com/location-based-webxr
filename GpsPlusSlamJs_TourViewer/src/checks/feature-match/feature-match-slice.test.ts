@@ -630,3 +630,62 @@ describe("the guided view's capture state", () => {
     expect(again.planRun).toBeNull();
   });
 });
+
+describe("the guided view's run zip", () => {
+  const withPair = (): FeatureMatchState =>
+    run([
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+    ]);
+
+  // Why: the zip packs every complete pair; it needs one, and it holds the
+  // page busy so no photo or run changes the plan while it is packed.
+  it("starts only with a complete pair and while idle", () => {
+    const none = start();
+    expect(featureMatchReducer(none, A.runZipStarted())).toBe(none);
+    const going = run([A.runZipStarted()], withPair());
+    expect(going.busy).toBe("saving");
+    expect(going.runZip).toEqual({
+      phase: "preparing",
+      text: "Packing the photos. Keep this page open.",
+    });
+    expect(featureMatchReducer(going, A.runZipStarted())).toBe(going);
+    const busy = run([A.runStarted("plan")], withPair());
+    expect(featureMatchReducer(busy, A.runZipStarted())).toBe(busy);
+  });
+
+  // Why: the end screen says what happened to the zip: saved, refused by
+  // the save dialog (nothing lost, no failure) or failed (retry).
+  it("ends saved, closed or failed, and only a zip in preparation", () => {
+    const idle = withPair();
+    expect(
+      featureMatchReducer(idle, A.runZipEnded({ phase: "saved", text: "x" })),
+    ).toBe(idle);
+    const going = run([A.runZipStarted()], withPair());
+    for (const phase of ["saved", "idle", "failed"] as const) {
+      const done = run([A.runZipEnded({ phase, text: `t-${phase}` })], going);
+      expect(done.busy).toBe("idle");
+      expect(done.runZip).toEqual({ phase, text: `t-${phase}` });
+    }
+    // A camera save that ends does not end the zip.
+    expect(featureMatchReducer(going, A.saveFinished([])).runZip.phase).toBe(
+      "preparing",
+    );
+  });
+
+  // Why: a new photo after a saved zip makes the zip on the phone stale;
+  // the end screen must not keep saying it was saved.
+  it("forgets a saved zip once a photo changes the plan", () => {
+    const saved = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "saved", text: "Saved" })],
+      withPair(),
+    );
+    const next = run(
+      [A.planPhotoTaken({ slot: "1b-s1", which: "a", photo: photo("q1") })],
+      saved,
+    );
+    expect(next.runZip).toEqual({ phase: "idle", text: "" });
+    const moved = run([A.planMoved(3)], saved);
+    expect(moved.runZip.phase).toBe("saved");
+  });
+});

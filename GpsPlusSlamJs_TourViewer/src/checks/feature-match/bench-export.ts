@@ -429,6 +429,8 @@ export function framesInfo(
   captureMaxLongEdge: number,
   tag: PairTag,
   checks: { readonly light: LightCheck | null; readonly session: string },
+  /** The names the frames are saved under; the fixed FRAME_FILES ones by default. */
+  files: Readonly<Record<"A" | "B", string>> = FRAME_FILES,
 ): string {
   return `${JSON.stringify(
     {
@@ -444,7 +446,7 @@ export function framesInfo(
         const g = greyStats(f.frame);
         return {
           name: f.name,
-          file: FRAME_FILES[f.name],
+          file: files[f.name],
           width: f.frame.width,
           height: f.frame.height,
           sourceWidth: f.source.width,

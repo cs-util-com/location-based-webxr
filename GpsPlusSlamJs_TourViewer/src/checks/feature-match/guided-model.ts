@@ -6,7 +6,15 @@
  *
  * @see guided-model.ts.md
  */
-import type { SavedFrame } from "./bench-export";
+import {
+  pairFileNames,
+  pairTag,
+  type LightCheck,
+  type PairFileNames,
+  type PairTag,
+  type SavedFrame,
+} from "./bench-export";
+import type { DeviceInfo } from "./bench-report";
 import type { FeatureMatchState } from "./feature-match-slice";
 import { guidedCard, LIGHT_NOTE, GUIDED_STEPS } from "./guided-texts";
 import type { DiagramKind } from "./guided-diagram";
@@ -242,6 +250,33 @@ export interface EndView {
   readonly title: string;
   readonly lede: string;
   readonly canDownload: boolean;
+  readonly download: {
+    readonly label: string;
+    readonly text: string;
+    /** "ok" after a saved zip, "err" after a failed one. */
+    readonly tone: "" | "ok" | "err";
+  };
+}
+
+function downloadView(s: FeatureMatchState, done: number): EndView["download"] {
+  const z = s.runZip;
+  const again = s.plan.downloads > 0 ? "Download again" : "Download all";
+  switch (z.phase) {
+    case "preparing":
+      return { label: "Preparing the zip...", text: z.text, tone: "" };
+    case "saved":
+      return { label: "Download again", text: z.text, tone: "ok" };
+    case "failed":
+      return { label: "Download all", text: z.text, tone: "err" };
+    case "idle":
+      return {
+        label: again,
+        text:
+          z.text ||
+          `One zip with ${String(done)} pair${done === 1 ? "" : "s"}, saved to this phone only.`,
+        tone: "",
+      };
+  }
 }
 
 /** The end screen: what is captured and whether the zip can be made. */
@@ -261,6 +296,7 @@ export function endView(s: FeatureMatchState): EndView {
       ? "Download the zip, then send it together with the summary below."
       : "Only complete pairs go into the zip. Go back to the pairs any time to add the rest.",
     canDownload: done > 0 && s.busy === "idle",
+    download: downloadView(s, done),
   };
 }
 
@@ -287,3 +323,81 @@ export function planPairOf(
   const b = rec?.b ? frames.get(rec.b.id) : undefined;
   return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
 }
+
+/** One complete pair of the run zip, with the names its files get. */
+export interface RunPair {
+  readonly slot: Slot;
+  readonly tag: PairTag;
+  readonly names: PairFileNames;
+  readonly light: LightCheck | null;
+  readonly a: SavedFrame;
+  readonly b: SavedFrame;
+}
+
+/**
+ * Every complete pair in run order, for Download all. The other pairs
+ * share key "x", so their running numbers keep the names apart.
+ *
+ * @throws Error naming the photo when a complete pair's frame is not in
+ *   the side table (a restore that failed): a zip without it would be
+ *   silently short.
+ */
+export function runPairs(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+): RunPair[] {
+  return planSlots(s.plan).flatMap((slot) => {
+    const rec = s.plan.slots[slot.id];
+    const st = slotStatus(rec);
+    if (!rec || (st !== "done" && st !== "retake")) {
+      return [];
+    }
+    const frame = (w: "a" | "b"): SavedFrame => {
+      const f = frames.get(rec[w]!.id);
+      if (!f) {
+        throw new Error(`photo ${up(w)} of ${slot.id} is not loaded`);
+      }
+      return f;
+    };
+    const tag = pairTag(slot.key, slot.spot, rec.seq);
+    return [
+      {
+        slot,
+        tag,
+        names: pairFileNames(tag),
+        light: rec.light,
+        a: frame("a"),
+        b: frame("b"),
+      },
+    ];
+  });
+}
+
+/** The summary's phone line: model, OS version and cores, nothing else. */
+export const deviceSummary = (d: DeviceInfo): string =>
+  `${d.model ?? "unknown model"}, OS ${d.platformVersion ?? "-"}, ${d.hardwareConcurrency === null ? "-" : String(d.hardwareConcurrency)} cores`;
+
+/**
+ * Above this smoothed rotation rate (degrees per second) the steady chip
+ * reads "phone moving". Swept 3 to 12 in the tests: 6 keeps a phone held
+ * still in the hand steady and settles about 0.3 s after a tap's shake.
+ */
+export const STEADY_THRESHOLD = 6;
+
+type RotationRate = {
+  readonly alpha: number | null;
+  readonly beta: number | null;
+  readonly gamma: number | null;
+} | null;
+
+/** The next smoothed motion level from a `devicemotion` rotation rate. */
+export function motionStep(level: number, r: RotationRate): number {
+  if (!r || (r.alpha === null && r.beta === null && r.gamma === null)) {
+    return level;
+  }
+  const m =
+    Math.abs(r.alpha ?? 0) + Math.abs(r.beta ?? 0) + Math.abs(r.gamma ?? 0);
+  return level * 0.8 + m * 0.2;
+}
+
+export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;

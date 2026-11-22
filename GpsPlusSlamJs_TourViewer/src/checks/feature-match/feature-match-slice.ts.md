@@ -33,6 +33,14 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `guidedRetakeToggled(which)`: points the next photo at A or B of the current slot, a second tap takes it back; refused while counting or busy and for a photo the slot does not hold.
 - `guidedCountSet({ shot, left } | null)`: one countdown second (the view owns the timer) or its end; refused while busy, for a shot other than the due one and for a count that is not a whole number of at least 1.
 
+### Guided run zip actions
+
+`state.runZip` `{ phase, text }` is the guided view's Download all (workflow status, so it lives here).
+
+- `runZipStarted()`: refused unless idle with at least one complete pair; sets busy `saving` and phase `preparing`.
+- `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation, so a camera save's end does not end it.
+- An accepted plan photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
+
 ### Flat target actions
 
 `flatOpened`, `flatClosed`, `flatCameraChanged`, `flatSurfaceAdded`, `flatSurfaceSelected`, `flatOverview`, `flatClassPicked`, `flatPoseChosen`, `flatCountdown`, `flatStatus`, `flatReferenceTaken`, `flatReferenceDropped`, `flatTapped`, `flatPreviewMade`, `flatCornersRedone`, `flatReferenceAccepted`, `flatShotTaken`, `flatShotRemoved`, `flatSavingStarted`, `flatSavingEnded`, `flatSaved`. Progress changes go through `flatReducer` (`flat-progress.ts`); each refuses input that does not fit the phase (a tap outside the corner step or after four taps, a non-finite tap, a preview without four taps, an unknown pose, a reference outside `ref-live`).
@@ -57,5 +65,5 @@ store.getState().pairInProgress; // { pair: "1a", spot: 1, sequence: 1, ... }
 
 ## Tests
 
-- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference), and the run plan inside the page state (the shared running number, the stored plan's start number, refusals while busy, the same state for refused plan actions), and the guided view's capture state (the retake toggle only onto a held photo, retake and countdown dropped at a photo, move and reset, the countdown only for the due photo and never while busy, the `plan` run on the current pair and its results dropped at a new photo there).
+- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference), and the run plan inside the page state (the shared running number, the stored plan's start number, refusals while busy, the same state for refused plan actions), and the guided view's capture state (the retake toggle only onto a held photo, retake and countdown dropped at a photo, move and reset, the countdown only for the due photo and never while busy, the `plan` run on the current pair and its results dropped at a new photo there), and the run zip (started only idle with a pair, ended only while preparing, forgotten at a new photo).
 - `feature-match-slice.property.test.ts`: random action sequences keep the invariants above, a second download is a no-op, a failed light check keeps the pair, and the flat prepared zip is always valid.

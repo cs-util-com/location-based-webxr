@@ -214,6 +214,26 @@ describe("framesInfo", () => {
     ]);
   });
 
+  // Why this test matters: a run zip holds many pairs side by side, so
+  // each frames JSON must name the files its own pair's photos are under.
+  it("names the given files instead of the fixed ones", () => {
+    const text = framesInfo(
+      [
+        { name: "A", frame: a, source: { width: 4, height: 2 } },
+        { name: "B", frame: b, source: { width: 4, height: 2 } },
+      ],
+      DEVICE,
+      1280,
+      TAG,
+      { light: null, session: "0a1b2c3d" },
+      { A: "p-frame-a.png", B: "p-frame-b.png" },
+    );
+    const files = (
+      JSON.parse(text) as { frames: { file: string }[] }
+    ).frames.map((f) => f.file);
+    expect(files).toEqual(["p-frame-a.png", "p-frame-b.png"]);
+  });
+
   it("names no time or place anywhere", () => {
     const text = framesInfo(
       [{ name: "A", frame: a, source: { width: 2, height: 1 } }],
