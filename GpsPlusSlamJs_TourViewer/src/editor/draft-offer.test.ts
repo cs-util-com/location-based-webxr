@@ -26,6 +26,7 @@ import {
   selectTourDocument,
   tourDocumentActions,
 } from "../tour-document.js";
+import { selectTourDraft, tourDraftActions } from "../tour-draft-slice.js";
 import { createTourViewerStore } from "../tour-viewer-session.js";
 import { createDraftOffer, type DraftOfferView } from "./draft-offer.js";
 
@@ -43,12 +44,16 @@ function pin(id: string, caption = `pin ${id}`): TourPin {
 function setup(discard: () => Promise<boolean> = () => Promise.resolve(true)) {
   const store = createTourViewerStore();
   store.dispatch(tourDocumentActions.opened({ manifest: tourOf([pin("a")]) }));
+  // The page starts the question when it reads the draft (`edit-main.ts`).
+  store.dispatch(tourDraftActions.readStarted());
+  const question = selectTourDraft(store.getState()).generation;
   const views: (DraftOfferView | null)[] = [];
   const said: { text: string; error: boolean }[] = [];
   const changes: { count: number; restored: boolean }[] = [];
   let current = true;
   const offer = createDraftOffer({
-    gate: store.draftGate,
+    store,
+    question,
     text: "1 earlier change is on this device.",
     render: (view) => views.push(view),
     say: (text, error = false) => said.push({ text, error }),
@@ -79,6 +84,7 @@ function setup(discard: () => Promise<boolean> = () => Promise.resolve(true)) {
     );
   return {
     store,
+    question,
     offer,
     views,
     said,
@@ -217,6 +223,44 @@ describe("the desktop draft offer", () => {
     });
     finish(true);
     await running;
+  });
+
+  // Why: the offer IS the store's draft question (the store plan's
+  // `tourDraft`): its status moves with each answer, and the view is
+  // drawn from it - a put-off offer asked about again elsewhere (the phone
+  // page's AR start, an edit) shows here without this module's help.
+  it("is the store's draft question: each answer moves its status, and the view follows it", () => {
+    const { store, question, offer, views } = setup();
+    const draft = () => selectTourDraft(store.getState());
+    expect(draft()).toMatchObject({
+      status: "offered",
+      text: "1 earlier change is on this device.",
+    });
+    offer.notNow();
+    expect(draft().status).toBe("declined");
+    expect(views.at(-1)).toBeNull();
+    store.dispatch(tourDraftActions.reshown({ generation: question }));
+    expect(views.at(-1)).toEqual({
+      text: "1 earlier change is on this device.",
+      deleting: false,
+    });
+    offer.restore();
+    expect(draft().status).toBe("restored");
+  });
+
+  // Why: a read of the next tour starts a new question; the old offer goes
+  // from the screen, and its answers change nothing any more.
+  it("goes when the next tour's draft is read, and its answers do nothing then", async () => {
+    const { store, offer, views, changes, edit } = setup();
+    edit("The gate");
+    store.dispatch(tourDraftActions.readStarted());
+    expect(views.at(-1)).toBeNull();
+    offer.restore();
+    offer.notNow();
+    await offer.deleteIt();
+    expect(views.at(-1)).toBeNull();
+    expect(changes).toEqual([]);
+    expect(selectTourDraft(store.getState()).status).toBe("reading");
   });
 
   // Why: an answer for a tour the page has left does nothing to the one
