@@ -27,7 +27,14 @@ export type ImportPayload =
       /** The model's text and every loose file it may name, by path. */
       readonly files: readonly { readonly path: string; readonly blob: Blob }[];
     }
-  | { readonly format: "zip"; readonly name: string; readonly zip: Blob };
+  | {
+      readonly format: "zip";
+      readonly name: string;
+      readonly zip: Blob;
+      /** The model to make, by its path in the zip (`listZipModels`);
+       *  without it the first, the others named in a note. */
+      readonly model?: string;
+    };
 
 export interface ImportStepLimits {
   /** The loose files together, before any is read. */
@@ -44,8 +51,12 @@ function importPayloadOf(payload: unknown): ImportPayload | null {
   if (typeof payload !== "object" || payload === null) return null;
   const p = payload as Partial<Record<string, unknown>>;
   if (typeof p.name !== "string") return null;
-  if (p.format === "zip")
-    return p.zip instanceof Blob ? (p as ImportPayload) : null;
+  if (p.format === "zip") {
+    const fit =
+      p.zip instanceof Blob &&
+      (p.model === undefined || typeof p.model === "string");
+    return fit ? (p as ImportPayload) : null;
+  }
   if (p.format !== "gltf" || !Array.isArray(p.files)) return null;
   const files = p.files as unknown[];
   const fit = files.every((f) => {
@@ -56,8 +67,8 @@ function importPayloadOf(payload: unknown): ImportPayload | null {
   return fit ? (p as ImportPayload) : null;
 }
 
-const glbBlob = (bytes: Uint8Array): Blob =>
-  new Blob([bytes.slice()], { type: "model/gltf-binary" });
+const glbBlob = (bytes: Uint8Array<ArrayBuffer>): Blob =>
+  new Blob([bytes], { type: "model/gltf-binary" });
 
 /** The step: `payload` as one tour model, or the refusal in words. */
 export async function convertImport(
@@ -104,7 +115,12 @@ async function convertZip(
   input: Extract<ImportPayload, { format: "zip" }>,
   control: WorkerStepControl,
 ): Promise<WorkerStepAnswer> {
-  const bundle = await readZipBundle(input.zip, input.name, {}, control.signal);
+  const bundle = await readZipBundle(
+    input.zip,
+    input.name,
+    input.model === undefined ? {} : { model: input.model },
+    control.signal,
+  );
   if (!bundle.ok) return { type: "kept", reason: bundle.reason };
   control.progress(0.8);
   if (bundle.kind === "glb") {

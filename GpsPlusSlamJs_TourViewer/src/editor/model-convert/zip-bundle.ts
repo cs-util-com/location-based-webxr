@@ -9,12 +9,20 @@
  *
  * @see zip-bundle.ts.md
  */
+import { ArchiveLimitError } from "gps-plus-slam-app-framework/storage";
 import { isMacOsMetadataName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import { withZipBlobDirectory } from "../../zip-blob.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
 import { importRoleOf } from "./import-formats.js";
 import { note, refusal } from "./model-import-words.js";
+
+export interface ZipBundleOptions extends Partial<ZipBundleLimits> {
+  /** The model to make, by its path in the zip (`listZipModels`): the
+   *  others are not named. Without it, the first model by path is made
+   *  and the others are named. */
+  readonly model?: string;
+}
 
 export interface ZipBundleLimits {
   /** Entries a model may bring along (model files, parts, pictures). */
@@ -33,7 +41,7 @@ export interface ZipBundleContents {
   /** The model's path in the zip. */
   readonly model: string;
   /** Every entry read, by its path (the model's own text included). */
-  readonly files: ReadonlyMap<string, Uint8Array>;
+  readonly files: ReadonlyMap<string, Uint8Array<ArrayBuffer>>;
   /** The other models in the zip, not made. */
   readonly others: readonly string[];
   /** Entries not read: no model uses their kind. */
@@ -46,7 +54,7 @@ export type ZipBundle =
       readonly ok: true;
       readonly kind: "glb";
       readonly model: string;
-      readonly glb: Uint8Array;
+      readonly glb: Uint8Array<ArrayBuffer>;
       readonly others: readonly string[];
       readonly skipped: readonly string[];
     }
@@ -60,6 +68,43 @@ const baseOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 const isModel = (path: string) =>
   importRoleOf(path) === "primary" || /\.glb$/i.test(path);
+
+/** The entries a model may use, the macOS and system files left out;
+ *  refuses a zip that names an entry twice, and a tour's zip. */
+function entriesOf(names: readonly string[], zipName: string): string[] {
+  const kept = names.filter(
+    (n) => !isMacOsMetadataName(n) && !SYSTEM_FILES.test(n),
+  );
+  const twice = kept.find((n, i) => kept.indexOf(n) !== i);
+  if (twice !== undefined) {
+    throw new Refused(refusal.zipNamedTwice(zipName, twice));
+  }
+  if (kept.some((n) => baseOf(n).toLowerCase() === "tour.json")) {
+    throw new Refused(refusal.zipIsTour(zipName));
+  }
+  return kept;
+}
+
+/** The refusal for a zip past an archive cap, in size words. */
+const archiveLimitReason = (error: ArchiveLimitError, zipName: string) =>
+  error.kind === "entry-count"
+    ? refusal.zipTooManyEntries(zipName, error.limit)
+    : refusal.zipTooLarge(zipName, error.limit);
+
+/**
+ * The models in `zip` by path, in the order `readZipBundle` takes them:
+ * one import each. None for a zip the reader refuses whole (a tour's, one
+ * naming an entry twice, one it cannot read). Never rejects.
+ */
+export async function listZipModels(zip: Blob): Promise<string[]> {
+  try {
+    return await withZipBlobDirectory(zip, (dir) =>
+      Promise.resolve(entriesOf(dir.names, "").filter(isModel).sort()),
+    );
+  } catch {
+    return [];
+  }
+}
 
 /** A part a `.gltf` may name: its data, a material file, a picture. */
 const isPart = (path: string) => {
@@ -75,29 +120,26 @@ const isPart = (path: string) => {
 export async function readZipBundle(
   zip: Blob,
   zipName: string,
-  limits: Partial<ZipBundleLimits> = {},
+  options: ZipBundleOptions = {},
   signal?: AbortSignal,
 ): Promise<ZipBundle> {
+  const { model: asked, ...limits } = options;
   const caps = { ...DEFAULT_LIMITS, ...limits };
   signal?.throwIfAborted();
   try {
     return await withZipBlobDirectory(zip, async (dir) => {
-      const names = [...new Set(dir.names)].filter(
-        (n) => !isMacOsMetadataName(n) && !SYSTEM_FILES.test(n),
-      );
-      if (names.some((n) => baseOf(n).toLowerCase() === "tour.json")) {
-        throw new Refused(refusal.zipIsTour(zipName));
-      }
+      const names = entriesOf(dir.names, zipName);
       const models = names.filter(isModel).sort();
-      const model = models[0];
+      const model =
+        asked === undefined ? models[0] : models.find((m) => m === asked);
       if (model === undefined) throw new Refused(refusal.zipNoModel(zipName));
-      const others = models.slice(1);
+      const others = asked === undefined ? models.slice(1) : [];
       const glb = /\.glb$/i.test(model);
       const wanted = glb
         ? [model]
         : names.filter((n) => n === model || isPart(n));
       const skipped = names.filter(
-        (n) => !wanted.includes(n) && !others.includes(n),
+        (n) => !wanted.includes(n) && !models.includes(n),
       );
       if (wanted.length > caps.maxFiles) {
         throw new Refused(
@@ -108,15 +150,19 @@ export async function readZipBundle(
       if (declared > caps.maxBytes) {
         throw new Refused(refusal.tooLarge(zipName, declared, caps.maxBytes));
       }
-      const files = new Map<string, Uint8Array>();
+      const files = new Map<string, Uint8Array<ArrayBuffer>>();
       let taken = 0;
       for (const name of wanted) {
         signal?.throwIfAborted();
         // The directory may understate a size: the read itself is capped
-        // at what the bundle has left.
+        // at what the bundle has left (a cap is at least one byte; the sum
+        // below holds the bundle's cap even then).
         const blob = await dir.read(name, Math.max(1, caps.maxBytes - taken));
         const data = new Uint8Array(await blob.arrayBuffer());
         taken += data.length;
+        if (taken > caps.maxBytes) {
+          throw new Refused(refusal.tooLarge(zipName, taken, caps.maxBytes));
+        }
         files.set(name, data);
       }
       signal?.throwIfAborted();
@@ -134,6 +180,9 @@ export async function readZipBundle(
   } catch (error) {
     signal?.throwIfAborted();
     if (error instanceof Refused) return { ok: false, reason: error.message };
+    if (error instanceof ArchiveLimitError) {
+      return { ok: false, reason: archiveLimitReason(error, zipName) };
+    }
     return { ok: false, reason: refusal.zipUnreadable(zipName) };
   }
 }

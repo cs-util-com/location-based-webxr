@@ -58,7 +58,7 @@ function fakeHost() {
     run: (_kind, payload, _settings, control) =>
       new Promise<OptimizeOutcome>((resolve, reject) => {
         const settleWith =
-          <T,>(done: (value: T) => void) =>
+          <T>(done: (value: T) => void) =>
           (value: T) => {
             unsettled.delete(fail);
             done(value);
@@ -95,7 +95,7 @@ const made = (notes: string[] = [], used: string[] = []): OptimizeOutcome => ({
 
 const file = (name: string, size = 4) => new File([new Uint8Array(size)], name);
 
-function setup() {
+function setup(listModels?: (zip: Blob) => Promise<readonly string[]>) {
   const store = configureStore({
     reducer: {
       assetShelf: assetShelfReducer,
@@ -123,7 +123,11 @@ function setup() {
     return Promise.resolve({ kind: "added" as const, id });
   });
   const released: File[][] = [];
-  const runner = createModelImportRunner({ store, host });
+  const runner = createModelImportRunner({
+    store,
+    host,
+    ...(listModels === undefined ? {} : { listModels }),
+  });
   /** Drops `files` as one group. */
   const drop = (files: File[], to: ImportDelivery = deliver) => {
     const plan = planImport(files.map((f) => f.name));
@@ -191,6 +195,39 @@ describe("the model import runner", () => {
     await t.settle();
     expect(t.runs).toHaveLength(2);
     expect(t.runs[1]!.payload).toMatchObject({ format: "zip", name: "b.zip" });
+  });
+
+  // Why: a zip of several models makes each of them, one card each; none
+  // is left behind with only a note naming it.
+  it("makes every model of a zip, one import each, named by its model", async () => {
+    const t = setup((zip) =>
+      Promise.resolve(zip.size === 4 ? ["a/a.gltf", "b/b.glb"] : []),
+    );
+    t.drop([file("set.zip")]);
+    await t.settle();
+    expect(t.rows().map((r) => [r.name, r.status])).toEqual([
+      ["set.zip", "running"],
+      ["b.glb", "queued"],
+    ]);
+    expect(t.runs[0]!.payload).toMatchObject({
+      format: "zip",
+      name: "set.zip",
+      model: "a/a.gltf",
+    });
+    t.runs[0]!.resolve(made());
+    await t.settle();
+    expect(t.runs[1]!.payload).toMatchObject({
+      format: "zip",
+      name: "set.zip",
+      model: "b/b.glb",
+    });
+    t.runs[1]!.resolve(made());
+    await t.settle();
+    expect(t.delivered.map((d) => [d.file.name, d.from])).toEqual([
+      ["a.glb", "set.zip"],
+      ["b.glb", "set.zip"],
+    ]);
+    expect(t.rows().filter((r) => r.import !== undefined)).toEqual([]);
   });
 
   it("waits while the optimizer works on a model, and starts once it is done", () => {

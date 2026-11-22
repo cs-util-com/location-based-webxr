@@ -4,7 +4,7 @@
 
 ## Public API
 
-- `ImportPayload`: `{ format: "gltf", name, files: [{ path, blob }] }` (the `.gltf` at `name` among the loose files) or `{ format: "zip", name, zip }`.
+- `ImportPayload`: `{ format: "gltf", name, files: [{ path, blob }] }` (the `.gltf` at `name` among the loose files) or `{ format: "zip", name, zip, model? }` (`model` the path of the model to make, as `listZipModels` lists it; checked to be a string when given).
 - `convertImport(payload, settings, control, limits?)`: a `WorkerStepAnswer`:
   - `done { blob, extension: "glb", conversion: { notes, used } }`: `notes` what was left out in words (the repack's, then the zip's), `used` the given files the model carries (by path);
   - `kept { reason }`: a refusal in words; the page shows it with no Retry, since the same files would be refused again.
@@ -20,4 +20,4 @@
 
 ## Tests
 
-`import-step.test.ts`: loose files to an inert `.glb` with `used`, a missing `.bin` as `kept`, a folder zip with its notes, a `.glb` in a zip as it is, a zip with no model, bad payloads, abort, the size cap.
+`import-step.test.ts`: loose files to an inert `.glb` with `used`, a missing `.bin` as `kept`, a folder zip with its notes, a `.glb` in a zip as it is, the model of a zip by its path, a zip with no model, bad payloads, abort, the size cap.

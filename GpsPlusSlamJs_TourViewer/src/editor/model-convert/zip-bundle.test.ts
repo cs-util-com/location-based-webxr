@@ -8,14 +8,69 @@
  */
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
+import { Uint8ArrayReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js";
+import {
+  DEFAULT_ARCHIVE_LIMITS,
+  packFilesAsZip,
+} from "gps-plus-slam-app-framework/storage";
 
 import { note, refusal } from "./model-import-words.js";
-import { readZipBundle, zipBundleNotes } from "./zip-bundle.js";
+import { listZipModels, readZipBundle, zipBundleNotes } from "./zip-bundle.js";
 
-const bytes = (text: string) => new TextEncoder().encode(text);
+const bytes = (text: string): Uint8Array<ArrayBuffer> =>
+  new TextEncoder().encode(text);
 const zipOf = (files: Record<string, string>) =>
   packFilesAsZip(Object.entries(files).map(([path, data]) => ({ path, data })));
+
+/** A zip whose two entries carry the same name: `b.gltf`'s name bytes
+ *  rewritten to `a.gltf` in its headers (a writer refuses to make one). */
+async function zipNamingTwice(): Promise<Blob> {
+  const zip = new Uint8Array(
+    await (await zipOf({ "a.gltf": "{}", "b.gltf": "{}" })).arrayBuffer(),
+  );
+  const from = bytes("b.gltf");
+  for (let i = 0; i + from.length <= zip.length; i++) {
+    if (from.every((b, k) => zip[i + k] === b)) zip[i] = "a".charCodeAt(0);
+  }
+  return new Blob([zip]);
+}
+
+/** A zip of `count` empty stored entries, written byte by byte: a writer
+ *  takes seconds for twenty thousand of them. */
+function emptyEntriesZip(count: number): Blob {
+  const local: Uint8Array<ArrayBuffer>[] = [];
+  const central: Uint8Array<ArrayBuffer>[] = [];
+  let offset = 0;
+  for (let i = 0; i < count; i++) {
+    const name = bytes(`f${i}.txt`);
+    const head = new Uint8Array(30 + name.length);
+    const h = new DataView(head.buffer);
+    h.setUint32(0, 0x04034b50, true);
+    h.setUint16(4, 10, true);
+    h.setUint16(26, name.length, true);
+    head.set(name, 30);
+    const entry = new Uint8Array(46 + name.length);
+    const c = new DataView(entry.buffer);
+    c.setUint32(0, 0x02014b50, true);
+    c.setUint16(4, 10, true);
+    c.setUint16(6, 10, true);
+    c.setUint16(28, name.length, true);
+    c.setUint32(42, offset, true);
+    entry.set(name, 46);
+    local.push(head);
+    central.push(entry);
+    offset += head.length;
+  }
+  const size = central.reduce((sum, e) => sum + e.length, 0);
+  const end = new Uint8Array(22);
+  const e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054b50, true);
+  e.setUint16(8, count, true);
+  e.setUint16(10, count, true);
+  e.setUint32(12, size, true);
+  e.setUint32(16, offset, true);
+  return new Blob([...local, ...central, end]);
+}
 
 describe("readZipBundle", () => {
   it("finds the .gltf and reads its parts, leaving out what no model uses", async () => {
@@ -70,6 +125,63 @@ describe("readZipBundle", () => {
     });
   });
 
+  it("makes the model it is asked for, naming no other model", async () => {
+    const zip = await zipOf({
+      "b/b.gltf": "{}",
+      "a/a.gltf": "{}",
+      "c.glb": "GLB",
+    });
+    expect(await readZipBundle(zip, "set.zip", { model: "c.glb" })).toEqual({
+      ok: true,
+      kind: "glb",
+      model: "c.glb",
+      glb: bytes("GLB"),
+      others: [],
+      skipped: [],
+    });
+    expect(
+      await readZipBundle(zip, "set.zip", { model: "b/b.gltf" }),
+    ).toMatchObject({ ok: true, kind: "gltf", model: "b/b.gltf", others: [] });
+    expect(await readZipBundle(zip, "set.zip", { model: "gone.gltf" })).toEqual(
+      { ok: false, reason: refusal.zipNoModel("set.zip") },
+    );
+  });
+
+  // Why: an entry named twice is ambiguous - which of the two is the
+  // model's part? - so the zip is refused, never read first-wins.
+  it("refuses a zip that names an entry twice", async () => {
+    expect(await readZipBundle(await zipNamingTwice(), "twice.zip")).toEqual({
+      ok: false,
+      reason: refusal.zipNamedTwice("twice.zip", "a.gltf"),
+    });
+  });
+
+  // Why: a zip past the archive caps is refused in size words, not as a
+  // damaged zip: the creator must learn it is too large, not broken.
+  it("says a zip past the archive's inflation budget is too large, not unreadable", async () => {
+    const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 1 });
+    const zeros = new Uint8Array(DEFAULT_ARCHIVE_LIMITS.totalFloorBytes + 1024);
+    await writer.add("big.glb", new Uint8ArrayReader(zeros));
+    const zip = new Blob([await writer.close()]);
+    expect(zip.size).toBeLessThan(1024 * 1024);
+    expect(await readZipBundle(zip, "big.zip")).toEqual({
+      ok: false,
+      reason: refusal.zipTooLarge(
+        "big.zip",
+        DEFAULT_ARCHIVE_LIMITS.totalFloorBytes,
+      ),
+    });
+  }, 60_000);
+
+  it("says a zip of more entries than a zip may list holds too many files, not that it is unreadable", async () => {
+    const cap = DEFAULT_ARCHIVE_LIMITS.maxEntries;
+    const zip = emptyEntriesZip(cap + 1);
+    expect(await readZipBundle(zip, "many.zip")).toEqual({
+      ok: false,
+      reason: refusal.zipTooManyEntries("many.zip", cap),
+    });
+  }, 60_000);
+
   it("refuses a tour's zip, a zip with no model, and bytes that are no zip, in words", async () => {
     const tour = await zipOf({ "tour.json": "{}", "content/a.glb": "GLB" });
     expect(await readZipBundle(tour, "walk.zip")).toEqual({
@@ -107,6 +219,26 @@ describe("readZipBundle", () => {
     await expect(
       readZipBundle(zip, "m.zip", {}, control.signal),
     ).rejects.toThrow();
+  });
+});
+
+describe("listZipModels", () => {
+  // Why: the page makes one import per model a zip holds, so it must list
+  // them as the reader picks them, and list none for a zip the reader
+  // refuses whole (its one import then says why).
+  it("lists the models by path as the reader does, and none for a zip it refuses whole", async () => {
+    const set = await zipOf({
+      "b/b.gltf": "{}",
+      "a/a.gltf": "{}",
+      "c.glb": "GLB",
+      "__MACOSX/._d.gltf": "fork",
+      "a/a.bin": "B",
+    });
+    expect(await listZipModels(set)).toEqual(["a/a.gltf", "b/b.gltf", "c.glb"]);
+    const tour = await zipOf({ "tour.json": "{}", "a.glb": "GLB" });
+    expect(await listZipModels(tour)).toEqual([]);
+    expect(await listZipModels(await zipNamingTwice())).toEqual([]);
+    expect(await listZipModels(new Blob([bytes("no zip")]))).toEqual([]);
   });
 });
 
@@ -167,9 +299,8 @@ describe("readZipBundle, properties", () => {
             (n) => n.endsWith("tour.json") && !/__MACOSX\/|\/\._/.test(n),
           );
           expect(
-            bundle.ok ||
-              !isTour ||
-              bundle.reason === refusal.zipIsTour("p.zip"),
+            !isTour ||
+              (!bundle.ok && bundle.reason === refusal.zipIsTour("p.zip")),
           ).toBe(true);
           if (!bundle.ok) return;
           const kept =

@@ -87,6 +87,12 @@ export const refusal = {
     `"${zip}" could not be read as a zip. Is the file complete?`,
   zipTooManyFiles: (zip: string, count: number, cap: number): string =>
     `"${zip}" holds ${count} model files and pictures, more than the ${cap} a model may have. Zip the model's own folder only.`,
+  zipTooManyEntries: (zip: string, cap: number): string =>
+    `"${zip}" holds more than ${cap} files, more than a zip may hold here. Zip the model's own folder only.`,
+  zipTooLarge: (zip: string, cap: number): string =>
+    `"${zip}" is too large to convert here (more than ${megabytes(cap)} MB unpacked). Zip the model's own folder only.`,
+  zipNamedTwice: (zip: string, name: string): string =>
+    `"${zip}" holds two files named "${name}", so which one the model uses is unclear. Zip the model's folder again.`,
 } as const;
 
 /** Sentences for a conversion that did not finish: the model is not

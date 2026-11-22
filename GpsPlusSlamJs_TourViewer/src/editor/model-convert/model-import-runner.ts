@@ -13,6 +13,9 @@
  *   so a model's memory is given back at once.
  * - A refusal fails the row with its words and no Retry; a crash or a
  *   failure fails it with Retry; nothing is retried by itself.
+ * - A zip holding several models is one import per model: before the
+ *   first conversion of a zip its models are listed (`listZipModels`), it
+ *   makes the first, and each other is queued as an import of its own.
  * - The pictures a drop held back for its models (`ImportPlan.held`) go
  *   to the drop's `release` once each of its models was added or removed,
  *   less those a model carries.
@@ -40,6 +43,7 @@ import {
 import type { ImportPlan, PlannedImport } from "./import-plan.js";
 import type { ImportPayload } from "./import-step.js";
 import { failure } from "./model-import-words.js";
+import { listZipModels } from "./zip-bundle.js";
 
 /** What a delivery made of a converted model. */
 type DeliveryResult =
@@ -85,6 +89,9 @@ export interface ModelImportDeps {
   };
   readonly host: OptimizerHost;
   readonly settings?: OptimizerSettings;
+  /** The models of a zip by path (default `listZipModels`, which reads
+   *  only the zip's directory, on the page). */
+  readonly listModels?: (zip: Blob) => Promise<readonly string[]>;
 }
 
 interface Group {
@@ -98,14 +105,24 @@ interface Group {
 
 interface Job {
   readonly id: string;
+  /** What the row shows. */
   readonly name: string;
-  readonly payload: ImportPayload;
+  /** The file the model came in (a zip's name for each of its models). */
+  readonly from: string;
+  /** Set once a zip's models are listed: the model it makes. */
+  payload: ImportPayload;
   readonly deliver: ImportDelivery;
   readonly group: Group;
 }
 
-/** The name a converted model's file gets: the import's, as `.glb`. */
-function glbName(name: string): string {
+const baseOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+/** The name a converted model's file gets: its model's, as `.glb`. */
+function glbName(payload: ImportPayload): string {
+  const name =
+    payload.format === "zip" && payload.model !== undefined
+      ? baseOf(payload.model)
+      : payload.name;
   const dot = name.lastIndexOf(".");
   return `${dot > 0 ? name.slice(0, dot) : name}.glb`;
 }
@@ -141,6 +158,7 @@ export function createModelImportRunner(
 ): ModelImportRunner {
   const { store, host } = deps;
   const settings = deps.settings ?? OPTIMIZER_SETTINGS;
+  const listModels = deps.listModels ?? listZipModels;
   const jobs = new Map<string, Job>();
   let seq = 0;
   let closed = false;
@@ -184,12 +202,51 @@ export function createModelImportRunner(
   const owns = (job: Job, stop: AbortController) =>
     !closed && !stop.signal.aborted && jobs.get(job.id) === job;
 
+  /** Queues one import of `group`, shown as `name`. */
+  function queue(
+    group: Group,
+    deliver: ImportDelivery,
+    payload: ImportPayload,
+    name: string,
+  ): string {
+    const id = `import:${++seq}`;
+    jobs.set(id, { id, name, from: payload.name, payload, deliver, group });
+    group.open.add(id);
+    store.dispatch(
+      act.importQueued({
+        id,
+        name,
+        format: payload.format,
+        bytes: bytesOf(payload),
+      }),
+    );
+    return id;
+  }
+
+  /** A zip not yet listed: it makes its first model, and each other is
+   *  queued as an import of its own, in the same group. A zip that lists
+   *  none is handed on as it is, for the converter to say why. */
+  async function splitZip(job: Job, stop: AbortController): Promise<void> {
+    const { payload } = job;
+    if (payload.format !== "zip") return;
+    const [first, ...others] = await listModels(payload.zip);
+    if (!owns(job, stop) || first === undefined) return;
+    job.payload = { ...payload, model: first };
+    for (const model of others) {
+      queue(job.group, job.deliver, { ...payload, model }, baseOf(model));
+    }
+  }
+
   async function convert(job: Job): Promise<void> {
     const stop = new AbortController();
     let workerGone = false;
     current = { id: job.id, stop };
     store.dispatch(act.importStarted({ id: job.id }));
     try {
+      if (job.payload.format === "zip" && job.payload.model === undefined) {
+        await splitZip(job, stop);
+        if (!owns(job, stop)) return;
+      }
       const outcome = await host.run("model", job.payload, settings, {
         signal: stop.signal,
         progress: (fraction) => {
@@ -212,14 +269,14 @@ export function createModelImportRunner(
       current = null;
       delivering = job.id;
       const notes = outcome.conversion?.notes ?? [];
-      const made = new File([outcome.blob], glbName(job.name), {
+      const made = new File([outcome.blob], glbName(job.payload), {
         type: "model/gltf-binary",
       });
       // The model leaves the converter here: its Worker goes before the
       // model is added, which may optimize it at once.
       host.close();
       workerGone = true;
-      const result = await job.deliver(made, { from: job.name, notes });
+      const result = await job.deliver(made, { from: job.from, notes });
       delivering = null;
       if (closed) return;
       if (result.kind === "added") {
@@ -228,7 +285,7 @@ export function createModelImportRunner(
         }
         store.dispatch(act.importRemoved({ id: job.id }));
         store.dispatch(
-          act.madeFromSet({ id: result.id, from: job.name, notes }),
+          act.madeFromSet({ id: result.id, from: job.from, notes }),
         );
         leave(job);
       } else if (result.kind === "refused") {
@@ -278,28 +335,10 @@ export function createModelImportRunner(
         open: new Set(),
         used: new Set(),
       };
-      const ids: string[] = [];
-      for (const planned of input.plan.imports) {
+      const ids = input.plan.imports.map((planned) => {
         const payload = payloadOf(input.files, planned);
-        const id = `import:${++seq}`;
-        jobs.set(id, {
-          id,
-          name: payload.name,
-          payload,
-          deliver: input.deliver,
-          group,
-        });
-        group.open.add(id);
-        ids.push(id);
-        store.dispatch(
-          act.importQueued({
-            id,
-            name: payload.name,
-            format: payload.format,
-            bytes: bytesOf(payload),
-          }),
-        );
-      }
+        return queue(group, input.deliver, payload, payload.name);
+      });
       if (ids.length === 0 && group.held.length > 0) group.release(group.held);
       pump();
       return ids;

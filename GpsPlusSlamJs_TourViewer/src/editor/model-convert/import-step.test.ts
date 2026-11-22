@@ -126,6 +126,27 @@ describe("convertImport", () => {
     ).toEqual({ type: "kept", reason: refusal.zipNoModel("e.zip") });
   });
 
+  // Why: the page makes one import per model of a zip, each naming its
+  // model; each must make that model, and name no other in a note.
+  it("makes the model of a zip it is handed by path, naming no other", async () => {
+    const a = await buildModel({ meshes: [boxSpec("a")] });
+    const b = await buildModel({ meshes: [boxSpec("b"), boxSpec("c")] });
+    const zip = await packFilesAsZip([
+      { path: "a.glb", data: a },
+      { path: "b.glb", data: b },
+    ]);
+    const answer = await convertImport(
+      { format: "zip", name: "set.zip", zip, model: "b.glb" },
+      OPTIMIZER_SETTINGS,
+      control(),
+    );
+    expect(answer).toMatchObject({
+      type: "done",
+      conversion: { notes: [], used: [] },
+    });
+    expect(await glbOf(answer as { blob: Blob })).toEqual(b);
+  });
+
   it("fails a hand-over that is no import, and stops when it is aborted", async () => {
     for (const payload of [
       null,
@@ -133,6 +154,7 @@ describe("convertImport", () => {
       { format: "obj", name: "a.obj", files: [] },
       { format: "gltf", name: "a.gltf", files: [{ path: "a.gltf" }] },
       { format: "zip", name: "a.zip" },
+      { format: "zip", name: "a.zip", zip: new Blob(["x"]), model: 3 },
     ]) {
       await expect(
         convertImport(payload, OPTIMIZER_SETTINGS, control()),
