@@ -71,13 +71,21 @@ export function fileExt(name: string): string {
 }
 
 /** A card's second line: "Sound · WAV · 9.0 MB" (the size it came in);
- *  a character's entry: "Character · 2 files · 1.2 MB". */
+ *  a character's entry: "Character · 2 files · 1.2 MB"; a converted
+ *  model with notes: "3D model · GLB · 2.1 MB · 2 notes". */
 export function cardKindLine(row: ShelfRow): string {
   const size = formatBytes(row.originalBytes);
   if (row.character !== undefined) {
     return `Character · ${filesWord(row.character.files.length)} · ${size}`;
   }
-  return `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${size}`;
+  const line = `${SHELF_KINDS[row.kind].label} · ${fileExt(row.name)} · ${size}`;
+  const notes = row.madeFrom?.notes.length ?? 0;
+  return notes > 0 ? `${line} · ${notesWord(notes)}` : line;
+}
+
+/** "1 note", "2 notes": what a conversion left out, counted. */
+export function notesWord(count: number): string {
+  return `${String(count)} note${count === 1 ? "" : "s"}`;
 }
 
 /** 0 to 100, whole. */

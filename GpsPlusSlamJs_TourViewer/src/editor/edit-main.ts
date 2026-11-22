@@ -163,7 +163,7 @@ import {
   createShelfPanel,
   type ShelfPanel,
 } from "./asset-shelf/shelf-panel.js";
-import { shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
+import { notesWord, shelfSqueezed } from "./asset-shelf/shelf-panel-model.js";
 import {
   TOUR_HOSTS,
   hostOfLink,
@@ -277,6 +277,7 @@ import {
   fileAddKindOf,
   fileAddKindOfAsset,
   fileDropTarget,
+  type FileDropTarget,
 } from "./file-drop.js";
 import {
   useInChoices,
@@ -2288,23 +2289,46 @@ async function dropFiles(
         use: (where, assetId) => {
           useFileAt(open, assetId, where);
         },
-        shelved: (assetId, fileName) => {
+        shelved: (assetId, fileName, notes) => {
           shelfPanel?.reveal(assetId);
-          toast(`"${fileName}" is on the shelf.`);
+          toast(
+            notes > 0
+              ? `"${fileName}" is on the shelf, with ${notesWord(notes)} on its card.`
+              : `"${fileName}" is on the shelf.`,
+          );
         },
         notKept: () => {
           toast(FILE_NOT_KEPT);
         },
       }),
+      // The pictures the model did not use go where the drop was made,
+      // as a plain drop's would.
       release: (pictures) => {
-        void shelfActions.addToShelf(open, pictures);
+        void placeDropped(open, pictures, dropTarget);
       },
     });
     if (first !== undefined) shelfPanel?.reveal(first);
   }
   const taken = [...plan.plain, ...plan.unknown].sort((a, b) => a - b);
+  await placeDropped(
+    open,
+    taken.map((i) => files[i]!),
+    dropTarget,
+  );
+}
+
+/** Dropped files a tour takes as they are, each where the drop was made
+ *  (`dropFiles`): onto the shelf for a drop on no row, else into the row
+ *  or the item's file field; a file of no kind a tour takes is said. Does
+ *  nothing once `open` is no longer the open tour. */
+async function placeDropped(
+  open: EditorSession,
+  files: readonly File[],
+  dropTarget: FileDropTarget | null,
+): Promise<void> {
   const loose: File[] = [];
-  for (const file of taken.map((i) => files[i]!)) {
+  for (const file of files) {
+    if (editor !== open) return;
     const kind = fileAddKindOf(file.name);
     if (kind === null) {
       toast(`"${file.name}" is not a picture, sound, video or 3D model.`);
@@ -2315,7 +2339,7 @@ async function dropFiles(
       await useAsItemFile(dropTarget.id, file);
     } else await addFromFile(kind, dropTarget, file);
   }
-  if (editor !== null) await shelfActions.addToShelf(editor, loose);
+  await shelfActions.addToShelf(open, loose);
 }
 
 /** A station made in this session (added, split off, copied) starts

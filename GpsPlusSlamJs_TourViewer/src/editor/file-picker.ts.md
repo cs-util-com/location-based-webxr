@@ -39,4 +39,6 @@ const file = await picker.pick("model"); // File | null
 
 `file-picker.test.ts` (jsdom): the allowlist per kind, a chosen file, a
 cancel and an empty change, and a second pick settling the first, and a
-many-files pick of every kind.
+many-files pick of every kind. Whether a phone's own picker lets the
+`IMPORT_ACCEPT` kinds (.gltf, .bin, .zip) be picked is not tested here
+or in any browser run: a check on a real phone, still to be made.

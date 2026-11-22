@@ -30,8 +30,9 @@ export interface ImportDeliveryDeps {
     assetId: string,
     fileName: string,
   ) => void;
-  /** The file `assetId` is on the shelf, used nowhere yet: said. */
-  readonly shelved: (assetId: string, fileName: string) => void;
+  /** The file `assetId` is on the shelf, used nowhere yet: said, with
+   *  the count of its conversion's notes (read on its card). */
+  readonly shelved: (assetId: string, fileName: string, notes: number) => void;
   /** The draft could not keep a copy of it: said. */
   readonly notKept: () => void;
 }
@@ -41,7 +42,7 @@ export function importDelivery(
   target: FileDropTarget | null,
   deps: ImportDeliveryDeps,
 ): ImportDelivery {
-  return async (file) => {
+  return async (file, about) => {
     if (!deps.open()) return { kind: "stopped" };
     let added: Awaited<ReturnType<ImportDeliveryDeps["addFile"]>>;
     try {
@@ -52,7 +53,7 @@ export function importDelivery(
     if (!deps.open()) return { kind: "stopped" };
     if (added.kind === "refused") return added;
     const id = added.asset.id;
-    if (target === null) deps.shelved(id, file.name);
+    if (target === null) deps.shelved(id, file.name, about.notes.length);
     else deps.use(target, id, file.name);
     if (!added.backedUp) deps.notKept();
     return { kind: "added", id };

@@ -11,7 +11,7 @@
   - `{ ok: false, reason }`: in words (`refusal.zipIsTour`, `zipNoModel` (also for a `model` the zip does not hold), `zipNamedTwice`, `zipUnreadable`, `zipTooManyFiles`, `tooLarge`, and for the archive caps `zipTooManyEntries` (`entry-count`) or `zipTooLarge` (every byte cap: the archive, its directory, an entry, the inflation budget)).
     Rejects only when `signal` aborted.
 - `zipBundleNotes(bundle, used)`: the notes a model made from a bundle carries: the other models (`note.otherModels`) and the entries it did not use (`note.unusedFiles`, up to five named).
-- `ZipBundleLimits`: `maxFiles` (default 1000 entries a model brings along), `maxBytes` (default `ASSET_CEILING_BYTES`, their bytes together).
+- `ZipBundleOptions` limits (its `ZipBundleLimits` part, not exported): `maxFiles` (default 1000 entries a model brings along), `maxBytes` (default `ASSET_CEILING_BYTES`, their bytes together).
 
 ## Invariants
 

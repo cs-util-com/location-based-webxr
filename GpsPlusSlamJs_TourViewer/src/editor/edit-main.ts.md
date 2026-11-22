@@ -1083,7 +1083,12 @@ on a desktop.
   convert (`model-convert/import-plan.ts`: a glTF with its parts, a zip
   of its folder) starts `open.imports`; once converted it goes the same
   way (`model-convert/import-delivery.ts`, through `useFileAt`), and
-  the pictures dropped with it wait for it. A part dropped alone (.bin,
+  the pictures dropped with it wait for it; the ones it did not use are
+  let go after it to where the drop was made, as a plain drop's would be
+  (`placeDropped`, the same path the files a tour takes as they are go:
+  a row, an item's file field, or the shelf). Once converted onto the
+  shelf, its toast counts the notes its card carries ("with 2 notes on
+  its card"). A part dropped alone (.bin,
   .mtl, .tga, .bmp) is refused in words. "Add files..." goes through the
   same drop, on no row. Docked, only
   the loose files (the shelf's add, a drop on the page) show the Files

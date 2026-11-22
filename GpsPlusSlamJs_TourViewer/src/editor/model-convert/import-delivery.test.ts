@@ -36,8 +36,19 @@ describe("importDelivery", () => {
       id: ID,
     });
     expect(d.addFile).toHaveBeenCalledWith(made);
-    expect(d.shelved).toHaveBeenCalledWith(ID, "bust.glb");
+    expect(d.shelved).toHaveBeenCalledWith(ID, "bust.glb", 0);
     expect(d.use).not.toHaveBeenCalled();
+  });
+
+  // Why: what a conversion left out is said on the card; the line that
+  // says the model arrived must tell there is something to read there.
+  it("says how many notes the model came with", async () => {
+    const d = deps();
+    await importDelivery(null, d)(made, {
+      from: "bust.gltf",
+      notes: ["one", "two"],
+    });
+    expect(d.shelved).toHaveBeenCalledWith(ID, "bust.glb", 2);
   });
 
   it("uses a model where it was dropped: an item's file field, a station's or a story's row", async () => {

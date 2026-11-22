@@ -24,7 +24,7 @@ export interface ZipBundleOptions extends Partial<ZipBundleLimits> {
   readonly model?: string;
 }
 
-export interface ZipBundleLimits {
+interface ZipBundleLimits {
   /** Entries a model may bring along (model files, parts, pictures). */
   readonly maxFiles: number;
   /** Their bytes together, as the directory declares and as inflated. */

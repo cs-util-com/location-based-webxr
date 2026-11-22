@@ -98,6 +98,23 @@ describe("the card", () => {
     expect(fileExt("photo.Large.jpeg")).toBe("JPEG");
   });
 
+  // Why: a converted model's notes (what the conversion left out) are
+  // read only on its opened card; its closed card's kind line counts them
+  // so they are not missed.
+  it("counts a converted model's notes on its kind line", () => {
+    const made = (notes: string[]) =>
+      cardKindLine(
+        row({
+          kind: "model",
+          name: "bust.glb",
+          madeFrom: { from: "bust.gltf", notes },
+        }),
+      );
+    expect(made(["a", "b"])).toBe("3D model · GLB · 9.0 MB · 2 notes");
+    expect(made(["a"])).toBe("3D model · GLB · 9.0 MB · 1 note");
+    expect(made([])).toBe("3D model · GLB · 9.0 MB");
+  });
+
   // Why: a character's entry holds his files; its kind line names him a
   // character and counts the files, never one file's extension.
   it("names a character's entry with its count of files", () => {
