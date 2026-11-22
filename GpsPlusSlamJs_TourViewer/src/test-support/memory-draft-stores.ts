@@ -9,8 +9,9 @@
  *   to a namespace, `failMetaPuts` that many of the next meta writes: `put`
  *   resolves false, as a full disk or a revoked handle does.
  * - `holdPuts` (every write) and `holdPutsOf` (the keys it matches) hold a
- *   write until `releasePuts(ok)`; `holdOpenOf` holds a namespace's open
- *   until `releaseOpens()`: the order writes land in.
+ *   write, and `holdRemovesOf` a removal of the keys it matches, until
+ *   `releasePuts(ok)`; `holdOpenOf` holds a namespace's open until
+ *   `releaseOpens()`: the order changes land in.
  * - `failRemoveOf` makes a removal of those keys throw (a store breaking
  *   its never-throws contract: the one way a removal can be seen to fail).
  * - `unreadable` keys read back as missing; `beforePut` runs before each
@@ -58,8 +59,10 @@ export interface MemoryDraftStores {
   holdPuts: boolean;
   /** A write of a key this matches waits for `releasePuts`. */
   holdPutsOf: RegExp | null;
-  /** Lands (or, with `ok` false, refuses) every held write, and stops
-   *  holding new ones. */
+  /** A removal of a key this matches waits for `releasePuts`. */
+  holdRemovesOf: RegExp | null;
+  /** Lands (or, with `ok` false, refuses) every held write, lands every
+   *  held removal, and stops holding new ones. */
   readonly releasePuts: (ok?: boolean) => void;
   /** An open of these namespaces waits for `releaseOpens`. */
   readonly holdOpenOf: Set<string>;
@@ -184,7 +187,18 @@ function storeOver(
         return Promise.reject(new Error("the removal failed"));
       }
       opsSoFar += 1;
-      if (changes(`remove ${k}`)) files.delete(k);
+      const lands = (): void => {
+        if (changes(`remove ${k}`)) files.delete(k);
+      };
+      if (browser.holdRemovesOf?.test(k) === true) {
+        return new Promise((resolve) => {
+          held.push(() => {
+            lands();
+            resolve();
+          });
+        });
+      }
+      lands();
       return Promise.resolve();
     },
     getText: async (k) => {
@@ -229,9 +243,11 @@ export function memoryDraftStores(): MemoryDraftStores {
     failMetaPuts: 0,
     holdPuts: false,
     holdPutsOf: null,
+    holdRemovesOf: null,
     releasePuts: (ok = true) => {
       browser.holdPuts = false;
       browser.holdPutsOf = null;
+      browser.holdRemovesOf = null;
       for (const land of heldPuts.splice(0)) land(ok);
     },
     holdOpenOf: new Set(),

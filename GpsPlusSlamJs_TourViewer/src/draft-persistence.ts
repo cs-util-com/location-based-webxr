@@ -100,6 +100,10 @@ export const SETTINGS_KEY = "settings";
  * an object's id: kept in the list while the record's file is on disk.
  */
 export const SETTINGS_REJECTED = ":settings";
+/** The codes record's entry in a meta's `rejected` list, by the settings
+ *  record's rule (`SETTINGS_REJECTED`): "Delete it" names it, and
+ *  `readDraftCodes` reads no codes the meta rejects. */
+export const CODES_REJECTED = ":codes";
 const OBJECT_PREFIX = "object:";
 const PHOTO_PREFIX = "photo:";
 const DELETED_PREFIX = "deleted:";
@@ -339,6 +343,50 @@ function rejectedIdsOf(value: unknown): string[] {
   return value.filter((id): id is string => typeof id === "string");
 }
 
+/** The store's meta, or undefined when it is missing or does not read as
+ *  one (`isMeta`, the rule `readDraft` reads it by). */
+async function storedMeta(
+  store: DraftFileStore,
+): Promise<DraftMeta | undefined> {
+  const text = await store.getText(META_KEY);
+  if (text === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return isMeta(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every id the store's meta rejects; none when there is no meta or it
+ *  does not read (`rejectedIdsOf`'s rule). */
+export async function metaRejectedIds(
+  store: DraftFileStore,
+): Promise<string[]> {
+  return rejectedIdsOf((await storedMeta(store))?.rejected);
+}
+
+/**
+ * Rewrite the store's meta without `id` in its `rejected` list: a claim
+ * made by the store's own meta, for a write that runs once the tour it was
+ * issued for is no longer the open one. True when nothing needed it (no
+ * meta, or `id` not rejected) or the write landed.
+ */
+export async function writeMetaWithout(
+  store: DraftFileStore,
+  id: string,
+): Promise<boolean> {
+  const meta = await storedMeta(store);
+  if (meta === undefined) return true;
+  const rejected = rejectedIdsOf(meta.rejected);
+  if (!rejected.includes(id)) return true;
+  return writeDraftMeta(store, {
+    tourUrl: meta.tourUrl,
+    sizeM: meta.sizeM,
+    rejected: rejected.filter((r) => r !== id),
+  });
+}
+
 /**
  * The settings record's text, or undefined when there is none or the
  * meta rejects it (`SETTINGS_REJECTED`): a record "Delete it" threw away
@@ -348,18 +396,8 @@ function rejectedIdsOf(value: unknown): string[] {
 export async function readSettingsText(
   store: DraftFileStore,
 ): Promise<string | undefined> {
-  const metaText = await store.getText(META_KEY);
-  if (metaText !== undefined) {
-    try {
-      const parsed: unknown = JSON.parse(metaText);
-      const rejected =
-        typeof parsed === "object" && parsed !== null
-          ? rejectedIdsOf((parsed as { rejected?: unknown }).rejected)
-          : [];
-      if (rejected.includes(SETTINGS_REJECTED)) return undefined;
-    } catch {
-      // Not JSON: no rejection.
-    }
+  if ((await metaRejectedIds(store)).includes(SETTINGS_REJECTED)) {
+    return undefined;
   }
   return store.getText(SETTINGS_KEY);
 }
@@ -518,11 +556,13 @@ function codesOf(value: unknown): DraftCodes {
 /**
  * Read the draft's codes: the codes file only. The code fields an older
  * meta carried are not read (debug-captures plan M3b, D5: no old drafts
- * to carry over). None when the file is missing or does not read.
+ * to carry over). None when the file is missing or does not read, or
+ * the meta rejects it (`CODES_REJECTED`).
  */
 export async function readDraftCodes(
   store: DraftFileStore,
 ): Promise<DraftCodes> {
+  if ((await metaRejectedIds(store)).includes(CODES_REJECTED)) return NO_CODES;
   const text = await store.getText(CODES_KEY);
   if (text === undefined) return NO_CODES;
   try {
@@ -752,6 +792,7 @@ export async function readDraft(
   const visits = await readVisits(store, keys, rejected);
   const onDisk = new Set(storedIds);
   if (keys.includes(SETTINGS_KEY)) onDisk.add(SETTINGS_REJECTED);
+  if (keys.includes(CODES_KEY)) onDisk.add(CODES_REJECTED);
   return {
     draft: {
       tourUrl: meta.tourUrl,

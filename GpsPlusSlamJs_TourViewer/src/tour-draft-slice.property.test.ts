@@ -32,7 +32,6 @@ type Step =
       kind:
         | "found"
         | "none"
-        | "unavailable"
         | "restore"
         | "decline"
         | "reshow"
@@ -46,7 +45,6 @@ const answer = fc.record({
   kind: fc.constantFrom(
     "found",
     "none",
-    "unavailable",
     "restore",
     "decline",
     "reshow",
@@ -92,8 +90,6 @@ function actionOf(s: Step, state: TourDraftState) {
       return a.found({ generation, text: `words ${generation}` });
     case "none":
       return a.noneFound({ generation });
-    case "unavailable":
-      return a.unavailable({ generation, reason: "storage" });
     case "restore":
       return a.restored({ generation });
     case "decline":
@@ -131,10 +127,9 @@ describe("the draft question over random sequences", () => {
             s.kind === "read" || s.kind === "end" || s.kind === "close";
           expect(state.generation).toBe(before.generation + (moves ? 1 : 0));
           if (moves) decidedInQuestion = false;
-          // The words exist exactly while undecided; the reason exactly
-          // while unavailable; "Delete it" runs only on a showing offer.
+          // The words exist exactly while undecided; "Delete it" runs
+          // only on a showing offer.
           expect(state.text !== null).toBe(undecided(state));
-          expect(state.reason !== null).toBe(state.status === "unavailable");
           expect(!state.deleting || state.status === "offered").toBe(true);
           // Nothing but its end answers while "Delete it" runs.
           const heldByDelete =

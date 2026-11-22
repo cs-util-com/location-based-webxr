@@ -35,6 +35,7 @@ import {
 } from "./tour-viewer-session.js";
 import {
   CODES_KEY,
+  CODES_REJECTED,
   deletedKey,
   META_KEY,
   objectKey,
@@ -715,6 +716,7 @@ describe("the rejection is committed by the meta write", () => {
     expect(rejectedOf(metaPuts.at(-2)), "the attempt that failed").toEqual([
       "old-pin",
       SETTINGS_REJECTED,
+      CODES_REJECTED,
     ]);
     expect(
       rejectedOf(metaPuts.at(-1)),

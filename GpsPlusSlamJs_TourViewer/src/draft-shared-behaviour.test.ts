@@ -61,6 +61,7 @@ import {
   selectTourDocument,
   tourDocumentActions,
 } from "./tour-document.js";
+import { CODES_KEY, META_KEY } from "./draft-persistence.js";
 import { SETTINGS_KEY } from "./tour-document-draft.js";
 import { editorStore } from "./test-support/editor-store.js";
 import {
@@ -253,6 +254,12 @@ const openDesktop: OpenPage = async (browser) => {
   const manifest = openedTour();
   let warned = false;
   let key: string | null = null;
+  // As `edit-main.ts` orders it: the store's question starts before the
+  // read, so a no-backup report during the read meets the question being
+  // read (the page's report touches no store state, as there).
+  const store = editorStore();
+  store.dispatch(tourDraftActions.readStarted());
+  const question = selectTourDraft(store.getState()).generation;
   const draft = createEditorDraft({
     openStore: (k) => {
       key = k;
@@ -264,7 +271,11 @@ const openDesktop: OpenPage = async (browser) => {
     },
   });
   const opened = await draft.open(session.archive.url, manifest);
-  const store = editorStore();
+  // The open's unawaited writes (its meta) may settle before the page
+  // offers the draft: nothing orders them after it, so the harness lets
+  // them land first - the order in which a refused one reaches the store
+  // during the read.
+  await settle(() => [memoryDraftOps()]);
   const editor = createEditorSession({
     session,
     manifest,
@@ -273,10 +284,6 @@ const openDesktop: OpenPage = async (browser) => {
     store,
   });
   const offer = opened.offer;
-  // As `edit-main.ts` starts the question before its read; this harness
-  // makes the store after the read, so it starts it here.
-  store.dispatch(tourDraftActions.readStarted());
-  const question = selectTourDraft(store.getState()).generation;
   if (offer === null) {
     store.dispatch(tourDraftActions.noneFound({ generation: question }));
   }
@@ -923,6 +930,59 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(next.shape().stations).not.toContain(
       JSON.stringify({ id: "st-a", geo: MOVED }),
     );
+  }, 60_000);
+
+  // Why: the same move, with the tab closed after one, two or three of
+  // its changes landed (the object that followed the station, then the
+  // claim: the rejected record removed, the meta rewritten, the new
+  // record written): a crash between any two steps leaves the rejection
+  // or what landed of the new move - never the move "Delete it" threw
+  // away.
+  it.each([1, 2, 3])(
+    "discard, then a station moved again, the tab closed after %i change(s): the next open never offers the deleted move",
+    async (landed) => {
+      const { browser, page, opened } = await freshPage(open);
+      await page.moveStation("st-a", MOVED);
+      const offered = await reopen(open, browser);
+      await offered.discard();
+      browser.crashAfter = landed;
+      await offered.moveStation("st-b", MOVED);
+      const next = await reopen(open, browser, offered);
+      expect(next.shape()).toEqual(opened);
+      if (next.offer() !== "") await next.restore();
+      const stations = next.shape().stations;
+      expect(stations, "never the deleted move").not.toContain(
+        JSON.stringify({ id: "st-a", geo: MOVED }),
+      );
+      const stB = stations.find((st) => st.includes('"id":"st-b"'));
+      expect(
+        [
+          opened.stations.find((st) => st.includes('"id":"st-b"')),
+          JSON.stringify({ id: "st-b", geo: MOVED }),
+        ],
+        "st-b where the file has it, or at its new move",
+      ).toContain(stB);
+    },
+    60_000,
+  );
+
+  // Why: a meta write refused during the open (the page then says no
+  // backup is kept) must not hide a draft the read found: on the desktop
+  // the report reached the store while the draft was read and turned the
+  // question away, so the found draft was never offered - no Restore, no
+  // "Delete it", only the no-backup line. The phone says a refused write
+  // at the creator's next change, not at the open, so only the desktop
+  // says it here.
+  it("open with a refused meta write: the draft is still offered", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.edit("a", "The gate");
+    browser.failMetaPuts = 1;
+    const next = await reopen(open, browser);
+    expect(browser.refused, "the open's meta write was refused").toContain(
+      META_KEY,
+    );
+    expect(next.offer(), "the draft is offered").not.toBe("");
+    expect(next.saidNotKept()).toBe(name === "desktop");
   }, 60_000);
 
   // Why: the unawaited removals after "Delete it" must not surface as an
@@ -1718,12 +1778,15 @@ function stationKeyOf(shape: DocumentShape, key: string): string | undefined {
  *  step lost a write: a refused tombstone of its last object brings the
  *  object back with its station, at a pose the record no longer holds (the
  *  removal took it off the record). The page said the write was refused,
- *  so that is a said loss, not a draft defect: the station is tainted. */
+ *  so that is a said loss, not a draft defect: the station is tainted.
+ *  `lostRecord`: among the step's refused writes is the settings or the
+ *  codes record, the only writes that carry a station's pose. */
 function follow(
   expected: Expected,
   before: DocumentShape,
   after: DocumentShape,
   lostWrite: boolean,
+  lostRecord: boolean,
 ): void {
   const was = entriesOf(before, true);
   const stands = entriesOf(after, true);
@@ -1742,12 +1805,12 @@ function follow(
     }
     // A station showing again (an object back at it) is no change of its
     // own either: it keeps the pose the draft holds for it - unless the
-    // step lost a write, for the reason above: the record dropped the
-    // station when it stopped showing, so its pose comes back only with
-    // this step's write of the record, and the page said that write was
+    // step lost its write of the record: the record dropped the station
+    // when it stopped showing, so its pose comes back only with this
+    // step's write of the record, and the page said that write was
     // refused. The station is tainted.
     if (isStation(key) && !was.has(key) && expected.entries.has(key)) {
-      if (lostWrite) expected.tainted.add(key);
+      if (lostRecord) expected.tainted.add(key);
       continue;
     }
     if (content === undefined) expected.entries.delete(key);
@@ -1922,6 +1985,9 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
     browser.failPutsOf = null;
     browser.failMetaPuts = 0;
     const lostWrite = browser.refused.length > refusedBefore;
+    const lostRecord = browser.refused
+      .slice(refusedBefore)
+      .some((key) => key === SETTINGS_KEY || key === CODES_KEY);
     const after = page.shape();
     saw(after);
     if (fault.kind === "crash") {
@@ -1944,7 +2010,7 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
       return;
     }
     if (answer === null) {
-      follow(expected, before, after, lostWrite);
+      follow(expected, before, after, lostWrite, lostRecord);
       return;
     }
     said ||= page.saidNotKept();
@@ -1964,7 +2030,7 @@ async function runSteps(open: OpenPage, steps: readonly Step[]): Promise<void> {
       // answer and went through after it: that edit is followed like any
       // step, so a write of it the page said was refused stays tainted.
       expected = expectedOf(opened);
-      follow(expected, opened, after, lostWrite);
+      follow(expected, opened, after, lostWrite, lostRecord);
     }
   };
   for (const [op, fault, asked] of steps) {

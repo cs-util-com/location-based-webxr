@@ -965,12 +965,6 @@ const draft = createEditorDraft({
   holdLock: (key) => holdEditorDraftLock(navigator.locks, key),
   noBackup: (reason) => {
     document.body.dataset["draft"] = "off";
-    store.dispatch(
-      tourDraftActions.unavailable({
-        generation: selectTourDraft(store.getState()).generation,
-        reason: reason === "other-tab" ? "other-tab" : "storage",
-      }),
-    );
     noBackupNote = NO_BACKUP[reason];
     // Said during an open, it waits until the tour shows: switching tours
     // takes the old file's toasts away.

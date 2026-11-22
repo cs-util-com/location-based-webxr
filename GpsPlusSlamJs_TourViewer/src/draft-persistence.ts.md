@@ -136,9 +136,22 @@ are the framework's.
   id: `rejectedIds` keeps it while the record's file is on disk.
 - `readSettingsText(store)` - the record's text, or undefined when there
   is none or the meta rejects it; both pages read the record through it.
-  A meta that does not read rejects nothing.
-- `StoredDraft.settingsStored` - whether the record's file was on disk at
-  read time: what a discard names with `SETTINGS_REJECTED`.
+  A meta that does not read, or does not read as one (`isMeta`,
+  `readDraft`'s rule), rejects nothing.
+- `CODES_REJECTED` (`":codes"`) - the codes record's entry, by the same
+  rule: "Delete it" names it in its commit, `readDraftCodes` (and so
+  `readDraft`'s `level` and `levels`) reads no codes the meta rejects,
+  and `rejectedIds` keeps it while `CODES_KEY` is on disk.
+- A discard always names both entries, whether or not a record is on disk;
+  `readDraft` keeps an entry in `rejectedIds` only while its record's
+  file is there, so the next meta write prunes it.
+- `metaRejectedIds(store)` - every id the store's meta rejects (none for
+  a missing meta or one that does not read as one).
+- `writeMetaWithout(store, id)` - rewrite the store's meta without `id`
+  in its list, keeping its tour and size: the claim of a record by the
+  store's own meta, for a write that runs once its tour is no longer the
+  open one (`creator-draft.ts`'s `claimRecord`). True when nothing
+  needed it or the write landed.
 - `StoredDraft.rejectedOnDisk` (M6 E2c review #3) - EVERY id the meta on
   disk rejects, files or not. Until the next meta write lands, the pruned
   ids are still rejected on disk, so a change of one must be claimed

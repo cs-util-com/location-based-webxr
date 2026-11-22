@@ -24,8 +24,15 @@ import {
 import { tourObjects } from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
+  CODES_REJECTED,
   deletedKey,
   discardOlderFormatDraft,
+  metaRejectedIds,
+  readDraftCodes,
+  readSettingsText,
+  SETTINGS_KEY,
+  SETTINGS_REJECTED,
+  writeMetaWithout,
   isOlderVersionDraft,
   META_KEY,
   objectKey,
@@ -344,6 +351,60 @@ describe("several codes in the draft (code book plan M4c-1)", () => {
     const store = memoryDraftStore();
     await writeDraftMeta(store, META);
     expect((await readDraft(store))?.draft.levels).toEqual([]);
+  });
+});
+
+describe("the settings and codes records' rejections", () => {
+  const LEVEL = { id: "old", json: "{}" };
+
+  // Why: "Delete it" names the codes record in the commit; a crash before
+  // the record is written again must leave the old codes inert, by the
+  // same rule as the settings record.
+  it("reads no codes the meta rejects, and keeps the entry while the file is on disk", async () => {
+    const store = memoryDraftStore();
+    await writeDraftMeta(store, { ...META, rejected: [CODES_REJECTED] });
+    await writeDraftCodes(store, { level: LEVEL, levels: [LEVEL] });
+    expect(await readDraftCodes(store)).toEqual({ level: null, levels: [] });
+    const read = await readDraft(store);
+    expect(read?.draft.level).toBeNull();
+    expect(read?.rejectedIds).toEqual([CODES_REJECTED]);
+    await store.remove(CODES_KEY);
+    expect((await readDraft(store))?.rejectedIds, "pruned").toEqual([]);
+  });
+
+  // Why: the settings record's reader reads the meta by readDraft's own
+  // rule (`isMeta`): a file that is no meta rejects nothing, whatever
+  // list it carries, as it says nothing of the draft at all.
+  it("reads the settings record past a file that is no meta", async () => {
+    const store = memoryDraftStore();
+    await store.put(
+      META_KEY,
+      JSON.stringify({ rejected: [SETTINGS_REJECTED] }),
+    );
+    await store.put(SETTINGS_KEY, "{}");
+    expect(await readSettingsText(store)).toBe("{}");
+    await writeDraftMeta(store, { ...META, rejected: [SETTINGS_REJECTED] });
+    expect(await readSettingsText(store), "a meta rejects it").toBeUndefined();
+  });
+
+  // Why: a write that runs once its tour is no longer the open one claims
+  // a rejected record by the store's own meta: the entry goes, the rest
+  // of the meta stays.
+  it("rewrites the meta without one entry, and leaves a meta that does not reject it alone", async () => {
+    const store = memoryDraftStore();
+    await writeDraftMeta(store, {
+      ...META,
+      rejected: ["gone", SETTINGS_REJECTED],
+    });
+    expect(await writeMetaWithout(store, SETTINGS_REJECTED)).toBe(true);
+    expect(await metaRejectedIds(store)).toEqual(["gone"]);
+    expect((await readDraft(store))?.draft.tourUrl).toBe(META.tourUrl);
+    const before = store.files.get(META_KEY);
+    expect(await writeMetaWithout(store, CODES_REJECTED)).toBe(true);
+    expect(store.files.get(META_KEY), "not written").toBe(before);
+    expect(await writeMetaWithout(memoryDraftStore(), CODES_REJECTED)).toBe(
+      true,
+    );
   });
 });
 
