@@ -28,6 +28,26 @@ export interface PhotoMeta {
 type SaveMode = "each" | "end";
 /** "auto": photos take themselves when the phone is still; "tap": countdown. */
 type CaptureMode = "auto" | "tap";
+
+/**
+ * How photo B of a pair can take itself: "still" where nothing changes
+ * between A and B (B once the phone rests), "move" where the viewpoint
+ * changes (B once the phone moved and rests again), null where the
+ * motion sensor cannot see the change (the light pairs, the tester's own
+ * pair): B by tap.
+ */
+export function handsOffKind(key: string): "still" | "move" | null {
+  if (
+    key === "1a" ||
+    key === "2a" ||
+    key === "3a" ||
+    key === "4a" ||
+    key === "4c"
+  ) {
+    return "still";
+  }
+  return /^(2[bcd]|3[bc]|4[bd])$/.test(key) ? "move" : null;
+}
 const COUNTDOWNS = [0, 3, 5] as const;
 type Countdown = (typeof COUNTDOWNS)[number];
 

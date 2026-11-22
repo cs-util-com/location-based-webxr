@@ -32,6 +32,7 @@ import type { CameraControl } from "./camera-control";
 import {
   downloadCount,
   instrView,
+  meterFill,
   nextAfterPair,
   nightOn,
   progressText,
@@ -45,6 +46,7 @@ import {
 } from "./cockpit-model";
 import {
   featureMatchActions as A,
+  handsOffDue,
   type FeatureMatchState,
 } from "./feature-match-slice";
 import type { FeatureMatchStore } from "./feature-match-store";
@@ -66,6 +68,8 @@ import { keptState, planSlots, type KeptState } from "./run-plan";
 const BEFORE_START_SEEN = "feature-match-check.before-start-seen";
 /** The meter ring's length (2 pi r, r = 46). */
 const METER = 289.03;
+/** How often a hands-off wait checks that motion readings still come (ms). */
+const WATCHDOG_MS = 500;
 
 type Tab = "pairs" | "guide" | "results" | "settings";
 const TABS: readonly Tab[] = ["pairs", "guide", "results", "settings"];
@@ -364,6 +368,8 @@ export function startCockpitView(deps: CockpitDeps): () => void {
   const openTab = (next: Tab | null): void => {
     if (next !== null) {
       cancelCount("details opened");
+      // The drawer covers the viewfinder: no photo takes itself under it.
+      store.dispatch(A.handsOffPaused());
     }
     tab = next;
     render();
@@ -437,6 +443,26 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     }
   };
 
+  // --- hands-off photo B ----------------------------------------------------------
+
+  const handsOffWaits = (): boolean => {
+    const p = state().handsOff.phase;
+    return tab === null && (p === "armed" || p === "waiting");
+  };
+
+  /** The phone rested for the dwell: photo B, and how it went. */
+  const takeHandsOff = (): void => {
+    let r: "taken" | "refused" | "failed";
+    try {
+      r = io.shoot("b") ? "taken" : "refused";
+    } catch (e) {
+      fail("capture", e);
+      r = "failed";
+    }
+    store.dispatch(A.handsOffShot(r));
+    log(`hands-off photo B: ${r}`);
+  };
+
   // --- render -------------------------------------------------------------------
 
   /** Draws the frame `id` onto `canvas` once; hides it while there is none. */
@@ -496,10 +522,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     ui.shutter.dataset.mode = sh.tone;
     ui.shutter.disabled = sh.disabled;
     ui.shutterText.textContent = sh.text;
-    const c = s.guided.count;
-    const secs = s.plan.settings.countdown;
-    const fill = c && secs > 0 ? (secs - c.left + 1) / (secs + 1) : 0;
-    ui.meter.style.strokeDashoffset = String(METER * (1 - fill));
+    ui.meter.style.strokeDashoffset = String(METER * (1 - meterFill(s)));
     const r = retakeView(s, last);
     ui.retake.disabled = r.disabled;
     ui.retakeLabel.textContent = r.label;
@@ -662,6 +685,9 @@ export function startCockpitView(deps: CockpitDeps): () => void {
       r.checked = Number(r.value) === s.plan.spots;
       r.disabled = started || s.busy !== "idle";
     }
+    for (const r of all<HTMLInputElement>('input[name="c-capture"]')) {
+      r.checked = r.value === set.capture;
+    }
     ui.sound.checked = set.sound;
   };
 
@@ -670,6 +696,11 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     // marks the page busy, and this render must draw that.
     if (pending && state().running === null) {
       void packPending();
+    }
+    // Photo B waits to take itself only once the sensor has spoken: a
+    // phone without one keeps the tap, and so does a browser test.
+    if (tab === null && motion.seen && handsOffDue(state())) {
+      store.dispatch(A.handsOffArmed(performance.now()));
     }
     const s = state();
     io.syncTimer();
@@ -773,6 +804,11 @@ export function startCockpitView(deps: CockpitDeps): () => void {
       store.dispatch(A.planSettingsChanged({ countdown: Number(r.value) }));
     });
   }
+  for (const r of all<HTMLInputElement>('input[name="c-capture"]')) {
+    r.addEventListener("change", () => {
+      store.dispatch(A.planSettingsChanged({ capture: r.value }));
+    });
+  }
   for (const r of all<HTMLInputElement>('input[name="c-spots"]')) {
     r.addEventListener("change", () => {
       store.dispatch(
@@ -819,7 +855,24 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     if (changed) {
       render();
     }
+    if (handsOffWaits()) {
+      store.dispatch(
+        A.handsOffSample({
+          t: ev.timeStamp,
+          rate: r && { alpha: r.alpha, beta: r.beta, gamma: r.gamma },
+        }),
+      );
+      if (state().handsOff.phase === "taking") {
+        takeHandsOff();
+      }
+    }
   });
+  // A sensor that stops reporting ends the wait (as "failed", with the tap).
+  window.setInterval(() => {
+    if (handsOffWaits()) {
+      store.dispatch(A.handsOffSample({ t: performance.now(), rate: null }));
+    }
+  }, WATCHDOG_MS);
 
   return render;
 }

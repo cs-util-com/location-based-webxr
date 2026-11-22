@@ -4,13 +4,15 @@ import {
   featureMatchActions as A,
   featureMatchReducer,
   flatPhase,
+  handsOffDue,
   initialFeatureMatchState,
   logText,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
 import { POSES, SURFACE_CLASSES } from "./flat-target";
-import type { PhotoMeta } from "./run-plan";
+import { planSlots, type PhotoMeta } from "./run-plan";
+import { STILL_CONFIG } from "./still-detector";
 
 const start = (): FeatureMatchState =>
   initialFeatureMatchState({ session: "s1" });
@@ -527,5 +529,159 @@ describe("the guided view's single-file save and camera start", () => {
     const s = run([A.photoStoreChanged(true)]);
     expect(s.photoStoreFailing).toBe(true);
     expect(run([A.photoStoreChanged(false)], s).photoStoreFailing).toBe(false);
+  });
+});
+
+describe("hands-off photo B", () => {
+  const still = { alpha: 0.2, beta: -0.1, gamma: 0.3 };
+  const fast = { alpha: 60, beta: 60, gamma: 60 };
+  /** Readings every 20 ms from `t0` for `ms`. */
+  const readings = (t0: number, ms: number, rate = still) => {
+    const out: FeatureMatchAction[] = [];
+    for (let t = t0; t <= t0 + ms; t += 20) {
+      out.push(A.handsOffSample({ t, rate }));
+    }
+    return out;
+  };
+  const withA = (slot = "1a-s1"): FeatureMatchState => {
+    const s = run([A.cameraChanged(true)]);
+    const index = planSlots(s.plan).findIndex((sl) => sl.id === slot);
+    return run(
+      [
+        A.planMoved(index),
+        A.planPhotoTaken({ slot, which: "a", photo: photo("pa") }),
+      ],
+      s,
+    );
+  };
+  const armed = (slot?: string): FeatureMatchState =>
+    run([A.handsOffArmed(0)], withA(slot));
+
+  // Why: B takes itself only where it can: the setting on, the camera on,
+  // a pair the sensor can judge, photo A taken and B due, no countdown,
+  // nothing busy, and once per photo A.
+  it("is due only after photo A of a pair it can judge", () => {
+    expect(handsOffDue(withA())).toBe(true);
+    expect(handsOffDue(start())).toBe(false);
+    expect(handsOffDue(run([A.cameraChanged(false)], withA()))).toBe(false);
+    expect(
+      handsOffDue(run([A.planSettingsChanged({ capture: "tap" })], withA())),
+    ).toBe(false);
+    expect(
+      handsOffDue(run([A.guidedCountSet({ shot: "b", left: 3 })], withA())),
+    ).toBe(false);
+    expect(handsOffDue(run([A.runStarted("speed")], withA()))).toBe(false);
+    expect(handsOffDue(withA("1b-s1"))).toBe(false);
+    expect(handsOffDue(withA("2b-s1"))).toBe(true);
+    expect(handsOffDue(armed())).toBe(false);
+  });
+
+  // Why: arming is refused unless due, so a render that arms on every
+  // change cannot loop, and a bad time never starts the detector.
+  it("arms once, and refuses when not due or with a bad time", () => {
+    const s = armed();
+    expect(s.handsOff.phase).toBe("armed");
+    expect(s.handsOff.slot).toBe("1a-s1");
+    expect(featureMatchReducer(s, A.handsOffArmed(5))).toBe(s);
+    expect(featureMatchReducer(start(), A.handsOffArmed(0))).toEqual(start());
+    const a = withA();
+    expect(featureMatchReducer(a, A.handsOffArmed(Number.NaN))).toBe(a);
+  });
+
+  // Why: the flow itself - readings arrive (waiting), the phone stays
+  // still for the dwell, and only then is the photo due (taking).
+  it("waits for the still phone, then takes B", () => {
+    const s = armed();
+    const w = run(readings(20, 500), s);
+    expect(w.handsOff.phase).toBe("waiting");
+    const t = run(readings(540, STILL_CONFIG.dwellMs), w);
+    expect(t.handsOff.phase).toBe("taking");
+    expect(run([A.handsOffShot("taken")], t).handsOff.phase).toBe("taken");
+    expect(run([A.handsOffShot("refused")], t).handsOff.phase).toBe("refused");
+    expect(run([A.handsOffShot("failed")], t).handsOff.phase).toBe("failed");
+    expect(featureMatchReducer(w, A.handsOffShot("taken"))).toBe(w);
+  });
+
+  // Why: on a pair that moves the phone, B waits for the move.
+  it("stays armed on a move pair until the phone moved", () => {
+    const s = run(readings(20, 3000), armed("2b-s1"));
+    expect(s.handsOff.phase).toBe("armed");
+    const moved = run(readings(3040, 400, fast), s);
+    const t = run(readings(3460, 3000), moved);
+    expect(t.handsOff.phase).toBe("taking");
+  });
+
+  // Why: a sensor that never reports, or stops, ends the wait with a
+  // reason, and that photo A is not armed again: the tap is the way out.
+  it("fails when the readings stop, and offers the tap", () => {
+    const s = run(
+      [A.handsOffSample({ t: STILL_CONFIG.lostMs + 1, rate: null })],
+      armed(),
+    );
+    expect(s.handsOff.phase).toBe("failed");
+    expect(s.handsOff.text).toMatch(/tap/i);
+    expect(handsOffDue(s)).toBe(false);
+    const c = run([A.guidedCountSet({ shot: "b", left: 3 })], s);
+    expect(c.guided.count).toEqual({ shot: "b", left: 3 });
+  });
+
+  // Why: a tap on the big button during the wait takes B by countdown;
+  // the wait ends and does not come back for the same photo A.
+  it("ends on a countdown, a retake or a run, and stays off for that A", () => {
+    const w = run(readings(20, 200), armed());
+    for (const act of [
+      A.guidedCountSet({ shot: "b", left: 3 }),
+      A.guidedRetakeToggled("a"),
+      A.runStarted("speed"),
+    ]) {
+      const s = run([act], w);
+      expect(s.handsOff.phase, act.type).toBe("off");
+      expect(s.handsOff.slot).toBe("1a-s1");
+    }
+    const off = run([A.guidedCountSet({ shot: "b", left: 3 })], w);
+    expect(handsOffDue(run([A.guidedCountSet(null)], off))).toBe(false);
+  });
+
+  // Why: the drawer pauses the wait; closing it arms again. A new photo
+  // A, another pair, Start over or the camera off clear it as well.
+  it("clears on a pause, a move, a reset and the camera off", () => {
+    const w = run(readings(20, 200), armed());
+    const paused = run([A.handsOffPaused()], w);
+    expect(paused.handsOff.phase).toBe("off");
+    expect(handsOffDue(paused)).toBe(true);
+    for (const act of [A.planMoved(1), A.planReset(), A.cameraChanged(false)]) {
+      expect(run([act], w).handsOff.phase, act.type).toBe("off");
+      expect(run([act], w).handsOff.slot, act.type).toBeNull();
+    }
+    const retakenA = run(
+      [
+        A.guidedRetakeToggled("a"),
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("pa2") }),
+      ],
+      w,
+    );
+    expect(handsOffDue(retakenA)).toBe(true);
+  });
+
+  // Why: readings are only taken while waiting; a bad one changes nothing.
+  it("ignores readings when not waiting, and bad readings", () => {
+    const a = withA();
+    expect(
+      featureMatchReducer(a, A.handsOffSample({ t: 5, rate: still })),
+    ).toBe(a);
+    const s = armed();
+    expect(
+      featureMatchReducer(s, A.handsOffSample({ t: Number.NaN, rate: still })),
+    ).toBe(s);
+    const w = run(readings(20, 100), s);
+    expect(
+      featureMatchReducer(
+        w,
+        A.handsOffSample({
+          t: 200,
+          rate: { alpha: Number.NaN, beta: null, gamma: Infinity },
+        }),
+      ),
+    ).toBe(w);
   });
 });

@@ -402,7 +402,7 @@ export const deviceSummary = (d: DeviceInfo): string =>
  */
 export const STEADY_THRESHOLD = 6;
 
-type RotationRate = {
+export type RotationRate = {
   readonly alpha: number | null;
   readonly beta: number | null;
   readonly gamma: number | null;
@@ -422,14 +422,21 @@ const finiteRates = (r: RotationRate): number[] =>
 /** Whether a `devicemotion` reading carries a usable rotation rate. */
 export const hasRate = (r: RotationRate): boolean => finiteRates(r).length > 0;
 
+/**
+ * The summed absolute finite rotation rates of a reading, or null for a
+ * reading without any, or whose sum overflows past the largest number.
+ */
+export function rateSum(r: RotationRate): number | null {
+  const rates = finiteRates(r);
+  if (rates.length === 0) return null;
+  const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
+  return Number.isFinite(m) ? m : null;
+}
+
 /** The next smoothed motion level from a `devicemotion` rotation rate. */
 export function motionStep(level: number, r: RotationRate): number {
-  const rates = finiteRates(r);
-  if (rates.length === 0) return level;
-  const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
-  // Absurdly large rates can sum past the largest number: ignore that too.
-  if (!Number.isFinite(m)) return level;
-  return level * 0.8 + m * 0.2;
+  const m = rateSum(r);
+  return m === null ? level : level * 0.8 + m * 0.2;
 }
 
 export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;

@@ -26,6 +26,7 @@ The photo test run as plain data, shared by every view of the feature matching c
   - `reset` - Start over: back to `EMPTY_PLAN`, the settings kept.
 - `keptState(plan, slotId)` - `"warn"` (a failed light check) before `"saved"`, `"kept"`, `"done"`, `"half"`, `"missing"`: the cockpit's pair list.
 - `planSlots(plan)`, `planPhotoIds(plan)`, `maxSequence(plan)`.
+- `handsOffKind(key)` - `"still"` (1a, 2a, 3a, 4a, 4c: B from the same pose), `"move"` (2b-2d, 3b, 3c, 4b, 4d: the phone moves and rests again before B) or `null` (the light pairs 1b and 1c, whose change the motion sensor cannot see, and the extra pair): which pairs the cockpit's photo B may take by itself.
 - `planText(plan)` / `parsePlan(text)` - versioned JSON; `parsePlan` returns undefined for missing, damaged or foreign text and drops a bad record, kept file or setting alone.
 - `planAfterReload(plan)` - kept files are forgotten (their Blobs lived in memory).
 - `EMPTY_PLAN`, `DEFAULT_SETTINGS` (`save: "end"`, `capture: "auto"`, `countdown: 3`, `sound: true`), `COUNTDOWNS`.

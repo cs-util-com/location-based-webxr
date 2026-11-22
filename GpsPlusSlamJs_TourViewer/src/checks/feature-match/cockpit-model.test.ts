@@ -4,6 +4,7 @@ import fc from "fast-check";
 import {
   downloadCount,
   instrView,
+  meterFill,
   nextAfterPair,
   nightOn,
   progressText,
@@ -314,6 +315,94 @@ describe("dock lines", () => {
   });
 });
 
+describe("cockpit model: hands-off photo B", () => {
+  const rest = { alpha: 0.2, beta: -0.1, gamma: 0.3 };
+  const samples = (t0: number, ms: number): FeatureMatchAction[] => {
+    const out: FeatureMatchAction[] = [];
+    for (let t = t0; t <= t0 + ms; t += 20) {
+      out.push(A.handsOffSample({ t, rate: rest }));
+    }
+    return out;
+  };
+  const armed = run([
+    A.planSettingsChanged({ countdown: 0 }),
+    camOn,
+    shot("1a-s1", "a"),
+    A.handsOffArmed(0),
+  ]);
+  const waiting = run(samples(0, 500), armed);
+  const taking = run(samples(520, 1200), waiting);
+
+  // Why: every hands-off state shows itself on the big button, and while
+  // it waits the button still takes B at a tap: the way out of a wait.
+  it("shows the wait on the big button, which still takes B at a tap", () => {
+    expect(shutterView(armed)).toMatchObject({
+      mode: "capture",
+      shot: "b",
+      text: "Waiting",
+      tone: "armed",
+      disabled: false,
+    });
+    expect(shutterView(waiting)).toMatchObject({
+      mode: "capture",
+      shot: "b",
+      text: "Hold still",
+    });
+    expect(shutterView(taking)).toMatchObject({
+      mode: "busy",
+      text: "Taking B",
+      disabled: true,
+    });
+    for (const r of ["refused", "failed"] as const) {
+      expect(shutterView(run([A.handsOffShot(r)], taking))).toMatchObject({
+        mode: "capture",
+        shot: "b",
+        text: "Take B",
+        disabled: false,
+      });
+    }
+  });
+
+  // Why: the status line says what the wait is doing and, after a refusal
+  // or a lost sensor, that a tap takes B instead.
+  it("says on the status line what the wait does", () => {
+    expect(statusView(armed).text).toMatch(/takes itself/);
+    expect(statusView(waiting).text).toMatch(/Hold still/);
+    expect(statusView(run([A.handsOffShot("refused")], taking))).toEqual({
+      text: expect.stringMatching(/Tap to take it/),
+      tone: "bad",
+    });
+    expect(statusView(run([A.handsOffShot("taken")], taking)).tone).toBe("ok");
+    const lost = run(
+      [A.handsOffSample({ t: 5000, rate: null })],
+      run(samples(0, 100), armed),
+    );
+    expect(statusView(lost).text).toMatch(/No motion readings/);
+  });
+
+  // Why: the meter ring fills with the dwell while the phone rests, and
+  // with the countdown otherwise; it never leaves 0..1.
+  it("fills the meter with the dwell or the countdown", () => {
+    expect(meterFill(armed)).toBe(0);
+    const half = meterFill(waiting);
+    expect(half).toBeGreaterThan(0.2);
+    expect(half).toBeLessThan(0.5);
+    const count = run([camOn, A.guidedCountSet({ shot: "a", left: 3 })]);
+    expect(meterFill(count)).toBeCloseTo(1 / 4);
+    expect(meterFill(run([camOn]))).toBe(0);
+  });
+
+  // Why: the mode readout says "auto" only while B is really waiting to
+  // take itself, so a tester never waits for a photo that will not come.
+  it("reads auto while photo B waits to take itself", () => {
+    const motion = { seen: true, moving: false };
+    expect(readoutView(armed, motion).mode.text).toBe("auto");
+    expect(
+      readoutView(run([A.handsOffShot("failed")], taking), motion).mode.text,
+    ).toBe("tap");
+  });
+});
+
 // Why this property matters: the dock never resizes, so whatever the state,
 // every box gets a text it can show and the big button keeps one mode.
 describe("cockpit model property", () => {
@@ -334,6 +423,20 @@ describe("cockpit model property", () => {
     fc.constant(A.runStarted("synthetic")),
     fc.constant(A.runFinished({ text: "done", resultsId: null })),
     fc.constant(A.planRunDownloaded()),
+    fc.integer({ min: 0, max: 5000 }).map((t) => A.handsOffArmed(t)),
+    fc
+      .tuple(fc.integer({ min: 0, max: 8000 }), fc.integer({ min: 0, max: 90 }))
+      .map(([t, r]) =>
+        A.handsOffSample({ t, rate: { alpha: r, beta: 0, gamma: 0 } }),
+      ),
+    fc
+      .constantFrom<"taken" | "refused" | "failed">(
+        "taken",
+        "refused",
+        "failed",
+      )
+      .map((r) => A.handsOffShot(r)),
+    fc.constant(A.handsOffPaused()),
   );
   it("always yields a shutter text and finite counts", () => {
     fc.assert(
@@ -346,6 +449,9 @@ describe("cockpit model property", () => {
         const rv = retakeView(s, { index: 0, seq: 1 });
         expect(rv.label.length).toBeGreaterThan(0);
         expect(rv.disabled).toBe(rv.action === null);
+        const fill = meterFill(s);
+        expect(fill).toBeGreaterThanOrEqual(0);
+        expect(fill).toBeLessThanOrEqual(1);
       }),
     );
   });

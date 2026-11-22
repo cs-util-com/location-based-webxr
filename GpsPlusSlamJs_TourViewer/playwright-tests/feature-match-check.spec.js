@@ -591,6 +591,130 @@ test("the feature matching cockpit keeps each pair for Download all", async ({
 });
 
 /**
+ * Starts synthetic `devicemotion` readings at about 60 a second with the
+ * rotation rate `rate` (deg/s per axis); a new call replaces the old feed,
+ * and `null` stops it, as a sensor that falls silent.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number | null} rate
+ */
+async function motionFeed(page, rate) {
+  await page.evaluate((r) => {
+    const w = /** @type {any} */ (window);
+    clearInterval(w.__motionFeed);
+    if (r === null) {
+      return;
+    }
+    w.__motionFeed = setInterval(() => {
+      window.dispatchEvent(
+        new DeviceMotionEvent("devicemotion", {
+          rotationRate: { alpha: r, beta: -r, gamma: r / 2 },
+        }),
+      );
+    }, 16);
+  }, rate);
+}
+
+/**
+ * Photo A of the current pair with the big button, the camera started
+ * first; photo B is left to the test.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function takeCockpitA(page) {
+  const shutter = page.locator("#c-shutter");
+  const text = page.locator("#c-shutter-text");
+  await shutter.click();
+  await expect(text).toHaveText("Take A");
+  await page.waitForFunction(
+    () =>
+      /** @type {HTMLVideoElement} */ (document.querySelector("#c-video"))
+        .videoWidth > 0,
+  );
+  await shutter.click();
+  await expect(page.locator("#c-state-a")).toHaveText("taken");
+}
+
+/**
+ * Why this test matters: with the phone on its stand, photo B of a pair
+ * the motion sensor can judge takes itself once the phone has rested for
+ * the dwell, so the tap that shook the phone for A never blurs B; the
+ * pair is then measured and kept like a tapped one. A shaking phone keeps
+ * it waiting. The motion is synthetic `devicemotion` events.
+ */
+test("the feature matching cockpit takes photo B by itself once the phone is still", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitA(page);
+  const text = page.locator("#c-shutter-text");
+  await expect(text).toHaveText("Take B");
+  await motionFeed(page, 40);
+  await expect(text).toHaveText("Hold still");
+  await expect(page.locator("#c-read-mode")).toHaveText("auto");
+  await expect(page.locator("#c-status")).toHaveText(
+    "Hold still: photo B takes itself.",
+  );
+  await expect(page.locator("#c-read-still")).toHaveText("moving");
+  await expect(page.locator("#c-state-b")).toHaveText("now");
+  await motionFeed(page, 0.3);
+  // B is packed and the next pair comes up at once, so the durable end
+  // state is the status line, not tile B.
+  await expect(page.locator("#c-status")).toHaveText(
+    /^Kept feature-match-01-1a-s1-light-control-same-light\.zip here/,
+  );
+  await motionFeed(page, null);
+  expect(await logLines(page, "hands-off photo B: taken")).toBe(1);
+  await expect(page.locator("#c-segs i").first()).toHaveClass("kept");
+});
+
+/**
+ * Why this test matters: the ways out of a hands-off wait. With "At a
+ * tap" set, readings never start one; a sensor that falls silent ends the
+ * wait with a line that says so, and the big button takes B at a tap.
+ */
+test("the feature matching cockpit falls back to the tap when motion readings stop", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await openTab(page, "settings");
+  await page.locator('input[name="c-capture"][value="tap"]').check();
+  await closeDrawer(page);
+  await takeCockpitA(page);
+  const text = page.locator("#c-shutter-text");
+  await motionFeed(page, 0.3);
+  await expect(page.locator("#c-read-still")).toHaveText("steady");
+  await expect(text).toHaveText("Take B");
+  await expect(page.locator("#c-read-mode")).toHaveText("tap");
+
+  // Back to "By itself": the wait starts once the drawer closes.
+  await openTab(page, "settings");
+  await page.locator('input[name="c-capture"][value="auto"]').check();
+  await motionFeed(page, 40);
+  await closeDrawer(page);
+  await expect(text).toHaveText("Hold still");
+  await motionFeed(page, null);
+  await expect(page.locator("#c-status")).toHaveText(
+    "No motion readings: tap to take photo B.",
+  );
+  await expect(page.locator("#c-status")).toHaveClass(/bad/);
+  await expect(text).toHaveText("Take B");
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-status")).toHaveText(/^Kept .+\.zip here/);
+  expect(await logLines(page, "hands-off photo B")).toBe(0);
+});
+
+/**
  * Why this test matters: the async rule for the pair's zip: while it is
  * packed the big button says so and nothing else can start, and a failed
  * encode (a phone out of memory) must say so, log the error and lose

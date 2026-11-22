@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SETTINGS,
   EMPTY_PLAN,
+  handsOffKind,
   keptState,
   maxSequence,
   parsePlan,
@@ -363,5 +364,22 @@ describe("the run plan across reloads", () => {
     expect(planAfterReload(plan).kept).toEqual([]);
     expect(maxSequence(plan)).toBe(2);
     expect(maxSequence(EMPTY_PLAN)).toBe(0);
+  });
+});
+
+describe("which pairs take photo B by themselves", () => {
+  // Why: B right after A is only right where nothing changes; a pair that
+  // moves the phone needs the move first, and a light change or the
+  // tester's own pair cannot be seen by the motion sensor at all.
+  it("sorts every pair into still, move or by tap", () => {
+    for (const k of ["1a", "2a", "3a", "4a", "4c"]) {
+      expect(handsOffKind(k), k).toBe("still");
+    }
+    for (const k of ["2b", "2c", "2d", "3b", "3c", "4b", "4d"]) {
+      expect(handsOffKind(k), k).toBe("move");
+    }
+    for (const k of ["1b", "1c", "x", "", "9z"]) {
+      expect(handsOffKind(k), k).toBeNull();
+    }
   });
 });

@@ -38,6 +38,7 @@ import {
 } from "./flat-target";
 import {
   EMPTY_PLAN,
+  handsOffKind,
   maxSequence,
   planSlots,
   planReducer,
@@ -46,6 +47,14 @@ import {
   type RunPlan,
 } from "./run-plan";
 import { doneCount, shotDue, slotStatus } from "./plan-slots";
+import {
+  isStill,
+  readingsLost,
+  stillStart,
+  stillStep,
+  type MotionSample,
+  type StillState,
+} from "./still-detector";
 
 /** One action at a time: a run (benchmark or speed test) or a save. */
 type Busy = "idle" | "running" | "saving";
@@ -126,6 +135,47 @@ interface GuidedState {
 }
 
 /**
+ * The cockpit's hands-off photo B: "armed" after photo A until the first
+ * reading (and on a move pair until the move), "waiting" for the phone to
+ * rest, "taking" once it rested for the dwell (the view takes the photo),
+ * then "taken", "refused" (the photo was not taken) or "failed" (the
+ * readings stopped, or the capture threw). "off" with a take named means
+ * that photo A is not armed again.
+ */
+type HandsOffPhase =
+  "off" | "armed" | "waiting" | "taking" | "taken" | "refused" | "failed";
+
+interface HandsOff {
+  readonly phase: HandsOffPhase;
+  /** The slot and photo A it was armed for; null arms on the next due B. */
+  readonly slot: string | null;
+  readonly a: string | null;
+  /** The still detector's state while armed or waiting. */
+  readonly still: StillState | null;
+  /** The line the status shows for it. */
+  readonly text: string;
+}
+
+const HANDS_OFF_IDLE: HandsOff = {
+  phase: "off",
+  slot: null,
+  a: null,
+  still: null,
+  text: "",
+};
+
+const HANDS_OFF_TEXT = {
+  still: "Hands off: photo B takes itself once the phone is still.",
+  move: "Move the phone for photo B; it takes itself once the phone rests again.",
+  waiting: "Hold still: photo B takes itself.",
+  taking: "Taking photo B.",
+  taken: "Photo B took itself.",
+  refused: "Photo B was not taken by itself. Tap to take it.",
+  failed: "Photo B could not be taken by itself. Tap to take it.",
+  lost: "No motion readings: tap to take photo B.",
+} as const;
+
+/**
  * The guided view's Download all: "preparing" while the zip is packed,
  * then saved, failed, or "idle" again (the save dialog was closed).
  */
@@ -179,6 +229,7 @@ export interface FeatureMatchState {
   /** The photo test run of the plan-driven views (`run-plan.ts`). */
   readonly plan: RunPlan;
   readonly guided: GuidedState;
+  readonly handsOff: HandsOff;
   readonly planRun: PlanRun | null;
   readonly runZip: RunZip;
   readonly fileSave: FileSave;
@@ -225,6 +276,7 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     session: i.session,
     plan,
     guided: { retake: null, count: null },
+    handsOff: HANDS_OFF_IDLE,
     planRun: null,
     runZip: { phase: "idle", text: "" },
     fileSave: { preparing: false, text: "" },
@@ -282,6 +334,29 @@ export function flatPhase(f: FlatState): FlatPhase {
     return "ref-live";
   }
   return f.preview ? "check" : "corners";
+}
+
+/**
+ * Whether photo B is due to take itself: the setting is "auto", the
+ * camera on, nothing busy and no countdown or retake; the current pair is
+ * one the motion sensor can judge (`handsOffKind`), its photo A is taken
+ * and B is missing; and this photo A was not armed before.
+ */
+export function handsOffDue(s: FeatureMatchState): boolean {
+  const slot = planSlots(s.plan)[s.plan.current];
+  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  const h = s.handsOff;
+  return (
+    s.plan.settings.capture === "auto" &&
+    s.camera &&
+    s.busy === "idle" &&
+    s.guided.count === null &&
+    s.guided.retake === null &&
+    slot !== undefined &&
+    handsOffKind(slot.key) !== null &&
+    shotDue(rec, null) === "b" &&
+    !(h.slot === slot.id && h.a === rec?.a?.id)
+  );
 }
 
 /** The first pose not yet complete, else the first. */
@@ -365,6 +440,11 @@ const planCase =
     if (TARGET_CHANGES.has(action.type)) {
       s.guided = { retake: null, count: null };
     }
+    if (action.type === "photo") {
+      endHandsOff(s);
+    } else if (TARGET_CHANGES.has(action.type)) {
+      s.handsOff = HANDS_OFF_IDLE;
+    }
     if (
       (action.type === "photo" && s.planRun?.slot === action.slot) ||
       action.type === "reset" ||
@@ -416,6 +496,14 @@ const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
   "reset",
 ]);
 
+/** Ends an armed or waiting hands-off photo; that photo A stays named. */
+function endHandsOff(s: Draft): void {
+  const p = s.handsOff.phase;
+  if (p === "armed" || p === "waiting") {
+    s.handsOff = { ...s.handsOff, phase: "off", still: null, text: "" };
+  }
+}
+
 /** The current plan slot and its record, if any. */
 function currentSlot(s: Draft) {
   const slot = planSlots(s.plan)[s.plan.current];
@@ -428,6 +516,10 @@ const slice = createSlice({
   reducers: {
     cameraChanged(s: Draft, a: PayloadAction<boolean>) {
       s.camera = a.payload;
+      const p = s.handsOff.phase;
+      if (!a.payload && (p === "armed" || p === "waiting")) {
+        s.handsOff = HANDS_OFF_IDLE;
+      }
     },
     /** A run or the speed test starts; refused unless idle. */
     runStarted(s: Draft, a: PayloadAction<RunKind>) {
@@ -444,6 +536,7 @@ const slice = createSlice({
         s.planRun = { slot: slot.id, seq: rec.seq, resultsId: null };
         s.guided = { ...s.guided, count: null };
       }
+      endHandsOff(s);
       s.busy = "running";
       s.running = kind;
       setStatus(s, statusOf(kind), "running");
@@ -544,6 +637,7 @@ const slice = createSlice({
         ...s.guided,
         retake: s.guided.retake === which ? null : which,
       };
+      endHandsOff(s);
     },
     /**
      * A countdown second, or null to end it (taken or cancelled). Refused
@@ -571,6 +665,92 @@ const slice = createSlice({
         return;
       }
       s.guided = { ...s.guided, count: { shot: c.shot, left: c.left } };
+      endHandsOff(s);
+    },
+    /**
+     * Photo B starts waiting to take itself, from page time `t`; refused
+     * unless `handsOffDue` and `t` is finite.
+     */
+    handsOffArmed(s: Draft, a: PayloadAction<number>) {
+      const t = a.payload;
+      if (!Number.isFinite(t) || !handsOffDue(s)) {
+        return;
+      }
+      const { slot, rec } = currentSlot(s);
+      const kind = slot ? handsOffKind(slot.key) : null;
+      if (!slot || !rec?.a || kind === null) {
+        return;
+      }
+      s.handsOff = {
+        phase: "armed",
+        slot: slot.id,
+        a: rec.a.id,
+        still: stillStart(t, kind === "move"),
+        text: HANDS_OFF_TEXT[kind],
+      };
+    },
+    /**
+     * A motion reading, or a missing one (rate null) from the page's
+     * watchdog: only while armed or waiting and idle. The detector
+     * validates it; readings lost end the wait as "failed".
+     */
+    handsOffSample(s: Draft, a: PayloadAction<MotionSample>) {
+      const h = s.handsOff;
+      const p = a.payload as MotionSample | null;
+      if (
+        (h.phase !== "armed" && h.phase !== "waiting") ||
+        !h.still ||
+        s.busy !== "idle" ||
+        !p ||
+        typeof p.t !== "number"
+      ) {
+        return;
+      }
+      const before = plain(h.still);
+      const st = stillStep(before, p);
+      if (readingsLost(st, p.t)) {
+        s.handsOff = {
+          ...h,
+          phase: "failed",
+          still: null,
+          text: HANDS_OFF_TEXT.lost,
+        };
+        return;
+      }
+      const phase =
+        !st.seen || !st.moved ? "armed" : isStill(st) ? "taking" : "waiting";
+      if (st === before && phase === h.phase) {
+        return;
+      }
+      s.handsOff = {
+        ...h,
+        phase,
+        still: phase === "taking" ? null : st,
+        text:
+          phase === "armed"
+            ? h.text
+            : phase === "taking"
+              ? HANDS_OFF_TEXT.taking
+              : HANDS_OFF_TEXT.waiting,
+      };
+    },
+    /** How the photo the wait asked for went; only while "taking". */
+    handsOffShot(s: Draft, a: PayloadAction<"taken" | "refused" | "failed">) {
+      const r = a.payload;
+      if (
+        s.handsOff.phase !== "taking" ||
+        (r !== "taken" && r !== "refused" && r !== "failed")
+      ) {
+        return;
+      }
+      s.handsOff = { ...s.handsOff, phase: r, text: HANDS_OFF_TEXT[r] };
+    },
+    /** The drawer opened: the wait stops, and arms again once it closes. */
+    handsOffPaused(s: Draft) {
+      const p = s.handsOff.phase;
+      if (p === "armed" || p === "waiting") {
+        s.handsOff = HANDS_OFF_IDLE;
+      }
     },
     /** Download all starts packing; refused unless idle with a complete pair. */
     runZipStarted(s: Draft) {

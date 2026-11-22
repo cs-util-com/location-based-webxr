@@ -12,6 +12,7 @@ import type { FeatureMatchState } from "./feature-match-slice";
 import { guidedCard } from "./guided-texts";
 import { doneCount, nextStep, shotDue, slotStatus } from "./plan-slots";
 import { keptState, planSlots } from "./run-plan";
+import { stillProgress } from "./still-detector";
 
 type Shot = "a" | "b";
 const up = (w: Shot): string => w.toUpperCase();
@@ -99,6 +100,10 @@ const WARN_NOTE: Readonly<Record<Exclude<LightCheck, "ok">, string>> = {
 
 const base = { disabled: false, shot: null, index: -1, tone: "" } as const;
 
+/** Whether photo B is waiting to take itself (armed or waiting). */
+const handsOffWaits = (s: FeatureMatchState): boolean =>
+  s.handsOff.phase === "armed" || s.handsOff.phase === "waiting";
+
 /** The big button. */
 export function shutterView(s: FeatureMatchState): ShutterView {
   if (s.running !== null) {
@@ -133,6 +138,25 @@ export function shutterView(s: FeatureMatchState): ShutterView {
           mode: "start",
           text: s.cameraStart === "failed" ? "Retry camera" : "Start",
         };
+  }
+  if (s.handsOff.phase === "taking") {
+    return {
+      ...base,
+      mode: "busy",
+      text: "Taking B",
+      tone: "busy",
+      disabled: true,
+    };
+  }
+  if (due === "b" && handsOffWaits(s)) {
+    // A tap still takes B (with the countdown): the way out of the wait.
+    return {
+      ...base,
+      mode: "capture",
+      shot: "b",
+      tone: "armed",
+      text: s.handsOff.phase === "armed" ? "Waiting" : "Hold still",
+    };
   }
   if (due) {
     const secs = s.plan.settings.countdown;
@@ -352,8 +376,26 @@ export function readoutView(
   return {
     still,
     light,
-    mode: { text: secs ? `tap, ${String(secs)} s` : "tap", tone: "" },
+    mode: handsOffWaits(s)
+      ? { text: "auto", tone: "good" }
+      : { text: secs ? `tap, ${String(secs)} s` : "tap", tone: "" },
   };
+}
+
+/**
+ * The meter ring's fill from 0 to 1: the countdown while one runs, the
+ * dwell while photo B waits for the phone to rest, else empty.
+ */
+export function meterFill(s: FeatureMatchState): number {
+  const c = s.guided.count;
+  const secs = s.plan.settings.countdown;
+  if (c) {
+    return secs > 0
+      ? Math.min(1, Math.max(0, (secs - c.left + 1) / (secs + 1)))
+      : 0;
+  }
+  const st = s.handsOff.still;
+  return s.handsOff.phase === "waiting" && st ? stillProgress(st) : 0;
 }
 
 /** The status line: the newest workflow line, with its tone. */
@@ -383,6 +425,18 @@ export function statusView(s: FeatureMatchState): Line {
   }
   if (s.fileSave.text) {
     return { text: s.fileSave.text, tone: "" };
+  }
+  const h = s.handsOff;
+  if (h.phase !== "off" && h.text) {
+    return {
+      text: h.text,
+      tone:
+        h.phase === "taken"
+          ? "ok"
+          : h.phase === "refused" || h.phase === "failed"
+            ? "bad"
+            : "",
+    };
   }
   if (s.cameraStart === "starting") {
     return { text: "Starting the camera...", tone: "" };
