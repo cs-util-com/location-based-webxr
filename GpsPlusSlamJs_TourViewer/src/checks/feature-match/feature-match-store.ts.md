@@ -6,20 +6,26 @@ The store of the feature matching check page (`configureStore` over `feature-mat
 
 ## Public API
 
-- `createFeatureMatchStore({ storage, session, revokeUrl })` returns:
+- `createFeatureMatchStore({ storage, session, revokeUrl, photoDb?, photoDbFailed? })` returns:
   - `store`: the Redux store.
-  - `sides`: the side tables, keyed by the ids the state holds: `frames` (camera photos by `PhotoMeta.id`), `results` (the camera run's results by `resultsId`), `urls` (Blob URLs of offered files and of the prepared flat zip), `flatFrames` (the reference being marked and its preview), `flatPhotos` (each surface's photos, by surface id).
+  - `sides`: the side tables, keyed by the ids the state holds: `frames` (camera photos by `PhotoMeta.id`, the run plan's photos included), `blobs` (the run plan's kept pair zips, by kept file id), `results` (the camera run's results by `resultsId`), `urls` (Blob URLs of offered files and of the prepared flat zip), `flatFrames` (the reference being marked and its preview), `flatPhotos` (each surface's photos, by surface id).
+  - `restorePhotos()`: reads the run plan's photos back from `photoDb` into `frames` (see below). Never rejects.
   - `newId(prefix)`: a fresh side table key.
   - `photosOf(id)`: a surface's photos, created empty on first use.
   - `accepted(action)`: dispatches and returns whether the reducer took it (a refused reducer returns the same state object).
   - `put(table, entries, action)`: sets the entries in `table` and dispatches `action` in one step, returning `accepted`; an entry a refused action does not name is dropped by the reconcile it triggers, a URL revoked.
   - `dispose()`: stops the listeners and revokes every URL.
 - `flatHasUnsaved(state, sides)`: whether any surface has captures, or an attached original, that exist only in this page.
-- `PROGRESS_KEY`, `FLAT_PROGRESS_KEY` (the `localStorage` keys), `shotKey(pose, q)`, types `KeyValueStorage`, `SurfacePhotos`, `FeatureMatchSides`, `FeatureMatchStoreDeps`, `FeatureMatchStore`.
+- `PROGRESS_KEY`, `FLAT_PROGRESS_KEY`, `PLAN_KEY` (the `localStorage` keys), `PHOTO_DB`, `PHOTO_STORE` (the IndexedDB database and object store of the plan's photos), `shotKey(pose, q)`, types `KeyValueStorage`, `SurfacePhotos`, `FeatureMatchSides`, `FeatureMatchStoreDeps`, `FeatureMatchStore`.
 
 ## Invariants and assumptions
 
-- **Persistence is a listener.** The running number, pair and spot are written when one of them changed; the flat progress when it changed. Reading and writing run in try/catch: with storage blocked the page starts over and its progress lasts as long as the page. After a reload only downloaded flat captures remain (`afterReload`).
+- **Persistence is a listener.** The running number, pair and spot are written when one of them changed; the flat progress when it changed. Reading and writing run in try/catch: with storage blocked the page starts over and its progress lasts as long as the page. After a reload only downloaded flat captures remain (`afterReload`). The run plan (`run-plan.ts`) is written as `planText` whenever it changed and read back through `parsePlan` and `planAfterReload` (kept zips are forgotten).
+- **The run plan's photos survive a reload (decided).** A run of a few dozen photos is long enough for the browser to discard the tab, so the photos are mirrored into `photoDb` (a `KeyValueStore`, IndexedDB in the page) as the plain `SavedFrame` values, keyed by the photo ids the plan's slots hold:
+  - after every reconcile a newly named photo is written once and a photo no longer named is deleted;
+  - `restorePhotos()` at start deletes stored keys the plan does not name, then reads each named photo: a valid value goes into `frames` (no action), a missing or damaged one dispatches `planPhotoLost`, so the slot asks for that photo again; a photo replaced while the read was pending is left alone;
+  - without a database (`photoDb` null, IndexedDB missing or refused) every stored photo reads as lost; every database failure goes to `photoDbFailed` and never stops the page.
+  - Cost: every photo of the run is held in memory too (about 3.7 MB for a 1280x720 frame).
 - **Reconcile after every action.** An entry the state no longer names is dropped and its URL revoked: a photo retaken, a run withdrawn, offered files withdrawn, a stale prepared zip, a surface's removed shot. So a view puts an entry in place with `put`, in the same step as the action that names it; any action in between would drop it.
 - **Freeing.** Selecting or adding a surface frees the photos of every other surface with nothing left to download; an attached original counts as not downloaded (`unsavedCount`) until its surface's zip was saved.
 - The camera, canvases, ORT sessions and timers are not here: they belong to the views that use them.
@@ -42,4 +48,4 @@ put(
 
 ## Tests
 
-`feature-match-store.test.ts`: the stored start and the writes (only on change), the flat progress write, blocked storage, `accepted` and `put` (kept when named, dropped and revoked when refused), reconcile dropping frames and results, the flat reference and preview and removed shots, and revoking offered and prepared zip URLs, freeing that keeps a surface with an attached original, and `dispose`.
+`feature-match-store.test.ts`: the stored start and the writes (only on change), the flat progress write, blocked storage, `accepted` and `put` (kept when named, dropped and revoked when refused), reconcile dropping frames and results, the flat reference and preview and removed shots, and revoking offered and prepared zip URLs, freeing that keeps a surface with an attached original, `dispose`, and the run plan's storage (the plan written and read back without kept files, photos mirrored and deleted, restored, lost when missing or damaged or without a database, orphans removed).

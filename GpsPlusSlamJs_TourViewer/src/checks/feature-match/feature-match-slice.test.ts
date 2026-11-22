@@ -11,9 +11,9 @@ import {
   NOTHING_MEASURED,
   type FeatureMatchAction,
   type FeatureMatchState,
-  type PhotoMeta,
 } from "./feature-match-slice";
 import { POSES, SURFACE_CLASSES } from "./flat-target";
+import type { PhotoMeta } from "./run-plan";
 
 const start = (): FeatureMatchState =>
   initialFeatureMatchState({ session: "s1" });
@@ -465,5 +465,63 @@ describe("rules a one-line deletion would lose", () => {
     const saving = run([...withReference(), A.flatSavingStarted()]);
     expect(saving.flat.saving).toBe(true);
     expect(featureMatchReducer(saving, A.flatSavingStarted())).toBe(saving);
+  });
+});
+
+describe("the run plan inside the page state", () => {
+  // Why: the plan views and the pair selector share one running number,
+  // so no two takes of either ever get the same file names.
+  it("raises the page's running number at a plan photo's new take", () => {
+    const s = run([
+      A.photoTaken({ which: "a", photo: photo("a1") }),
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+    ]);
+    expect(s.progress.sequence).toBe(2);
+    expect(s.plan.slots["1a-s1"]?.seq).toBe(2);
+  });
+
+  // Why: a plan photo or Start over during a run would change the pair
+  // the run measures.
+  it("refuses a plan photo and a reset while a run goes, with the same state", () => {
+    const busy = run([
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.runStarted("speed"),
+    ]);
+    expect(
+      featureMatchReducer(
+        busy,
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p2") }),
+      ),
+    ).toBe(busy);
+    expect(featureMatchReducer(busy, A.planReset())).toBe(busy);
+    expect(featureMatchReducer(busy, A.planMoved(3)).plan.current).toBe(3);
+  });
+
+  // Why: the store's `accepted` reads a refused plan action from the
+  // state's identity.
+  it("returns the same state for a refused plan action", () => {
+    const s = start();
+    expect(featureMatchReducer(s, A.planMoved(0))).toBe(s);
+    expect(featureMatchReducer(s, A.planRunDownloaded())).toBe(s);
+    expect(featureMatchReducer(s, A.planSettingsChanged({ save: "x" }))).toBe(
+      s,
+    );
+  });
+
+  // Why: a stored plan holding a higher number than the stored progress
+  // (a write lost between the two) must not lead to a reused name.
+  it("starts the running number above every number the stored plan holds", () => {
+    const plan = run([
+      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planPhotoTaken({ slot: "2a-s1", which: "a", photo: photo("p2") }),
+    ]).plan;
+    const s = initialFeatureMatchState({
+      session: "s",
+      progress: { sequence: 1, pair: "1a", spot: 1 },
+      plan,
+    });
+    expect(s.progress.sequence).toBe(2);
+    expect(s.progress.advancedFor).toBe(2);
+    expect(s.plan).toBe(plan);
   });
 });

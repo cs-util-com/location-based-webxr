@@ -6,11 +6,11 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ## Public API
 
-- `initialFeatureMatchState({ session, progress?, flat? })`: the first state. `progress` is the stored running number, pair and spot (`advancedFor` starts at the stored number, so a reload never advances again); a stored pair of `flat` exits to the first pair.
+- `initialFeatureMatchState({ session, progress?, flat?, plan? })`: the first state. `progress` is the stored running number, pair and spot (`advancedFor` starts at the stored number, so a reload never advances again); a stored pair of `flat` exits to the first pair. `plan` is the stored run plan; the running number starts at the higher of the stored one and the plan's highest take.
 - `featureMatchReducer`, `featureMatchActions`, `FeatureMatchAction`.
 - Selectors: `flowState` (for `stepStates`), `canSave`, `logText` (the log as one text), `currentSurface`, `flatPhase` (`overview`, `ref-live`, `corners`, `check`, `poses`).
 - Constant: `NOTHING_MEASURED`. The options start at the controls' starting values in the HTML (module-private defaults); the view mirrors the controls into the state on every change and once more at each run start.
-- Types: `FeatureMatchState`, `FlatState`, `PhotoMeta`, `Offered`, `PairNote`, `BenchOptions`, `SpeedOptions`, `StatusSlot`.
+- Types: `FeatureMatchState`, `FlatState`, `Offered`, `PairNote`, `BenchOptions`, `SpeedOptions`, `StatusSlot`.
 
 ### Camera pair actions
 
@@ -21,6 +21,10 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `saveStarted()` (only when `canSave`), `saveFinished(offered)`, `saveFailed()`.
 - `filesDownloaded()`: the first download per pair moves the selector to `nextPair`, unless the light check failed (the pair stays, `pairNote` kind `kept`); a second one changes nothing.
 - `statusSet`, `tableSet`, `reportSet`, `logged(line)` (stamped by the view), `failed({ line, stamped })` (kept in `errors` for the run's report and logged), `errorsCleared`, `optionsChanged`, `speedOptionsChanged`.
+
+### Run plan actions
+
+`planSized`, `planMoved`, `planPhotoTaken`, `planPhotoLost`, `planFileKept`, `planFilesDownloaded(ids)`, `planRunDownloaded`, `planKeptDropped`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan` with the page's one running number, so plan takes and pair-selector takes never share a number. A photo or a reset is refused while busy.
 
 ### Flat target actions
 
@@ -46,5 +50,5 @@ store.getState().pairInProgress; // { pair: "1a", spot: 1, sequence: 1, ... }
 
 ## Tests
 
-- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference).
+- `feature-match-slice.test.ts`: the pair flow, the retake rule, the advance and the kept pair, one run or save at a time, the run's end states, the withdrawal, the selector, the stored start, errors and log, and the flat steps (phases, taps, the stale prepared zip, Save, the overview, poses), and the rules one deleted line would lose (no pair photo in the flat mode, `lastPair` on the advance, a synthetic run leaving `cameraRun` alone, the same state for refused actions, the flat zip refused while saving or with no reference), and the run plan inside the page state (the shared running number, the stored plan's start number, refusals while busy, the same state for refused plan actions).
 - `feature-match-slice.property.test.ts`: random action sequences keep the invariants above, a second download is a no-op, a failed light check keeps the pair, and the flat prepared zip is always valid.

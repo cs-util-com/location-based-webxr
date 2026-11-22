@@ -70,8 +70,11 @@ import {
   type SpeedOptions,
   type StatusSlot,
 } from "./feature-match-slice";
+import { indexedDbKeyValueStore } from "../../key-value-db";
 import {
   createFeatureMatchStore,
+  PHOTO_DB,
+  PHOTO_STORE,
   type KeyValueStorage,
 } from "./feature-match-store";
 import { startFlatCapture } from "./flat-capture";
@@ -384,6 +387,15 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     // This page load's token for the frames JSON (no time, no place).
     session: sessionToken(crypto.getRandomValues(new Uint8Array(4))),
     revokeUrl: (url) => URL.revokeObjectURL(url),
+    photoDb: indexedDbKeyValueStore(
+      typeof indexedDB === "undefined" ? undefined : indexedDB,
+      PHOTO_DB,
+      PHOTO_STORE,
+    ),
+    // Called only after a database call settled, long after `fail` exists.
+    photoDbFailed: (e) => {
+      fail("photo storage", e);
+    },
   });
   const { store, sides, newId, accepted, put } = fm;
   const state = (): FeatureMatchState => store.getState();
@@ -430,6 +442,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   window.addEventListener("unhandledrejection", (ev) =>
     fail("page", ev.reason),
   );
+  void fm.restorePhotos();
 
   try {
     performance.setResourceTimingBufferSize(1000);

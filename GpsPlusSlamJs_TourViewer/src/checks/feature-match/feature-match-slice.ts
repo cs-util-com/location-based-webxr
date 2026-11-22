@@ -49,6 +49,14 @@ import {
   type Size,
   type SurfaceClass,
 } from "./flat-target";
+import {
+  EMPTY_PLAN,
+  maxSequence,
+  planReducer,
+  type PhotoMeta,
+  type PlanAction,
+  type RunPlan,
+} from "./run-plan";
 
 /** Save's label after a camera run that measured nothing. */
 export const NOTHING_MEASURED =
@@ -62,17 +70,6 @@ type RunKind = "camera" | "synthetic" | "speed";
 /** The page's one-line status texts. */
 export type StatusSlot =
   "a" | "b" | "run" | "synthetic" | "speed" | "save" | "copy";
-
-/** A taken photo; its pixels are the side table's, under `id`. */
-export interface PhotoMeta {
-  readonly id: string;
-  readonly width: number;
-  readonly height: number;
-  /** The camera stream's size when it was taken. */
-  readonly source: Size;
-  /** Grey mean 0 to 255, for the light check. */
-  readonly greyMean: number;
-}
 
 /** What the pair line under the selector says. */
 export type PairNote =
@@ -193,6 +190,8 @@ export interface FeatureMatchState {
   readonly options: BenchOptions;
   readonly speedOptions: SpeedOptions;
   readonly flat: FlatState;
+  /** The photo test run of the plan-driven views (`run-plan.ts`). */
+  readonly plan: RunPlan;
 }
 
 /** The options as the page's controls start. */
@@ -237,18 +236,26 @@ export interface InitialInput {
     readonly spot: number;
   };
   readonly flat?: FlatProgress;
+  readonly plan?: RunPlan;
 }
 
-/** The first state; a stored pair of `flat` keeps the first pair for Exit. */
+/**
+ * The first state; a stored pair of `flat` keeps the first pair for Exit.
+ * The running number starts above every number the stored plan holds, so
+ * a stored plan and stored progress that disagree never reuse a name.
+ */
 export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
   const p = i.progress ?? { sequence: 0, pair: "1a", spot: 1 };
+  const plan = i.plan ?? EMPTY_PLAN;
+  const sequence = Math.max(p.sequence, maxSequence(plan));
   return {
     session: i.session,
+    plan,
     progress: {
-      sequence: p.sequence,
+      sequence,
       pair: p.pair,
       spot: p.spot,
-      advancedFor: p.sequence,
+      advancedFor: sequence,
       lastPair: p.pair === FLAT_MODE.key ? PAIRS[0].key : p.pair,
     },
     camera: false,
@@ -391,6 +398,32 @@ const flatCase =
     const f = s.flat as FlatDraft;
     fn(f, a.payload);
     settleFlat(f);
+  };
+
+/**
+ * A slice case over `planReducer`. A refused plan action leaves the draft
+ * untouched, so the state keeps its identity; a photo is also refused
+ * while a run or save is going (it would change the pair under it).
+ */
+const planCase =
+  <P>(make: (payload: P) => PlanAction) =>
+  (s: Draft, a: PayloadAction<P>): void => {
+    const action = make(a.payload);
+    if (
+      (action.type === "photo" || action.type === "reset") &&
+      s.busy !== "idle"
+    ) {
+      return;
+    }
+    const before = plain(s.plan);
+    const next = planReducer(before, s.progress.sequence, action);
+    if (next.plan === before) {
+      return;
+    }
+    s.plan = next.plan;
+    if (next.sequence !== s.progress.sequence) {
+      s.progress = { ...s.progress, sequence: next.sequence };
+    }
   };
 
 const slice = createSlice({
@@ -618,6 +651,38 @@ const slice = createSlice({
     errorsCleared(s: Draft) {
       s.errors = [];
     },
+    planSized: planCase((p: { spots: number; extra: number }) => ({
+      type: "size",
+      ...p,
+    })),
+    planMoved: planCase((index: number) => ({ type: "move", index })),
+    planPhotoTaken: planCase(
+      (p: { slot: string; which: "a" | "b"; photo: PhotoMeta }) => ({
+        type: "photo",
+        ...p,
+      }),
+    ),
+    planPhotoLost: planCase((p: { slot: string; which: "a" | "b" }) => ({
+      type: "lost",
+      ...p,
+    })),
+    planFileKept: planCase((p: { id: string; name: string; slot: string }) => ({
+      type: "keep",
+      ...p,
+    })),
+    planFilesDownloaded: planCase((ids: readonly string[]) => ({
+      type: "downloaded",
+      ids,
+    })),
+    planRunDownloaded: planCase((_: void) => ({ type: "run-downloaded" })),
+    planKeptDropped: planCase((_: void) => ({ type: "drop-downloaded" })),
+    planSettingsChanged: planCase(
+      (settings: Readonly<Record<string, unknown>>) => ({
+        type: "settings",
+        settings,
+      }),
+    ),
+    planReset: planCase((_: void) => ({ type: "reset" })),
     optionsChanged(s: Draft, a: PayloadAction<BenchOptions>) {
       s.options = a.payload;
     },
