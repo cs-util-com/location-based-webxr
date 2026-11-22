@@ -198,7 +198,9 @@ object as an `@internal` testing seam in lieu of pumping the global
   `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-06-1210-anchor-starter-cachehit-jump-investigation.md`.
 - **`snap-every-tick` is not gated by the view**: it commits every
   above-threshold correction at once, in view or not, as its name says; the
-  anchor set only runs it. An app that wants no visible jump uses
+  anchor set only runs it. A difference within the set's
+  `DEFERRED_ANCHOR_EPSILON_M` (2 cm) never moves it, whatever the
+  threshold, so even at threshold 0 it lands within 2 cm, not exactly. An app that wants no visible jump uses
   `snap-when-offscreen`.
 
 ## Examples

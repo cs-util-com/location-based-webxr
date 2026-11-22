@@ -22,7 +22,7 @@ under "show all"); this module never reads the store.
     once its alignment binding exists. Read as each station enters; absent
     or null, the station goes on `scene` as a plain group (non-AR callers,
     the e2e fakes). An anchor that cannot take the group (no binding yet) is
-    logged and the station goes on `scene`.
+    logged, naming the station, and the station goes on `scene`.
   - `deps.onAnchorCommit?(group)` - an anchored station's group was placed
     (its world matrices fresh, the frame not yet rendered); the visitor
     re-ticks that station's camera-relative parts (the edge hint's tag).

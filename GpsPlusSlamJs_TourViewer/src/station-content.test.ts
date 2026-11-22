@@ -614,6 +614,12 @@ describe("station content: an anchor parent", () => {
       await h.at(1000);
       expect(h.names()).toEqual(["station-content:a"]);
       expect(parent.children).toHaveLength(0);
+      // The warning names the station, so a field log says which one.
+      expect(
+        warn.mock.calls.some((c) =>
+          c.some((x) => x === "station a could not enter as an anchor"),
+        ),
+      ).toBe(true);
     } finally {
       warn.mockRestore();
     }

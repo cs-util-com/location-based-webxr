@@ -95,7 +95,10 @@ into)` (writes the target local position, returns the threshold below
    epsilon of T^-1. A follow step is skipped while the parent's matrix is
    unchanged (`followUpdates` counts the steps that ran).
 5. Position members: each member's `step` runs (a throw is logged and costs
-   that member its frame). A difference below its threshold is not pending.
+   that member its frame). A difference below its threshold, or within
+   `DEFERRED_ANCHOR_EPSILON_M` (2 cm) whatever the threshold, is not
+   pending: a member with threshold 0 (`snap-every-tick`) lands within
+   2 cm of its target, not exactly.
    Otherwise it commits now at a release (`release:code-lock`, even below the
    threshold), when ungated (`every-tick`, `first`) or while the window is
    open (`window`); else it is pending. Members take no follow phase:

@@ -332,7 +332,7 @@ export function createStationContent(deps: StationContentDeps): StationContent {
     } catch (error: unknown) {
       // No alignment binding yet, a throwing seam, or a root nested in
       // another anchor: the station still shows, without deferring.
-      log.warn("a station could not enter as an anchor", error);
+      log.warn(`station ${entry.id} could not enter as an anchor`, error);
     }
     deps.scene.add(group);
   }
