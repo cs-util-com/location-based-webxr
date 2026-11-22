@@ -31,14 +31,14 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### Hands-off photo B actions
 
-`state.handsOff` `{ phase, slot, a, still, text }` is the cockpit's photo B that takes itself once the phone rests (`still-detector.ts`). Phases: `off`, `armed` (no reading yet, or a move pair waiting for its move), `waiting` (for the phone to rest), `taking` (rested for the dwell: the view takes the photo), `taken`, `refused` (the photo was not taken), `failed` (the readings stopped, or the capture threw); `text` is the status line for it. `slot` and `a` name the take it was armed for, so one photo A is armed once.
+`state.handsOff` `{ phase, slot, a, still, text }` is the cockpit's photo B that takes itself once the phone rests (`still-detector.ts`). Phases: `off`, `armed` (no reading yet, or a move pair waiting for its move), `waiting` (for the phone to rest), `taking` (rested for the dwell: the view takes the photo), `taken`, `refused` (the photo was not taken), `failed` (the readings stopped, or the capture threw); `text` is the status line for it (`HANDS_OFF_TEXT`; the waiting texts say "or tap", since a tap takes B after the countdown). `slot` and `a` name the take it was armed for, so one photo A is armed once.
 
 - `handsOffDue(s)`: the setting is `capture: "auto"`, the camera on, nothing busy, no countdown or retake, the current pair one the sensor can judge (`handsOffKind`), its A taken and B missing, and this A not armed before.
 - `handsOffArmed(t)`: refused unless `handsOffDue` and `t` is finite; starts the detector at `t` (needing a move first on a move pair).
-- `handsOffSample({ t, rate })`: one reading, or a missing one (rate null) from the view's watchdog; only while armed or waiting and idle. Readings lost turn the wait `failed`; a state that did not change returns the same object.
+- `handsOffSample({ t, rate })`: one reading, or a missing one (rate null) from the view's watchdog; only while armed or waiting and idle. Readings lost turn the wait `failed`, as does a reading that jumps far ahead of the last; a state that did not change returns the same object.
 - `handsOffShot("taken" | "refused" | "failed")`: only from `taking`.
 - `handsOffPaused()`: an armed or waiting B goes back to `off` with no take named (the drawer opened), so it arms again afterwards.
-- A photo, a countdown, a retake toggle or a run started ends an armed or waiting B, keeping its take named (no second wait for that A); a move, resize or reset, or the camera going off while it waits, clears it entirely. A new photo A re-arms.
+- A photo, a countdown, a retake toggle or a run started ends an armed or waiting B, keeping its take named (no second wait for that A); a move, resize or reset, photo A lost, or the camera going off while it waits, clears it entirely. A new photo A re-arms.
 
 ### Guided run zip actions
 

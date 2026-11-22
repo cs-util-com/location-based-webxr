@@ -23,11 +23,18 @@ export interface StillConfig {
 }
 
 /**
+ * The smoothing's time constant (ms): the weight of a new reading is
+ * `1 - exp(-dt / tau)`, which is 0.2 at 60 Hz, so a phone that reports
+ * at another rate settles as fast. 1000/60 / -ln(0.8).
+ */
+const SMOOTH_TAU_MS = 1000 / 60 / -Math.log(0.8);
+
+/**
  * The values the page uses. The threshold is the steady readout's, so
  * "steady" and "still" never disagree, and it is the lowest at which a
  * shaky hand comes to rest; the dwell is the shortest that a pause while
  * the phone is carried does not pass (swept in the tests: 2 to 16 deg/s,
- * 0.8 to 2.5 s).
+ * 0.8 to 2.5 s; every claim is asserted there).
  */
 export const STILL_CONFIG: StillConfig = {
   threshold: STEADY_THRESHOLD,
@@ -89,7 +96,10 @@ export function stillStep(
   if (m === null) {
     return gap && st.stillSince !== null ? { ...st, stillSince: null } : st;
   }
-  const level = st.seen ? st.level * 0.8 + m * 0.2 : m;
+  // Readings less than 1 ms apart (or at a time too large to resolve
+  // them) count as 1 ms apart, so a reading always moves the level.
+  const w = 1 - Math.exp(-Math.max(1, t - st.lastT) / SMOOTH_TAU_MS);
+  const level = st.seen ? st.level + (m - st.level) * w : m;
   let { moved, moveSince } = st;
   if (!moved) {
     // A move, like stillness, has to be seen without a gap to count.

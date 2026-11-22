@@ -192,13 +192,46 @@ describe("still-detector", () => {
     expect(stillProgress(st)).toBe(1);
   });
 
+  // Why: the smoothing follows time, not the reading count, so a phone
+  // that fires at 15 or 120 Hz rests as fast as one at 60 Hz, and a short
+  // jolt at a slow rate does not pass for the move a pair needs.
+  it("smooths by time, the same at 60 Hz and alike at 15 and 120 Hz", () => {
+    const a = stillStep(stillStart(0, false), {
+      t: 0,
+      rate: { alpha: 10, beta: 0, gamma: 0 },
+    });
+    const b = stillStep(a, { t: DT, rate: { alpha: 0, beta: 0, gamma: 0 } });
+    expect(b.level).toBeCloseTo(8, 9);
+    const at = (hz: number): number | null => {
+      const out: MotionSample[] = [];
+      const axis = HAND(3);
+      for (let t = 0; t < 4000; t += 1000 / hz) {
+        out.push({ t, rate: { alpha: axis(), beta: axis(), gamma: axis() } });
+      }
+      return firstStill(out);
+    };
+    const ref = at(60)!;
+    for (const hz of [15, 30, 120]) {
+      expect(at(hz), String(hz)).not.toBeNull();
+      expect(Math.abs(at(hz)! - ref), String(hz)).toBeLessThan(150);
+    }
+    const jolt: MotionSample[] = [];
+    for (let t = 0; t < 3000; t += 1000 / 15) {
+      const fast = t >= 1000 && t < 1150;
+      const r = fast ? 120 : 0.3;
+      jolt.push({ t, rate: { alpha: r, beta: r, gamma: r } });
+    }
+    expect(run(jolt, true).moved).toBe(false);
+  });
+
   // Why (sweep): the verdict must not rest on one threshold and dwell.
-  // Swept 2 to 16 deg/s and 0.8 to 2.5 s: a shaky hand (2.5 deg/s per
-  // axis) only comes to rest from 6 up, and no carry with 0.4 s pauses
-  // fires anywhere up to 16. The dwell is what guards a pause while the
-  // phone is carried: a 1.2 s pause takes B at 0.8 s (and at 1 s with a
-  // threshold of 16), never from 1.5 s up. A tester who pauses longer
-  // than the dwell while moving the phone would get B early.
+  // Every claim here is asserted below. Swept 2 to 16 deg/s and 0.8 to
+  // 2.5 s: a shaky hand (2.5 deg/s per axis) only comes to rest from 6 up
+  // (a stand rests at 2 and 3 too), and no carry with 0.4 s pauses, nor a
+  // slow carry without pauses, fires anywhere up to 16. The dwell is what
+  // guards a pause while the phone is carried: a 1.2 s pause takes B at
+  // 0.8 s, not at 1 s or from 1.5 s up. A tester who pauses longer than
+  // the dwell while moving the phone would get B early.
   it("holds over a range of thresholds and dwells", () => {
     const carried = (seed: number, pause: number): MotionSample[] => {
       const out: MotionSample[] = [];
@@ -230,5 +263,23 @@ describe("still-detector", () => {
     expect(firstStill(trace(0, 5000, SHAKY(1)), false, low)).toBeNull();
     const short = { ...STILL_CONFIG, dwellMs: 800 };
     expect(firstStill(carried(1, 1200), false, short)).not.toBeNull();
+    const second = { ...STILL_CONFIG, dwellMs: 1000 };
+    expect(firstStill(carried(1, 1200), false, second)).toBeNull();
+    // At 2 and 3 deg/s a phone on its stand still rests, a hand does not.
+    for (const threshold of [2, 3]) {
+      const cfg = { ...STILL_CONFIG, threshold };
+      expect(
+        firstStill(trace(0, 5000, STAND(1)), false, cfg),
+        `stand at ${threshold}`,
+      ).not.toBeNull();
+      expect(firstStill(trace(0, 5000, SHAKY(1)), false, cfg)).toBeNull();
+    }
+    // A slow carry (8 to 20 deg/s per axis, never a pause) never fires.
+    const r = rng(9);
+    const slow = trace(0, 8000, () => 8 + r() * 12);
+    for (const threshold of [6, 8, 10, 12, 16]) {
+      const cfg = { ...STILL_CONFIG, threshold };
+      expect(firstStill(slow, false, cfg), String(threshold)).toBeNull();
+    }
   });
 });

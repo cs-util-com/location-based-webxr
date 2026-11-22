@@ -4,6 +4,7 @@ import {
   featureMatchActions as A,
   featureMatchReducer,
   flatPhase,
+  HANDS_OFF_TEXT,
   handsOffDue,
   initialFeatureMatchState,
   logText,
@@ -661,6 +662,25 @@ describe("hands-off photo B", () => {
       w,
     );
     expect(handsOffDue(retakenA)).toBe(true);
+  });
+
+  // Why: photo A lost (its frame did not come back) ends the wait at once:
+  // B must not take itself against a photo A that is gone.
+  it("ends the wait when photo A is lost", () => {
+    const w = run(readings(20, 200), armed());
+    const lost = run([A.planPhotoLost({ slot: "1a-s1", which: "a" })], w);
+    expect(lost.handsOff.phase).toBe("off");
+    expect(lost.handsOff.slot).toBeNull();
+  });
+
+  // Why: a reading from far in the future would set the detector's clock
+  // ahead, after which every real reading looks backwards and the wait
+  // freezes; it fails the wait instead, and the tap takes B.
+  it("fails the wait on a reading that jumps far ahead", () => {
+    const w = run(readings(20, 200), armed());
+    const jumped = run([A.handsOffSample({ t: 1e12, rate: still })], w);
+    expect(jumped.handsOff.phase).toBe("failed");
+    expect(jumped.handsOff.text).toBe(HANDS_OFF_TEXT.lost);
   });
 
   // Why: readings are only taken while waiting; a bad one changes nothing.

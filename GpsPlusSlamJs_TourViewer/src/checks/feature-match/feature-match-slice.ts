@@ -164,10 +164,10 @@ const HANDS_OFF_IDLE: HandsOff = {
   text: "",
 };
 
-const HANDS_OFF_TEXT = {
+export const HANDS_OFF_TEXT = {
   still: "Hands off: photo B takes itself once the phone is still.",
-  move: "Move the phone for photo B; it takes itself once the phone rests again.",
-  waiting: "Hold still: photo B takes itself.",
+  move: "Turn the phone for photo B, or tap; it takes itself once the phone rests again.",
+  waiting: "Hold still, or tap: photo B takes itself.",
   taking: "Taking photo B.",
   taken: "Photo B took itself.",
   refused: "Photo B was not taken by itself. Tap to take it.",
@@ -442,7 +442,8 @@ const planCase =
     }
     if (action.type === "photo") {
       endHandsOff(s);
-    } else if (TARGET_CHANGES.has(action.type)) {
+    } else if (TARGET_CHANGES.has(action.type) || action.type === "lost") {
+      // A lost photo A ends the wait too: B must not match a gone A.
       s.handsOff = HANDS_OFF_IDLE;
     }
     if (
@@ -707,8 +708,10 @@ const slice = createSlice({
         return;
       }
       const before = plain(h.still);
+      // Checked before the step as well: a reading far ahead in time
+      // would set the clock past every later one and freeze the wait.
       const st = stillStep(before, p);
-      if (readingsLost(st, p.t)) {
+      if (readingsLost(before, p.t) || readingsLost(st, p.t)) {
         s.handsOff = {
           ...h,
           phase: "failed",
