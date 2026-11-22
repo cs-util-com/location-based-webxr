@@ -150,5 +150,6 @@ const controller = createEnableGpsArController(seams.controllerDeps);
 ## Tests
 
 `seams.test.ts` — override inert under VITEST; every device function
-`main.ts` wires is present. The override path is exercised by
+`main.ts` wires is present; the stations' anchor parent is the framework's
+`getArWorldGroup` itself. The override path is exercised by
 `playwright-tests/ar-fakes.js` + `ar-mode.spec.js`.

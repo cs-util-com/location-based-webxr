@@ -552,8 +552,11 @@ export function mountModelView(
   }
 
   // A model with no inner motion is bounded by one sphere in its station
-  // anchor's view test; a playing clip or a toy (dragged, scaled) is not.
-  if (mixer === null && view !== "toy") mergeForAnchorBounds(model);
+  // anchor's view test; a playing clip, a toy (dragged, scaled) or a
+  // cutaway (its frame moves and turns with the section) is not.
+  if (mixer === null && view !== "toy" && view !== "cutaway") {
+    mergeForAnchorBounds(model);
+  }
 
   // --- toy
   let toyFactor = view === "toy" ? toyStartFactor(sizeM) : 1;

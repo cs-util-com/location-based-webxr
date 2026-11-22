@@ -129,8 +129,8 @@ content.update(Date.now());
   counts for the stations shown, `contentStatus`, `onMounted` once, a throwing render; a throwing
   part tried once over enter/leave/enter, a throwing mount callback, no
   material write once a fade settled, `showsAny`; an anchor parent that is
-  null or absent puts the group on the scene, an unbound one falls back to
-  the scene with a warning.
+  null or absent puts the group on the scene, an unbound one or a throwing
+  seam falls back to the scene with a warning.
 - `station-content.property.test.ts` - over generated sequences of show /
   show all / setPart / frames / settles: at most one station group
   (presence only); every result disposed at most
@@ -148,8 +148,10 @@ content.update(Date.now());
   an immature alignment, holds a mature change in view and lands once out
   of view (dwell honoured), lands on an epoch bump or a camera jump, re-reads
   its bounds after a late part, leaves on fade-out, is not held by its edge
-  hint, draws its tag against the committed place, and, through the real
-  QR controller, snaps on a code lock, not once the code's budget is spent.
+  hint, draws its tag against the committed place in the commit's own frame, and,
+  through the real QR controller, snaps on a code lock, casts nothing once
+  the code's budget is spent, and releases nothing when the viewer refuses
+  the votes.
 - `station-content.scale.test.ts` - the 100-station object count.
 - `station-content.sweep.test.ts` - the fade length's sweep.
 - End to end: `playwright-tests/stations.spec.js` (the walk from the gate

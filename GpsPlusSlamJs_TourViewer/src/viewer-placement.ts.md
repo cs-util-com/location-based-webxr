@@ -370,7 +370,10 @@ them.
     `onAnchorCommit` re-ticks the committed group's world parts at once
     (`tickWorldParts` with the viewer camera), so a tag or hint is never
     drawn one frame against the old place. Pinned by
-    `station-anchor.integration.test.ts`.
+    `station-anchor.integration.test.ts` (the rules) and by the
+    anchored-parent case of `viewer-content-alignment.test.ts` (this
+    wiring: the station under the world group at its NUE, the re-tick
+    reading the viewer camera on the commit).
 - **Drawn per station** (visitor plan 2026-10-18-2349 §3, M2;
   `station-content.ts`): everything placed is a part of its station in
   the session's side table (`ctx.stationContent`, created with the first

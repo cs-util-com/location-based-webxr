@@ -618,4 +618,20 @@ describe("station content: an anchor parent", () => {
       warn.mockRestore();
     }
   });
+  it("with an anchor-parent seam that throws, the station still enters on the scene", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const h = harness({
+        anchorParent: () => {
+          throw new Error("no AR session");
+        },
+      });
+      h.content.setPart("a", "items", planePart().part);
+      h.content.show(new Set(["a"]));
+      await h.at(1000);
+      expect(h.names()).toEqual(["station-content:a"]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
 });

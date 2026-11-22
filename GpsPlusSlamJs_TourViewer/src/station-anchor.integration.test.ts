@@ -10,8 +10,9 @@
  * mature a station in view keeps its place on the screen and lands where
  * its coordinates say once looked away from; a code lock or a tracking
  * frame switch places it at once; and the edge hint's tag, placed against
- * the station every frame, is never drawn against a station matrix of
- * the frame before.
+ * the station every frame, is never drawn against the station matrix of
+ * the frame before in a frame where the station commits (between commits
+ * the page's own tick places it).
  */
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import * as THREE from "three";
@@ -318,6 +319,9 @@ describe("a station as a deferred anchor", () => {
     w.content.update(1e9);
     w.content.update(2e9);
     expect(w.group.getObjectByName("station-content:s")).toBeUndefined();
+    // Left the anchor too, not only the group: the anchor gave its matrix
+    // back (a group still held by it would be re-placed off the scene).
+    expect(w.station.matrixAutoUpdate).toBe(true);
   });
 });
 
@@ -350,10 +354,12 @@ describe("the edge hint on an anchored station", () => {
     const tag = w.hintParts[0]!.object.children.find(
       (c) => c.renderOrder === 999,
     )!;
+    // Frames until the one that commits, and the check right after it:
+    // a later frame's page tick would re-place the tag anyway.
     const commitsBefore = w.commits.length;
-    w.frame();
-    w.frame();
-    w.frame();
+    for (let i = 0; i < 6 && w.commits.length === commitsBefore; i += 1) {
+      w.frame();
+    }
     expect(w.commits.length).toBeGreaterThan(commitsBefore);
     const drawn = tag.matrixWorld.clone();
     // A fresh tick against the committed station places it where it was drawn.
@@ -389,7 +395,7 @@ describe("a code lock through the viewer's pipeline", () => {
 
   /** The real controller over the viewer's config; each cast moves the
    *  store's alignment to `northOnCast()`. */
-  function pipeline(onCast: () => void) {
+  function pipeline(onCast: () => void, { canAccept = true } = {}) {
     let casts = 0;
     const config = buildViewerControllerConfig({
       frontEnd: {
@@ -417,7 +423,7 @@ describe("a code lock through the viewer's pipeline", () => {
         onCast();
         return true;
       },
-      canAcceptVotes: () => true,
+      canAcceptVotes: () => canAccept,
       resolveStablePose: () => ({
         position: [0, 0, -2],
         rotation: [0, 0, 0, 1],
@@ -459,7 +465,7 @@ describe("a code lock through the viewer's pipeline", () => {
     p.dispose();
   });
 
-  it("moves nothing once the code's budget is spent", async () => {
+  it("a spent code casts nothing and moves nothing", async () => {
     const w = await world();
     let casts = 0;
     let north = 0;
@@ -487,6 +493,30 @@ describe("a code lock through the viewer's pipeline", () => {
     w.frame();
     expect(casts).toBe(MAX_VOTED_LOCKS_PER_CODE);
     expect(w.ringInCamera().distanceTo(before)).toBeLessThan(TOL);
+    p.dispose();
+  });
+
+  it("a lock whose votes the viewer refuses releases no station in view", async () => {
+    // Why: the code-vote wrapper reports whether it cast. A wrapper that
+    // refused the votes (no tour levels, no session) yet told the
+    // controller it cast would release every pending station in view with
+    // no correction behind it, a visible jump for nothing.
+    const w = await world();
+    w.store.setNorth(2);
+    w.frame();
+    const before = w.ringInCamera();
+    let casts = 0;
+    const p = pipeline(
+      () => {
+        casts += 1;
+      },
+      { canAccept: false },
+    );
+    await p.lock();
+    w.frame();
+    expect(casts).toBe(0);
+    expect(w.ringInCamera().distanceTo(before)).toBeLessThan(TOL);
+    expect(w.ringError()).toBeGreaterThan(1);
     p.dispose();
   });
 

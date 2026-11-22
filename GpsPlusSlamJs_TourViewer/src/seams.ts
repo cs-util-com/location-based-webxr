@@ -298,7 +298,7 @@ const pnpSolver = /* @__PURE__ */ new PlanarPnpSquare();
 export const realSeams: TourViewerSeams = {
   controllerDeps: {},
   getArWorldGroup,
-  getStationAnchorParent: () => getArWorldGroup(),
+  getStationAnchorParent: getArWorldGroup,
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,

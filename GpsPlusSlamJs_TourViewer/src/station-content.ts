@@ -313,20 +313,20 @@ export function createStationContent(deps: StationContentDeps): StationContent {
   /** Into the scene: as a deferred anchor under `anchorParent`, else (or
    *  when the anchor cannot take it) on `scene`. */
   function enter(entry: Entry, group: Group): void {
-    const parent = deps.anchorParent?.() ?? null;
-    if (parent !== null) {
-      try {
+    try {
+      const parent = deps.anchorParent?.() ?? null;
+      if (parent !== null) {
         const anchor = deferredAnchor(parent, `station:${entry.id}`);
         anchor.add(group, {
           onCommit: (root) => deps.onAnchorCommit?.(root),
         });
         entry.anchor = anchor;
         return;
-      } catch (error: unknown) {
-        // No alignment binding yet, or a root nested in another anchor:
-        // the station still shows, without deferring.
-        log.warn("a station could not enter as an anchor", error);
       }
+    } catch (error: unknown) {
+      // No alignment binding yet, a throwing seam, or a root nested in
+      // another anchor: the station still shows, without deferring.
+      log.warn("a station could not enter as an anchor", error);
     }
     deps.scene.add(group);
   }

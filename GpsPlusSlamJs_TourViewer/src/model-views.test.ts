@@ -391,12 +391,16 @@ describe("mountModelView", () => {
       v.dispose();
       return cache.mergeRoots.has(model);
     };
-    for (const view of ["placed", "ghost", "cutaway", "hotspots"] as const) {
+    for (const view of ["placed", "ghost", "hotspots"] as const) {
       expect(merged(view, false), view).toBe(true);
     }
     expect(merged("hotspots", true), "hotspots holds the clip").toBe(true);
     expect(merged("placed", true), "a playing clip").toBe(false);
     expect(merged("toy", false), "a toy").toBe(false);
+    // The cutaway's frame moves and turns with the section and can stand
+    // outside the sphere kept at the model's first bounds, so a station
+    // could commit while a corner of the frame is on screen.
+    expect(merged("cutaway", false), "a cutaway").toBe(false);
   });
 
   // Why: the clip loops where the tour asks for it, and hotspots holds it

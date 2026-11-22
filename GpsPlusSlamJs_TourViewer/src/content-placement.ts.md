@@ -48,7 +48,7 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   Details:
   Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's: without a door it is left out quietly). With a door (`worldPart`, one field the station renderer shares) an object goes to it exactly as its block (`tourObjectBlock`at the local origin) would at a station: a pin as its head on a stem and every view no drawing here has, placed at the object's pose with its id in`userData.objectId`; the creator's AR previews (`creator-previews.ts`) pass the door in the edit mode for an item placed in this visit or held by no station (a hosted item goes through `renderStationBlocks` in its station's frame, as the visitor draws it), the visitor's other callers pass none and keep pins as labels;
 a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
-picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
+picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all under the given parent in the session's NUE; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model
 here (a world-view object, the creator's previews) is not drawn - it never
 reaches the photo loader and
