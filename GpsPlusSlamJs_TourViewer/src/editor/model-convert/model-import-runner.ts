@@ -42,7 +42,7 @@ import type { ImportPayload } from "./import-step.js";
 import { failure } from "./model-import-words.js";
 
 /** What a delivery made of a converted model. */
-export type DeliveryResult =
+type DeliveryResult =
   | { readonly kind: "added"; readonly id: string }
   | { readonly kind: "refused"; readonly reason: string }
   /** Nothing to deliver to any more (the editor closed). */
@@ -56,7 +56,7 @@ export type ImportDelivery = (
 ) => Promise<DeliveryResult>;
 
 /** One drop's models, with where they go. */
-export interface ImportGroup {
+interface ImportGroup {
   readonly files: readonly File[];
   readonly plan: Pick<ImportPlan, "imports" | "held">;
   readonly deliver: ImportDelivery;

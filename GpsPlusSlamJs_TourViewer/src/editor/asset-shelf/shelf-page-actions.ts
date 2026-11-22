@@ -53,8 +53,13 @@ export interface ShelfPageDeps {
 }
 
 export interface ShelfPageActions {
-  /** "Add files...": the picker, then `addToShelf`; a picker failure said. */
-  addFiles(open: ShelfPageSession): Promise<void>;
+  /** "Add files...": the picker, then `take` (default `addToShelf`; the
+   *  page routes models to convert through its drop); a picker failure
+   *  said. */
+  addFiles(
+    open: ShelfPageSession,
+    take?: (files: readonly File[]) => Promise<void>,
+  ): Promise<void>;
   /** Files put on the shelf, used nowhere yet. */
   addToShelf(open: ShelfPageSession, files: readonly File[]): Promise<void>;
   /** The delete of the file `id` in use, after its confirm. */
@@ -112,7 +117,7 @@ export function createShelfPageActions(deps: ShelfPageDeps): ShelfPageActions {
   }
 
   return {
-    async addFiles(open) {
+    async addFiles(open, take) {
       let files: File[];
       try {
         files = await deps.pickMany();
@@ -120,7 +125,7 @@ export function createShelfPageActions(deps: ShelfPageDeps): ShelfPageActions {
         toast(FILE_ADD_FAILED);
         return;
       }
-      await addToShelf(open, files);
+      await (take ?? ((f) => addToShelf(open, f)))(files);
     },
     addToShelf,
     deleteInUse(open, id) {

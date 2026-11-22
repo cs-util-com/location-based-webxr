@@ -14,7 +14,9 @@ opened on demand, settling with the chosen file or with null.
   (`data-testid="add-file-input"`) to `host`; `pick` sets its `accept`,
   clears it, clicks it, and settles with the chosen file, or null on the
   input's `cancel` event or a change with no file.
-  `pickMany` opens it for several files of every kind the allowlist takes
+  `pickMany` opens it for several files of every kind the allowlist takes,
+  and what the model import converts (`IMPORT_ACCEPT` of
+  `model-convert/import-formats.ts`: .gltf, .zip and a glTF's parts)
   (the asset shelf's "Add files..."), settling with the chosen files, or
   none on a cancel; a later `pick` is single again.
 

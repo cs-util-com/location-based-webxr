@@ -141,7 +141,7 @@ export interface ShelfEntry extends ShelfJob {
 }
 
 /** What a model was converted from (`ShelfEntry.madeFrom`). */
-export interface ShelfMadeFrom {
+interface ShelfMadeFrom {
   readonly from: string;
   readonly notes: readonly string[];
 }
@@ -149,11 +149,11 @@ export interface ShelfMadeFrom {
 /** Where a model being converted stands: waiting for the converter, in
  *  it, or failed with words (`ShelfImport.reason`). A converted model
  *  leaves the imports: it is a file of the shelf then. */
-export type ImportStatus = "queued" | "converting" | "failed";
+type ImportStatus = "queued" | "converting" | "failed";
 
 /** A model being converted for the tour. Its files are not state: the
  *  runner (`model-import-runner.ts`) keeps them. */
-export interface ShelfImport {
+interface ShelfImport {
   readonly id: string;
   /** The model's file name, or the zip's. */
   readonly name: string;

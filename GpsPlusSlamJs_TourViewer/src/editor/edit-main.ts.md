@@ -12,7 +12,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
 
 ## Behaviour
 
-- Leaving a file (`leaveFile`) closes the session's asset shelf first, so no optimization job of the old tour lands in the next one.
+- Leaving a file (`leaveFile`) closes the session's model import and asset shelf first, so no optimization job of the old tour lands in the next one.
 - Every slider of the page takes the framework's scroll guard at load, so a
   vertical swipe on the radius slider scrolls its panel on a phone.
 
@@ -1079,7 +1079,13 @@ on a desktop.
   name; dropped on a station's or a story's row it is added there
   (`addFromFile`, one step each); on an item's file field it becomes that
   item's file (`useAsItemFile`); anywhere else it goes onto the shelf only
-  (`addToShelf`). Every file lands on the shelf either way. Docked, only
+  (`addToShelf`). Every file lands on the shelf either way. A model to
+  convert (`model-convert/import-plan.ts`: a glTF with its parts, a zip
+  of its folder) starts `open.imports`; once converted it goes the same
+  way (`model-convert/import-delivery.ts`, through `useFileAt`), and
+  the pictures dropped with it wait for it. A part dropped alone (.bin,
+  .mtl, .tga, .bmp) is refused in words. "Add files..." goes through the
+  same drop, on no row. Docked, only
   the loose files (the shelf's add, a drop on the page) show the Files
   tab; an add that makes or changes an item keeps its Details in sight
   (the shelf toggle's badge carries the processing).

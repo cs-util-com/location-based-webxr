@@ -98,6 +98,11 @@ describe("createFilePicker", () => {
     expect(input.accept.split(",")).toEqual(
       expect.arrayContaining([".glb", ".mp4", ".jpg", ".mp3"]),
     );
+    // A model in another format, a zip of its folder and the parts a
+    // glTF names come in through the same picker, to be converted.
+    expect(input.accept.split(",")).toEqual(
+      expect.arrayContaining([".gltf", ".zip", ".bin", ".mtl", ".tga", ".bmp"]),
+    );
     const a = new File(["a"], "a.jpg");
     const b = new File(["b"], "b.glb");
     Object.defineProperty(input, "files", {

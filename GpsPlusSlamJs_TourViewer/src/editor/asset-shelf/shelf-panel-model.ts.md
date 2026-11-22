@@ -22,7 +22,12 @@ and the phone's progress pill. Pure functions over the shelf's rows
   2 before it" / "Queued, next"), processing (phase words, whole percent),
   ready (sizes, gain or null), idle, kept, failed (title, retry offered,
   reason).
-- `cardMore(row)`: the words of an opened card.
+- `cardMore(row)`: the words of an opened card; an import's say that
+  nothing is added until it is converted, or that nothing was.
+- An import row's processing words are "Converting to a tour model"; its failed title is "Not converted", and the rail's
+  tip says "not converted".
+- `madeFromLines(row)`: a converted model's `Converted from "bust.gltf".`
+  and the conversion's notes, null for a file not converted.
 - `gainPercent(before, after)`: whole percent smaller, null when not
   smaller or unknown.
 - `usesLabel(n)`, `placesWord(n)`.

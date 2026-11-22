@@ -3,7 +3,8 @@
  * opened by `pick`, which settles with the chosen file, or null once the
  * picker was closed without one (the input's `cancel` event). A second
  * `pick` while one is open settles the first with null. `pickMany` takes
- * several files of every kind a tour takes (the shelf's "Add files...").
+ * several files of every kind a tour takes, and what the model import
+ * converts (the shelf's "Add files...").
  *
  * @see file-picker.ts.md
  */
@@ -12,6 +13,8 @@ import {
   TOUR_MEDIA_EXTENSIONS,
   tourMediaTypeOf,
 } from "gps-plus-slam-app-framework/ar/tour-media";
+
+import { IMPORT_ACCEPT } from "./model-convert/import-formats.js";
 
 /** The input's `accept` for `kind`: every extension a tour takes for it
  *  (the media allowlist), each with its dot. */
@@ -26,8 +29,8 @@ export function acceptFor(kind: TourAssetKind): string {
 export interface FilePicker {
   /** Open the picker for `kind`; the chosen file, or null. */
   pick(kind: TourAssetKind): Promise<File | null>;
-  /** Open the picker for several files of any kind a tour takes; none on
-   *  a cancel. */
+  /** Open the picker for several files of any kind a tour takes, or the
+   *  model import converts (`IMPORT_ACCEPT`); none on a cancel. */
   pickMany(): Promise<File[]>;
 }
 
@@ -66,9 +69,12 @@ export function createFilePicker(host: HTMLElement): FilePicker {
     },
     pickMany() {
       return open(
-        TOUR_MEDIA_EXTENSIONS.filter((ext) => tourMediaTypeOf(ext) !== null)
-          .map((ext) => `.${ext}`)
-          .join(","),
+        [
+          ...TOUR_MEDIA_EXTENSIONS.filter(
+            (ext) => tourMediaTypeOf(ext) !== null,
+          ).map((ext) => `.${ext}`),
+          IMPORT_ACCEPT,
+        ].join(","),
         true,
       );
     },

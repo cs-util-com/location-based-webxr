@@ -36,6 +36,13 @@ shelf runner (`asset-shelf.ts`); every word comes from
   - `deps.retry`, `deps.useOriginal`, `deps.remove`, `deps.optimizeTour`:
     the runner's commands. `remove` returns the undo, or null when the
     file is not on the shelf.
+  - `deps.imports?`: `retry(id)` and `remove(id)` of the model import
+    (`model-convert/model-import-runner.ts`). An import's card (queued,
+    converting, failed) shows no "Used in", no "Use in..." and no
+    Replace; its Retry and Remove go here, a remove refused while its
+    model is being added said as "... is being added and can no longer
+    be stopped.", a done one as "... was not converted.". An opened
+    card of a converted model lists `madeFromLines` (`ul.as-made`).
   - `deps.setDetail(id, share)`: re-makes a model at a share of its
     triangles, null for the default level (`AssetShelf.setDetail`);
     resolves to `{ kind: "applied" }` or `{ kind: "refused", reason }`.

@@ -180,6 +180,11 @@ import {
   createOptimizerHost,
   spawnOptimizerWorker,
 } from "./asset-shelf/optimizer-client.js";
+import {
+  createModelImportHost,
+  createModelImportRunner,
+  type ModelImportRunner,
+} from "./model-convert/model-import-runner.js";
 import { newStory, withoutStoryChild } from "../tour-story-edit.js";
 import { folderRefusalLine } from "../tour-folder-edit.js";
 import {
@@ -800,6 +805,11 @@ export interface EditorSession {
    *  in is queued there to be made smaller, an opened tour's files wait
    *  for "Optimize this tour". The page closes it with the tour. */
   readonly shelf: AssetShelf;
+  /** The model import of this open (`model-import-runner.ts`): a glTF
+   *  or a zip dropped is converted here into a model the tour takes,
+   *  shown on the shelf while it converts. The page closes it with the
+   *  tour, with the shelf. */
+  readonly imports: ModelImportRunner;
   /** The tour as it stands with the edits, for the rail and the map. */
   model(): EditorModel;
   /** Edits and deletions not yet in a saved file, by content: a text
@@ -1386,6 +1396,9 @@ export function createEditorSession(input: {
   /** The Worker the optimizers hand their heavy part to (default: the
    *  module Worker, spawned on the first run that needs it). */
   readonly optimizerHost?: OptimizerHost;
+  /** The Worker the model import converts in (default: its own module
+   *  Worker, spawned on the first conversion, let go after each). */
+  readonly importHost?: OptimizerHost;
 }): EditorSession {
   const { session, levels } = input;
   const store: EditorSessionStore =
@@ -2328,6 +2341,10 @@ export function createEditorSession(input: {
     },
     swap: (id, file) => swapAsset(id, file),
   });
+  const imports = createModelImportRunner({
+    store,
+    host: input.importHost ?? createModelImportHost(),
+  });
   /** The files kept as made (`AddFileOptions`): the declared characters'
    *  pictures. On the shelf kept, never queued, however they came in. */
   const keptAsMade = (): Set<string> =>
@@ -2370,6 +2387,7 @@ export function createEditorSession(input: {
 
   return {
     shelf,
+    imports,
     addFile,
     setItemFile,
     setVideoPoster,

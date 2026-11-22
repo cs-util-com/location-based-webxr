@@ -49,6 +49,7 @@ export const SPECS = {
   "editor-characters.spec.js": { project: "dom", area: "both", lane: 1 },
   "editor-entry.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor-files.spec.js": { project: "dom", area: "editor", lane: 1 },
+  "editor-model-import.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor.spec.js": { project: "dom", area: "editor", lane: 1 },
   "editor3d-add-palette.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-character-facing.spec.js": {

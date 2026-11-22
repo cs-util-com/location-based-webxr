@@ -11,7 +11,9 @@ says its outcome, says a failure, and leaves nothing half done. The page
 ## Public API
 
 - `createShelfPageActions(deps: ShelfPageDeps): ShelfPageActions`
-  - `addFiles(open)`: `pickMany`, then `addToShelf`. A picker that rejects
+  - `addFiles(open, take?)`: `pickMany`, then `take` (default
+    `addToShelf`; the page passes its drop, so a model to convert is
+    converted first). A picker that rejects
     is said as `FILE_ADD_FAILED`.
   - `addToShelf(open, files)`: a busy toast (`shelf-add-busy`) while each
     file goes through `open.addFile`. A refusal is said per file as
