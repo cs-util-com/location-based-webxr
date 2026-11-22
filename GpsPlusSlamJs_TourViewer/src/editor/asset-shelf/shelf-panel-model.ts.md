@@ -20,7 +20,7 @@ and the phone's progress pill. Pure functions over the shelf's rows
   file came in; a character's row "Character · 2 files · 3.0 MB"; a model of a zip of several, being converted, "3D model · GLTF · part of set.zip" (the zip's size is no one model's); a
   converted model with notes adds their count ("· 2 notes"), so a closed
   card says there is something to read on it.
-- `notesWord(count)`: "1 note", "2 notes".
+- `notesWord(count)` (module-private): "1 note", "2 notes".
 - `shelvedWords(fileName, notes)`: the page's toast for a converted model put on
   the shelf, `"bust.glb" is on the shelf, with 2 notes on its card.` (no count
   for none).

@@ -87,7 +87,7 @@ export function cardKindLine(row: ShelfRow): string {
 }
 
 /** "1 note", "2 notes": what a conversion left out, counted. */
-export function notesWord(count: number): string {
+function notesWord(count: number): string {
   return `${String(count)} note${count === 1 ? "" : "s"}`;
 }
 
