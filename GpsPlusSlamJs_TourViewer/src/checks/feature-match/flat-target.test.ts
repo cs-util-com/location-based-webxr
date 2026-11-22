@@ -264,9 +264,26 @@ describe("toImagePoint", () => {
   it("maps a tap on a letterboxed picture to image pixels", () => {
     const box = { left: 0, top: 0, width: 400, height: 400 };
     // A 800x400 image shown at 400x200, bars of 100 above and below.
-    expect(toImagePoint(200, 200, box, 800, 400)).toEqual({ x: 400, y: 200 });
+    // The middle of the picture is the edge between pixels 399 and 400,
+    // so its centre coordinate is 399.5 (pixel centres at integers).
+    expect(toImagePoint(200, 200, box, 800, 400)).toEqual({
+      x: 399.5,
+      y: 199.5,
+    });
     expect(toImagePoint(0, 100, box, 800, 400)).toEqual({ x: 0, y: 0 });
+    expect(toImagePoint(400, 300, box, 800, 400)).toEqual({ x: 799, y: 399 });
     expect(toImagePoint(200, 50, box, 800, 400)).toBeNull();
+  });
+
+  // Why: the JSON promises pixel centres at integers, and rectify samples
+  // there; a tap in the middle of pixel (i, j) must read exactly (i, j).
+  it("puts a tap in the middle of a pixel on that pixel's centre", () => {
+    const box = { left: 10, top: 20, width: 100, height: 50 };
+    // 200x100 shown at 100x50: one image pixel is 0.5 CSS pixels.
+    expect(toImagePoint(10 + 3.25, 20 + 7.25, box, 200, 100)).toEqual({
+      x: 6,
+      y: 14,
+    });
   });
 });
 
@@ -284,15 +301,25 @@ describe("flatFileNames", () => {
   // Why: every file must say its surface, pose and light bin, so a folder
   // of downloads sorts and reads without the JSON.
   it("names the surface, pose, shot and bin", () => {
-    const n = flatFileNames(3, "busy");
-    expect(n.zip).toBe("flat-target-s03-busy.zip");
+    const n = flatFileNames(3, "busy", "a1b2c3d4");
+    expect(n.zip).toBe("flat-target-s03-busy-a1b2c3d4.zip");
     expect(n.reference).toBe("s03-reference.png");
     expect(n.rectified).toBe("s03-reference-rectified.png");
-    expect(n.info).toBe("s03-info.json");
+    expect(n.info).toBe("s03-a1b2c3d4-info.json");
     expect(n.query("w40-t0", 1, "b1")).toBe("s03-w40-t0-q1-b1.png");
     expect(n.query("w12-t40", 4, "b3")).toBe("s03-w12-t40-q4-b3.png");
     expect(n.original("My Photo.JPG")).toBe("s03-original.jpg");
     expect(n.original("noext")).toBe("s03-original.bin");
+  });
+
+  // Why: two phones (or a cleared progress) both number from s01; the
+  // session token keeps their zips apart, and a token is never allowed to
+  // put a path separator or other odd character into a file name.
+  it("tags the zip and JSON with the session, sanitised", () => {
+    expect(flatFileNames(1, "text", "../x y").zip).toBe(
+      "flat-target-s01-text-xy.zip",
+    );
+    expect(flatFileNames(1, "text", "").info).toBe("s01-info.json");
   });
 });
 
@@ -306,6 +333,7 @@ describe("flatInfo", () => {
       session: "a1b2c3d4",
       original: { exists: true, file: "s02-original.png" },
       captureMaxLongEdge: 1024,
+      camera: { width: 1920, height: 1080 },
       reference: {
         file: "s02-reference.png",
         width: 1024,
@@ -341,10 +369,16 @@ describe("flatInfo", () => {
       "session",
       "original",
       "captureMaxLongEdge",
+      "capture",
+      "camera",
       "reference",
       "shots",
     ]);
     expect(v.format).toBe("flat-target/1");
+    // The photos are video frames, not still-camera shots: the scorer must
+    // know the source and the stream size the frames were scaled from.
+    expect(v.capture).toBe("getUserMedia");
+    expect(v.camera).toEqual({ width: 1920, height: 1080 });
     const shots = v.shots as Record<string, unknown>[];
     expect(shots[0]).toMatchObject({
       pose: "w40-t0",

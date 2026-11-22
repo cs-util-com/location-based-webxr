@@ -310,12 +310,18 @@ export function toImagePoint(
   const scale = Math.min(box.width / imageWidth, box.height / imageHeight);
   const left = box.left + (box.width - imageWidth * scale) / 2;
   const top = box.top + (box.height - imageHeight * scale) / 2;
-  const x = (clientX - left) / scale;
-  const y = (clientY - top) / scale;
-  if (x < 0 || y < 0 || x > imageWidth || y > imageHeight) {
+  // Picture-edge coordinates: pixel i spans [i, i + 1).
+  const ex = (clientX - left) / scale;
+  const ey = (clientY - top) / scale;
+  if (ex < 0 || ey < 0 || ex > imageWidth || ey > imageHeight) {
     return null;
   }
-  return { x: Math.min(x, imageWidth - 1), y: Math.min(y, imageHeight - 1) };
+  // Pixel centres at integers, as `Point` says: shift by half a pixel.
+  const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), max);
+  return {
+    x: clamp(ex - 0.5, imageWidth - 1),
+    y: clamp(ey - 0.5, imageHeight - 1),
+  };
 }
 
 /**
@@ -351,20 +357,26 @@ export interface FlatFileNames {
 }
 
 /**
- * The names of a surface's files, e.g. `flat-target-s03-busy.zip` holding
- * `s03-reference.png` and `s03-w40-t0-q2-b3.png` (surface, pose, shot
- * number within the pose, light bin).
+ * The names of a surface's files, e.g. `flat-target-s03-busy-a1b2c3d4.zip`
+ * holding `s03-a1b2c3d4-info.json`, `s03-reference.png` and
+ * `s03-w40-t0-q2-b3.png` (surface, pose, shot number within the pose,
+ * light bin). The session token in the zip and JSON names keeps two
+ * phones, or a cleared progress, from writing two different `s03` zips
+ * under one name; anything but letters and digits is dropped from it.
  */
 export function flatFileNames(
   surface: number,
   cls: SurfaceClass,
+  session: string,
 ): FlatFileNames {
   const s = `s${String(surface).padStart(2, "0")}`;
+  const token = session.replace(/[^a-z0-9]/gi, "");
+  const tagged = token ? `-${token}` : "";
   return {
-    zip: `flat-target-${s}-${cls}.zip`,
+    zip: `flat-target-${s}-${cls}${tagged}.zip`,
     reference: `${s}-reference.png`,
     rectified: `${s}-reference-rectified.png`,
-    info: `${s}-info.json`,
+    info: `${s}${tagged}-info.json`,
     query: (pose, shot, bin) => `${s}-${pose}-q${String(shot)}-${bin}.png`,
     original: (fileName) => {
       const m = /\.([a-z0-9]{1,5})$/i.exec(fileName);
@@ -396,6 +408,8 @@ export interface FlatInfoInput {
   readonly session: string;
   readonly original: { readonly exists: boolean; readonly file: string | null };
   readonly captureMaxLongEdge: number;
+  /** The camera stream's size when the reference was taken; null after a reload. */
+  readonly camera: Size | null;
   readonly reference: Size & {
     readonly file: string | null;
     readonly corners: readonly Point[];
@@ -423,6 +437,10 @@ export function flatInfo(v: FlatInfoInput): string {
       session: v.session,
       original: v.original,
       captureMaxLongEdge: v.captureMaxLongEdge,
+      capture: "getUserMedia",
+      camera: v.camera
+        ? { width: v.camera.width, height: v.camera.height }
+        : null,
       reference: {
         file: v.reference.file,
         width: v.reference.width,
