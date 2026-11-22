@@ -400,6 +400,37 @@ export function createQrTrackingController(
     return solution;
   }
 
+  // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
+  // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
+  function castGeoVote(
+    level: QrLevel,
+    text: string,
+    sizeM: number,
+    solution: QrPoseSolution
+  ): void {
+    const qrGeo = level.qr.geo;
+    if (!qrGeo) return;
+    // Stability gate (sliding-window stabilization): when a resolver is
+    // wired, vote on the FILTERED pose and skip the vote entirely until it
+    // converges (`null`). Without a resolver, the raw solve pose is used.
+    const votePose = resolveStablePose
+      ? resolveStablePose(text)
+      : solution.qrPoseWorld;
+    if (!votePose) return;
+    const votes = buildQrGpsVotes({
+      qrPoseWorld: votePose,
+      sizeM,
+      qrGeo,
+      syntheticAccuracyM,
+      ...(voteBaselineM !== undefined ? { baselineM: voteBaselineM } : {}),
+      ...(voteCount !== undefined ? { count: voteCount } : {}),
+    });
+    const cast = dispatchVotes(votes);
+    // The code's correction lands on the anchors at once, before the app's
+    // own lock handling runs.
+    if (cast !== false) requestAnchorRelease('code-lock');
+  }
+
   const scheduler: DetectionScheduler<CapturedCameraFrame> =
     createDetectionScheduler<QrPoseSolution, CapturedCameraFrame>({
       detect,
@@ -427,33 +458,7 @@ export function createQrTrackingController(
           ...(current.orderSource ? { orderSource: current.orderSource } : {}),
         });
 
-        // The GPS vote is CONDITIONAL on geo: geo-less levels (debug/observe,
-        // trigger, AR-root-anchored spawn) emit the detection but cast no vote.
-        if (level.qr.geo) {
-          // Stability gate (sliding-window stabilization): when a resolver is
-          // wired, vote on the FILTERED pose and skip the vote entirely until it
-          // converges (`null`). Without a resolver, the raw solve pose is used.
-          const votePose = resolveStablePose
-            ? resolveStablePose(text)
-            : solution.qrPoseWorld;
-          if (votePose) {
-            const votes = buildQrGpsVotes({
-              qrPoseWorld: votePose,
-              sizeM,
-              qrGeo: level.qr.geo,
-              syntheticAccuracyM,
-              ...(voteBaselineM !== undefined
-                ? { baselineM: voteBaselineM }
-                : {}),
-              ...(voteCount !== undefined ? { count: voteCount } : {}),
-            });
-            const cast = dispatchVotes(votes);
-            // The code's correction lands on the anchors at once, before
-            // the app's own lock handling runs.
-            if (cast !== false) requestAnchorRelease('code-lock');
-          }
-        }
-
+        castGeoVote(level, text, sizeM, solution);
         setStatus('tracking');
         onLocked?.(solution, level);
       },

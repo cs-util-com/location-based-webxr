@@ -409,64 +409,54 @@ function createAnchorSet(
     }
   }
 
-  function pass(
-    view: AnchorView | THREE.Camera | null,
-    _dt: number,
-    elapsedS: number
-  ): DeferredAnchorPassCounts {
-    counters.sphereTests = 0;
-    counters.traversals = 0;
-    if (disposed || !Number.isFinite(elapsedS))
-      return { ...counters, windowOpen };
-    nowMs = elapsedS * 1000;
-    const sessionS = target.sessionElapsedS(elapsedS);
-    parent.updateWorldMatrix(true, false);
-    targetInv.copy(target.target()).invert();
-    followInv.copy(parent.matrix).invert();
-
-    // The previous view, carried by the parent's motion since then, so the
-    // frusta derived from it below sit where they were in the parent frame.
-    if (hasPrev) {
-      motion.copy(prevParentWorld).invert().premultiply(parent.matrixWorld);
-      for (let i = 0; i < prev.viewCount; i += 1) {
-        prev.slots[i]!.worldFromView.premultiply(motion);
-      }
-      prev.setCount = 0;
+  /** The previous view, carried by the parent's motion since then, so the frusta derived from it sit where they were in the parent frame. */
+  function rebasePrevView(): void {
+    if (!hasPrev) return;
+    motion.copy(prevParentWorld).invert().premultiply(parent.matrixWorld);
+    for (let i = 0; i < prev.viewCount; i += 1) {
+      prev.slots[i]!.worldFromView.premultiply(motion);
     }
-    readView(view);
+    prev.setCount = 0;
+  }
+
+  /** The first view's camera position in the parent frame, or null without a view. */
+  function cameraInParent(): THREE.Vector3 | null {
     parentInv.copy(parent.matrixWorld).invert();
-    const cam =
-      cur.viewCount > 0
-        ? camNow
-            .setFromMatrixPosition(cur.slots[0]!.worldFromView)
-            .applyMatrix4(parentInv)
-        : null;
+    if (cur.viewCount === 0) return null;
+    return camNow
+      .setFromMatrixPosition(cur.slots[0]!.worldFromView)
+      .applyMatrix4(parentInv);
+  }
 
-    // 1. A pending release: one commit per displaced key, then deferral.
-    const epoch = target.frameEpoch();
-    if (releaseRequested) {
-      releaseRequested = false;
-      immatureEnded = true;
-      windowOpen = false;
-      windowUntilS = -Infinity;
-      // The release absorbs a frame switch it lands with.
-      lastEpoch = epoch;
-      lastCam = cam ? cam.clone() : null;
-      for (const key of keys.values()) {
-        if (
-          displacement(key.local, targetInv, cornersOf(key)) >
-          DEFERRED_ANCHOR_EPSILON_M
-        ) {
-          commit(key, targetInv, 'release:code-lock');
-        }
-        if (key.following) {
-          key.following = false;
-          log.info(`follow-end: ${key.key} (release)`);
-        }
+  /** A pending release: one commit per displaced key, then deferral. */
+  function applyRelease(epoch: number, cam: THREE.Vector3 | null): void {
+    if (!releaseRequested) return;
+    releaseRequested = false;
+    immatureEnded = true;
+    windowOpen = false;
+    windowUntilS = -Infinity;
+    // The release absorbs a frame switch it lands with.
+    lastEpoch = epoch;
+    lastCam = cam ? cam.clone() : null;
+    for (const key of keys.values()) {
+      if (
+        displacement(key.local, targetInv, cornersOf(key)) >
+        DEFERRED_ANCHOR_EPSILON_M
+      ) {
+        commit(key, targetInv, 'release:code-lock');
+      }
+      if (key.following) {
+        key.following = false;
+        log.info(`follow-end: ${key.key} (release)`);
       }
     }
+  }
 
-    // 2. Frame switches open (or extend) the window.
+  /** A frame switch since the last pass: a new epoch, or a camera step. */
+  function detectTrigger(
+    epoch: number,
+    cam: THREE.Vector3 | null
+  ): 'epoch' | 'jump' | null {
     let trigger: 'epoch' | 'jump' | null = null;
     if (epoch !== lastEpoch) {
       lastEpoch = epoch;
@@ -476,14 +466,29 @@ function createAnchorSet(
       trigger ??= 'jump';
     }
     if (cam) (lastCam ??= new THREE.Vector3()).copy(cam);
-    let tStep = displacement(lastTargetInv, targetInv, [new THREE.Vector3()]);
+    return trigger;
+  }
+
+  /** How far T^-1 moved any key's content (or the origin) since the last pass. */
+  function targetStep(): number {
+    let step = displacement(lastTargetInv, targetInv, [new THREE.Vector3()]);
     for (const key of keys.values()) {
-      tStep = Math.max(
-        tStep,
+      step = Math.max(
+        step,
         displacement(lastTargetInv, targetInv, cornersOf(key))
       );
     }
     lastTargetInv.copy(targetInv);
+    return step;
+  }
+
+  /** Frame switches open (or extend) the window; a cap or a quiet spell closes it. */
+  function stepWindow(
+    trigger: 'epoch' | 'jump' | null,
+    tStep: number,
+    elapsedS: number,
+    sessionS: number
+  ): void {
     if (trigger) {
       const cap = Math.min(
         WINDOW_MAX_S,
@@ -499,50 +504,61 @@ function createAnchorSet(
     } else if (windowOpen && tStep > WINDOW_NOISE_FLOOR_M) {
       lastStepS = elapsedS;
     }
-    if (
-      windowOpen &&
-      (elapsedS >= windowUntilS || elapsedS - lastStepS >= WINDOW_QUIET_S)
-    ) {
+    const expired =
+      elapsedS >= windowUntilS || elapsedS - lastStepS >= WINDOW_QUIET_S;
+    if (windowOpen && expired) {
       windowOpen = false;
       log.info('window closed');
     }
+  }
 
-    // 3. Follow: world pose equals NUE (scene-root behaviour).
+  function startFollow(key: KeyEntry): void {
+    key.following = true;
+    const kind: CommitKind = windowOpen ? 'window-entry' : 'follow-start';
+    if (
+      displacement(key.local, followInv, cornersOf(key)) >
+      DEFERRED_ANCHOR_EPSILON_M
+    ) {
+      commit(
+        key,
+        followInv,
+        kind,
+        kind === 'window-entry' ? windowTrigger : ''
+      );
+    } else {
+      assign(key, followInv);
+      log.info(`follow-start: ${key.key}`);
+    }
+  }
+
+  function continueFollow(key: KeyEntry, followWanted: boolean): void {
+    assign(key, followInv);
+    // After the phase ends, follow on until the key is at T^-1.
+    if (
+      !followWanted &&
+      displacement(followInv, targetInv, cornersOf(key)) <=
+        DEFERRED_ANCHOR_EPSILON_M
+    ) {
+      key.following = false;
+      log.info(`follow-end: ${key.key}`);
+    }
+  }
+
+  /** Follow: world pose equals NUE (scene-root behaviour). */
+  function followKeys(): void {
     const followWanted = isFollowWanted();
     for (const key of keys.values()) {
-      if (followWanted && !key.following) {
-        key.following = true;
-        const kind: CommitKind = windowOpen ? 'window-entry' : 'follow-start';
-        if (
-          displacement(key.local, followInv, cornersOf(key)) >
-          DEFERRED_ANCHOR_EPSILON_M
-        ) {
-          commit(
-            key,
-            followInv,
-            kind,
-            kind === 'window-entry' ? windowTrigger : ''
-          );
-        } else {
-          assign(key, followInv);
-          log.info(`follow-start: ${key.key}`);
-        }
-      } else if (key.following) {
-        assign(key, followInv);
-        // After the phase ends, follow on until the key is at T^-1.
-        if (
-          !followWanted &&
-          displacement(followInv, targetInv, cornersOf(key)) <=
-            DEFERRED_ANCHOR_EPSILON_M
-        ) {
-          key.following = false;
-          log.info(`follow-end: ${key.key}`);
-        }
-      }
+      if (followWanted && !key.following) startFollow(key);
+      else if (key.following) continueFollow(key, followWanted);
     }
+  }
 
-    // 4. Deferred keys: cached tests for all, at most one key's traversal.
-    const ordered = [...keys.values()];
+  /** Displaced deferred keys by what their cached tests say, in round-robin order. */
+  function classifyDeferred(ordered: KeyEntry[]): {
+    out: KeyEntry[];
+    build: KeyEntry[];
+    stale: KeyEntry[];
+  } {
     const out: KeyEntry[] = [];
     const build: KeyEntry[] = [];
     const stale: KeyEntry[] = [];
@@ -567,22 +583,103 @@ function createAnchorSet(
         stale.push(key);
       }
     }
-    const pick = out[0] ?? build[0] ?? stale[0];
-    if (pick) {
-      roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
-      excludeNested(pick);
-      if (keys.get(pick.key) === pick && !keyInView(pick, true)) {
-        commit(pick, targetInv, 'out-of-view');
-      }
-    }
+    return { out, build, stale };
+  }
 
-    // 5. This view is the next pass's previous view.
+  /** Deferred keys: cached tests for all, at most one key's traversal. */
+  function commitOneDeferred(): void {
+    const ordered = [...keys.values()];
+    const { out, build, stale } = classifyDeferred(ordered);
+    const pick = out[0] ?? build[0] ?? stale[0];
+    if (!pick) return;
+    roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
+    excludeNested(pick);
+    if (keys.get(pick.key) === pick && !keyInView(pick, true)) {
+      commit(pick, targetInv, 'out-of-view');
+    }
+  }
+
+  /** This view is the next pass's previous view. */
+  function swapViews(): void {
     const swap = prev;
     prev = cur;
     cur = swap;
     prevParentWorld.copy(parent.matrixWorld);
     hasPrev = true;
+  }
+
+  function pass(
+    view: AnchorView | THREE.Camera | null,
+    _dt: number,
+    elapsedS: number
+  ): DeferredAnchorPassCounts {
+    counters.sphereTests = 0;
+    counters.traversals = 0;
+    if (disposed || !Number.isFinite(elapsedS))
+      return { ...counters, windowOpen };
+    nowMs = elapsedS * 1000;
+    const sessionS = target.sessionElapsedS(elapsedS);
+    parent.updateWorldMatrix(true, false);
+    targetInv.copy(target.target()).invert();
+    followInv.copy(parent.matrix).invert();
+
+    rebasePrevView();
+    readView(view);
+    const cam = cameraInParent();
+    const epoch = target.frameEpoch();
+    applyRelease(epoch, cam);
+    const trigger = detectTrigger(epoch, cam);
+    stepWindow(trigger, targetStep(), elapsedS, sessionS);
+    followKeys();
+    commitOneDeferred();
+    swapViews();
     return { ...counters, windowOpen };
+  }
+
+  /** Throws on a root the set cannot take; true when it already belongs to `key`. */
+  function isMemberOf(root: THREE.Object3D, key: string): boolean {
+    if (disposed) {
+      throw new Error(
+        'DeferredAnchor.add: the anchor set ended with its AR session; ' +
+          'call deferredAnchor again'
+      );
+    }
+    if (!(root instanceof THREE.Object3D)) {
+      throw new TypeError('DeferredAnchor.add: root must be a THREE.Object3D');
+    }
+    const current = keyOfRoot.get(root);
+    if (current) {
+      if (current.key === key) return true;
+      throw new Error(
+        `DeferredAnchor.add: root already belongs to ${current.key}`
+      );
+    }
+    assertNoNesting(root);
+    return false;
+  }
+
+  function assertNoNesting(root: THREE.Object3D): void {
+    if (root === parent || isAncestorOf(root, parent)) {
+      throw new Error('DeferredAnchor.add: root must not hold its parent');
+    }
+    for (const other of keyOfRoot.keys()) {
+      if (isAncestorOf(other, root) || isAncestorOf(root, other)) {
+        throw new Error(
+          'DeferredAnchor.add: anchors must not nest; add each root directly'
+        );
+      }
+    }
+  }
+
+  /** A key's first root: following in a follow phase, else at T^-1. */
+  function placeNewKey(keyEntry: KeyEntry): void {
+    parent.updateWorldMatrix(true, false);
+    if (isFollowWanted()) {
+      keyEntry.following = true;
+      commit(keyEntry, followInv.copy(parent.matrix).invert(), 'follow-start');
+    } else {
+      commit(keyEntry, targetInv.copy(target.target()).invert(), 'first');
+    }
   }
 
   function handle(key: string): DeferredAnchor {
@@ -591,34 +688,7 @@ function createAnchorSet(
     const anchor: DeferredAnchor = {
       key,
       add(root, options = {}) {
-        if (disposed) {
-          throw new Error(
-            'DeferredAnchor.add: the anchor set ended with its AR session; ' +
-              'call deferredAnchor again'
-          );
-        }
-        if (!(root instanceof THREE.Object3D)) {
-          throw new TypeError(
-            'DeferredAnchor.add: root must be a THREE.Object3D'
-          );
-        }
-        const current = keyOfRoot.get(root);
-        if (current) {
-          if (current.key === key) return;
-          throw new Error(
-            `DeferredAnchor.add: root already belongs to ${current.key}`
-          );
-        }
-        if (root === parent || isAncestorOf(root, parent)) {
-          throw new Error('DeferredAnchor.add: root must not hold its parent');
-        }
-        for (const other of keyOfRoot.keys()) {
-          if (isAncestorOf(other, root) || isAncestorOf(root, other)) {
-            throw new Error(
-              'DeferredAnchor.add: anchors must not nest; add each root directly'
-            );
-          }
-        }
+        if (isMemberOf(root, key)) return;
         const autoUpdateBefore = root.matrixAutoUpdate;
         parent.add(root);
         root.matrixAutoUpdate = false;
@@ -634,17 +704,7 @@ function createAnchorSet(
         const isNew = keyEntry.roots.size === 0;
         keyEntry.roots.set(root, entry);
         if (isNew) {
-          parent.updateWorldMatrix(true, false);
-          if (isFollowWanted()) {
-            keyEntry.following = true;
-            commit(
-              keyEntry,
-              followInv.copy(parent.matrix).invert(),
-              'follow-start'
-            );
-          } else {
-            commit(keyEntry, targetInv.copy(target.target()).invert(), 'first');
-          }
+          placeNewKey(keyEntry);
         } else {
           root.matrix.copy(keyEntry.local);
           root.updateMatrixWorld(true);
