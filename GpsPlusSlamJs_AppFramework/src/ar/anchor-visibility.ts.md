@@ -110,11 +110,13 @@ through the `ar` barrel.
   attribute, its `id` (for interleaved data the shared buffer's `uuid`, the
   offset and item size) and version (for interleaved data the shared
   buffer's), and for a skinned part by the bind-to-bone matrices compared by
-  value. The geometry's `id` is there because three keys its morph texture
-  on the geometry and ignores `needsUpdate` on morph attributes: a geometry
-  swapped in around the same attributes after an in-place edit draws the
-  edited shape although every attribute key matches. The key holds no
-  geometry or attribute, so a replaced one is not kept in memory.
+  value. The geometry's `id` comes first because three keys its morph
+  texture on the geometry and ignores `needsUpdate` on morph attributes:
+  when a morph target is edited in place and a new geometry is then built
+  around the same attribute objects, three builds a new morph texture for
+  it and draws the edited shape, while every attribute's key still matches.
+  The key holds no geometry or attribute, so a replaced one is not kept in
+  memory.
   Replacing or editing an attribute with `needsUpdate`, swapping the
   geometry or rebinding recomputes it. **Contract:** after any in-place edit
   of a skinned or morphed part, set `needsUpdate` on the edited attribute or
@@ -158,12 +160,16 @@ through the `ar` barrel.
     which is then applied. Assumes non-negative weights (as glTF requires); a
     negative weight is clamped to 0. A weight on a bone index outside the
     skeleton adds nothing to the weight sum, as it moves no vertex. A skinned
-    mesh with no skeleton, or with no positive weight, is still drawn, so it
-    is bounded as a plain mesh instead. A bound skinned mesh missing
-    `skinIndex` or `skinWeight` is still skinned by three, from the generic
-    vertex attribute value at that location (which another program may have
-    set, to 1 for a default colour, say), so its weights and bones are
-    unknown: it is unbounded and counts as in view wherever it is, while it
+    mesh with no skeleton (three cannot render it: its renderer calls
+    `skeleton.update()`) or with no positive weight (drawn, collapsed onto
+    its origin) is bounded as a plain mesh. A bound skinned mesh whose
+    `skinIndex` or `skinWeight` is missing or not four components wide is
+    still skinned by three, which reads four of each per vertex: a missing
+    attribute from the generic vertex attribute value at its location (which
+    another program may have set, to 1 for a default colour, say), a
+    narrower one with its missing components filled as (0, 0, 0, 1), a
+    fourth weight of 1. Its weights and bones are not what the attribute
+    holds, so it is unbounded and counts as in view wherever it is, while it
     is counted, and is never merged.
 - **Stretch.** The largest scale of a matrix is bounded by the square root of
   the Gershgorin bound of its Gram matrix, an upper bound on the spectral norm
@@ -176,20 +182,22 @@ through the `ar` barrel.
   view's; a merged sphere carries the OR of its members that are counted.
 - **Cost.** A cached test does at most `ANCHOR_SPHERE_CAP` sphere tests per
   view (plus one per never-merged entry past the cap), plus the bone pass of
-  each skinned part. A fresh traversal reuses the kept bind data. A cache build is linear in
-  the subtree, plus the merge, which is O(n^2) time and O(n) memory in the
-  number of renderables above the cap: each cluster keeps its nearest
-  neighbour, and a cluster whose neighbour merged is only marked stale and
-  rescanned when it is picked, so each merge costs amortized O(n) however
-  many clusters shared that neighbour: in 3-D a point is the nearest
-  neighbour of a bounded number of points, so a merge leaves O(1) stale
-  clusters, and coincident centres keep the recorded distance exact (zero),
-  so a stale pick is rescanned once and taken. Coincident centres (the parts of a model
+  each skinned part. A fresh traversal reuses the kept bind data. A cache
+  build is linear in the subtree, plus the merge, which is O(n^2) time and
+  O(n) memory in the number of renderables above the cap. Each cluster
+  keeps its nearest neighbour, and a cluster whose neighbour merged is only
+  marked stale and rescanned when it is picked. A merge scans the table
+  once and rescans, at O(n) each, only the stale clusters it picks: with
+  distinct centres a merge leaves a bounded number of clusters stale (in
+  3-D a point is the nearest neighbour of a bounded number of points), and
+  coincident centres keep the recorded distance exact (zero), so a stale
+  pick is rescanned once and taken. That is O(n) per merge on average over
+  the run, not for every merge. Coincident centres (the parts of a model
   whose meshes are flat children with baked positions, each bounded about
   its own origin) are the case this matters for: with an eager rescan of
-  every such cluster per merge the build was O(n^3), about 30x the grid case
-  for 400 parts and about 2 s for 1000. A large flat subtree should still use
-  `mergeForAnchorBounds`.
+  every such cluster per merge the build was O(n^3), about 30x the grid
+  case for 400 parts and about 2 s for 1000. A large flat subtree should
+  still use `mergeForAnchorBounds`.
 
 ## Parameters
 
@@ -233,17 +241,19 @@ not tightness).
   it (it must stay `visible` to count).
 - Kept bind data is not versioned beyond the attributes' own versions, and
   three uploads some in-place edits that bump no version: an edit before
-  the part's first render, morph targets rebuilt after
-  `geometry.dispose()` (where `needsUpdate` changes nothing for three), and
-  `SkinnedMesh.normalizeSkinWeights()` before the part's first render. A
-  fresh traversal keeps the old, possibly too small bound for such an edit.
+  the part's first render (`SkinnedMesh.normalizeSkinWeights()` is one, as
+  it writes the weights in place without `needsUpdate`) and morph targets
+  rebuilt after `geometry.dispose()` (where `needsUpdate` changes nothing
+  for three). A fresh traversal keeps the old, possibly too small bound for
+  such an edit.
   Set `needsUpdate` on the edited attribute or call `markAnchorBoundsChanged`
   after any in-place edit of a skinned or morphed part.
-- A bound `SkinnedMesh` missing its `skinIndex` or `skinWeight` attribute
-  has no finite bound (three skins it from generic attribute values), so it
+- A bound `SkinnedMesh` whose `skinIndex` or `skinWeight` attribute is
+  missing or not four components wide has no finite bound (three skins it
+  from generic attribute values or fills the missing components), so it
   counts as in view wherever it is: its anchor never re-places while that
-  part is counted. Give every skinned geometry both attributes, or hide or
-  ignore such a part.
+  part is counted. Give every skinned geometry both attributes, four wide,
+  or hide or ignore such a part.
 - The out-of-view dwell before acting (two consecutive "out" answers, a
   confirmation with `fresh: true`) is the caller's, not this module's.
 
@@ -293,7 +303,8 @@ renderer.setAnimationLoop((time) => {
   attribute moved to another offset or item size of its buffer; kept per
   kind; a key of primitives only), a skinned mesh with no skeleton or zero
   weights, a bound skinned mesh missing a skin attribute (in view wherever
-  it is, never merged), a view wider than the angle clamp,
+  it is, never merged) or with one narrower than four components, a view
+  wider than the angle clamp,
   the anchor as its own merge root,
   and a premise test that drives a real `WebXRManager` frame loop.
 - `anchor-visibility.property.test.ts`: never a false "out" against an
