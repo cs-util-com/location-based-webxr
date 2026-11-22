@@ -15,7 +15,8 @@ import {
 } from "../asset-shelf/optimizer-protocol.js";
 import { ASSET_CEILING_BYTES } from "../tour-files.js";
 import { repackGltf } from "./gltf-repack.js";
-import { refusal } from "./model-import-words.js";
+import { importRoleOf } from "./import-formats.js";
+import { note, refusal } from "./model-import-words.js";
 import { readZipBundle, zipBundleNotes } from "./zip-bundle.js";
 
 /** What the page hands the converter for one import. */
@@ -103,11 +104,22 @@ export async function convertImport(
   const result = repackGltf(input.name, files);
   if (!result.ok) return { type: "kept", reason: result.reason };
   control.progress(1);
+  // A part the model does not use is no file of the tour alone: it is
+  // named. A picture it does not use goes on to the shelf instead.
+  const unused = [...files.keys()].filter(
+    (path) => importRoleOf(path) === "companion" && !result.used.includes(path),
+  );
   return {
     type: "done",
     blob: glbBlob(result.glb),
     extension: "glb",
-    conversion: { notes: [...result.notes], used: [...result.used] },
+    conversion: {
+      notes:
+        unused.length > 0
+          ? [...result.notes, note.unusedFiles(unused)]
+          : [...result.notes],
+      used: [...result.used],
+    },
   };
 }
 

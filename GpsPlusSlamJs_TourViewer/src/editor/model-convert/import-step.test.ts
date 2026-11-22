@@ -71,6 +71,28 @@ describe("convertImport", () => {
     expect(fractions.every((f) => f >= 0 && f <= 1)).toBe(true);
   });
 
+  // Why: a part dropped with a model that the model does not use would
+  // otherwise vanish without a word: it is no file of the tour alone. A
+  // picture it does not use is no part: it goes on to the shelf.
+  it("names the loose parts the model did not use, never a picture", async () => {
+    const files = new Map(await model())
+      .set("stray.bin", new Uint8Array(4))
+      .set("wood.tga", new Uint8Array(4))
+      .set("photo.png", new Uint8Array(4));
+    const answer = await convertImport(
+      loose(files),
+      OPTIMIZER_SETTINGS,
+      control(),
+    );
+    expect(answer).toMatchObject({
+      type: "done",
+      conversion: {
+        notes: [note.unusedFiles(["stray.bin", "wood.tga"])],
+        used: ["bust.bin"],
+      },
+    });
+  });
+
   it("refuses a model it cannot make in words, as kept, not as a failure", async () => {
     const files = await model();
     files.delete("bust.bin");
