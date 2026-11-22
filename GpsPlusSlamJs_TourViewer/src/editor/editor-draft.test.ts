@@ -1335,6 +1335,25 @@ describe("createEditorDraft, the settings record's edge walks (M1b-2 milestone r
     );
   });
 
+  it("an offer of the characters alone names the characters, not the setting", async () => {
+    // Why: the offer's words fell back to naming the "needs no GPS" setting
+    // whenever no detail, station or frame changed, so a record holding
+    // only a declared character said the setting was "turned off" though
+    // it never changed, and never named the character.
+    const b = memoryDraftStores();
+    const first = draftIn(b);
+    await first.open(K1, tour(pin("a")));
+    void first.saveSettings({
+      needsNoGps: false,
+      characters: [{ id: "k1", name: "Rita", image: "rita-image" }],
+    });
+    await first.idle();
+    first.close();
+    expect((await draftIn(b).open(K1, tour(pin("a")))).offer?.text).toBe(
+      "Unsaved work from this tour is still on this device: 1 change. Add it back? Changed: the tour's characters.",
+    );
+  });
+
   it("Delete it has removed an offered setting by the time it says it is done", async () => {
     // Why (#4): the removal ran outside the commit point, fire-and-forget,
     // so "deleted" was said before the record went.

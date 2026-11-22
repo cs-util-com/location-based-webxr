@@ -187,11 +187,9 @@ function offerText(
   });
   if (settings === undefined || changes === null) return counted;
   const noGps = `${NO_GPS_LABEL} turned ${settings.needsNoGps ? "on" : "off"}`;
-  if (
-    changes.details.length === 0 &&
-    changes.stations.length === 0 &&
-    frameChangeCount(changes.frames) === 0
-  ) {
+  // The setting alone is named with its value; anything beside it is
+  // named part by part.
+  if (settingsParts(changes, noGps).length === 1 && changes.noGps) {
     return notes + deleted === 0
       ? `${counted} It is ${noGps}.`
       : `${counted} One of the changes is ${noGps}.`;
