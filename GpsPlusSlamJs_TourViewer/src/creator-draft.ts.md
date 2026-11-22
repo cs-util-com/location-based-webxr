@@ -405,6 +405,21 @@ phone offers and restores the WHOLE record, by the desktop's rule
   record and owns it). An interrupted removal is safe: a record the
   opened tour carries is spent again at the next open.
 
+## Every end of the wait draws what waited
+
+An edit made while the draft is read or offered waits in the gate
+(`draft-edit-gate.ts`), so its own preview sync and readout ran while it
+was held and drew nothing. Every way the wait ends lets the waiting edits
+through by one function (`released`), which then syncs the previews and
+renders the readout: a read that found no draft or nothing to offer, a
+read that threw, Restore and "Delete it" (`decided`). A landed pin with
+no preview reads as a lost tap, and the creator places it again - a
+duplicate at the same spot in the published tour
+(`creator-setup.test.ts`, "draws a pin that waited ..."). "Not now" and
+a tour change drop the waiting edits instead; a dropped placement gives
+its "New station here" arm back (`creator-placement.ts.md`) and frees its
+photo's bytes (`creator-document.ts.md`).
+
 ## Visits in the draft (authoring plan 2026-09-28-0953 M3b)
 
 - Each entry is written to the draft as its own file (`writeDraftVisit`,

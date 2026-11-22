@@ -55,8 +55,12 @@ troubleshooting recording's record of each placement. Split out of
 - A placement that waits for the draft question (`held`,
   `draft-edit-gate.ts`) is `"held"` from `placeInTour`, with no refusal
   note: the question on screen says why, and the placement lands after
-  the answer. It keeps the "New station here" arm it took (it lands with
-  that station), so the arm is not given back.
+  the answer. It keeps the "New station here" arm it took while it waits
+  and when it lands (it lands with that station). Dropped instead
+  (Restore, "Not now": `DocumentChange.landed` answers false), it was
+  never placed, so the arm comes back as for any placement that did not
+  happen - into the visit it was taken in only (`giveBackNewStationArm`),
+  and the readout renders (`creator-setup.test.ts`, "'New station here'").
 - A new pin's text is taken in NFC (`inputText`) before it is trimmed
   and counted (B2a review 6).
 - **The gate:** allowed only with a tour open on the page

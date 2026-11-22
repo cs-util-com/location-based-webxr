@@ -935,6 +935,28 @@ describe.each(PAGES)("the %s page's draft", (name, open) => {
     expect(holds(next, "q")).toBe(true);
   }, 60_000);
 
+  // Why: a photo placed while the offer stands waits for the answer, and
+  // Restore drops it (it was built before the draft came back). Its
+  // picture must not turn into work of its own: not placed, and the next
+  // open offers exactly what it offered before the photo. On the desktop
+  // the picture's file stays listed on the shelf as an unused file (its
+  // listing passed the question, `draft-edit-gate.ts`), which offers
+  // nothing; on the phone the captured bytes go with the dropped photo.
+  it("a photo dropped by Restore is not placed and adds nothing to the next offer", async () => {
+    const { browser, page } = await freshPage(open);
+    await page.edit("b", "The well");
+    const offered = await reopen(open, browser, page);
+    const asked = offered.offer();
+    await offered.placePhoto("q");
+    await offered.restore();
+    expect(holds(offered, "q")).toBe(false);
+    expect(offered.said()).toContain(DRAFT_EDIT_MAKE_AGAIN);
+    const next = await reopen(open, browser, offered);
+    expect(next.offer()).toBe(asked);
+    await next.restore();
+    expect(holds(next, "q")).toBe(false);
+  }, 60_000);
+
   // Why: a photo is two files, its picture and its record. Whatever
   // order they land in, a crash between them must never bring back a
   // record without the picture it names: the reopen restores the photo

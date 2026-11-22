@@ -306,6 +306,16 @@ editor's own namespace, one tab at a time. Design:
 
 ## The files
 
+- **A file listed while the offer stands, whose item Restore drops**: the
+  listing (`assetsAdded`) passes the draft question and its bytes are
+  saved at once, so the file stays listed and on the shelf as an unused
+  file; the dropped item is made again or the file deleted from the shelf
+  by hand. It offers nothing at the next open of its own
+  (`draft-shared-behaviour.test.ts`, "a photo dropped by Restore ...").
+  Kept rather than removed: removing it would need a second path back
+  through the shelf, the draft and the document for a file the creator
+  just brought in and may still want.
+
 - A file brought in is kept as `asset:<id>` (its bytes) beside `assets` (the list of their `TourAsset`s), in that order, before the record naming it (`saveAsset(asset, blob)`, whether both landed; a write that did not land is said as any other: `noBackup("storage")`).
 - `open` reads the list and the bytes, skipping a file the opened manifest lists (its own now). A list that does not read, or a file it names that is missing, is told (`unreadDraft`, once), and an offered record naming a file held nowhere is left out (`objectAssetsHeld`), except a long text whose voice is gone: it is offered with the opened file's narration (`withFiledNarration`), its words kept. `holdsFile(id)` is false for a file whose last write did not land in this open: a key move that carries the file counts as its write, and a close forgets it (the same bytes kept by another tour's draft are held there). The offer carries `files`; with nothing offered they go, and every `asset:` entry the list does not name is removed.
 - `open` copies each file's bytes into memory. The store hands out a snapshot of the entry (`handle.getFile()`), whose reads fail once the entry is removed; a landed save or a key move removes it while the session may still need the bytes (a preview, a save after an undo brings the file back). An entry that does not read is told as a missing one. The restored photos' pictures are copied the same way (`readDraft`, `draft-persistence.ts`): a restore writes a copied photo's record and picture into the very entry its snapshot read from.

@@ -236,7 +236,9 @@ export function wireCreatorPlacement(deps: {
 
   /** Put `object` into the tour document; null (and said) when refused,
    *  "held" while it waits for the draft question (it lands later, with
-   *  the arm it took, so the arm stays taken),
+   *  the arm it took, so the arm stays taken; dropped, it never lands, and
+   *  the arm comes back to `visit` as for any placement that did not
+   *  happen),
    *  else the object as the document took it and whether it started its
    *  own station ("New station here" was armed, D8: the document consumes
    *  the arm only when it takes the object, and the object then names
@@ -245,6 +247,7 @@ export function wireCreatorPlacement(deps: {
   function placeInTour(
     object: TourObject,
     extras: Parameters<TourViewerSession["tourDocument"]["place"]>[1],
+    visit: number,
   ): { object: TourObject; ownStation: boolean } | "held" | null {
     const what =
       object.kind === "shortText"
@@ -262,7 +265,14 @@ export function wireCreatorPlacement(deps: {
     });
     // Waiting for the draft question (`draft-edit-gate.ts`): not placed
     // yet, and the question on screen says why - no refusal note.
-    if (change.held === true) return "held";
+    if (change.held === true) {
+      void change.landed?.then((landed) => {
+        if (landed) return;
+        giveBackNewStationArm(extras.ownStation === true, visit);
+        deps.render();
+      });
+      return "held";
+    }
     return { object: change.object, ownStation: change.ownStation };
   }
 
@@ -433,20 +443,24 @@ export function wireCreatorPlacement(deps: {
     }
     const visit = ctx.arSessionGeneration;
     const ownStation = takeNewStationArm();
-    const placedPin = placeInTour(pin, {
-      ownStation,
-      ...(local === null
-        ? {}
-        : {
-            placement: {
-              visit,
-              local: {
-                position: [local.x, local.y, local.z],
-                rotation: [0, 0, 0, 1],
+    const placedPin = placeInTour(
+      pin,
+      {
+        ownStation,
+        ...(local === null
+          ? {}
+          : {
+              placement: {
+                visit,
+                local: {
+                  position: [local.x, local.y, local.z],
+                  rotation: [0, 0, 0, 1],
+                },
               },
-            },
-          }),
-    });
+            }),
+      },
+      visit,
+    );
     if (placedPin === "held") {
       deps.render();
       return;
@@ -534,13 +548,17 @@ export function wireCreatorPlacement(deps: {
           note("No usable GPS alignment yet - the photo cannot be placed.");
           return;
         }
-        const placedPhoto = placeInTour(photo, {
-          blob: jpeg.blob,
-          // The capture pose is RAW WebXR: through the one conversion into
-          // the world group's frame, never composed by hand (plan §3.2).
-          placement: { visit, local: odomNueFromWebXr(cameraPose) },
-          ownStation,
-        });
+        const placedPhoto = placeInTour(
+          photo,
+          {
+            blob: jpeg.blob,
+            // The capture pose is RAW WebXR: through the one conversion into
+            // the world group's frame, never composed by hand (plan §3.2).
+            placement: { visit, local: odomNueFromWebXr(cameraPose) },
+            ownStation,
+          },
+          visit,
+        );
         if (placedPhoto === "held") {
           deps.render();
           return;

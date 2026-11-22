@@ -873,3 +873,49 @@ describe("the creator's document: 'New station here' (D8)", () => {
     expect(doc.newStationArmed()).toBe(false);
   });
 });
+
+describe("a placement that waits for the draft question", () => {
+  // Why: a photo's bytes and its AR placement are kept beside the document
+  // from the tap on, before the placement waits for the draft question. A
+  // waiting placement dropped (Restore, "Not now") never lands, so its
+  // bytes would stay in memory for the rest of the tour with nothing
+  // naming them; one that lands keeps them, its preview draws from them.
+  function held() {
+    const store = createTourViewerStore();
+    const doc = createCreatorDocument(store);
+    doc.open(tourOf([pin("a")]));
+    store.draftGate.hold(() => undefined);
+    const change = doc.place(
+      photo("p"),
+      {
+        blob: new Blob(["jpg"]),
+        placement: {
+          visit: 1,
+          local: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+        },
+      },
+      "a photo",
+    );
+    expect(change?.held).toBe(true);
+    return { store, doc };
+  }
+
+  it("frees its photo's bytes and placement when it is dropped", async () => {
+    const { store, doc } = held();
+    store.draftGate.drop();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(doc.pictureOf("p")).toBeUndefined();
+    store.draftGate.release();
+    expect(doc.entries()).toEqual([]);
+  });
+
+  it("keeps them when it lands", async () => {
+    const { store, doc } = held();
+    store.draftGate.release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(doc.pictureOf("p")).toBeDefined();
+    expect(doc.entries()[0]?.placement?.visit).toBe(1);
+  });
+});

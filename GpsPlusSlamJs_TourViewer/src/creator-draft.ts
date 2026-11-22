@@ -142,8 +142,9 @@ export interface CreatorDraft {
   ): Promise<boolean>;
   /** Remove object `id`'s draft files, after any write queued for it. */
   forgetObject(id: string): Promise<void>;
-  /** Write the tour document's settings record (`tour-document-draft.ts`:
-   *  the moved stations' poses, the details once set), in its own queue.
+  /** Write the tour document's settings record (`tour-document-draft.ts`,
+   *  whole: the setting, the details once set, the stations and the
+   *  characters once changed), in its own queue.
    *  True with no tour's draft open yet (nothing of the document can have
    *  changed before it: every edit waits from `present` on). */
   saveSettings(settings: TourSettingsRecord): Promise<boolean>;
@@ -839,7 +840,18 @@ export function wireCreatorDraft(deps: {
     dom.draftOffer.hidden = true;
     offered = null;
     editWaits = false;
+    released();
+  }
+
+  /** The edits that waited land: drawn and read out, as each one's own
+   *  placement would have done had it not waited (its own preview sync
+   *  ran while it was held, and drew nothing). Every way a wait ends comes
+   *  here. The sync guards against a dead scene, so it is safe outside a
+   *  session too. */
+  function released(): void {
     gate.release();
+    deps.syncPreviews();
+    deps.render();
   }
 
   /** "Delete it" in progress (async-ui-feedback): no second answer
@@ -890,13 +902,11 @@ export function wireCreatorDraft(deps: {
       writeSideM(dom.sizeInput, waiting.sizeM);
       ctx.activeSizeM = waiting.sizeM;
     }
-    // The draft is the document's now; new edits land on it.
-    decided();
-    // Render them, or the readout says "5 objects placed" over an empty
+    // The draft is the document's now; new edits land on it. Drawn by
+    // `decided`, or the readout says "5 objects placed" over an empty
     // scene and the creator places them again - new ids, real duplicates
-    // at the same spot in the published zip. The sync guards against a
-    // dead scene, so this is safe outside a session too.
-    deps.syncPreviews();
+    // at the same spot in the published zip.
+    decided();
     // What was put back, not what was offered: a code measured here kept
     // its place, and a visit already held stayed.
     const back = restoredText(restored.placed, levelBack, {
@@ -1336,7 +1346,7 @@ export function wireCreatorDraft(deps: {
         // and a note that the page was reading goes.
         if (asked) return;
         clearBeingRead();
-        gate.release();
+        released();
       },
       () => {
         if (stale()) {
@@ -1348,7 +1358,7 @@ export function wireCreatorDraft(deps: {
         // stranded behind a question nobody can see, nor the note that
         // said it was reading stand.
         clearBeingRead();
-        gate.release();
+        released();
       },
     );
   }
@@ -1479,8 +1489,9 @@ export function wireCreatorDraft(deps: {
     saveSettings: (settings) => {
       const store = draftStore;
       const tourUrl = draftTourUrl;
-      // No draft namespace yet: `present` writes the record when it
-      // opens, as it does the objects - nothing failed.
+      // No draft namespace yet: nothing of the document can have changed
+      // (every edit waits from `present` on, and the document's listener
+      // writes the record once one lands) - nothing failed.
       if (tourUrl === null) return Promise.resolve(true);
       if (store === undefined) {
         noteNoPersistence();

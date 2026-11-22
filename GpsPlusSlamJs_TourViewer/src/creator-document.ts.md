@@ -122,7 +122,10 @@ generation, written, appliedDeletions, stationsAtStart })`,
   (true for a dropped one: nothing of it was left unsaved); its draft
   writes, made when the gate replays it, count as its own (`heldWrites`);
   a held placement is seated once it lands, against the document just
-  before it (`heldLanding`).
+  before it (`heldLanding`). `landed` answers whether it landed (false:
+  dropped). A dropped placement takes its photo's bytes and its AR
+  placement out of the side tables, which it filled at the tap, so
+  nothing in memory names an object that never came to be.
 - **The save status is not all here yet**: the slice's `save` says
   whether a write runs for the undo (`canStep`); the phone's Finish keeps
   its own beside it - a named deviation from the root Redux rule, with its
