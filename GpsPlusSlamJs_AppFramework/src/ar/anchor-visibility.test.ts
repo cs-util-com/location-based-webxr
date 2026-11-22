@@ -848,6 +848,45 @@ describe('anchor-visibility: what is in view', () => {
     }
   });
 
+  it('a skin attribute narrower than four components counts as in view wherever it is', () => {
+    // three's shader reads four bone indices and four weights per vertex and
+    // fills a narrower attribute's missing components with (0, 0, 0, 1): a
+    // fourth weight of 1, on bone 1 when the indices are the narrow ones.
+    // Walking the attribute's own components (or reading past them into the
+    // next vertex) misses that weight. Here the box is drawn at a bone 10 m
+    // ahead, while such a walk bounds it behind the camera. The camera stands
+    // 50 m from the world origin, about which a weight sum below one scales
+    // the drawn shape (the walk past the last vertex reads no index there).
+    const cases = [
+      { narrow: 'skinWeight', index: [0, 0, 0, 0], weight: [0, 0], bone: 0 },
+      { narrow: 'skinIndex', index: [0, 0], weight: [0, 0, 0, 1], bone: 1 },
+    ];
+    for (const c of cases) {
+      const geometry = new THREE.BoxGeometry(1, 1, 1);
+      const count = geometry.getAttribute('position').count;
+      const repeat = (v: number[]): number[] =>
+        Array.from({ length: count }, () => v).flat();
+      geometry.setAttribute(
+        'skinIndex',
+        new THREE.Uint16BufferAttribute(repeat(c.index), c.index.length)
+      );
+      geometry.setAttribute(
+        'skinWeight',
+        new THREE.Float32BufferAttribute(repeat(c.weight), c.weight.length)
+      );
+      const mesh = new THREE.SkinnedMesh(geometry);
+      const bones = [new THREE.Bone(), new THREE.Bone()];
+      mesh.add(...bones);
+      mesh.bind(new THREE.Skeleton(bones));
+      mesh.position.set(0, 0, 100); // behind the camera
+      bones[c.bone]!.position.set(0, 0, -160); // the drawn box: 10 m ahead
+      const rig = makeRig();
+      rig.camera.position.set(0, 0, -50);
+      rig.anchor.add(mesh);
+      expect(inView(rig), c.narrow).toBe(true);
+    }
+  });
+
   it('a geometry swapped in with the same attributes after an in-place morph edit is walked again', () => {
     // three keys its morph texture on the geometry and ignores needsUpdate
     // on morph attributes, so a target edited in place is drawn by a
@@ -905,7 +944,8 @@ describe('anchor-visibility: what is in view', () => {
     expect(inView(rig, { fresh: true })).toBe(true);
 
     // The weights as an interleaved view, then the same view with fewer
-    // components: the walk reads `itemSize` components, so it must run again.
+    // components: three fills the missing ones (a fourth weight of 1), so
+    // the kept walk of the wider view must not be served for it.
     const weights = geometry.getAttribute(
       'skinWeight'
     ) as THREE.BufferAttribute;
@@ -918,11 +958,13 @@ describe('anchor-visibility: what is in view', () => {
       new THREE.InterleavedBufferAttribute(weightData, 4, 0)
     );
     expect(inView(rig, { fresh: true })).toBe(true);
-    const narrower = new THREE.InterleavedBufferAttribute(weightData, 2, 0);
-    const reads = vi.spyOn(narrower, 'getComponent');
-    geometry.setAttribute('skinWeight', narrower);
+    bone.position.set(0, 0, -500); // drawn 300 m ahead: out
+    expect(inView(rig, { fresh: true })).toBe(false);
+    geometry.setAttribute(
+      'skinWeight',
+      new THREE.InterleavedBufferAttribute(weightData, 2, 0)
+    );
     expect(inView(rig, { fresh: true })).toBe(true);
-    expect(reads).toHaveBeenCalled();
   });
 
   it('a wider margin never narrows a view whose sides are past the angle clamp', () => {

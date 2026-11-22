@@ -388,7 +388,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   const session = sessionToken(crypto.getRandomValues(new Uint8Array(4)));
   /** The pair of the current photos, fixed at photo A. */
   let pairInProgress: PairTag | null = null;
-  /** The newest pair whose Download all moved the selector on. */
+  /** The newest pair any of whose files was downloaded. */
   let advancedFor = 0;
   /** The current pair's light check, set at photo B; null for other pairs. */
   let light: LightCheck | null = null;
@@ -438,7 +438,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
 
   /** The guidance card follows the selector. */
   const showGuide = (): void => {
-    const g = PAIR_GUIDE[ui.pair.value as PairKey] ?? PAIR_GUIDE.x;
+    const g = PAIR_GUIDE[ui.pair.value as PairKey];
     ui.guidePurpose.textContent = g.purpose;
     ui.guideSteps.replaceChildren(
       ...listItems(g.steps).map((li, i) => {
@@ -662,8 +662,9 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   };
 
   /**
-   * A photo B taken again after the pair's Download all is a new take: a
-   * new running number, so its files never reuse the saved names.
+   * A photo B taken again after any of the pair's files was downloaded is
+   * a new take: a new running number, so its files never reuse the saved
+   * names.
    */
   const retagRetake = (): void => {
     if (pairInProgress && pairInProgress.sequence <= advancedFor) {
@@ -765,14 +766,19 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
         return link;
       }),
     );
-    ui.saveLinks.firstElementChild?.addEventListener("click", () => {
-      advancePair(tag, lightResult);
-    });
+    // Any link counts as saved, the single files too: a retake of photo B
+    // must then get a new running number.
+    for (const link of ui.saveLinks.children) {
+      link.addEventListener("click", () => {
+        advancePair(tag, lightResult);
+      });
+    }
   };
 
   /**
-   * After the pair's Download all, the selector moves on to the next pair
-   * (once per pair; a second tap saves again but moves nothing). A pair
+   * After the first download of the pair's files (the zip or any single
+   * file), the selector moves on to the next pair (once per pair; a later
+   * tap saves again but moves nothing). A pair
    * whose light check failed stays selected, to be taken again.
    */
   const advancePair = (tag: PairTag, lightResult: LightCheck | null): void => {

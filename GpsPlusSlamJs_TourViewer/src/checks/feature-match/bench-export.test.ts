@@ -276,7 +276,11 @@ describe("lightCheck", () => {
     ["1c", 9, 2, "too-dark-a"],
     ["1c", 50, 2.9, "too-dark-b"],
     ["1c", 50, 3, "ok"],
-    ["1b", 50, 2, "ok"],
+    // Both dimmed pairs refuse a black photo B: dimmed or dark, a black
+    // frame has nothing to match.
+    ["1b", 50, 2, "too-dark-b"],
+    ["1b", 50, 2.9, "too-dark-b"],
+    ["1b", 50, 3, "ok"],
     ["1a", 100, 100, "ok"],
     ["1a", 100, 80, "ok"],
     ["1a", 100, 120, "ok"],
@@ -640,7 +644,7 @@ describe("pairs", () => {
   it("reads the spot field, any bad value as spot 1", () => {
     expect(parseSpot("2")).toBe(2);
     expect(parseSpot("3")).toBe(3);
-    for (const bad of ["", "0", "4", "1.5", "x", "-1"]) {
+    for (const bad of ["", "  ", "0", "4", "1.5", "x", "-1"]) {
       expect(parseSpot(bad)).toBe(1);
     }
   });

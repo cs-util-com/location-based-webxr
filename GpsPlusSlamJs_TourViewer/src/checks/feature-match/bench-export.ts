@@ -64,14 +64,14 @@ export const LIGHT_CONTROL_TOLERANCE = 0.2;
  * the control pair then allows LIGHT_FLOOR_B grey levels instead of a share.
  */
 export const LIGHT_FLOOR_A = 10;
-/** Below this grey mean the dark pair's photo B is black: nothing to match. */
+/** Below this grey mean a dimmed pair's photo B is black: nothing to match. */
 export const LIGHT_FLOOR_B = 3;
 
 /**
  * Whether the light changed as a light pair needs: "ok", "not-darker" (a
  * dimmed pair whose B is not clearly darker than A), "too-dark-a" (a
- * dimmed pair whose A is almost black), "too-dark-b" (the dark pair's B is
- * black) or "changed" (the control pair's light changed). Null for every
+ * dimmed pair whose A is almost black), "too-dark-b" (a dimmed pair's B
+ * is black) or "changed" (the control pair's light changed). Null for every
  * other pair.
  */
 export type LightCheck =
@@ -91,7 +91,7 @@ export function lightCheck(
     }
   }
   if (key === "1b" || key === "1c") {
-    return dimmedCheck(key === "1c", meanA, meanB);
+    return dimmedCheck(meanA, meanB);
   }
   if (key === "1a") {
     const tolerance =
@@ -101,12 +101,12 @@ export function lightCheck(
   return null;
 }
 
-/** A dimmed pair's check; only the dark pair has a floor for photo B. */
-function dimmedCheck(dark: boolean, meanA: number, meanB: number): LightCheck {
+/** A dimmed pair's check, the same for the dimmed and the dark pair. */
+function dimmedCheck(meanA: number, meanB: number): LightCheck {
   if (meanA < LIGHT_FLOOR_A) {
     return "too-dark-a";
   }
-  if (dark && meanB < LIGHT_FLOOR_B) {
+  if (meanB < LIGHT_FLOOR_B) {
     return "too-dark-b";
   }
   return meanB > LIGHT_DARKER_RATIO * meanA ? "not-darker" : "ok";
@@ -214,9 +214,7 @@ export function sessionToken(bytes: Uint8Array): string {
 /** The spot field's value; anything but 1, 2 or 3 reads as 1. */
 export function parseSpot(text: string): number {
   const n = Number(text.trim());
-  return Number.isInteger(n) && n >= 1 && n <= SPOTS && text.trim() !== ""
-    ? n
-    : 1;
+  return Number.isInteger(n) && n >= 1 && n <= SPOTS ? n : 1;
 }
 
 /**
