@@ -21,9 +21,10 @@ tap on nothing closes the sheet.
     open (its station's content hidden, the block gone from the tour, or no
     scene); `main.ts` calls it on every station tick. Free while closed.
 - `tappablePins(scene, blocks)` - every shown object (itself and every
-  ancestor `visible`) under a `station-content:<id>` group (a child of
-  the scene, or of the AR world group one level below it, where an
-  anchored station stands) whose
+  ancestor `visible`) under a `station-content:<id>` group, found at any
+  depth (on the scene root, or anchored under the AR world group; the
+  search does not descend past a station group, which holds no other
+  station's) whose
   `userData.objectId` names a pin with a non-empty description, by id.
 - `tourBlocksById(manifest)` - every station's blocks by id (ids are
   unique tour-wide); empty without a tour.
@@ -68,7 +69,7 @@ sheet.tapped(tap);
 
 - `pin-sheet.test.ts` - the overlay's taps, the blocks map, opening and
   closing, which pins are offered (hidden, bare, outside the content, a
-  card), no scene; a property over any mix of described and shown pins.
+  card), a station group at depths 0 to 5 below the scene, no scene; a property over any mix of described and shown pins.
 - `playwright-tests/story-blocks.spec.js` - a tap on the story's pin opens
   its description, only described pins are offered, and the Close is no
   world tap.

@@ -82,25 +82,29 @@ function sheetOf(
 /**
  * The pins a tap may open now: every shown object under a station's
  * content group (`station-content:<id>`) whose `userData.objectId` names a
- * pin with a description in `blocks`, by that id. A station group is a
- * child of the scene, or, anchored in an AR visit, of the world group one
- * level below it.
+ * pin with a description in `blocks`, by that id. A station group is
+ * found at any depth (on the scene root, or anchored under the AR world
+ * group); the search does not descend past one, since a station's content
+ * holds no other station's.
  */
 export function tappablePins(
   scene: Object3D,
   blocks: ReadonlyMap<string, TourBlock>,
 ): Map<string, Object3D> {
   const pins = new Map<string, Object3D>();
-  const groups = scene.children.flatMap((child) => [child, ...child.children]);
-  for (const group of groups) {
-    if (!group.name.startsWith("station-content:")) continue;
-    group.traverse((object) => {
+  const visit = (node: Object3D): void => {
+    if (!node.name.startsWith("station-content:")) {
+      for (const child of node.children) visit(child);
+      return;
+    }
+    node.traverse((object) => {
       const id: unknown = object.userData["objectId"];
       if (typeof id !== "string" || pins.has(id)) return;
       if (sheetOf(blocks.get(id)) === null || !shown(object)) return;
       pins.set(id, object);
     });
-  }
+  };
+  for (const child of scene.children) visit(child);
   return pins;
 }
 
