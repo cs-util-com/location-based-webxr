@@ -19,7 +19,7 @@ The photo test's browser side, shared by both views of the feature matching page
   - `downloadAll()`: `runZipStarted` (refused unless idle with a complete pair), every complete pair (its kept zip when this take has one on the page, else its PNGs and frames JSON), the summary and the log, saved with `downloadBlob` under `runZipName(session)`. Saved: `runZipEnded("saved")`, `planRunDownloaded`, the kept files marked downloaded and dropped. A closed dialog: `idle`, "Nothing was lost". A failure: `failed` with its error.
   - `saveFile(kind)`: one file of the current pair (`A`, `B`, `info`, `matches`) under busy `saving` (`planFileSaveStarted`, `planFileSaveEnded(note)`); a saved file marks the take downloaded (`planFileKept`, `planFilesDownloaded`, `planKeptDropped`), so a retake gets a new running number. The Blob is not kept: the take's photos already are.
   - `copyText(text, out)`: the clipboard, "copied" or "copy refused: select the text and copy by hand".
-- `SUMMARY_FILE` (`feature-match-summary.txt`), `FileKind`, types `PlanIoDeps`, `PlanIo`.
+- Types `PlanIoDeps`, `PlanIo`; the summary file inside the run zip is `feature-match-summary.txt`.
 
 ## Invariants and assumptions
 

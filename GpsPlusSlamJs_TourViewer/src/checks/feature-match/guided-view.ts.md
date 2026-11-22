@@ -8,7 +8,7 @@ The guided view of `feature-match-check.html`, the page's default (`?ui=cockpit`
 
 - `startGuidedView({ root, fm, engine, camera, log, fail })`: wires the view found under `root` and returns its render, which the entry calls on every store change. Throws `feature-match-check: missing <selector>` when the page lacks an element it needs.
 - `guidedVideo(root)`: the view's video element, for the page camera.
-- The camera start, the countdown, the photo, the pair and run zips, the single files and the summary are `plan-io.ts`, shared with the cockpit view; the summary goes into the run zip as `feature-match-summary.txt` (`SUMMARY_FILE`).
+- The camera start, the countdown, the photo, the pair and run zips, the single files and the summary are `plan-io.ts`, shared with the cockpit view; the summary goes into the run zip as `feature-match-summary.txt`.
 
 ## Invariants and assumptions
 

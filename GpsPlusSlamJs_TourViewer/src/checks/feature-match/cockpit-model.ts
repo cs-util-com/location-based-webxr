@@ -16,7 +16,7 @@ import { keptState, planSlots } from "./run-plan";
 type Shot = "a" | "b";
 const up = (w: Shot): string => w.toUpperCase();
 
-export type ShutterMode =
+type ShutterMode =
   "start" | "capture" | "cancel" | "busy" | "retake" | "next" | "save";
 
 export interface ShutterView {
@@ -37,7 +37,7 @@ export interface LastPair {
   readonly seq: number;
 }
 
-export type RetakeAction =
+type RetakeAction =
   | { readonly kind: "toggle"; readonly which: Shot }
   | { readonly kind: "back"; readonly index: number };
 

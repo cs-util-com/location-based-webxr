@@ -58,13 +58,13 @@ const JSON_FILE_TYPE: DownloadFileType = {
 };
 
 /** The summary file inside the run zip. */
-export const SUMMARY_FILE = "feature-match-summary.txt";
+const SUMMARY_FILE = "feature-match-summary.txt";
 
 /** How long the white flash after a photo stays, in ms. */
 const FLASH_MS = 360;
 
 /** A file of the measure sheet or the Results tab. */
-export type FileKind = "A" | "B" | "info" | "matches";
+type FileKind = "A" | "B" | "info" | "matches";
 
 export interface PlanIoDeps {
   readonly fm: FeatureMatchStore;
