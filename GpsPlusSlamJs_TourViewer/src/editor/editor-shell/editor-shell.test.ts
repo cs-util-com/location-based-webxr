@@ -40,6 +40,11 @@ import {
 } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
 import {
+  NOTHING_COPIED,
+  NOTHING_SELECTED,
+  ONLY_NOTES_AND_FOLDERS,
+} from "../clipboard.js";
+import {
   stationContent,
   storyOf,
   stationBlocks,
@@ -188,6 +193,7 @@ function setUp() {
       duplicate: vi.fn(),
       remove: vi.fn(),
     },
+    clipboard: { copy: vi.fn(), paste: vi.fn() },
     edits,
     // The real folder commands on the real store: the tree's Group and
     // Ungroup are tested through to the tour.
@@ -3076,5 +3082,49 @@ describe("framing an item the page just made", () => {
     shell.hide();
     shell.frame("new-video");
     expect(view.flyTo).not.toHaveBeenCalled();
+  });
+});
+
+describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
+  const item = (id: string) => document.getElementById(id) as HTMLElement;
+  const disabled = (id: string) =>
+    item(id).getAttribute("aria-disabled") === "true";
+
+  // Why: the Edit menu offers what the keys do, and only what they would
+  // do with the selection as it is: an item a click cannot act on is
+  // disabled the menu pattern's way and its title says why, and an item
+  // that can act calls the page's own command for the selection.
+  it("enables each item for what the selection allows, and its click runs the page's command", () => {
+    const { shell, store, select, deps } = setUp();
+    expect(disabled("edit-copy")).toBe(true);
+    expect(item("edit-copy").title).toBe(NOTHING_SELECTED);
+    expect(disabled("edit-paste")).toBe(true);
+    expect(item("edit-paste").title).toBe(NOTHING_COPIED);
+    expect(disabled("edit-duplicate")).toBe(true);
+    expect(disabled("edit-delete")).toBe(true);
+
+    select("station:a");
+    expect(disabled("edit-copy")).toBe(true);
+    expect(item("edit-copy").title).toBe(ONLY_NOTES_AND_FOLDERS);
+    expect(disabled("edit-duplicate")).toBe(false);
+    expect(disabled("edit-delete")).toBe(false);
+    item("edit-duplicate").click();
+    expect(deps.stations.duplicate).toHaveBeenCalledWith("station:a");
+    item("edit-delete").click();
+    expect(deps.stations.remove).toHaveBeenCalledWith("station:a");
+
+    select("pa");
+    expect(disabled("edit-copy")).toBe(false);
+    expect(item("edit-copy").title).toBe("Copy (Ctrl+C)");
+    item("edit-copy").click();
+    expect(deps.clipboard.copy).toHaveBeenCalledOnce();
+
+    store.dispatch(editorViewActions.copied({ ids: ["pa"] }));
+    select("station:b");
+    expect(disabled("edit-paste")).toBe(false);
+    expect(item("edit-paste").title).toBe("Paste into Station b (Ctrl+V)");
+    item("edit-paste").click();
+    expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    shell.hide();
   });
 });

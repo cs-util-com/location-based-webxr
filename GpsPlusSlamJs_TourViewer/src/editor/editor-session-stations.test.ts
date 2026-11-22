@@ -1264,3 +1264,134 @@ describe("the station edits across a reload", () => {
     await session.close();
   });
 });
+
+describe("the editor session's paste", () => {
+  /** The session over `OBJECTS` with folder grp (photo f in it) in f's
+   *  station. */
+  async function withFolder(options?: { readonly picture?: boolean }) {
+    const { session, manifest } = await opened(undefined, options);
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    store.dispatch(
+      tourDocumentActions.folderGrouped({
+        folderId: "grp",
+        title: "Shots",
+        ids: ["f"],
+        what: "group",
+      }),
+    );
+    const steps = () => store.getState().tourDocument.past.length;
+    return { session, store, editor, steps };
+  }
+
+  // Why: a paste copies a folder's photo under a new id into another
+  // station, so the copy needs a picture of its own, or the save writes a
+  // photo with no content file (a tour the reader refuses). A note and a
+  // folder pasted together are ONE undo step, named for what was pasted.
+  it("pastes a note and a folder with its photo into another station as one step, the save writing the copy's picture", async () => {
+    const { session, editor, steps } = await withFolder();
+    const was = steps();
+    const pasted = await editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: ["b"],
+      folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+    });
+    if (pasted.kind !== "pasted") throw new Error(JSON.stringify(pasted));
+    expect(steps()).toBe(was + 1);
+    const [note] = pasted.objects;
+    const [folder] = pasted.folders;
+    expect(note).not.toBe("b");
+    expect(folder).not.toBe("grp");
+    const saved = await editor.save({ keepScan: false });
+    const tour = await savedTour(saved.blob);
+    const copy = tourObjects(tour).find((o) => o.folder?.[0] === folder);
+    if (copy?.kind !== "picture") throw new Error("no copy");
+    expect(copy.station).toBe(stationIdOf("a"));
+    const path = tour.assets.find((a) => a.id === copy.image)?.path ?? "";
+    expect(await entryText(saved.blob, path)).toBe("the picture of f");
+    expect(tourObjects(tour).find((o) => o.id === note)?.station).toBe(
+      stationIdOf("a"),
+    );
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: "the paste of 2 copies",
+    });
+    await session.close();
+  });
+
+  // Why: the paste reads pictures before it writes, and the tour may
+  // change meanwhile; a copy of what changed would miss a picture, so the
+  // paste is refused with the tour as it was, and asked again it pastes
+  // the tour as it is now, its step named for the one thing pasted.
+  it("refuses, saying the tour changed, when what is copied changes during the picture read", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const pasting = editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: [],
+      folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+    });
+    store.dispatch(
+      tourDocumentActions.objectsFoldered({
+        ids: ["f"],
+        folderId: null,
+        what: "out",
+      }),
+    );
+    const was = steps();
+    expect(await pasting).toEqual({
+      kind: "refused",
+      reason: "That change could not be made to the tour as it is now.",
+    });
+    expect(steps()).toBe(was);
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    const again = await editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: [],
+      folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+    });
+    expect(again.kind).toBe("pasted");
+    expect(editor.undo()).toEqual({
+      kind: "undone",
+      what: 'the copy of "Shots"',
+    });
+    await session.close();
+  });
+
+  // Why: a photo whose picture cannot be read is not copied, and saying so
+  // leaves the tour and its steps as they were; an id the tour lacks is
+  // refused before anything is read.
+  it("refuses an unreadable picture and anything the tour lacks, changing nothing", async () => {
+    const { session, store, editor, steps } = await withFolder({
+      picture: false,
+    });
+    const was = store.getState().tourDocument;
+    expect(
+      await editor.paste({
+        toStationId: stationIdOf("a"),
+        objects: [],
+        folders: [{ stationId: stationIdOf("f"), folderId: "grp" }],
+      }),
+    ).toMatchObject({
+      kind: "refused",
+      reason: expect.stringMatching(/picture/),
+    });
+    for (const plan of [
+      { toStationId: stationIdOf("a"), objects: ["nope"], folders: [] },
+      {
+        toStationId: stationIdOf("a"),
+        objects: [],
+        folders: [{ stationId: stationIdOf("f"), folderId: "nope" }],
+      },
+    ]) {
+      expect((await editor.paste(plan)).kind).toBe("refused");
+    }
+    expect(store.getState().tourDocument).toBe(was);
+    expect(steps()).toBe(was.past.length);
+    await session.close();
+  });
+});

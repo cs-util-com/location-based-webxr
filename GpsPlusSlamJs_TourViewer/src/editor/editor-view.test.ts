@@ -35,6 +35,7 @@ const SHELL_START = {
   picked: [],
   selectMode: false,
   foldedFolders: [],
+  clipboard: null,
 };
 
 // Why: the 3D inspector's note or section in focus, and the click on the
@@ -580,5 +581,47 @@ describe("the entry step", () => {
         ),
       ).toBe(false);
     }
+  });
+});
+
+// Why: Copy fills the editor's own clipboard, which lives in the store so
+// the Edit menu, the keys and every bar read one copy. It holds ids, not
+// content (re-checked at the paste), never changes the tour, and belongs
+// to the open tour: another tour, or none, starts with it empty.
+describe("the editor's clipboard", () => {
+  it("holds what Copy copied, in order, dropping repeats and blanks", () => {
+    const state = reduce(
+      initialEditorViewState,
+      act.copied({ ids: ["a", "", "folder:f", "a"] }),
+    );
+    expect(state.clipboard).toEqual({ mode: "copy", ids: ["a", "folder:f"] });
+  });
+
+  it("is emptied by a Copy of nothing and by another tour", () => {
+    const full = reduce(initialEditorViewState, act.copied({ ids: ["a"] }));
+    expect(reduce(full, act.copied({ ids: [] })).clipboard).toBeNull();
+    const manifest = createEmptyTourManifest();
+    for (const action of [
+      tourDocumentActions.opened({ manifest }),
+      tourDocumentActions.closed(),
+    ]) {
+      expect(reduce(full, action).clipboard).toBeNull();
+    }
+  });
+
+  it("ignores a Copy that carries no list", () => {
+    const full = reduce(initialEditorViewState, act.copied({ ids: ["a"] }));
+    const bad = act.copied({ ids: "a" as unknown as string[] });
+    expect(reduce(full, bad)).toBe(full);
+  });
+
+  it("is not the tour: a Copy changes nothing the document holds", () => {
+    const store = createTourViewerStore(undefined, { editorView: reduce });
+    const before = store.getState().tourDocument;
+    store.dispatch(act.copied({ ids: ["a"] }));
+    expect(store.getState().tourDocument).toBe(before);
+    expect(tourDocumentReducer(before, act.copied({ ids: ["a"] }))).toBe(
+      before,
+    );
   });
 });

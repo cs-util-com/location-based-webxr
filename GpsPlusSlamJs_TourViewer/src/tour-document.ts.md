@@ -486,6 +486,23 @@ geo?, what })` - a copy inserted after the original (any station the
       stays untitled). One step. Refused: an unknown folder, a missing,
       taken or repeated new id, an item the copy would take beyond its
       station's reach.
+  - `clipboardPasted({ toStationId, objects: [{ id, newId }], folders: [{ stationId, folderId, newIds }], createdAtIso?, what })`
+    - the editor's Paste (`editor/clipboard.ts` says what is pasted):
+      copies of the notes and plain folders into the station
+      `toStationId`, the notes first, each in the order given, as ONE
+      step however many there are (a single one is that copy's own step).
+      Into a note's or a folder's own station it is the copy Duplicate
+      makes (`objectDuplicated`, `folderDuplicated`). Into another one,
+      a rigid move: the copy keeps its pose in its station's frame
+      (`rigidlyMoved` for a note, which goes to the station's top, out of
+      any folder; a folder keeps its pose composed through the folders
+      that held it, goes after the station's own children as a top-level
+      folder, and its items keep their poses in it). A rigid move keeps
+      every local offset, so a copy fits the target's bound wherever its
+      original fits its own: no fallback place is needed. The new ids
+      follow `folderDuplicated`'s rules. Refused, all or nothing: nothing
+      to paste, an item or a folder named twice, a story's entry, an
+      unknown item, folder or station, any refused copy.
   - `objectsFoldered({ ids, folderId, what })` - items into the folder
     `folderId` of their station, or (null) out to the station's top,
     each keeping its world pose. Refused: `objectsFolderRefusal` (an
@@ -513,7 +530,8 @@ geo?, what })` - a copy inserted after the original (any station the
     inspector's "Pivot to centre", `folder-commands.ts`); `folderDeleted`
     and `folderDuplicated` (Del and Duplicate on a folder, the delete
     asked first, through the session's `deleteFolder` and
-    `duplicateFolder`).
+    `duplicateFolder`); `clipboardPasted` (the Edit menu's Paste and
+    Ctrl+V, through the session's `paste`).
   - `blockNumberSet({ id, field, value, what })` - a block's size: the
     field its placement row's `size` extent names
     (`placement/placement-rows.ts`), a placed model's `sizeM` (0.05 m to
@@ -1031,6 +1049,19 @@ store.dispatch(tourDocumentActions.undone());
   the opened tour gives back the same `manifestToWrite`; an edit of a
   station a delete or a move emptied (its radius, a title set then
   cleared) does not list it again, as a reload does not.
+- `tour-document-paste.test.ts` pins `clipboardPasted`: a note into
+  another station keeps its pose in the station's frame (swept over the
+  target's heading 0, 90 and 179 degrees and 100 m and 5 km away), a note
+  in a folder lands at the top, a folder (nested or not) lands as the
+  station's last folder with its items' paths renamed and their local
+  poses kept (swept over the folder's yaw 0, 30 and 179), into the own
+  station it equals Duplicate, a multi paste is one step that undoes and
+  redoes whole, and every refusal returns the same state.
+  `tour-document-paste.property.test.ts` runs random sequences of up to 6
+  pastes over 3 stations of random headings: ids stay unique, every
+  folder an item names is its station's, each paste is one step, undoing
+  them all gives back the tour as opened, and at least 90 % of the
+  generated pastes apply (so the property is not passed on refusals).
 - `tour-document.test.ts` also carries a placed 3D model (format minor 1)
   through a pin edit, its station's move and a save: its asset, its size in
   metres and its local pose come back exactly, and the write is at minor 1.

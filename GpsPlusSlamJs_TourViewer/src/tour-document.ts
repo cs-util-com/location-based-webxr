@@ -4899,33 +4899,9 @@ function folderDuplicate(
   before: TourDocumentState,
   payload: FolderDuplicatePayload,
 ): TourDocumentState {
-  if (before.written === null) return before;
-  const frame = frameOf(before, payload.stationId);
-  const chain = frame && folderChains(frame).get(payload.folderId);
-  const old = chain?.at(-1);
-  if (frame === undefined || chain === undefined || old === undefined) {
-    return before;
-  }
-  const items = documentObjects(before)
-    .map((o) => o.object)
-    .filter(
-      (o) =>
-        o.station === frame.id && o.folder?.includes(payload.folderId) === true,
-    );
-  const copied = [...folderIdsIn(old), ...items.map((o) => o.id)];
-  const minted = copied.map((id) => payload.newIds[id]);
-  if (
-    minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
-    new Set(minted).size !== minted.length
-  ) {
-    return before;
-  }
-  // Only the copied folders and items are renamed: a new id offered for
-  // anything else (a folder above the copied one) is ignored, so no copy
-  // names a folder the tour lacks.
-  const copiedSet = new Set(copied);
-  const renamed = (id: string): string =>
-    copiedSet.has(id) ? (payload.newIds[id] ?? id) : id;
+  const source = folderCopySource(before, payload);
+  if (source === null) return before;
+  const { frame, chain, old, renamed } = source;
   // The copy's origin: the original's, in the world, moved east as an
   // item's copy is; back in the copy's holder (the original's), turned as
   // the original is.
@@ -4940,22 +4916,101 @@ function folderDuplicate(
     ).position,
   });
   if (pose === null) return before;
-  const copy: TourFolder = {
+  const copy = folderCopyOf(old, pose, renamed);
+  return withFolderCopy(
+    before,
+    source,
+    {
+      ...frame,
+      children: withFolderAfter(frame.children, payload.folderId, copy),
+    },
+    (held) => held.map(renamed),
+    payload,
+  );
+}
+
+/** What copying the plain folder `payload` names needs: its station's
+ *  frame, its chain of folders (outermost first, it last), the items it
+ *  holds at any depth, and the renaming of it, its folders and its items
+ *  under the new ids. Null for an unwritten tour, an unknown station or
+ *  folder, and a missing, taken or repeated new id. */
+interface FolderCopySource {
+  readonly frame: StationFrame;
+  readonly chain: readonly TourFolder[];
+  readonly old: TourFolder;
+  readonly items: readonly TourObject[];
+  readonly renamed: (id: string) => string;
+}
+
+function folderCopySource(
+  before: TourDocumentState,
+  payload: FolderDuplicatePayload,
+): FolderCopySource | null {
+  if (before.written === null) return null;
+  const frame = frameOf(before, payload.stationId);
+  const chain = frame && folderChains(frame).get(payload.folderId);
+  const old = chain?.at(-1);
+  if (frame === undefined || chain === undefined || old === undefined) {
+    return null;
+  }
+  const items = documentObjects(before)
+    .map((o) => o.object)
+    .filter(
+      (o) =>
+        o.station === frame.id && o.folder?.includes(payload.folderId) === true,
+    );
+  const copied = [...folderIdsIn(old), ...items.map((o) => o.id)];
+  const minted = copied.map((id) => payload.newIds[id]);
+  if (
+    minted.some((id) => id === undefined || !freeObjectId(before, id)) ||
+    new Set(minted).size !== minted.length
+  ) {
+    return null;
+  }
+  // Only the copied folders and items are renamed: a new id offered for
+  // anything else (a folder above the copied one) is ignored, so no copy
+  // names a folder the tour lacks.
+  const copiedSet = new Set(copied);
+  const renamed = (id: string): string =>
+    copiedSet.has(id) ? (payload.newIds[id] ?? id) : id;
+  return { frame, chain, old, items, renamed };
+}
+
+/** The copy of the plain folder `old` at `pose`, under the new ids
+ *  `renamed` gives, titled as a copy (an untitled one stays untitled). */
+function folderCopyOf(
+  old: TourFolder,
+  pose: TourLocalPose,
+  renamed: (id: string) => string,
+): TourFolder {
+  return {
     ...copiedFolder(old, renamed),
     pose,
     ...(old.title === undefined
       ? {}
       : { title: copyTitle(old.title, TOUR_FOLDER_TITLE_RULE.max) }),
   };
-  const next: StationFrame = {
-    ...frame,
-    children: withFolderAfter(frame.children, payload.folderId, copy),
-  };
+}
+
+/** The folder copy written: the frame `next` (the station that takes the
+ *  copy, with it among its folders) and a copy of each of the source's
+ *  items in it, under its new id, in the folders `pathOf` gives its own,
+ *  standing in its folder as its original stands in its own
+ *  (`copiedObject`: a photo under its own new asset); one step. The same
+ *  state when a copy would stand past its station's bound. */
+function withFolderCopy(
+  before: TourDocumentState,
+  source: FolderCopySource,
+  next: StationFrame,
+  pathOf: (held: readonly string[]) => string[],
+  payload: { readonly createdAtIso: string; readonly what: string },
+): TourDocumentState {
+  const { frame, items, renamed } = source;
   const chains = folderChains(frame);
   const nextChains = folderChains(next);
   let placed = before.placed;
   for (const item of items) {
-    const path = (item.folder ?? []).map(renamed);
+    const path = pathOf(item.folder ?? []);
     const inFolder = decomposeTourFolderPath(
       folderChainOf(item, chains),
       localPoseOf(item.geo, frame.geo),
@@ -4965,16 +5020,16 @@ function folderDuplicate(
         folderChainOf({ ...item, folder: path }, nextChains),
         inFolder,
       ),
-      frame.geo,
+      next.geo,
     );
-    if (!fitsStation(geo, frame.id, [next])) return before;
+    if (!fitsStation(geo, next.id, [next])) return before;
     const object = copiedObject(
       item,
       {
         id: renamed(item.id),
         createdAtIso: payload.createdAtIso,
         geo,
-        station: frame.id,
+        station: next.id,
       },
       before.addedAssets,
     );
@@ -4986,6 +5041,151 @@ function folderDuplicate(
     { placed, deleted: before.deleted },
     payload.what,
   );
+}
+
+/** One item of the clipboard pasted into the station `toStationId`
+ *  (`clipboardPaste`): into its own station, the copy Duplicate makes
+ *  (beside itself, in its folder); into another one, a copy standing
+ *  there as the original stands in its own station (its pose in the
+ *  station's frame kept, a rigid move, so it fits the format's bound
+ *  there as it fits it here), out of any folder. The same state for an
+ *  unknown item or station, an entry of a story, and a taken new id. */
+function objectPasteInto(
+  before: TourDocumentState,
+  payload: {
+    readonly id: string;
+    readonly newId: string;
+    readonly toStationId: string;
+    readonly createdAtIso: string;
+    readonly what: string;
+  },
+): TourDocumentState {
+  const found = documentObjects(before).find((o) => o.object.id === payload.id);
+  const from = found?.object.station;
+  if (found === undefined || from === undefined) return before;
+  // A story's entry is the story's: it is copied with its story only.
+  const manifest = manifestNow(before);
+  if (
+    manifest === null ||
+    tourChildPlace(manifest, payload.id)?.story !== undefined
+  ) {
+    return before;
+  }
+  if (from === payload.toStationId) return objectDuplicate(before, payload);
+  const source = frameOf(before, from);
+  const target = frameOf(before, payload.toStationId);
+  if (source === undefined || target === undefined) return before;
+  if (!freeObjectId(before, payload.newId)) return before;
+  const copy = inFolders(
+    copiedObject(
+      found.object,
+      {
+        id: payload.newId,
+        createdAtIso: payload.createdAtIso,
+        geo: rigidlyMoved(found.object.geo, source.geo, target.geo),
+        station: target.id,
+      },
+      before.addedAssets,
+    ),
+    [],
+  );
+  if (!objectFits(before, copy)) return before;
+  return putObject(before, copy, payload.what);
+}
+
+/** One plain folder of the clipboard pasted into the station
+ *  `toStationId` (`clipboardPaste`): into its own station, the copy
+ *  Duplicate makes (`folderDuplicate`); into another one, a copy after
+ *  that station's own children, standing there as the original stands in
+ *  its station (its pose in the station's frame kept, nested or not),
+ *  everything it holds copied as `withFolderCopy` copies it. The same
+ *  state where `folderCopySource` refuses, for an unknown target, and for
+ *  a pose the format would refuse. */
+function folderPasteInto(
+  before: TourDocumentState,
+  payload: FolderDuplicatePayload & { readonly toStationId: string },
+): TourDocumentState {
+  if (payload.toStationId === payload.stationId) {
+    return folderDuplicate(before, payload);
+  }
+  const source = folderCopySource(before, payload);
+  const target = frameOf(before, payload.toStationId);
+  if (source === null || target === undefined) return before;
+  const { chain, old, renamed } = source;
+  const pose = readPose(
+    composeTourFolderPath(chain.slice(0, -1), old.pose ?? NO_FOLDER_POSE),
+  );
+  if (pose === null) return before;
+  return withFolderCopy(
+    before,
+    source,
+    {
+      ...target,
+      children: [...target.children, folderCopyOf(old, pose, renamed)],
+    },
+    // Its folders from the copied one inward: the ones around it stay.
+    (held) => held.slice(held.indexOf(payload.folderId)).map(renamed),
+    payload,
+  );
+}
+
+/** What `clipboardPasted` carries: the station pasted into, and the
+ *  clipboard's items and plain folders with the new ids minted outside
+ *  the reducer, by the page (it copies their photos' pictures under them
+ *  first). */
+export interface ClipboardPastePayload {
+  readonly toStationId: string;
+  readonly objects: readonly { readonly id: string; readonly newId: string }[];
+  readonly folders: readonly (FolderAt & {
+    readonly newIds: Readonly<Record<string, string>>;
+  })[];
+  readonly createdAtIso: string;
+  readonly what: string;
+}
+
+/**
+ * The clipboard's items and plain folders pasted into one station
+ * (`clipboardPasted`), as ONE undo step however many there are: each
+ * copied as `objectPasteInto` and `folderPasteInto` copy it, the items
+ * first, each in the order given. All or nothing: the same state when
+ * there is nothing to paste, when an item or a folder is named twice,
+ * and when any one copy is refused.
+ */
+function clipboardPaste(
+  before: TourDocumentState,
+  payload: ClipboardPastePayload,
+): TourDocumentState {
+  const { toStationId, createdAtIso, what } = payload;
+  const named = [
+    ...payload.objects.map((o) => o.id),
+    ...payload.folders.map((f) => f.folderId),
+  ];
+  if (named.length === 0 || new Set(named).size !== named.length) {
+    return before;
+  }
+  let after = before;
+  for (const object of payload.objects) {
+    const next = objectPasteInto(after, {
+      ...object,
+      toStationId,
+      createdAtIso,
+      what,
+    });
+    if (next === after) return before;
+    after = next;
+  }
+  for (const folder of payload.folders) {
+    const next = folderPasteInto(after, {
+      ...folder,
+      toStationId,
+      createdAtIso,
+      what,
+    });
+    if (next === after) return before;
+    after = next;
+  }
+  // The copies' steps folded into one, taken from `before`.
+  return named.length === 1 ? after : edited(before, after, what);
 }
 
 /** A block's size set (`blockNumberSet`): the field its placement row's
@@ -5118,6 +5318,22 @@ const folderUngrouped = createAction<{
   folders: readonly FolderAt[];
   what: string;
 }>("tourDocument/folderUngrouped");
+
+/** The clipboard pasted into a station (`clipboardPaste`); made now
+ *  unless told. */
+const clipboardPasted = createAction(
+  "tourDocument/clipboardPasted",
+  (
+    input: Omit<ClipboardPastePayload, "createdAtIso"> & {
+      readonly createdAtIso?: string;
+    },
+  ): { payload: ClipboardPastePayload } => ({
+    payload: {
+      ...input,
+      createdAtIso: input.createdAtIso ?? new Date().toISOString(),
+    },
+  }),
+);
 
 /** A folder copied beside itself with what it holds (`folderDuplicate`);
  *  made now unless told. */
@@ -6151,6 +6367,9 @@ const tourDocumentSlice = createSlice({
     builder.addCase(folderDuplicated, (state, action) =>
       folderDuplicate(plain(state), action.payload),
     );
+    builder.addCase(clipboardPasted, (state, action) =>
+      clipboardPaste(plain(state), action.payload),
+    );
     builder.addCase(folderReordered, (state, action) =>
       folderReorder(plain(state), action.payload),
     );
@@ -6179,6 +6398,7 @@ export const tourDocumentActions = {
   folderRenamed,
   folderDeleted,
   folderDuplicated,
+  clipboardPasted,
   folderReordered,
   characterDeclared,
   characterRemoved,
@@ -6222,6 +6442,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.folderRenamed,
   tourDocumentActions.folderDeleted,
   tourDocumentActions.folderDuplicated,
+  tourDocumentActions.clipboardPasted,
   tourDocumentActions.folderReordered,
   tourDocumentActions.settingsChanged,
   tourDocumentActions.detailsChanged,

@@ -3,8 +3,9 @@
 ## Purpose
 
 The 3D view's studio shell: the top bar's studio controls
-(Undo, Redo, Help), the Edit menu's Undo and Redo (where those
-fold at a phone's width), the View menu's Top view and Frame, the tree
+(Undo, Redo, Help), the Edit menu (Undo and Redo, where
+those fold at a phone's width; Copy, Paste, Duplicate and Delete, drawn
+for the selection by `drawEditItems`), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, the bottom bar's toggles and the
 bottom panel they open (`bottom-panel.ts`: the tour's problems from
@@ -472,12 +473,16 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
   control keeps its words at every width; the tour's name keeps a floor
   (`--s-name-min`, lowered step by step), and the bar folds in steps
   before the name goes under it:
-  - at 820 px the unsaved mark keeps its dot (its words are its title,
+  - the Edit menu shows at every width (it holds Copy, Paste, Duplicate
+    and Delete), and the steps below are measured with it shown;
+  - at 840 px the unsaved mark keeps its dot (its words are its title,
     and the save status a screen reader hears);
   - from 900 px down to 701 px the docks are 226 px and 268 px wide (a
     phone turned sideways keeps both, with the map between them);
-  - at 720 px the buttons drop their icons, keeping words;
-  - at 560 px Undo, Redo and Add fold into the Edit menu;
+  - at 780 px the buttons drop their icons, keeping words, and Add its
+    key hint;
+  - at 720 px the name's floor is lowered;
+  - at 610 px Undo, Redo and Add fold into the Edit menu;
   - at 420 px the menus' carets go and the groups close up.
   - Each step starts where the bar, in its most crowded state (the unsaved
     mark shown) in a wide platform face (Verdana, with DejaVu Sans'
@@ -576,6 +581,12 @@ else shell.hide();
 
 ## Tests
 
+- "the Edit menu's Copy, Paste, Duplicate and Delete" in
+  `editor-shell.test.ts`: each item disabled with the refusal as its
+  title until the selection allows it, Paste's title naming the target
+  station, and a click calling the clipboard, the station commands or
+  the delete; the fold steps at every band in
+  `playwright-tests/editor3d-shell.spec.js`.
 - "the tree's plain folders" in `editor-shell.test.ts`: Ctrl+click and
   Ctrl+G make a folder whose name field takes the focus with the proposed
   name, renamed by Enter; a Shift range grouped from the bar, Escape

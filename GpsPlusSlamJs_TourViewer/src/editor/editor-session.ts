@@ -1134,6 +1134,30 @@ export interface EditorSession {
   duplicateFolder(
     folderId: string,
   ): Promise<{ kind: "duplicated"; folderId: string } | EditorRefusal>;
+  /** Paste copies of notes and plain folders into the station
+   *  `toStationId` (`clipboard.ts`'s `pasteOf` says which): each with
+   *  everything it holds and every id new, a photo's picture read first
+   *  and held under its copy's id. Into a note's or folder's own station
+   *  the copy Duplicate makes; into another one, standing there as the
+   *  original stands in its own (a note out of any folder). ONE step for
+   *  the lot. `objects` and `folders`: the copies' ids, in the plan's order. Refused for
+   *  anything the tour lacks, a picture that cannot be read, a tour that
+   *  changed during that read, and a copy beyond its station's reach. */
+  paste(plan: {
+    readonly toStationId: string;
+    readonly objects: readonly string[];
+    readonly folders: readonly {
+      readonly stationId: string;
+      readonly folderId: string;
+    }[];
+  }): Promise<
+    | {
+        kind: "pasted";
+        readonly objects: readonly string[];
+        readonly folders: readonly string[];
+      }
+    | EditorRefusal
+  >;
   /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
    *  about its origin, sizes and distances alike. One step. Refused for a
    *  folder the tour lacks, a scale out of the bounds, and one that takes
@@ -3537,6 +3561,114 @@ export function createEditorSession(input: {
       return folderOf(own(), folderId) === null
         ? noSuchFolder
         : { kind: "refused", reason: FOLDER_TOO_FAR };
+    },
+    async paste(plan) {
+      const state = mine();
+      if (state === null) return notInTour;
+      // What is copied, as the tour is: the notes, and each folder's
+      // items at any depth.
+      const sourcesIn = (of: TourDocumentState) => {
+        const objects = documentObjects(of).map((o) => o.object);
+        return [
+          ...plan.objects.map((id) => objects.filter((o) => o.id === id)),
+          ...plan.folders.map(({ folderId }) =>
+            objects.filter((o) => o.folder?.includes(folderId) === true),
+          ),
+        ].flat();
+      };
+      if (
+        plan.objects.some((id) => find(id) === undefined) ||
+        plan.folders.some((f) => folderOf(state, f.folderId) === null)
+      ) {
+        return notApplied;
+      }
+      const items = sourcesIn(state);
+      const read = await picturesOf(items);
+      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+      // The tour may have changed during the read: paste only while what
+      // is copied is exactly what was read (a photo added meanwhile would
+      // be copied without its picture).
+      const after = mine();
+      if (after === null) return notInTour;
+      const held = sourcesIn(after).map((o) => o.id);
+      const fresh = plan.folders.map((f) => folderOf(after, f.folderId));
+      if (
+        held.length !== items.length ||
+        held.some((id, i) => id !== items[i]?.id) ||
+        fresh.some((f) => f === null)
+      ) {
+        return notApplied;
+      }
+      const objects = plan.objects.map((id) => ({ id, newId: newObjectId() }));
+      const folderIds = (folder: TourFolder): string[] => [
+        folder.id,
+        ...folder.children.filter(isTourFolder).flatMap(folderIds),
+      ];
+      const folders = plan.folders.map(({ stationId, folderId }, i) => {
+        const inIt = documentObjects(after)
+          .map((o) => o.object)
+          .filter((o) => o.folder?.includes(folderId) === true)
+          .map((o) => o.id);
+        const folder = fresh[i]?.folder;
+        return {
+          stationId,
+          folderId,
+          newIds: Object.fromEntries(
+            [...(folder === undefined ? [] : folderIds(folder)), ...inIt].map(
+              (id) => [id, newObjectId()],
+            ),
+          ),
+        };
+      });
+      // A copy's new id by its original's, for the pictures.
+      const copies = new Map<string, string>([
+        ...objects.map((o) => [o.id, o.newId] as const),
+        ...folders.flatMap((f) => Object.entries(f.newIds)),
+      ]);
+      const pictured: string[] = [];
+      for (const [id, blob] of read) {
+        const copyId = copies.get(id);
+        if (copyId === undefined) continue;
+        files.set(copyId, blob);
+        pictured.push(copyId);
+      }
+      const names = [
+        ...plan.objects.flatMap((id) => {
+          const found = find(id);
+          return found === undefined ? [] : [objectName(found.object)];
+        }),
+        ...fresh.flatMap((f) =>
+          f === null ? [] : [`"${folderName(f.folder)}"`],
+        ),
+      ];
+      const what =
+        names.length === 1
+          ? `the copy of ${names[0] ?? ""}`
+          : `the paste of ${String(names.length)} copies`;
+      if (
+        took(() =>
+          store.dispatch(
+            tourDocumentActions.clipboardPasted({
+              toStationId: plan.toStationId,
+              objects,
+              folders,
+              what,
+            }),
+          ),
+        )
+      ) {
+        return {
+          kind: "pasted",
+          objects: objects.map((o) => o.newId),
+          folders: folders.map((f) => f.newIds[f.folderId] ?? f.folderId),
+        };
+      }
+      for (const id of pictured) files.delete(id);
+      if (mine() === null) return notInTour;
+      return {
+        kind: "refused",
+        reason: folders.length > 0 ? FOLDER_TOO_FAR : TOO_FAR_FROM_STATION,
+      };
     },
     scaleFolder(folderId, value) {
       const state = mine();

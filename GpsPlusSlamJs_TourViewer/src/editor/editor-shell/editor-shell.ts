@@ -64,6 +64,7 @@ import {
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
+import { copyOf, pasteOf } from "../clipboard.js";
 import {
   FOLDER_PREFIX,
   STATION_PREFIX,
@@ -346,6 +347,12 @@ export interface EditorShellDeps {
    *  the focus going back to `opener` on close. None: no preview. */
   readonly previewStory?: (storyId: string, opener: HTMLElement) => void;
   readonly stations: ShellStationCommands;
+  /** The Edit menu's Copy and Paste (`clipboard.ts`): the page's, as its
+   *  Ctrl+C and Ctrl+V; each says its outcome. */
+  readonly clipboard: {
+    copy(): void;
+    paste(): void;
+  };
   readonly edits: ShellEditCommands;
   /** The plain folders' commands (Group, Ungroup, a move into or out of a
    *  folder, a rename): each one undo step, its outcome said. */
@@ -413,7 +420,7 @@ export interface EditorShell {
 const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
   duplicate: "dup",
   align: "align",
-  copy: "copy",
+  copyPosition: "copy",
 };
 
 /** An inspector field to type in: a line (an input) or prose (a text
@@ -692,6 +699,10 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     redo: byId<HTMLButtonElement>("studio-redo"),
     editUndo: byId<HTMLButtonElement>("edit-undo"),
     editRedo: byId<HTMLButtonElement>("edit-redo"),
+    editCopy: byId<HTMLButtonElement>("edit-copy"),
+    editPaste: byId<HTMLButtonElement>("edit-paste"),
+    editDuplicate: byId<HTMLButtonElement>("edit-duplicate"),
+    editDelete: byId<HTMLButtonElement>("edit-delete"),
     frame: byId<HTMLButtonElement>("studio-frame"),
     topView: byId<HTMLButtonElement>("studio-top"),
     help: byId<HTMLButtonElement>("studio-help"),
@@ -1111,6 +1122,41 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     });
   };
 
+  /** The Edit menu's Copy, Paste, Duplicate and Delete for the selection:
+   *  each disabled the menu pattern's way where its command could not act
+   *  (`clipboard.ts` for Copy and Paste, the bar's Duplicate, everything
+   *  but a code for Delete), its title saying what it would do or why
+   *  not. */
+  const drawEditItems = (
+    doc: TourDocumentState,
+    ui: EditorViewState,
+    model: InspectorModel | null,
+  ) => {
+    const copy = copyOf(doc, ui);
+    setItemDisabled(top.editCopy, copy.kind === "refused");
+    top.editCopy.title =
+      copy.kind === "refused" ? copy.reason : "Copy (Ctrl+C)";
+    const paste = pasteOf(doc, ui);
+    setItemDisabled(top.editPaste, paste.kind === "refused");
+    const into = manifest()?.stations.find(
+      (s) => paste.kind === "paste" && s.id === paste.toStationId,
+    );
+    top.editPaste.title =
+      paste.kind === "refused"
+        ? paste.reason
+        : `Paste into ${into?.title ?? "the station"} (Ctrl+V)`;
+    const duplicable = barActions(model).some((a) => a.action === "duplicate");
+    setItemDisabled(top.editDuplicate, !duplicable);
+    top.editDuplicate.title = duplicable
+      ? "Duplicate the selection (Ctrl+D)"
+      : "Select something to duplicate it";
+    const deletable = model !== null && model.kind !== "code";
+    setItemDisabled(top.editDelete, !deletable);
+    top.editDelete.title = deletable
+      ? "Delete the selection (Del)"
+      : "Select something to delete it";
+  };
+
   /** The bottom bar's power actions for the selection; a draw keeps the
    *  focus on the action that had it. */
   const drawActs = (model: InspectorModel | null) => {
@@ -1226,6 +1272,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     // The cards and the thumbnail a draw replaced are no longer watched.
     pictures.sweep();
     drawHistory(doc);
+    drawEditItems(doc, ui, model);
     if (before === null || before.hiddenLayers !== ui.hiddenLayers) {
       view?.setLayers(ui.hiddenLayers);
     }
@@ -1576,7 +1623,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.stations.duplicate(selected);
       return;
     }
-    if (action === "copy") {
+    if (action === "copyPosition") {
       const text = positionText(model);
       if (text === null) return;
       // A browser without the clipboard, or one that refuses it, still
@@ -2197,7 +2244,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   bar.acts.addEventListener("click", (event) => {
     const action = (event.target as Element).closest<HTMLElement>("[data-bar]")
       ?.dataset["bar"];
-    if (action === "duplicate" || action === "align" || action === "copy") {
+    if (
+      action === "duplicate" ||
+      action === "align" ||
+      action === "copyPosition"
+    ) {
       runBarAction(action);
     }
   });
@@ -2530,6 +2581,20 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       deps.step("redo");
     });
   }
+  top.editCopy.addEventListener("click", () => {
+    deps.clipboard.copy();
+  });
+  top.editPaste.addEventListener("click", () => {
+    deps.clipboard.paste();
+  });
+  top.editDuplicate.addEventListener("click", () => {
+    const selected = state().editorView.selected;
+    if (selected !== null) deps.stations.duplicate(selected);
+  });
+  top.editDelete.addEventListener("click", () => {
+    const selected = state().editorView.selected;
+    if (selected !== null) deleteSelected(selected);
+  });
   const frame = (whole: boolean) => {
     view?.frame(whole ? null : state().editorView.selected);
   };

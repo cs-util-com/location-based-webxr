@@ -844,9 +844,25 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     Duplicate do nothing, so a second Ctrl+D makes no second copy; a
     story's entry has no Duplicate (the bar offers none), so its Ctrl+D
     does nothing;
+  - `copySelection` (Ctrl+C, the Edit menu's Copy) puts the selected note
+    or plain folder, or every picked row, on the store's clipboard
+    (`clipboard.ts`'s `copyOf`, then `copied`) and says "Copied ..."; a
+    refusal is said ("Only notes and folders can be copied");
+  - `pasteSelection` (Ctrl+V, the Edit menu's Paste) pastes the
+    clipboard into the station the selection names (`pasteOf`, then the
+    session's `paste`): one undo step, the station's rows unfolded, the
+    first copy selected (so a second Ctrl+V pastes again beside it),
+    "Pasted a copy" or "Pasted <n> copies"; while the pictures are read a
+    held "Pasting..." toast shows (`aria-busy`) and the store's
+    `duplicating` makes another paste or Duplicate do nothing; the toast
+    goes either way, and a refusal is said with the tour unchanged;
+  - `clipboardKeys` takes Ctrl/Cmd+C and Ctrl/Cmd+V (without Shift)
+    only where `editKeysFree` holds and the page has no text selected,
+    so a field, a dialog, a menu and selected text keep the browser's
+    own copy and paste; the 3D view's `sceneKey` leaves both alone;
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
-  - `keysFree` is false in a field, in a menu, for the pattern's keys on a menu's button,
+  - `keysFree` (`editKeysFree`, shared with `clipboardKeys`) is false in a field, in a menu, for the pattern's keys on a menu's button,
     or for the arrows, Home and End inside a toolbar or a radio group
     (`key-target.ts`: the menu's arrows, Home and End must not nudge the
     selection behind it), while a dialog or the modal shows and while the
@@ -854,6 +870,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     A gesture under way counts as an edit being made (`editing()`, the
     `gesture` field of the view slice), and an undo or a redo cancels it
     first (`runStep`).
+- **The clipboard**, given to the shell as `clipboard`: `copy` and
+  `paste`, which the Edit menu's Copy and Paste call (`copySelection`,
+  `pasteSelection`).
 - **The tree's station commands** (G2 M3b), given to the shell as
   `stations` with a `say` (a toast), each one undo step that ends a
   delete's Undo offer, refreshes the views and tells autosave:

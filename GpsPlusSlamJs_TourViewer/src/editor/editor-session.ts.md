@@ -275,6 +275,20 @@ never state). Design:
       item beyond its station's reach (`FOLDER_TOO_FAR`); the held
       pictures are dropped then. Its step, like `deleteFolder`'s, names
       the folder in quotes (`the copy of "Shots"`).
+    - `paste(plan)` (async) - the clipboard's notes and plain folders
+      copied into the station `plan.toStationId` (`clipboardPasted`), one
+      step for the lot: `{ kind: "pasted", objects, folders }` (the
+      copies' ids, in the plan's order). Each copy keeps its pose within
+      its station, so it lands where its source sat in its own; every
+      copied folder and item gets a new id; each photo's picture is read
+      first and held under its copy's id, as `duplicateFolder` does, and
+      the step re-checks after that read that every source is still
+      there (`NOT_APPLIED` otherwise). Refused for an id the tour lacks, a
+      picture that cannot be read, and a copy beyond the station's reach
+      (`FOLDER_TOO_FAR` when folders are pasted, else
+      `TOO_FAR_FROM_STATION`); the held pictures are dropped then. Its
+      step is `the copy of "<name>"` for one folder, `the copy of` and
+      the note's name for one note, else `the paste of <n> copies`.
     - `scaleFolder(folderId, value)` - a plain folder's scale, 0.1 to 10
       times (`folderScaled`): its whole group grows about its origin;
       "unchanged" for the scale it has (none counts as 1); refused out of

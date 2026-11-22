@@ -68,6 +68,7 @@ export const SPECS = {
     area: "editor",
     lane: 3,
   },
+  "editor3d-clipboard.spec.js": { project: "webgl", area: "editor", lane: 5 },
   "editor3d-docking.spec.js": { project: "webgl", area: "editor", lane: 1 },
   "editor3d-edit.spec.js": { project: "webgl", area: "editor", lane: 3 },
   "editor3d-folders.spec.js": { project: "webgl", area: "editor", lane: 4 },
