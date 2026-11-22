@@ -217,7 +217,7 @@ test("a tap in AR selects the object under the ring, a tap on the panel does not
 
   // In AR the list waits for a selection.
   await expect(page.getByTestId("object-list-hint")).toHaveText(
-    /Tap a pin or photo to select it/,
+    /Tap an item to select it/,
   );
   await page.evaluate(
     ([key, id]) => {
@@ -362,4 +362,106 @@ test("in AR a delete is taken back by the strip's persistent Undo, which names i
       .locator('[data-testid="object-row"][data-selected="true"]')
       .getByTestId("object-title"),
   ).toHaveText("Fixture pin");
+});
+
+/** The stations tour whose gate stands a pin, two plane pictures, a model
+ *  and two characters as free items. */
+const BLOCKS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/blocks-tour.zip";
+
+/** The object ids drawn in the AR scene, however deep: under the fake
+ *  scene (earlier visits) or the world group (this visit). An id counts
+ *  only when something stands under it: a mesh, line, sprite or points,
+ *  or a child at all (the fixture model is an empty glb scene, drawn as
+ *  its loaded group). An empty preview root, as a kind nothing draws
+ *  leaves, does not count. */
+function drawnIds(page) {
+  return page.evaluate((key) => {
+    const w = /** @type {any} */ (window);
+    /** @param {any} o @returns {boolean} */
+    const hasLook = (o) =>
+      Boolean(o.isMesh || o.isLine || o.isSprite || o.isPoints) ||
+      (o.children ?? []).length > 0;
+    /** @param {any} o @returns {string[]} */
+    const ids = (o) => [
+      ...(typeof o.userData?.objectId === "string" && hasLook(o)
+        ? [o.userData.objectId]
+        : []),
+      ...(o.children ?? []).flatMap(ids),
+    ];
+    const roots = [w[key].fakeScene, w.__tourViewerSeams.getArWorldGroup()];
+    return [...new Set(roots.filter(Boolean).flatMap(ids))].sort();
+  }, TEST_KEY);
+}
+
+test("in AR the creator sees the pin, pictures, model and characters drawn, a tap selects the model, Delete takes it out and Undo brings it back", async ({
+  page,
+}) => {
+  // Why this test matters: the creator's AR previews drew only pins and
+  // photos, so a model, a framed picture or a character could be neither
+  // seen nor tapped in AR, and so never deleted there. Every free item of
+  // this tour (a pin, two plane pictures, a model, two characters) must
+  // stand in the scene by its id, a deleted one must go and come back on
+  // Undo. The other kinds and views are unit-tested
+  // (`creator-previews.test.ts`, `content-placement.test.ts`).
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(BLOCKS_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  // As `openFixtureTour` does for its own tour: the card shows one step,
+  // and AR is entered from the measure step.
+  const step = page.getByTestId("step-measure");
+  if (!(await step.evaluate((el) => /** @type {any} */ (el).open))) {
+    await page.getByTestId("station-measure").click();
+  }
+  await enterArAndMeasure(page);
+  const items = [
+    "gate-arch",
+    "gate-knight",
+    "gate-photo",
+    "gate-pin",
+    "gate-porter",
+    "gate-warden",
+  ];
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate((key) => {
+          /** @type {any} */ (window)[key].emitFrames(1);
+        }, TEST_KEY);
+        const drawn = await drawnIds(page);
+        return items.filter((id) => drawn.includes(id));
+      },
+      { timeout: 20000 },
+    )
+    .toEqual(items);
+
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, "gate-arch"],
+  );
+  const selected = page.locator(
+    '[data-testid="object-row"][data-selected="true"]',
+  );
+  await expect(selected).toHaveCount(1);
+  await selected.getByTestId("object-delete").click();
+  await expect
+    .poll(async () => (await drawnIds(page)).includes("gate-arch"), {
+      timeout: 10000,
+    })
+    .toBe(false);
+  expect(await drawnIds(page)).toContain("gate-pin");
+  // The strip's Undo renders it again.
+  await page.getByTestId("setup-undo").click();
+  await expect
+    .poll(async () => (await drawnIds(page)).includes("gate-arch"), {
+      timeout: 10000,
+    })
+    .toBe(true);
 });

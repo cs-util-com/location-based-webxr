@@ -70,7 +70,11 @@ were here. What stays is the Finish's side:
 
 ## Public API
 
-- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged?, codeVotes? }): CreatorSetup`
+- `wireCreatorSetup({ ctx, mode, arStore, arController, seams, wizard, dom, openDraftStore?, codeTour?, summary?, host?, onCodesChanged?, codeVotes?, previewDrawings? }): CreatorSetup`
+  - `previewDrawings` - the previews' world door and stands, handed to
+    `creator-previews.ts`; the page's own unless a node test injects
+    them (node has no canvas: `authoring-settle.test.ts` draws a pin as a
+    node named by its caption).
   - `codeVotes(options)` (optional) - the viewer placement's
     `storedCodeVotes`, handed to the measuring module: a code the tour
     stores votes in a visit without GPS (`creator-measuring.ts`).
@@ -129,7 +133,9 @@ were here. What stays is the Finish's side:
     page resolves false), `beginAuthorVisit`,
     `endAuthorVisit` (it also ends the stations' line and ring, and
     disarms "New station here": the chip is the session's, D8),
-    `tickStations` (every camera frame in a creator's session: the open
+    `tickStations` (every camera frame in a creator's session: the
+    previews' world parts (`creator-previews.ts` `tick`, with the editing
+    selection), and the open
     station's line and ring through `creator-stations.ts` (judged where
     the reticle points while it is visible, else at the creator), which reads the
     working copy through the Finish's own writer and keeps no state of its

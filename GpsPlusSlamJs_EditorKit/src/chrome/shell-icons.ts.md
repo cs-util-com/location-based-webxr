@@ -13,7 +13,7 @@ in the current text colour, as SVG elements.
   `undo`, `redo`, `help`, `qr`, `down`, `right`, `up`, `close`,
   `station`, `pencil`, `check`, `lock`, `unlock`, `walk`, `eye`, `folder`,
   and for the tree's editing `plus`, `earlier`, `later`, `trash`, `split`,
-  `dup`, `align`, `copy` (the prototype's) and `grip` (a card's six dots), `ban` (a circle struck through: a drag cannot land here), `foldall` (two chevrons: fold every station),
+  `dup`, `align`, `crosshair` (the prototype's; a position, so the bar's Copy position is not drawn as a copy) and `grip` (a card's six dots), `ban` (a circle struck through: a drag cannot land here), `foldall` (two chevrons: fold every station),
   and for the inspector's Put on the ground `ground` (the prototype's),
   `left` (the fourth chevron), and for the docked panels' tabs and
   rails `details`, `problems`, `history`, `tiles` (the map loading

@@ -56,7 +56,10 @@ import type { TourHost } from "./tour-host.js";
 import { wireCreatorCodes, type CreatorCodes } from "./creator-codes.js";
 import { wireCreatorDraft } from "./creator-draft.js";
 import { tourFileKeyOfFile } from "./tour-session.js";
-import { wireCreatorPreviews } from "./creator-previews.js";
+import {
+  wireCreatorPreviews,
+  type CreatorPreviewDrawings,
+} from "./creator-previews.js";
 import { wireCreatorAlignmentPicks } from "./creator-alignment-picks.js";
 import {
   wireCreatorPlacement,
@@ -338,6 +341,9 @@ export function wireCreatorSetup(deps: {
   /** Runs first in every Finish's start: the page commits what is still
    *  in a field (the tour's name, whose "change" a tap may not fire). */
   beforeFinish?: () => void;
+  /** The previews' world door and stands (`creator-previews.ts`); the
+   *  page's own unless a node test injects them (node has no canvas). */
+  previewDrawings?: CreatorPreviewDrawings;
 }): CreatorSetup {
   const { ctx, mode, arStore, arController, seams, wizard, dom } = deps;
   const codeTour: Pick<ScanOpen, "onDetection" | "status" | "relation"> =
@@ -410,6 +416,10 @@ export function wireCreatorSetup(deps: {
     seams,
     creator,
     objects: () => editing.objects(),
+    selected: () => editing.selected(),
+    ...(deps.previewDrawings === undefined
+      ? {}
+      : { drawings: deps.previewDrawings }),
   });
 
   dom.panel.hidden = !creator;
@@ -1100,7 +1110,9 @@ export function wireCreatorSetup(deps: {
     codes,
     renderAuthorReadout,
     tickStations: () => {
-      if (creator) stations.tick();
+      if (!creator) return;
+      stations.tick();
+      previews.tick(performance.now());
     },
     renameTour: (name) => {
       const renamed = ctx.tourDocument.rename(name);

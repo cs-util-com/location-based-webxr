@@ -1066,7 +1066,7 @@ async function crowdTheBar(page) {
 
 /** Where the top bar folds a step (`editor-shell.css`): each is checked
  *  at its edges. */
-const FOLD_STEPS = [820, 720, 560, 420];
+const FOLD_STEPS = [840, 780, 610, 420];
 
 test("the top bar holds every control in its most crowded state, at every step it folds", async ({
   page,
@@ -1351,12 +1351,13 @@ test.describe("on a touch screen", () => {
     await expect(page.locator("#edit-undo")).toBeVisible();
     await expect(page.locator("#edit-undo")).toBeDisabled();
     await expect(page.locator("#edit-redo")).toBeDisabled();
-    // A tap outside closes it.
+    // A tap outside closes it: low on the canvas, below the open menu,
+    // which holds Copy, Paste, Duplicate and Delete too.
     await page
       .locator("#view3d canvas")
       .first()
       .tap({
-        position: { x: 200, y: 150 },
+        position: { x: 200, y: 400 },
       });
     await expect(page.locator("#edit-menu")).toBeHidden();
     // An edit through File's Tour details…, then Edit's Undo takes it back.
