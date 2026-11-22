@@ -46,6 +46,7 @@ import {
   wantPlace,
   type PlateMetrics,
   type SettleState,
+  type TravelHideWhy,
   type TravelPlace,
   type TravellingBoxKnobs,
   type TravelWhy,
@@ -77,6 +78,31 @@ export interface TravelPlaceEvent {
   readonly why: TravelWhy;
 }
 
+/** One frame of the controller as measured, for the field log
+ *  (`travelling-box-log.ts`). */
+export interface TravelFrameSample {
+  /** `now()` at the frame (ms). */
+  readonly at: number;
+  readonly surface: string;
+  /** The surface travels and has its words laid out. */
+  readonly travelling: boolean;
+  readonly hideWhy: TravelHideWhy | null;
+  readonly slotFree: boolean;
+  readonly canFold: boolean;
+  readonly finger: boolean;
+  /** The settled place after this frame. */
+  readonly place: TravelPlace;
+  /** This frame's want, and why. */
+  readonly want: TravelPlace;
+  readonly wantWhy: TravelWhy;
+  readonly metrics: PlateMetrics;
+  readonly angleDeg: number;
+  /** The eye's distance from the plate along the ground (m). */
+  readonly distM: number;
+  /** Screen px per metre at 1 m, from the lens: `proj[5] x height / 2`. */
+  readonly pxPerM: number;
+}
+
 export interface TravellingBoxDeps {
   readonly surface: TravelSurface;
   /** Where the flight quad goes: the scene the camera renders. */
@@ -95,6 +121,9 @@ export interface TravellingBoxDeps {
    *  (the page passes `renderer.initTexture`). */
   readonly upload?: (texture: Texture) => void;
   readonly onPlace?: (event: TravelPlaceEvent) => void;
+  /** Each frame as measured, for the field log (`?debug=1` only: the
+   *  sample is built only when this is given). */
+  readonly onFrame?: (sample: TravelFrameSample) => void;
   /** Whether this surface owns its screen slot (alone it always does). */
   readonly slotFree?: () => boolean;
   /** The page's registry: the box joins it at once and leaves it on
@@ -493,16 +522,19 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     wasPressing = fingerDown;
     // The hysteresis side is the settled place: a flight home keeps it.
     const onPlate = settle.place === "plate";
+    const hideWhy = surface.hideWhy();
+    const slotFree = deps.slotFree?.() ?? true;
+    const canFold = surface.canFold();
     const wanted = wantPlace(
       {
         travelling: travelling && layout !== null,
-        hideWhy: surface.hideWhy(),
+        hideWhy,
         gates: surface.gates(metrics, knobs),
         metrics,
         angleDeg,
         onPlate,
-        slotFree: deps.slotFree?.() ?? true,
-        canFold: surface.canFold(),
+        slotFree,
+        canFold,
       },
       knobs,
     );
@@ -528,6 +560,22 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
       }
       deps.onPlace?.({ at: t, surface: surface.id, place: settle.place, why });
     }
+    deps.onFrame?.({
+      at: t,
+      surface: surface.id,
+      travelling: travelling && layout !== null,
+      hideWhy,
+      slotFree,
+      canFold,
+      finger: fingerDown,
+      place: settle.place,
+      want,
+      wantWhy: wanted.why,
+      metrics,
+      angleDeg,
+      distM: Math.hypot(eye.x - at.x, eye.z - at.z),
+      pxPerM: (camera.projectionMatrix.elements[5] ?? 0) * (view.height / 2),
+    });
 
     const reduce = deps.reduceMotion();
     const shown = settle.place === "plate" || settle.place === "dock";

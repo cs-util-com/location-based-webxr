@@ -42,8 +42,9 @@ import { createNarrationBox } from "./narration-box.js";
 import { selectNarrationBox } from "./narration-box-slice.js";
 import { wordsPaintScale } from "./narration-words-paint.js";
 import { createTravelRegistry } from "./travel-registry.js";
-import { createTravellingBox } from "./travelling-box.js";
-import { TRAVELLING_BOX_DEFAULTS } from "./travelling-box-rules.js";
+import { createTravellingBox, type TravellingBox } from "./travelling-box.js";
+import { travellingBoxKnobs } from "./travelling-box-knobs.js";
+import { createTravelLog, wireTravelLogButtons } from "./travelling-box-log.js";
 import { signWordsSurface } from "./travelling-box-sign.js";
 import { createNarrationVisitor } from "./narration-visitor.js";
 import { createViewSwitch, switchBlocks } from "./view-switch.js";
@@ -1254,6 +1255,24 @@ const travelView = { left: 0, top: 0, width: 1, height: 1 };
 // the bottom of the AR view, scrolled with the voice, or travelling from
 // the text's reading sign; it tells the page's store what it shows
 // (`narration-box-slice.ts`).
+// With `?debug=1` the `tb.*` knobs of the address tune the travel, and a
+// visitor's walk is logged for the offline replay (`travelling-box-log.ts`):
+// a diagnostic buffer, not app state, so it lives beside the store.
+const travelKnobs = travellingBoxKnobs(location.search, debug);
+const travelLog =
+  mode === "visitor" && debug ? createTravelLog({ knobs: travelKnobs }) : null;
+/** The newest travel, for the readout's cost line. */
+let lastTravel: TravellingBox | null = null;
+if (travelLog !== null) {
+  element("travel-log-tools").hidden = false;
+  wireTravelLogButtons({
+    copy: element<HTMLButtonElement>("travel-log-copy"),
+    mark: element<HTMLButtonElement>("travel-log-mark"),
+    log: travelLog,
+    write: (text) => seams.copyText(text),
+    now: () => performance.now(),
+  });
+}
 const captionsFollow =
   mode === "visitor"
     ? (() => {
@@ -1277,7 +1296,7 @@ const captionsFollow =
             const scene = seams.getScene();
             const camera = seams.getViewerCamera();
             if (scene === null || camera === null) return null;
-            return createTravellingBox({
+            lastTravel = createTravellingBox({
               surface: signWordsSurface({
                 ...start,
                 box,
@@ -1285,7 +1304,7 @@ const captionsFollow =
               }),
               scene,
               camera,
-              knobs: TRAVELLING_BOX_DEFAULTS,
+              knobs: travelKnobs,
               now: () => performance.now(),
               reduceMotion: reducedMotion,
               viewRect: () => {
@@ -1297,7 +1316,18 @@ const captionsFollow =
                 seams.uploadTexture(texture);
               },
               registry: travelRegistry,
+              ...(travelLog === null
+                ? {}
+                : {
+                    onFrame: (sample) => {
+                      travelLog.frame(sample);
+                    },
+                    onPlace: (event) => {
+                      travelLog.place(event);
+                    },
+                  }),
             });
+            return lastTravel;
           },
           signOf: (id) => mountedReadingSign(id),
           sheetOpen: () => longTextSheet.isOpen(),
@@ -1446,7 +1476,10 @@ const arEntry = wireArEntry({
     toast: walkToast,
     progressKept: () => mode === "visitor" && stations.progressKept(),
     sheetShown: () => stations.walkShown(),
-    debugLines: () => stations.debugLines(),
+    debugLines: () => [
+      ...stations.debugLines(),
+      ...(travelLog?.readout(lastTravel?.cost() ?? null) ?? []),
+    ],
   },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),
 });

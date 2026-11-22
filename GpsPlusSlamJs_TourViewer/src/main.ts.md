@@ -80,7 +80,8 @@ listed in `index.html.md`. The concerns and their modules:
   with one travel registry (`travel-registry.ts`) for the words that
   travel from a reading sign: the follower's `travel` builds the sign's
   surface (`travelling-box-sign.ts`) and its controller
-  (`travelling-box.ts`, the default knobs, the texture uploaded through
+  (`travelling-box.ts`, the knobs of `travellingBoxKnobs`: the defaults,
+  or the address's `tb.*` with `?debug=1`; the texture uploaded through
   `seams.uploadTexture`), or none while there is no scene or camera (the
   words then stay at the bottom); `signOf` is `mountedReadingSign`,
   `sheetOpen` the reading sheet's, `playing` the `narrationBox` slice's.
@@ -88,7 +89,13 @@ listed in `index.html.md`. The concerns and their modules:
   after the world parts, runs the registry's frame; a `pointerdown` on
   `#ar-root` that is not an overlay's goes to the registry, a
   `beforexrselect` is cancelled while a finger is on the words, and
-  `hooks.visitorTap` gives a select the words own to them alone.
+  `hooks.visitorTap` gives a select the words own to them alone. With
+  `?debug=1` a visitor's travels feed the field log
+  (`travelling-box-log.ts`, through `onFrame` and `onPlace`): its lines
+  join the AR readout with the newest travel's cost, and the
+  `#travel-log-tools` row under the readout shows Copy log (through
+  `seams.copyText`) and Mark. The log is a diagnostic buffer beside the
+  store, never app state.
   `hooks.stopStations` stops the follower (and its travel) and pauses
   every voice; `hooks.releaseTourMedia` (a
   tour's close) lets every voice go (`narration.reset()`).

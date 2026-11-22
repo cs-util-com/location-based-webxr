@@ -20,6 +20,7 @@ import type {
 } from "./travel-surface.js";
 import {
   createTravellingBox,
+  type TravelFrameSample,
   type TravelPointer,
   type TravellingBox,
 } from "./travelling-box.js";
@@ -538,6 +539,50 @@ describe("createTravellingBox", () => {
     expect(cost.over50).toBe(1);
     expect(cost.over100).toBe(0);
     expect(cost.paints).toBe(1);
+  });
+
+  // Why: the field log replays the knobs offline from what each frame
+  // measured, so a frame must report the eye's ground distance, the
+  // lens's px per metre, the finger and the settled place with its want.
+  it("reports each frame as measured to onFrame", () => {
+    const frames: TravelFrameSample[] = [];
+    box.stop();
+    box = createTravellingBox({
+      surface,
+      scene,
+      camera,
+      knobs: TRAVELLING_BOX_DEFAULTS,
+      now: () => t,
+      reduceMotion: () => reduce,
+      viewRect: () => VIEW,
+      createCanvas: fakeCanvas,
+      onFrame: (s) => frames.push(s),
+    });
+    box.frame();
+    standAt(16);
+    surface.down = true;
+    run(32);
+    expect(frames).toHaveLength(3);
+    expect(frames[0]).toMatchObject({
+      at: 1000,
+      surface: "words:test",
+      travelling: true,
+      hideWhy: null,
+      slotFree: true,
+      finger: false,
+      place: "plate",
+      want: "plate",
+      wantWhy: "readable",
+    });
+    expect(frames[0]!.distM).toBeCloseTo(3, 6);
+    // fov 50 on an 844 px view: 422 / tan(25 deg) px per metre at 1 m.
+    const lens = 422 / Math.tan((25 * Math.PI) / 180);
+    expect(frames[0]!.pxPerM).toBeCloseTo(lens, 3);
+    expect(frames[0]!.metrics.letterPxH).toBeGreaterThan(30);
+    const last = frames[2]!;
+    expect(last).toMatchObject({ finger: true, place: "plate", want: "dock" });
+    expect(last.wantWhy).toBe("too small");
+    expect(last.distM).toBeCloseTo(16, 6);
   });
 
   it("takes its quad and texture away when stopped", () => {

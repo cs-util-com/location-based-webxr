@@ -24,6 +24,12 @@ both; the DOM ghost is invisible and takes pointers only at u = 1.
   - optional: `createCanvas()` (default a new DOM canvas), `upload(texture)`
     (e.g. `renderer.initTexture`, so the upload is not in the draw),
     `onPlace(event)` (each settled change: `{ at, surface, place, why }`),
+    `onFrame(sample)` (each frame as measured, a `TravelFrameSample`:
+    surface, travelling, hide reason, slot, fold, finger, the settled
+    place, the want and why, the metrics, the angle, the eye's ground
+    distance `distM` and the lens's `pxPerM`, `proj[5] x height / 2`; the
+    sample is built only when `onFrame` is given, so a page without the
+    field log (`travelling-box-log.ts`) allocates nothing for it),
     `slotFree()` (default true; the page decides who holds the slot),
     `registry` (the page's `travel-registry.ts`: the box joins it when
     made and leaves it on `stop()`).
@@ -135,7 +141,8 @@ With `registry` in the deps the box joins it itself.
   the quad, the ghost's pointers only at u = 1; repaints on a key change
   only and never while hidden; the two frame guards; the render camera,
   not the frame's; no press at the dock or off the words; reduced motion;
-  the place events and the cost counters; `stop` (the quad, the
+  the place events and the cost counters; each frame reported to
+  `onFrame` with its distance, lens and finger; `stop` (the quad, the
   texture off the plate, the registry left so a press reaches the live
   plate behind); a surface that does not travel is never ghosted; the
   hysteresis held during the flight home; words shown again mid-fade fly;
