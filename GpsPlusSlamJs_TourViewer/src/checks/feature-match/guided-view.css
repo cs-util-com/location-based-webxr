@@ -1,7 +1,7 @@
 /* The guided view of the feature-matching check, ported from the
    prototype at public/prototypes/feature-match-2-guided/style.css. Every
    rule is scoped to html[data-ui="guided"] at zero added specificity, so
-   the four-step view (?ui=cockpit) never sees it and the flat-target
+   the cockpit view (?ui=cockpit) never sees it and the flat-target
    styles still win inside #flat. Dark on purpose: in the light tests the
    screen itself lights the room, so it stays dim. */
 :where(html[data-ui="guided"]) {
@@ -41,7 +41,7 @@
 :where(html[data-ui="guided"]) body {
   overflow: hidden;
 }
-/* The page also loads the shared design.css for the four-step view. Its
+/* The page also loads the shared design.css for the shared blocks. Its
    layered rules lose to every rule here, but they still set what the
    prototype leaves at the browser default: undo those on the class names
    both use. Kept before the view's own rules, which may set them again. */
@@ -948,12 +948,12 @@
   text-align: left;
 }
 
-/* ---- the build only: the four-step view is out of sight ---- */
+/* ---- the build only: the shared blocks' first home is out of sight ---- */
 :where(html[data-ui="guided"]) body > .layout {
   display: none;
 }
 
-/* ---- the measure sheet holds the four-step view's options, speed test and results ---- */
+/* ---- the measure sheet holds the shared options, speed test and results ---- */
 :where(html[data-ui="guided"]) .measure-more {
   display: grid;
   gap: 10px;

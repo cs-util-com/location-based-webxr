@@ -8,9 +8,11 @@
 - **Differences from the prototype, mechanical:** every class and id carries the `c-` prefix of the markup; the tile and ghost images are canvases; the toast that says why a tap ended without a photo, or what became of a pair's zip (`.c-shot-note`), is the build's own.
 - **Portrait and landscape.** Below an aspect ratio of 4/5 the dock sits under the viewfinder; from 4/5 on it is a column beside it, `clamp(280px, 36vw, 340px)` wide, as in the prototype.
 - **One deliberate fix over the prototype:** a short screen on its side (from 4/5 and at most 560 px high) takes the bottom dock's one-row controls in a wider column (`clamp(340px, 46vw, 400px)`), with a three-line instruction and no change line. The prototype's side dock needs about 550 px for its eight rows and cuts off its readouts, status and footer at 915x412 and 800x360.
+- **Two more fixes over the prototype:** below 400 px of width the side columns narrow (48 and 60 px), so the big button fits between the photo tiles; and below about 330 px of height the short landscape column scrolls (`overflow-y: auto`) rather than cutting off its foot.
+- **Paragraph spacing.** The welcome card and the drawer panels keep the browser's 1em paragraph margins, as in the prototype; the page's `design.css` tightens them otherwise. Zero added specificity, so `.c-hint` keeps its own.
 - **Night.** `.c-app.night` dims the dock between photo A and B of the dimmed pairs.
 - Dark on purpose, as in the prototype: in the light tests the screen itself lights the room.
 
 ## Tests
 
-Pinned by the cockpit layout test in `playwright-tests/feature-match-check.spec.js` (positions and gaps at 412x915, 915x412, 800x360 and 880x790, with room for the taller Linux fonts of CI) and checked side by side against the prototype at the same four viewports.
+Pinned by the cockpit layout test in `playwright-tests/feature-match-check.spec.js` (positions and gaps at 412x915, 360x740, 915x412, 800x360, 800x300 and 880x790, with room for the taller Linux fonts of CI; at 800x300 the dock scrolls and the big button stays on screen) and checked side by side against the prototype at the same six viewports (`cockpit-view.ts.md`, Differences from the prototype).

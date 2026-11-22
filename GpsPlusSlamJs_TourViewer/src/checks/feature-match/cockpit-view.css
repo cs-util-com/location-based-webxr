@@ -50,6 +50,11 @@
   font-weight: bold;
   letter-spacing: normal;
 }
+/* The browser's paragraph spacing, as the prototype has it; design.css
+   tightens it. Zero added specificity, so .c-hint keeps its 6px. */
+:where(html[data-ui="cockpit"]) :where(.c-welcome, .c-panel) p {
+  margin-block: 1em;
+}
 :where(html[data-ui="cockpit"]) .c-hint {
   font-family: inherit;
   text-transform: none;
@@ -480,6 +485,13 @@
     "foot foot foot foot foot";
   transition: filter 0.4s;
 }
+/* A narrow phone upright (below 400 px): narrower side columns, so the
+   big button (76 px) fits between the photo tiles instead of over them. */
+@media (max-width: 400px) {
+  :where(html[data-ui="cockpit"]) .c-dock {
+    grid-template-columns: 48px 60px minmax(0, 1fr) 60px 48px;
+  }
+}
 @media (min-aspect-ratio: 4/5) {
   :where(html[data-ui="cockpit"]) .c-dock {
     border-top: 0;
@@ -850,6 +862,9 @@
       "status status status status status"
       "foot foot foot foot foot";
     align-content: start;
+    /* Below about 330 px of height the rows do not fit: the dock scrolls
+       rather than cutting off its foot. */
+    overflow-y: auto;
   }
   :where(html[data-ui="cockpit"]) .c-instr {
     font-size: 1rem;
