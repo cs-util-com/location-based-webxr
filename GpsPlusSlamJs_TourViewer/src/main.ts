@@ -45,6 +45,7 @@ import { createTravelRegistry } from "./travel-registry.js";
 import { createTravellingBox, type TravellingBox } from "./travelling-box.js";
 import { travellingBoxKnobs } from "./travelling-box-knobs.js";
 import { createTravelLog, wireTravelLogButtons } from "./travelling-box-log.js";
+import { downloadBlob } from "gps-plus-slam-app-framework/storage";
 import { signWordsSurface } from "./travelling-box-sign.js";
 import { createNarrationVisitor } from "./narration-visitor.js";
 import { createViewSwitch, switchBlocks } from "./view-switch.js";
@@ -1261,15 +1262,25 @@ const travelView = { left: 0, top: 0, width: 1, height: 1 };
 const travelKnobs = travellingBoxKnobs(location.search, debug);
 const travelLog =
   mode === "visitor" && debug ? createTravelLog({ knobs: travelKnobs }) : null;
+/** A logged walk saved as a text file: the copy's fallback for a log the
+ *  clipboard cannot take (the framework's save path, picker first). */
+const saveTravelLog = (text: string): Promise<boolean> =>
+  downloadBlob(
+    new Blob([text], { type: "text/plain" }),
+    `travel-log-${new Date().toISOString().replace(/[:.]/g, "-")}.txt`,
+    { description: "Text file", mimeType: "text/plain", extension: ".txt" },
+  );
 /** The newest travel, for the readout's cost line. */
 let lastTravel: TravellingBox | null = null;
 if (travelLog !== null) {
   element("travel-log-tools").hidden = false;
   wireTravelLogButtons({
     copy: element<HTMLButtonElement>("travel-log-copy"),
+    download: element<HTMLButtonElement>("travel-log-download"),
     mark: element<HTMLButtonElement>("travel-log-mark"),
     log: travelLog,
     write: (text) => seams.copyText(text),
+    save: saveTravelLog,
     now: () => performance.now(),
   });
 }

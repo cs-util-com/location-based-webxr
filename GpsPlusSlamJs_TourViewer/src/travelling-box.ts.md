@@ -25,6 +25,8 @@ both; the DOM ghost is invisible and takes pointers only at u = 1.
     (e.g. `renderer.initTexture`, so the upload is not in the draw),
     `onPlace(event)` (each settled change: `{ at, surface, place, why }`),
     `onFrame(sample)` (each frame as measured, a `TravelFrameSample`:
+    the time `at`, the settling step `dtS` this frame counted (0 on the
+    first frame, at most 0.1 s), `first` on the controller's first frame,
     surface, travelling, hide reason, slot, fold, finger, the settled
     place, the want and why, the metrics, the angle, the eye's ground
     distance `distM` and the lens's `pxPerM`, `proj[5] x height / 2`; the

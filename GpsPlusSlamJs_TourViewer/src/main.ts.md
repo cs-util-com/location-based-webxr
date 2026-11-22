@@ -94,7 +94,8 @@ listed in `index.html.md`. The concerns and their modules:
   (`travelling-box-log.ts`, through `onFrame` and `onPlace`): its lines
   join the AR readout with the newest travel's cost, and the
   `#travel-log-tools` row under the readout shows Copy log (through
-  `seams.copyText`) and Mark. The log is a diagnostic buffer beside the
+  `seams.copyText`), Download log (the framework's `downloadBlob`, a
+  `.txt` file, for a log the clipboard cannot take) and Mark. The log is a diagnostic buffer beside the
   store, never app state.
   `hooks.stopStations` stops the follower (and its travel) and pauses
   every voice; `hooks.releaseTourMedia` (a

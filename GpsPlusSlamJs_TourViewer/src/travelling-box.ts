@@ -83,6 +83,10 @@ export interface TravelPlaceEvent {
 export interface TravelFrameSample {
   /** `now()` at the frame (ms). */
   readonly at: number;
+  /** The time step the settling counted this frame (s, capped). */
+  readonly dtS: number;
+  /** The controller's first frame (it starts hidden). */
+  readonly first: boolean;
   readonly surface: string;
   /** The surface travels and has its words laid out. */
   readonly travelling: boolean;
@@ -502,6 +506,7 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
   function step(): void {
     const t = deps.now();
     if (lastT !== null && t === lastT) return;
+    const first = lastT === null;
     const gapMs = lastT === null ? 0 : t - lastT;
     const dtS = Math.min(MAX_STEP_S, Math.max(0, gapMs / 1000));
     lastT = t;
@@ -562,6 +567,8 @@ export function createTravellingBox(deps: TravellingBoxDeps): TravellingBox {
     }
     deps.onFrame?.({
       at: t,
+      dtS,
+      first,
       surface: surface.id,
       travelling: travelling && layout !== null,
       hideWhy,

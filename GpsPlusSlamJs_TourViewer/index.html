@@ -6718,8 +6718,9 @@
               <pre id="ar-debug" data-testid="ar-debug" hidden></pre>
               <!-- The travelling box's field log, under the readout: a
                visitor's ?debug=1 only (main.ts shows it). Copy puts the
-               walk's log on the clipboard; Mark notes where reading got
-               hard. -->
+               walk's log on the clipboard, Download saves it as a file
+               when the clipboard cannot take it; Mark notes where reading
+               got hard. -->
               <p id="travel-log-tools" data-testid="travel-log-tools" hidden>
                 <button
                   type="button"
@@ -6728,6 +6729,14 @@
                   data-testid="travel-log-copy"
                 >
                   Copy log
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  id="travel-log-download"
+                  data-testid="travel-log-download"
+                >
+                  Download log
                 </button>
                 <button
                   type="button"

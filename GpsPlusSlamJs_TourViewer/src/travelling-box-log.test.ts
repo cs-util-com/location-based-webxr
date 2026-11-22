@@ -3,12 +3,15 @@
  * are chosen. One walk per condition is logged at 10 Hz on the phone,
  * copied as text, and every knob set is then replayed offline from it, so
  * nobody walks once per knob value. The log must therefore keep the newest
- * part of a long walk (a ring), sample at 10 Hz whatever the frame rate,
- * keep every press, release, place change and Mark at its own time, reach
- * the clipboard only through the page's seam, read back what it wrote, and
- * the replay must run the app's own rules: a lower threshold docks later
- * on a retreat, a wider keep band changes place less often at the edge,
- * and the lock after a release holds across a logged release.
+ * part of a long walk (a ring), sample at 10 Hz whatever the frame rate
+ * and on every frame where the want, the place or the finger changes, with
+ * the app's own time step since the sample before, keep every press,
+ * release, place change and Mark at its own time, stay small enough for a
+ * phone's clipboard, reach the clipboard only through the page's seam (or
+ * a file, as the fallback), empty itself after either, read back what it
+ * wrote, and the replay must run the app's own rules: a lower threshold
+ * docks later on a retreat, a wider keep band changes place less often at
+ * the edge, and the lock after a release holds across a logged release.
  */
 import { describe, expect, it } from "vitest";
 
@@ -17,6 +20,7 @@ import {
   createTravelLog,
   parseTravelLog,
   replayPlaces,
+  replaySelfCheck,
   TRAVEL_LOG_PERIOD_MS,
   wireTravelLogButtons,
   type TravelLog,
@@ -51,6 +55,8 @@ function sample(
   const { px = 20, ...rest } = over;
   return {
     at,
+    dtS: 0.1,
+    first: false,
     surface: "words:t1",
     travelling: true,
     hideWhy: null,
@@ -80,7 +86,7 @@ function frames(
   let t = from;
   for (let i = 0; i < seconds * fps; i++) {
     t = from + i * step;
-    log.frame(sample(t, at(t)));
+    log.frame(sample(t, { dtS: step / 1000, ...at(t) }));
   }
   return t;
 }
@@ -97,6 +103,58 @@ describe("the travelling box's field log", () => {
       expect(n, `${String(fps)} fps`).toBeLessThanOrEqual(31);
     }
     expect(TRAVEL_LOG_PERIOD_MS).toBe(100);
+  });
+
+  // Why: the replay under the walk's own knobs must meet each change at
+  // the app's frame, so a frame where the want, the place or the finger
+  // changes is a sample too, carrying the app's settling time since the
+  // sample before (its capped steps, not the clock).
+  it("samples every change, with the app's time step since the sample before", () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    for (let i = 0; i < 13; i++) {
+      const want = i >= 5 ? "dock" : "plate";
+      log.frame(sample(i * 16, { dtS: 0.016, want }));
+    }
+    const kept = log.samples();
+    expect(kept.map((s) => s.t)).toEqual([0, 80, 192]);
+    // A travel starts with no step behind it (the app's first frame too).
+    expect(kept[0]!.dt).toBe(0);
+    // 5 frames of 16 ms since t 0, then 7 since t 80 (the beat at 192).
+    expect(kept[1]!.dt).toBeCloseTo(0.08, 4);
+    expect(kept[2]!.dt).toBeCloseTo(0.112, 4);
+    expect(kept[1]!.want).toBe("dock");
+  });
+
+  // Why: an Android clipboard carries about 1 MB at most and a paste of
+  // megabytes is fragile, so a 6-minute walk must stay well under 300 KB;
+  // the size of a full ring (6000 samples, ten minutes) is measured here
+  // and stated in the sidecar.
+  it("stays small: a 6-minute walk well under 300 KB", () => {
+    const sizeOf = (n: number) => {
+      const log = createTravelLog({ knobs: KNOBS });
+      for (let i = 0; i < n; i++) {
+        const t = 123_456 + i * 100;
+        log.frame(
+          sample(t, {
+            distM: 3 + 9 * Math.abs(Math.sin(i / 300)),
+            angleDeg: 40 * Math.sin(i / 53),
+            dtS: 0.1,
+            metrics: {
+              ...metricsOf(12 + 7 * Math.sin(i / 37)),
+              ndcX: 0.31 * Math.sin(i / 19),
+              ndcY: -0.2 + 0.11 * Math.cos(i / 23),
+            },
+          }),
+        );
+      }
+      return log.text().length;
+    };
+    const sixMinutes = sizeOf(3600);
+    const full = sizeOf(6000);
+    // Measured: about 55 bytes a sample, 198 KB for 6 minutes and 329 KB
+    // for the full ring.
+    expect(sixMinutes).toBeLessThan(210_000);
+    expect(full).toBeLessThan(350_000);
   });
 
   // Why: a walk is minutes long and a phone's memory is not; the newest
@@ -191,17 +249,37 @@ describe("the travelling box's field log", () => {
     expect(lines[1]).toContain("1 mark");
     expect(lines[1]).toContain("2/600 over 50 ms");
   });
+
+  // Why: a press held when a travel ended must not come back as a release
+  // on the next travel's first frame: the lock would count from it.
+  it("logs no release at a new travel's first frame", () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    log.frame(sample(0));
+    log.frame(sample(100, { finger: true }));
+    log.frame(sample(60_000, { surface: "words:t2" }));
+    log.frame(sample(60_100, { surface: "words:t2" }));
+    expect(log.events().map((e) => e.kind)).toEqual(["press"]);
+  });
 });
 
 describe("the log's buttons", () => {
   function buttons() {
     const copy = { disabled: false, textContent: "Copy log" as string | null };
+    const download = {
+      disabled: false,
+      textContent: "Download log" as string | null,
+    };
     const mark = { disabled: false, textContent: "Mark" as string | null };
     const clicks = new Map<object, () => void>();
     const on = (b: object) => ({
       addEventListener: (_type: "click", fn: () => void) => clicks.set(b, fn),
     });
-    return { copy, mark, clicks, on };
+    return {
+      copy: Object.assign(copy, on(copy)),
+      download: Object.assign(download, on(download)),
+      mark: Object.assign(mark, on(mark)),
+      clicks,
+    };
   }
 
   // Why: the copy is async (the async-UI rule): busy, then the outcome,
@@ -214,8 +292,10 @@ describe("the log's buttons", () => {
     const written: string[] = [];
     let release: () => void = () => undefined;
     wireTravelLogButtons({
-      copy: Object.assign(b.copy, b.on(b.copy)),
-      mark: Object.assign(b.mark, b.on(b.mark)),
+      copy: b.copy,
+      download: b.download,
+      mark: b.mark,
+      save: () => Promise.resolve(true),
       log,
       write: (text) => {
         written.push(text);
@@ -234,14 +314,21 @@ describe("the log's buttons", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(b.copy.disabled).toBe(false);
     expect(b.copy.textContent).toBe("Log copied");
+    // Copied, so emptied: the next copy holds the next run alone.
+    expect(log.size().samples).toBe(0);
+    expect(log.readout(null)).toEqual([
+      "log cleared after the copy (10 samples)",
+    ]);
   });
 
   it("says a copy that failed, and stays usable", async () => {
     const log = createTravelLog({ knobs: KNOBS });
     const b = buttons();
     wireTravelLogButtons({
-      copy: Object.assign(b.copy, b.on(b.copy)),
-      mark: Object.assign(b.mark, b.on(b.mark)),
+      copy: b.copy,
+      download: b.download,
+      mark: b.mark,
+      save: () => Promise.resolve(true),
       log,
       write: () => Promise.reject(new Error("no clipboard")),
       now: () => 0,
@@ -252,6 +339,62 @@ describe("the log's buttons", () => {
     expect(b.copy.disabled).toBe(false);
   });
 
+  // Why: a log too large for the clipboard goes out as a file instead,
+  // async like the copy (busy, then the outcome); a saved log is emptied
+  // like a copied one, a dismissed dialog keeps it and the label, and a
+  // save that fails says so and keeps the log.
+  it("downloads the log as the fallback, emptying it, or says how it ended", async () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    frames(log, 1, 60);
+    const b = buttons();
+    const saved: string[] = [];
+    let outcome: "fail" | "dismiss" | "save" = "fail";
+    let finish: () => void = () => undefined;
+    wireTravelLogButtons({
+      copy: b.copy,
+      download: b.download,
+      mark: b.mark,
+      log,
+      write: undefined,
+      save: (text) =>
+        new Promise<boolean>((resolve, reject) => {
+          finish = () => {
+            if (outcome === "fail") {
+              reject(new Error("no download"));
+              return;
+            }
+            if (outcome === "save") saved.push(text);
+            resolve(outcome === "save");
+          };
+        }),
+      now: () => 0,
+    });
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    b.clicks.get(b.download)?.();
+    expect(b.download.disabled).toBe(true);
+    expect(b.download.textContent).toBe("Saving...");
+    finish();
+    await settle();
+    expect(b.download.textContent).toBe("Download failed");
+    expect(b.download.disabled).toBe(false);
+    expect(log.size().samples).toBe(10);
+    outcome = "dismiss";
+    b.clicks.get(b.download)?.();
+    finish();
+    await settle();
+    expect(b.download.textContent).toBe("Download log");
+    expect(log.size().samples).toBe(10);
+    outcome = "save";
+    const text = log.text();
+    b.clicks.get(b.download)?.();
+    finish();
+    await settle();
+    expect(saved).toEqual([text]);
+    expect(b.download.textContent).toBe("Log downloaded");
+    expect(log.size().samples).toBe(0);
+    expect(log.readout(null)[0]).toContain("cleared after the download");
+  });
+
   // Why: a Mark is the walker's "reading got hard here"; it must land in
   // the log at the moment of the tap and say how many there are.
   it("marks the log at the tap's time, counting the marks", () => {
@@ -259,8 +402,10 @@ describe("the log's buttons", () => {
     const b = buttons();
     let now = 500;
     wireTravelLogButtons({
-      copy: Object.assign(b.copy, b.on(b.copy)),
-      mark: Object.assign(b.mark, b.on(b.mark)),
+      copy: b.copy,
+      download: b.download,
+      mark: b.mark,
+      save: () => Promise.resolve(true),
       log,
       write: () => Promise.resolve(),
       now: () => now,
@@ -373,8 +518,9 @@ describe("replaying a logged walk under other knobs", () => {
     expect(noneDock).toBeGreaterThanOrEqual(3_000);
     expect(longDock).toBeGreaterThanOrEqual(4_000);
     expect(longDock).toBeGreaterThan(noneDock);
+    // Within 1 s of the release without a lock; at 1 s or later with one.
     expect(none.afterRelease).toBe(1);
-    expect(long.afterRelease).toBe(1);
+    expect(long.afterRelease).toBe(0);
   });
 
   // Why: a log that holds two travels (the voice ended, another began)
@@ -394,5 +540,50 @@ describe("replaying a logged walk under other knobs", () => {
       ["words:t1", "plate"],
       ["words:t2", "plate"],
     ]);
+  });
+
+  // Why: appearing and hiding follow the voice, not the knobs, so the
+  // sweep compares the plate, dock and fold changes alone.
+  it("counts the moves among plate, dock and fold apart from appearing", () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    for (let i = 0; i < 60; i++) {
+      log.frame(sample(i * 100, { px: i < 30 ? 20 : 6 }));
+    }
+    const r = replayPlaces(
+      { samples: log.samples(), events: log.events() },
+      KNOBS,
+    );
+    expect(r.changes.map((c) => c.place)).toEqual(["plate", "dock"]);
+    expect(r.count).toBe(2);
+    expect(r.moves).toBe(1);
+    expect(r.movesPerMinute).toBeCloseTo(r.moves / r.minutes, 5);
+  });
+
+  // Why: the sweep's first step checks that the replay under the walk's
+  // own knobs gives the changes the app logged; a mismatch is reported at
+  // its index, never smoothed over.
+  it("self-checks the replay against the logged changes", () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    for (let i = 0; i < 10; i++) log.frame(sample(i * 100));
+    log.place({ at: 0, surface: "words:t1", place: "plate", why: "readable" });
+    const good = replaySelfCheck(parseTravelLog(log.text()));
+    expect(good).toEqual({
+      logged: 1,
+      replayed: 1,
+      matched: 1,
+      maxLagMs: 0,
+      firstMismatch: null,
+    });
+    log.place({
+      at: 500,
+      surface: "words:t1",
+      place: "dock",
+      why: "too small",
+    });
+    const bad = replaySelfCheck(parseTravelLog(log.text()));
+    expect(bad?.matched).toBe(1);
+    expect(bad?.firstMismatch?.index).toBe(1);
+    expect(bad?.firstMismatch?.replayed).toBeNull();
+    expect(replaySelfCheck({ ...parseTravelLog(""), knobs: null })).toBeNull();
   });
 });
