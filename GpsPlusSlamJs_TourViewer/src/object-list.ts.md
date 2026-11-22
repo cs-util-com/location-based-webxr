@@ -34,7 +34,8 @@ zip's and this device's - with **Edit text**, **Move to the reticle** and
   `detail` ("Pin · in the zip · 4 m from the code"), `selected`, `busy`,
   `canEditText` (pins only), `canMove` (pins only, in AR only),
   `canDeselect` (the selected row in AR: Close), `enabled`.
-- `SELECT_HINT` - the AR hint while nothing is selected.
+- `SELECT_HINT` - the AR hint while nothing is selected ("Tap an item to
+  select it.": every kind is drawn and pickable in AR).
 - `createObjectListView(container, doc): ObjectListView` - the DOM view over
   `#object-list`: `bind(handlers)` once, `render(model)` any time.
 - `ObjectListHandlers` - `editText(id, text)`, `move(id)`, `remove(id)`,

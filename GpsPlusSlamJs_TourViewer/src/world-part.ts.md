@@ -83,6 +83,13 @@ the reading sign (`reading-sign.ts`) are world parts too.
   `options.sound` and reads its file the same way; `options.screen` is
   handed on in `play` only, so an editor part never opens a panel, and
   `options.say` likewise, so an editor part never shows a toast.
+- `tickEachWorldPart(parts, viewer, nowMs, { viewHeightPx?, selected?, shown? })` -
+  the one per-part frame builder: each part with an `update` that `shown`
+  (when given) accepts gets the frame below, plus `selected` when given.
+  `tickWorldParts` builds on it with `shown` = under a station's content
+  group; the creator's AR previews (`creator-previews.ts` `tick`) with
+  `shown` = still has a parent and the editing selection. No allocation
+  per part beyond the frame object.
 - `tickWorldParts(scene, viewer, nowMs, parts = mountedWorldParts())` - every
   camera frame (`main.ts` `hooks.tickStations`): each shown part with an
   `update` gets `{ seconds: nowMs / 1000, viewer }`, the camera's world
@@ -159,7 +166,7 @@ tapShownWorldPart(scene, pickObjectInView, tap);
 
 ## Tests
 
-`world-part.test.ts`: `canvasTexture`'s colour space, anisotropy and mipmap switch (swept over
+`world-part.test.ts`: `tickEachWorldPart` (the shown filter, the selection, the lens); `canvasTexture`'s colour space, anisotropy and mipmap switch (swept over
 1, 4 and 16, and none), the mounted set as a property, the shown-only tap
 (hidden, outside any station, no tap, no scene, a miss), the nearer of two
 parts on the ray through the real `pickObject`, an empty `Object3D` as a

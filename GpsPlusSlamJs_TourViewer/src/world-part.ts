@@ -362,6 +362,39 @@ export function tickWorldParts(
   viewHeightPx?: number,
 ): void {
   if (scene === null || viewer === null) return;
+  tickEachWorldPart(parts, viewer, nowMs, {
+    ...(viewHeightPx === undefined ? {} : { viewHeightPx }),
+    shown: (part) => shownIn(part.object, scene),
+  });
+}
+
+/** What a page hands every part of one tick beyond the clock and the
+ *  viewer (`tickEachWorldPart`). */
+interface TickOptions {
+  /** The view's height in CSS px: with a camera, the lens over it. */
+  readonly viewHeightPx?: number;
+  /** The editing selection (`WorldFrame.selected`); absent in play. */
+  readonly selected?: string | null;
+  /** Which parts take this frame; none: every part with an `update`. */
+  readonly shown?: (part: WorldPart) => boolean;
+}
+
+/**
+ * One frame for each of `parts` that has an `update` and is `shown`: the
+ * page clock (`nowMs`, as seconds), the world position of `viewer` in
+ * the part's parent frame and the direction it looks there, the camera
+ * and its lens over `viewHeightPx` when the viewer is one, and the
+ * selection when given. The visitor's `tickWorldParts` names the parts
+ * under a station's content; the AR creator names its previews' parts
+ * (`creator-previews.ts`). Allocates nothing per part.
+ */
+export function tickEachWorldPart(
+  parts: Iterable<WorldPart>,
+  viewer: Object3D,
+  nowMs: number,
+  options: TickOptions = {},
+): void {
+  const { viewHeightPx, selected, shown } = options;
   const seconds = nowMs / 1000;
   const camera = isCamera(viewer) ? viewer : undefined;
   const lens = camera?.projectionMatrix.elements[5] ?? 0;
@@ -373,7 +406,7 @@ export function tickWorldParts(
       ? 2 / (lens * viewHeightPx)
       : undefined;
   for (const part of parts) {
-    if (part.update === undefined || !shownIn(part.object, scene)) continue;
+    if (part.update === undefined || shown?.(part) === false) continue;
     const parent = part.object.parent;
     viewer.getWorldPosition(viewerLocal);
     viewer.getWorldDirection(facingLocal);
@@ -388,6 +421,7 @@ export function tickWorldParts(
       facing: [facingLocal.x, facingLocal.y, facingLocal.z],
       ...(camera === undefined ? {} : { camera }),
       ...(metresPerPxAtOneM === undefined ? {} : { metresPerPxAtOneM }),
+      ...(selected === undefined ? {} : { selected }),
     });
   }
 }

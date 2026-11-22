@@ -41,12 +41,12 @@ imageHeight, nowIso }): TourPicture | null` - the camera's RAW odometry pose
   rule every page that turns a stand uses: the renderer here and the 3D
   editor's drag preview (`editor3d-stations.ts`), so a drag or a
   cancelled one never tilts a stand.
-- `renderTourObjects(objects, { scene, zero, poseOf?, makeLabel, loadPhotoTexture })`
+- `renderTourObjects(objects, { scene, zero, poseOf?, makeLabel, loadPhotoTexture, makeLectern?, makeReadingSign?, worldPart? })`
   builds ONE `Group` and adds it to the scene only after the last photo
   decoded (photos decode one at a time - memory), so a session ending
   mid-run owns no stray labels; `dispose` removes the group.
   Details:
-  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's, which this renderer has not, so it is left out quietly),
+  Promise<RenderedTourObjects>` - by the same view rules as a station's blocks (`drawnByView`): a short text in its `pin`view as a label object (a sign, an edge hint or a ground arrow is the world door's: without a door it is left out quietly). With a door (`worldPart`, one field the station renderer shares) an object goes to it exactly as its block (`tourObjectBlock`at the local origin) would at a station: a pin as its head on a stem and every view no drawing here has, placed at the object's pose with its id in`userData.objectId`; the creator's AR previews (`creator-previews.ts`) pass the door in the edit mode, the visitor's other callers pass none and keep pins as labels;
 a picture in its`plane` view, or in a viewpoint view without its viewpoint, as a capture plane (`placeCapturedImagePlanes`, from each
 picture's inline `imageAsset`; a framed print, a cut-out or a picture lined up from its viewpoint is the world door's, so it is left out quietly), all at the scene root; a picture whose
 texture fails is skipped and named in `skipped`; a placed 3D model

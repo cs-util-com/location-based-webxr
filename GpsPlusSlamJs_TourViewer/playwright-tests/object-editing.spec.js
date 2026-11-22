@@ -217,7 +217,7 @@ test("a tap in AR selects the object under the ring, a tap on the panel does not
 
   // In AR the list waits for a selection.
   await expect(page.getByTestId("object-list-hint")).toHaveText(
-    /Tap a pin or photo to select it/,
+    /Tap an item to select it/,
   );
   await page.evaluate(
     ([key, id]) => {
@@ -362,4 +362,78 @@ test("in AR a delete is taken back by the strip's persistent Undo, which names i
       .locator('[data-testid="object-row"][data-selected="true"]')
       .getByTestId("object-title"),
   ).toHaveText("Fixture pin");
+});
+
+/** The stations tour whose gate stands every kind of free block. */
+const BLOCKS_ARCHIVE = "http://127.0.0.1:5197/ranges-ok/blocks-tour.zip";
+
+/** The object ids drawn anywhere in the fake scene, however deep. */
+function drawnIds(page) {
+  return page.evaluate((key) => {
+    /** @param {any} o @returns {string[]} */
+    const ids = (o) => [
+      ...(typeof o.userData?.objectId === "string"
+        ? [o.userData.objectId]
+        : []),
+      ...(o.children ?? []).flatMap(ids),
+    ];
+    return [...new Set(ids(/** @type {any} */ (window)[key].fakeScene))].sort();
+  }, TEST_KEY);
+}
+
+test("in AR the creator sees every kind of item drawn, a tap selects the placed model and Delete takes it out of the scene", async ({
+  page,
+}) => {
+  // Why this test matters: the creator's AR previews drew only pins and
+  // photos, so a model, a framed picture or a character could be neither
+  // seen nor tapped in AR, and so never deleted there. Every free item of
+  // the tour must stand in the scene by its id, and a deleted one must go.
+  await page.goto("/?nocache=1");
+  await page.getByTestId("link-input").fill(BLOCKS_ARCHIVE);
+  await page.getByTestId("open-button").click();
+  await expect(page.locator("body")).toHaveAttribute(
+    "data-tour-open",
+    "settled",
+    { timeout: 15000 },
+  );
+  await enterArAndMeasure(page);
+  const items = [
+    "gate-arch",
+    "gate-knight",
+    "gate-photo",
+    "gate-pin",
+    "gate-porter",
+    "gate-warden",
+  ];
+  await expect
+    .poll(
+      async () => {
+        await page.evaluate((key) => {
+          /** @type {any} */ (window)[key].emitFrames(1);
+        }, TEST_KEY);
+        const drawn = await drawnIds(page);
+        return items.filter((id) => drawn.includes(id));
+      },
+      { timeout: 20000 },
+    )
+    .toEqual(items);
+
+  await page.evaluate(
+    ([key, id]) => {
+      /** @type {any} */ (window)[key].pickId = id;
+      /** @type {any} */ (window)[key].tapXr();
+    },
+    [TEST_KEY, "gate-arch"],
+  );
+  const selected = page.locator(
+    '[data-testid="object-row"][data-selected="true"]',
+  );
+  await expect(selected).toHaveCount(1);
+  await selected.getByTestId("object-delete").click();
+  await expect
+    .poll(async () => (await drawnIds(page)).includes("gate-arch"), {
+      timeout: 10000,
+    })
+    .toBe(false);
+  expect(await drawnIds(page)).toContain("gate-pin");
 });

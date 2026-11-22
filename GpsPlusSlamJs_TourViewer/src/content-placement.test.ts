@@ -27,7 +27,10 @@ import type {
   TourObject,
   TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
-import { localPoseOf } from "gps-plus-slam-app-framework/ar/tour-station-pose";
+import {
+  localPoseOf,
+  tourObjectBlock,
+} from "gps-plus-slam-app-framework/ar/tour-station-pose";
 
 import {
   mintPhoto,
@@ -1951,5 +1954,207 @@ describe("renderTourStation", () => {
         (0.001 * Math.PI) / 180,
       );
     }
+  });
+});
+
+describe("renderTourObjects with a world door", () => {
+  const geo = {
+    lat: 47.5001,
+    lon: 8.7001,
+    alt: 401,
+    rotation: [0, 0.6, 0, 0.8],
+  } as const;
+  const base = { createdAtIso: NOW, geo };
+  /** One object of every free kind, in views the door draws and views
+   *  this renderer draws itself. */
+  const every: readonly TourObject[] = [
+    { ...base, id: "pin", kind: "shortText", view: "pin", caption: "Gate" },
+    { ...base, id: "sign", kind: "shortText", view: "sign", caption: "Sign" },
+    {
+      ...base,
+      id: "model",
+      kind: "model",
+      view: "placed",
+      asset: "arch",
+      sizeM: 2,
+    },
+    {
+      ...base,
+      id: "framed",
+      kind: "picture",
+      view: "framed",
+      image: "knight",
+      widthM: 1,
+      imageAsset: { id: "knight", path: "content/knight.png", kind: "image" },
+    },
+    {
+      ...base,
+      id: "plane",
+      kind: "picture",
+      view: "plane",
+      image: "plane",
+      widthM: 1,
+      imageAsset: { id: "plane", path: "content/plane.jpg", kind: "image" },
+    },
+    {
+      ...base,
+      id: "video",
+      kind: "video",
+      view: "standHere",
+      video: "clip",
+      widthM: 1,
+    },
+    {
+      ...base,
+      id: "sound",
+      kind: "audio",
+      view: "spot",
+      audio: "voice",
+    } as unknown as TourObject,
+    {
+      ...base,
+      id: "figure",
+      kind: "character",
+      view: "speak",
+      name: "Warden",
+      image: "knight",
+    },
+    {
+      ...base,
+      id: "stand",
+      kind: "longText",
+      view: "lectern",
+      title: "T",
+      body: "B",
+    },
+  ];
+
+  function door() {
+    const asked: TourBlock[] = [];
+    const parts: WorldPart[] = [];
+    const worldPart = (block: TourBlock): WorldPart => {
+      asked.push(block);
+      const part: WorldPart = {
+        object: new Object3D(),
+        dispose: () => {
+          unmountWorldPart(part);
+        },
+      };
+      parts.push(part);
+      return part;
+    };
+    return { asked, parts, worldPart };
+  }
+
+  function deps(scene: Object3D, worldPart?: (block: TourBlock) => WorldPart) {
+    return {
+      scene,
+      zero: ZERO,
+      makeLabel: () => ({ object: new Object3D(), dispose: () => undefined }),
+      loadPhotoTexture: () => Promise.resolve(new Texture()),
+      ...(worldPart === undefined ? {} : { worldPart }),
+    };
+  }
+
+  it("sends a pin and every view only the door draws to it, keeps a plane picture a plane, and draws each at the object's pose under its id", async () => {
+    // Why this test matters: the creator's AR previews draw the tour's
+    // objects through this renderer. Without the door every model,
+    // video, sound, character, framed picture and sign was drawn as
+    // nothing, so the creator could neither see nor tap it in AR; and a
+    // pin stayed the old label while the visitor sees its head on a stem.
+    const scene = new Group();
+    const d = door();
+    const rendered = await renderTourObjects(every, deps(scene, d.worldPart));
+    expect(d.asked.map((b) => b.id)).toEqual([
+      "pin",
+      "sign",
+      "model",
+      "framed",
+      "video",
+      "sound",
+      "figure",
+    ]);
+    // A block as the door reads it: the object's fields, no world pose,
+    // station or inline asset (the renderer places the part).
+    const framed = d.asked.find((b) => b.id === "framed") as unknown as Record<
+      string,
+      unknown
+    >;
+    expect(framed["geo"]).toBeUndefined();
+    expect(framed["imageAsset"]).toBeUndefined();
+    expect(framed["image"]).toBe("knight");
+    // The plane picture is a plane, the stand has no builder here: left out.
+    expect(rendered.count).toBe(8);
+    const at = objectPoseNue(geo, ZERO);
+    for (const part of d.parts) {
+      expect(part.object.position.toArray()).toEqual([...at.positionNue]);
+      expect(part.object.quaternion.toArray()).toEqual([...at.rotationNue]);
+      expect(part.object.parent).toBe(rendered.root);
+    }
+    expect(d.parts.map((p): unknown => p.object.userData["objectId"])).toEqual(
+      d.asked.map((b) => b.id),
+    );
+    // Mounted while they stand, freed and unmounted with the preview.
+    expect(mountedWorldParts()).toEqual(expect.arrayContaining(d.parts));
+    rendered.dispose();
+    for (const part of d.parts) {
+      expect(mountedWorldParts()).not.toContain(part);
+    }
+  });
+
+  it("places a door part at the caller's pose in the caller's frame when it passes one", async () => {
+    // Why: an object placed in this AR visit stands under the world group
+    // at its odometry pose; a door part placed from geo instead would
+    // jump with every GPS re-solve.
+    const scene = new Group();
+    const d = door();
+    await renderTourObjects([every[2]!], {
+      ...deps(scene, d.worldPart),
+      poseOf: () => ({ positionNue: [1, 2, 3], rotationNue: [0, 0, 0, 1] }),
+    });
+    expect(d.parts[0]?.object.position.toArray()).toEqual([1, 2, 3]);
+  });
+
+  it("draws an object as the station renderer draws the same block (property)", async () => {
+    // Why this test matters: the creator sees in AR what the visitor sees
+    // at the station. The object renderer and the station renderer make
+    // the door choice by one rule; this holds them to it for any mix of
+    // kinds and views.
+    await fc.assert(
+      fc.asyncProperty(
+        fc.subarray([...every], { minLength: 1 }),
+        async (objects) => {
+          const viaObjects = door();
+          await renderTourObjects(
+            objects,
+            deps(new Group(), viaObjects.worldPart),
+          );
+          const viaStation = door();
+          const blocks = objects.map((o) =>
+            tourObjectBlock(o, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
+          );
+          await renderStationBlocks({ geo }, blocks, {
+            ...deps(new Group(), viaStation.worldPart),
+            assets: [
+              { id: "knight", path: "content/knight.png", kind: "image" },
+              { id: "plane", path: "content/plane.jpg", kind: "image" },
+            ],
+          });
+          expect(viaObjects.asked.map((b) => b.id)).toEqual(
+            viaStation.asked.map((b) => b.id),
+          );
+        },
+      ),
+      { numRuns: 60 },
+    );
+  });
+
+  it("without a door draws only what it drew before", async () => {
+    // The positive control: the other callers pass no door and keep
+    // their pins as labels and the door kinds out.
+    const scene = new Group();
+    const rendered = await renderTourObjects(every, deps(scene));
+    // pin label + plane picture.
+    expect(rendered.count).toBe(2);
   });
 });
