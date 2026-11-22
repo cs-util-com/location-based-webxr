@@ -648,7 +648,7 @@ async function startAr(): Promise<void> {
       // Fire-and-forget: the framework ties this binding's disposal to the AR
       // session teardown (it registers a session disposer that
       // `resetWebXRState()` flushes), so a restart never leaks the previous
-      // session's per-frame lerp + store subscription.
+      // session's alignment binding + store subscription.
       getSeams().enableArWorldGroupAlignment({
         store,
         arWorldGroup: alignmentArWorldGroup,

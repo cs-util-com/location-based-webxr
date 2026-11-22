@@ -78,9 +78,8 @@ gate now:
   stehen"_.
 - **`aligned`** — `arWorldGroup.matrix` has left identity, i.e. the fusion has
   solved at least once. Until then the city is drawn in the AR session's own
-  origin frame: right place, arbitrary rotation. Not weakened by the alignment
-  lerper, which applies the FIRST target instantly rather than animating out of
-  identity.
+  origin frame: right place, arbitrary rotation. Every alignment lands in the
+  frame it arrives, never animating out of identity.
 - **`contentReady`** — the AR entry rebuild has settled. Entering AR re-fetches
   and re-meshes the city because the AR datum is baked into its vertices;
   uncovering before that shows the desktop-datum city, ~100 m out.

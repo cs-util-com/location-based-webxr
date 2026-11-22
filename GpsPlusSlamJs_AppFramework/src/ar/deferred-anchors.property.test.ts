@@ -274,10 +274,10 @@ function checkLiveness(group: THREE.Object3D, roots: THREE.Object3D[]): void {
       expect(
         local.distanceTo(p.clone().applyMatrix4(tInv))
       ).toBeLessThanOrEqual(DEFERRED_ANCHOR_EPSILON_M + 1e-9);
-      // Paths 1 and 2: the world pose is the NUE pose (lerper snapped).
+      // Paths 1 and 2: the world pose is the NUE pose (T lands in one frame).
       const world = p.clone().applyMatrix4(root.matrixWorld);
       expect(world.distanceTo(p)).toBeLessThanOrEqual(
-        DEFERRED_ANCHOR_EPSILON_M + 1e-3
+        DEFERRED_ANCHOR_EPSILON_M + 1e-9
       );
     }
   });
@@ -378,7 +378,7 @@ function runScenario({ ops, matureAtStart, keys, devJump }: Scenario): void {
     // Liveness: mature, quiet until the window closes, then out of view.
     world.store.mature();
     for (let i = 0; i < 2600 && world.pass().windowOpen; i += 1);
-    for (let i = 0; i < 60; i += 1) world.pass(); // the lerp settles, follow ends
+    for (let i = 0; i < 60; i += 1) world.pass(); // the follow ends
     world.setLook('out');
     for (let i = 0; i < keys + 2; i += 1) world.pass();
     checkLiveness(world.group, world.roots);

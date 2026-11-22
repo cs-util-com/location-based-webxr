@@ -50,7 +50,7 @@ keep, and no consumer passed any of the three.
     1 Hz samples, as below.
   - `'mature-alignment'` (owner decision D33, 2026-10-03) - the object's
     position in `arWorldGroup`'s frame (raw odometry NUE, whatever the
-    group's lerped matrix is) through the FIRST MATURE alignment at or after
+    group's matrix is) through the FIRST MATURE alignment at or after
     the placement: the first whose session GPS extent (`getGpsExtentM`)
     reaches `matureGpsExtentM` (default 40 m, the shared
     `../state/alignment-maturity.ts`). An object placed after the session
@@ -137,14 +137,14 @@ object as an `@internal` testing seam in lieu of pumping the global
   object until `isFullyAnchored`).
 - **Steady-state commits snap instantly**: when the commit gate accepts a
   correction the object's local pose is set with `object3D.position.copy(target)`
-  (no per-anchor easing). Smoothing is done **once** at `arWorldGroup` via
-  `enableArWorldGroupAlignment` (the framework default that lerps
-  `arWorldGroup.matrix`), so the camera and every anchored child shift together
+  (no per-anchor easing). The alignment is applied **once**, at `arWorldGroup`,
+  via `enableArWorldGroupAlignment` (the framework default, which lands each
+  alignment in one frame), so the camera and every anchored child shift together
   and each accepted commit here is only a small off-screen residual. The commit
   **gate** (distance-scaled threshold + `snap-when-offscreen` frustum
   suppression) decides _when_ a correction lands; the snap decides _how_
   (instantly). A previous per-anchor lerp (`lerpCorrections` /
-  `correctionLerpRate`, D1′) was removed once alignment was lerped at
+  `correctionLerpRate`, D1′) was removed once the alignment was applied at
   `arWorldGroup` — see
   `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-05-0650-gps-anchor-frame-architecture-bug-and-plan.md`.
 - **`snap-when-offscreen` corrections fire only off-screen — except the first

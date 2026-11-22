@@ -1,5 +1,5 @@
 /**
- * `enableArWorldGroupAlignment` — wire the store's alignment matrix to
+ * `enableArWorldGroupAlignment`: wire the store's alignment matrix to
  * `arWorldGroup.matrix`, as a single framework-default call.
  *
  * Why this exists: `arWorldGroup` is the AR-odometry node that the camera and

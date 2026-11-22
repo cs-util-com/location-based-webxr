@@ -40,7 +40,7 @@ arWorldGroup, arpose, camera, renderer}`), `getOccupancyGrid()` (or `null`),
 - **GPS-marker singleton:** points `gpsEventVisualizer` at the replay scene on
   start and restores it (`setSceneSource(null)`) on `dispose`, so a later live AR
   session is unaffected. Only one replay session may be active at a time (the
-  scene + marker singletons are module-global — same constraint as the
+  scene + marker singletons are module-global, the same constraint as the
   RecorderApp's replay mode).
 - **Coordinate frames:** cubes/occlusion mesh carry `WEBXR_TO_NUE` under
   `arWorldGroup` (raw-WebXR cells in an NUE-aligned node); `onNewOdomPose`

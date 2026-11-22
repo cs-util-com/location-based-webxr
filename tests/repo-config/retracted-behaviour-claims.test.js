@@ -90,6 +90,27 @@ const REMOVED_BEHAVIOURS = [
     ],
   },
   {
+    // The world under arWorldGroup no longer eases toward a new alignment:
+    // every change lands in the frame it arrives, and smoothing, if any, is
+    // an app's own. The pattern is the easing VERB with what eased; the
+    // context keeps it to sentences about corrections and the AR view, so a
+    // UI animation that "eases in smoothly" stays legal.
+    //
+    // OWN MARKERS: the sentence that shipped also says "does not override",
+    // a shared marker that negates a DIFFERENT verb (the removed bypass), so
+    // under the shared set this entry read that line as history and passed.
+    // The witness check below now fails any witness a marker would exempt.
+    markers: /\b(removed|retracted|superseded|no longer eases?)\b/i,
+    pattern: /\b(?:eases?|eased|easing)\s+(?:into it together|in smoothly)\b/i,
+    context: /\b(?:AR view|corrections?|alignment)\b/i,
+    label:
+      'the AR view easing into a new alignment (removed 2026-11-22: every alignment change lands in the frame it arrives; see ar-world-group-alignment.ts.md)',
+    witnesses: [
+      "a large alignment change does not override that, because the whole AR view eases into it together rather than one object snapping under the user's gaze.",
+      'point of view. Later corrections ease in smoothly rather than teleporting.',
+    ],
+  },
+  {
     // NOT a behaviour removal — a retracted MEASUREMENT, kept here rather than
     // in the figures guard because it is a claim about how the system behaves
     // over time, and because it reached three READMEs and four articles from a
@@ -126,9 +147,14 @@ const REMOVED_BEHAVIOURS = [
  * marker set made of ordinary English rehabilitates by coincidence, which is
  * indistinguishable from not having the gate. Each entry here either names the
  * removal or negates the specific verb the pattern matched.
+ *
+ * "does not stay" was dropped from it: the bypass entry's own first witness
+ * says "does not stay in a stale location", so the scan read the very sentence
+ * it was written for as history. The witness check now fails any witness a
+ * marker would exempt.
  */
 const MARKERS =
-  /\b(removed|retracted|superseded|no longer exists|does not (force|bypass|override|stay)|not size-limited|no large-jump)\b/i;
+  /\b(removed|retracted|superseded|no longer exists|does not (force|bypass|override)|not size-limited|no large-jump)\b/i;
 
 /** @returns {string[]} tracked .md and .ts files, excluding this guard itself */
 function trackedDocs() {
@@ -186,11 +212,13 @@ function scanTree() {
       continue;
     }
     text.split('\n').forEach((line, index) => {
-      if (MARKERS.test(line)) {
-        return;
-      }
-      for (const { pattern, context, label } of REMOVED_BEHAVIOURS) {
+      for (const { pattern, context, markers, label } of REMOVED_BEHAVIOURS) {
         if (!pattern.test(line)) {
+          continue;
+        }
+        // An entry may carry its own markers when a shared one negates a
+        // verb that is not its own (see the AR-view easing entry).
+        if ((markers ?? MARKERS).test(line)) {
           continue;
         }
         // A context requirement is a per-entry narrowing: the pattern says
@@ -226,12 +254,14 @@ describe('removed behaviour is not described as current', () => {
   // mode the sibling guard was rewritten for.
   it.each(REMOVED_BEHAVIOURS)(
     'matches the sentences that actually shipped: $label',
-    ({ pattern, context, witnesses }) => {
+    ({ pattern, context, markers, witnesses }) => {
       for (const witness of witnesses) {
         expect(witness).toMatch(pattern);
         if (context) {
           expect(witness).toMatch(context);
         }
+        // A witness a marker exempts is a sentence the scan would let through.
+        expect(witness).not.toMatch(markers ?? MARKERS);
       }
     }
   );

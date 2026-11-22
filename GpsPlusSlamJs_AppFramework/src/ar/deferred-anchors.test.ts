@@ -699,7 +699,7 @@ describe('deferredAnchor: the frame-switch window', () => {
     // Still following: the world pose is the NUE pose.
     expectMatrixClose(root.matrixWorld, IDENTITY, 1e-9);
     s.run(30);
-    expectMatrixClose(root.matrix, inv(tOf(6)), 0.02);
+    expectMatrixClose(root.matrix, inv(tOf(6)), 1e-9);
     const held = root.matrix.clone();
     s.store.setT(tOf(8));
     s.run(20);

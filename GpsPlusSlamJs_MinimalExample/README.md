@@ -36,7 +36,8 @@ place two markers near the real-world spot you tapped:
   placed exactly on the tapped point. It holds the tapped pose while it samples
   GPS (default bootstrap), then makes a single lazy correction to the GPS median
   **while off-screen** (`snap-when-offscreen`) — so it stays put from the user's
-  point of view. Later corrections ease in smoothly rather than teleporting.
+  point of view. Later corrections move the whole AR view together, in one frame,
+  rather than one object teleporting under the user's gaze.
 
 The two markers spawn a short fixed distance apart so they are individually
 visible from the start (an early field test reported the coincident pair looking

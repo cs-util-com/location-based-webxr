@@ -85,8 +85,7 @@ const AR_CAMERA_FAR = 200;
  *
  * The trade, so the choice is informed rather than copied: scene-root content
  * is geographically truthful but appears to shift against the camera
- * passthrough as the fusion refines the alignment (the lerp is what smooths
- * that). arWorldGroup content is visually locked to the real world but its
+ * passthrough as the fusion refines the alignment. arWorldGroup content is visually locked to the real world but its
  * geographic position drifts, which is why an anchor there re-solves.
  *
  * CAUTION — two NUE frames: arWorldGroup's local space is the *AR-odometry*

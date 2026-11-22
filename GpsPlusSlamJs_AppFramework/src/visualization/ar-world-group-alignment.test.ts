@@ -17,7 +17,7 @@
  * - `null` alignment is ignored (no spurious identity target),
  * - `dispose()` stops both the subscription and the per-frame update.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { enableArWorldGroupAlignment } from './ar-world-group-alignment.js';
 import { getArParentBinding } from '../ar/ar-parent-target.js';
@@ -298,6 +298,27 @@ describe('enableArWorldGroupAlignment: every change lands at once', () => {
     rig.handle.dispose();
   });
 
+  // Why: frames with no new alignment must not touch the group at all. A
+  // binding that rewrote the matrix every frame would still pass every
+  // exact-landing test above, while walking the world matrices of the whole
+  // AR subtree each frame.
+  it('leaves the group untouched over frames with no new alignment', () => {
+    const rig = arRig(tOf(0));
+    rig.frame();
+    rig.store.setAlignment(tOf(2, 10, -1));
+    rig.frame();
+    const spy = vi.spyOn(rig.group, 'updateMatrixWorld');
+    for (let f = 0; f < 30; f += 1) rig.frame();
+    expect(spy).not.toHaveBeenCalled();
+    expectMatrixExact(rig.group.matrix.toArray(), tOf(2, 10, -1));
+    spy.mockRestore();
+    rig.handle.dispose();
+  });
+
+  // A regression pin only: how the group lands no longer depends on the
+  // frame epoch (only the deferred anchors read it), so this holds that an
+  // epoch change neither moves the group nor keeps the next alignment from
+  // landing.
   it('does not change what it lands around a frame-epoch change', () => {
     const rig = arRig(tOf(0));
     rig.frame();
@@ -312,7 +333,7 @@ describe('enableArWorldGroupAlignment: every change lands at once', () => {
 });
 
 // Why: the deferred anchors under the group read T from this binding and
-// run their pass inside its frame update. A pass that ran before the lerp
+// run their pass inside its frame update. A pass that ran before the alignment
 // step, or a binding that outlived its dispose, would place content
 // against a stale or dead T.
 describe('enableArWorldGroupAlignment: the parent binding', () => {

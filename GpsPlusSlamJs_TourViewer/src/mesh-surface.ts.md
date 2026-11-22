@@ -78,8 +78,8 @@ now? }) → MeshSurface` - composes the framework's pieces:
   hit-test by one re-mesh (filed, M5 review #8 / F10); the smoothing's time constant
   (0.1 s) is a deliberate lag of its own, several frames long.
 - **Smoothed in the world group's frame, not in world** (r867 review #2): the mesh, the
-  camera and the reticle all hang under `parent`, which the alignment lerper eases every
-  frame. In world, each alignment step was a lag: the ring slid over a still surface
+  camera and the reticle all hang under `parent`, which the alignment binding moves in one
+  frame on every change. In world, each alignment step was a lag: the ring slid over a still surface
   (about 35 cm at 50 m from the pivot of a small turn). In the parent's frame a still
   surface under a still phone is a still target. Assumes `parent.matrixWorld` is rigid
   (the alignment is); a singular one turns the normal to zero, which the smoother takes as

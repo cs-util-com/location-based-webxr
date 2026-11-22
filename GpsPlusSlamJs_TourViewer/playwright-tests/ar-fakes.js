@@ -265,7 +265,7 @@ export async function installTourViewerArFakes(page, options = {}) {
       /**
        * The store's alignment right now (16 numbers, column-major), or the
        * identity before there is one. The real world group's matrix IS the
-       * alignment (lerped toward it), and since the authoring settle
+       * alignment (landed in one frame), and since the authoring settle
        * (authoring plan 2026-09-28-0953 M2c) recomputes geo as
        * `alignment · local`, a group that pretended to be the identity
        * under a real alignment would move every settled pin by it.

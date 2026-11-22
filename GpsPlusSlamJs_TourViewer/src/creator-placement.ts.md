@@ -106,9 +106,9 @@ troubleshooting recording's record of each placement. Split out of
   (refused with the field kept while the text is past a pin's 40
   characters, `pin-text.ts`: the tour file would refuse it at the Finish)
   mints a pin (a short text in its `pin` view) from the reticle's GPS-world position
-  (`content-placement.ts`; the reticle rides the lerped visual alignment,
-  which converges within ~0.3 s of a correction - the one frame difference
-  to the photo's target-matrix mint, accepted);
+  (`content-placement.ts`; the reticle rides the alignment on the world
+  group, which lands in the frame it arrives, so the pin and the photo's
+  target-matrix mint read the same alignment, with no frame between them);
   "Capture a photo here" encodes the latest camera frame's pixels
   (`ctx.latestFrame.image`) through `seams.encodeFrameJpeg` and mints a
   picture (its `plane` view, its own image asset) from THAT frame's raw capture pose

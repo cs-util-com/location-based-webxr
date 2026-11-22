@@ -375,7 +375,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   };
 
   /** Fix the point: the object's position in `arWorldGroup`'s frame (raw
-   *  odometry NUE, whatever the group's lerped matrix is now) through the
+   *  odometry NUE, whatever the group's matrix is now) through the
    *  picked alignment, as GPS. */
   const commitThrough = (moment: AlignmentMoment): void => {
     const { alignmentMatrix, zero } = moment;

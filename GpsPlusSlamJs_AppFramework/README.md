@@ -343,7 +343,7 @@ WebXR session lifecycle, Three.js renderer setup, image/depth capture, occupancy
   - `bresenham3d(...)` — Voxel ray traversal.
 - **Replay scene**
   - `initReplayScene(container)` / `disposeReplayScene()` — Create and tear down a 3D replay scene with orbit/FPS controls.
-  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` — Replay scene controls.
+  - `getReplayState()` / `getCameraMode()` / `toggleCameraMode()` / `updateOrbitTarget()` / `getCameraFollower()` - Replay scene controls.
   - `applyReplayAlignment()` - Writes an alignment to the replay scene's `arWorldGroup`, exactly, in the frame it arrives (no smoothing).
 - **Constants**
   - `WEBXR_TO_NUE` — The WebXR → NUE basis change.
@@ -461,8 +461,8 @@ H3-based proximity matching for GPS-anchored points.
 ### `visualization/` — Three.js & Maps
 
 - **Alignment**
-  - `enableArWorldGroupAlignment(options)` — Set the `arWorldGroup` to the store's newest alignment matrix, in the frame it arrives. **Call this once after AR starts** (see [Scene-Graph Convention](#scene-graph-convention)).
-  - `createAlignmentLerper()` — A smoothing alignment-matrix interpolation for an app that drives its own group (the recorder does); the framework's binding does not use it.
+  - `enableArWorldGroupAlignment(options)` - Set the `arWorldGroup` to the store's newest alignment matrix, in the frame it arrives. **Call this once after AR starts** (see [Scene-Graph Convention](#scene-graph-convention)).
+  - `createAlignmentLerper()` - A smoothing alignment-matrix interpolation for an app that drives its own group (the recorder does); the framework's binding does not use it.
   - `clampedAlpha(...)` / `DEFAULT_LERP_RATE` — Frame-rate-independent lerp helpers.
 - **Placement**
   - `createGpsAnchor(options)` — GPS-anchored placement helper for one Three.js object.

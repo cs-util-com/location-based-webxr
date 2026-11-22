@@ -8,7 +8,7 @@
 - **Public API:**
   - `enableArWorldGroupAlignment(options) → ArWorldGroupAlignmentHandle`
     - `options.store: SubscribableStore` — read via `selectAlignmentMatrix`.
-    - `options.arWorldGroup: THREE.Object3D` — the node whose `.matrix` is set
+    - `options.arWorldGroup: THREE.Object3D`: the node whose `.matrix` is set
       to each alignment.
     - Returns a handle with `dispose()` that removes the store subscription
       and the per-frame update.

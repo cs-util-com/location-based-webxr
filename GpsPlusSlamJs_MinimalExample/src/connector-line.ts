@@ -65,7 +65,7 @@ export function createConnectorLine(opts: {
   const scratch = new Vector3();
   const update = (): void => {
     // Refresh the sphere's world matrix so `worldToLocal` uses its current
-    // transform (the GPS alignment lerped onto arWorldGroup moves the sphere).
+    // transform (the GPS alignment on arWorldGroup moves the sphere).
     sphere.updateWorldMatrix(true, false);
     cube.getWorldPosition(scratch);
     sphere.worldToLocal(scratch);
