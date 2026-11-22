@@ -843,7 +843,7 @@
     const zip = await zipBlob(files);
     const name = "feature-match-all-" + session + ".zip";
     download(zip, name);
-    for (const [id, e] of Object.entries(S.entries))
+    for (const e of Object.values(S.entries))
       if (e.status === "kept") e.status = "saved";
     persist();
     log("download all: " + files.length + " pairs as " + name);
@@ -978,7 +978,7 @@
       .querySelectorAll(".panel")
       .forEach((p) => (p.hidden = p.dataset.panel !== tab));
   }
-  let statusTimer = 0;
+  const statusTimer = 0;
   function status(text, kind) {
     const el = $("status");
     el.textContent = text;

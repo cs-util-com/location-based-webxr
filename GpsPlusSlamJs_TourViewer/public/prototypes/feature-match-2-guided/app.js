@@ -800,7 +800,7 @@ async function downloadAll() {
       name: "feature-match-log.txt",
       bytes: enc.encode(logLines.join("\n") + "\n"),
     });
-    const zip = storeZip(entries);
+    const zip = window.storeZip(entries);
     const url = URL.createObjectURL(zip);
     const a = document.createElement("a");
     a.href = url;
@@ -960,8 +960,8 @@ function arrow(text) {
   </g>`;
 }
 function diagram(kind) {
-  let a = "";
-  let b = "";
+  let a;
+  let b;
   let tintB = "";
   let mid = "then";
   switch (kind) {
