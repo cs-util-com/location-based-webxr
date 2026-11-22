@@ -323,10 +323,17 @@ function createAnchorSet(
   };
   const atTarget = { ...atCurrent, atLocal: targetInv };
 
-  function cornersOf(key: KeyEntry): THREE.Vector3[] {
-    const all: THREE.Vector3[] = [];
-    for (const r of key.roots.values()) all.push(...r.corners);
-    return all;
+  /** Largest distance any of the key's corners moves between `a` and `b`. */
+  function keyDisplacement(
+    a: THREE.Matrix4,
+    b: THREE.Matrix4,
+    key: KeyEntry
+  ): number {
+    let max = 0;
+    for (const r of key.roots.values()) {
+      max = Math.max(max, displacement(a, b, r.corners));
+    }
+    return max;
   }
 
   function assign(key: KeyEntry, local: THREE.Matrix4): void {
@@ -355,7 +362,7 @@ function createAnchorSet(
     kind: CommitKind,
     detail = ''
   ): void {
-    const moved = displacement(key.local, local, cornersOf(key));
+    const moved = keyDisplacement(key.local, local, key);
     const waitMs =
       key.pendingSinceMs === null ? 0 : Math.max(0, nowMs - key.pendingSinceMs);
     assign(key, local);
@@ -464,8 +471,7 @@ function createAnchorSet(
     lastCam = cam ? cam.clone() : null;
     for (const key of keys.values()) {
       if (
-        displacement(key.local, targetInv, cornersOf(key)) >
-        DEFERRED_ANCHOR_EPSILON_M
+        keyDisplacement(key.local, targetInv, key) > DEFERRED_ANCHOR_EPSILON_M
       ) {
         commit(key, targetInv, 'release:code-lock');
       }
@@ -497,10 +503,7 @@ function createAnchorSet(
   function targetStep(): number {
     let step = displacement(lastTargetInv, targetInv, ORIGIN_ONLY);
     for (const key of keys.values()) {
-      step = Math.max(
-        step,
-        displacement(lastTargetInv, targetInv, cornersOf(key))
-      );
+      step = Math.max(step, keyDisplacement(lastTargetInv, targetInv, key));
     }
     lastTargetInv.copy(targetInv);
     return step;
@@ -540,8 +543,7 @@ function createAnchorSet(
     key.following = true;
     const kind: CommitKind = windowOpen ? 'window-entry' : 'follow-start';
     if (
-      displacement(key.local, followInv, cornersOf(key)) >
-      DEFERRED_ANCHOR_EPSILON_M
+      keyDisplacement(key.local, followInv, key) > DEFERRED_ANCHOR_EPSILON_M
     ) {
       commit(
         key,
@@ -550,8 +552,10 @@ function createAnchorSet(
         kind === 'window-entry' ? windowTrigger : ''
       );
     } else {
+      // Within epsilon: no move worth a log line, still a placement.
       assign(key, followInv);
       log.info(`follow-start: ${key.key}`);
+      notify(key.roots.values());
     }
   }
 
@@ -564,8 +568,7 @@ function createAnchorSet(
     // After the phase ends, follow on until the key is at T^-1.
     if (
       !followWanted &&
-      displacement(followInv, targetInv, cornersOf(key)) <=
-        DEFERRED_ANCHOR_EPSILON_M
+      keyDisplacement(followInv, targetInv, key) <= DEFERRED_ANCHOR_EPSILON_M
     ) {
       key.following = false;
       log.info(`follow-end: ${key.key}`);
@@ -594,8 +597,7 @@ function createAnchorSet(
       const key = ordered[(i + roundRobin) % ordered.length]!;
       if (key.following) continue;
       if (
-        displacement(key.local, targetInv, cornersOf(key)) <=
-        DEFERRED_ANCHOR_EPSILON_M
+        keyDisplacement(key.local, targetInv, key) <= DEFERRED_ANCHOR_EPSILON_M
       ) {
         key.pendingSinceMs = null;
         continue;
