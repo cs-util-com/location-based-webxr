@@ -27,7 +27,10 @@ import {
   tourDocumentActions,
 } from "../tour-document.js";
 import { selectTourDraft, tourDraftActions } from "../tour-draft-slice.js";
-import { createTourViewerStore } from "../tour-viewer-session.js";
+import {
+  createTourViewerStore,
+  type TourViewerStore,
+} from "../tour-viewer-session.js";
 import { createDraftOffer, type DraftOfferView } from "./draft-offer.js";
 
 function pin(id: string, caption = `pin ${id}`): TourPin {
@@ -41,12 +44,17 @@ function pin(id: string, caption = `pin ${id}`): TourPin {
   };
 }
 
-function setup(discard: () => Promise<boolean> = () => Promise.resolve(true)) {
+function setup(
+  discard: () => Promise<boolean> = () => Promise.resolve(true),
+  /** Runs between the question's start and the offer (the read's await). */
+  whileReading: (store: TourViewerStore) => void = () => undefined,
+) {
   const store = createTourViewerStore();
   store.dispatch(tourDocumentActions.opened({ manifest: tourOf([pin("a")]) }));
   // The page starts the question when it reads the draft (`edit-main.ts`).
   store.dispatch(tourDraftActions.readStarted());
   const question = selectTourDraft(store.getState()).generation;
+  whileReading(store);
   const views: (DraftOfferView | null)[] = [];
   const said: { text: string; error: boolean }[] = [];
   const changes: { count: number; restored: boolean }[] = [];
@@ -225,10 +233,10 @@ describe("the desktop draft offer", () => {
     await running;
   });
 
-  // Why: the offer IS the store's draft question (the store plan's
-  // `tourDraft`): its status moves with each answer, and the view is
-  // drawn from it - a put-off offer asked about again elsewhere (the phone
-  // page's AR start, an edit) shows here without this module's help.
+  // Why: the offer IS the store's draft question (`tourDraft`): its
+  // status moves with each answer, and the view is drawn from it - a
+  // put-off offer asked about again elsewhere (the phone page's AR start,
+  // an edit) shows here without this module's help.
   it("is the store's draft question: each answer moves its status, and the view follows it", () => {
     const { store, question, offer, views } = setup();
     const draft = () => selectTourDraft(store.getState());
@@ -261,6 +269,29 @@ describe("the desktop draft offer", () => {
     expect(views.at(-1)).toBeNull();
     expect(changes).toEqual([]);
     expect(selectTourDraft(store.getState()).status).toBe("reading");
+  });
+
+  // Why: the store refuses the offer when its question moved on while the
+  // draft was read (the question ended, or the next read started). The
+  // gate must not hold then: no answer of this offer can release it, so
+  // every later edit would wait for good.
+  it("an offer the store refuses holds no edit, shows nothing, and its answers do nothing", async () => {
+    const { store, offer, views, changes, caption, edit } = setup(
+      undefined,
+      (s: TourViewerStore) => {
+        s.dispatch(tourDraftActions.questionEnded());
+      },
+    );
+    expect(selectTourDraft(store.getState()).status).toBe("none");
+    expect(views).toEqual([]);
+    expect(isHeldEdit(edit("The gate"))).toBe(false);
+    expect(caption()).toBe("The gate");
+    offer.restore();
+    offer.notNow();
+    await offer.deleteIt();
+    expect(views).toEqual([]);
+    expect(changes).toEqual([]);
+    expect(selectTourDraft(store.getState()).status).toBe("none");
   });
 
   // Why: an answer for a tour the page has left does nothing to the one

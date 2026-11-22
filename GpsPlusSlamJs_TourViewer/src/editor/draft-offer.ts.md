@@ -15,7 +15,10 @@ from that slice.
   (`found`) into the question `deps.question` names and holds the store's
   draft gate (`draft-edit-gate.ts`); it draws the view from the store on
   every change of the slice, its words ending in `DRAFT_EDIT_WAITS` while
-  an edit waits (the gate's count shows a put-off offer again).
+  an edit waits (the gate's count shows a put-off offer again). An offer
+  the slice refuses (its question moved on while the draft was read: the
+  question ended, or the next read started) holds nothing, shows nothing,
+  and its answers do nothing: no answer of it could release the gate.
   - `deps.store` - the page's store: `dispatch`, `getState`, `subscribe`
     and its `draftGate` (`hold`, `release`, `drop`).
   - `deps.question` - the slice's `generation` the page read when it
@@ -85,6 +88,6 @@ restoreButton.onclick = () => offer.restore();
   nothing waiting), Not now dropping and saying so with the next edit
   asking again, Delete it's progress and replay, a failed Delete it, a
   re-show while it runs, an answer after the tour was left, each answer
-  moving the slice's status with the view following it, and the next
-  tour's read hiding it.
+  moving the slice's status with the view following it, the next
+  tour's read hiding it, and an offer the store refuses holding no edit.
 - `draft-shared-behaviour.test.ts` - the same rule against the phone's.

@@ -35,6 +35,13 @@ export interface DraftOfferAnswers {
   deleteIt(): Promise<void>;
 }
 
+/** The answers of an offer the store refused: each does nothing. */
+const NO_ANSWERS: DraftOfferAnswers = {
+  restore: () => undefined,
+  notNow: () => undefined,
+  deleteIt: () => Promise.resolve(),
+};
+
 export function createDraftOffer(deps: {
   /** The page's store: the offer is its draft question (`tourDraft`). */
   store: {
@@ -105,11 +112,14 @@ export function createDraftOffer(deps: {
     }
   };
 
+  store.dispatch(tourDraftActions.found({ generation, text: deps.text }));
+  // Refused: the question moved on while the draft was read. Nothing is
+  // held, since no answer of this offer could release the gate again.
+  if (!showing()) return NO_ANSWERS;
   // The gate's count reaches the store before it asks, and a put-off
   // offer shows again from there (`tour-draft-slice.ts`): nothing to do.
   gate.hold(() => undefined);
   unsubscribe = store.subscribe(draw);
-  store.dispatch(tourDraftActions.found({ generation, text: deps.text }));
   draw();
 
   return {
