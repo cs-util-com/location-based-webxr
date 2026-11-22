@@ -666,3 +666,51 @@ describe("Delete it's commit point holds the settings and codes records", () => 
   });
 });
 
+describe("an object edited after Delete it claims its id wherever its write runs", () => {
+  /** OLD with a draft of pin "a" offered, "Delete it" tapped and landed. */
+  async function deleted(holdSweep: boolean) {
+    const ns = namespaces();
+    const first = await wired(ns);
+    expect(await first.draft.writeObject(pin("a", "draft"))).toBe(true);
+    await flush();
+    const page = await wired(ns);
+    expect(page.dom.draftOffer.hidden, "the draft is offered").toBe(false);
+    if (holdSweep) ns.holdRemovesOf = new RegExp(`^${objectKey("a")}$`);
+    page.dom.draftDiscard.click();
+    await flush();
+    expect(page.dom.draftOffer.hidden, "Delete it landed").toBe(true);
+    return { ns, page };
+  }
+
+  // Why: the edit is newer than the rejection. Run once the tour had
+  // closed (queued behind the id's sweep), its claim was skipped: it
+  // landed under a meta still rejecting the id, and the next open hid it
+  // and swept it.
+  it("an edit that runs after the tour closed is offered at the next open", async () => {
+    const { ns, page } = await deleted(true);
+    const wrote = page.draft.writeObject(pin("a", "edited"));
+    page.draft.reset();
+    ns.releasePuts();
+    expect(await wrote).toBe(true);
+    await flush();
+    const next = await wired(ns);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+    expect(ns.files(OLD).has(objectKey("a"))).toBe(true);
+  });
+
+  // Why: the same edit, run once a Finish moved the draft to the saved
+  // file's key: it landed in the old namespace under the rejection, the
+  // copy carried it, and the new meta rejected the id again.
+  it("an edit that runs after the draft followed a Finish is offered there", async () => {
+    const { ns, page } = await deleted(true);
+    const wrote = page.draft.writeObject(pin("a", "edited"));
+    const moved = page.draft.follow(NEW);
+    await flush();
+    ns.releasePuts();
+    expect(await wrote).toBe(true);
+    expect(await moved).toBe(true);
+    await flush();
+    const next = await wired(ns, tourOf([pin("a")]), NEW);
+    expect(next.dom.draftOffer.hidden, "the edit is offered").toBe(false);
+  });
+});

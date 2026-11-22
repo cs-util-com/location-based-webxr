@@ -340,6 +340,39 @@ export function wireCreatorDraft(deps: {
    * flight.
    */
   const draftWrites = createKeyedChain();
+  /**
+   * The ids (and reserved entries) a write claimed by a namespace's own
+   * meta once that namespace was no longer the open tour's
+   * (`claimElsewhere`), per namespace. A `follow` away from a namespace
+   * drops exactly these from the list it carries over: the copy holds
+   * their writes, so the new meta must not reject them again. Only these:
+   * an id whose rejection stands (a spent draft whose sweep did not land)
+   * stays rejected.
+   */
+  const claimedElsewhere = new WeakMap<DraftFileStore, Set<string>>();
+
+  /**
+   * Claim `id` by `store`'s own meta, which is no longer the open tour's:
+   * `remove` its rejected files, then rewrite the meta without it,
+   * directly - never through the meta's queue, which a `follow` holds
+   * (`exclusive`) until the claiming write ends. True when the meta did
+   * not reject it or the rewrite landed.
+   */
+  async function claimElsewhere(
+    store: DraftFileStore,
+    id: string,
+    remove: () => Promise<void>,
+  ): Promise<boolean> {
+    if (!(await metaRejectedIds(store)).includes(id)) return true;
+    await remove();
+    let claimed = claimedElsewhere.get(store);
+    if (claimed === undefined) {
+      claimed = new Set();
+      claimedElsewhere.set(store, claimed);
+    }
+    claimed.add(id);
+    return writeMetaWithout(store, id);
+  }
 
   function metaChainKey(tourUrl: string): string {
     return JSON.stringify(["meta", draftKeyForTour(tourUrl)]);
@@ -548,11 +581,10 @@ export function wireCreatorDraft(deps: {
    *
    * While `store` is the open tour's, by that tour's lists. Once it is not
    * (the tour closed, or a Finish moved the draft to another key since the
-   * write was queued), by `store`'s own meta, written directly: the claim
-   * follows the store the write goes to. Skipped, the write landed under a
-   * meta that still rejected it, and the next open swept it without a
-   * word. Not through the meta's queue: a `follow` holds every queue
-   * (`exclusive`) until this one ends.
+   * write was queued, or while its removal ran), by `store`'s own meta
+   * (`claimElsewhere`): the claim follows the store the write goes to.
+   * Skipped, the write landed under a meta that still rejected it, and the
+   * next open swept it without a word.
    *
    * True when nothing needed claiming or the meta write landed.
    */
@@ -562,17 +594,14 @@ export function wireCreatorDraft(deps: {
     fileKey: string,
     entry: string,
   ): Promise<boolean> {
-    if (draftStore === store) {
-      if (!draftRejected.includes(entry) && !diskRejected.has(entry)) {
-        return true;
-      }
-      await store.remove(fileKey);
-      draftRejected = draftRejected.filter((r) => r !== entry);
-      return recordMeta(tourUrl);
+    const remove = () => store.remove(fileKey);
+    if (draftStore !== store) return claimElsewhere(store, entry, remove);
+    if (!draftRejected.includes(entry) && !diskRejected.has(entry)) {
+      return true;
     }
-    if (!(await metaRejectedIds(store)).includes(entry)) return true;
-    await store.remove(fileKey);
-    return writeMetaWithout(store, entry);
+    await remove();
+    draftRejected = draftRejected.filter((r) => r !== entry);
+    return recordMeta(tourUrl);
   }
 
   /** The settings record's write in its queue: the whole record, or its
@@ -675,9 +704,22 @@ export function wireCreatorDraft(deps: {
    * still lets the change be written - it is newer than anything on disk -
    * and reports false, so the creator hears it is not backed up.
    *
-   * Only while `store` is still the open tour's: `draftRejected` is that
-   * tour's list.
+   * While `store` is the open tour's, by that tour's lists; once it is
+   * not, by `store`'s own meta (`claimElsewhere`), as a record's claim.
    */
+  async function claimObject(
+    store: DraftFileStore,
+    tourUrl: string,
+    id: string,
+  ): Promise<boolean> {
+    const remove = () => removeDraftObject(store, id);
+    if (draftStore !== store) return claimElsewhere(store, id, remove);
+    if (!draftRejected.includes(id) && !diskRejected.has(id)) return true;
+    await remove();
+    draftRejected = draftRejected.filter((rejected) => rejected !== id);
+    return recordMeta(tourUrl);
+  }
+
   function writeForObject(
     store: DraftFileStore,
     tourUrl: string,
@@ -685,15 +727,7 @@ export function wireCreatorDraft(deps: {
     write: (store: DraftFileStore) => Promise<boolean>,
   ): Promise<boolean> {
     return draftWrites.run(objectChainKey(tourUrl, id), async () => {
-      let claimed = true;
-      if (
-        draftStore === store &&
-        (draftRejected.includes(id) || diskRejected.has(id))
-      ) {
-        await removeDraftObject(store, id);
-        draftRejected = draftRejected.filter((rejected) => rejected !== id);
-        claimed = await recordMeta(tourUrl);
-      }
+      const claimed = await claimObject(store, tourUrl, id);
       const wrote = await write(store);
       return claimed && wrote;
     });
@@ -838,17 +872,14 @@ export function wireCreatorDraft(deps: {
           // Listed but unreadable: not copied (the old namespace has it).
           ok = data !== undefined && (await opened.put(key, data)) && ok;
         }
-        // A record's write that ran once the draft had moved claimed its
-        // rejection in the old namespace's meta (`claimRecord`), not in
-        // this list: the copy holds that write, so the new meta must not
-        // reject it again.
-        if (draftStore === opened) {
-          const still = await metaRejectedIds(from);
-          draftRejected = draftRejected.filter(
-            (r) =>
-              (r !== SETTINGS_REJECTED && r !== CODES_REJECTED) ||
-              still.includes(r),
-          );
+        // A write that ran once the draft had moved claimed its rejection
+        // in the old namespace's meta (`claimElsewhere`), not in this
+        // list: the copy holds that write, so the new meta must not reject
+        // it again.
+        const away = claimedElsewhere.get(from);
+        claimedElsewhere.delete(from);
+        if (draftStore === opened && away !== undefined) {
+          draftRejected = draftRejected.filter((r) => !away.has(r));
         }
         return ok;
       })
@@ -1217,6 +1248,9 @@ export function wireCreatorDraft(deps: {
       if (stale()) return false;
       draftStore = store;
       draftTourUrl = tourUrl;
+      // This open's lists start from its read: a claim made in this
+      // namespace while it was not open is in that read already.
+      if (store !== undefined) claimedElsewhere.delete(store);
       if (store === undefined) {
         // No persistence at all - a browser without OPFS, blocked site
         // data, a quota wall. The creator must hear it ONCE, here: this

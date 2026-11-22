@@ -293,8 +293,8 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   and removal for one id - record, bytes, tombstone, a sweep - runs in that
   id's queue (`gps-plus-slam-app-framework/utils/keyed-chain`, keys per tour namespace and id), so they
   land in call order.
-- **A change to an id the meta rejects CLAIMS the id first** (M4 review
-  #1, `writeForObject`). The meta's rejected list outranks an object's
+- **A change to an id the meta rejects CLAIMS the id first**
+  (`writeForObject`, `claimObject`). The meta's rejected list outranks an object's
   files, so an edit or delete of an object a spent draft or "Delete it" had
   rejected was hidden by the next read and swept by the next open - the
   edit lost, or the deleted object back. In the id's queue, each step
@@ -303,6 +303,9 @@ shape, and the framework's `opfs-draft-store.ts` the mechanics).
   nothing for the id, never the rejected version. A sweep (discard, spent,
   an unfinished earlier sweep) removes an id's files only if it is STILL
   rejected when its turn comes, so a claim made meanwhile survives it.
+  The claim follows the store the write goes to, as a record's does
+  below (`claimElsewhere`): a write that runs after the tour closed or
+  after a `follow` moved the draft claims by that store's own meta.
   The claim is made against the meta ON DISK too (`rejectedOnDisk`, then
   each landed meta write's list), not only the pruned in-memory list: after
   "Delete it" and a reload the pruned list no longer names an id whose files
@@ -414,10 +417,22 @@ phone offers and restores the WHOLE record, by the desktop's rule
   removed, the meta rewritten without the entry, then written). The claim
   follows the store the write goes to: while it is the open tour's, by
   that tour's lists; once the tour closed or a Finish moved the draft
-  (`follow`) since the write was queued, by that store's own meta,
-  written directly (a `follow` holds every queue until the write ends).
-  `follow` then drops from the moved list a record entry the old meta
-  no longer rejects, so the new meta does not reject the copied record. A
+  (`follow`) since the write was queued, or while its removal ran, by
+  that store's own meta (`claimElsewhere`), written directly: a
+  `follow` holds every queue until the write ends, so a claim through
+  the meta's queue would wait for the move while the move waits for it.
+  `claimElsewhere` notes each id and entry it claims per store, and
+  `follow` drops exactly those from the moved list, so the new meta does
+  not reject the copied write; an id whose rejection stands (a spent
+  draft whose sweep did not land) stays rejected. The note is dropped
+  when the store opens again: its read already holds the claim.
+  **Residual race:** `claimElsewhere` reads and rewrites the meta outside
+  the meta's queue, so a `recordMeta` queued for that store before the
+  switch and landing between the read and the rewrite can re-reject the
+  entry, and the next open then hides that write. It needs a meta write
+  of the old tour still queued at the move, and is not covered by a test;
+  closing it would mean awaiting the old meta queue before the move's
+  `exclusive`. A
   commit that lands after a close removes the record unless the tour was
   reopened. A reopen whose settings read ran before the commit landed
   refuses the record it read once its `readDraft` sees it rejected
@@ -523,7 +538,10 @@ settings write that runs after the tour closed or after a `follow` claims
 the rejection, a reopen the commit lands in the middle of offers nothing,
 a tab closed right after the commit leaves the codes inert but keeps a
 code the page measured, and a code
-written after "Delete it" claims the codes record); composed, two Finishes and the
+written after "Delete it" claims the codes record; an object edited after
+"Delete it" whose write runs after the tour closed, after a `follow`, or
+across a `follow` that starts during its claim's removal is offered at
+the next open, and the move ends); composed, two Finishes and the
 reopen of the saved file: `tour-document-parity.test.ts`. The gate: `draft-edit-gate.test.ts` (rows and a property);
 the rule across both pages, with random view / "Not now" / edit /
 Restore / "Delete it" / reopen sequences: `draft-shared-behaviour.test.ts`.
