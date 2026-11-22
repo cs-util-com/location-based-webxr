@@ -438,6 +438,23 @@
 :where(html[data-ui="guided"]) .seq li.past .seq-tag::after {
   content: " ✓";
 }
+/* The same short landscape screens get tighter spacing too: the step text
+   wraps by the platform's font, and Linux fonts ran about 30 px taller than
+   Windows ones at 915x412. After the rules above, as all are equally
+   specific. */
+@media (orientation: landscape) and (min-width: 700px) and (max-height: 559px) {
+  :where(html[data-ui="guided"]) .card {
+    gap: 6px;
+    padding: 8px 12px;
+  }
+  :where(html[data-ui="guided"]) .seq {
+    gap: 2px;
+  }
+  :where(html[data-ui="guided"]) .seq li {
+    padding: 2px 6px;
+    line-height: 1.25;
+  }
+}
 :where(html[data-ui="guided"]) .foot-lines {
   margin: 0;
   font-size: 0.85rem;
