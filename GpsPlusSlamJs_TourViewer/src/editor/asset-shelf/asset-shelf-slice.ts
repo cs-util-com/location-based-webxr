@@ -9,7 +9,10 @@
  * him, his files inside (`ShelfRow.character`). Blobs
  * are never state: the runner (`asset-shelf.ts`) keeps them, and its
  * commands (retry, use the original, remove with undo, optimize this
- * tour) live there, outside the selector.
+ * tour) live there, outside the selector. A model being converted for
+ * the tour (`model-import-runner.ts`) is an import row (`imports`)
+ * until the runner delivers it as a file: an import never adds an entry
+ * by itself.
  *
  * @see asset-shelf-slice.ts.md
  */
@@ -132,6 +135,39 @@ export interface ShelfEntry extends ShelfJob {
    *  for another one is under way. */
   readonly detail?: ShelfDetail;
   readonly detailBusy?: boolean;
+  /** A converted model's: the file it was made from and what the
+   *  conversion left out, in words (this session only). */
+  readonly madeFrom?: ShelfMadeFrom;
+}
+
+/** What a model was converted from (`ShelfEntry.madeFrom`). */
+export interface ShelfMadeFrom {
+  readonly from: string;
+  readonly notes: readonly string[];
+}
+
+/** Where a model being converted stands: waiting for the converter, in
+ *  it, or failed with words (`ShelfImport.reason`). A converted model
+ *  leaves the imports: it is a file of the shelf then. */
+export type ImportStatus = "queued" | "converting" | "failed";
+
+/** A model being converted for the tour. Its files are not state: the
+ *  runner (`model-import-runner.ts`) keeps them. */
+export interface ShelfImport {
+  readonly id: string;
+  /** The model's file name, or the zip's. */
+  readonly name: string;
+  readonly format: "gltf" | "zip";
+  readonly status: ImportStatus;
+  /** 0..1 while converting. */
+  readonly progress: number;
+  readonly reason?: string;
+  /** A failure Retry may fix (a crash); a refusal is not one. */
+  readonly retryable: boolean;
+  /** The files' bytes together. */
+  readonly bytes: number;
+  /** Arrival order, shared with the entries. */
+  readonly seq: number;
 }
 
 /** What a video brought in carries beyond its asset (`AssetShelf.add`). */
@@ -142,13 +178,34 @@ export interface ShelfVideoLook {
 
 export interface AssetShelfState {
   readonly entries: Readonly<Record<string, ShelfEntry>>;
+  readonly imports: Readonly<Record<string, ShelfImport>>;
   readonly nextSeq: number;
 }
 
 export const initialAssetShelfState: AssetShelfState = {
   entries: {},
+  imports: {},
   nextSeq: 0,
 };
+
+/** `state` with import `id` changed by `next`; unchanged when it holds
+ *  no such import or `next` refuses (returns null). */
+function withImport(
+  state: AssetShelfState,
+  id: string,
+  next: (was: ShelfImport) => ShelfImport | null,
+): AssetShelfState {
+  const was = state.imports[id];
+  const now = was === undefined ? null : next(was);
+  if (now === null) return state;
+  return { ...state, imports: { ...state.imports, [id]: now } };
+}
+
+/** An import `status` waiting again, its words gone. */
+function importWaiting(was: ShelfImport): ShelfImport {
+  const { reason: _gone, ...rest } = was;
+  return { ...rest, status: "queued", progress: 0, retryable: false };
+}
 
 interface EntryAddedPayload {
   readonly id: string;
@@ -226,6 +283,7 @@ const assetShelfSlice = createSlice({
         ...job,
       };
       return {
+        ...state,
         entries: { ...state.entries, [p.id]: entry },
         nextSeq: state.nextSeq + 1,
       };
@@ -359,9 +417,94 @@ const assetShelfSlice = createSlice({
         seq: was?.seq ?? state.nextSeq,
       };
       return {
+        ...state,
         entries: { ...state.entries, [p.id]: entry },
         nextSeq: was === undefined ? state.nextSeq + 1 : state.nextSeq,
       };
+    },
+    /** A model came in to be converted: it waits for the converter. */
+    importQueued(
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly name: string;
+        readonly format: ShelfImport["format"];
+        readonly bytes: number;
+      }>,
+    ) {
+      const { id, name, format, bytes } = action.payload;
+      if (state.imports[id] !== undefined) return state;
+      const entry: ShelfImport = {
+        id,
+        name,
+        format,
+        status: "queued",
+        progress: 0,
+        retryable: false,
+        bytes,
+        seq: state.nextSeq,
+      };
+      return {
+        ...state,
+        imports: { ...state.imports, [id]: entry },
+        nextSeq: state.nextSeq + 1,
+      };
+    },
+    importStarted: (state, action: PayloadAction<{ readonly id: string }>) =>
+      withImport(state, action.payload.id, (was) =>
+        was.status === "queued"
+          ? { ...was, status: "converting", progress: 0 }
+          : null,
+      ),
+    importProgress: (
+      state,
+      action: PayloadAction<{ readonly id: string; readonly fraction: number }>,
+    ) =>
+      withImport(state, action.payload.id, (was) => {
+        const fraction = Math.min(1, Math.max(0, action.payload.fraction));
+        return was.status === "converting" && Number.isFinite(fraction)
+          ? { ...was, progress: fraction }
+          : null;
+      }),
+    importFailed: (
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly reason: string;
+        readonly retryable: boolean;
+      }>,
+    ) =>
+      withImport(state, action.payload.id, (was) => ({
+        ...was,
+        status: "failed",
+        progress: 0,
+        reason: action.payload.reason,
+        retryable: action.payload.retryable,
+      })),
+    importRetried: (state, action: PayloadAction<{ readonly id: string }>) =>
+      withImport(state, action.payload.id, (was) =>
+        was.status === "failed" ? importWaiting(was) : null,
+      ),
+    /** The import left: delivered as a file, or removed by the author. */
+    importRemoved(state, action: PayloadAction<{ readonly id: string }>) {
+      if (state.imports[action.payload.id] === undefined) return state;
+      const imports = { ...state.imports };
+      delete imports[action.payload.id];
+      return { ...state, imports };
+    },
+    /** What a delivered model was converted from. */
+    madeFromSet(
+      state,
+      action: PayloadAction<{
+        readonly id: string;
+        readonly from: string;
+        readonly notes: readonly string[];
+      }>,
+    ) {
+      const { id, from, notes } = action.payload;
+      const entry = state.entries[id];
+      if (entry === undefined) return state;
+      return withEntry(state, { ...entry, madeFrom: { from, notes } });
     },
     /** The runner let an original's bytes go: no longer offered. */
     originalFreed(state, action: PayloadAction<{ readonly id: string }>) {
@@ -457,6 +600,39 @@ export interface ShelfRow {
    *  sizes his files' together; its places are where his files are used
    *  (`characterFileUses`), never his own declaration. */
   readonly character?: ShelfCharacter;
+  /** An import's row: a model being converted, not yet a file of the
+   *  tour (`ShelfImport`). Its card offers only Retry and Remove. */
+  readonly import?: { readonly format: ShelfImport["format"] };
+  /** A converted model's: what it was made from, and what was left out. */
+  readonly madeFrom?: ShelfMadeFrom;
+}
+
+/** An import's status as a row's phase. */
+const IMPORT_PHASE: Readonly<Record<ImportStatus, ShelfPhase>> = {
+  queued: "queued",
+  converting: "running",
+  failed: "failed",
+};
+
+/** The row of import `i`, `position` its place among those waiting. */
+function importRow(i: ShelfImport, position: number): ShelfRow {
+  return {
+    id: i.id,
+    kind: "model",
+    name: i.name,
+    origin: "added",
+    status: IMPORT_PHASE[i.status],
+    progress: i.progress,
+    ...(i.reason === undefined ? {} : { reason: i.reason }),
+    retryable: i.retryable,
+    originalBytes: i.bytes,
+    estimatedBytes: i.bytes,
+    queuePosition: position < 0 ? null : position,
+    placesInUse: 0,
+    swaps: 0,
+    canUseOriginal: false,
+    import: { format: i.format },
+  };
 }
 
 interface ShelfRoot {
@@ -541,6 +717,7 @@ export const selectShelfRows = createSelector(
         swaps: doc.assetSwaps[e.id] ?? 0,
         canUseOriginal,
         ...lookOf(e),
+        ...(e.madeFrom === undefined ? {} : { madeFrom: e.madeFrom }),
         ...(e.detail === undefined || e.phase !== "optimized"
           ? {}
           : {
@@ -555,7 +732,20 @@ export const selectShelfRows = createSelector(
     const held = charactersByFile(shelf, doc);
     const shown = new Set<string>();
     const rows: ShelfRow[] = [];
+    const imports = Object.values(shelf.imports).sort((a, b) => a.seq - b.seq);
+    const waiting = imports
+      .filter((i) => i.status === "queued")
+      .map((i) => i.id);
+    let next = 0;
+    /** The imports that arrived before `seq`, in their place. */
+    const importsBefore = (seq: number) => {
+      while (next < imports.length && imports[next]!.seq < seq) {
+        const i = imports[next++]!;
+        rows.push(importRow(i, waiting.indexOf(i.id)));
+      }
+    };
     for (const entry of entries) {
+      importsBefore(entry.seq);
       const character = held.get(entry.id);
       if (character === undefined) {
         rows.push(fileRow(entry));
@@ -579,6 +769,7 @@ export const selectShelfRows = createSelector(
         ),
       );
     }
+    importsBefore(Number.POSITIVE_INFINITY);
     return rows;
   },
 );

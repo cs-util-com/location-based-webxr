@@ -438,4 +438,69 @@ describe("the optimizer's Worker client", () => {
       extension: "glb",
     });
   });
+
+  // Why: the model converter runs on the same client; when it dies, the
+  // creator must read that the converter stopped, not the optimizer.
+  it("names who stopped in a crash and in a silence", async () => {
+    vi.useFakeTimers();
+    try {
+      const workers: FakeWorker[] = [];
+      const host = createOptimizerHost(
+        () => {
+          const w = fakeWorker();
+          workers.push(w);
+          return w;
+        },
+        null,
+        "converter",
+      );
+      const crashed = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+      workers[0]!.crash();
+      await expect(crashed).rejects.toThrow(
+        "the converter stopped unexpectedly",
+      );
+      const silent = host.run("model", 2, OPTIMIZER_SETTINGS, control());
+      const outcome = silent.catch((err: unknown) => err);
+      await vi.advanceTimersByTimeAsync(OPTIMIZER_SILENCE_MS);
+      expect(((await outcome) as Error).message).toBe(
+        "the converter stopped answering for 2 minutes",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Why: a converted model reaches the shelf with what the conversion
+  // left out, in words the card shows; a report that does not read is
+  // dropped rather than shown half.
+  it("carries a conversion's notes through, and drops a report that does not read", async () => {
+    const w = fakeWorker();
+    const host = createOptimizerHost(() => w);
+    const good = host.run("model", 1, OPTIMIZER_SETTINGS, control());
+    const bad = host.run("model", 2, OPTIMIZER_SETTINGS, control());
+    const [a, b] = w.posted.map((m) => m.job);
+    const blob = new Blob(["g"]);
+    const conversion = { notes: ["Made without x."], used: ["m.bin"] };
+    w.answer({ type: "done", job: a!, blob, extension: "glb", conversion });
+    w.onmessage?.({
+      data: {
+        type: "done",
+        job: b,
+        blob,
+        extension: "glb",
+        conversion: { notes: [3], used: [] },
+      },
+    } as MessageEvent);
+    await expect(good).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+      conversion,
+    });
+    await expect(bad).resolves.toEqual({
+      kind: "optimized",
+      blob,
+      extension: "glb",
+    });
+  });
 });
