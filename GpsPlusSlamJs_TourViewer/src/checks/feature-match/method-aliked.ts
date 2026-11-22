@@ -85,7 +85,6 @@ export function ortApi(mod: unknown): OrtApi {
 /** Loaded once per page: the runtime and its global settings are shared. */
 const runtimes = new WeakMap<LoadDeps["importModule"], Promise<OrtApi>>();
 
-/** The runtime, imported and configured once per page (per `importModule`). */
 /**
  * The onnxruntime-web WASM thread count: threads need cross-origin
  * isolation, so without it one thread; with it up to four.
@@ -97,6 +96,7 @@ export function ortWasmThreads(
   return isolated ? Math.max(1, Math.min(4, Math.floor(cores ?? 1))) : 1;
 }
 
+/** The runtime, imported and configured once per page (per `importModule`). */
 export function loadOrtRuntime(deps: LoadDeps): Promise<OrtApi> {
   let p = runtimes.get(deps.importModule);
   if (!p) {
