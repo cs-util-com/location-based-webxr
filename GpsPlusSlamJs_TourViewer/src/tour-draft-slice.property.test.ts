@@ -205,13 +205,24 @@ describe("the draft question over random sequences", () => {
       }),
       {
         numRuns: 300,
-        // A sequence that once failed here: an edit waited through the
-        // read, the offer showed, and "Not now" was tapped.
+        // Sequences that once failed here, both with "Not now" tapped on
+        // an offer while an edit waited: the edit waited through the read,
+        // or arrived during it (seed 954322625, on a tree whose model took
+        // "Not now" without the drop of the waiting edits). The page drops
+        // them, so the put-off offer must stay hidden with nothing waiting.
         examples: [
           [
             [
               { kind: "count", count: 1 },
               { kind: "read" },
+              { kind: "found", late: 0 },
+              { kind: "decline", late: 0 },
+            ],
+          ],
+          [
+            [
+              { kind: "read" },
+              { kind: "count", count: 1 },
               { kind: "found", late: 0 },
               { kind: "decline", late: 0 },
             ],
