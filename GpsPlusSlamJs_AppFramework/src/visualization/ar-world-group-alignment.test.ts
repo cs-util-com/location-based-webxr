@@ -14,7 +14,8 @@
  *   after the first fix still register the view),
  * - a newly-dispatched alignment updates the lerper target and converges,
  * - the first target is applied instantly (no slide from identity), later
- *   targets ease,
+ *   refinements ease, and a correction (a large step, or the first change
+ *   after a frame-epoch change) lands in the frame it arrives,
  * - `null` alignment is ignored (no spurious identity target),
  * - `dispose()` stops both the subscription and the per-frame update.
  */
@@ -39,11 +40,21 @@ import type { CombinedRootState } from '../state/combined-root-state.js';
  */
 function makeFakeStore(initial: readonly number[] | null): SubscribableStore & {
   setAlignment: (matrix: readonly number[] | null) => void;
+  bumpEpoch: () => void;
 } {
   const listeners = new Set<() => void>();
-  let state = {
-    gpsData: { gpsEvents: { alignmentMatrix: initial } },
-  } as unknown as CombinedRootState;
+  let alignmentMatrix = initial;
+  let frameEpoch = 0;
+  const build = () =>
+    ({
+      gpsData: { gpsEvents: { alignmentMatrix } },
+      qrDetected: { frameEpoch },
+    }) as unknown as CombinedRootState;
+  let state = build();
+  const publish = () => {
+    state = build();
+    for (const listener of [...listeners]) listener();
+  };
   return {
     getState: () => state,
     subscribe: (listener: () => void) => {
@@ -51,12 +62,45 @@ function makeFakeStore(initial: readonly number[] | null): SubscribableStore & {
       return () => listeners.delete(listener);
     },
     setAlignment: (matrix: readonly number[] | null) => {
-      state = {
-        gpsData: { gpsEvents: { alignmentMatrix: matrix } },
-      } as unknown as CombinedRootState;
-      for (const listener of [...listeners]) listener();
+      alignmentMatrix = matrix;
+      publish();
+    },
+    bumpEpoch: () => {
+      frameEpoch += 1;
+      publish();
     },
   };
+}
+
+/** T as north metres (x), a yaw in degrees and east metres (z). */
+function tOf(north: number, yawDeg = 0, east = 0): number[] {
+  return new THREE.Matrix4()
+    .makeRotationY(THREE.MathUtils.degToRad(yawDeg))
+    .setPosition(north, 0, east)
+    .toArray();
+}
+
+/** A group in a scene with an AR camera child at `cameraAt` (group-local). */
+function arRig(initial: readonly number[] | null, cameraAt = [0, 0, 0]) {
+  const store = makeFakeStore(initial);
+  const scene = new THREE.Scene();
+  const group = new THREE.Group();
+  scene.add(group);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(cameraAt[0], cameraAt[1], cameraAt[2]);
+  group.add(camera);
+  const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+  let t = 0;
+  const frame = (dt = 1 / 30) => {
+    t += dt;
+    runFrameUpdates(dt, t);
+  };
+  /** World position of the camera now. */
+  const cameraWorld = () => {
+    group.updateMatrixWorld(true);
+    return new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
+  };
+  return { store, group, camera, handle, frame, cameraWorld };
 }
 
 function matrixIsIdentity(group: THREE.Object3D): boolean {
@@ -111,7 +155,7 @@ describe('enableArWorldGroupAlignment', () => {
     handle.dispose();
   });
 
-  it('applies the first dispatched alignment instantly, then eases to later ones', () => {
+  it('applies the first dispatched alignment instantly, then eases a small refinement', () => {
     const store = makeFakeStore(null);
     const arWorldGroup = new THREE.Group();
     const handle = enableArWorldGroupAlignment({ store, arWorldGroup });
@@ -125,7 +169,11 @@ describe('enableArWorldGroupAlignment', () => {
       new THREE.Matrix4().fromArray([...m1]).toArray()
     );
 
-    const m2 = makeNonTrivialAlignment(3);
+    // A refinement well below the correction threshold (0.5 m, no rotation).
+    const m2 = new THREE.Matrix4()
+      .makeTranslation(0.5, 0, 0)
+      .multiply(new THREE.Matrix4().fromArray([...m1]))
+      .toArray();
     store.setAlignment(m2);
     // A single tiny step must NOT have reached m2 yet (it eases).
     runFrameUpdates(1 / 60, 2);
@@ -232,6 +280,149 @@ describe('enableArWorldGroupAlignment', () => {
     }
     handle.dispose();
   });
+});
+
+// Why (the world jumps at once, literally): a correction of T must land in
+// the frame it arrives, so the world under the group is never seen sliding
+// through intermediate poses; small refinements of a converging alignment
+// keep easing, so GPS noise does not turn into a visible jitter. A
+// correction is a T step that moves the AR camera's group-local position
+// (the origin without a camera) by more than 1 m, or the first T change
+// within 2 s of a frame-epoch change.
+describe('enableArWorldGroupAlignment: corrections land at once', () => {
+  it('lands a large T step exactly in the frame it arrives', () => {
+    const rig = arRig(tOf(0));
+    rig.frame();
+    rig.store.setAlignment(tOf(5, 20, -3));
+    rig.frame();
+    expectMatrixClose(rig.group.matrix.toArray(), tOf(5, 20, -3));
+    expectMatrixClose(rig.group.matrixWorld.toArray(), tOf(5, 20, -3));
+    rig.handle.dispose();
+  });
+
+  // Sweep around the threshold: just below eases, just above snaps.
+  it.each([
+    [0.5, false],
+    [0.9, false],
+    [0.99, false],
+    [1.01, true],
+    [1.1, true],
+    [3, true],
+  ])('a %f m step at the camera snaps: %s', (stepM, snaps) => {
+    const rig = arRig(tOf(0), [2, 0, 4]);
+    rig.frame();
+    rig.store.setAlignment(tOf(stepM));
+    rig.frame();
+    const landed = Math.abs(rig.group.matrix.elements[12] - stepM) < 1e-9;
+    expect(landed).toBe(snaps);
+    rig.handle.dispose();
+  });
+
+  // The step is measured where the viewer is: a 1 degree yaw is a 1.7 m
+  // step for a camera 100 m from the odometry origin, and a 3.5 cm step
+  // for one 2 m from it.
+  it('measures the step at the camera, so a small yaw far from the origin snaps', () => {
+    const far = arRig(tOf(0), [0, 0, 100]);
+    far.frame();
+    far.store.setAlignment(tOf(0, 1));
+    far.frame();
+    expectMatrixClose(far.group.matrix.toArray(), tOf(0, 1));
+    far.handle.dispose();
+    clearFrameUpdates();
+
+    const near = arRig(tOf(0), [0, 0, 2]);
+    near.frame();
+    near.store.setAlignment(tOf(0, 1));
+    near.frame();
+    const landed = near.group.matrix.equals(
+      new THREE.Matrix4().fromArray(tOf(0, 1))
+    );
+    expect(landed).toBe(false);
+    near.handle.dispose();
+  });
+
+  it('uses the origin as the probe when the group has no camera child', () => {
+    const store = makeFakeStore(tOf(0));
+    const group = new THREE.Group();
+    const handle = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+    runFrameUpdates(1 / 30, 1 / 30);
+    store.setAlignment(tOf(0, 30)); // a pure yaw moves nothing at the origin
+    runFrameUpdates(1 / 30, 2 / 30);
+    const landed = group.matrix.equals(
+      new THREE.Matrix4().fromArray(tOf(0, 30))
+    );
+    expect(landed).toBe(false);
+    store.setAlignment(tOf(1.5, 30));
+    runFrameUpdates(1 / 30, 3 / 30);
+    expectMatrixClose(group.matrix.toArray(), tOf(1.5, 30));
+    handle.dispose();
+  });
+
+  it('snaps the first T change within 2 s of a frame-epoch change, and only that one', () => {
+    const rig = arRig(tOf(0), [0, 0, 1]);
+    rig.frame();
+    rig.store.bumpEpoch();
+    rig.frame();
+    for (let i = 0; i < 30; i += 1) rig.frame(); // 1 s later
+    rig.store.setAlignment(tOf(0.3));
+    rig.frame();
+    expectMatrixClose(rig.group.matrix.toArray(), tOf(0.3));
+    rig.store.setAlignment(tOf(0.6));
+    rig.frame();
+    expect(rig.group.matrix.elements[12]).toBeLessThan(0.6 - 1e-3);
+    rig.handle.dispose();
+  });
+
+  it('eases a small T change that comes more than 2 s after the epoch change', () => {
+    const rig = arRig(tOf(0), [0, 0, 1]);
+    rig.frame();
+    rig.store.bumpEpoch();
+    for (let i = 0; i < 75; i += 1) rig.frame(); // 2.5 s
+    rig.store.setAlignment(tOf(0.3));
+    rig.frame();
+    expect(rig.group.matrix.elements[12]).toBeLessThan(0.3 - 1e-3);
+    rig.handle.dispose();
+  });
+
+  // Evidence that easing the refinements keeps noise smooth: a 1 Hz
+  // sequence of random sub-threshold re-solves never moves the camera by
+  // more than alpha (rate 8 at 30 fps, 0.267) times the step amplitude in
+  // one frame, and never snaps. Amplitudes swept from 0.1 m to 0.95 m.
+  it.each([0.1, 0.5, 0.9, 0.95])(
+    'noisy refinements of amplitude %f m move the view by at most alpha x amplitude per frame',
+    (amplitude) => {
+      let seed = 7;
+      const rand = () => {
+        seed = (seed * 16807) % 2147483647;
+        return seed / 2147483647;
+      };
+      const rig = arRig(tOf(0), [0, 1.5, 3]);
+      rig.frame();
+      const alpha = Math.min(8 / 30, 1);
+      // Each axis within +-amplitude/sqrt(2), so the step to the next target
+      // is below `amplitude` at the camera (translation only).
+      const half = amplitude * Math.SQRT1_2;
+      let previousTarget = tOf(0);
+      let maxFrameStep = 0;
+      let prev = rig.cameraWorld();
+      for (let second = 0; second < 20; second += 1) {
+        const next = [...previousTarget];
+        next[12] = next[12]! + (rand() * 2 - 1) * half * 0.999;
+        next[14] = next[14]! + (rand() * 2 - 1) * half * 0.999;
+        previousTarget = next;
+        rig.store.setAlignment(next);
+        for (let f = 0; f < 30; f += 1) {
+          rig.frame();
+          const now = rig.cameraWorld();
+          maxFrameStep = Math.max(maxFrameStep, now.distanceTo(prev));
+          prev = now;
+        }
+      }
+      expect(maxFrameStep).toBeLessThanOrEqual(alpha * amplitude * (1 + 1e-3));
+      expect(maxFrameStep).toBeGreaterThan(0);
+      rig.handle.dispose();
+    }
+  );
 });
 
 // Why: the deferred anchors under the group read T from this binding and

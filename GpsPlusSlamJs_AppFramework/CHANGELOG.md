@@ -208,13 +208,16 @@
 
 ### Changed
 
-- `ar/qr/qr-tracking-controller`: `dispatchVotes` may return `false` to say
-  it cast no votes. Otherwise the controller asks every deferred anchor to
-  re-place once. Returning nothing keeps today's meaning. Its type is now
-  `(votes) => boolean | void`: a callback whose expression body returns
-  another value (`(v) => list.push(...v)`) needs braces.
 - `visualization/ar-world-group-alignment`: the binding drives the deferred
   anchors under its group right after its lerp step. Options unchanged.
+- `visualization/ar-world-group-alignment`: **a correction of the alignment
+  lands in one frame.** A change that moves the AR camera (or, without a
+  camera child, the group's origin) by more than 1 m, or the first change
+  within 2 s of an odometry frame switch, is applied exactly in the frame it
+  is read; smaller refinements still ease over about 0.3 s. The world under
+  the group therefore jumps at once at a correction instead of sliding.
+- `visualization/alignment-lerper`: `setTarget(matrix, { instant: true })`
+  lands a target exactly on the next `update` (`LerperTargetOptions`).
 - `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
   `utils/data-uri`, strictly: a payload with whitespace or without its
   padding, which plain `atob` accepted, is now an image that cannot be
@@ -274,6 +277,14 @@
   (`parseTourObject`).
 
 ### ⚠️ Breaking changes
+
+- `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
+  `(votes) => boolean | void`. Returning `false` says it cast no votes;
+  otherwise the controller asks every deferred anchor to re-place once, and
+  returning nothing keeps today's meaning. A callback whose expression body
+  returns another value (`(v) => list.push(...v)`) no longer type-checks and
+  needs braces. The type is not `unknown` on purpose: `unknown` would also
+  accept `async () => false`, whose Promise would release silently.
 
 - **`tour.json` version 5: stations hold children, stories hold their own**
   (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,

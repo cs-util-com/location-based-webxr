@@ -5,6 +5,7 @@
 // --- alignment-lerper ---
 export {
   type AlignmentLerper,
+  type LerperTargetOptions,
   createAlignmentLerper,
 } from './alignment-lerper.js';
 

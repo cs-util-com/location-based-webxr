@@ -15,15 +15,16 @@ Smoothly interpolates `arWorldGroup.matrix` toward a target alignment matrix eac
 
 Returns an `AlignmentLerper` with:
 
-| Method              | Description                                                                                             |
-| ------------------- | ------------------------------------------------------------------------------------------------------- |
-| `setTarget(matrix)` | Store a new 16-element column-major target matrix. Decomposed into position + quaternion + scale.       |
-| `update(dt)`        | Advance interpolation by `dt` seconds. Lerps position, slerps quaternion, composes result, writes back. |
-| `dispose()`         | No-op (lerper does not own arWorldGroup).                                                               |
+| Method                        | Description                                                                                                                                                  |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `setTarget(matrix, options?)` | Store a new 16-element column-major target matrix. Decomposed into position + quaternion + scale. `{ instant: true }` lands it exactly on the next `update`. |
+| `update(dt)`                  | Advance interpolation by `dt` seconds. Lerps position, slerps quaternion, composes result, writes back.                                                      |
+| `dispose()`                   | No-op (lerper does not own arWorldGroup).                                                                                                                    |
 
 ## Invariants & Assumptions
 
 - **First target is applied instantly** (no lerp from identity) — prevents meaningless animation on session start.
+- **An instant target is applied exactly on the next update**, even mid-ease; the targets after it ease again. The caller decides what is a correction (`ar-world-group-alignment.ts` marks one).
 - **Subsequent targets lerp**: position via `Vector3.lerp`, rotation via `Quaternion.slerp`, scale via `Vector3.lerp`.
 - **Alpha clamped**: `alpha = min(lerpRate × dt, 1.0)` — prevents overshoot on large dt.
 - **`updateMatrixWorld(true)`** called after every update to propagate to children (cyan fused spheres, etc.).
@@ -50,6 +51,7 @@ lerper.dispose();
 
 - `alignment-lerper.test.ts` — 13 unit tests covering:
   - First-target instant apply
+  - Instant targets (after a first target, mid-ease), then easing again
   - Position lerp and quaternion slerp convergence
   - No overshoot with large dt
   - Scale preservation

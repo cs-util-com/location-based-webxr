@@ -37,10 +37,23 @@
 
 - **Invariants & assumptions:**
   - The first alignment target is applied **instantly** (via the lerper's
-    first-target rule) so the view never slides from identity; subsequent targets
-    ease toward their value.
-  - An alignment already present at enable time is adopted immediately,
-    because the parent target's `onTargetChange` only fires on change.
+    first-target rule) so the view never slides from identity.
+  - **Corrections land at once, refinements ease.** T is read once per frame
+    (by the target's version), in the frame step. A change is a correction,
+    applied exactly in that frame (`setTarget(t, { instant: true })`), when
+    it moves the probe by more than `CORRECTION_STEP_M = 1` m, or when it is
+    the first change within `EPOCH_SNAP_S = 2` s of a frame-epoch change.
+    The probe is the first camera child's group-local position (WebXR keeps
+    `position` in step with the pose), the group's origin without one: the
+    step is measured where the viewer is. Smaller changes ease over about
+    0.3 s (lerp rate 8). The dev jump is a T change like any other.
+    - Why not snap everything: easing keeps the noise of a converging GPS
+      alignment smooth. The tests bound the per-frame step of a 1 Hz series
+      of random sub-threshold re-solves by alpha (0.27 at 30 fps) times the
+      step amplitude, for amplitudes 0.1 to 0.95 m.
+    - A T change that reaches the store a frame before its epoch change
+      still snaps when it is above 1 m; a smaller one eases.
+  - An alignment already present at enable time is adopted immediately.
   - `null` (or non-finite) alignment is ignored (no spurious identity target).
   - **Single-driver rule:** the helper owns its lerper and drives it from the
     frame loop. Do **not** call it for a group that already has an externally
@@ -55,7 +68,10 @@
   ```
 
 - **Tests:** `ar-world-group-alignment.test.ts` covers: adopt-at-enable, null
-  ignored, instant-first-then-ease convergence, dispose-stops-updates, and the
+  ignored, instant-first-then-ease convergence, the correction rule (a large
+  step lands in its frame, the 1 m threshold swept from 0.5 to 3 m, the
+  probe at the camera or the origin, the epoch snap once within 2 s, the
+  noisy sub-threshold series), dispose-stops-updates, and the
   session-lifecycle disposal (auto-dispose when `runSessionDisposers()` flushes,
   `dispose()`-after-flush is an idempotent no-op, and a manual `dispose()`
   deregisters so the later flush is a no-op). Driven with the real `frame-loop`

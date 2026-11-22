@@ -13,11 +13,20 @@
  * helper folds the lerper + store subscription + frame-loop drive into one
  * call so no app can forget it.
  *
+ * Refinements ease; corrections land at once. A change of T that moves the
+ * AR camera's group-local position (the group's origin when it has no
+ * camera child) by more than {@link CORRECTION_STEP_M}, or the first change
+ * within {@link EPOCH_SNAP_S} of a frame-epoch change, is applied exactly in
+ * the frame it is read, so the world is never seen sliding through the poses
+ * between two frames of reference. Smaller re-solves of a converging
+ * alignment keep the lerper's ease (about 0.3 s), so noise in them does not
+ * become a per-fix jitter.
+ *
  * See
  * `gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-06-05-0650-gps-anchor-frame-architecture-bug-and-plan.md`
  * (Slice 2 / Bug A) and the colocated sidecar.
  */
-import type * as THREE from 'three';
+import * as THREE from 'three';
 import { createAlignmentLerper } from './alignment-lerper.js';
 import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { registerSessionDisposer } from '../ar/session-disposers.js';
@@ -28,6 +37,40 @@ import {
   registerArParentBinding,
   type ArParentBinding,
 } from '../ar/ar-parent-target.js';
+
+/** A T step at the camera above this many metres is a correction (snaps). */
+const CORRECTION_STEP_M = 1;
+/** Seconds after a frame-epoch change in which the next T change snaps. */
+const EPOCH_SNAP_S = 2;
+
+const _probe = new THREE.Vector3();
+const _before = new THREE.Vector3();
+
+/**
+ * The point whose motion decides a correction: the first camera child's
+ * group-local position (WebXR keeps `position` in step with the pose), else
+ * the origin.
+ */
+function correctionProbe(
+  group: THREE.Object3D,
+  out: THREE.Vector3
+): THREE.Vector3 {
+  for (const child of group.children) {
+    if ((child as THREE.Camera).isCamera === true)
+      return out.copy(child.position);
+  }
+  return out.set(0, 0, 0);
+}
+
+/** How far T moves `probe` (group-local) in the parent frame, previous to next. */
+function stepAt(
+  previous: THREE.Matrix4,
+  next: THREE.Matrix4,
+  probe: THREE.Vector3
+): number {
+  _before.copy(probe).applyMatrix4(previous);
+  return probe.applyMatrix4(next).distanceTo(_before);
+}
 
 export interface ArWorldGroupAlignmentOptions {
   /** The store whose alignment selector drives the lerper. */
@@ -79,11 +122,37 @@ export function enableArWorldGroupAlignment(
   const target = createArParentTarget(options.store, {
     devJump: devWorldJumpFromPage(),
   });
-  // Adopt an alignment that is already present when we enable: the target
-  // reports only later changes, so an app that enables after the first fix
-  // would otherwise never register the view until the next alignment update.
-  if (target.version() > 0) lerper.setTarget(target.target().toArray());
-  const unsubscribe = target.onTargetChange((t) => lerper.setTarget(t));
+  // Adopt an alignment that is already present when we enable: an app that
+  // enables after the first fix registers the view on its first frame.
+  // Changes are read once per frame (by version), in the frame step, where
+  // the correction rule can see the epoch and the camera.
+  const appliedT = new THREE.Matrix4();
+  const targetArray: number[] = new Array<number>(16).fill(0);
+  let appliedVersion = target.version();
+  if (appliedVersion > 0) {
+    appliedT.copy(target.target());
+    lerper.setTarget(appliedT.toArray(targetArray));
+  }
+  let lastEpoch = target.frameEpoch();
+  let snapUntilS = Number.NEGATIVE_INFINITY;
+
+  /** Hand a changed T to the lerper, instantly when it is a correction. */
+  const adoptChangedTarget = (elapsedS: number): void => {
+    const version = target.version();
+    if (version === appliedVersion) return;
+    const next = target.target();
+    let instant =
+      appliedVersion > 0 &&
+      stepAt(appliedT, next, correctionProbe(options.arWorldGroup, _probe)) >
+        CORRECTION_STEP_M;
+    if (elapsedS <= snapUntilS) {
+      instant = true;
+      snapUntilS = Number.NEGATIVE_INFINITY;
+    }
+    appliedVersion = version;
+    appliedT.copy(next);
+    lerper.setTarget(appliedT.toArray(targetArray), { instant });
+  };
 
   // The group's anchor set (if any) runs its pass in this same callback,
   // right after the lerp step, so it reads this frame's lerped matrix.
@@ -91,6 +160,12 @@ export function enableArWorldGroupAlignment(
   const disposeListeners = new Set<() => void>();
   const step = (dt: number, elapsedS: number): void => {
     target.tick(elapsedS);
+    const epoch = target.frameEpoch();
+    if (epoch !== lastEpoch) {
+      lastEpoch = epoch;
+      snapUntilS = elapsedS + EPOCH_SNAP_S;
+    }
+    adoptChangedTarget(elapsedS);
     lerper.update(dt);
   };
   const binding: ArParentBinding = {
@@ -122,7 +197,6 @@ export function enableArWorldGroupAlignment(
     dispose(): void {
       if (disposed) return;
       disposed = true;
-      unsubscribe();
       unregister();
       unregisterBinding();
       target.dispose();
