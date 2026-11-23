@@ -42,7 +42,7 @@ describe("diagramSvg", () => {
   it("says what changes between the panels", () => {
     expect(diagramSvg("light-same")).toContain(">nothing<");
     expect(diagramSvg("light-dim")).toContain(">dim<");
-    expect(diagramSvg("rot-35")).toContain(">tilt<");
+    expect(diagramSvg("rot-35")).toContain(">turn<");
     expect(diagramSvg("dist-2x")).toContain(">step back<");
     // Why: F5 is taken after F4 at 3 m by stepping forward to 1 m; a
     // picture saying "step back" contradicts the card next to it.

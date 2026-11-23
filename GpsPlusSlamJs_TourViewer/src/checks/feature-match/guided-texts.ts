@@ -97,11 +97,12 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
     avoid: "Moving between the two shots.",
   },
   F3: {
-    title: "Slight tilt",
-    change: "Tilt the phone 30-45 deg, like a clock hand at one o'clock.",
-    capture: "Capture tilted.",
+    title: "Turn the phone",
+    change:
+      "Turn the phone 30-45 deg in its own plane, like a clock hand at one o'clock. Keep facing the surface: do not tilt it away.",
+    capture: "Capture turned.",
     diagram: "rot-35",
-    purpose: "Does a method cope with a slight tilt?",
+    purpose: "Does a method cope with a turned picture?",
     avoid: STEPPING,
   },
   F4: {
@@ -123,7 +124,7 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
   F6: {
     title: "Step aside",
     change:
-      "Back to 1.5 m, then about 1 m to the side, parallel to the surface. Aim at the same centre.",
+      "Back to 1.5 m, then about 1 m to one side (left or right, one photo), parallel to the surface. Aim at the same centre.",
     capture: "Capture from the new place.",
     diagram: "side-flat",
     purpose: "Does a method match after a change of viewpoint?",
@@ -147,7 +148,8 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
   },
   D3: {
     title: "Deep scene, step aside",
-    change: "Step about 1 m to the side. Aim at the same centre.",
+    change:
+      "Step about 1 m to one side (left or right, one photo). Aim at the same centre.",
     capture: "Capture from the new place.",
     diagram: "side-deep",
     purpose: "Does a method match a deep scene after a change of viewpoint?",

@@ -1045,15 +1045,17 @@ test("the feature matching benchmark guides each shot and the first visit", asyn
   await expect(page.locator("#c-drawer")).toBeHidden();
 
   await openTab(page, "pairs");
-  await page.locator("#c-pair-list button", { hasText: "Slight tilt" }).click();
+  await page
+    .locator("#c-pair-list button", { hasText: "Turn the phone" })
+    .click();
   await expect(page.locator("#c-drawer")).toBeHidden();
   await expect(page.locator("#c-chip-key")).toHaveText("F3");
   await openTab(page, "guide");
   await expect(page.locator("#c-guide-purpose")).toHaveText(
-    "Does a method cope with a slight tilt?",
+    "Does a method cope with a turned picture?",
   );
   await expect(page.locator("#c-guide-steps li").last()).toHaveText(
-    "Capture tilted.",
+    "Capture turned.",
   );
   await expect(page.locator("#c-guide-spot")).toBeHidden();
 

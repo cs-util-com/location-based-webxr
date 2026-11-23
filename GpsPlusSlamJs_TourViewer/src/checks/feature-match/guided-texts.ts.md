@@ -22,6 +22,8 @@ The words per shot of the photo test, shared by both views (the guided view and 
 - L1 is taken with the light on; L3 and L4 dim the light in their change step, without moving the phone.
 - Titles are unique per shot.
 
+- F3 says turn, never tilt: pair `2d` is the phone turned in its own plane (its diagram draws that). "Slight tilt" read on the phone as an oblique view and sent a tester looking for a second, other-side shot. F6 and D3 say one photo from one side (left or right).
+
 ## Example
 
 ```ts

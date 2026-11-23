@@ -67,15 +67,15 @@ const SCENE_SHOTS: Readonly<Record<SceneKind, readonly ShotDef[]>> = {
   flat: [
     { key: "F1", text: "upright at 1.5 m", handsOff: null },
     { key: "F2", text: "again, unchanged", handsOff: "still" },
-    { key: "F3", text: "tilted 30-45 deg", handsOff: "move" },
+    { key: "F3", text: "turned 30-45 deg in its plane", handsOff: "move" },
     { key: "F4", text: "from 3 m", handsOff: null },
     { key: "F5", text: "from 1 m", handsOff: null },
-    { key: "F6", text: "1 m to the side at 1.5 m", handsOff: null },
+    { key: "F6", text: "1 m to one side at 1.5 m", handsOff: null },
   ],
   deep: [
     { key: "D1", text: "a deep scene", handsOff: null },
     { key: "D2", text: "again, unchanged", handsOff: "still" },
-    { key: "D3", text: "1 m to the side", handsOff: null },
+    { key: "D3", text: "1 m to one side", handsOff: null },
   ],
   own: [
     { key: "X1", text: "your own first photo", handsOff: null },

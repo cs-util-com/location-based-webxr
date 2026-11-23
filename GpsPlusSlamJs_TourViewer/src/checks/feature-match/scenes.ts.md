@@ -12,8 +12,8 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `shotList(spots, extra)` -> `Shot[]`: every shot in the order the run walks them. A shot has `id` (`<scene id>/<key>`, e.g. `flat-s1/F3`), `scene`, `kind`, `spot`, `step` (0 for the scene's first shot), `key`, `text` and `handsOff`.
   - The shots per scene:
     - light: L1 normal light, L2 again unchanged, L3 light dimmed, L4 as dark as possible;
-    - flat: F1 upright at 1.5 m, F2 again unchanged, F3 tilted 30-45 deg, F4 from 3 m, F5 from 1 m, F6 1 m to the side;
-    - deep: D1 a deep scene, D2 again unchanged, D3 1 m to the side;
+    - flat: F1 upright at 1.5 m, F2 again unchanged, F3 turned 30-45 deg in its own plane (pair `2d`: a turn, not a tilt away from the surface), F4 from 3 m, F5 from 1 m, F6 1 m to one side;
+    - deep: D1 a deep scene, D2 again unchanged, D3 1 m to one side;
     - own: X1, X2.
   - `handsOff`: `"still"` for L2, F2 and D2 (nothing changes once the phone rests), `"move"` for F3 (the phone turns first), `null` for the rest (the gyroscope cannot judge a step or a light change): which shots the cockpit may take by itself.
   - One place: 13 shots (L1-L4 at 0-3, F1-F6 at 4-9, D1-D3 at 10-12).

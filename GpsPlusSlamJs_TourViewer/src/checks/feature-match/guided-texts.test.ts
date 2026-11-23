@@ -104,3 +104,27 @@ describe("OTHER_TAB_TEXT", () => {
     expect(OTHER_TAB_TEXT).not.toMatch(DASHES);
   });
 });
+
+// Why this test matters: on the phone the F3 card ("Slight tilt", "like a
+// clock hand") read as an oblique view, and the tester then looked for a
+// second, other-side shot the flow never asks for. The plan's pair 2d is
+// a turn of the phone in its own plane (its diagram draws exactly that);
+// the words must say turn, not tilt, and the step-aside shots must say
+// that one side is enough.
+describe("the turn and the step aside say what the plan measures", () => {
+  it("F3 asks for a turn in the phone's own plane, not a tilt away", () => {
+    const w = SHOT_WORDS.F3;
+    expect(w.title).toBe("Turn the phone");
+    expect(w.change).toMatch(/in its own plane/);
+    expect(w.change).toMatch(/do not tilt it away/i);
+    expect(`${w.title} ${w.capture} ${w.purpose}`).not.toMatch(/tilt/i);
+  });
+
+  it("F6 and D3 ask for one photo from one side", () => {
+    for (const key of ["F6", "D3"] as const) {
+      expect(SHOT_WORDS[key].change).toMatch(
+        /to one side \(left or right, one photo\)/,
+      );
+    }
+  });
+});
