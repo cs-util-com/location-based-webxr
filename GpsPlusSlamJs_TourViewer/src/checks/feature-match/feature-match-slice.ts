@@ -460,6 +460,15 @@ export interface MeasureProgress {
   readonly estimateMs: number | null;
 }
 
+/**
+ * Why the speed and synthetic runs wait, shown on their buttons: a pair in
+ * the measuring worker would time against them. Empty when they may run.
+ */
+export const benchWaitText = (s: FeatureMatchState): string =>
+  s.busy === "idle" && s.queue.running !== null
+    ? "Waits for the pair being measured"
+    : "";
+
 export function measureProgress(s: FeatureMatchState): MeasureProgress {
   const keys = planResultKeys(s.plan);
   const entries = [...keys.keys()].map((k) => s.results[k]);

@@ -72,6 +72,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `queueStarted(key)`: refused unless `key` is `nextMeasureKey`.
 - `resultStored` and `resultFailed` free the queue when they name the running pair; a stale key still frees it. Only `resultStored` (the worker measured the pair) resets the crash count: a failure that may not have involved the worker (a photo that could not be read) leaves it.
 - `workerCrashed({ key, text })`: only for the running pair; counts the crash and fails the pair for this load only (not persisted).
+- `benchWaitText(s)`: "Waits for the pair being measured" while the queue holds a pair and no run is busy, else empty; the speed and synthetic buttons show it as the reason they are off.
 - `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, crashes, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
 
 ### Flat target actions

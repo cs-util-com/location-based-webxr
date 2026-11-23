@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   anyPairReady,
+  benchWaitText,
   currentShot,
   featureMatchActions as A,
   featureMatchReducer,
@@ -897,5 +898,23 @@ describe("the measuring queue", () => {
       running: "light-s1/L1-L3",
       estimateMs: 3000,
     });
+  });
+});
+
+describe("benchWaitText", () => {
+  // Why this test matters: the speed and synthetic buttons go dead while
+  // the queue measures a pair (it would time against the run); a dead
+  // button with no word reads as broken, so the wait must say why.
+  it("names the pair being measured as the reason, and nothing when free", () => {
+    const s = run([
+      A.restoreFinished({ stored: [], results: {}, log: [] }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L2", photo: photo("p2") }),
+    ]);
+    expect(benchWaitText(s)).toBe("");
+    const key = nextMeasureKey(s)!;
+    const busy = run([A.queueStarted(key)], s);
+    expect(busy.queue.running).toBe(key);
+    expect(benchWaitText(busy)).toBe("Waits for the pair being measured");
   });
 });

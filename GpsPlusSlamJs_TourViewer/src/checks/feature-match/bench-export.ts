@@ -9,6 +9,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { toFramePoint } from "./bench-image";
 import type { MethodResult, Points } from "./bench-run";
+import type { SquareCrop, TurnDegrees } from "./rotation-square";
 
 /** The names the saved files get. */
 export const FRAME_FILES = {
@@ -227,6 +228,16 @@ export interface MatchesAbout {
   readonly settings: string;
   readonly methods: Readonly<Record<string, boolean>>;
   readonly sizes: readonly number[];
+  /**
+   * A rotation pair: both frames were cut to these centre squares of the
+   * shot files and B turned clockwise, so the keypoints are in the
+   * squares' pixels (B's after the turn).
+   */
+  readonly square?: {
+    readonly a: SquareCrop;
+    readonly b: SquareCrop;
+    readonly turn: TurnDegrees;
+  };
 }
 
 /**
@@ -267,6 +278,15 @@ export function matchesInfo(
             settings: about.settings,
             methods: about.methods,
             sizes: about.sizes,
+            ...(about.square
+              ? {
+                  square: {
+                    a: about.square.a,
+                    b: about.square.b,
+                    turn: { degrees: about.square.turn, direction: "cw" },
+                  },
+                }
+              : {}),
           },
         }),
     methods: results.map((r) => ({

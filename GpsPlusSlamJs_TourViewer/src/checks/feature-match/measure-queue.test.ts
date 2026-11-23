@@ -1,7 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkerCrashed } from "./measure-client";
-import { featureMatchActions as A } from "./feature-match-slice";
+import {
+  featureMatchActions as A,
+  nextMeasureKey,
+} from "./feature-match-slice";
+
+// The queue's choice of the next pair, counted: it rebuilds the plan's
+// pairs, so it must not run on a notification that changed nothing.
+vi.mock("./feature-match-slice", async (original) => {
+  const m = await original<typeof import("./feature-match-slice")>();
+  return { ...m, nextMeasureKey: vi.fn(m.nextMeasureKey) };
+});
 import {
   doneOf,
   flush as settle,
@@ -178,5 +188,69 @@ describe("startMeasureQueue", () => {
     }
     await settle();
     expect(h.calls).toHaveLength(0);
+  });
+});
+
+describe("the queue's work per store notification", () => {
+  // Why this test matters: every devicemotion reading dispatches, and a
+  // refused or unchanged dispatch still notifies; choosing the next pair
+  // on each rebuilt the derived pairs, the photos and a Map 60 times a
+  // second for nothing.
+  it("skips a notification whose state did not change", async () => {
+    const h = harness();
+    h.store.dispatch(restore);
+    await settle();
+    const count = vi.mocked(nextMeasureKey);
+    const before = count.mock.calls.length;
+    for (let i = 0; i < 5; i++) {
+      h.store.dispatch(A.planMoved(h.state().plan.current));
+    }
+    expect(count.mock.calls.length).toBe(before);
+    h.store.dispatch(shot(L1, "p1"));
+    expect(count.mock.calls.length).toBeGreaterThan(before);
+  });
+});
+
+describe("a rotation pair's matches", () => {
+  // Why this test matters: a rotation pair is measured on the centre
+  // squares, B turned; its keypoints are in square pixels, so the matches
+  // JSON must say which square of which shot file, and the turn, or the
+  // PC reads them against the full photo.
+  it("carries the crop of both squares and the turn in measured", async () => {
+    const h = harness();
+    for (const a of [
+      restore,
+      shot("flat-s1/F1", "f1"),
+      shot("flat-s1/F2", "f2"),
+    ]) {
+      h.store.dispatch(a);
+    }
+    for (let i = 0; i < 6; i++) {
+      await settle();
+      const open = h.calls[i];
+      if (!open) break;
+      open.resolve(doneOf([result("sift")]));
+    }
+    await settle();
+    const key = [...h.matches.keys()].find((k) =>
+      k.startsWith("flat-s1/F1-T90@"),
+    );
+    const real = [...h.matches.keys()].find((k) =>
+      k.startsWith("flat-s1/F1-F2@"),
+    );
+    expect(key).toBeDefined();
+    const saved = JSON.parse(h.matches.get(key!)!) as {
+      measured: Record<string, unknown>;
+    };
+    // The harness photos are 640 x 480: the square is 480 wide, 80 in.
+    expect(saved.measured["square"]).toEqual({
+      a: { x: 80, y: 0, side: 480 },
+      b: { x: 80, y: 0, side: 480 },
+      turn: { degrees: 90, direction: "cw" },
+    });
+    const plain = JSON.parse(h.matches.get(real!)!) as {
+      measured: Record<string, unknown>;
+    };
+    expect(plain.measured).not.toHaveProperty("square");
   });
 });

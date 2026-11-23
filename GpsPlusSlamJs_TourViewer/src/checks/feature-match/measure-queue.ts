@@ -22,7 +22,7 @@ import { WorkerCrashed, type MeasureClient } from "./measure-client";
 import type { MeasureDone } from "./measure-protocol";
 import type { RunGuard } from "./run-guard";
 import { shotFile } from "./run-zip";
-import { turnOf } from "./rotation-square";
+import { centreCrop, turnOf } from "./rotation-square";
 
 export interface MeasureQueueDeps {
   readonly store: {
@@ -102,8 +102,9 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
         return;
       }
       log(`${pair.id}: measuring ${context}`);
+      const turn = turnOf(pair.kind);
       const done = await deps.client.measure(
-        { a, b, turn: turnOf(pair.kind), methods, sizes, pair: pair.legacy },
+        { a, b, turn, methods, sizes, pair: pair.legacy },
         (line) => log(`${pair.id}: ${line}`),
       );
       const notLoaded = done.results.filter((r) => r.error !== null);
@@ -119,6 +120,17 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
         settings: done.settings,
         methods,
         sizes,
+        // A rotation pair is measured on the centre squares, B turned: its
+        // keypoints are in those squares' pixels, not the shot files'.
+        ...(turn === null
+          ? {}
+          : {
+              square: {
+                a: centreCrop(ra.photo.width, ra.photo.height),
+                b: centreCrop(rb.photo.width, rb.photo.height),
+                turn,
+              },
+            }),
       });
       deps.putMatches(
         key,
@@ -147,11 +159,17 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
     }
   };
 
+  /** The state the queue last looked at: an unchanged one needs no look. */
+  let last: FeatureMatchState | null = null;
   const tick = (): void => {
     if (stopped) {
       return;
     }
     const s = store.getState();
+    if (s === last) {
+      return;
+    }
+    last = s;
     const key = nextMeasureKey(s);
     if (key === null) {
       return;

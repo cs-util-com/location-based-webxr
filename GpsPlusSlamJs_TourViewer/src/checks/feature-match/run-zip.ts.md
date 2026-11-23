@@ -18,7 +18,7 @@ The zip is named `runZipName(session)` = `feature-match-run-<session>.zip` (`sce
 
 1. `shots/<scene id>/<shot key>-t<take>.png`, one per shot that has a photo, in run order (`planShots`), e.g. `shots/light-s1/L1-t1.png`, `shots/flat-s1/F1-t1.png`. Only the photo the plan keeps for a shot goes in; `take` is its take (2 after one retake). The PNG is the captured frame at its captured size (at most `CAPTURE_MAX` on the long side), plain (`assertPlainPng`: no EXIF, text or time chunks).
 2. Per ready derived pair, in `derivedPairs` order: `pairs/<pair id>/feature-match-frames.json`, e.g. `pairs/light-s1/L1-L2/feature-match-frames.json`, `pairs/flat-s1/F1-T90/feature-match-frames.json`. A pair is ready when both its shots have a photo.
-3. Right after a pair's frames JSON, only when its result is `done` and its matches are stored: `pairs/<pair id>/feature-match-matches.json` (the text the measuring queue stored, `measure-queue.ts`).
+3. Right after a pair's frames JSON, only when its result is `done` and its matches are stored: `pairs/<pair id>/feature-match-matches.json` (the text the measuring queue stored, `measure-queue.ts`). For a rotation pair its keypoints are in the pixels of the centre squares (B's after the turn), not of the shot files its `frames` name: its `measured.square` gives `{ a: { x, y, side }, b: { x, y, side }, turn: { degrees, direction: "cw" } }`, the same crops and turn as the frames JSON.
 4. `feature-match-summary.txt` (`summaryText` of `scenes.ts`).
 5. `feature-match-log.txt` (the page log, the log of earlier loads first, a `page reloaded` line between loads).
 
