@@ -25,6 +25,7 @@ import {
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
+import { OTHER_TAB_TEXT } from "./guided-texts";
 import {
   LIGHT_NOTE,
   retakeText,
@@ -363,6 +364,11 @@ describe("cockpit model: status order and the run's own line", () => {
     expect(statusView(run([A.cameraStartSet("failed")], pair)).text).toBe(
       "Camera unavailable: tap Retry camera.",
     );
+    // Another tab holding the run outranks every other line.
+    expect(statusView(run([A.otherTabFound()], failed))).toEqual({
+      text: OTHER_TAB_TEXT,
+      tone: "bad",
+    });
   });
 
   // Why: the hands-off photo's outcome is what the status line reports;

@@ -9,7 +9,7 @@
  */
 import type { FeatureMatchState } from "./feature-match-slice";
 import { readyCount, shotContext, warned } from "./guided-model";
-import { LIGHT_NOTE, retakeText } from "./guided-texts";
+import { LIGHT_NOTE, OTHER_TAB_TEXT, retakeText } from "./guided-texts";
 import { planPhotos, planShots } from "./run-plan";
 import { lightOf, nextOpen } from "./scenes";
 import { stillProgress } from "./still-detector";
@@ -390,6 +390,9 @@ export function sameDrawing(
 
 /** The status line: the newest workflow line, with its tone. */
 export function statusView(s: FeatureMatchState): Line {
+  if (s.otherTab) {
+    return { text: OTHER_TAB_TEXT, tone: "bad" };
+  }
   if (s.photoStoreFailing) {
     return {
       text: "Photos are not stored on this phone: Download all before a reload.",

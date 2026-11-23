@@ -38,6 +38,7 @@ import {
 } from "./flat-target";
 import {
   EMPTY_PLAN,
+  planPhotoIds,
   planPhotos,
   planReducer,
   planShots,
@@ -45,7 +46,14 @@ import {
   type PlanAction,
   type RunPlan,
 } from "./run-plan";
-import { derivedPairs, previousInScene, readyPairs, type Shot } from "./scenes";
+import {
+  derivedPairs,
+  previousInScene,
+  readyPairs,
+  readyResultKeys,
+  type DerivedPair,
+  type Shot,
+} from "./scenes";
 import {
   isStill,
   readingsLost,
@@ -182,6 +190,21 @@ interface RunZip {
   readonly text: string;
 }
 
+/**
+ * A pair's measured outcome. `persisted`: kept in storage, so a reload
+ * brings it back (a result, or a failure the method itself reported); a
+ * crash is kept for this page load only and measured again after a reload.
+ */
+export interface ResultEntry {
+  readonly status: "done" | "failed";
+  /** The short line a view shows. */
+  readonly text: string;
+  readonly persisted: boolean;
+}
+
+/** The line the log gets between the restored log and this load's lines. */
+export const RELOAD_LINE = "page reloaded";
+
 /** Where the page's last camera start stands, for the finder chip. */
 type CameraStart = "idle" | "starting" | "failed";
 const CAMERA_STARTS: readonly string[] = ["idle", "starting", "failed"];
@@ -209,6 +232,14 @@ export interface FeatureMatchState {
   readonly cameraStart: CameraStart;
   /** A plan photo the browser's database refused is not stored yet. */
   readonly photoStoreFailing: boolean;
+  /** The photos, results and log of the last load were read back. */
+  readonly restored: boolean;
+  /** Plan photo ids whose storage write succeeded or that were read back. */
+  readonly storedIds: readonly string[];
+  /** The ready pairs' measured outcomes, by result key (`scenes.ts`). */
+  readonly results: Readonly<Record<string, ResultEntry>>;
+  /** Another tab of this page holds the run: this one changes nothing of it. */
+  readonly otherTab: boolean;
 }
 
 /** The options as the page's controls start. */
@@ -247,6 +278,10 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     runZip: { phase: "idle", text: "" },
     cameraStart: "idle",
     photoStoreFailing: false,
+    restored: false,
+    storedIds: [],
+    results: {},
+    otherTab: false,
     camera: false,
     busy: "idle",
     running: null,
@@ -334,6 +369,10 @@ export function handsOffDue(s: FeatureMatchState): boolean {
   );
 }
 
+/** The ready pairs of a plan by the key their result is stored under. */
+export const planResultKeys = (p: RunPlan): Map<string, DerivedPair> =>
+  readyResultKeys(derivedPairs(p.spots, p.extra), planPhotos(p));
+
 /** The run has a pair whose two shots have a photo. */
 export const anyPairReady = (p: RunPlan): boolean =>
   readyPairs(derivedPairs(p.spots, p.extra), planPhotos(p)).length > 0;
@@ -399,8 +438,9 @@ const planCase =
   (s: Draft, a: PayloadAction<P>): void => {
     const action = make(a.payload);
     if (
-      (action.type === "photo" || action.type === "reset") &&
-      s.busy !== "idle"
+      s.otherTab ||
+      ((action.type === "photo" || action.type === "reset") &&
+        s.busy !== "idle")
     ) {
       return;
     }
@@ -410,6 +450,7 @@ const planCase =
       return;
     }
     s.plan = next;
+    keepNamed(s);
     if (TARGET_CHANGES.has(action.type)) {
       s.guided = { count: null };
     }
@@ -429,6 +470,20 @@ const planCase =
       s.runZip = { phase: "idle", text: "" };
     }
   };
+
+/** Drops the stored ids and results the plan no longer names. */
+function keepNamed(s: Draft): void {
+  const ids = new Set(planPhotoIds(plain(s.plan)));
+  if (s.storedIds.some((id) => !ids.has(id))) {
+    s.storedIds = s.storedIds.filter((id) => ids.has(id));
+  }
+  const keys = planResultKeys(plain(s.plan));
+  if (Object.keys(s.results).some((k) => !keys.has(k))) {
+    s.results = Object.fromEntries(
+      Object.entries(plain(s.results)).filter(([k]) => keys.has(k)),
+    );
+  }
+}
 
 /** Plan actions after which a zip made before holds other photos. */
 const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([
@@ -681,6 +736,83 @@ const slice = createSlice({
     },
     photoStoreChanged(s: Draft, a: PayloadAction<boolean>) {
       s.photoStoreFailing = a.payload;
+    },
+    /** A plan photo's write succeeded; refused for an id the plan does not name. */
+    photoStored(s: Draft, a: PayloadAction<string>) {
+      if (
+        !s.storedIds.includes(a.payload) &&
+        planPhotoIds(plain(s.plan)).includes(a.payload)
+      ) {
+        s.storedIds = [...s.storedIds, a.payload];
+      }
+    },
+    /** A ready pair was measured; refused for a key no ready pair has. */
+    resultStored(s: Draft, a: PayloadAction<{ key: string; text: string }>) {
+      if (planResultKeys(plain(s.plan)).has(a.payload.key)) {
+        s.results = {
+          ...s.results,
+          [a.payload.key]: {
+            status: "done",
+            text: a.payload.text,
+            persisted: true,
+          },
+        };
+      }
+    },
+    /** A ready pair's measuring failed; `persisted` when the method reported it. */
+    resultFailed(
+      s: Draft,
+      a: PayloadAction<{ key: string; text: string; persisted: boolean }>,
+    ) {
+      if (planResultKeys(plain(s.plan)).has(a.payload.key)) {
+        s.results = {
+          ...s.results,
+          [a.payload.key]: {
+            status: "failed",
+            text: a.payload.text,
+            persisted: a.payload.persisted,
+          },
+        };
+      }
+    },
+    /**
+     * The restore after a load finished: the photos read back count as
+     * stored, the results of the ready pairs come back, and the stored log
+     * goes before this load's lines with a reload line between. Once only.
+     */
+    restoreFinished(
+      s: Draft,
+      a: PayloadAction<{
+        stored: readonly string[];
+        results: Readonly<Record<string, ResultEntry>>;
+        log: readonly string[];
+      }>,
+    ) {
+      if (s.restored) {
+        return;
+      }
+      s.restored = true;
+      const ids = new Set(planPhotoIds(plain(s.plan)));
+      s.storedIds = [
+        ...new Set([
+          ...s.storedIds,
+          ...a.payload.stored.filter((id) => ids.has(id)),
+        ]),
+      ];
+      const keys = planResultKeys(plain(s.plan));
+      s.results = {
+        ...Object.fromEntries(
+          Object.entries(a.payload.results).filter(([k]) => keys.has(k)),
+        ),
+        ...s.results,
+      };
+      if (a.payload.log.length > 0) {
+        s.log = [...a.payload.log, RELOAD_LINE, ...s.log];
+      }
+    },
+    /** Another tab of the page holds the run. */
+    otherTabFound(s: Draft) {
+      s.otherTab = true;
     },
     optionsChanged(s: Draft, a: PayloadAction<BenchOptions>) {
       s.options = a.payload;

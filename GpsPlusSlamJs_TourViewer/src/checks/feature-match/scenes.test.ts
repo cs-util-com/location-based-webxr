@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { lightCheck, MAX_SPOTS } from "./bench-export";
+import { lightCheck } from "./bench-export";
 import {
   derivedPairs,
   lightOf,
   MAX_EXTRA,
   nextOpen,
-  pairFolderTag,
   pairsUsing,
   previousInScene,
   readyPairs,
@@ -178,37 +177,6 @@ describe("the derived pairs", () => {
   });
 });
 
-describe("the zip folder of a pair", () => {
-  // Why: the PC side finds a pair by its protocol key in the folder name.
-  // The synthetic turns have keys of their own, so a folder of a turned
-  // square never reads as an old pair of a phone turned by hand.
-  it("uses the protocol key and the run number", () => {
-    const pairs = derivedPairs(2, 1);
-    for (const [i, p] of pairs.entries()) {
-      const t = pairFolderTag(p, i + 1);
-      expect(t.sequence).toBe(i + 1);
-      expect(t.spot).toBe(p.spot);
-      expect(t.pair).toBe(p.legacy);
-    }
-    const turns = pairs.filter((p) => p.axis === "rot").map((p) => p.legacy);
-    expect(turns).toEqual(["t0", "t90", "t180"]);
-    for (const n of [0, 1.5, Number.NaN]) {
-      expect(() => pairFolderTag(pairs[0]!, n)).toThrow(/sequence/);
-    }
-  });
-
-  // Why: the scene list and the folder tag each bound the places; they
-  // share one constant, so the largest run the page allows must name
-  // every folder without the tag refusing its spot.
-  it("names every folder of the largest run", () => {
-    const pairs = derivedPairs(MAX_SPOTS, MAX_EXTRA);
-    expect(Math.max(...pairs.map((p) => p.spot))).toBe(MAX_SPOTS);
-    for (const [i, p] of pairs.entries()) {
-      expect(() => pairFolderTag(p, i + 1)).not.toThrow();
-    }
-  });
-});
-
 describe("the light check per shot", () => {
   // Why: the light checks keep their old rules: L2 like the control pair,
   // L3 and L4 like the dimmed pairs, all against L1.
@@ -269,6 +237,7 @@ describe("the run summary", () => {
       extra: 0,
       photos: photos({ "light-s1/L1": 100, "light-s1/L2": 40 }),
       retakes: 1,
+      results: {},
       device: "Pixel test",
     });
     expect(text).toContain("Session: abcd1234");
@@ -278,6 +247,38 @@ describe("the run summary", () => {
     expect(text).toContain("Light checks: light-s1/L2 changed");
     expect(text).toContain("Retakes: 1");
     expect(text).toContain(`File: ${runZipName("abcd1234")}`);
-    expect(text).toContain("Measured: none on the phone, measure on the PC");
+    expect(text).toContain(
+      "Pairs measured on this phone: 0, failed: 0, pending (to be measured on the PC): 1",
+    );
+  });
+});
+
+describe("the summary's measured pairs", () => {
+  // Why: the zip goes to the PC; the summary says which ready pairs the
+  // phone measured, which failed, and which the PC must still measure. A
+  // result whose key no ready pair has (a retake made it stale) counts as
+  // nothing.
+  it("counts measured, failed and pending pairs by their result keys", () => {
+    const shots = photos({
+      "light-s1/L1": 100,
+      "light-s1/L2": 100,
+      "light-s1/L3": 60,
+    });
+    const text = summaryText({
+      session: "abcd1234",
+      spots: 1,
+      extra: 0,
+      photos: shots,
+      retakes: 0,
+      results: {
+        "light-s1/L1-L2@p-light-s1/L1+p-light-s1/L2": { status: "done" },
+        "light-s1/L1-L3@p-light-s1/L1+p-light-s1/L3": { status: "failed" },
+        "light-s1/L1-L4@x+y": { status: "done" },
+      },
+      device: "Pixel test",
+    });
+    expect(text).toContain(
+      "Pairs measured on this phone: 1, failed: 1, pending (to be measured on the PC): 0",
+    );
   });
 });

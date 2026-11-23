@@ -7,8 +7,7 @@
  */
 import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
-import { greyStats, toFramePoint, type Frame } from "./bench-image";
-import type { DeviceInfo } from "./bench-report";
+import { toFramePoint } from "./bench-image";
 import type { MethodResult, Points } from "./bench-run";
 
 /** The names the saved files get. */
@@ -52,8 +51,6 @@ export type PairKey = (typeof PAIRS)[number]["key"];
 
 /** The places the light pairs (and the light scene) are repeated at. */
 export const MAX_SPOTS = 3;
-/** The pairs that are repeated at spots; every other pair is at spot 1. */
-const LIGHT_PAIRS: ReadonlySet<string> = new Set(["1a", "1b", "1c"]);
 
 /** A dimmed pair's photo B must be at most this share of A's grey mean. */
 export const LIGHT_DARKER_RATIO = 0.8;
@@ -115,41 +112,6 @@ function dimmedCheck(meanA: number, meanB: number): LightCheck {
   return meanB > LIGHT_DARKER_RATIO * meanA ? "not-darker" : "ok";
 }
 
-/** Which pair a capture belongs to; fixed when photo A is taken. */
-export interface PairTag {
-  readonly pair: string;
-  readonly pairLabel: string;
-  /** 1 to MAX_SPOTS for a light pair, 1 for every other pair. */
-  readonly spot: number;
-  /** The pair's number in the run, from 1; it names the pair's folder. */
-  readonly sequence: number;
-}
-
-/**
- * @throws Error on an unknown key, a spot that is not an integer 1-3 or a
- *   sequence that is not an integer of at least 1.
- */
-export function pairTag(key: string, spot: number, sequence: number): PairTag {
-  const p = PAIRS.find((q) => q.key === key);
-  if (!p) {
-    throw new Error(`unknown pair ${key}`);
-  }
-  if (!Number.isInteger(spot) || spot < 1 || spot > MAX_SPOTS) {
-    throw new Error(
-      `spot must be 1 to ${String(MAX_SPOTS)}, got ${String(spot)}`,
-    );
-  }
-  if (!Number.isInteger(sequence) || sequence < 1) {
-    throw new Error(`sequence must be 1 or more, got ${String(sequence)}`);
-  }
-  return {
-    pair: p.key,
-    pairLabel: p.label,
-    spot: LIGHT_PAIRS.has(p.key) ? spot : 1,
-    sequence,
-  };
-}
-
 /**
  * A page load's token for the frames JSON: random bytes as hex, no time
  * and no place. It tells two runs apart, and names the run's zip.
@@ -163,39 +125,6 @@ export function sessionToken(bytes: Uint8Array): string {
     );
   }
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-/** The downloaded names of one pair's files. */
-export type PairFileNames = Readonly<
-  Record<"all" | "A" | "B" | "info" | "matches", string>
->;
-
-/**
- * The names one pair's files are offered under, e.g.
- * `feature-match-03-1b-s2-light-dimmed.zip`: running number (two digits at
- * least), key, spot and the label in lower-case ASCII. Entries inside the
- * zip keep the fixed FRAME_FILES names.
- */
-export function pairFileNames(tag: PairTag): PairFileNames {
-  const slug = tag.pairLabel
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-  const stem = `feature-match-${String(tag.sequence).padStart(2, "0")}-${tag.pair}-s${String(tag.spot)}-${slug}`;
-  return {
-    all: `${stem}.zip`,
-    A: `${stem}-frame-a.png`,
-    B: `${stem}-frame-b.png`,
-    info: `${stem}-frames.json`,
-    matches: `${stem}-matches.json`,
-  };
-}
-
-/** A captured frame and the camera size it was taken from. */
-export interface SavedFrame {
-  readonly name: "A" | "B";
-  readonly frame: Frame;
-  readonly source: { readonly width: number; readonly height: number };
 }
 
 const SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -335,53 +264,6 @@ export function matchesInfo(
       })),
     })),
   })}\n`;
-}
-
-/**
- * The JSON saved with the frames: a fixed list of fields (the pair, the
- * session token, the light check, sizes, grey values, the device), no time
- * and no place.
- */
-export function framesInfo(
-  frames: readonly SavedFrame[],
-  device: DeviceInfo,
-  captureMaxLongEdge: number,
-  tag: PairTag,
-  checks: { readonly light: ShotLight | null; readonly session: string },
-  /** The names the frames are saved under; the fixed FRAME_FILES ones by default. */
-  files: Readonly<Record<"A" | "B", string>> = FRAME_FILES,
-  /** More fields, written after the fixed ones and before the device. */
-  more: Readonly<Record<string, unknown>> = {},
-): string {
-  return `${JSON.stringify(
-    {
-      format: "feature-match-frames/1",
-      pair: tag.pair,
-      pairLabel: tag.pairLabel,
-      spot: tag.spot,
-      sequence: tag.sequence,
-      session: checks.session,
-      lightCheck: checks.light,
-      captureMaxLongEdge,
-      frames: frames.map((f) => {
-        const g = greyStats(f.frame);
-        return {
-          name: f.name,
-          file: files[f.name],
-          width: f.frame.width,
-          height: f.frame.height,
-          sourceWidth: f.source.width,
-          sourceHeight: f.source.height,
-          greyMean: round2(g.mean),
-          greySd: round2(g.sd),
-        };
-      }),
-      ...more,
-      device,
-    },
-    null,
-    2,
-  )}\n`;
 }
 
 /** One prepared file: its name and its bytes. */

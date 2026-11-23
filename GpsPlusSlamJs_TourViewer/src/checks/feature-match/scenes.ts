@@ -9,9 +9,7 @@
 import {
   lightCheck,
   MAX_SPOTS,
-  pairTag,
   type PairKey,
-  type PairTag,
   type ShotLight,
 } from "./bench-export";
 
@@ -259,18 +257,21 @@ export const readyPairs = (
   photos: ShotPhotos,
 ): DerivedPair[] => pairs.filter((p) => photos[p.a] && photos[p.b]);
 
-/**
- * The tag that names a pair's folder in the run zip, `n` its number in
- * the run: its protocol key, so the PC side reads the folder by it.
- *
- * @throws Error for an `n` that is not an integer of at least 1.
- */
-export const pairFolderTag = (p: DerivedPair, n: number): PairTag =>
-  pairTag(p.legacy, p.spot, n);
-
 /** The key a pair's result is stored under: stale after either retake. */
 export const resultKey = (p: DerivedPair, idA: string, idB: string): string =>
   `${p.id}@${idA}+${idB}`;
+
+/** The ready pairs by the key their result is stored under, in run order. */
+export function readyResultKeys(
+  pairs: readonly DerivedPair[],
+  photos: ShotPhotos,
+): Map<string, DerivedPair> {
+  const out = new Map<string, DerivedPair>();
+  for (const p of readyPairs(pairs, photos)) {
+    out.set(resultKey(p, photos[p.a]!.id, photos[p.b]!.id), p);
+  }
+  return out;
+}
 
 // --- the light check -----------------------------------------------------------
 
@@ -332,6 +333,10 @@ export interface SummaryInput {
   readonly photos: ShotPhotos;
   /** Photos taken again over a shot that had one (lost photos are not). */
   readonly retakes: number;
+  /** The measured outcomes by result key; a stale key counts as nothing. */
+  readonly results: Readonly<
+    Record<string, { readonly status: "done" | "failed" }>
+  >;
   readonly device: string;
 }
 
@@ -346,6 +351,11 @@ export function summaryText(i: SummaryInput): string {
     return l ? [`${s.id} ${l}`] : [];
   });
   const places = clampInt(i.spots, 1, MAX_SPOTS);
+  const keys = [...readyResultKeys(pairs, i.photos).keys()];
+  const count = (status: "done" | "failed"): number =>
+    keys.filter((k) => i.results[k]?.status === status).length;
+  const measured = count("done");
+  const failed = count("failed");
   return [
     "Feature matcher photo test - summary",
     `Session: ${i.session}`,
@@ -354,7 +364,7 @@ export function summaryText(i: SummaryInput): string {
     `Pairs ready: ${String(readyPairs(pairs, i.photos).length)} of ${String(pairs.length)}`,
     `Light checks: ${light.length ? light.join(", ") : "-"}`,
     `Retakes: ${String(i.retakes)}`,
-    "Measured: none on the phone, measure on the PC",
+    `Pairs measured on this phone: ${String(measured)}, failed: ${String(failed)}, pending (to be measured on the PC): ${String(keys.length - measured - failed)}`,
     `File: ${runZipName(i.session)}`,
     `Phone: ${i.device}`,
     "No location, no time and no names are included.",

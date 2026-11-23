@@ -38,14 +38,14 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `ShotPhotos`: what the pair rules read of each shot's photo (`{ id, greyMean }`), by shot id.
 - `pairsUsing(pairs, shot)`: the pairs naming `shot`, i.e. what a retake measures again (F1: 7).
 - `readyPairs(pairs, photos)`: the pairs whose two shots have a photo.
-- `pairFolderTag(pair, n)` -> `PairTag`: the tag that names a pair's folder in the run zip, `n` its number in the run. `pairTag(legacy, spot, n)`. Throws `Error` for an `n` that is not an integer of at least 1.
-- `resultKey(pair, idA, idB)`: `<pair id>@<photo id A>+<photo id B>`, the key a measured result will be stored under; any retake makes it stale. Kept for the on-phone measuring of a later milestone; only tests use it now.
+- `resultKey(pair, idA, idB)`: `<pair id>@<photo id A>+<photo id B>`, the key a measured result is stored under; any retake makes it stale.
+- `readyResultKeys(pairs, photos)`: the result keys of the ready pairs, each with its pair (a `Map` in pair order); the slice keeps results only for these, the store keeps their records and the zip writes one folder per entry.
 - `ShotLight` (re-exported from `bench-export.ts`): the `LightCheck` values plus `"not-darker-than-dimmed"`.
 - `lightOf(shot, photos)`: a light shot's check against its scene's L1 (L2 by the control rule `1a`, L3 by `1b`, L4 by `1c`), and L4 against L3 (`"not-darker-than-dimmed"` when L4 passes against L1 but is brighter than L3); null for any other shot or while a photo it needs is missing.
 - `needsRetake(shot, photos)`: its light check exists and is not `"ok"`.
 - `nextOpen(list, photos, from)`: the first shot without a photo after `from`, else the first one before it; null when every shot has one (or only `from` is open).
 - `runZipName(session)`: `feature-match-run-<session>.zip`.
-- `summaryText({ session, spots, extra, photos, retakes, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Measured: none on the phone", the file name, the phone, and a line that no location, time or names are included.
+- `summaryText({ session, spots, extra, photos, retakes, results, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Pairs measured on this phone: X, failed: Y, pending (to be measured on the PC): Z" over the ready pairs' current result keys, the file name, the phone, and a line that no location, time or names are included.
 
 ## Invariants and assumptions
 
@@ -53,14 +53,9 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - Every pair's two shots are in the same scene; a pair is ready exactly when both have a photo.
 - Pure and deterministic: no DOM, no time, no randomness.
 
-## The run zip (written by `plan-io.ts`)
+## The run zip
 
-- The zip is named `runZipName(session)`.
-- Per ready derived pair, in run order, one folder named `pairFileNames(pairFolderTag(pair, n)).all` without `.zip`, `n` the pair's position in `derivedPairs` plus 1 (so numbers skip pairs that are not ready). Examples with one place: `feature-match-01-1a-s1-light-control-same-light/`, `feature-match-05-t0-s1-rotation-control-centre-squares/`.
-- In each folder the fixed `FRAME_FILES` names: `feature-match-frame-a.png`, `feature-match-frame-b.png` and `feature-match-frames.json`. The frames JSON names the legacy key in `pair`, and adds `derivedPair`, `kind`, `axis`, `controlFor`, `shots` (`{ A: { id, take }, B: { id, take } }`).
-- The rotation pairs (`F1-T0`, `F1-T90`, `F1-T180`) carry the full F1 and F2 photos, not the squares; their frames JSON adds `rotation: { cropA, cropB, turnB, direction: "cw" }`, so the PC side cuts and turns the same squares.
-- At the root: `feature-match-summary.txt` (`summaryText`) and `feature-match-log.txt` (the page log).
-- No matches JSON: nothing is measured on the phone. An older PC reader that expects one pair per zip and a matches JSON does not read this zip as is; the folders keep the old names so a reader can walk them.
+Named `runZipName(session)`; its layout (each shot once under `shots/`, a frames JSON per ready pair under `pairs/<pair id>/`, the summary and the log) is in `run-zip.ts.md`.
 
 ## Example
 
@@ -68,11 +63,10 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 const pairs = derivedPairs(1, 0);
 pairsUsing(pairs, "flat-s1/F1").length; // 7
 readyPairs(pairs, { "light-s1/L1": l1, "light-s1/L2": l2 }); // [L1-L2]
-pairFileNames(pairFolderTag(pairs[0]!, 1)).all;
-// "feature-match-01-1a-s1-light-control-same-light.zip"
+runZipName("0a1b2c3d"); // "feature-match-run-0a1b2c3d.zip"
 ```
 
 ## Tests
 
-- `scenes.test.ts`: the scene and shot lists and their clamping, the pair table with its legacy keys and controls, the pairs a retake of F1 redoes, ready pairs, the light check of L2-L4 (L4 against L3), the next open shot with its wrap, the previous shot in a scene, the zip folder of a pair (protocol keys, the turns `t0`, `t90`, `t180`, a bad number refused, every folder of the largest run named), the zip name and the summary text.
+- `scenes.test.ts`: the scene and shot lists and their clamping, the pair table with its legacy keys and controls, the pairs a retake of F1 redoes, ready pairs, the light check of L2-L4 (L4 against L3), the next open shot with its wrap, the previous shot in a scene, the zip name, the summary text and its measured, failed and pending counts.
 - `scenes.property.test.ts`: for any sizes (clamped ones included), the derived pairs name shots of the list only; a pair is ready exactly when both shots have a photo; a retake changes the result keys of exactly `pairsUsing`; the shot light checks equal the old pair checks on the same means; `nextOpen` finds an open shot inside the list, or none when all are taken.

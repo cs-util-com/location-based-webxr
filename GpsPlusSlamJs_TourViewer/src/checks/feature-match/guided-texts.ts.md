@@ -11,6 +11,8 @@ The words per shot of the photo test, shared by both views (the guided view and 
 - `SCENE_SETUP: Record<SceneKind, string>`: where a scene's first shot is taken from; shown on every shot of the scene.
 - `ShotCard` and `shotCard(shot)`: the shot's words plus its scene's `setup`.
 - `LIGHT_NOTE: Record<ShotLight, string>`: one line per light check result; every failed one says what to retake (an almost black L1: go back to L1).
+- `STORE_CHIP_TEXT`: the guided chip while photos are not stored ("not stored on this phone: download soon").
+- `OTHER_TAB_TEXT`: "This test is open in another tab: this one takes no photo.", said by both views and by a refused photo's note in a tab that does not hold the run.
 - `retakeText(key, pairs)`: "Retaking F1 redoes 7 measurements." (singular for one).
 
 ## Invariants

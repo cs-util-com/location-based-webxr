@@ -317,10 +317,10 @@ export function startCockpitView(deps: CockpitDeps): () => void {
 
   /** Draws the frame `id` onto `canvas` once; hides it while there is none. */
   const drawFrame = (canvas: HTMLCanvasElement, id: string | null): void => {
-    const f = id ? sides.frames.get(id) : undefined;
+    const f = id ? sides.previews.get(id) : undefined;
     canvas.hidden = !f;
     if (f && id && canvas.dataset.id !== id) {
-      frameCanvas(f.frame, canvas);
+      frameCanvas(f, canvas);
       canvas.dataset.id = id;
     }
   };

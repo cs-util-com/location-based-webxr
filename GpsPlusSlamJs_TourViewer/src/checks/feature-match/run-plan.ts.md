@@ -7,7 +7,7 @@ The photo test run as plain data, shared by every view of the feature matching c
 ## Public API
 
 - Types:
-  - `PhotoMeta`: a taken photo's id, size, camera size and grey mean (0-255); its pixels are in the store's `frames` table under the id.
+  - `PhotoMeta`: a taken photo's id, size, camera size and grey mean (0-255); its PNG is in the browser's database under `photo:<id>` (and in the store's `photos` table until stored), its preview in `previews`.
   - `PlanSettings`: `capture` (`"auto"`: the cockpit's hands-off shots take themselves; `"tap"`), `countdown` (0, 3 or 5 s), `sound`.
   - `RunPlan`: `{ spots, extra, current, shots, settings }`. `shots` maps a shot id to `{ photo, take }` (`take` is 1 for the first photo, raised by each retake); a shot without a record has no photo.
   - `PlanAction`: the actions below.

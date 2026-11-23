@@ -87,6 +87,15 @@ export function toFramePoint(
   return ((v + 0.5) * toSize) / fromSize - 0.5;
 }
 
+/** The long edge of the small copy of a photo the views keep in memory. */
+export const PREVIEW_EDGE = 320;
+
+/** A photo's small copy: at most PREVIEW_EDGE on its long side, never larger. */
+export function previewFrame(f: Frame): Frame {
+  const s = fitInside(f.width, f.height, PREVIEW_EDGE, PREVIEW_EDGE);
+  return resizeFrame(f, Math.max(1, s.width), Math.max(1, s.height));
+}
+
 /**
  * Resizes a frame: halves (box average) while the target is less than half
  * the size, so a large shrink averages instead of aliasing, then samples

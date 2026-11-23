@@ -172,6 +172,13 @@ export const shotCard = (shot: Shot): ShotCard => ({
   setup: SCENE_SETUP[shot.kind],
 });
 
+/** The guided chip while the photos are not stored on this phone. */
+export const STORE_CHIP_TEXT = "not stored on this phone: download soon";
+
+/** Said while another tab of the page holds the run. */
+export const OTHER_TAB_TEXT =
+  "This test is open in another tab: this one takes no photo.";
+
 /** The note after a shot's light check (against L1, and L4 against L3). */
 export const LIGHT_NOTE: Readonly<Record<ShotLight, string>> = {
   ok: "Light check: ok.",
