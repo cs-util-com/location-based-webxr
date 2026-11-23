@@ -190,7 +190,7 @@ type Source =
       readonly holds: ReadonlySet<string>;
     };
 
-/** What `sourceOf` reads, built once per Copy or Paste. */
+/** What `sourceOf` reads, built once per document state (`lookups`). */
 interface Lookup {
   readonly doc: TourDocumentState;
   readonly manifest: TourManifest | null;
@@ -202,13 +202,23 @@ interface Lookup {
   >;
 }
 
+/** Each state's lookup, built once: a state never changes (the reducer
+ *  makes a new one for every change), and one shell draw asks Copy, Cut
+ *  and Paste about the same state several times, on every hover of a
+ *  drag in the tree. Callers read it, never change it. */
+const lookups = new WeakMap<TourDocumentState, Lookup>();
+
 function lookupOf(doc: TourDocumentState): Lookup {
-  return {
+  const known = lookups.get(doc);
+  if (known !== undefined) return known;
+  const lookup: Lookup = {
     doc,
     manifest: manifestToWrite(doc),
     objects: new Map(documentObjects(doc).map((o) => [o.object.id, o.object])),
     chains: new Map(documentFrames(doc).map((f) => [f.id, folderChains(f)])),
   };
+  lookups.set(doc, lookup);
+  return lookup;
 }
 
 /** The note or plain folder the selection id `id` names, or null: a

@@ -1035,10 +1035,14 @@ export interface EditorSession {
   ):
     { kind: "deleted"; children: number; stationGone: boolean } | EditorRefusal;
   /** Copy a story right after itself, "... copy", with everything it
-   *  holds under new ids: one step. */
+   *  holds under new ids: one step; `held` while it waits for the draft
+   *  question. */
   duplicateStory(
     storyId: string,
-  ): { kind: "duplicated"; id: string } | EditorRefusal;
+  ):
+    | { kind: "duplicated"; id: string }
+    | EditorHeld<{ kind: "duplicated"; id: string }>
+    | EditorRefusal;
   /** A new entry at the end of a story, or before its child at `at`
    *  (0-based): one step. */
   addToStory(
@@ -3186,17 +3190,21 @@ export function createEditorSession(input: {
         ]),
       );
       const id = newIds[story.id] as string;
-      return took(() =>
-        store.dispatch(
-          tourDocumentActions.storyDuplicated({
-            story: storyId,
-            newIds,
-            what: `the copy of the story "${story.title}"`,
-          }),
-        ),
-      )
-        ? { kind: "duplicated", id }
-        : notApplied;
+      const was = doc().revision;
+      const out = store.dispatch(
+        tourDocumentActions.storyDuplicated({
+          story: storyId,
+          newIds,
+          what: `the copy of the story "${story.title}"`,
+        }),
+      );
+      const made = { kind: "duplicated", id } as const;
+      if (isHeldEdit(out)) {
+        return heldUntilLanded(out, [], () =>
+          storyNow(own(), id) === undefined ? null : made,
+        );
+      }
+      return doc().revision !== was ? made : notApplied;
     },
     deleteStory(storyId) {
       const state = mine();

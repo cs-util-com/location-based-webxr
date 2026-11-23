@@ -21,8 +21,9 @@ hash and the navigation type `"navigate"`.
 - `holdLandingSkip(document, { until?, graceMs?, Observer?, view? })` -
   for a skipped page: puts the stage back now and on every resize of
   `#landing`, `#setup-stage`, `#setup-map` and `#setup-card`. It ends
-  (and disconnects) on the reader's first input or on a scroll it did not
-  make (`"moved"`), or `graceMs` (1 s) after `until` settled
+  (and disconnects) on the reader's first input or on a scroll that moves
+  the stage from where the hold put it (`"moved"`), or `graceMs` (1 s)
+  after `until` settled
   (`"released"`). `main.ts` calls it right after `mountLanding`, with
   `until: landing.ready`, so a throw later in its wiring cannot skip it.
 
@@ -58,6 +59,15 @@ hash and the navigation type `"navigate"`.
   it is theirs: nothing scrolls it again. A drag of a desktop scrollbar may
   send no pointer event to the page (not checked); a resize during such a
   drag would put the stage back once.
+- **A scroll is judged by the stage, not by `scrollY`:** when content
+  mounts above the stage, the browser's scroll anchoring scrolls by the
+  same amount and the stage stays where it is. That scroll event can be
+  dispatched before the resize callback puts the stage back, and a check
+  on `scrollY` read it as the reader's move: in CI's Chromium the hold
+  ended as `"moved"` with the stage still at the top, once the hero was a
+  line taller (not seen locally). The
+  hold records the stage's viewport top each time it puts it back and
+  ends only when a scroll moves that top by more than 1 px.
 
 ## Examples
 

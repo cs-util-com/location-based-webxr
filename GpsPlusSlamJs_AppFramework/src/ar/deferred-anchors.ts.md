@@ -87,7 +87,10 @@ deferring }`. `passMs` is the pass's `performance.now()` span, measured
 With the deferral off (`target.defersAnchors` false, `?anchors=0` in
 development builds) every key follows each frame as in phase 4, and every
 pending member commits at once (`deferral-off`), so every correction lands
-at once; the set logs `deferral off` once when it is created.
+at once. That includes the position members: a GPS anchor in
+`snap-when-offscreen` mode loses its own view gate as well and lands in
+view (`gps-anchor.anchor-set.test.ts`, "the deferral switch"). The set
+logs `deferral off` once when it is created.
 
 1. The previous frame's view is re-expressed by the parent's motion since
    then, so "in view last frame" means the same content rays after a T step.

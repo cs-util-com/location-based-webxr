@@ -64,7 +64,11 @@ firstMismatch }`, or null when the head has no knobs: the log replayed
   anchor log, `anchor-debug-log.ts`) the copied and downloaded text is the
   log's text, a newline, then `appendix.text()`, and both are cleared
   after a copy or download that succeeded. The replay reader skips the
-  appended plain-text lines as unreadable (it counts them, never throws).
+  appended plain-text lines as unreadable (it counts them, never throws),
+  so a normal paste now reports skipped lines: one per non-empty line of
+  the anchor section. A `skipped` above zero no longer means on its own
+  that the paste was damaged; `travelling-box-log.test.ts` pins that the
+  appendix leaves the samples and events as the travel text alone reads.
   - Copy log uses `copyWithFeedback`, reading `Copying...`, then
     `Log copied` or `Copy failed`, enabled again after either. A copy that
     succeeded clears the log.

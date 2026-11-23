@@ -26,7 +26,7 @@ import { percentileOfSorted } from "gps-plus-slam-app-framework/utils/percentile
 /** Passes kept for the summaries: about 30 s at 60 frames a second. */
 const ANCHOR_LOG_PASSES = 1800;
 /** `[DeferredAnchors]` lines kept (the oldest go first). */
-const ANCHOR_LOG_LINES = 200;
+const ANCHOR_LOG_LINES = 2000;
 /** The readout recomputes its line at most this often (ms). */
 const READOUT_EVERY_MS = 1000;
 const TAG = "DeferredAnchors";

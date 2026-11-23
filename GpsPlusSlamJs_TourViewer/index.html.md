@@ -280,7 +280,12 @@ its chunk fails, the hero shows its last moment as a drawing).
   first paint. `visitor-screen.ts` sets `hidden` on it for a visitor.
 - **Top to bottom:** `.landing-way` (a visitor's way in: scan the code, or
   `#have-tour` for a link), the hero (`.landing-kicker`, the `h1`
-  "You know a story about a place.", `.landing-lede`, `.landing-make-line`,
+  "You know a story about a place.", three lines: `.landing-lede` (make a
+  tour with your phone, share it with a printed code), `.landing-promise`
+  (no app, no account, the tour stays in the maker's own storage; bold in
+  the ink colour, the one emphasis) and `.landing-code-line` (the code opens
+  the tour and shows each phone where it stands; the wording is pinned by
+  `src/landing/hero-copy.test.ts`),
   `.landing-needs` "Tours run on Android phones with Chrome." and a "Make
   your tour" button, `.landing-begin`), the film's host `#landing-film`,
   the five step cards (`.landing-cards`, each `.landing-card`: kicker,
@@ -354,8 +359,8 @@ its chunk fails, the hero shows its last moment as a drawing).
   host, before the first paint (`src/landing/uses-height.ts`).
 - **Gaps** (all set here, the design system zeroes margins): the hero's
   kicker 16 px under the band (34 px from 900 px), the `h1` 8 px, lede 10,
-  make-line 12 (20 from 900 px), needs 7, button 14, film 18 (28 from
-  900 px); on a phone held sideways 6, 6, 4 and 10. Cards: text then
+  promise 12 (20 from 900 px), code line 10, needs 7, button 14, film 18
+  (28 from 900 px); on a phone held sideways 6, 6, 6, 4 and 10. Cards: text then
   picture 20 px (stacked) or side by side with a column gap of 5 % of the
   view, at most 72 px (desktop, from 1440 px wide), or 22 px (sideways
   phone); caption 9 px under the picture; 52 px (56 px from 900 px wide

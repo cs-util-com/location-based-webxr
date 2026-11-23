@@ -16,7 +16,7 @@ A diagnostic buffer beside the store, like the travelling-box log
   - p50 and p95 are the framework's nearest rank
     (`gps-plus-slam-app-framework/utils/percentile`), so each is a value
     that occurred.
-- `createAnchorDebugLog({ passes = 1800, lines = 200 }?): AnchorDebugLog`
+- `createAnchorDebugLog({ passes = 1800, lines = 2000 }?): AnchorDebugLog`
   - `RangeError` for a size that is not a positive integer.
   - `pass(sample)`: one `DeferredAnchorPassSample` from the framework's
     pass observer. Keeps its pass ms, its traversals and its frame time
@@ -56,11 +56,18 @@ A diagnostic buffer beside the store, like the travelling-box log
 
 ## Invariants
 
-- Bounded: 3 x 1800 doubles and at most 200 lines, whatever the walk's
+- Bounded: 3 x 1800 doubles and at most 2000 lines, whatever the walk's
   length. 1800 passes are about 30 s at 60 frames a second (60 s at 30).
-- The frame time is the anchor pass's `dt`, so it has samples only once an
+- The frame time is the anchor pass's `dt`, the interval between two XR
+  frames, not the anchors' cost: its p95 is what shows dropped frames (a
+  dropped frame doubles one interval). The anchors' own cost is the pass
+  time, read through `pass p95`. The frame time has samples only once an
   anchor set runs; the pass time is measured by the framework only while an
   observer is set, so a page without `?debug=1` pays nothing.
+- Pass times are `performance.now()` spans, which a browser coarsens
+  without cross-origin isolation: on a phone opening the page without it
+  they come in steps of about 0.1 ms, so a cheap pass reads 0 or 0.1 and
+  the p95 and max, not the p50, carry the signal.
 - With the deferral off (`?anchors=0`, development builds only) the set
   still runs a cheap follow pass each frame; its time is in the numbers.
 - With several anchor sets every set's passes land in the same rings (the
