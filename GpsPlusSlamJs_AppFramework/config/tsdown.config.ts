@@ -339,6 +339,9 @@ const entryFiles = [
   // TourViewer (QR near-frontal pose plan §67 #3).
   'src/utils/debug-flag.ts',
   'src/utils/failure-tracker.ts',
+  // The finite-positive rule and the worse of two accuracies,
+  // deep-imported by the Tour Viewer.
+  'src/utils/finite-positive.ts',
   'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',

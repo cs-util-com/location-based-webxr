@@ -20,6 +20,7 @@ import {
   type LatLong,
 } from '../../core/index.js';
 import { deviceAccuracySeriesM } from '../../state/position-precision.js';
+import { finitePositive, worse } from '../../utils/finite-positive.js';
 import {
   firstIndexAtOrAfter,
   type ArPose,
@@ -216,12 +217,11 @@ function fixOf(
     0,
     0
   );
-  const ownOk = typeof own === 'number' && Number.isFinite(own) && own > 0;
   return {
     t: r.t,
     north: nue[0],
     east: nue[2],
-    accM: ownOk ? Math.max(median, own) : median,
+    accM: worse(median, finitePositive(own)) ?? median,
   };
 }
 

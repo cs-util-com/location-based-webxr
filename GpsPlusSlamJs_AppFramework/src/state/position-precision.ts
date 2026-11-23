@@ -29,6 +29,7 @@
  */
 
 import { GPS_POINT_SOURCE_DEVICE, gpsPointSourceOf } from '../core/index.js';
+import { finitePositive, worse } from '../utils/finite-positive.js';
 import { interpolatingMedian } from '../utils/median.js';
 
 /**
@@ -176,7 +177,7 @@ export function positionPrecision(
   const median = deviceAccuracyM(input.gpsPoints);
   const accuracyM =
     input.position === 'lone-fix'
-      ? worse(median, usableAccuracy(input.loneFixAccuracyM))
+      ? worse(median, finitePositive(input.loneFixAccuracyM))
       : median;
   if (accuracyM === null) return NONE;
   return { source: 'gps', accuracyM, tooWeak: accuracyM > ceilingM };
@@ -213,7 +214,7 @@ function errorLengthM(precision: PositionPrecision): number | null {
     case 'code':
       return CODE_HELD_ERROR_M;
     case 'gps':
-      return usableAccuracy(precision.accuracyM);
+      return finitePositive(precision.accuracyM);
     default:
       return null;
   }
@@ -236,7 +237,7 @@ export function deviceAccuracySeriesM(
   for (const p of points) {
     const accuracy =
       gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE
-        ? usableAccuracy(p.latLongAccuracy)
+        ? finitePositive(p.latLongAccuracy)
         : null;
     if (accuracy !== null) {
       recent.push(accuracy);
@@ -254,29 +255,12 @@ function deviceAccuracyM(points: readonly PrecisionGpsPoint[]): number | null {
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const p = points[i]!;
     if (gpsPointSourceOf(p) !== GPS_POINT_SOURCE_DEVICE) continue;
-    const accuracy = usableAccuracy(p.latLongAccuracy);
+    const accuracy = finitePositive(p.latLongAccuracy);
     if (accuracy === null) continue;
     recent.push(accuracy);
     if (recent.length === DEVICE_ACCURACY_WINDOW_FIXES) break;
   }
   return recent.length === 0 ? null : interpolatingMedian(recent);
-}
-
-/** A reported accuracy a position can be judged by: finite and positive
- *  (external data: anything else is no accuracy at all). */
-function usableAccuracy(accuracy: unknown): number | null {
-  return typeof accuracy === 'number' &&
-    Number.isFinite(accuracy) &&
-    accuracy > 0
-    ? accuracy
-    : null;
-}
-
-/** The worse of two accuracies; an unknown one gives way to a known one. */
-function worse(a: number | null, b: number | null): number | null {
-  if (a === null) return b;
-  if (b === null) return a;
-  return Math.max(a, b);
 }
 
 function checkPositive(value: number, name: string): number {
