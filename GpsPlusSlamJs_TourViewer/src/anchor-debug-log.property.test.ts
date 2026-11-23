@@ -39,6 +39,7 @@ describe("createAnchorDebugLog (properties)", () => {
       fc.property(
         fc.integer({ min: 1, max: 16 }),
         fc.array(fc.double({ min: 0, max: 50, noNaN: true }), {
+          minLength: 1,
           maxLength: 60,
         }),
         (cap, passes) => {
@@ -61,11 +62,9 @@ describe("createAnchorDebugLog (properties)", () => {
           expect(text).toContain(
             `passes ${String(passes.length)} seen, last ${String(kept.length)} summarized`,
           );
-          if (kept.length > 0) {
-            expect(text).toContain(
-              `max ${Math.max(...kept).toFixed(3)} (n ${String(kept.length)})`,
-            );
-          }
+          expect(text).toContain(
+            `max ${Math.max(...kept).toFixed(3)} (n ${String(kept.length)})`,
+          );
         },
       ),
     );

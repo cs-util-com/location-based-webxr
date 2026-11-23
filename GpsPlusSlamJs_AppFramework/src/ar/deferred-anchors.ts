@@ -630,6 +630,14 @@ function createAnchorSet(
     }
   }
 
+  /** How a member's due change lands now (ungated, window, deferral off), or null: it waits. */
+  function landsNowAs(m: MemberEntry): CommitKind | null {
+    const ungated = m.member.ungated();
+    if (ungated !== null) return ungated;
+    if (windowOpen) return 'window';
+    return deferring ? null : 'deferral-off';
+  }
+
   /** Members: a release, an ungated or a window commit lands now; else pending. */
   function stepMembers(dt: number, elapsedS: number, releasing: boolean): void {
     for (const m of members) {
@@ -640,17 +648,13 @@ function createAnchorSet(
         continue;
       }
       const delta = m.root.position.distanceTo(m.target);
-      const ungated = m.member.ungated();
+      const landing = landsNowAs(m);
       if (releasing && delta > DEFERRED_ANCHOR_EPSILON_M) {
         commitMember(m, 'release:code-lock');
       } else if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
         m.pendingSinceMs = null;
-      } else if (ungated !== null) {
-        commitMember(m, ungated);
-      } else if (windowOpen) {
-        commitMember(m, 'window');
-      } else if (!deferring) {
-        commitMember(m, 'deferral-off');
+      } else if (landing !== null) {
+        commitMember(m, landing);
       } else {
         m.pending = true;
         m.pendingSinceMs ??= nowMs;
