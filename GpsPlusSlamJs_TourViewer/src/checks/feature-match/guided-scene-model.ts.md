@@ -11,7 +11,9 @@ The guided view's screens as plain data, read from the page state only: the run 
 - `stripView(state, browse)`: a tab per scene (`sceneShort` name, selected, current, measuring badge) and the thumbs of the browsed scene (else the current one): state `taken`, `open` or `skipped`, the `step` or `retake` mark, a failed light check, the photo drawn, an aria label; plus the hint beside a short scene ("Your photos appear here", then "Tap a photo to retake it").
 - `endView(state)`: kicker ("3 of 13 photos taken"), title and lede by the measuring (nothing yet, the last pairs, stopped, everything measured), `eta`, one `EndRow` per scene (pair count, badge, a progress bar once the scene is complete, else which keys are not taken), `choice` (shown while pairs wait and measuring did not stop), `retry` (shown while a failure kept for this load exists), `download` (label, sub, disabled, the waiting share, tone `err` after a failure), the zip `state` line, the `trust` line and the `missing` shots as buttons.
 - `sceneProgress(state, sceneId, progress?)`: badge kind and text, measured share, time left, whether every shot is taken or skipped, ready and failed pairs, keys not taken.
-- `sceneName`, `sceneShort`, `sceneRule`, `thumbState`, `etaText` ("about 25 s" under 50 s, rounded up to 5 s; else "about N min"; empty for none).
+- `etaText` ("about 25 s" under 50 s, rounded up to 5 s; else "about N min"; empty for none).
+
+The scene names, the scene rule and the thumb state behind these views are module-private helpers.
 
 ## Invariants
 

@@ -134,7 +134,6 @@ export interface FlatState {
   readonly status: string;
 }
 
-/** A countdown before the current shot's photo; its timer is the view's. */
 /** The guided view's screens. */
 export type GuidedScreen = "intro" | "run" | "end";
 const GUIDED_SCREENS: readonly string[] = ["intro", "run", "end"];
@@ -143,7 +142,10 @@ const GUIDED_SCREENS: readonly string[] = ["intro", "run", "end"];
 export type EndChoice = "now" | "wait";
 
 interface GuidedState {
-  /** The shot it counts down for. */
+  /**
+   * A countdown before the current shot's photo: the shot it counts down
+   * for and the seconds left. Its timer is the view's.
+   */
   readonly count: { readonly shot: string; readonly left: number } | null;
   /** The screen the guided view shows. */
   readonly screen: GuidedScreen;

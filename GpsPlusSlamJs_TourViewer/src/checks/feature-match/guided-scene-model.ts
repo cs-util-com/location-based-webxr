@@ -42,7 +42,7 @@ const plural = (n: number, word: string): string =>
   `${String(n)} ${word}${n === 1 ? "" : "s"}`;
 
 /** "Light" or, with several places, "Light, place 2". */
-export function sceneName(s: FeatureMatchState, sc: Scene): string {
+function sceneName(s: FeatureMatchState, sc: Scene): string {
   return sc.kind === "light" && s.plan.spots > 1
     ? `${sc.title}, place ${String(sc.spot)}`
     : sc.title;
@@ -56,7 +56,7 @@ const SHORT: Readonly<Record<Scene["kind"], string>> = {
 };
 
 /** The strip tab's name: "Light", "Light 2", "Flat", "Deep", "Own 1". */
-export function sceneShort(s: FeatureMatchState, sc: Scene): string {
+function sceneShort(s: FeatureMatchState, sc: Scene): string {
   if (sc.kind === "light" && s.plan.spots > 1) {
     return `${SHORT.light} ${String(sc.spot)}`;
   }
@@ -67,16 +67,16 @@ export function sceneShort(s: FeatureMatchState, sc: Scene): string {
 }
 
 /** The scene's rule: the light scene's phone stands still, the rest is hand-held. */
-export const sceneRule = (sc: Scene): "still" | "hand" =>
+const sceneRule = (sc: Scene): "still" | "hand" =>
   sc.kind === "light" ? "still" : "hand";
 
 const scenesOf = (s: FeatureMatchState): Scene[] =>
   sceneList(s.plan.spots, s.plan.extra);
 
 /** A shot's state in the strip. */
-export type ThumbState = "taken" | "open" | "skipped";
+type ThumbState = "taken" | "open" | "skipped";
 
-export const thumbState = (s: FeatureMatchState, shot: string): ThumbState =>
+const thumbState = (s: FeatureMatchState, shot: string): ThumbState =>
   s.plan.shots[shot]
     ? "taken"
     : s.plan.skipped.includes(shot)
@@ -91,7 +91,7 @@ export function etaText(ms: number | null): string {
   return `about ${String(Math.ceil(sec / 60))} min`;
 }
 
-export type BadgeKind = "waiting" | "measuring" | "done" | "failed" | "none";
+type BadgeKind = "waiting" | "measuring" | "done" | "failed" | "none";
 
 export interface SceneProgress {
   readonly b: BadgeKind;
@@ -179,7 +179,7 @@ const sceneStart = (s: FeatureMatchState, sceneId: string): boolean =>
     .filter((x) => x.scene === sceneId)
     .every((x) => thumbState(s, x.id) === "open");
 
-export interface StripSeg {
+interface StripSeg {
   readonly scene: string;
   readonly name: string;
   readonly selected: boolean;
@@ -192,7 +192,7 @@ export interface StripSeg {
   };
 }
 
-export interface StripThumb {
+interface StripThumb {
   readonly shot: string;
   readonly index: number;
   readonly key: string;
@@ -275,7 +275,7 @@ export function stripView(
   };
 }
 
-export interface Banner {
+interface Banner {
   /** "retake", "warn", or the scene's rule for a new scene. */
   readonly kind: "retake" | "warn" | "still" | "hand";
   readonly title: string;
@@ -284,7 +284,7 @@ export interface Banner {
   readonly extra: string;
 }
 
-export interface CardView {
+interface CardView {
   readonly banner: Banner | null;
   readonly code: string;
   readonly codeMode: "" | "retake" | "done";
@@ -303,7 +303,7 @@ interface ButtonView {
 }
 
 /** What the secondary button does. */
-export type SecondaryAct =
+type SecondaryAct =
   "skip-photo" | "skip-scene" | "back" | "keep" | "none";
 
 export interface RunView {
@@ -560,7 +560,7 @@ export function runView(s: FeatureMatchState): RunView {
   };
 }
 
-export interface EndRow {
+interface EndRow {
   readonly scene: string;
   readonly name: string;
   readonly pairs: string;
