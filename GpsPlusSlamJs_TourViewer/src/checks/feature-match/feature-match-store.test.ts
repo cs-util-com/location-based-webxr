@@ -9,7 +9,7 @@ import {
   type KeyValueStorage,
 } from "./feature-match-store";
 import { SURFACE_CLASSES } from "./flat-target";
-import { planPhotoIds, type PhotoMeta } from "./run-plan";
+import { EMPTY_PLAN, planPhotoIds, planText, type PhotoMeta } from "./run-plan";
 
 const memory = (init: Record<string, string> = {}) => {
   const data = new Map(Object.entries(init));
@@ -59,6 +59,16 @@ describe("stored progress", () => {
     expect(make(memory().storage).oldPlanDiscarded).toBe(false);
   });
 
+  // Why: the discard is said once. Until the tester takes a photo nothing
+  // rewrites the stored plan, so without a write of its own the old plan
+  // would be found, dropped and logged again on every reload.
+  it("replaces the discarded plan at once, so the next start reads none", () => {
+    const { data, storage } = memory({ [PLAN_KEY]: JSON.stringify({ v: 1 }) });
+    expect(make(storage).oldPlanDiscarded).toBe(true);
+    expect(data.get(PLAN_KEY)).toBe(planText(EMPTY_PLAN));
+    expect(make(storage).oldPlanDiscarded).toBe(false);
+  });
+
   // Why: the flat progress outlives the page so a reload keeps the surfaces.
   it("writes the flat progress when it changes", () => {
     const { data, storage } = memory();
@@ -70,14 +80,14 @@ describe("stored progress", () => {
   // Why: private mode blocks storage; the page must still work, starting over.
   it("starts over and keeps working when storage is blocked", () => {
     const { store } = make(blocked);
-    expect(store.getState().plan.shotsTaken).toBe(0);
+    expect(store.getState().plan.shots).toEqual({});
     expect(() => {
       store.dispatch(
         A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
       );
       store.dispatch(A.flatSurfaceAdded({ cls: CLS, original: false }));
     }).not.toThrow();
-    expect(store.getState().plan.shotsTaken).toBe(1);
+    expect(Object.keys(store.getState().plan.shots)).toEqual(["light-s1/L1"]);
   });
 });
 
@@ -313,7 +323,7 @@ describe("the run plan's storage", () => {
     const again = makeWith(storage, null);
     const plan = again.store.getState().plan;
     expect(plan.shots["light-s1/L1"]?.photo.id).toBe("p1");
-    expect(plan.shotsTaken).toBe(1);
+    expect(plan.shots["light-s1/L1"]?.take).toBe(1);
   });
 
   // Why: the photos of the plan's shots live in the browser's database so

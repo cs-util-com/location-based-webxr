@@ -466,9 +466,9 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   for (const [n, key] of [
     ["01", "1a"],
     ["04", "2a"],
-    ["05", "f1-t0"],
-    ["06", "2b"],
-    ["07", "2c"],
+    ["05", "t0"],
+    ["06", "t90"],
+    ["07", "t180"],
   ]) {
     for (const file of ["frame-a.png", "frame-b.png", "frames.json"]) {
       expect(files.filter((f) => pairFile(n, key, file).test(f))).toHaveLength(
@@ -479,7 +479,7 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
 
   for (const [n, key] of [
     ["01", "1a"],
-    ["06", "2b"],
+    ["06", "t90"],
   ]) {
     for (const name of ["frame-a.png", "frame-b.png"]) {
       const png = await zipEntryBytes(bytes, pairFile(n, key, name));
@@ -518,9 +518,9 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     light.frames.map((/** @type {{ width: number }} */ f) => f.width),
   ).toEqual([320, 320]);
 
-  const turn = await zipJson(bytes, pairFile("06", "2b", "frames.json"));
+  const turn = await zipJson(bytes, pairFile("06", "t90", "frames.json"));
   expect(turn).toMatchObject({
-    pair: "2b",
+    pair: "t90",
     sequence: 6,
     kind: "turn90",
     shots: { A: { id: "flat-s1/F1" }, B: { id: "flat-s1/F2" } },
@@ -880,7 +880,7 @@ test("the feature matching benchmark guides each shot and the first visit", asyn
 
   await openTab(page, "results");
   await expect(page.locator("#options-note")).toContainText(
-    "WASM where the phone has no WebGPU",
+    "These options apply to the synthetic run.",
   );
   await expect(page.locator("#copy-note")).toHaveText(
     "Not needed for the photo tests - the zip already contains the log. Use it to paste a quick timing run into a chat.",

@@ -154,6 +154,24 @@ describe("runView", () => {
     });
   });
 
+  // Why: an almost black L1 fails L3's check and no retake of L3 can fix
+  // it; the big button leads back to L1, where the fix is.
+  it("leads back to L1 when L1 is too dark to dim from", () => {
+    const s = run([
+      shot("light-s1/L1", 5),
+      shot("light-s1/L2", 5),
+      shot("light-s1/L3", 2),
+    ]);
+    const v = runView(s);
+    expect(v.key).toBe("L3");
+    expect(v.note.text).toContain(LIGHT_NOTE["too-dark-a"]);
+    expect(v.primary).toMatchObject({
+      mode: "next",
+      label: "Back to L1",
+      index: 0,
+    });
+  });
+
   it("goes back to a missing shot after the last, and finishes once all are taken", () => {
     const s0 = run([]);
     const list = planShots(s0.plan);

@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Whether the phone has come to rest, from `devicemotion` rotation rates: the rule behind the cockpit's hands-off photo B. Pure functions over a plain state, so the slice keeps that state (`feature-match-slice.ts`, `handsOff.still`) and every threshold is unit- and property-tested without a DOM.
+Whether the phone has come to rest, from `devicemotion` rotation rates: the rule behind the cockpit's hands-off shots (L2, F2 and D2 once the phone rests, F3 after its move). Pure functions over a plain state, so the slice keeps that state (`feature-match-slice.ts`, `handsOff.still`) and every threshold is unit- and property-tested without a DOM.
 
 ## Public API
 

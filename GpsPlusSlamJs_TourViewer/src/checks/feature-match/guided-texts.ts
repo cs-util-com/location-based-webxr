@@ -107,7 +107,7 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
     title: "From 1 m",
     change: "Step forward to about 1 m, keep it centred.",
     capture: "Capture from 1 m.",
-    diagram: "dist-3x",
+    diagram: "dist-forward",
     purpose: "Matched against the 3 m shot: a third of the size.",
     avoid: "Zooming instead of stepping.",
   },

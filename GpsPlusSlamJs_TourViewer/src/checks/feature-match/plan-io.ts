@@ -29,7 +29,7 @@ import {
 import type { FeatureMatchStore, ShotFrame } from "./feature-match-store";
 import { deviceSummary } from "./guided-model";
 import { centreCrop } from "./rotation-square";
-import { planPhotos } from "./run-plan";
+import { planPhotos, planRetakes } from "./run-plan";
 import {
   derivedPairs,
   lightOf,
@@ -271,7 +271,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
       spots: s.plan.spots,
       extra: s.plan.extra,
       photos: planPhotos(s.plan),
-      shotsTaken: s.plan.shotsTaken,
+      retakes: planRetakes(s.plan),
       device: deviceLine,
     });
 

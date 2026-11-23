@@ -439,7 +439,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     store.dispatch(A.errorsCleared());
     const pair = syntheticInput();
     const o = state().options;
-    // A protocol pair sets runs, warm-up, backend and model file itself.
+    // The synthetic run takes runs, warm-up, backends and model files from the options.
     const settings = runSettings(
       {
         pair: pair.pair,

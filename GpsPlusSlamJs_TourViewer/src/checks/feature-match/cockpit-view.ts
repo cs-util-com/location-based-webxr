@@ -379,6 +379,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     const r = retakeView(s);
     ui.retake.disabled = r.disabled;
     ui.retakeLabel.textContent = r.label;
+    ui.retake.title = r.hint;
     ui.next.disabled =
       s.busy !== "idle" ||
       nextOpen(c.list, planPhotos(s.plan), c.index) === null;

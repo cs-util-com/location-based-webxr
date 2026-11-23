@@ -14,7 +14,7 @@ The store of the feature matching check page (`configureStore` over `feature-mat
   - `photosOf(id)`: a surface's photos, created empty on first use.
   - `accepted(action)`: dispatches and returns whether the reducer took it (a refused reducer returns the same state object).
   - `put(table, entries, action)`: sets the entries in `table` and dispatches `action` in one step, returning `accepted`; an entry a refused action does not name is dropped by the reconcile it triggers, a URL revoked.
-  - `oldPlanDiscarded`: the stored plan was of the earlier pair-slot version and was dropped (no migration); the page logs it.
+  - `oldPlanDiscarded`: the stored plan was of the earlier pair-slot version and was dropped (no migration); the page logs it. The store writes the empty plan in its place at once, so the next start neither finds nor logs it again.
   - `dispose()`: stops the listeners and revokes every URL.
 - `flatHasUnsaved(state, sides)`: whether any surface has captures, or an attached original, that exist only in this page.
 - `FLAT_PROGRESS_KEY`, `PLAN_KEY` (the `localStorage` keys), `PHOTO_DB`, `PHOTO_STORE` (the IndexedDB database and object store of the plan's photos), `shotKey(pose, q)`, types `KeyValueStorage`, `SurfacePhotos`, `ShotFrame`, `FeatureMatchSides`, `FeatureMatchStoreDeps`, `FeatureMatchStore`.

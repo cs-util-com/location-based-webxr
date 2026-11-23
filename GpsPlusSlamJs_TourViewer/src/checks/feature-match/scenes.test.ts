@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { lightCheck } from "./bench-export";
+import { lightCheck, MAX_SPOTS } from "./bench-export";
 import {
   derivedPairs,
   lightOf,
@@ -108,16 +108,16 @@ describe("the derived pairs", () => {
   // legacy keys; the table of the plan is pinned here row by row.
   it("derives the plan's table with its legacy keys", () => {
     const rows = derivedPairs(1, 1).map(
-      (p) => `${p.id} ${p.a}+${p.b} ${p.kind} ${p.legacy ?? "-"}`,
+      (p) => `${p.id} ${p.a}+${p.b} ${p.kind} ${p.legacy}`,
     );
     expect(rows).toEqual([
       "light-s1/L1-L2 light-s1/L1+light-s1/L2 real 1a",
       "light-s1/L1-L3 light-s1/L1+light-s1/L3 real 1b",
       "light-s1/L1-L4 light-s1/L1+light-s1/L4 real 1c",
       "flat-s1/F1-F2 flat-s1/F1+flat-s1/F2 real 2a",
-      "flat-s1/F1-T0 flat-s1/F1+flat-s1/F2 turn0 -",
-      "flat-s1/F1-T90 flat-s1/F1+flat-s1/F2 turn90 2b",
-      "flat-s1/F1-T180 flat-s1/F1+flat-s1/F2 turn180 2c",
+      "flat-s1/F1-T0 flat-s1/F1+flat-s1/F2 turn0 t0",
+      "flat-s1/F1-T90 flat-s1/F1+flat-s1/F2 turn90 t90",
+      "flat-s1/F1-T180 flat-s1/F1+flat-s1/F2 turn180 t180",
       "flat-s1/F1-F3 flat-s1/F1+flat-s1/F3 real 2d",
       "flat-s1/F1-F4 flat-s1/F1+flat-s1/F4 real 3b",
       "flat-s1/F5-F4 flat-s1/F5+flat-s1/F4 real 3c",
@@ -179,21 +179,32 @@ describe("the derived pairs", () => {
 });
 
 describe("the zip folder of a pair", () => {
-  // Why: the PC side finds a pair by its old key in the folder name; the
-  // rotation control has no old key and must still get a unique folder.
-  it("uses the legacy key, else the pair's own name, and the run number", () => {
+  // Why: the PC side finds a pair by its protocol key in the folder name.
+  // The synthetic turns have keys of their own, so a folder of a turned
+  // square never reads as an old pair of a phone turned by hand.
+  it("uses the protocol key and the run number", () => {
     const pairs = derivedPairs(2, 1);
     for (const [i, p] of pairs.entries()) {
       const t = pairFolderTag(p, i + 1);
       expect(t.sequence).toBe(i + 1);
       expect(t.spot).toBe(p.spot);
-      expect(t.pair).toBe(p.legacy ?? p.name.toLowerCase());
+      expect(t.pair).toBe(p.legacy);
     }
-    const control = pairs.find((p) => p.legacy === null)!;
-    expect(pairFolderTag(control, 3).pair).toBe("f1-t0");
+    const turns = pairs.filter((p) => p.axis === "rot").map((p) => p.legacy);
+    expect(turns).toEqual(["t0", "t90", "t180"]);
     for (const n of [0, 1.5, Number.NaN]) {
-      expect(() => pairFolderTag(control, n)).toThrow(/sequence/);
-      expect(() => pairFolderTag(pairs[0]!, n)).toThrow();
+      expect(() => pairFolderTag(pairs[0]!, n)).toThrow(/sequence/);
+    }
+  });
+
+  // Why: the scene list and the folder tag each bound the places; they
+  // share one constant, so the largest run the page allows must name
+  // every folder without the tag refusing its spot.
+  it("names every folder of the largest run", () => {
+    const pairs = derivedPairs(MAX_SPOTS, MAX_EXTRA);
+    expect(Math.max(...pairs.map((p) => p.spot))).toBe(MAX_SPOTS);
+    for (const [i, p] of pairs.entries()) {
+      expect(() => pairFolderTag(p, i + 1)).not.toThrow();
     }
   });
 });
@@ -257,7 +268,7 @@ describe("the run summary", () => {
       spots: 1,
       extra: 0,
       photos: photos({ "light-s1/L1": 100, "light-s1/L2": 40 }),
-      shotsTaken: 3,
+      retakes: 1,
       device: "Pixel test",
     });
     expect(text).toContain("Session: abcd1234");

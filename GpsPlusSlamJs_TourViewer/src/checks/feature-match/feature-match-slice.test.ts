@@ -263,7 +263,6 @@ describe("the run plan inside the page state", () => {
   it("moves on to the next open shot after a photo of the current one", () => {
     const s = run([shot("light-s1/L1")]);
     expect(currentShot(s.plan)?.id).toBe("light-s1/L2");
-    expect(s.plan.shotsTaken).toBe(1);
   });
 
   // Why: the stored plan is the one the page starts with.

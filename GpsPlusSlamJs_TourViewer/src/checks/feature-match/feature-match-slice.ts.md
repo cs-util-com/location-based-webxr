@@ -16,7 +16,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 ### Runs, log and options
 
 - `cameraChanged(on)`.
-- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. Nothing is measured on the phone's photos in this version; the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
+- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. `speed` times the methods on the flat scene's F1 and F2; nothing else is measured on the phone's photos in this version, and the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
 - `statusSet`, `tableSet`, `reportSet`, `logged(line)` (stamped by the view), `failed({ line, stamped })` (kept in `errors` for the run's report and logged), `errorsCleared`, `optionsChanged`, `speedOptionsChanged`.
 
 ### Run plan actions
@@ -30,7 +30,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `guidedCountSet({ shot, left } | null)`: one countdown second or its end; refused while busy, for a shot other than the current one and for a count that is not a whole number of at least 1. A count ends an armed or waiting hands-off shot.
 - A run or the zip starting ends the count too: a count that ran on would shoot into a refused photo.
 
-### Hands-off photo B actions
+### Hands-off shot actions
 
 `state.handsOff` `{ phase, shot, prev, still, text }` is a shot that takes itself once the phone rests (`still-detector.ts`): L2, F2 and D2 (`still`) and F3 (`move`, the phone turns first), by `handsOff` in `scenes.ts`. Phases: `off`, `armed` (no reading yet, or a move shot waiting for its move), `waiting` (for the phone to rest), `taking` (rested for the dwell: the view takes the photo), `taken`, `refused` (the photo was not taken), `failed` (the readings stopped, or the capture threw); `text` is the status line (`HANDS_OFF_TEXT`; the waiting texts say "or tap"). `shot` and `prev` name the shot and the scene's previous photo it was armed against, so one previous photo arms a shot once.
 

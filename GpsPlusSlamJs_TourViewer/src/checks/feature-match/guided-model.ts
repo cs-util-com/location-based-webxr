@@ -41,6 +41,11 @@ export interface ShotContext {
   readonly light: ShotLight | null;
   /** The pairs a retake of this shot measures again. */
   readonly redoes: number;
+  /**
+   * The shot whose retake fixes this one's light check: the scene's L1
+   * when L1 is too dark to dim from ("too-dark-a"), else this shot.
+   */
+  readonly fixAt: number;
 }
 
 /** The current shot of the plan, clamped into the list. */
@@ -49,6 +54,8 @@ export function shotContext(s: FeatureMatchState): ShotContext {
   const index = Math.min(Math.max(0, s.plan.current), list.length - 1);
   const shot = list[index]!;
   const prev = previousInScene(list, index);
+  const light = lightOf(shot.id, planPhotos(s.plan));
+  const first = list.findIndex((x) => x.id === `${shot.scene}/L1`);
   return {
     list,
     index,
@@ -57,9 +64,10 @@ export function shotContext(s: FeatureMatchState): ShotContext {
     photo: s.plan.shots[shot.id]?.photo,
     prev,
     prevPhoto: prev ? s.plan.shots[prev.id]?.photo : undefined,
-    light: lightOf(shot.id, planPhotos(s.plan)),
+    light,
     redoes: pairsUsing(derivedPairs(s.plan.spots, s.plan.extra), shot.id)
       .length,
+    fixAt: light === "too-dark-a" && first >= 0 ? first : index,
   };
 }
 
@@ -153,6 +161,15 @@ function primaryView(s: FeatureMatchState, c: ShotContext): PrimaryView {
       mode: "cancel",
       label: "Cancel",
       sub: `shooting ${c.shot.key} in ${String(count.left)} s`,
+    };
+  }
+  if (c.photo && c.fixAt !== c.index) {
+    return {
+      ...base,
+      mode: "next",
+      index: c.fixAt,
+      label: "Back to L1",
+      sub: "L1 is too dark to dim from",
     };
   }
   const secs = s.plan.settings.countdown;

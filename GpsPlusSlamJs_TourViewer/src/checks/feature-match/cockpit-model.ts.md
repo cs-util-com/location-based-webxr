@@ -12,12 +12,12 @@ The cockpit view's dock as plain data, read from the page state (`feature-match-
   - `start`: the shot wants a photo and the camera is off (Start, Starting, Retry camera);
   - `capture`: Take L1, or "L1 in 3 s" with the countdown; while a shot waits to take itself, Waiting or Hold still (a tap still takes it after the countdown: the way out of the wait);
   - `retake`: a failed light check (Retake L3);
-  - `next`: Next shot, `index` from `nextOpen`;
+  - `next`: Next shot, `index` from `nextOpen`; or Back to L1 (`index` the scene's L1) when the current shot has a photo whose light check says L1 is too dark to dim from (`too-dark-a`): only a new L1 fixes that, so the button leads there, camera on or off;
   - `save`: All done.
   - `tone` is the prototype's `data-mode`.
-- `retakeView(s)` -> `RetakeView { label, disabled, action }`: "Retake L1" (`{ kind: "shoot" }`) once the current shot has its photo, else "Back to L1" (`{ kind: "back", index }`) when the scene's previous shot has one; off while busy or counting.
+- `retakeView(s)` -> `RetakeView { label, disabled, action, hint }`: "Retake L1" (`{ kind: "shoot" }`) once the current shot has its photo, with `hint` what the retake redoes (`retakeText`, "Retaking L1 redoes 3 measurements.", set as the button's title); "Back to L1" (`{ kind: "back", index }`) instead when the photo's check is `too-dark-a`; else "Back to" the scene's previous shot when it has a photo; off while busy or counting. `hint` is empty except on a retake.
 - `tileView(s)` -> `{ a, b }` of `TileView { state, text, disabled }`: `a` is the scene's previous shot (its key; a tap goes back to it), `b` the current one (`armed` while due with the camera on: "now", or the seconds left; `taken`).
-- `instrView(s)` -> `{ label, text, bold? }`: the measuring line while a run goes, "tap Start" with the camera off (`bold: "Start"`), the scene's setup and capture words on a first shot or the change and capture words on a later one, the failed light check's note, then "Shot done" or "All shots done".
+- `instrView(s)` -> `{ label, text, bold? }`: the measuring line while a run goes, "tap Start" with the camera off (`bold: "Start"`), the scene's setup and capture words on a first shot or the change and capture words on a later one, the failed light check's note, then "Shot done" with what a retake redoes (`retakeText`) or "All shots done".
 - `progressText(s)` ("2 / 13": shots with a photo whose light check did not fail), `segClasses(s)` (one class per shot: `cur`, `kept`, `warn` or none), `downloadLabel(s)` ("Download all (N)" with N ready pairs, else "Download all").
 - `nightOn(s)`: before a dimmed shot (L3, L4) is taken: the dock must not light the room.
 - `readoutView(s, motion)` -> `{ still, light, mode }` of `Readout { text, tone }`: "still: -" before a motion reading, then moving or steady; the shot's light check, or its grey mean; the capture mode: "auto" while a shot waits to take itself, else tap with the countdown.
@@ -43,4 +43,4 @@ button.disabled = v.disabled;
 
 ## Tests
 
-`cockpit-model.test.ts`: each state of the big button (camera first, the shot due and the countdown, busy, a failed light check, next and all done), Retake and Back (off while busy or counting), the tiles, the instruction line (setup and capture on L1, change and capture after), the progress, segments and Download all label, night on L3 and L4, the readouts, the status order and tones, the hands-off shot on L2 (button, status, meter, mode readout), `handsOffResult`, `sameDrawing`, and a property test that random plans and actions always give a shutter text, finite counts and a meter fill in 0..1.
+`cockpit-model.test.ts`: each state of the big button (camera first, the shot due and the countdown, busy, a failed light check, Back to L1 for an almost black L1, next and all done), Retake with its hint and Back (Back to L1 for an almost black L1, off while busy or counting), the tiles, the instruction line (setup and capture on L1, change and capture after, what a retake redoes), the progress, segments and Download all label, night on L3 and L4, the readouts, the status order and tones, the hands-off shot on L2 (button, status, meter, mode readout), `handsOffResult`, `sameDrawing`, and a property test that random plans and actions always give a shutter text, finite counts and a meter fill in 0..1.

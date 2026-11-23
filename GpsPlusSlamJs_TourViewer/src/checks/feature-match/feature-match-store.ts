@@ -31,7 +31,13 @@ import {
   type SurfaceProgress,
 } from "./flat-progress";
 import type { PoseId } from "./flat-target";
-import { isOldPlan, parsePlan, planPhotoIds, planText } from "./run-plan";
+import {
+  EMPTY_PLAN,
+  isOldPlan,
+  parsePlan,
+  planPhotoIds,
+  planText,
+} from "./run-plan";
 import type { KeyValueStore } from "../../key-value-db";
 
 /** The flat target progress, kept across reloads. */
@@ -214,6 +220,10 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   /** A stored plan of the pair-slot version was found and not read. */
   const oldPlanDiscarded = isOldPlan(planStored);
   const listener = createListenerMiddleware<FeatureMatchState>();
+  if (oldPlanDiscarded) {
+    // Written once now, so the next start does not find and log it again.
+    write(deps.storage, PLAN_KEY, planText(EMPTY_PLAN));
+  }
   const store = configureStore({
     reducer: featureMatchReducer,
     preloadedState: initialFeatureMatchState({

@@ -9,7 +9,7 @@
  */
 import type { FeatureMatchState } from "./feature-match-slice";
 import { readyCount, shotContext, warned } from "./guided-model";
-import { LIGHT_NOTE } from "./guided-texts";
+import { LIGHT_NOTE, retakeText } from "./guided-texts";
 import { planPhotos, planShots } from "./run-plan";
 import { lightOf, nextOpen } from "./scenes";
 import { stillProgress } from "./still-detector";
@@ -37,6 +37,8 @@ export interface RetakeView {
   readonly label: string;
   readonly disabled: boolean;
   readonly action: RetakeAction | null;
+  /** What a retake redoes, for the button's description; empty otherwise. */
+  readonly hint: string;
 }
 
 export interface TileView {
@@ -87,6 +89,10 @@ export function shutterView(s: FeatureMatchState): ShutterView {
   }
   const c = shotContext(s);
   const key = c.shot.key;
+  if (c.photo && c.fixAt !== c.index) {
+    // Only a new L1 fixes this shot's light check: lead there, camera or not.
+    return { ...base, mode: "next", text: "Back to L1", index: c.fixAt };
+  }
   const wants = !c.photo || warned(c.light);
   if (wants && !s.camera) {
     return s.cameraStart === "starting"
@@ -132,7 +138,12 @@ export function shutterView(s: FeatureMatchState): ShutterView {
     : { ...base, mode: "next", text: "Next shot", index: next };
 }
 
-const OFF: RetakeView = { label: "Retake", disabled: true, action: null };
+const OFF: RetakeView = {
+  label: "Retake",
+  disabled: true,
+  action: null,
+  hint: "",
+};
 
 /**
  * The side button left of the big one: retakes the current shot once it
@@ -143,11 +154,20 @@ export function retakeView(s: FeatureMatchState): RetakeView {
     return OFF;
   }
   const c = shotContext(s);
+  if (c.photo && c.fixAt !== c.index) {
+    return {
+      label: "Back to L1",
+      disabled: false,
+      action: { kind: "back", index: c.fixAt },
+      hint: "",
+    };
+  }
   if (c.photo) {
     return {
       label: `Retake ${c.shot.key}`,
       disabled: false,
       action: { kind: "shoot" },
+      hint: retakeText(c.shot.key, c.redoes),
     };
   }
   if (c.prev && c.prevPhoto) {
@@ -155,6 +175,7 @@ export function retakeView(s: FeatureMatchState): RetakeView {
       label: `Back to ${c.prev.key}`,
       disabled: false,
       action: { kind: "back", index: c.index - 1 },
+      hint: "",
     };
   }
   return OFF;
@@ -233,7 +254,7 @@ export function instrView(s: FeatureMatchState): {
       }
     : {
         label: null,
-        text: "Shot done. Retake it, or go to the next shot.",
+        text: `Shot done. Retake it, or go to the next shot. ${retakeText(c.shot.key, c.redoes)}`,
       };
 }
 

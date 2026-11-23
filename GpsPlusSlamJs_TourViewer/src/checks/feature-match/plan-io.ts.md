@@ -22,7 +22,7 @@ The photo test's browser side, shared by both views of the feature matching page
 
 The layout the PC side reads; `scenes.ts.md` names the pair table behind it.
 
-- Per ready derived pair, in run order, a folder named `pairFileNames(pairFolderTag(pair, n)).all` without `.zip` (`n` = the pair's position in `derivedPairs` plus 1), e.g. `feature-match-01-1a-s1-light-control-same-light/`. The rotation control `F1-T0` has no legacy key: its folder is `feature-match-05-f1-t0-s1-rotation-control-centre-squares/` with one place.
+- Per ready derived pair, in run order, a folder named `pairFileNames(pairFolderTag(pair, n)).all` without `.zip` (`n` = the pair's position in `derivedPairs` plus 1), e.g. `feature-match-01-1a-s1-light-control-same-light/`. The rotation control `F1-T0` has the key `t0`: its folder is `feature-match-05-t0-s1-rotation-control-centre-squares/` with one place.
 - In each folder: `feature-match-frame-a.png`, `feature-match-frame-b.png` (full frames, PNG without metadata) and `feature-match-frames.json` (`framesInfo` from `bench-export.ts`): `pair` is the legacy key, `lightCheck` is `lightOf(B)`, plus `derivedPair`, `kind`, `axis`, `controlFor` and `shots: { A: { id, take }, B: { id, take } }`.
 - The rotation pairs carry the full F1 and F2; their frames JSON adds `rotation: { cropA, cropB, turnB, direction: "cw" }` (`centreCrop` from `rotation-square.ts`, `turnB` 0, 90 or 180), so the PC cuts and turns the same squares.
 - At the root: `feature-match-summary.txt` and `feature-match-log.txt`.

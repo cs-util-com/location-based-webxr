@@ -26,14 +26,18 @@ export const FRAME_FILES = {
  * The protocol's pair keys and labels: the vocabulary the frames JSON and
  * the PC side share. The pairs themselves are derived from shots
  * (`scenes.ts`); the old duplicate controls 3a and 4a no longer occur.
+ * The turns of a centre square cut from F1 and F2 are made, not captured,
+ * so they have keys of their own (t0, t90, t180): the old 2b and 2c named
+ * a phone turned by hand and are not reused for a different measurement.
  */
 export const PAIRS = [
   { key: "1a", label: "light: control (same light)" },
   { key: "1b", label: "light: dimmed" },
   { key: "1c", label: "light: dark, not black" },
   { key: "2a", label: "rotation: control (both upright)" },
-  { key: "2b", label: "rotation: 90 deg" },
-  { key: "2c", label: "rotation: 180 deg" },
+  { key: "t0", label: "rotation: control, centre squares" },
+  { key: "t90", label: "rotation: centre square turned 90 deg" },
+  { key: "t180", label: "rotation: centre square turned 180 deg" },
   { key: "2d", label: "rotation: tilted 30-45 deg" },
   { key: "3b", label: "distance: 1.5 m to 3 m" },
   { key: "3c", label: "distance: 1 m to 3 m" },
@@ -46,8 +50,8 @@ export const PAIRS = [
 /** A key of PAIRS. */
 export type PairKey = (typeof PAIRS)[number]["key"];
 
-/** Spots the light pairs are repeated at. */
-const SPOTS = 3;
+/** The places the light pairs (and the light scene) are repeated at. */
+export const MAX_SPOTS = 3;
 /** The pairs that are repeated at spots; every other pair is at spot 1. */
 const LIGHT_PAIRS: ReadonlySet<string> = new Set(["1a", "1b", "1c"]);
 
@@ -72,6 +76,9 @@ export const LIGHT_FLOOR_B = 3;
  */
 export type LightCheck =
   "ok" | "not-darker" | "too-dark-a" | "too-dark-b" | "changed";
+
+/** A light shot's check: the pair checks, plus L4 brighter than L3. */
+export type ShotLight = LightCheck | "not-darker-than-dimmed";
 
 /**
  * @throws RangeError on a grey mean that is not a number from 0 to 255.
@@ -112,7 +119,7 @@ function dimmedCheck(meanA: number, meanB: number): LightCheck {
 export interface PairTag {
   readonly pair: string;
   readonly pairLabel: string;
-  /** 1 to SPOTS for a light pair, 1 for every other pair. */
+  /** 1 to MAX_SPOTS for a light pair, 1 for every other pair. */
   readonly spot: number;
   /** The pair's number in the run, from 1; it names the pair's folder. */
   readonly sequence: number;
@@ -127,8 +134,10 @@ export function pairTag(key: string, spot: number, sequence: number): PairTag {
   if (!p) {
     throw new Error(`unknown pair ${key}`);
   }
-  if (!Number.isInteger(spot) || spot < 1 || spot > SPOTS) {
-    throw new Error(`spot must be 1 to ${String(SPOTS)}, got ${String(spot)}`);
+  if (!Number.isInteger(spot) || spot < 1 || spot > MAX_SPOTS) {
+    throw new Error(
+      `spot must be 1 to ${String(MAX_SPOTS)}, got ${String(spot)}`,
+    );
   }
   if (!Number.isInteger(sequence) || sequence < 1) {
     throw new Error(`sequence must be 1 or more, got ${String(sequence)}`);
@@ -338,8 +347,7 @@ export function framesInfo(
   device: DeviceInfo,
   captureMaxLongEdge: number,
   tag: PairTag,
-  /** The light check: an old one, or a newer outcome such as L4 against L3. */
-  checks: { readonly light: string | null; readonly session: string },
+  checks: { readonly light: ShotLight | null; readonly session: string },
   /** The names the frames are saved under; the fixed FRAME_FILES ones by default. */
   files: Readonly<Record<"A" | "B", string>> = FRAME_FILES,
   /** More fields, written after the fixed ones and before the device. */
