@@ -4,7 +4,7 @@ import fc from "fast-check";
 import {
   cameraReport,
   cameraReportText,
-  isCameraReport,
+  knownCameraReport,
 } from "./camera-report";
 
 const field = fc.oneof(
@@ -47,7 +47,7 @@ describe("cameraReport, properties", () => {
         ),
         (track) => {
           const r = cameraReport(track);
-          expect(isCameraReport(r)).toBe(true);
+          expect(knownCameraReport(r) ?? {}).toEqual(r);
           expect(r).not.toHaveProperty("deviceId");
           expect(typeof cameraReportText(r)).toBe("string");
         },

@@ -8,6 +8,7 @@
  * @see measure-protocol.ts.md
  */
 import type { MethodResult } from "./bench-run";
+import { isObj } from "./fm-helpers";
 import type { TurnDegrees } from "./rotation-square";
 
 /** The methods the worker can run (XFeat's runtime cannot start in it). */
@@ -56,8 +57,6 @@ export type MeasureAnswer =
   | ({ readonly type: "done"; readonly job: number } & MeasureDone)
   | { readonly type: "failed"; readonly job: number; readonly message: string };
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null;
 const isJob = (v: unknown): v is number =>
   typeof v === "number" && Number.isInteger(v) && v > 0;
 const isSize = (v: unknown): v is Size =>

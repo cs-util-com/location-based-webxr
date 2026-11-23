@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cameraReport,
   cameraReportText,
-  isCameraReport,
+  knownCameraReport,
 } from "./camera-report";
 
 /** A track with the settings and capabilities Chrome on Android gives. */
@@ -70,19 +70,25 @@ describe("cameraReport", () => {
   });
 });
 
-describe("cameraReportText and isCameraReport", () => {
+describe("cameraReportText and knownCameraReport", () => {
   it("writes one log line and checks a stored report", () => {
     const r = cameraReport(track());
     expect(cameraReportText(r)).toBe(
       "focusDistance 0.42 (0.1-10), focusMode continuous (manual,continuous), zoom 1 (1-8), 1920x1080 at 30 fps",
     );
     expect(cameraReportText({})).toBe("nothing reported");
-    expect(isCameraReport(r)).toBe(true);
-    expect(isCameraReport({})).toBe(true);
-    expect(isCameraReport({ deviceId: "x" })).toBe(false);
-    expect(isCameraReport({ zoom: Number.POSITIVE_INFINITY })).toBe(false);
-    expect(isCameraReport({ zoom: "1" })).toBe(false);
-    expect(isCameraReport({ focusMode: 3 })).toBe(false);
-    expect(isCameraReport([])).toBe(false);
+    expect(knownCameraReport(r)).toEqual(r);
+    expect(knownCameraReport({ zoom: 2, deviceId: "x" })).toEqual({ zoom: 2 });
+    for (const bad of [
+      {},
+      { deviceId: "x" },
+      { zoom: Number.POSITIVE_INFINITY },
+      { zoom: "1" },
+      { focusMode: 3 },
+      [],
+      null,
+    ]) {
+      expect(knownCameraReport(bad)).toBeUndefined();
+    }
   });
 });

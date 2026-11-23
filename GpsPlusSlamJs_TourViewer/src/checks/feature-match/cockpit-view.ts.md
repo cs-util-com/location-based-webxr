@@ -32,7 +32,7 @@ The cockpit view of the feature matching page (`?ui=cockpit`), a thin view over 
 Checked side by side at 412x915, 360x740, 915x412, 800x360, 800x300 and 880x790 before the move to shots; the dock's boxes are unchanged since.
 
 - **Layout.** At 412x915 and 880x790 the dock's boxes sit where the prototype's do, within a pixel. At 360x740 the build narrows the side columns (`cockpit-view.css`), so the big button no longer overlaps the tiles. At 915x412 and 800x360 the build gives short landscape screens (below 560 px of height) the bottom dock's one-row controls in a wider column, so every control stays on screen; below about 330 px (800x300) that column scrolls by about 30 px.
-- **Content, intended:** the welcome card's list comes from `BEFORE_YOU_START`; the chip names the real shot and its place; the tiles are the scene's previous shot and the current one; the big button's first state is Start; the readouts show the real motion and light ("still: -" before a reading); there is no fake camera image.
+- **Content, intended:** the welcome card's lede is `WELCOME_LEDE` and its list comes from `BEFORE_YOU_START`; the chip names the real shot and its place; the tiles are the scene's previous shot and the current one; the big button's first state is Start; the readouts show the real motion and light ("still: -" before a reading); there is no fake camera image.
 
 ## Example
 

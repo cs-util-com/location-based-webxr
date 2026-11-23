@@ -34,12 +34,10 @@ import {
   type Scene,
   type Shot,
 } from "./scenes";
+import { plural } from "./fm-helpers";
 
 /** What the two buttons are about now. */
 export type RunMode = "counting" | "retake" | "warn" | "capture" | "allDone";
-
-const plural = (n: number, word: string): string =>
-  `${String(n)} ${word}${n === 1 ? "" : "s"}`;
 
 /** "Light" or, with several places, "Light, place 2". */
 function sceneName(s: FeatureMatchState, sc: Scene): string {
@@ -525,6 +523,10 @@ export function runView(s: FeatureMatchState): RunView {
       case "warn":
         return { ...off, label: "Keep it, go on", disabled: busy, act: "keep" };
       case "capture":
+        // A skipped shot with no open one left has nowhere to skip to.
+        if (s.plan.skipped.includes(sh.id) && planNextOpen(s.plan) === null) {
+          return { ...off, label: "", disabled: true, act: "none" };
+        }
         return sceneStart(s, sh.scene)
           ? { ...off, label: "Skip scene", disabled: busy, act: "skip-scene" }
           : { ...off, label: "Skip photo", disabled: busy, act: "skip-photo" };
@@ -632,6 +634,22 @@ function rowOf(s: FeatureMatchState, sc: Scene, p: MeasureProgress): EndRow {
   };
 }
 
+/**
+ * How many results a zip saved early lacks: while pairs still measure the
+ * pairs pending at its start, after that the results done since (a stop or
+ * failures leave fewer). 0 for any zip not saved.
+ */
+function zipLacks(
+  z: FeatureMatchState["runZip"],
+  p: MeasureProgress,
+  still: boolean,
+): number {
+  if (z.phase !== "saved" || z.missing <= 0) {
+    return 0;
+  }
+  return still ? z.missing : Math.max(0, p.done - z.done);
+}
+
 function downloadOf(
   s: FeatureMatchState,
   p: MeasureProgress,
@@ -673,8 +691,9 @@ function downloadOf(
     };
   }
   const still = pend > 0 && !p.stopped;
-  const lacks = `the saved zip lacks ${plural(z.missing, "result")}`;
-  if (z.phase === "saved" && z.missing > 0) {
+  const n = zipLacks(z, p, still);
+  const lacks = `the saved zip lacks ${plural(n, "result")}`;
+  if (n > 0) {
     return still
       ? {
           label: "Download again",
@@ -683,13 +702,21 @@ function downloadOf(
           waiting: null,
           tone: "warn",
         }
-      : {
-          label: "Download the full zip",
-          sub: `Everything is measured now; ${lacks}`,
-          disabled: blocked,
-          waiting: null,
-          tone: "",
-        };
+      : pend > 0
+        ? {
+            label: "Download again",
+            sub: `Measuring stopped; ${lacks}`,
+            disabled: blocked,
+            waiting: null,
+            tone: "warn",
+          }
+        : {
+            label: "Download the full zip",
+            sub: `Everything is measured now; ${lacks}`,
+            disabled: blocked,
+            waiting: null,
+            tone: "",
+          };
   }
   if (z.phase === "saved") {
     return {
@@ -719,10 +746,15 @@ function downloadOf(
 }
 
 /** The line under the zip button; a zip saved early says what it lacks. */
-function stateOf(z: FeatureMatchState["runZip"]): EndView["state"] {
-  if (z.phase === "saved" && z.missing > 0) {
+function stateOf(
+  z: FeatureMatchState["runZip"],
+  p: MeasureProgress,
+  still: boolean,
+): EndView["state"] {
+  const n = zipLacks(z, p, still);
+  if (n > 0) {
     return {
-      text: `${z.text.replace(/\.$/, "")}. It lacks ${plural(z.missing, "result")} the phone was still measuring.`,
+      text: `${z.text.replace(/\.$/, "")}. It lacks ${plural(n, "result")} ${still ? "the phone was still measuring" : "measured since"}.`,
       tone: "",
     };
   }
@@ -791,7 +823,7 @@ export function endView(s: FeatureMatchState): EndView {
       text: `${plural(retryN, "pair")} failed on this phone (a crash or a model that did not load).`,
     },
     download: downloadOf(s, p, pend, left),
-    state: stateOf(z),
+    state: stateOf(z, p, pend > 0 && !p.stopped),
     trust: s.photoStoreFailing
       ? {
           text: "Some photos could not be stored on this phone, so a reload would lose them: download now.",

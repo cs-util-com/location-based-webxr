@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
+
+import { BEFORE_YOU_START, WELCOME_LEDE } from "./bench-guide";
 
 import { DIAGRAM_KINDS } from "./guided-diagram";
 import {
@@ -118,6 +122,21 @@ describe("the turn and the step aside say what the plan measures", () => {
     expect(w.change).toMatch(/in its own plane/);
     expect(w.change).toMatch(/do not tilt it away/i);
     expect(`${w.title} ${w.capture} ${w.purpose}`).not.toMatch(/tilt/i);
+  });
+
+  // Why: the page's intro and the welcome lines are read before any shot;
+  // a "tilted" there undoes the turn the shot card asks for.
+  it("the page intro and the welcome lines say turn, not tilt", () => {
+    const html = readFileSync(
+      new URL("../../../feature-match-check.html", import.meta.url),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(html).not.toMatch(/tilt|Turning the phone is not needed/i);
+    expect(html).toMatch(/turned in its plane/);
+    for (const t of [WELCOME_LEDE, ...BEFORE_YOU_START]) {
+      expect(t).not.toMatch(/tilt/i);
+    }
+    expect(WELCOME_LEDE).toMatch(/a turn/);
   });
 
   it("F6 and D3 ask for one photo from one side", () => {

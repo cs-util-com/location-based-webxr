@@ -4,6 +4,7 @@ import {
   featureMatchActions as A,
   featureMatchReducer,
   initialFeatureMatchState,
+  nextMeasureKey,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
@@ -398,6 +399,54 @@ describe("the end view", () => {
     expect(endView(full).state).toEqual({ text: "Saved", tone: "ok" });
   });
 
+  // Why: a zip saved early must not claim "everything is measured now"
+  // when the rest never arrived: after a stop it says measuring stopped and
+  // counts only the results that came in since, and when every pending
+  // pair failed the saved zip lacks nothing a new zip would add.
+  it("counts what a zip saved early lacks after a stop or failures", () => {
+    const s = run([restore, ...ALL.map((id) => take(id))]);
+    const early = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "saved", text: "Saved" })],
+      s,
+    );
+    // Each step acts on the pair the queue runs next.
+    const next = (x: FeatureMatchState): string => nextMeasureKey(x) ?? "";
+    const ok = (x: FeatureMatchState) =>
+      run([A.resultStored({ key: next(x), text: "ok", measureMs: 1000 })], x);
+    const crash = (x: FeatureMatchState) =>
+      run(
+        [
+          A.queueStarted(next(x)),
+          A.workerCrashed({ key: next(x), text: "crashed" }),
+        ],
+        x,
+      );
+    const stopped = crash(crash(ok(early)));
+    expect(endView(stopped).title).toBe("Measuring stopped");
+    expect(endView(stopped).download).toMatchObject({
+      label: "Download again",
+      sub: "Measuring stopped; the saved zip lacks 1 result",
+      tone: "warn",
+    });
+    expect(endView(stopped).state).toEqual({
+      text: "Saved. It lacks 1 result measured since.",
+      tone: "",
+    });
+    let failed = early;
+    for (let key = next(failed); key !== ""; key = next(failed)) {
+      failed = run(
+        [A.resultFailed({ key, text: "x", persisted: true })],
+        failed,
+      );
+    }
+    expect(endView(failed).title).toBe("Everything is measured");
+    expect(endView(failed).download).toMatchObject({
+      label: "Download again",
+      tone: "ok",
+    });
+    expect(endView(failed).state).toEqual({ text: "Saved", tone: "ok" });
+  });
+
   // Why: after two crashes the queue stops; the view says so, drops the
   // choice and offers "Retry failed".
   it("says measuring stopped and offers Retry failed", () => {
@@ -453,5 +502,17 @@ describe("etaText", () => {
     expect(etaText(21_000)).toBe("about 25 s");
     expect(etaText(50_000)).toBe("about 1 min");
     expect(etaText(61_000)).toBe("about 2 min");
+  });
+});
+
+// Why this test matters: with every shot skipped the current shot stays
+// on a skipped one; "Skip photo" there has nowhere to go and must not be
+// shown as a button that does nothing.
+describe("Skip photo on a skipped shot", () => {
+  it("hides the skip when no open shot is left", () => {
+    const s = run([cam, A.planSkipped(ALL)]);
+    const v = runView(s);
+    expect(v.mode).toBe("capture");
+    expect(v.secondary.act).toBe("none");
   });
 });

@@ -76,20 +76,36 @@ function keepLoaded(
   }));
 }
 
+/** Forgets the kept runner of method `id` and disposes it once loaded. */
+function drop(kept: KeptRunners, id: string): void {
+  const p = kept.get(id);
+  kept.delete(id);
+  p?.then(
+    (runner) => runner.dispose(),
+    () => undefined,
+  );
+}
+
 /**
- * Drops and disposes the kept runner of every method whose pair failed
- * (a size with an error): a lost GPU device or a broken session must not
- * fail every later pair.
+ * Drops the kept runner of every method whose pair failed (a size with an
+ * error), so a broken session is loaded again for the next pair. A lost
+ * GPU device is the page's to handle: it ends this worker (see
+ * `measure-queue.ts`).
  */
 function dropFailed(results: readonly MethodResult[], kept: KeptRunners) {
   for (const r of results) {
-    const p = kept.get(r.id);
-    if (p !== undefined && r.sizes.some((s) => s.error !== null)) {
-      kept.delete(r.id);
-      p.then(
-        (runner) => runner.dispose(),
-        () => undefined,
-      );
+    if (r.sizes.some((s) => s.error !== null)) {
+      drop(kept, r.id);
+    }
+  }
+}
+
+/** Drops the kept runners of methods not built for this pair (unticked). */
+function dropUnbuilt(methods: readonly BenchMethod[], kept: KeptRunners) {
+  const built = new Set(methods.map((m) => m.id));
+  for (const id of [...kept.keys()]) {
+    if (!built.has(id)) {
+      drop(kept, id);
     }
   }
 }
@@ -160,15 +176,14 @@ export async function handleMeasure(
       { pair: req.pair, backends: [], precisions: [], runs: 1 },
       await env.webgpu(),
     );
-    const methods = keepLoaded(
-      env.build({
-        ...req.methods,
-        xfeat: false,
-        backends: settings.backends,
-        precisions: settings.precisions,
-      }),
-      env.kept,
-    );
+    const built = env.build({
+      ...req.methods,
+      xfeat: false,
+      backends: settings.backends,
+      precisions: settings.precisions,
+    });
+    dropUnbuilt(built, env.kept);
+    const methods = keepLoaded(built, env.kept);
     const log = (line: string) => post({ type: "progress", job, line });
     log(settings.line);
     const results = await runBenchmark(

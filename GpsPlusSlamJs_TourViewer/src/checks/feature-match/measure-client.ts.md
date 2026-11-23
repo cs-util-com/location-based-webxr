@@ -21,7 +21,7 @@ The page's side of the feature-match measuring worker. `measure(job)` sends one 
 - **The timeout.** A pair the worker does not answer within `MEASURE_TIMEOUT_MS` counts as a crash: every held request rejects with `WorkerCrashed("timed out")` and the worker is terminated, so a hung worker (a GPU call that never returns, a lost message) cannot stall the queue for good; the queue's crash rule (`MAX_CRASHES` in a row) then applies. The timer is per pair and is cleared by the pair's answer.
   - Why 10 min: the first pair also downloads the models, about 66 MB with the default methods (SIFT, ALIKED + LightGlue). 10 min covers that at about 0.9 Mbit/s (66 MB x 8 / 600 s), plus a slow phone's measuring of the first pair.
   - The parameter swept (by arithmetic, not measured on a phone): 5 min would fail the first pair on any line below about 1.8 Mbit/s, which a phone on weak mobile data reaches, and two such pairs in a row would stop the queue; 20 min would hold a truly hung worker for 20 min, longer than a whole capture round of 13 shots, so the tester would reach the end view with nothing measured. 10 min is the value between; only a line slower than about 0.9 Mbit/s turns the verdict, and then the pairs go to the PC as for any crash.
-- `close()` rejects every held request with an `AbortError` and terminates the worker.
+- `close()` rejects every held request with an `AbortError` and terminates the worker; the next `measure` spawns a fresh one. The queue uses it to restart a worker whose GPU device was lost.
 - A `spawn` that throws rejects that request only; the next one is tried.
 
 ## Example

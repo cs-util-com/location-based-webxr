@@ -6,7 +6,10 @@
  *
  * @see flat-progress.ts.md
  */
+import { isFiniteNumber as isNum } from "gps-plus-slam-app-framework/utils/json-guards";
+
 import { LIGHT_FLOOR_A } from "./bench-export";
+import { isObj } from "./fm-helpers";
 import {
   LIGHT_BINS,
   lightBin,
@@ -300,10 +303,6 @@ export function classSummary(p: FlatProgress): ClassSummary[] {
 /** The stored form of `p`. */
 export const flatProgressText = (p: FlatProgress): string => JSON.stringify(p);
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const isNum = (v: unknown): v is number =>
-  typeof v === "number" && Number.isFinite(v);
 const isPoint = (v: unknown): v is Point =>
   isObj(v) && isNum(v.x) && isNum(v.y);
 const isSize = (v: unknown): v is Size =>

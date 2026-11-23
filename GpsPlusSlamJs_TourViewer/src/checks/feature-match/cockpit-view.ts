@@ -19,7 +19,7 @@
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { frameCanvas } from "./bench-dom";
 import { $, type BenchEngine } from "./bench-engine";
-import { BEFORE_YOU_START, SPOT_NOTE } from "./bench-guide";
+import { BEFORE_YOU_START, SPOT_NOTE, WELCOME_LEDE } from "./bench-guide";
 import type { CameraControl } from "./camera-control";
 import {
   downloadLabel,
@@ -175,8 +175,7 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     ...(results ? [results] : []),
   );
   ui.app.hidden = false;
-  el("welcome-lede").textContent =
-    "Take a few shots of each scene: a first shot, then one change per shot (the light, a tilt, a step). The pairs are made from the shots and saved in one zip.";
+  el("welcome-lede").textContent = WELCOME_LEDE;
   el("welcome-list").replaceChildren(...listItems(BEFORE_YOU_START));
   el("before-list").replaceChildren(...listItems(BEFORE_YOU_START));
 

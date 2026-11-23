@@ -19,7 +19,7 @@ What the measuring worker does with one request: decode both photos, cut and tur
 - A rotation pair cuts A's centre square unturned and B's turned by `turn` (`rotationSquare`), as the PC side does.
 - Any throw after the decode answers `failed` with its text.
 - **A method loads once per worker.** Its first load is kept in `kept`; later pairs reuse it with `initMs` 0 and the note "loaded for an earlier pair", and the per-pair dispose is a no-op. A phone log showed ALIKED + LightGlue spending about a second per pair building its ONNX sessions again.
-- **A failed load or pair drops the kept runner.** A load that rejects is forgotten, so the next pair tries again; a pair with a failed size disposes and drops that method's runner, so a lost GPU device or broken session does not fail every later pair. A worker crash ends the worker and its map with it; the page's new worker loads afresh, so the crash count (`MAX_CRASHES`) is unaffected.
+- **A failed load or pair drops the kept runner.** A load that rejects is forgotten, so the next pair tries again; a pair with a failed size disposes and drops that method's runner, so a broken session is loaded again for the next pair. A lost GPU device stays lost in this worker, so a new session would fail too: the page ends the worker when a WebGPU method fails every size (`measure-queue.ts`). A method no longer built (unticked between pairs) has its kept runner disposed and dropped before the pair runs. A worker crash ends the worker and its map with it; the page's new worker loads afresh, so the crash count (`MAX_CRASHES`) is unaffected.
 
 ## Example
 

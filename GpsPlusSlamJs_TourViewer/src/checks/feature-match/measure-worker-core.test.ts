@@ -295,6 +295,21 @@ describe("handleMeasure keeps loaded methods across pairs", () => {
     expect(next[0]!.initMs).toBe(1000);
   });
 
+  // Why: a method unticked between pairs is not built again; its kept
+  // runner (an ONNX session, GPU memory) must be freed, not held forever.
+  it("disposes the kept runner of a method no longer built", async () => {
+    const fail = { extract: false, init: false };
+    const { method, count } = countingMethod(fail);
+    let methods: BenchMethod[] = [method];
+    const { e } = env({ build: () => methods });
+    await run(request({ job: 1 }), e);
+    methods = [];
+    await run(request({ job: 2 }), e);
+    await Promise.resolve();
+    expect(count).toEqual({ init: 1, dispose: 1 });
+    expect(e.kept.size).toBe(0);
+  });
+
   it("forgets a load that failed, so the next pair tries again", async () => {
     const fail = { extract: false, init: true };
     const { method, count } = countingMethod(fail);

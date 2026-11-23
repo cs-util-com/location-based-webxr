@@ -9,6 +9,7 @@
  * @see measure-queue.ts.md
  */
 import { matchesInfo } from "./bench-export";
+import type { MethodResult } from "./bench-run";
 import { errorText } from "./bench-net";
 import {
   featureMatchActions as A,
@@ -18,6 +19,7 @@ import {
   type FeatureMatchState,
   type RunContext,
 } from "./feature-match-slice";
+import { plural } from "./fm-helpers";
 import { WorkerCrashed, type MeasureClient } from "./measure-client";
 import type { MeasureDone } from "./measure-protocol";
 import type { RunGuard } from "./run-guard";
@@ -32,7 +34,7 @@ export interface MeasureQueueDeps {
   };
   /** A photo's PNG, from storage or memory; rejects when it cannot be read. */
   readonly readPhoto: (id: string) => Promise<Blob>;
-  readonly client: Pick<MeasureClient, "measure">;
+  readonly client: Pick<MeasureClient, "measure" | "close">;
   /** Puts the matches JSON in the side table and dispatches `action`. */
   readonly putMatches: (
     key: string,
@@ -44,8 +46,17 @@ export interface MeasureQueueDeps {
   readonly log: (line: string) => void;
 }
 
-const plural = (n: number, word: string): string =>
-  `${String(n)} ${word}${n === 1 ? "" : "s"}`;
+/**
+ * The WebGPU method whose every size failed, or null: a lost GPU device
+ * fails them all, and stays lost in that worker.
+ */
+const gpuLost = (done: MeasureDone): MethodResult | null =>
+  done.results.find(
+    (r) =>
+      r.backend.startsWith("webgpu") &&
+      r.sizes.length > 0 &&
+      r.sizes.every((z) => z.error !== null),
+  ) ?? null;
 
 /** The result's short line: the time and the methods that could not load. */
 function doneText(done: MeasureDone, notLoaded: number): string {
@@ -77,11 +88,13 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
       .map(Number)
       .filter((v) => Number.isFinite(v) && v > 0);
     // Every outcome is logged too: the run zip's log says what the phone
-    // measured. A pair retaken meanwhile has its outcome dropped by the
-    // store, and the log says that instead.
+    // measured. A pair no longer in the plan (retaken, the run resized or
+    // started over) has its outcome dropped by the store; the log says so.
     const said = (text: string): string => {
       const fresh = planResultKeys(store.getState().plan).has(key);
-      log(`${pair.id}: ${fresh ? text : "discarded, retaken meanwhile"}`);
+      log(
+        `${pair.id}: ${fresh ? text : "discarded, the pair is no longer in the plan"}`,
+      );
       return text;
     };
     const failed = (text: string) =>
@@ -107,6 +120,21 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
         { a, b, turn, methods, sizes, pair: pair.legacy },
         (line) => log(`${pair.id}: ${line}`),
       );
+      const lost = gpuLost(done);
+      if (lost !== null) {
+        // The worker's GPU device is likely gone for good: end the worker
+        // so the next pair starts a fresh one, and count it as a crash.
+        deps.client.close();
+        store.dispatch(
+          A.workerCrashed({
+            key,
+            text: said(
+              `not measured: ${lost.label} failed every size on WebGPU (${lost.sizes[0]?.error ?? ""}); the worker restarts`,
+            ),
+          }),
+        );
+        return;
+      }
       const notLoaded = done.results.filter((r) => r.error !== null);
       if (notLoaded.length === done.results.length) {
         failed(`not measured: ${notLoaded[0]?.error ?? "no method ran"}`);

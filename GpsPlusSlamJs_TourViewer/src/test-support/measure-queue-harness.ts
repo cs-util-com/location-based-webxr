@@ -101,6 +101,7 @@ export function harness(
   const lines: string[] = [];
   let guards = 0;
   let ended = 0;
+  let closed = 0;
   const stop = startMeasureQueue({
     store,
     readPhoto: (id) => {
@@ -122,6 +123,9 @@ export function harness(
             reject,
           });
         }),
+      close: () => {
+        closed++;
+      },
     },
     putMatches: (key, json, action) => {
       matches.set(key, json);
@@ -148,5 +152,6 @@ export function harness(
     stop,
     guards: () => guards,
     ended: () => ended,
+    closed: () => closed,
   };
 }

@@ -7,7 +7,8 @@
  *
  * @see run-plan.ts.md
  */
-import { isCameraReport, type CameraReport } from "./camera-report";
+import { knownCameraReport, type CameraReport } from "./camera-report";
+import { isObj } from "./fm-helpers";
 import type { Size } from "./flat-target";
 import {
   needsRetake,
@@ -114,8 +115,6 @@ export const planNextOpen = (p: RunPlan, from = p.current): number | null =>
 
 // --- validation ------------------------------------------------------------
 
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 const isCount = (n: unknown): n is number =>
   typeof n === "number" && Number.isInteger(n) && n >= 0;
 const isSize = (n: unknown): n is number =>
@@ -139,9 +138,19 @@ function isPhoto(v: unknown): v is PhotoMeta {
       (typeof v.greySd === "number" &&
         Number.isFinite(v.greySd) &&
         v.greySd >= 0 &&
-        v.greySd <= 255)) &&
-    (v.camera === undefined || isCameraReport(v.camera))
+        v.greySd <= 255))
   );
+}
+
+/**
+ * The photo with only the known fields of its camera report; a report
+ * with none left is dropped. A report never costs the photo itself.
+ */
+function cleanPhoto(ph: PhotoMeta): PhotoMeta {
+  if (ph.camera === undefined) return ph;
+  const { camera, ...rest } = ph;
+  const known = knownCameraReport(camera);
+  return known ? { ...rest, camera: known } : rest;
 }
 
 const isRecord = (v: unknown): v is ShotRecord =>
@@ -175,7 +184,7 @@ function photo(p: RunPlan, a: PlanAction & { type: "photo" }): RunPlan | null {
   const index = list.findIndex((s) => s.id === a.shot);
   if (index < 0 || !isPhoto(a.photo)) return null;
   const take = (p.shots[a.shot]?.take ?? 0) + 1;
-  const shots = { ...p.shots, [a.shot]: { photo: a.photo, take } };
+  const shots = { ...p.shots, [a.shot]: { photo: cleanPhoto(a.photo), take } };
   const skipped = p.skipped.filter((id) => id !== a.shot);
   const next = { ...p, shots, skipped };
   if (index !== p.current || needsRetake(a.shot, planPhotos(next))) return next;
@@ -188,9 +197,14 @@ function skip(p: RunPlan, a: PlanAction & { type: "skip" }): RunPlan | null {
   const add = [...new Set(a.shots)].filter(
     (id) => ids.has(id) && !p.shots[id] && !p.skipped.includes(id),
   );
-  if (add.length === 0) return null;
-  const next = { ...p, skipped: [...p.skipped, ...add] };
   const cur = planShots(p)[p.current]?.id ?? "";
+  if (add.length === 0) {
+    // Skipping the current shot when it is skipped already moves on.
+    const to =
+      p.skipped.includes(cur) && a.shots.includes(cur) ? planNextOpen(p) : null;
+    return to === null ? null : { ...p, current: to };
+  }
+  const next = { ...p, skipped: [...p.skipped, ...add] };
   if (!add.includes(cur)) return next;
   return { ...next, current: planNextOpen(next) ?? p.current };
 }
@@ -304,7 +318,7 @@ export function parsePlan(text: string | null): RunPlan | undefined {
   if (isObj(raw.shots)) {
     for (const [id, r] of Object.entries(raw.shots)) {
       if (ids.has(id) && isRecord(r))
-        shots[id] = { photo: r.photo, take: r.take };
+        shots[id] = { photo: cleanPhoto(r.photo), take: r.take };
     }
   }
   const settings = isObj(raw.settings)

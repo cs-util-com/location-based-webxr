@@ -365,6 +365,7 @@ describe("Download all", () => {
       phase: "preparing",
       text: "Packing the photos. Keep this page open.",
       missing: 1,
+      done: 0,
     });
     expect(featureMatchReducer(going, A.runZipStarted())).toBe(going);
     expect(featureMatchReducer(going, A.planReset())).toBe(going);
@@ -394,7 +395,12 @@ describe("Download all", () => {
     for (const phase of ["saved", "idle", "failed"] as const) {
       const done = run([A.runZipEnded({ phase, text: `t-${phase}` })], going);
       expect(done.busy).toBe("idle");
-      expect(done.runZip).toEqual({ phase, text: `t-${phase}`, missing: 1 });
+      expect(done.runZip).toEqual({
+        phase,
+        text: `t-${phase}`,
+        missing: 1,
+        done: 0,
+      });
     }
   });
 
@@ -409,6 +415,7 @@ describe("Download all", () => {
       phase: "idle",
       text: "",
       missing: 0,
+      done: 0,
     });
     expect(run([A.planMoved(3)], saved).runZip.phase).toBe("saved");
   });

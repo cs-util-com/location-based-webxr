@@ -38,6 +38,7 @@ export const PAIRS = [
   { key: "t0", label: "rotation: control, centre squares" },
   { key: "t90", label: "rotation: centre square turned 90 deg" },
   { key: "t180", label: "rotation: centre square turned 180 deg" },
+  // The PC reader reads this label as it is; the shot is a turn in plane.
   { key: "2d", label: "rotation: tilted 30-45 deg" },
   { key: "3b", label: "distance: 1.5 m to 3 m" },
   { key: "3c", label: "distance: 1 m to 3 m" },

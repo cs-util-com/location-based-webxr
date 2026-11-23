@@ -25,13 +25,14 @@ The store decides (`nextMeasureKey`, `queueStarted` in `feature-match-slice.ts`)
 - A result whose methods all failed to load is `resultFailed` (not persisted, so a reload tries again). A result with some failed to load is `resultStored` with `persisted: false` and "k could not load" in its text.
 - The matches JSON (`matchesInfo` with the shot files, context, hidden flag, settings, methods and sizes) goes in with `resultStored`. For a rotation pair it also carries `square`: both centre crops (`centreCrop` of the shot photos' sizes) and the turn, since its keypoints are in the squares' pixels.
 - A photo that cannot be read is `resultFailed` ("not measured: a photo could not be read (...)"). `WorkerCrashed` is `workerCrashed` (counted; the queue stops at `MAX_CRASHES`). Any other error is `resultFailed`.
-- Log lines name the pair id first; every outcome (the result or failure text) is logged too, so the run zip's log says what the phone measured. An outcome for a pair retaken meanwhile (its key no longer in the plan) is logged as "discarded, retaken meanwhile" instead, since the store drops it.
+- Log lines name the pair id first; every outcome (the result or failure text) is logged too, so the run zip's log says what the phone measured. An outcome for a pair no longer in the plan (retaken, the run resized or started over) is logged as "discarded, the pair is no longer in the plan" instead, since the store drops it.
 
 ## Invariants
 
 - At most one pair measures: the store refuses `queueStarted` while one runs.
 - The guard is ended on every path (`finally`).
 - A result for a pair retaken meanwhile is dropped by the store (its key went stale) and frees the queue.
+- **A lost GPU device counts as a crash.** A WebGPU method whose every size failed (a lost device fails them all, and it stays lost in that worker) fails the pair as `workerCrashed`, counted toward `MAX_CRASHES`, and the queue calls `client.close()`, so the next pair runs in a fresh worker with a new device. One failed size is an ordinary result.
 
 ## Example
 

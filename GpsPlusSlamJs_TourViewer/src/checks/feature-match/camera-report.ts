@@ -7,6 +7,9 @@
  *
  * @see camera-report.ts.md
  */
+import { isFiniteNumber as isNum } from "gps-plus-slam-app-framework/utils/json-guards";
+
+import { isObj } from "./fm-helpers";
 
 /** The fields a report may hold; numbers except the two focus modes. */
 const NUMBER_SETTINGS = [
@@ -30,11 +33,6 @@ const NUMBER_KEYS: readonly string[] = [
 
 /** The camera's report at one photo; a field it did not give is absent. */
 export type CameraReport = Readonly<Record<string, number | string>>;
-
-const isObj = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const isNum = (v: unknown): v is number =>
-  typeof v === "number" && Number.isFinite(v);
 
 /** `track[name]()` as an object; {} when it is missing, throws or is not one. */
 function call(track: unknown, name: string): Record<string, unknown> {
@@ -86,14 +84,24 @@ export function cameraReport(track: unknown): CameraReport {
   return out;
 }
 
-/** A stored report: only the known fields, numbers finite, modes strings. */
-export const isCameraReport = (v: unknown): v is CameraReport =>
-  isObj(v) &&
-  Object.entries(v).every(([k, x]) =>
-    STRING_KEYS.includes(k)
-      ? typeof x === "string"
-      : NUMBER_KEYS.includes(k) && isNum(x),
-  );
+/**
+ * The known fields of a stored report (numbers finite, modes strings); a
+ * field this build does not know is dropped, not the report. Undefined
+ * when nothing known is left, so an empty report is stored as absent.
+ */
+export function knownCameraReport(v: unknown): CameraReport | undefined {
+  if (!isObj(v)) {
+    return undefined;
+  }
+  const out = Object.fromEntries(
+    Object.entries(v).filter(([k, x]) =>
+      STRING_KEYS.includes(k)
+        ? typeof x === "string"
+        : NUMBER_KEYS.includes(k) && isNum(x),
+    ),
+  ) as Record<string, number | string>;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
 
 /** One value and its range or choices, or "" when the value is absent. */
 function part(r: CameraReport, key: string, extra: string | undefined) {

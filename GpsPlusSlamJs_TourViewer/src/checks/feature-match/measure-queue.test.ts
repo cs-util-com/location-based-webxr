@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { MethodResult } from "./bench-run";
 import { WorkerCrashed } from "./measure-client";
 import type * as SliceModule from "./feature-match-slice";
 import {
@@ -177,8 +178,47 @@ describe("startMeasureQueue", () => {
     h.calls[0]!.resolve(doneOf([result("sift")]));
     await settle();
     expect(h.state().results[k12]).toBeUndefined();
-    expect(h.lines).toContain("light-s1/L1-L2: discarded, retaken meanwhile");
+    expect(h.lines).toContain(
+      "light-s1/L1-L2: discarded, the pair is no longer in the plan",
+    );
     expect(h.lines.filter((l) => l.includes(": done in"))).toEqual([]);
+  });
+
+  // Why: a lost GPU device makes every size of a WebGPU method fail, and
+  // the worker's device stays lost; the pair counts as a crash and the
+  // worker is ended, so the next pair runs in a fresh worker.
+  it("counts a WebGPU method failing every size as a crash and restarts the worker", async () => {
+    const h = harness();
+    for (const a of [restore, shot(L1, "p1"), shot(L2, "p2"), shot(L3, "p3")]) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    const lost = {
+      ...result("aliked"),
+      backend: "webgpu (execution provider)",
+      sizes: [
+        { error: "extract: device lost" },
+        { error: "extract: device lost" },
+      ],
+    } as unknown as MethodResult;
+    h.calls[0]!.resolve(doneOf([result("sift"), lost]));
+    await settle();
+    expect(h.state().results[k12]).toEqual({
+      status: "failed",
+      text: "not measured: aliked failed every size on WebGPU (extract: device lost); the worker restarts",
+      persisted: false,
+    });
+    expect(h.state().queue.crashes).toBe(1);
+    expect(h.closed()).toBe(1);
+    // One failed size of a WebGPU method is an ordinary result.
+    const once = {
+      ...lost,
+      sizes: [{ error: null }, { error: "extract: device lost" }],
+    } as unknown as MethodResult;
+    h.calls[1]!.resolve(doneOf([once]));
+    await settle();
+    expect(h.state().results[k13]).toMatchObject({ status: "done" });
+    expect(h.closed()).toBe(1);
   });
 
   it("starts nothing more once stopped", async () => {
