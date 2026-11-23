@@ -35,6 +35,18 @@ import { RECORDING_DEPTH } from "./authoring-recording.js";
 import { tourDocumentActions } from "./tour-document.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourOf } from "./test-support/tour-of.js";
+import { createTrackerCaptureWiring } from "./tracker-capture-wiring.js";
+import type * as TrackerCaptureWiringModule from "./tracker-capture-wiring.js";
+
+// The wiring stays the real one; the spy counts the gates built and keeps
+// the deps each was given.
+vi.mock("./tracker-capture-wiring.js", async (importOriginal) => {
+  const real = await importOriginal<typeof TrackerCaptureWiringModule>();
+  return {
+    ...real,
+    createTrackerCaptureWiring: vi.fn(real.createTrackerCaptureWiring),
+  };
+});
 import {
   endSession,
   recordGpsEvent,
@@ -2036,12 +2048,32 @@ describe("the tracker capture gate is the visitor's", () => {
   // Why this test matters: the session's gate goes with the session; the
   // next entry builds its own, so an old gate's routes never decide.
   it("a second session gets a gate of its own", async () => {
+    vi.mocked(createTrackerCaptureWiring).mockClear();
     const h = harness({ enableOk: true });
     await h.enter();
-    const first = h.captureConfig()!.wantsFrame;
+    expect(createTrackerCaptureWiring).toHaveBeenCalledTimes(1);
     h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
     h.frames.end();
     await h.enter();
-    expect(h.captureConfig()!.wantsFrame).not.toBe(first);
+    expect(createTrackerCaptureWiring).toHaveBeenCalledTimes(2);
+  });
+
+  // Why this test matters: the gate reads the session through its deps; a
+  // dep wired to the wrong field would leave the burst on locks only, QR
+  // at 1 Hz while the scan card asks for a code, or the identity alignment
+  // of the first fix read as a solved one.
+  it("the gate's deps read the decode stamp, the scan gate and the readiness", async () => {
+    vi.mocked(createTrackerCaptureWiring).mockClear();
+    const h = harness({ enableOk: true });
+    await h.enter();
+    const deps = vi.mocked(createTrackerCaptureWiring).mock.calls[0]![0];
+    h.ctx.qrDecodeAtMs = 1_234;
+    expect(deps.lastDecodeAtMs()).toBe(1_234);
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    expect(deps.scanning()).toBe(true);
+    h.ctx.scanGate = { kind: "idle" };
+    expect(deps.scanning()).toBe(false);
+    // No tracking report and no code: not ready.
+    expect(deps.alignmentReady()).toBe(false);
   });
 });

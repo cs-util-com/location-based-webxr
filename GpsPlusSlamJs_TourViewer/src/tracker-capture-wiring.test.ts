@@ -13,6 +13,7 @@ import {
   createTrackerCaptureWiring,
   newestHitAtMs,
   QR_BURST_MS,
+  stampDecodes,
   type QrDetectionsView,
   type TrackerCaptureWiring,
 } from "./tracker-capture-wiring.js";
@@ -66,10 +67,13 @@ function rig(o: {
   readonly stations?: readonly { geo: QrGeoPose; foundRadiusM: number }[];
   readonly samples?: readonly Sample[];
   readonly alignment?: readonly number[] | null;
+  /** The page's alignment readiness; default: an alignment is given. */
+  readonly alignmentReady?: boolean;
   readonly arPose?: { x: number; y: number; z: number } | null;
   readonly codeLinedUp?: boolean;
   readonly forcePref?: boolean;
   readonly codesOnly?: boolean;
+  readonly scanning?: boolean;
 }) {
   const clock = { now: T0 };
   const samples = o.samples ?? [];
@@ -89,6 +93,8 @@ function rig(o: {
   };
   const state = {
     detections: { markers: {}, frameEpoch: 0 } as QrDetectionsView,
+    /** The newest decode (epoch ms), lock or not. */
+    decodeAtMs: null as number | null,
   };
   const levels = o.levels ?? null;
   const levelIdByText = o.levelIdByText ?? new Map<string, string>();
@@ -99,6 +105,7 @@ function rig(o: {
     captureIntervalMs: INTERVAL,
     gpsEvents: () => (samples.length === 0 ? null : events),
     alignment: () => alignment,
+    alignmentReady: () => o.alignmentReady ?? alignment !== null,
     zero: () => ZERO,
     gpsPoints: () => gpsPositions,
     arPose: () =>
@@ -110,9 +117,11 @@ function rig(o: {
     levelIdByText: () => levelIdByText,
     stations: () => stations,
     detections: () => state.detections,
+    lastDecodeAtMs: () => state.decodeAtMs,
     qrBusy: () => false,
     forcePref: () => o.forcePref ?? false,
     codesOnly: () => o.codesOnly ?? false,
+    scanning: () => o.scanning ?? false,
   });
   return { clock, wiring, state };
 }
@@ -152,6 +161,22 @@ function fixesAt(
 
 const oneCode = () =>
   new Map([["code-a", level(geoAt(0, 0), { gpsAccuracyM: 3 })]]);
+
+/** The kernel over the wiring's position and the rig's codes. */
+function judge(
+  wiring: TrackerCaptureWiring,
+  nowMs: number,
+  input: Omit<Parameters<typeof codeTargets>[0], "zero" | "stations"> & {
+    readonly stations?: Parameters<typeof codeTargets>[0]["stations"];
+  },
+) {
+  return nearbyTargets({
+    targets: codeTargets({ stations: [], zero: ZERO, ...input }),
+    ...wiring.position(nowMs),
+    nowMs,
+    params: DEFAULT_NEARBY_PARAMS,
+  });
+}
 
 describe("tracker capture wiring: frames", () => {
   // Why this test matters: the store keeps odometry in odom-NUE while the
@@ -200,6 +225,41 @@ describe("tracker capture wiring: frames", () => {
     expect(result.state).toBe("dr");
     expect(result.open).toEqual([]);
     expect(run(8.9 + 200).result.open.map((o) => o.key)).toEqual(["c"]);
+  });
+
+  // Why this test matters: the store's alignment is the identity from the
+  // first fix, long before any solve. Used as a real alignment it would
+  // place the camera at its raw AR position and open a code the visitor is
+  // nowhere near; until the page calls the alignment ready the gate must
+  // judge by the lone fix, as the station guide does.
+  it("an identity alignment before the alignment is ready gives the lone-fix path", () => {
+    const run = (alignmentReady: boolean) => {
+      const { wiring, clock } = rig({
+        levels: oneCode(),
+        // Fixes 700 m off, while the raw odometry and the camera sit at
+        // the code's spot.
+        samples: fixesAt(500, 500, T0 - 3_000, T0).map((s) => ({
+          ...s,
+          odom: [0, 0, 0] as const,
+        })),
+        alignment: IDENTITY,
+        alignmentReady,
+        arPose: { x: 0, y: 0, z: 0 },
+      });
+      return {
+        live: wiring.position(clock.now).live,
+        open: judge(wiring, clock.now, {
+          levels: oneCode(),
+          levelIdByText: new Map(),
+          detections: { markers: {} },
+        }).open,
+      };
+    };
+    const before = run(false);
+    expect(before.live).toBeNull();
+    expect(before.open).toEqual([]);
+    // Once ready, the same inputs read as aligned (the control).
+    expect(run(true).open.map((o) => o.key)).toEqual(["code-a"]);
   });
 
   // Why this test matters: a code's sighting is raw WebXR too; only a
@@ -252,6 +312,70 @@ describe("tracker capture wiring: frames", () => {
     expect(a?.sighting?.pos[0]).toBeCloseTo(3, 9);
     expect(a?.sighting?.pos[2]).toBeCloseTo(1, 9);
     expect(targets.find((t) => t.key === "b")?.sighting).toBeUndefined();
+  });
+});
+
+describe("tracker capture wiring: the series within H", () => {
+  // Why this test matters: the kernel reads 'dr' up to H after the newest
+  // fix; a wiring that trimmed the series to F (5 s) would read 'unknown'
+  // after every short fix gap and drop QR to 1 Hz near a code.
+  it("a fix gap within H reads 'dr', one longer than H 'unknown'", () => {
+    const state = (gapMs: number) => {
+      const { wiring, clock } = rig({
+        levels: oneCode(),
+        samples: [{ t: T0 - gapMs, north: 0, east: 0, accM: 4 }],
+        alignment: IDENTITY,
+        arPose: { x: 0, y: 0, z: 0 },
+      });
+      return judge(wiring, clock.now, {
+        levels: oneCode(),
+        levelIdByText: new Map(),
+        detections: { markers: {} },
+      }).state;
+    };
+    expect(state(30_000)).toBe("dr");
+    expect(state(DEFAULT_NEARBY_PARAMS.H - 1_000)).toBe("dr");
+    expect(state(DEFAULT_NEARBY_PARAMS.H + 1_000)).toBe("unknown");
+  });
+
+  // Why this test matters: R_AR grows with the AR path walked since the
+  // sighting, and that path is the device samples within H. A wiring that
+  // trimmed to F would drop the walk 50 s ago and shrink R_AR, closing a
+  // code the visitor walked away from and back to.
+  it("R_AR counts the path walked within H", () => {
+    const detections: QrDetectionsView = {
+      frameEpoch: 0,
+      markers: {
+        "text-c": {
+          detections: [
+            { timestamp: T0 - 55_000, cameraPose: { position: [0, 0, 0] } },
+          ],
+        },
+      },
+    };
+    const levels = new Map([["c", level()]]);
+    const levelIdByText = new Map([["text-c", "c"]]);
+    const { wiring, clock, state } = rig({
+      levels,
+      levelIdByText,
+      // Far fixes (the code has no spot): 50 m out and 50 m back.
+      samples: [
+        { t: T0 - 54_000, north: 500, east: 500, accM: 4, odom: [50, 0, 0] },
+        { t: T0 - 50_000, north: 500, east: 500, accM: 4, odom: [0, 0, 0] },
+      ],
+      alignment: IDENTITY,
+      // odom-NUE [5, 0, 0] is WebXR (0, 0, -5): 5 m from the sighting.
+      arPose: { x: 0, y: 0, z: -5 },
+    });
+    state.detections = detections;
+    const result = judge(wiring, clock.now, {
+      levels,
+      levelIdByText,
+      detections,
+    });
+    // R_AR = 1.5 + 1 + 0.03 x (50 + 50 + 5) = 5.65 m; without the walk,
+    // 2.65 m.
+    expect(result.open.map((o) => o.key)).toEqual(["c"]);
   });
 });
 
@@ -313,6 +437,42 @@ describe("tracker capture wiring: capture counts", () => {
     expect(burst).toBeGreaterThanOrEqual(75);
     expect(burst).toBeLessThanOrEqual(80);
     expect(captures(wiring, clock, T0 + QR_BURST_MS, T0 + 20_000)).toBe(10);
+  });
+
+  // Why this test matters: the controller locks a code only after several
+  // decodes; a burst that waited for the first detection (the lock) would
+  // leave those decodes at 1 Hz, seconds apart. One decode must open full
+  // cadence at once.
+  it("one decode at 1 Hz opens full cadence, before any lock", () => {
+    const { wiring, clock, state } = rig({
+      levels: oneCode(),
+      samples: fixesAt(500, 500, T0, T0 + 20_000),
+    });
+    expect(captures(wiring, clock, T0, T0 + 2_000)).toBe(2);
+    state.decodeAtMs = T0 + 2_000;
+    const burst = captures(wiring, clock, T0 + 2_000, T0 + 2_000 + QR_BURST_MS);
+    expect(burst).toBeGreaterThanOrEqual(75);
+    // An older lock does not hide the newer decode, nor the reverse.
+    state.detections = {
+      frameEpoch: 0,
+      markers: { a: { detections: [{ timestamp: T0 - 60_000 }] } },
+    };
+    state.decodeAtMs = T0 + 20_000;
+    expect(
+      captures(wiring, clock, T0 + 20_000, T0 + 21_000),
+    ).toBeGreaterThanOrEqual(7);
+  });
+
+  // Why this test matters: while the scan card asks the visitor to scan a
+  // code, the visitor is pointing the camera at one: QR runs at full
+  // cadence wherever the position says they are.
+  it("the scan gate scanning: every interval with every code closed", () => {
+    const { wiring, clock } = rig({
+      levels: oneCode(),
+      samples: fixesAt(500, 500, T0, T0 + 10_000),
+      scanning: true,
+    });
+    expect(captures(wiring, clock, T0, T0 + 10_000)).toBeGreaterThanOrEqual(75);
   });
 
   // Why this test matters: the visitor's setting keeps QR at full cadence
@@ -380,7 +540,8 @@ describe("tracker capture wiring: targets", () => {
   // Why this test matters: a heading-uncertain mint's spot may be off by
   // about its alignment's GPS extent: its target carries that extent for
   // the kernel to widen by; a certain mint, or one without an extent,
-  // carries none.
+  // carries none. Values go through raw: the kernel alone decides what a
+  // malformed extent or accuracy means, so the two cannot disagree.
   it("a heading-uncertain mint's target carries its alignment's GPS extent", () => {
     const levels = new Map([
       [
@@ -413,7 +574,7 @@ describe("tracker capture wiring: targets", () => {
       ["u", 3, 6],
       ["s", 3, undefined],
       ["n", null, undefined],
-      ["x", 3, undefined],
+      ["x", 3, -1],
     ]);
   });
 
@@ -431,6 +592,44 @@ describe("tracker capture wiring: targets", () => {
         },
       }),
     ).toBe(9);
+  });
+
+  // Why this test matters: the burst opens on a decode, so the stamp must
+  // fire for a frame with a code and stay silent for one without, pass the
+  // result through untouched, and still free the detector.
+  it("stampDecodes calls back on a decode only and keeps the front end whole", async () => {
+    const image = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
+    const code = {
+      text: "t",
+      corners: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+      ],
+    } as const;
+    let next: typeof code | null = null;
+    let decodes = 0;
+    let disposed = 0;
+    const stamped = stampDecodes(
+      {
+        kind: "barcode-detector",
+        detect: () => Promise.resolve(next as never),
+        dispose: () => {
+          disposed += 1;
+        },
+      },
+      () => {
+        decodes += 1;
+      },
+    );
+    await expect(stamped.detect(image)).resolves.toBeNull();
+    expect(decodes).toBe(0);
+    next = code;
+    await expect(stamped.detect(image)).resolves.toBe(code);
+    expect(decodes).toBe(1);
+    stamped.dispose?.();
+    expect(disposed).toBe(1);
   });
 
   // Why this test matters: before the tour's codes are read there is

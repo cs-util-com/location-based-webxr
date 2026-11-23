@@ -3,9 +3,10 @@
  * framework's generic gate (`ar/targets/tracker-capture-gate`) and
  * registers QR, the first tracker, with the tour's codes as targets. The
  * camera asks `wantsFrame` before each capture: in full cadence while a
- * code is near (the nearby-targets kernel) or right after any code was
- * read, at 1 Hz otherwise, so codes without a position and codes of other
- * tours are still read outside every gate.
+ * code is near (the nearby-targets kernel), right after any code was
+ * decoded and while the scan card asks for a code, at 1 Hz otherwise, so
+ * codes without a position and codes of other tours are still read outside
+ * every gate.
  *
  * Every AR position handed to the kernel is odom-NUE: the store keeps its
  * odometry so, and the live pose and a code's sighting (raw WebXR) go
@@ -19,6 +20,7 @@
 
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
+import type { QrFrontEnd } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   createNearbyPositionSource,
@@ -48,7 +50,7 @@ import { horizontalM, takesAlong } from "./move-with-code.js";
 import { HUD_ARRIVAL_BAND_M } from "./station-bands.js";
 import { cameraNue, type ArPoseLike } from "./visitor-position.js";
 
-/** After any code is read, full cadence for this long (ms). */
+/** After any code is decoded, full cadence for this long (ms). */
 export const QR_BURST_MS = 10_000;
 /** QR's rate while no code is near, and while the position is unknown:
  *  codes without a position and other tours' codes are read at it. */
@@ -101,6 +103,28 @@ export function codeReachM(
   return reach + HUD_ARRIVAL_BAND_M;
 }
 
+/**
+ * The front end with every decode stamped: `onDecode` runs when a detect
+ * resolves with a code, before the controller validates or locks it. The
+ * burst opens on it, so the decodes a lock needs run at full cadence.
+ */
+export function stampDecodes(
+  frontEnd: QrFrontEnd,
+  onDecode: () => void,
+): QrFrontEnd {
+  return {
+    kind: frontEnd.kind,
+    detect: async (image) => {
+      const result = await frontEnd.detect(image);
+      if (result !== null) onDecode();
+      return result;
+    },
+    ...(frontEnd.dispose === undefined
+      ? {}
+      : { dispose: () => frontEnd.dispose?.() }),
+  };
+}
+
 /** The newest detection's time of any code (epoch ms), or null. */
 export function newestHitAtMs(detections: QrDetectionsView): number | null {
   let newest: number | null = null;
@@ -148,7 +172,8 @@ export function codeTargets(input: {
       kind: "qr",
       north: nue?.[0] ?? Number.NaN,
       east: nue?.[2] ?? Number.NaN,
-      accM: positive(level.qr.mintQuality?.gpsAccuracyM),
+      // Raw: the kernel decides what a malformed value means.
+      accM: level.qr.mintQuality?.gpsAccuracyM ?? null,
       ...headingExtent(level),
       reachM:
         geo === undefined
@@ -169,7 +194,7 @@ export function codeTargets(input: {
 function headingExtent(level: QrLevel): { alignmentGpsExtentM?: number } {
   const q = level.qr.mintQuality;
   const extent = q?.alignmentGpsExtentM;
-  return q?.headingUncertain === true && isNonNegative(extent)
+  return q?.headingUncertain === true && extent !== undefined
     ? { alignmentGpsExtentM: extent }
     : {};
 }
@@ -213,6 +238,10 @@ export interface TrackerCaptureWiringDeps {
   gpsEvents(): NearbyGpsEvents | null;
   /** The store's alignment, or null. Stable per value (a selector). */
   alignment(): ArrayLike<number> | null;
+  /** The page's alignment readiness (`stationAlignmentSignals`): the
+   *  store's alignment is the identity from the first fix, so until this
+   *  is true the gate judges by the lone fix, as the station guide does. */
+  alignmentReady(): boolean;
   /** The session's GPS zero, or null. Stable per value (a selector). */
   zero(): LatLong | null;
   /** The store's GPS readings (the precision rule's input). */
@@ -225,12 +254,16 @@ export interface TrackerCaptureWiringDeps {
   levelIdByText(): ReadonlyMap<string, string>;
   stations(): readonly CodeStation[];
   detections(): QrDetectionsView;
+  /** The newest decode of any code (epoch ms, `stampDecodes`), or null. */
+  lastDecodeAtMs(): number | null;
   /** The QR controller cannot take a frame now. */
   qrBusy(): boolean;
   /** The visitor's setting: QR at full cadence everywhere. */
   forcePref(): boolean;
   /** The session runs on codes alone: no fix ever comes. */
   codesOnly(): boolean;
+  /** The scan card asks the visitor to scan a code. */
+  scanning(): boolean;
   readonly params?: NearbyParams;
 }
 
@@ -253,7 +286,7 @@ export function createTrackerCaptureWiring(
   const params = deps.params ?? DEFAULT_NEARBY_PARAMS;
   const source = createNearbyPositionSource({
     gpsEvents: () => deps.gpsEvents(),
-    alignment: () => deps.alignment(),
+    alignment: () => readyAlignment(deps),
     zero: () => deps.zero(),
     live: () => livePose(deps),
     lookBackMs: params.H,
@@ -298,8 +331,9 @@ export function createTrackerCaptureWiring(
       burstMs: QR_BURST_MS,
     },
     isBusy: () => deps.qrBusy(),
-    lastHitAtMs: () => newestHitAtMs(deps.detections()),
-    forceOn: () => deps.forcePref() || deps.codesOnly(),
+    lastHitAtMs: () =>
+      laterOf(deps.lastDecodeAtMs(), newestHitAtMs(deps.detections())),
+    forceOn: () => deps.forcePref() || deps.codesOnly() || deps.scanning(),
   });
   let routes: readonly FrameRoute[] | null = null;
   return {
@@ -313,12 +347,27 @@ export function createTrackerCaptureWiring(
   };
 }
 
+/** The store's alignment once the page calls it ready, else null. */
+function readyAlignment(
+  deps: TrackerCaptureWiringDeps,
+): ArrayLike<number> | null {
+  return deps.alignmentReady() ? deps.alignment() : null;
+}
+
+/** The later of two times; either alone; null when neither is finite. */
+function laterOf(a: number | null, b: number | null): number | null {
+  const times = [a, b].filter(
+    (t): t is number => t !== null && Number.isFinite(t),
+  );
+  return times.length === 0 ? null : Math.max(...times);
+}
+
 /** The live pose: the aligned camera and its odom-NUE AR position of the
  *  same tick, with the precision rule's acc_fix (a code hold: 1 m). Null
- *  without an alignment or a pose. */
+ *  without a ready alignment or a pose. */
 function livePose(deps: TrackerCaptureWiringDeps): LivePose | null {
   const pose = deps.arPose();
-  const nue = cameraNue(deps.alignment(), pose);
+  const nue = cameraNue(readyAlignment(deps), pose);
   const ar = odomNueOfWebXr(pose?.position);
   if (nue === null || ar === null) return null;
   const precision = positionPrecision({
@@ -338,14 +387,4 @@ function livePose(deps: TrackerCaptureWiringDeps): LivePose | null {
           ? precision.accuracyM
           : null,
   };
-}
-
-function positive(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : null;
-}
-
-function isNonNegative(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }

@@ -57,17 +57,20 @@ describe("tracker capture wiring: the station-band property", () => {
           const sn = g.stationDistM * Math.cos(g.stationAngle);
           const se = g.stationDistM * Math.sin(g.stationAngle);
           const station = { geo: geoAt(sn, se), foundRadiusM: g.foundRadiusM };
-          const ll = calcGpsCoords(ZERO, [0, 0, 0]);
-          const fix = {
-            latitude: ll.lat,
-            longitude: ll.lon,
-            latLongAccuracy: g.accM,
-            timestamp: T0,
+          const fixAt = (n: number, e: number) => {
+            const ll = calcGpsCoords(ZERO, [n, 0, e]);
+            return {
+              latitude: ll.lat,
+              longitude: ll.lon,
+              latLongAccuracy: g.accM,
+              timestamp: T0,
+            };
           };
+          // The precision reads the fix's accuracy alone.
           const precision = positionPrecision({
             position: "aligned",
             codeHold: g.codeHold,
-            gpsPoints: [fix],
+            gpsPoints: [fixAt(0, 0)],
           });
           const band = judgedStationBands(
             { activateRadiusM: 0, foundRadiusM: g.foundRadiusM },
@@ -76,6 +79,8 @@ describe("tracker capture wiring: the station-band property", () => {
           const r = band.foundExitM * g.visitorFraction;
           const vn = sn + r * Math.cos(g.visitorAngle);
           const ve = se + r * Math.sin(g.visitorAngle);
+          // The fix and its odometry at the visitor, as on a phone.
+          const fix = fixAt(vn, ve);
           const levels = new Map([
             [
               "code",
@@ -99,6 +104,7 @@ describe("tracker capture wiring: the station-band property", () => {
             captureIntervalMs: 125,
             gpsEvents: () => events,
             alignment: () => IDENTITY,
+            alignmentReady: () => true,
             zero: () => ZERO,
             gpsPoints: () => [fix],
             // odom-NUE [n, u, e] is WebXR (e, u, -n).
@@ -108,9 +114,11 @@ describe("tracker capture wiring: the station-band property", () => {
             levelIdByText: () => new Map(),
             stations: () => [station],
             detections: () => ({ markers: {} }),
+            lastDecodeAtMs: () => null,
             qrBusy: () => false,
             forcePref: () => false,
             codesOnly: () => false,
+            scanning: () => false,
           });
           const targets = codeTargets({
             levels,

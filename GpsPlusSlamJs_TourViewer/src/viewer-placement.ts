@@ -121,6 +121,7 @@ import {
   type StationContent,
 } from "./station-content.js";
 import { reducedMotionReader } from "./reduced-motion.js";
+import { stampDecodes } from "./tracker-capture-wiring.js";
 import {
   selectPresentStationId,
   selectShowAllContent,
@@ -548,10 +549,14 @@ export function createViewerPlacement(deps: {
       }
     };
     const solve = (input: QrSolvePoseInput) => seams.solveQrPose(input);
+    // Every decode, lock or not, opens the capture gate's burst.
+    const decoding = stampDecodes(frontEnd, () => {
+      if (live()) ctx.qrDecodeAtMs = now();
+    });
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         ...votes,
-        frontEnd: deps.qrPerf?.wrapFrontEnd(frontEnd) ?? frontEnd,
+        frontEnd: deps.qrPerf?.wrapFrontEnd(decoding) ?? decoding,
         now,
         solvePose: deps.qrPerf?.wrapSolve(solve) ?? solve,
         getIntrinsics: (image) => seams.getIntrinsics(image),

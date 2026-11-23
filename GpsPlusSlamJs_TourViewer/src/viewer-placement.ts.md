@@ -18,6 +18,10 @@ them.
     on the instrument's timed front end (`wrapFrontEnd`) and solve
     (`wrapSolve`); absent, on the seams' own
     (`viewer-placement-qr-perf.test.ts`).
+  - The front end is stamped first (`stampDecodes`,
+    `tracker-capture-wiring.ts`): every decode of a live pipeline, lock or
+    not, sets `ctx.qrDecodeAtMs` to `now()`, which opens the tracker
+    capture gate's burst; the instrument wraps the stamped front end.
   - `now` (M2b review #4): the page clock - the QR controller's detection
     times and the moment a GPS fix arrives, the one clock the keep-alive's
     hold runs on; `Date.now` when absent (the controller's own default, and

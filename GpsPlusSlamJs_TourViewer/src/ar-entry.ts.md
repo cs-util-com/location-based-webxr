@@ -72,9 +72,13 @@ since the flows plan M6.
     ([tracker-capture-wiring.ts.md](tracker-capture-wiring.ts.md)) and
     passes its `wantsFrame` in the capture config; a frame is offered to QR
     only when the gate routed it there (every frame before the gate
-    decided). Force-on is the stored `trackerCaptureForceOn` pref or a
-    codes-only tour. A creator's capture keeps `{ intervalMs }` alone.
-    Each session builds a new gate; the session end drops it.
+    decided). Force-on is the stored `trackerCaptureForceOn` pref, a
+    codes-only tour or the scan gate scanning. The burst reads the
+    session's newest decode (`ctx.qrDecodeAtMs`) besides the detections;
+    the alignment counts only while `stationAlignmentSignals`' readiness
+    holds (the store's identity from the first fix is no solve). A
+    creator's capture keeps `{ intervalMs }` alone. Each session builds a
+    new gate; the session end drops it.
   - **The per-frame UI runs on the render loop:** once the runtime started,
     each session registers one `seams.registerFrameUpdate` that calls
     `renderArStatus()` then `hooks.tickStations()` at the capture cadence
@@ -84,8 +88,9 @@ since the flows plan M6.
     stations, the HUD or the status line. Every session end clears the
     frame loop's registrations, so it is registered per session and never
     unregistered by hand; a failed start registers none. It also runs during
-    a tracking loss and without camera access, where the stations judge no
-    arrival.
+    a tracking loss and without camera access. Under a null pose an aligned
+    visitor has no position and arrives nowhere; an unaligned one is judged
+    by a fresh lone fix as before.
   - Every session starts the scan gate (`hooks.startScanGate`; a
     creator's is `not-required/creator`, a visitor's holds placement back)
     before the visitor's placement subscription; the session end cancels

@@ -61,7 +61,6 @@ import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
 import {
   arStatusLine,
-  codeLinedUp,
   type ArStatusInput,
   type LocationRefusal,
 } from "./tour-flow.js";
@@ -70,6 +69,7 @@ import {
   type TrackerCaptureWiring,
 } from "./tracker-capture-wiring.js";
 import { selectTrackerCaptureForceOn } from "./visitor-prefs-slice.js";
+import { stationAlignmentSignals } from "./visitor-stations.js";
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,
@@ -813,7 +813,9 @@ export function wireArEntry(deps: {
    * per session, after the runtime started: every session end clears the
    * frame loop's registrations, so nothing is unregistered by hand. Unlike
    * the captures it also runs during a tracking loss and without camera
-   * access; the stations then judge no arrival (no position).
+   * access. Under a null pose an aligned visitor has no position and is
+   * judged to arrive nowhere; an unaligned one is judged by a fresh lone
+   * fix as before.
    */
   function startFrameTicks(): void {
     const qrPerf = deps.qrPerf;
@@ -842,28 +844,28 @@ export function wireArEntry(deps: {
    */
   function visitorCaptureWiring(): TrackerCaptureWiring | null {
     if (authorMode || ctx.qrController === null) return null;
+    const signals = stationAlignmentSignals(ctx, arStore);
     return createTrackerCaptureWiring({
       // The QR controller's clock: detections are stamped in epoch ms.
       now: () => Date.now(),
       captureIntervalMs: CAMERA_FRAME_INTERVAL_MS,
       gpsEvents: () => arStore.getState().gpsData?.gpsEvents ?? null,
       alignment: () => selectAlignmentMatrix(arStore.getState()),
+      alignmentReady: signals.alignmentReady,
       zero: () => selectZeroReference(arStore.getState()),
       gpsPoints: () => selectGpsPositions(arStore.getState()),
       arPose: () => seams.getArPose(),
-      codeLinedUp: () =>
-        codeLinedUp({
-          lockedText: ctx.viewerLockedText,
-          votedLocks: ctx.viewerVotedLocks,
-        }),
+      codeLinedUp: signals.codeLinedUp,
       levels: () => ctx.currentLevels,
       levelIdByText: () => ctx.levelIdByText,
       stations: () => ctx.tourDocument.manifest()?.stations ?? [],
       detections: () => arStore.getState().qrDetected,
+      lastDecodeAtMs: () => ctx.qrDecodeAtMs,
       // Gone or busy: the frame would be dropped anyway.
       qrBusy: () => ctx.qrController?.isBusy() ?? true,
       forcePref: () => selectTrackerCaptureForceOn(arStore.getState()),
       codesOnly: () => ctx.codesOnly,
+      scanning: () => ctx.scanGate.kind === "scanning",
     });
   }
 

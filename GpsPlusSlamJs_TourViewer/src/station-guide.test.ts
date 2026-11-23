@@ -393,6 +393,34 @@ describe("wireStationGuide", () => {
     );
   });
 
+  // Why this test matters: the null-pose rule above is the aligned
+  // visitor's. An unaligned one (no code, tracking not ready) is judged by
+  // a fresh lone fix, which needs no pose: standing on the station by such
+  // a fix finds it even during a tracking loss.
+  it("an unaligned visitor under a null AR pose is judged by a fresh lone fix", () => {
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
+    h.ready(false);
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    h.fromDevice({
+      alignment: identity,
+      arPose: null,
+      gpsPositions: [
+        {
+          latitude: zero.lat,
+          longitude: zero.lon,
+          latLongAccuracy: 4,
+          timestamp: h.now(),
+        },
+      ] as unknown as Parameters<typeof visitorPosition>[0]["gpsPositions"],
+      zero,
+    });
+    expect(h.found).toEqual(["gate"]);
+  });
+
   it("says when it has no position yet, or the GPS is too weak to guide", () => {
     const h = harness({
       assets: new Set(),
