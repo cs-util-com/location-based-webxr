@@ -128,7 +128,9 @@ Consequences:
 `tour-file-key.test.ts`: the key's shape and prefix, order and folder
 entries not mattering, any changed CRC, size, name or file count changing
 the key, and a property that two lists differing only in size never share
-a key; stable across a Finish (a new `tour.json`, a level and photos) and
+a key (over names the key reads: a lone macOS metadata file such as `._`
+is left out, so its size cannot reach the key, which a named test pins);
+stable across a Finish (a new `tour.json`, a level and photos) and
 a re-zip into a folder, a Finder re-zip (wrapping folder plus `__MACOSX/`
 and `._` files) keeping the key, two recordings still apart, and the fallback for a
 tour of only the tour kit's files (K0 milestone review R7); the id key's

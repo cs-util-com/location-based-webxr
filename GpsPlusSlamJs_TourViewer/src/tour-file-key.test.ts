@@ -2,6 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { TOUR_ID_PATTERN } from "gps-plus-slam-app-framework/ar/tour-archive";
+import { isMacOsMetadataName } from "gps-plus-slam-app-framework/storage/zip-reader";
 
 import {
   isTourContentKey,
@@ -53,10 +54,16 @@ describe("tourFileKey", () => {
     }
   });
 
+  // Why: a size change is a content change, so it must change the key.
+  // The names are the ones the key reads at all: a macOS metadata name
+  // (`._x`, `__MACOSX/...`) is left out of the key by design, so a list
+  // holding only such a file has no size in its key to tell apart.
   it("tells apart any two files that differ only in size (property)", async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.string({ minLength: 1, maxLength: 12 }),
+        fc
+          .string({ minLength: 1, maxLength: 12 })
+          .filter((name) => !isMacOsMetadataName(name)),
         fc.nat(),
         fc.nat(),
         async (name, size, crc) => {
@@ -71,6 +78,31 @@ describe("tourFileKey", () => {
       ),
       { numRuns: 50 },
     );
+  });
+
+  // Why: this list once came out of the size property's generator. It is
+  // not a collision: `._` is a macOS resource-fork name, which the key
+  // leaves out (a Finder re-zip must keep the key), so both lists hash as
+  // the empty list and no size reaches the key. Next to a real file the
+  // metadata still adds nothing, and the real file's size still counts.
+  it("leaves a lone macOS metadata file out, so its size does not change the key", async () => {
+    const empty = await tourFileKey([]);
+    const a = await tourFileKey([
+      { filename: "._", uncompressedSize: 0, crc32: 0 },
+    ]);
+    const b = await tourFileKey([
+      { filename: "._", uncompressedSize: 1, crc32: 0 },
+    ]);
+    expect(a).toBe(empty);
+    expect(b).toBe(empty);
+    const real = { filename: "session.json", uncompressedSize: 5, crc32: 1 };
+    const meta = { filename: "._", uncompressedSize: 1, crc32: 0 };
+    const withMeta = await tourFileKey([real, meta]);
+    expect(withMeta).toBe(await tourFileKey([real]));
+    expect(withMeta).not.toBe(empty);
+    expect(
+      await tourFileKey([{ ...real, uncompressedSize: 6 }, meta]),
+    ).not.toBe(withMeta);
   });
 });
 
