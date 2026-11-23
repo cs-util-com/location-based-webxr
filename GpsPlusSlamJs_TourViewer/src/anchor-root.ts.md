@@ -19,7 +19,7 @@ Callers:
 
 ## Public API
 
-- `anchorRoot(parent, key, root, onCommit?): AnchoredRoot | null`
+- `anchorRoot(parent, key, root, onCommit?, { warn }?): AnchoredRoot | null`
   - `parent`: the anchor parent (the AR world group with its alignment
     binding). `key`: the anchor key. `root`: an identity wrapper with its
     content already inside, so the anchor's first bounds include it.
@@ -28,7 +28,9 @@ Callers:
   - Returns null, after a `warn` log, when the framework refuses (no
     binding for `parent` yet, a root nested in another anchor, a set torn
     down); the wrapper is detached and the caller stands its content on
-    the scene root instead.
+    the scene root instead. `warn: false` (default true) skips that log,
+    for a caller asking again after a refusal it already logged (the
+    walk's cues, until the parent's binding exists).
 - `AnchoredRoot`
   - `parent`, `root`: what it stands under, and the wrapper.
   - `boundsChanged()`: after a part was added, removed or swapped under the

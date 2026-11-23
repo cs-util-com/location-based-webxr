@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { PAIRS } from "./bench-export";
 import {
-  canSave,
   featureMatchActions as A,
   featureMatchReducer,
   flatPhase,
+  HANDS_OFF_TEXT,
+  handsOffDue,
   initialFeatureMatchState,
   logText,
-  NOTHING_MEASURED,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
 import { POSES, SURFACE_CLASSES } from "./flat-target";
-import type { PhotoMeta } from "./run-plan";
+import { planSlots, type PhotoMeta } from "./run-plan";
+import { STILL_CONFIG } from "./still-detector";
 
 const start = (): FeatureMatchState =>
   initialFeatureMatchState({ session: "s1" });
@@ -31,181 +31,13 @@ const photo = (id: string, greyMean = 120): PhotoMeta => ({
   greyMean,
 });
 
-const OFFERED = [{ id: "u1", file: "x.zip", text: "Download all (zip), 1 kB" }];
-
-/** Photo A and B of one pair, its camera run done and its files offered. */
-const savedPair = (meanB = 120): FeatureMatchAction[] => [
-  A.photoTaken({ which: "a", photo: photo("a1") }),
-  A.photoTaken({ which: "b", photo: photo("b1", meanB) }),
-  A.runStarted("camera"),
-  A.runFinished({ text: "done", resultsId: "r1" }),
-  A.saveStarted(),
-  A.saveFinished(OFFERED),
-];
-
-describe("the photo pair flow", () => {
-  // Why: photo A is what fixes a pair; its running number names every file.
-  it("starts a new pair at photo A, with the selector's pair and spot", () => {
-    const s = run([
-      A.selectorChanged({ pair: "1b", spot: 2 }),
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-    ]);
-    expect(s.progress.sequence).toBe(1);
-    expect(s.pairInProgress).toMatchObject({
-      pair: "1b",
-      spot: 2,
-      sequence: 1,
-    });
-    expect(s.pairNote).toEqual({ kind: "now", tag: s.pairInProgress });
-    expect(s.photos).toEqual({ a: photo("a1"), b: null });
-    expect(s.status.a).toBe("taken, 640x480");
-    expect(s.status.run).toBe("waiting for photo B");
-  });
-
-  // Why: photo B alone has no pair to belong to.
-  it("refuses photo B before photo A", () => {
-    const s = run([A.photoTaken({ which: "b", photo: photo("b1") })]);
-    expect(s).toEqual(start());
-  });
-
-  // Why: a photo must not replace the frames a run or a save is reading.
-  it("refuses photos while a run or a save is going", () => {
-    const busy = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.runStarted("synthetic"),
-    ]);
-    expect(
-      featureMatchReducer(
-        busy,
-        A.photoTaken({ which: "a", photo: photo("a2") }),
-      ),
-    ).toBe(busy);
-  });
-
-  // Why: a NaN size or an out-of-range grey mean is a broken capture.
-  it("refuses a photo with a bad size or grey mean", () => {
-    for (const p of [
-      { ...photo("a1"), width: 0 },
-      { ...photo("a1"), height: Number.NaN },
-      { ...photo("a1"), greyMean: 300 },
-    ]) {
-      expect(run([A.photoTaken({ which: "a", photo: p })])).toEqual(start());
-    }
-  });
-
-  // Why: the retake rule - files once downloaded keep their names, so a
-  // photo B taken again after a download is a new take with a new number.
-  it("gives photo B a new running number only after the pair was downloaded", () => {
-    const before = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.photoTaken({ which: "b", photo: photo("b1") }),
-      A.photoTaken({ which: "b", photo: photo("b2") }),
-    ]);
-    expect(before.pairInProgress?.sequence).toBe(1);
-    const after = run([
-      ...savedPair(),
-      A.filesDownloaded(),
-      A.photoTaken({ which: "b", photo: photo("b2") }),
-    ]);
-    expect(after.pairInProgress?.sequence).toBe(2);
-    expect(after.progress.sequence).toBe(2);
-    expect(after.pairNote?.kind).toBe("now");
-  });
-
-  // Why: the light check is what tells a dimmed pair that was not dimmed.
-  it("checks the light at photo B and withdraws the run and its files", () => {
-    const s = run([
-      A.selectorChanged({ pair: "1b", spot: 1 }),
-      ...savedPair(200),
-    ]);
-    expect(s.light).toBe("not-darker");
-    const again = featureMatchReducer(
-      s,
-      A.photoTaken({ which: "b", photo: photo("b2", 60) }),
-    );
-    expect(again.light).toBe("ok");
-    expect(again.cameraRun).toBe("none");
-    expect(again.resultsId).toBeNull();
-    expect(again.offered).toEqual([]);
-    expect(again.saved).toBe(false);
-  });
-});
-
-describe("the download advance", () => {
-  // Why: the selector walks the protocol; it must move once per pair.
-  it("moves the selector to the next pair once per pair", () => {
-    const s = run([...savedPair(), A.filesDownloaded()]);
-    expect(s.progress.pair).toBe(PAIRS[1].key);
-    expect(s.progress.advancedFor).toBe(1);
-    expect(s.pairNote).toMatchObject({ kind: "next", next: { key: "1b" } });
-    expect(featureMatchReducer(s, A.filesDownloaded())).toBe(s);
-  });
-
-  // Why: a pair whose light check failed must be taken again, not skipped.
-  it("keeps a pair whose light check failed", () => {
-    const s = run([
-      A.selectorChanged({ pair: "1b", spot: 1 }),
-      ...savedPair(200),
-      A.filesDownloaded(),
-    ]);
-    expect(s.progress.pair).toBe("1b");
-    expect(s.progress.advancedFor).toBe(1);
-    expect(s.pairNote?.kind).toBe("kept");
-  });
-
-  // Why: with nothing offered there is nothing that was downloaded.
-  it("does nothing without offered files", () => {
-    const s = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.photoTaken({ which: "b", photo: photo("b1") }),
-    ]);
-    expect(featureMatchReducer(s, A.filesDownloaded())).toBe(s);
-  });
-});
-
 describe("one run or save at a time", () => {
   // Why: two runs at once would time each other.
   it("refuses a second run, and a save, while one runs", () => {
-    const s = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.photoTaken({ which: "b", photo: photo("b1") }),
-      A.runStarted("speed"),
-    ]);
+    const s = run([A.runStarted("speed")]);
     expect(s.busy).toBe("running");
-    expect(featureMatchReducer(s, A.runStarted("camera"))).toBe(s);
-    expect(featureMatchReducer(s, A.saveStarted())).toBe(s);
-    expect(canSave(s)).toBe(false);
-  });
-
-  // Why: the camera run measures the pair; without both photos it has none.
-  it("refuses a camera run without both photos", () => {
-    expect(run([A.runStarted("camera")])).toEqual(start());
-  });
-
-  // Why: Save describes the run; it is offered once the run ended, whatever
-  // it came to, and says when nothing was measured.
-  it("ends a camera run done with results, failed without", () => {
-    const pair = [
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.photoTaken({ which: "b", photo: photo("b1") }),
-      A.runStarted("camera"),
-    ];
-    const done = run([...pair, A.runFinished({ text: "ok", resultsId: "r1" })]);
-    expect(done).toMatchObject({
-      busy: "idle",
-      running: null,
-      cameraRun: "done",
-    });
-    expect(done.resultsId).toBe("r1");
-    expect(done.status.run).toBe("ok");
-    expect(canSave(done)).toBe(true);
-    const failed = run([
-      ...pair,
-      A.runFinished({ text: "x", resultsId: null }),
-    ]);
-    expect(failed.cameraRun).toBe("failed");
-    expect(failed.status.save).toBe(NOTHING_MEASURED);
-    expect(canSave(failed)).toBe(true);
+    expect(featureMatchReducer(s, A.runStarted("synthetic"))).toBe(s);
+    expect(featureMatchReducer(s, A.planFileSaveStarted())).toBe(s);
   });
 
   // Why: a speed test's progress lines go to its own status line.
@@ -214,58 +46,16 @@ describe("one run or save at a time", () => {
     expect(s.status.speed).toBe("running: arm 1");
     expect(run([A.runProgressed("x")])).toEqual(start());
   });
-
-  // Why: a synthetic run replaces the results on screen; Save must not
-  // describe results that are gone.
-  it("withdraws a finished camera run and its files", () => {
-    const s = run([...savedPair(), A.cameraRunWithdrawn()]);
-    expect(s.cameraRun).toBe("none");
-    expect(s.offered).toEqual([]);
-    expect(s.status.run).toContain("replaced");
-    const none = start();
-    expect(featureMatchReducer(none, A.cameraRunWithdrawn())).toBe(none);
-  });
-
-  it("saves, and a failed save offers nothing", () => {
-    const ready = run(savedPair().slice(0, 5));
-    expect(ready.busy).toBe("saving");
-    expect(ready.status.save).toBe("preparing...");
-    const failed = featureMatchReducer(ready, A.saveFailed());
-    expect(failed).toMatchObject({ busy: "idle", saved: false, offered: [] });
-    const saved = run(savedPair());
-    expect(saved).toMatchObject({
-      busy: "idle",
-      saved: true,
-      offered: OFFERED,
-    });
-  });
 });
 
-describe("selector, log and errors", () => {
-  // Why: the selector's value comes from the DOM; an unknown one is ignored.
-  it("ignores an unknown pair or spot", () => {
-    expect(run([A.selectorChanged({ pair: "9z", spot: 1 })])).toEqual(start());
-    expect(run([A.selectorChanged({ pair: "1a", spot: 0 })])).toEqual(start());
-  });
-
-  // Why: Exit of the flat mode returns to the pair picked before it.
-  it("returns to the pair picked before the flat mode", () => {
-    const s = run([
-      A.selectorChanged({ pair: "2b", spot: 1 }),
-      A.selectorChanged({ pair: "flat", spot: 1 }),
-      A.flatExited(),
-    ]);
-    expect(s.progress.pair).toBe("2b");
-  });
-
-  // Why: a reload on the flat mode must still have a pair to exit to.
-  it("starts from stored progress, exiting a stored flat mode to the first pair", () => {
+describe("progress, log and errors", () => {
+  // Why: the running number survives a reload, so no name is reused.
+  it("starts from the stored running number", () => {
     const s = initialFeatureMatchState({
       session: "s",
-      progress: { sequence: 7, pair: "flat", spot: 2 },
+      progress: { sequence: 7 },
     });
-    expect(s.progress).toMatchObject({ sequence: 7, advancedFor: 7 });
-    expect(s.progress.lastPair).toBe(PAIRS[0].key);
+    expect(s.progress).toEqual({ sequence: 7 });
   });
 
   it("keeps errors for the report until cleared, and logs them", () => {
@@ -410,37 +200,14 @@ describe("the flat target capture", () => {
 });
 
 describe("rules a one-line deletion would lose", () => {
-  // Why: in the flat mode the pair photos are not on screen; a photo there
-  // would start a pair nobody sees.
-  it("refuses a pair photo in the flat mode", () => {
-    const s = run([A.selectorChanged({ pair: "flat", spot: 1 })]);
-    expect(
-      featureMatchReducer(s, A.photoTaken({ which: "a", photo: photo("a1") })),
-    ).toBe(s);
-  });
-
-  // Why: after an advance Exit of a later flat mode returns to the pair the
-  // protocol moved to, not to the one picked before the advance.
-  it("moves the pair Exit returns to along with the advance", () => {
+  // Why: only a plan run's results belong to a pair; a synthetic run must
+  // not attach its results to the plan's take.
+  it("keeps no plan results after a synthetic run", () => {
     const s = run([
-      ...savedPair(),
-      A.filesDownloaded(),
-      A.selectorChanged({ pair: "flat", spot: 1 }),
-      A.flatExited(),
-    ]);
-    expect(s.progress.pair).toBe(PAIRS[1].key);
-  });
-
-  // Why: a synthetic run must not mark the camera pair as measured.
-  it("leaves the camera run alone when another run finishes", () => {
-    const s = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.photoTaken({ which: "b", photo: photo("b1") }),
       A.runStarted("synthetic"),
       A.runFinished({ text: "done", resultsId: "r1" }),
     ]);
-    expect(s.cameraRun).toBe("none");
-    expect(s.resultsId).toBeNull();
+    expect(s.planRun).toBeNull();
     expect(s.status.synthetic).toBe("done");
   });
 
@@ -450,7 +217,7 @@ describe("rules a one-line deletion would lose", () => {
   it("returns the same state for a refused run, save or zip", () => {
     const running = run([A.runStarted("speed")]);
     expect(featureMatchReducer(running, A.runStarted("speed"))).toBe(running);
-    expect(featureMatchReducer(running, A.saveStarted())).toBe(running);
+    expect(featureMatchReducer(running, A.runZipStarted())).toBe(running);
     const idle = start();
     expect(featureMatchReducer(idle, A.flatSavingStarted())).toBe(idle);
   });
@@ -469,13 +236,13 @@ describe("rules a one-line deletion would lose", () => {
 });
 
 describe("the run plan inside the page state", () => {
-  // Why: the plan views and the pair selector share one running number,
-  // so no two takes of either ever get the same file names.
+  // Why: the page's running number is the one stored across reloads, so
+  // a take after a reload never gets the file names of an earlier one.
   it("raises the page's running number at a plan photo's new take", () => {
-    const s = run([
-      A.photoTaken({ which: "a", photo: photo("a1") }),
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
-    ]);
+    const s = run(
+      [A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") })],
+      initialFeatureMatchState({ session: "s1", progress: { sequence: 1 } }),
+    );
     expect(s.progress.sequence).toBe(2);
     expect(s.plan.slots["1a-s1"]?.seq).toBe(2);
   });
@@ -517,11 +284,10 @@ describe("the run plan inside the page state", () => {
     ]).plan;
     const s = initialFeatureMatchState({
       session: "s",
-      progress: { sequence: 1, pair: "1a", spot: 1 },
+      progress: { sequence: 1 },
       plan,
     });
     expect(s.progress.sequence).toBe(2);
-    expect(s.progress.advancedFor).toBe(2);
     expect(s.plan).toBe(plan);
   });
 });
@@ -615,7 +381,6 @@ describe("the guided view's capture state", () => {
     const done = run([A.runFinished({ text: "done", resultsId: "r9" })], going);
     expect(done.busy).toBe("idle");
     expect(done.planRun).toEqual({ slot: "1a-s1", seq: 1, resultsId: "r9" });
-    expect(done.cameraRun).toBe("none");
     expect(done.status.run).toBe("done");
     // A photo in another pair keeps them, a photo in this one drops them.
     const other = run(
@@ -667,10 +432,8 @@ describe("the guided view's run zip", () => {
       expect(done.busy).toBe("idle");
       expect(done.runZip).toEqual({ phase, text: `t-${phase}` });
     }
-    // A camera save that ends does not end the zip.
-    expect(featureMatchReducer(going, A.saveFinished([])).runZip.phase).toBe(
-      "preparing",
-    );
+    // A single-file save that ends does not end the zip.
+    expect(featureMatchReducer(going, A.planFileSaveEnded("x"))).toBe(going);
   });
 
   // Why: a new photo after a saved zip makes the zip on the phone stale;
@@ -767,5 +530,178 @@ describe("the guided view's single-file save and camera start", () => {
     const s = run([A.photoStoreChanged(true)]);
     expect(s.photoStoreFailing).toBe(true);
     expect(run([A.photoStoreChanged(false)], s).photoStoreFailing).toBe(false);
+  });
+});
+
+describe("hands-off photo B", () => {
+  const still = { alpha: 0.2, beta: -0.1, gamma: 0.3 };
+  const fast = { alpha: 60, beta: 60, gamma: 60 };
+  /** Readings every 20 ms from `t0` for `ms`. */
+  const readings = (t0: number, ms: number, rate = still) => {
+    const out: FeatureMatchAction[] = [];
+    for (let t = t0; t <= t0 + ms; t += 20) {
+      out.push(A.handsOffSample({ t, rate }));
+    }
+    return out;
+  };
+  const withA = (slot = "1a-s1"): FeatureMatchState => {
+    const s = run([A.cameraChanged(true)]);
+    const index = planSlots(s.plan).findIndex((sl) => sl.id === slot);
+    return run(
+      [
+        A.planMoved(index),
+        A.planPhotoTaken({ slot, which: "a", photo: photo("pa") }),
+      ],
+      s,
+    );
+  };
+  const armed = (slot?: string): FeatureMatchState =>
+    run([A.handsOffArmed(0)], withA(slot));
+
+  // Why: B takes itself only where it can: the setting on, the camera on,
+  // a pair the sensor can judge, photo A taken and B due, no countdown,
+  // nothing busy, and once per photo A.
+  it("is due only after photo A of a pair it can judge", () => {
+    expect(handsOffDue(withA())).toBe(true);
+    expect(handsOffDue(start())).toBe(false);
+    expect(handsOffDue(run([A.cameraChanged(false)], withA()))).toBe(false);
+    expect(
+      handsOffDue(run([A.planSettingsChanged({ capture: "tap" })], withA())),
+    ).toBe(false);
+    expect(
+      handsOffDue(run([A.guidedCountSet({ shot: "b", left: 3 })], withA())),
+    ).toBe(false);
+    expect(handsOffDue(run([A.runStarted("speed")], withA()))).toBe(false);
+    expect(handsOffDue(withA("1b-s1"))).toBe(false);
+    expect(handsOffDue(withA("2b-s1"))).toBe(true);
+    expect(handsOffDue(armed())).toBe(false);
+  });
+
+  // Why: arming is refused unless due, so a render that arms on every
+  // change cannot loop, and a bad time never starts the detector.
+  it("arms once, and refuses when not due or with a bad time", () => {
+    const s = armed();
+    expect(s.handsOff.phase).toBe("armed");
+    expect(s.handsOff.slot).toBe("1a-s1");
+    expect(featureMatchReducer(s, A.handsOffArmed(5))).toBe(s);
+    expect(featureMatchReducer(start(), A.handsOffArmed(0))).toEqual(start());
+    const a = withA();
+    expect(featureMatchReducer(a, A.handsOffArmed(Number.NaN))).toBe(a);
+  });
+
+  // Why: the flow itself - readings arrive (waiting), the phone stays
+  // still for the dwell, and only then is the photo due (taking).
+  it("waits for the still phone, then takes B", () => {
+    const s = armed();
+    const w = run(readings(20, 500), s);
+    expect(w.handsOff.phase).toBe("waiting");
+    const t = run(readings(540, STILL_CONFIG.dwellMs), w);
+    expect(t.handsOff.phase).toBe("taking");
+    expect(run([A.handsOffShot("taken")], t).handsOff.phase).toBe("taken");
+    expect(run([A.handsOffShot("refused")], t).handsOff.phase).toBe("refused");
+    expect(run([A.handsOffShot("failed")], t).handsOff.phase).toBe("failed");
+    expect(featureMatchReducer(w, A.handsOffShot("taken"))).toBe(w);
+  });
+
+  // Why: on a pair that moves the phone, B waits for the move.
+  it("stays armed on a move pair until the phone moved", () => {
+    const s = run(readings(20, 3000), armed("2b-s1"));
+    expect(s.handsOff.phase).toBe("armed");
+    const moved = run(readings(3040, 400, fast), s);
+    const t = run(readings(3460, 3000), moved);
+    expect(t.handsOff.phase).toBe("taking");
+  });
+
+  // Why: a sensor that never reports, or stops, ends the wait with a
+  // reason, and that photo A is not armed again: the tap is the way out.
+  it("fails when the readings stop, and offers the tap", () => {
+    const s = run(
+      [A.handsOffSample({ t: STILL_CONFIG.lostMs + 1, rate: null })],
+      armed(),
+    );
+    expect(s.handsOff.phase).toBe("failed");
+    expect(s.handsOff.text).toMatch(/tap/i);
+    expect(handsOffDue(s)).toBe(false);
+    const c = run([A.guidedCountSet({ shot: "b", left: 3 })], s);
+    expect(c.guided.count).toEqual({ shot: "b", left: 3 });
+  });
+
+  // Why: a tap on the big button during the wait takes B by countdown;
+  // the wait ends and does not come back for the same photo A.
+  it("ends on a countdown, a retake or a run, and stays off for that A", () => {
+    const w = run(readings(20, 200), armed());
+    for (const act of [
+      A.guidedCountSet({ shot: "b", left: 3 }),
+      A.guidedRetakeToggled("a"),
+      A.runStarted("speed"),
+    ]) {
+      const s = run([act], w);
+      expect(s.handsOff.phase, act.type).toBe("off");
+      expect(s.handsOff.slot).toBe("1a-s1");
+    }
+    const off = run([A.guidedCountSet({ shot: "b", left: 3 })], w);
+    expect(handsOffDue(run([A.guidedCountSet(null)], off))).toBe(false);
+  });
+
+  // Why: the drawer pauses the wait; closing it arms again. A new photo
+  // A, another pair, Start over or the camera off clear it as well.
+  it("clears on a pause, a move, a reset and the camera off", () => {
+    const w = run(readings(20, 200), armed());
+    const paused = run([A.handsOffPaused()], w);
+    expect(paused.handsOff.phase).toBe("off");
+    expect(handsOffDue(paused)).toBe(true);
+    for (const act of [A.planMoved(1), A.planReset(), A.cameraChanged(false)]) {
+      expect(run([act], w).handsOff.phase, act.type).toBe("off");
+      expect(run([act], w).handsOff.slot, act.type).toBeNull();
+    }
+    const retakenA = run(
+      [
+        A.guidedRetakeToggled("a"),
+        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("pa2") }),
+      ],
+      w,
+    );
+    expect(handsOffDue(retakenA)).toBe(true);
+  });
+
+  // Why: photo A lost (its frame did not come back) ends the wait at once:
+  // B must not take itself against a photo A that is gone.
+  it("ends the wait when photo A is lost", () => {
+    const w = run(readings(20, 200), armed());
+    const lost = run([A.planPhotoLost({ slot: "1a-s1", which: "a" })], w);
+    expect(lost.handsOff.phase).toBe("off");
+    expect(lost.handsOff.slot).toBeNull();
+  });
+
+  // Why: a reading from far in the future would set the detector's clock
+  // ahead, after which every real reading looks backwards and the wait
+  // freezes; it fails the wait instead, and the tap takes B.
+  it("fails the wait on a reading that jumps far ahead", () => {
+    const w = run(readings(20, 200), armed());
+    const jumped = run([A.handsOffSample({ t: 1e12, rate: still })], w);
+    expect(jumped.handsOff.phase).toBe("failed");
+    expect(jumped.handsOff.text).toBe(HANDS_OFF_TEXT.lost);
+  });
+
+  // Why: readings are only taken while waiting; a bad one changes nothing.
+  it("ignores readings when not waiting, and bad readings", () => {
+    const a = withA();
+    expect(
+      featureMatchReducer(a, A.handsOffSample({ t: 5, rate: still })),
+    ).toBe(a);
+    const s = armed();
+    expect(
+      featureMatchReducer(s, A.handsOffSample({ t: Number.NaN, rate: still })),
+    ).toBe(s);
+    const w = run(readings(20, 100), s);
+    expect(
+      featureMatchReducer(
+        w,
+        A.handsOffSample({
+          t: 200,
+          rate: { alpha: Number.NaN, beta: null, gamma: Infinity },
+        }),
+      ),
+    ).toBe(w);
   });
 });

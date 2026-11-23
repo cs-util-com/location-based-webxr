@@ -28,6 +28,26 @@ export interface PhotoMeta {
 type SaveMode = "each" | "end";
 /** "auto": photos take themselves when the phone is still; "tap": countdown. */
 type CaptureMode = "auto" | "tap";
+
+/**
+ * How photo B of a pair can take itself: "still" where nothing changes
+ * between A and B (B once the phone rests), "move" where the phone turns
+ * (B once it turned and rests again), null where the motion sensor cannot
+ * judge the change: the light pairs, the steps (a gyroscope sees rotation,
+ * not translation) and the tester's own pair: B by tap.
+ */
+export function handsOffKind(key: string): "still" | "move" | null {
+  if (
+    key === "1a" ||
+    key === "2a" ||
+    key === "3a" ||
+    key === "4a" ||
+    key === "4c"
+  ) {
+    return "still";
+  }
+  return /^2[bcd]$/.test(key) ? "move" : null;
+}
 const COUNTDOWNS = [0, 3, 5] as const;
 type Countdown = (typeof COUNTDOWNS)[number];
 
@@ -249,10 +269,16 @@ function photo(
     a.which === "a"
       ? { ...base, a: a.photo, b: newTake ? null : old.b }
       : { ...base, b: a.photo };
+  // A take that goes on gets a new photo, so a zip kept of it is stale:
+  // dropped here, Download all packs the photos as they are now.
+  const kept = newTake
+    ? p.kept
+    : p.kept.filter((k) => k.slot !== slot.id || k.downloaded);
   return {
     plan: {
       ...p,
       slots: { ...p.slots, [slot.id]: withLight(slot.key, rec) },
+      kept,
       shots: p.shots + 1,
     },
     sequence: newTake ? seq : sequence,

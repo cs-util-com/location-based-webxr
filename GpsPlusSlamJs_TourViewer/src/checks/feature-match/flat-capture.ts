@@ -968,8 +968,8 @@ export function startFlatCapture(
       close();
     }
   });
-  // A back-forward cache restore keeps the selector on the flat mode, so
-  // the mode comes back with it.
+  // A back-forward cache restore brings back the page as it was hidden,
+  // so the mode it closed comes back with it.
   window.addEventListener("pageshow", (ev) => {
     if (ev.persisted && closedByPagehide) {
       closedByPagehide = false;

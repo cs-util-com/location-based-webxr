@@ -10,6 +10,7 @@ import {
 } from "./feature-match-slice";
 import {
   deviceSummary,
+  hasRate,
   introCountdownText,
   endView,
   isMoving,
@@ -18,6 +19,7 @@ import {
   pairRows,
   planPairOf,
   runPairs,
+  speedPairOf,
   runView,
   STEADY_THRESHOLD,
 } from "./guided-model";
@@ -293,6 +295,33 @@ describe("planPairOf", () => {
   });
 });
 
+// Why this test matters: the speed test times a photo pair when there is
+// one; after the automatic move the current pair is empty, so it falls back
+// to the pair measured last, and only then to the synthetic pair.
+describe("speedPairOf", () => {
+  it("takes the current pair, else the last measured one, else none", () => {
+    const frames = new Map([
+      ["1a-s1-a", saved("A")],
+      ["1a-s1-b", saved("B")],
+    ]);
+    const s = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    expect(speedPairOf(s, frames)?.slot.id).toBe("1a-s1");
+    const measured = run(
+      [A.runStarted("plan"), A.runFinished({ text: "done", resultsId: "r" })],
+      s,
+    );
+    const moved = run([A.planMoved(1)], measured);
+    expect(planPairOf(moved, frames)).toBeNull();
+    expect(speedPairOf(moved, frames)?.slot.id).toBe("1a-s1");
+    const retaken = run(
+      [A.planMoved(0), A.guidedRetakeToggled("b"), shot("1a-s1", "b")],
+      measured,
+    );
+    expect(speedPairOf(run([A.planMoved(1)], retaken), frames)).toBeNull();
+    expect(speedPairOf(run([A.planMoved(1)], s), frames)).toBeNull();
+  });
+});
+
 // Why this test matters: Download all packs every complete pair under its
 // own file names; a pair whose frame is gone must stop the zip rather than
 // send a pair with one photo or none.
@@ -393,6 +422,18 @@ describe("the steady hint", () => {
   ];
   const settledAfter = (threshold: number): number =>
     level(tap).findIndex((l, i) => i > 0 && l <= threshold);
+
+  // Why this test matters: the views' devicemotion listeners mark motion
+  // as seen on a usable reading only; an all-NaN reading tested against
+  // null alone made the readout claim "steady" without any measurement.
+  it("counts only a finite rate as a reading", () => {
+    expect(hasRate(null)).toBe(false);
+    expect(hasRate({ alpha: null, beta: null, gamma: null })).toBe(false);
+    expect(
+      hasRate({ alpha: Number.NaN, beta: Infinity, gamma: -Infinity }),
+    ).toBe(false);
+    expect(hasRate({ alpha: Number.NaN, beta: 0, gamma: null })).toBe(true);
+  });
 
   it("ignores a reading without a rotation rate", () => {
     expect(motionStep(5, null)).toBe(5);

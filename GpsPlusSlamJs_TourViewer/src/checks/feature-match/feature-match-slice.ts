@@ -1,10 +1,10 @@
 /**
  * The feature matching check page's state: one Redux slice for the whole
  * page session, shared by every view of the page. The reducers own the
- * rules of the photo-pair flow (which pair a photo belongs to, when a
- * retake gets a new running number, when the selector moves on, one run or
- * save at a time), the run and speed test status, the options and the flat
- * target capture (its progress through `flatReducer`, the reference being
+ * rules of the photo test run (`run-plan.ts`: which pair a photo belongs
+ * to, when a retake gets a new running number, one run or save at a
+ * time), the run and speed test status, the options and the flat target
+ * capture (its progress through `flatReducer`, the reference being
  * marked, the pose, the countdown and the prepared zip). Frames, results,
  * Blob URLs, the camera, canvases and timers live outside, in side tables
  * keyed by the ids this state holds (`feature-match-store.ts`).
@@ -19,20 +19,7 @@ import {
   type PayloadAction,
 } from "@reduxjs/toolkit";
 
-import {
-  FLAT_MODE,
-  lightCheck,
-  NO_PAIR,
-  nextPair,
-  PAIRS,
-  pairTag,
-  parseSpot,
-  type LightCheck,
-  type PairTag,
-  type SelectorKey,
-} from "./bench-export";
 import type { TableRow } from "./bench-report";
-import type { FlowState } from "./bench-steps";
 import {
   EMPTY_PROGRESS,
   flatReducer,
@@ -51,6 +38,7 @@ import {
 } from "./flat-target";
 import {
   EMPTY_PLAN,
+  handsOffKind,
   maxSequence,
   planSlots,
   planReducer,
@@ -59,37 +47,21 @@ import {
   type RunPlan,
 } from "./run-plan";
 import { doneCount, shotDue, slotStatus } from "./plan-slots";
-
-/** Save's label after a camera run that measured nothing. */
-export const NOTHING_MEASURED =
-  "nothing measured: tap to save the photos anyway";
-/** Save's label before there is anything to save. */
-const AFTER_THE_RUN = "after the run";
+import {
+  isStill,
+  readingsLost,
+  stillStart,
+  stillStep,
+  type MotionSample,
+  type StillState,
+} from "./still-detector";
 
 /** One action at a time: a run (benchmark or speed test) or a save. */
 type Busy = "idle" | "running" | "saving";
 /** "plan": a run on the current plan pair's photos (the guided view). */
-type RunKind = "camera" | "synthetic" | "speed" | "plan";
+type RunKind = "synthetic" | "speed" | "plan";
 /** The page's one-line status texts. */
-export type StatusSlot =
-  "a" | "b" | "run" | "synthetic" | "speed" | "save" | "copy";
-
-/** What the pair line under the selector says. */
-export type PairNote =
-  | { readonly kind: "now"; readonly tag: PairTag }
-  | { readonly kind: "kept"; readonly tag: PairTag }
-  | {
-      readonly kind: "next";
-      readonly tag: PairTag;
-      readonly next: { readonly key: string; readonly spot: number };
-    };
-
-/** An offered download; its Blob URL is the side table's, under `id`. */
-export interface Offered {
-  readonly id: string;
-  readonly file: string;
-  readonly text: string;
-}
+type StatusSlot = "run" | "synthetic" | "speed" | "copy";
 
 /** The benchmark's options as the controls hold them (parsed at run time). */
 export interface BenchOptions {
@@ -163,6 +135,47 @@ interface GuidedState {
 }
 
 /**
+ * The cockpit's hands-off photo B: "armed" after photo A until the first
+ * reading (and on a move pair until the move), "waiting" for the phone to
+ * rest, "taking" once it rested for the dwell (the view takes the photo),
+ * then "taken", "refused" (the photo was not taken) or "failed" (the
+ * readings stopped, or the capture threw). "off" with a take named means
+ * that photo A is not armed again.
+ */
+type HandsOffPhase =
+  "off" | "armed" | "waiting" | "taking" | "taken" | "refused" | "failed";
+
+interface HandsOff {
+  readonly phase: HandsOffPhase;
+  /** The slot and photo A it was armed for; null arms on the next due B. */
+  readonly slot: string | null;
+  readonly a: string | null;
+  /** The still detector's state while armed or waiting. */
+  readonly still: StillState | null;
+  /** The line the status shows for it. */
+  readonly text: string;
+}
+
+const HANDS_OFF_IDLE: HandsOff = {
+  phase: "off",
+  slot: null,
+  a: null,
+  still: null,
+  text: "",
+};
+
+export const HANDS_OFF_TEXT = {
+  still: "Hands off: photo B takes itself once the phone is still.",
+  move: "Turn the phone for photo B, or tap; it takes itself once the phone rests again.",
+  waiting: "Hold still, or tap: photo B takes itself.",
+  taking: "Taking photo B.",
+  taken: "Photo B took itself.",
+  refused: "Photo B was not taken by itself. Tap to take it.",
+  failed: "Photo B could not be taken by itself. Tap to take it.",
+  lost: "No motion readings: tap to take photo B.",
+} as const;
+
+/**
  * The guided view's Download all: "preparing" while the zip is packed,
  * then saved, failed, or "idle" again (the save dialog was closed).
  */
@@ -200,30 +213,10 @@ export interface FeatureMatchState {
   readonly progress: {
     /** The newest pair's running number; kept across reloads. */
     readonly sequence: number;
-    readonly pair: SelectorKey;
-    readonly spot: number;
-    /** The newest pair any of whose files was downloaded. */
-    readonly advancedFor: number;
-    /** The pair picked before the flat mode, for its Exit. */
-    readonly lastPair: SelectorKey;
   };
   readonly camera: boolean;
-  /** The pair of the current photos, fixed at photo A. */
-  readonly pairInProgress: PairTag | null;
-  readonly pairNote: PairNote | null;
-  readonly photos: {
-    readonly a: PhotoMeta | null;
-    readonly b: PhotoMeta | null;
-  };
-  /** The current pair's light check, set at photo B; null otherwise. */
-  readonly light: LightCheck | null;
-  readonly cameraRun: FlowState["run"];
-  /** Side table key of the camera run's results; null with none. */
-  readonly resultsId: string | null;
-  readonly saved: boolean;
   readonly busy: Busy;
   readonly running: RunKind | null;
-  readonly offered: readonly Offered[];
   readonly status: Readonly<Record<StatusSlot, string>>;
   readonly table: readonly TableRow[];
   readonly report: string;
@@ -236,6 +229,7 @@ export interface FeatureMatchState {
   /** The photo test run of the plan-driven views (`run-plan.ts`). */
   readonly plan: RunPlan;
   readonly guided: GuidedState;
+  readonly handsOff: HandsOff;
   readonly planRun: PlanRun | null;
   readonly runZip: RunZip;
   readonly fileSave: FileSave;
@@ -264,76 +258,35 @@ const DEFAULT_SPEED_OPTIONS: SpeedOptions = {
   runs: "10",
 };
 
-const SELECTOR_KEYS: readonly string[] = [
-  ...PAIRS.map((p) => p.key),
-  NO_PAIR.key,
-  FLAT_MODE.key,
-];
-const isSelectorKey = (k: unknown): k is SelectorKey =>
-  typeof k === "string" && SELECTOR_KEYS.includes(k);
-const isSpot = (n: unknown): n is number =>
-  typeof n === "number" && parseSpot(String(n)) === n;
-const isSize = (n: unknown): boolean =>
-  typeof n === "number" && Number.isFinite(n) && n > 0;
-const isMean = (n: unknown): n is number =>
-  typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 255;
-
 export interface InitialInput {
   readonly session: string;
-  readonly progress?: {
-    readonly sequence: number;
-    readonly pair: SelectorKey;
-    readonly spot: number;
-  };
+  readonly progress?: { readonly sequence: number };
   readonly flat?: FlatProgress;
   readonly plan?: RunPlan;
 }
 
 /**
- * The first state; a stored pair of `flat` keeps the first pair for Exit.
- * The running number starts above every number the stored plan holds, so
+ * The first state. The running number starts above every number the stored plan holds, so
  * a stored plan and stored progress that disagree never reuse a name.
  */
 export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
-  const p = i.progress ?? { sequence: 0, pair: "1a", spot: 1 };
   const plan = i.plan ?? EMPTY_PLAN;
-  const sequence = Math.max(p.sequence, maxSequence(plan));
+  const sequence = Math.max(i.progress?.sequence ?? 0, maxSequence(plan));
   return {
     session: i.session,
     plan,
     guided: { retake: null, count: null },
+    handsOff: HANDS_OFF_IDLE,
     planRun: null,
     runZip: { phase: "idle", text: "" },
     fileSave: { preparing: false, text: "" },
     cameraStart: "idle",
     photoStoreFailing: false,
-    progress: {
-      sequence,
-      pair: p.pair,
-      spot: p.spot,
-      advancedFor: sequence,
-      lastPair: p.pair === FLAT_MODE.key ? PAIRS[0].key : p.pair,
-    },
+    progress: { sequence },
     camera: false,
-    pairInProgress: null,
-    pairNote: null,
-    photos: { a: null, b: null },
-    light: null,
-    cameraRun: "none",
-    resultsId: null,
-    saved: false,
     busy: "idle",
     running: null,
-    offered: [],
-    status: {
-      a: "not taken",
-      b: "not taken",
-      run: "waiting for photo B",
-      synthetic: "",
-      speed: "",
-      save: AFTER_THE_RUN,
-      copy: "",
-    },
+    status: { run: "", synthetic: "", speed: "", copy: "" },
     table: [],
     report: "",
     log: [],
@@ -359,21 +312,6 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
 
 // --- selectors ------------------------------------------------------------
 
-/** The camera pair's flow, for the step marks. */
-export const flowState = (s: FeatureMatchState): FlowState => ({
-  a: s.photos.a !== null,
-  b: s.photos.b !== null,
-  run: s.cameraRun,
-  saved: s.saved,
-});
-
-/** Save is possible once the camera pair's run has ended, whatever it came to. */
-export const canSave = (s: FeatureMatchState): boolean =>
-  s.busy === "idle" &&
-  s.photos.a !== null &&
-  s.photos.b !== null &&
-  (s.cameraRun === "done" || s.cameraRun === "failed");
-
 /** The log as one text, one line each. */
 export const logText = (s: FeatureMatchState): string =>
   s.log.map((l) => `${l}\n`).join("");
@@ -398,6 +336,29 @@ export function flatPhase(f: FlatState): FlatPhase {
   return f.preview ? "check" : "corners";
 }
 
+/**
+ * Whether photo B is due to take itself: the setting is "auto", the
+ * camera on, nothing busy and no countdown or retake; the current pair is
+ * one the motion sensor can judge (`handsOffKind`), its photo A is taken
+ * and B is missing; and this photo A was not armed before.
+ */
+export function handsOffDue(s: FeatureMatchState): boolean {
+  const slot = planSlots(s.plan)[s.plan.current];
+  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  const h = s.handsOff;
+  return (
+    s.plan.settings.capture === "auto" &&
+    s.camera &&
+    s.busy === "idle" &&
+    s.guided.count === null &&
+    s.guided.retake === null &&
+    slot !== undefined &&
+    handsOffKind(slot.key) !== null &&
+    shotDue(rec, null) === "b" &&
+    !(h.slot === slot.id && h.a === rec?.a?.id)
+  );
+}
+
 /** The first pose not yet complete, else the first. */
 const firstOpenPose = (s: SurfaceProgress): PoseId =>
   (POSES.find((p) => !poseSummary(s, p.id).complete) ?? POSES[0]!).id;
@@ -409,16 +370,8 @@ type FlatDraft = { -readonly [K in keyof FlatState]: FlatState[K] };
 
 const plain = <T>(v: T): T => (isDraft(v) ? current(v as ImmerDraft<T>) : v);
 
-/** Withdraws the offered files (their URLs are revoked by the store). */
-function clearSaved(s: Draft, text: string): void {
-  s.offered = [];
-  s.saved = false;
-  setStatus(s, "save", text);
-}
-
 /** The status line a run writes to. */
-const statusOf = (k: RunKind): StatusSlot =>
-  k === "camera" || k === "plan" ? "run" : k;
+const statusOf = (k: RunKind): StatusSlot => (k === "plan" ? "run" : k);
 
 function setStatus(s: Draft, slot: StatusSlot, text: string): void {
   s.status = { ...s.status, [slot]: text };
@@ -487,6 +440,12 @@ const planCase =
     if (TARGET_CHANGES.has(action.type)) {
       s.guided = { retake: null, count: null };
     }
+    if (action.type === "photo") {
+      endHandsOff(s);
+    } else if (TARGET_CHANGES.has(action.type) || action.type === "lost") {
+      // A lost photo A ends the wait too: B must not match a gone A.
+      s.handsOff = HANDS_OFF_IDLE;
+    }
     if (
       (action.type === "photo" && s.planRun?.slot === action.slot) ||
       action.type === "reset" ||
@@ -538,6 +497,14 @@ const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
   "reset",
 ]);
 
+/** Ends an armed or waiting hands-off photo; that photo A stays named. */
+function endHandsOff(s: Draft): void {
+  const p = s.handsOff.phase;
+  if (p === "armed" || p === "waiting") {
+    s.handsOff = { ...s.handsOff, phase: "off", still: null, text: "" };
+  }
+}
+
 /** The current plan slot and its record, if any. */
 function currentSlot(s: Draft) {
   const slot = planSlots(s.plan)[s.plan.current];
@@ -548,83 +515,12 @@ const slice = createSlice({
   name: "featureMatch",
   initialState: initialFeatureMatchState({ session: "" }),
   reducers: {
-    /** The pair selector or the spot field changed. */
-    selectorChanged(
-      s: Draft,
-      a: PayloadAction<{ pair: unknown; spot: unknown }>,
-    ) {
-      const { pair, spot } = a.payload;
-      if (!isSelectorKey(pair) || !isSpot(spot)) {
-        return;
-      }
-      s.progress = {
-        ...s.progress,
-        pair,
-        spot,
-        lastPair: pair === FLAT_MODE.key ? s.progress.lastPair : pair,
-      };
-    },
-    /** Exit of the flat mode: the pair picked before it comes back. */
-    flatExited(s: Draft) {
-      s.progress = { ...s.progress, pair: s.progress.lastPair };
-    },
     cameraChanged(s: Draft, a: PayloadAction<boolean>) {
       s.camera = a.payload;
-    },
-    /**
-     * A photo was taken. Photo A starts a new pair (new running number,
-     * photo B cleared); photo B of a pair any of whose files was
-     * downloaded is a new take (new running number), and gets the light
-     * check. Either withdraws the run and its files. Refused while busy,
-     * for photo B without A, in the flat mode, and for bad sizes.
-     */
-    photoTaken(
-      s: Draft,
-      a: PayloadAction<{ which: "a" | "b"; photo: PhotoMeta }>,
-    ) {
-      const { which, photo } = a.payload;
-      if (
-        s.busy !== "idle" ||
-        s.progress.pair === FLAT_MODE.key ||
-        (which === "b" && (s.photos.a === null || s.pairInProgress === null)) ||
-        !isSize(photo.width) ||
-        !isSize(photo.height) ||
-        !isMean(photo.greyMean)
-      ) {
-        return;
+      const p = s.handsOff.phase;
+      if (!a.payload && (p === "armed" || p === "waiting")) {
+        s.handsOff = HANDS_OFF_IDLE;
       }
-      setStatus(
-        s,
-        which,
-        `taken, ${String(photo.width)}x${String(photo.height)}`,
-      );
-      s.cameraRun = "none";
-      s.resultsId = null;
-      clearSaved(s, AFTER_THE_RUN);
-      s.light = null;
-      if (which === "a") {
-        const sequence = s.progress.sequence + 1;
-        s.progress = { ...s.progress, sequence };
-        s.pairInProgress = pairTag(s.progress.pair, s.progress.spot, sequence);
-        s.pairNote = { kind: "now", tag: s.pairInProgress };
-        s.photos = { a: photo, b: null };
-        setStatus(s, "b", "not taken");
-        setStatus(s, "run", "waiting for photo B");
-        return;
-      }
-      s.photos = { ...s.photos, b: photo };
-      const tag = s.pairInProgress!;
-      if (tag.sequence <= s.progress.advancedFor) {
-        const sequence = s.progress.sequence + 1;
-        s.progress = { ...s.progress, sequence };
-        s.pairInProgress = { ...tag, sequence };
-        s.pairNote = { kind: "now", tag: s.pairInProgress };
-      }
-      s.light = lightCheck(
-        s.pairInProgress!.pair,
-        s.photos.a!.greyMean,
-        photo.greyMean,
-      );
     },
     /** A run or the speed test starts; refused unless idle. */
     runStarted(s: Draft, a: PayloadAction<RunKind>) {
@@ -632,9 +528,6 @@ const slice = createSlice({
         return;
       }
       const kind = a.payload;
-      if (kind === "camera" && (s.photos.a === null || s.photos.b === null)) {
-        return;
-      }
       if (kind === "plan") {
         const { slot, rec } = currentSlot(s);
         const st = slotStatus(rec);
@@ -644,13 +537,9 @@ const slice = createSlice({
         s.planRun = { slot: slot.id, seq: rec.seq, resultsId: null };
         s.guided = { ...s.guided, count: null };
       }
+      endHandsOff(s);
       s.busy = "running";
       s.running = kind;
-      if (kind === "camera") {
-        s.cameraRun = "running";
-        s.resultsId = null;
-        clearSaved(s, AFTER_THE_RUN);
-      }
       setStatus(s, statusOf(kind), "running");
     },
     /** A line from the run in progress, shown on its status. */
@@ -660,24 +549,7 @@ const slice = createSlice({
       }
       setStatus(s, statusOf(s.running), `running: ${a.payload}`);
     },
-    /**
-     * The synthetic run or the speed test replaces what Results shows, so
-     * the camera run it hides is withdrawn with its offered files.
-     */
-    cameraRunWithdrawn(s: Draft) {
-      if (s.cameraRun !== "done" && s.cameraRun !== "failed") {
-        return;
-      }
-      s.cameraRun = "none";
-      s.resultsId = null;
-      clearSaved(s, AFTER_THE_RUN);
-      setStatus(s, "run", "replaced by the synthetic run: tap Run again");
-    },
-    /**
-     * The run in progress ended. A camera run with results is "done" and
-     * offers its files; without results (nothing measured, or it threw)
-     * it is "failed" and Save offers the photos alone.
-     */
+    /** The run in progress ended; a plan run keeps its results' id. */
     runFinished(
       s: Draft,
       a: PayloadAction<{ text: string; resultsId: string | null }>,
@@ -692,69 +564,6 @@ const slice = createSlice({
       if (kind === "plan" && s.planRun) {
         s.planRun = { ...s.planRun, resultsId: a.payload.resultsId };
       }
-      if (kind === "camera") {
-        s.cameraRun = a.payload.resultsId !== null ? "done" : "failed";
-        s.resultsId = a.payload.resultsId;
-        setStatus(
-          s,
-          "save",
-          a.payload.resultsId !== null
-            ? "ready: tap to prepare the files"
-            : NOTHING_MEASURED,
-        );
-      }
-    },
-    saveStarted(s: Draft) {
-      if (!canSave(s)) {
-        return;
-      }
-      clearSaved(s, "preparing...");
-      s.busy = "saving";
-    },
-    saveFinished(s: Draft, a: PayloadAction<readonly Offered[]>) {
-      if (s.busy !== "saving") {
-        return;
-      }
-      s.busy = "idle";
-      s.offered = a.payload;
-      s.saved = true;
-      setStatus(s, "save", "ready: tap Download all (zip), or each file");
-    },
-    saveFailed(s: Draft) {
-      if (s.busy !== "saving") {
-        return;
-      }
-      s.busy = "idle";
-      clearSaved(s, "failed (see log)");
-    },
-    /**
-     * Any offered file was downloaded. The first time per pair the
-     * selector moves on to the next pair, unless the light check failed:
-     * that pair stays, to be taken again.
-     */
-    filesDownloaded(s: Draft) {
-      const tag = s.pairInProgress;
-      if (
-        s.offered.length === 0 ||
-        !tag ||
-        tag.sequence <= s.progress.advancedFor
-      ) {
-        return;
-      }
-      if (s.light !== null && s.light !== "ok") {
-        s.progress = { ...s.progress, advancedFor: tag.sequence };
-        s.pairNote = { kind: "kept", tag };
-        return;
-      }
-      const next = nextPair(tag.pair, tag.spot);
-      s.progress = {
-        ...s.progress,
-        advancedFor: tag.sequence,
-        pair: isSelectorKey(next.key) ? next.key : s.progress.pair,
-        spot: next.spot,
-        lastPair: isSelectorKey(next.key) ? next.key : s.progress.lastPair,
-      };
-      s.pairNote = { kind: "next", tag, next };
     },
     statusSet(s: Draft, a: PayloadAction<{ slot: StatusSlot; text: string }>) {
       setStatus(s, a.payload.slot, a.payload.text);
@@ -829,6 +638,7 @@ const slice = createSlice({
         ...s.guided,
         retake: s.guided.retake === which ? null : which,
       };
+      endHandsOff(s);
     },
     /**
      * A countdown second, or null to end it (taken or cancelled). Refused
@@ -856,6 +666,94 @@ const slice = createSlice({
         return;
       }
       s.guided = { ...s.guided, count: { shot: c.shot, left: c.left } };
+      endHandsOff(s);
+    },
+    /**
+     * Photo B starts waiting to take itself, from page time `t`; refused
+     * unless `handsOffDue` and `t` is finite.
+     */
+    handsOffArmed(s: Draft, a: PayloadAction<number>) {
+      const t = a.payload;
+      if (!Number.isFinite(t) || !handsOffDue(s)) {
+        return;
+      }
+      const { slot, rec } = currentSlot(s);
+      const kind = slot ? handsOffKind(slot.key) : null;
+      if (!slot || !rec?.a || kind === null) {
+        return;
+      }
+      s.handsOff = {
+        phase: "armed",
+        slot: slot.id,
+        a: rec.a.id,
+        still: stillStart(t, kind === "move"),
+        text: HANDS_OFF_TEXT[kind],
+      };
+    },
+    /**
+     * A motion reading, or a missing one (rate null) from the page's
+     * watchdog: only while armed or waiting and idle. The detector
+     * validates it; readings lost end the wait as "failed".
+     */
+    handsOffSample(s: Draft, a: PayloadAction<MotionSample>) {
+      const h = s.handsOff;
+      const p = a.payload as MotionSample | null;
+      if (
+        (h.phase !== "armed" && h.phase !== "waiting") ||
+        !h.still ||
+        s.busy !== "idle" ||
+        !p ||
+        typeof p.t !== "number"
+      ) {
+        return;
+      }
+      const before = plain(h.still);
+      // Checked before the step as well: a reading far ahead in time
+      // would set the clock past every later one and freeze the wait.
+      const st = stillStep(before, p);
+      if (readingsLost(before, p.t) || readingsLost(st, p.t)) {
+        s.handsOff = {
+          ...h,
+          phase: "failed",
+          still: null,
+          text: HANDS_OFF_TEXT.lost,
+        };
+        return;
+      }
+      const phase =
+        !st.seen || !st.moved ? "armed" : isStill(st) ? "taking" : "waiting";
+      if (st === before && phase === h.phase) {
+        return;
+      }
+      s.handsOff = {
+        ...h,
+        phase,
+        still: phase === "taking" ? null : st,
+        text:
+          phase === "armed"
+            ? h.text
+            : phase === "taking"
+              ? HANDS_OFF_TEXT.taking
+              : HANDS_OFF_TEXT.waiting,
+      };
+    },
+    /** How the photo the wait asked for went; only while "taking". */
+    handsOffShot(s: Draft, a: PayloadAction<"taken" | "refused" | "failed">) {
+      const r = a.payload;
+      if (
+        s.handsOff.phase !== "taking" ||
+        (r !== "taken" && r !== "refused" && r !== "failed")
+      ) {
+        return;
+      }
+      s.handsOff = { ...s.handsOff, phase: r, text: HANDS_OFF_TEXT[r] };
+    },
+    /** The drawer opened: the wait stops, and arms again once it closes. */
+    handsOffPaused(s: Draft) {
+      const p = s.handsOff.phase;
+      if (p === "armed" || p === "waiting") {
+        s.handsOff = HANDS_OFF_IDLE;
+      }
     },
     /** Download all starts packing; refused unless idle with a complete pair. */
     runZipStarted(s: Draft) {

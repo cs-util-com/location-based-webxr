@@ -87,10 +87,12 @@ export interface WalkFocusCues {
    *  their key; on the scene, they leave it). Cheap per frame:
    *  it only moves and scales the meshes it keeps. */
   update(cue: WalkFocusCue | null): void;
-  /** Where a scene-root NUE point stands as the cues show it: through
-   *  their anchor's correction still waiting in view (the breadcrumbs aim
-   *  at it); `nue` itself while they stand on the scene, or none shows. */
-  shownAt(nue: Nue): Nue;
+  /** Where station `id`'s scene-root NUE spot stands as the cues show it:
+   *  through their anchor's correction still waiting in view (the
+   *  breadcrumbs aim at it); `nue` itself while they stand on the scene,
+   *  or in another station's key (a focus change the cue has not reached
+   *  yet, or a null cue that kept the old key). */
+  shownAt(id: string, nue: Nue): Nue;
 }
 
 /**
@@ -130,8 +132,9 @@ export function createWalkFocusCues(deps: {
    *  station key it stands in. */
   let anchored: AnchoredRoot | null = null;
   let anchoredId: string | null = null;
-  /** The anchor parent that refused them: not asked again (each update
-   *  would log) until they are taken away. */
+  /** The anchor parent whose refusal was logged: asked again on each
+   *  update (its binding may come later), quietly, until they are taken
+   *  away. */
   let refused: Object3D | null = null;
   /** The radius the anchor's bounds were last read for. */
   let boundsFoundM = 0;
@@ -167,9 +170,9 @@ export function createWalkFocusCues(deps: {
   }
 
   return {
-    shownAt(nue) {
+    shownAt(id, nue) {
       const scene = deps.getScene();
-      if (anchored === null || scene === null) return nue;
+      if (anchored === null || anchoredId !== id || scene === null) return nue;
       const p = new Vector3(nue[0], nue[1], nue[2]);
       anchored.root.updateWorldMatrix(true, false);
       anchored.root.localToWorld(p);
@@ -206,12 +209,18 @@ export function createWalkFocusCues(deps: {
         boundsFoundM = cue.foundM;
         return;
       }
-      if (parent !== null && parent !== refused) {
+      if (parent !== null) {
         // Placed in the wrapper first: the anchor's first bounds see both.
         const wrapper = new Group();
         wrapper.name = "walk-focus-anchor";
         place(wrapper, cue);
-        anchored = anchorRoot(parent, stationAnchorKey(cue.id), wrapper);
+        anchored = anchorRoot(
+          parent,
+          stationAnchorKey(cue.id),
+          wrapper,
+          undefined,
+          { warn: parent !== refused },
+        );
         if (anchored !== null) {
           anchoredId = cue.id;
           boundsFoundM = cue.foundM;
