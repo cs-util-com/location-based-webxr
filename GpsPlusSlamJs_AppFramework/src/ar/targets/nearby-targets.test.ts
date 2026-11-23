@@ -752,12 +752,32 @@ describe('nearbyTargets: the live drift', () => {
 });
 
 describe('timeSlot', () => {
-  // Why this test matters: the round robin rotates by the clock alone.
-  it('rotates through n slots by period', () => {
-    expect(timeSlot(0, 1_000, 3)).toBe(0);
-    expect(timeSlot(1_000, 1_000, 3)).toBe(1);
-    expect(timeSlot(2_999, 1_000, 3)).toBe(2);
-    expect(timeSlot(3_000, 1_000, 3)).toBe(0);
+  // Why this test matters: the round robin is derived from the clock
+  // alone; within one period the slot holds still, and it is in range.
+  it('holds one slot per period, always in range', () => {
+    for (let p = 0; p < 50; p += 1) {
+      const s = timeSlot(NOW + p * 1_000, 1_000, 3);
+      expect(s).toBeGreaterThanOrEqual(0);
+      expect(s).toBeLessThan(3);
+      expect(timeSlot(NOW + p * 1_000 + 999, 1_000, 3)).toBe(s);
+    }
+  });
+
+  // Why this test matters: a caller that sees only every second or third
+  // period (a slow camera, a busy tracker) would, with a plain period
+  // count mod n, see the same few slots forever whenever the stride shares
+  // a factor with n, and starve the other targets. Every slot must still
+  // come up.
+  it('reaches every slot when only every second or third period is seen', () => {
+    for (const stride of [2, 3]) {
+      for (const n of [2, 3, 4, 6]) {
+        const seen = new Set<number>();
+        for (let p = 0; p < 300; p += stride) {
+          seen.add(timeSlot(NOW + p * 1_000, 1_000, n));
+        }
+        expect(seen.size).toBe(n);
+      }
+    }
   });
 
   // Why this test matters: defensive boundary; no slot index out of range.
@@ -766,7 +786,9 @@ describe('timeSlot', () => {
     expect(() => timeSlot(0, 1_000, 0)).toThrow(RangeError);
     expect(() => timeSlot(0, 1_000, 1.5)).toThrow(RangeError);
     expect(timeSlot(Number.NaN, 1_000, 3)).toBe(0);
-    expect(timeSlot(-1, 1_000, 3)).toBe(2);
+    const negative = timeSlot(-1, 1_000, 3);
+    expect(negative).toBeGreaterThanOrEqual(0);
+    expect(negative).toBeLessThan(3);
   });
 });
 

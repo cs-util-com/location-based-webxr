@@ -56,11 +56,17 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/tracker-capture-gate`
   `nowMs mod (1000 / hz) < captureIntervalMs`. A period at most one interval
   long wants every frame; 0 Hz never. The camera's veto does not consume
   its interval, so the first frame of a slot is captured at once and a
-  1 Hz rate gives one capture per second.
+  1 Hz rate gives one capture per second. The slot is one capture
+  interval wide: a frame source asking less often than once per interval
+  (below 8 fps at 125 ms) can step over a slow rate's slot and skip that
+  period.
 - **The route's targets:** the open targets by distance, capped at k: the
   nearest `ceil(k / 2)` always, the rest of the budget in turn over the
   others (`timeSlot` over the winning rate's period). With none open, one
-  target in turn by key order (none without targets).
+  target in turn by key order (none without targets). `timeSlot` mixes
+  the period count before `mod n`, so captures of every second slot (a
+  busy tracker, a slow camera) still reach every target; the turn is
+  spread, not a strict a, b, c order.
 
 ## Invariants and defensive measures
 
@@ -112,7 +118,8 @@ startCameraFrameCapture({
 
 - `tracker-capture-gate.test.ts`: captures per state (in gate every
   interval, about 1 Hz outside and when unknown, through a simulated
-  camera source), the routes (open codes, one code per second in turn),
+  camera source), the routes (open codes, one code per slot in turn, every
+  code reached when only every second slot is captured),
   the burst and a future hit, `forceOn()`, busy vetoes, unregister, 0 Hz
   and fast rates, validation; a fake `image` tracker (2 Hz in gate, off
   outside) beside QR: its own cadence and capped targets, QR's routes

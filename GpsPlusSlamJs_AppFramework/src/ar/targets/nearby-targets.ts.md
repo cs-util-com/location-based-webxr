@@ -40,8 +40,11 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
     skipped. A target with a non-finite position is not skipped: the GPS
     gate never opens it, its sighting still can. A non-positive or
     non-finite target accuracy reads as `defaultTargetAccM`.
-- `timeSlot(nowMs, periodMs, n)`: which of `n` rotating slots the clock is
-  in; a non-finite time gives 0, negative times wrap.
+- `timeSlot(nowMs, periodMs, n)`: which of `n` slots the clock is in,
+  constant within a period; the period count is mixed (murmur3's 32-bit
+  finaliser) before `mod n`, so a caller seeing only every m-th period
+  still reaches every slot. A non-finite time gives 0; negative times stay
+  in range.
 - `firstIndexAtOrAfter(series, fromMs)`: binary search on a series sorted by
   `t` (no shared helper existed).
 - `checkNearbyParams(p)`, `DEFAULT_NEARBY_PARAMS` (frozen).
@@ -146,7 +149,8 @@ if (r.open.length > 0) captureFrame();
     without a position, no live pose;
   - the H cap when handed the whole series ('dr' and the AR path);
   - no drift without a finite live AR position;
-  - `timeSlot`, `firstIndexAtOrAfter`, parameter validation.
+  - `timeSlot` (constant per period, every slot reached at strides 2 and
+    3), `firstIndexAtOrAfter`, parameter validation.
 - `nearby-targets.property.test.ts`: enter then band stays open, leave then
   band stays closed, band longer than H closes, monotone in both
   accuracies, never `'gps'` from one millisecond past F, invariant to

@@ -138,20 +138,39 @@ describe('createTrackerCaptureGate: one QR registration', () => {
 
     const unknown = gate(() => UNKNOWN);
     unknown.register(qr());
-    expect(unknown.kindsFor(NOW)).toEqual([{ kind: 'qr', targetIds: ['a'] }]);
-    expect(unknown.kindsFor(NOW + 1_000)).toEqual([
-      { kind: 'qr', targetIds: ['b'] },
-    ]);
-    expect(unknown.kindsFor(NOW + 2_000)).toEqual([
-      { kind: 'qr', targetIds: ['a'] },
-    ]);
+    const named = new Set<string>();
+    for (let s = 0; s < 20; s += 1) {
+      const [route] = unknown.kindsFor(NOW + s * 1_000);
+      expect(route?.targetIds).toHaveLength(1);
+      // The same code for the whole slot.
+      expect(unknown.kindsFor(NOW + s * 1_000 + 100)).toEqual([route]);
+      named.add(route!.targetIds[0]!);
+    }
+    expect([...named].sort()).toEqual(['a', 'b']);
     // Between slots, nothing is wanted.
     expect(unknown.kindsFor(NOW + 500)).toEqual([]);
   });
 
-  // Why this test matters: a decode opens the full rate for burstMs, so a
-  // lock completes at once; the gate derives it from the tracker's own last
-  // hit, so it holds no timer.
+  // Why this test matters: a camera that captures only every second slot
+  // (a busy controller, a slow frame rate) must still reach every code in
+  // turn; with 4 codes a plain slot count mod 4 would name 2 of them only.
+  it('reaches every code in turn when only every second slot is captured', () => {
+    const four = ['a', 'b', 'c', 'd'].map((key, i) => code(key, 500 + i, 0));
+    const unknown = gate(() => UNKNOWN);
+    unknown.register(qr({ targets: () => four }));
+    const named = new Set<string>();
+    for (let s = 0; s < 60; s += 2) {
+      for (const r of unknown.kindsFor(NOW + s * 1_000)) {
+        for (const id of r.targetIds) named.add(id);
+      }
+    }
+    expect([...named].sort()).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  // Why this test matters: a hit (the tracker's newest decode or
+  // detection) opens the full rate for burstMs, so a lock can complete at
+  // once; the gate derives it from the tracker's own last hit, so it holds
+  // no timer.
   it('a hit opens the full rate for burstMs, then the slow cadence returns', () => {
     const g = gate(() => gpsAt(200, 200));
     g.register(qr({ lastHitAtMs: () => NOW }));

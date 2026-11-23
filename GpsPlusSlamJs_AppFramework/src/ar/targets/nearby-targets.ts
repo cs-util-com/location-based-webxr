@@ -199,8 +199,10 @@ function byDistanceThenKey(a: OpenTarget, b: OpenTarget): number {
 }
 
 /**
- * The slot `floor(nowMs / periodMs) mod n` (0..n-1): a round robin that
- * rotates by the clock alone, with no cursor. A non-finite time is slot 0.
+ * The slot `mix(floor(nowMs / periodMs)) mod n` (0..n-1): a round robin
+ * by the clock alone, with no cursor, constant within a period. The period
+ * count is mixed first, so a caller that sees only every m-th period still
+ * reaches every slot. A non-finite time is slot 0.
  *
  * @throws RangeError when `periodMs` is not finite and positive or `n` is not
  *   a positive integer.
@@ -215,8 +217,18 @@ export function timeSlot(nowMs: number, periodMs: number, n: number): number {
     throw new RangeError(`n must be a positive integer; got ${String(n)}`);
   }
   if (!Number.isFinite(nowMs)) return 0;
-  const slot = Math.floor(nowMs / periodMs) % n;
-  return slot < 0 ? slot + n : slot;
+  return mixSlot(Math.floor(nowMs / periodMs)) % n;
+}
+
+/** A 32-bit mix (murmur3's finaliser) of a period count, so a caller that
+ *  sees only every m-th period still reaches every slot: a plain count
+ *  mod n would show n / gcd(m, n) slots only. Stateless, unsigned. */
+function mixSlot(count: number): number {
+  const high = Math.floor(count / 0x1_0000_0000);
+  let h = (count % 0x1_0000_0000) ^ Math.imul(high, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  return (h ^ (h >>> 16)) >>> 0;
 }
 
 /** The index of the first sample with `t >= fromMs` in a series sorted by

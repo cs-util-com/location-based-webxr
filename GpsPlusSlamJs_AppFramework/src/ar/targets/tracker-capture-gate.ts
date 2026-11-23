@@ -183,7 +183,9 @@ function routeOf(
 
 /** Whether a rate of `hz` wants the frame at `nowMs`: its slot is the
  *  first interval of each period; a period of at most one interval is
- *  every frame, 0 Hz never. */
+ *  every frame, 0 Hz never. The slot is one capture interval wide: a frame
+ *  source that asks less often than once per interval (below 8 fps at
+ *  125 ms) can step over a slow rate's slot and skip that period. */
 function inSlot(hz: number, nowMs: number, intervalMs: number): boolean {
   if (hz <= 0) return false;
   const periodMs = 1000 / hz;
@@ -193,7 +195,7 @@ function inSlot(hz: number, nowMs: number, intervalMs: number): boolean {
 }
 
 /** The nearest ceil(k/2) open keys always, the rest of the budget in turn
- *  over the others (a time-derived slot, no cursor). */
+ *  over the others (a time-derived, mixed slot, no cursor). */
 function capped(
   keys: readonly string[],
   k: number,
