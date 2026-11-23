@@ -35,10 +35,13 @@ import type { Pose } from './qr/qr-pose';
  * compensation that motion is read as part of the jump: at 30 deg/s and a
  * 33 ms frame, 1 deg, which is 0.17 m at 10 m from the camera (sweep in
  * `ar-space-correction.test.ts`). A static camera gives the same D either
- * way (property test). No cap on the extrapolation ratio: a ratio cap
- * measured worse for a walking user (the sidecar's ratio sweep, ratios 1 to
- * 45). Requirement on the feed: `t - tLast` at most 500 ms (ratio 45 at
- * 90 Hz); `jumpTransform` itself does not check it.
+ * way (property test). No cap on the extrapolation ratio yet: at pose noise
+ * up to 1 mm / 0.05 deg the compensation wins for a walking user at every
+ * measured ratio, but at 3 mm / 0.2 deg and a 500 ms gap at 60 or 90 Hz
+ * (ratio 30 or 45) plain wins (the sidecar's ratio sweep). The guard for
+ * that case belongs to the feed, measured with its real noise.
+ * Requirement on the feed: `t - tLast` at most 500 ms; `jumpTransform`
+ * itself does not check it.
  */
 export const COMPENSATE_CAMERA_MOTION = true;
 
@@ -158,9 +161,9 @@ function extrapolatePose(
  * frame, or with `tPrev` not before `tLast` (no measurable rate), the
  * uncompensated form is used.
  *
- * Requirement on the caller: the gap `t - tLast` is at most 500 ms. The
- * extrapolation is measured up to ratio 45 (500 ms at 90 Hz); a longer gap
- * is not checked here and stretches the measured rates further.
+ * Requirement on the caller: the gap `t - tLast` is at most 500 ms
+ * (measured as ratio 15 at 30 Hz, 30 at 60 Hz and 45 at 90 Hz); a longer
+ * gap is not checked here and stretches the measured rates further.
  */
 export function jumpTransform(
   jump: RelocalizationJump,

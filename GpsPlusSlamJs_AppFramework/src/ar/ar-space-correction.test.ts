@@ -126,6 +126,24 @@ function seededRandom(seed: number): () => number {
   };
 }
 
+/**
+ * The measured verdict of one ratio-sweep cell (see the sweep's comment):
+ * still users favour plain; walkers favour compensation beyond ratio 4,
+ * except at 3 mm jitter and a 500 ms gap at 60 or 90 Hz, where plain wins
+ * for a 10 deg/s turn. Other cells are reported, not pinned.
+ */
+function pinnedVerdict(
+  motion: { walkMS: number; rateDegS: number },
+  jitterM: number,
+  ratio: number,
+  measured: 'comp' | 'plain'
+): 'comp' | 'plain' {
+  if (motion.walkMS === 0) return 'plain';
+  if (ratio <= 4) return measured;
+  if (jitterM < 0.003 || ratio <= 15) return 'comp';
+  return motion.rateDegS === 10 ? 'plain' : measured;
+}
+
 /** Standard normal sample (Box-Muller). */
 function gaussian(rng: () => number): number {
   const u = Math.max(rng(), 1e-12);
@@ -224,16 +242,25 @@ describe('ar-space-correction', () => {
     // measures, per ratio (t - tLast) / (tLast - tPrev), the error of the
     // compensated and the plain D under seeded jitter, for a still user and
     // two walking ones, so a cap on the ratio is decided on numbers.
-    // Parameters: measured interval 33 ms; ratios 1, 2, 4, 6, 10, 15, 30
-    // and 45 (a gap of 500 ms is ratio 15 at 30 Hz, 30 at 60 Hz and 45 at
-    // 90 Hz); jitter per pose (position sigma,
+    // Parameters: ratios 1, 2, 4, 6, 10 and 15 at a measured interval of
+    // 33 ms (30 Hz), ratio 30 at 16.7 ms (60 Hz) and ratio 45 at 11.1 ms
+    // (90 Hz), so the three longest gaps are each 500 ms, the longest the
+    // feed may hand over; jitter per pose (position sigma,
     // rotation sigma per axis) 0.5 mm / 0.01 deg, 1 mm / 0.05 deg and
     // 3 mm / 0.2 deg; 300 seeds per cell; residual at 10 m from the camera.
-    // Verdict (no cap): beyond ratio 4 the compensation beats the plain D
-    // for both walking users at every jitter level, and loses only for a
-    // still user, who loses at ratios 1 to 4 as well. So the ratio does not
-    // separate the cases a cap would serve; the camera's motion does.
-    const RATIOS = [1, 2, 4, 6, 10, 15, 30, 45];
+    // Verdict (no ratio cap yet): a still user is better off plain at
+    // every ratio. A walking user is better off compensated beyond ratio 4
+    // at a jitter of 1 mm / 0.05 deg or less, and at 3 mm / 0.2 deg up to
+    // ratio 15 at 30 Hz. At 3 mm / 0.2 deg and a 500 ms gap at 60 or 90 Hz
+    // the amplified noise wins: plain is better for the walker turning
+    // 10 deg/s (ratio 30 and 45) and for the one turning 30 deg/s at ratio
+    // 45. Which jitter the real feed has decides the guard; it is measured
+    // with the feed, not here. These cells are pinned below.
+    const CASES = [
+      ...[1, 2, 4, 6, 10, 15].map((ratio) => ({ ratio, dtMs: 33 })),
+      { ratio: 30, dtMs: 1000 / 60 },
+      { ratio: 45, dtMs: 1000 / 90 },
+    ];
     const JITTERS = [
       { posM: 0.0005, rotDeg: 0.01 },
       { posM: 0.001, rotDeg: 0.05 },
@@ -249,13 +276,13 @@ describe('ar-space-correction', () => {
       const rows: string[] = [];
       for (const motion of MOTIONS) {
         for (const jitter of JITTERS) {
-          for (const ratio of RATIOS) {
+          for (const { ratio, dtMs } of CASES) {
             const comp: number[] = [];
             const plain: number[] = [];
             const rng = seededRandom(1 + ratio * 1000 + jitter.rotDeg * 1e5);
             for (let s = 0; s < SEEDS; s++) {
               const jump = walkingJump(
-                33,
+                dtMs,
                 motion.rateDegS,
                 ratio,
                 { rng, ...jitter },
@@ -274,14 +301,13 @@ describe('ar-space-correction', () => {
             // A still camera favours the plain form; a moving one at a long
             // gap favours compensation; other cells are reported only.
             const better = compP50 < plainP50 ? 'comp' : 'plain';
-            const pinned =
-              motion.walkMS === 0 ? 'plain' : ratio > 4 ? 'comp' : better;
+            const pinned = pinnedVerdict(motion, jitter.posM, ratio, better);
             expect(`${motion.name} ratio ${ratio}: ${better}`).toBe(
               `${motion.name} ratio ${ratio}: ${pinned}`
             );
             rows.push(
               `${motion.name} jitter=${jitter.posM * 1000}mm/${jitter.rotDeg}deg ` +
-                `ratio=${ratio}: comp p50=${percentile(comp, 0.5).toFixed(3)} ` +
+                `ratio=${ratio} dt=${dtMs.toFixed(1)}ms: comp p50=${percentile(comp, 0.5).toFixed(3)} ` +
                 `p95=${percentile(comp, 0.95).toFixed(3)} ` +
                 `plain p50=${percentile(plain, 0.5).toFixed(3)} ` +
                 `p95=${percentile(plain, 0.95).toFixed(3)}`
@@ -290,9 +316,7 @@ describe('ar-space-correction', () => {
         }
       }
       report(`extrapolation ratio sweep (m at 10 m):\n${rows.join('\n')}`);
-      expect(rows).toHaveLength(
-        MOTIONS.length * JITTERS.length * RATIOS.length
-      );
+      expect(rows).toHaveLength(MOTIONS.length * JITTERS.length * CASES.length);
     });
   });
 
