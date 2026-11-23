@@ -34,13 +34,15 @@ export interface AnchoredRoot {
  * Null when it cannot (no alignment binding yet, a root nested in another
  * anchor): logged, and the caller stands its content on the scene root.
  * `onCommit` runs in the pass that places the key, so camera-relative
- * work can follow in that frame.
+ * work can follow in that frame. `warn: false` skips the log, for a
+ * caller that asks again after a refusal it already logged.
  */
 export function anchorRoot(
   parent: Object3D,
   key: string,
   root: Object3D,
   onCommit?: () => void,
+  { warn = true }: { readonly warn?: boolean } = {},
 ): AnchoredRoot | null {
   try {
     const anchor = deferredAnchor(parent, key);
@@ -57,7 +59,7 @@ export function anchorRoot(
       },
     };
   } catch (error: unknown) {
-    log.warn(`"${key}" could not stand as an anchor`, error);
+    if (warn) log.warn(`"${key}" could not stand as an anchor`, error);
     root.removeFromParent();
     return null;
   }

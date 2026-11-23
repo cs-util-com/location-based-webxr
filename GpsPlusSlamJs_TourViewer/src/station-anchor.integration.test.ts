@@ -15,7 +15,7 @@
  * the frame before in a frame where the station commits (between commits
  * the page's own tick places it).
  */
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
 import {
@@ -855,6 +855,81 @@ describe("the walk's focus beacon and ring", () => {
     c.marks.onGuide(visitor, target);
     for (const b of dotBearings()) {
       expect(b).toBeCloseTo(bearing(CUE.at[0], CUE.at[2]), 2);
+    }
+  });
+
+  /** The dots' bearings from the visitor's foot, as the breadcrumbs lie. */
+  function bearingsOf(w: World): number[] {
+    const dots = w.scene.getObjectByName("station-breadcrumbs")!.children;
+    expect(dots.length).toBeGreaterThan(0);
+    return dots.map((d) => Math.atan2(d.position.z, d.position.x));
+  }
+  const VISITOR: [number, number, number] = [0, 1.5, 0];
+  const TO_S = { id: "s", to: CUE.at, stopM: 5 };
+  const S_BEARING = Math.atan2(CUE.at[2], CUE.at[0]);
+
+  it("lead the breadcrumbs to the new focus's own place in the frame its focus changes", async () => {
+    // Why: the guide hands the breadcrumbs their target before the cue,
+    // so in the frame of a change from A to B the beacon still stands in
+    // A's key. B's spot taken through A's held correction would lead the
+    // dots past B; B's station has landed, so its place is its NUE.
+    const w = await world();
+    const c = cues(w);
+    holdA(w, c);
+    // The guide's order: onGuide first, then onFocusCue.
+    c.marks.onGuide(VISITOR, TO_S);
+    for (const b of bearingsOf(w)) expect(b).toBeCloseTo(S_BEARING, 9);
+    c.marks.onFocusCue(CUE);
+    c.marks.onGuide(VISITOR, TO_S);
+    for (const b of bearingsOf(w)) expect(b).toBeCloseTo(S_BEARING, 9);
+  });
+
+  it("lead the breadcrumbs to the new focus's place while no cue shows, its old key kept", async () => {
+    // Why: a null cue keeps the beacon in its old focus's key, hidden, so
+    // while the guide shows no distance the mismatch would last frame
+    // after frame, not one frame only.
+    const w = await world();
+    const c = cues(w);
+    holdA(w, c);
+    c.marks.onFocusCue(null);
+    for (let i = 0; i < 3; i += 1) {
+      c.marks.onGuide(VISITOR, TO_S);
+      c.marks.onFocusCue(null);
+      for (const b of bearingsOf(w)) expect(b).toBeCloseTo(S_BEARING, 9);
+    }
+  });
+
+  it("stand in their station's key once the binding exists, after a first cue before it, and say so once", () => {
+    // Why: the guide can send its first cue before the AR world group is
+    // bound. Refused then, the beacon and ring must not stay on the scene
+    // root for the session: they ask again once the binding exists, and
+    // the refusal is still logged only once.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const scene = new THREE.Scene();
+      const group = new THREE.Group();
+      scene.add(group);
+      const marks = wireSceneMarks({
+        getScene: () => scene,
+        getStationAnchorParent: () => group,
+      });
+      marks.onFocusCue(CUE);
+      marks.onFocusCue(CUE);
+      const beacon = scene.getObjectByName(WALK_BEACON_NAME)!;
+      expect(beacon.parent).toBe(scene);
+      enableArWorldGroupAlignment({
+        store: makeStore(40),
+        arWorldGroup: group,
+      });
+      marks.onFocusCue(CUE);
+      expect(beacon.parent!.parent).toBe(group);
+      expect(scene.getObjectByName(WALK_FOCUS_RING_NAME)!.parent).toBe(
+        beacon.parent,
+      );
+      const refusals = warn.mock.calls.filter((c) => c[0] === "[AnchorRoot]");
+      expect(refusals).toHaveLength(1);
+    } finally {
+      warn.mockRestore();
     }
   });
 });

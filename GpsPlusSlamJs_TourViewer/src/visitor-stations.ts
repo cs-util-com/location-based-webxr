@@ -889,7 +889,7 @@ export function wireSceneMarks(
         visitor,
         target === null
           ? null
-          : { ...target, to: focusCues.shownAt(target.to) },
+          : { ...target, to: focusCues.shownAt(target.id, target.to) },
       );
     },
     onFocusCue: (cue) => {
