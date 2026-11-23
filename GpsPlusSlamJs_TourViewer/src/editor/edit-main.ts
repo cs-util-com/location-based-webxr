@@ -906,6 +906,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => ReturnType<Editor3dView["characterCheck"]> | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
+        picked: () => readonly string[];
         dropTour: (reason: string) => void;
         deleteSelection: (id: string) => void;
       };
@@ -957,6 +958,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dCharacter: (id) => shown3d?.characterCheck(id) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
+    picked: () => ui().picked,
     // What a late integrity failure does to the open tour (`openFile`'s
     // `onIntegrityFailure`), at the moment an e2e chooses.
     dropTour,
@@ -1247,7 +1249,19 @@ function runStep(which: "undo" | "redo"): void {
   // A drag or a held key of the 3D view ends unwritten: the step acts on
   // the tour as it was.
   shown3d?.cancelGesture();
+  const tourNow = () => manifestToWrite(store.getState().tourDocument);
+  const heldBy = selectedStationOf(ui().selected, tourNow());
   const outcome = which === "undo" ? editor.undo() : editor.redo();
+  // A step that took the selected row away (an undone paste's copy) leaves
+  // its station selected, so a Paste after it still has a target.
+  const station = heldBy === null ? null : `${STATION_PREFIX}${heldBy}`;
+  if (
+    station !== null &&
+    selectedStationOf(ui().selected, tourNow()) === null &&
+    selectedStationOf(station, tourNow()) !== null
+  ) {
+    select(station);
+  }
   refresh();
   if (outcome.kind === "refused") {
     // A delete toast stays: its Undo can be tapped again once the save ends.
@@ -1653,12 +1667,19 @@ async function pasteSelection(): Promise<void> {
     run: () => mine.paste(plan),
     made: (outcome) => {
       showRowsOf(plan.toStationId);
-      const [note] = outcome.objects;
-      const [folder] = outcome.folders;
-      select(
-        note ?? (folder === undefined ? null : `${FOLDER_PREFIX}${folder}`),
-      );
-      const n = outcome.objects.length + outcome.folders.length;
+      // Every copy selected, as its source was picked: a Ctrl+X moves them
+      // on, a Delete takes them back.
+      const copies = [
+        ...outcome.objects,
+        ...outcome.folders.map((id) => `${FOLDER_PREFIX}${id}`),
+      ];
+      const [only] = copies;
+      if (copies.length > 1) {
+        store.dispatch(editorViewActions.picked({ ids: copies }));
+      } else {
+        select(only ?? null);
+      }
+      const n = copies.length;
       toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
       tourChanged();
     },

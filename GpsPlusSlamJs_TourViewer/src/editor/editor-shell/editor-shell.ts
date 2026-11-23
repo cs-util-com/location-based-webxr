@@ -64,7 +64,7 @@ import {
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
-import { copyOf, cutOf, pasteOf } from "../clipboard.js";
+import { copyOf, cutOf, type PasteOutcome, pasteOf } from "../clipboard.js";
 import {
   FOLDER_PREFIX,
   STATION_PREFIX,
@@ -1145,17 +1145,11 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     const paste = pasteOf(doc, ui);
     const running = ui.duplicating;
     setItemDisabled(top.editPaste, running || paste.kind === "refused");
-    const called = (id: string) =>
-      manifest()?.stations.find((s) => s.id === id)?.title ?? "the station";
     top.editPaste.title = running
       ? EDIT_STILL_RUNNING
       : paste.kind === "refused"
         ? paste.reason
-        : paste.kind === "reorder"
-          ? `Move after ${called(paste.afterStationId)} (Ctrl+V)`
-          : paste.kind === "pasteStations"
-            ? `Paste after ${called(paste.afterStationId)} (Ctrl+V)`
-            : `${paste.kind === "move" ? "Move to" : "Paste into"} ${called(paste.toStationId)} (Ctrl+V)`;
+        : pasteTitle(paste);
     const duplicable = barActions(model).some((a) => a.action === "duplicate");
     setItemDisabled(top.editDuplicate, running || !duplicable);
     top.editDuplicate.title = running
@@ -1170,9 +1164,43 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       : "Select something to delete it";
   };
 
-  /** The bottom bar's power actions for the selection; a draw keeps the
-   *  focus on the action that had it. */
+  /** What a Paste that `pasteOf` allows would do, as its title. */
+  const pasteTitle = (paste: Exclude<PasteOutcome, { kind: "refused" }>) => {
+    const called = (id: string) =>
+      manifest()?.stations.find((s) => s.id === id)?.title ?? "the station";
+    if (paste.kind === "reorder") {
+      return `Move after ${called(paste.afterStationId)} (Ctrl+V)`;
+    }
+    if (paste.kind === "pasteStations") {
+      return `Paste after ${called(paste.afterStationId)} (Ctrl+V)`;
+    }
+    const verb = paste.kind === "move" ? "Move to" : "Paste into";
+    return `${verb} ${called(paste.toStationId)} (Ctrl+V)`;
+  };
+
+  /** The bottom bar's Paste (a phone has no Ctrl+V and its Edit menu sits
+   *  behind a fold): shown only while the clipboard would paste onto the
+   *  selection and no paste still runs. */
+  const pasteAct = (doc: TourDocumentState, ui: EditorViewState) => {
+    const paste = pasteOf(doc, ui);
+    if (paste.kind === "refused" || ui.duplicating) return [];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "sact";
+    button.dataset["bar"] = "paste";
+    button.title = pasteTitle(paste);
+    button.setAttribute("aria-label", "Paste");
+    const words = document.createElement("span");
+    words.className = "lbl";
+    words.textContent = "Paste";
+    button.append(shellIcon("paste"), words);
+    return [button];
+  };
+
+  /** The bottom bar's power actions for the selection, and its Paste; a
+   *  draw keeps the focus on the action that had it. */
   const drawActs = (model: InspectorModel | null) => {
+    const { tourDocument: doc, editorView: ui } = state();
     const active = document.activeElement;
     const had =
       active instanceof HTMLElement && bar.acts.contains(active)
@@ -1192,6 +1220,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         button.append(shellIcon(BAR_ICON[act.action]), words);
         return button;
       }),
+      ...pasteAct(doc, ui),
     );
     if (had !== undefined) {
       bar.acts.querySelector<HTMLElement>(`[data-bar="${had}"]`)?.focus();
@@ -1242,14 +1271,15 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         row.dataset["cut"] = "true";
     }
     const rows = groupRows(doc, ui);
-    drawSelectionBar(
-      tree.selbar,
-      selectionBarOf({
+    drawSelectionBar(tree.selbar, {
+      ...selectionBarOf({
         rows,
         selectMode: ui.selectMode,
         refusal: pickedGroupRefusal(doc, rows),
       }),
-    );
+      copy: copyOf(doc, ui).kind === "copy",
+      cut: cutOf(doc, ui).kind === "cut",
+    });
     tree.selectMode.setAttribute("aria-pressed", String(ui.selectMode));
   };
 
@@ -1978,6 +2008,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       ?.dataset["selbar"];
     if (what === "group") groupPicked();
     else if (what === "ungroup") ungroupPicked();
+    else if (what === "copy") deps.clipboard.copy();
+    else if (what === "cut") deps.clipboard.cut();
     else if (what === "done") {
       store.dispatch(editorViewActions.selectModeSet({ on: false }));
     }
@@ -2271,6 +2303,8 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       action === "copyPosition"
     ) {
       runBarAction(action);
+    } else if (action === "paste") {
+      deps.clipboard.paste();
     }
   });
   top.list.addEventListener("click", showList);

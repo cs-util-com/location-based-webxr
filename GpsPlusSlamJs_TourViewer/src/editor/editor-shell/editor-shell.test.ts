@@ -2787,6 +2787,37 @@ describe("the tree's plain folders", () => {
     expect(titles()).toEqual(["Benches"]);
     shell.hide();
   });
+
+  // Why: a phone has no Ctrl+C, X or V and its Edit menu sits behind a
+  // fold, so the picks' own bar must copy and cut them, and the bottom bar
+  // must paste once a target is selected - offered only when it would.
+  it("copies and cuts the picks from their bar, and pastes from the bottom bar onto a valid target", () => {
+    const { store, deps, shell } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    const selbar = (what: string) =>
+      bar().querySelector<HTMLButtonElement>(`[data-selbar="${what}"]`);
+    expect(selbar("copy")?.disabled).toBe(false);
+    expect(selbar("cut")?.disabled).toBe(false);
+    selbar("copy")?.click();
+    expect(deps.clipboard.copy).toHaveBeenCalledOnce();
+    selbar("cut")?.click();
+    expect(deps.clipboard.cut).toHaveBeenCalledOnce();
+
+    const paste = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-acts [data-bar="paste"]',
+      );
+    store.dispatch(editorViewActions.selected({ id: "station:w" }));
+    expect(paste()).toBeNull();
+    store.dispatch(editorViewActions.copied({ ids: ["p"] }));
+    expect(paste()?.title).toBe("Paste into Station w (Ctrl+V)");
+    paste()?.click();
+    expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    store.dispatch(editorViewActions.selected({ id: null }));
+    expect(paste()).toBeNull();
+    shell.hide();
+  });
 });
 
 describe("the add menu's Character", () => {

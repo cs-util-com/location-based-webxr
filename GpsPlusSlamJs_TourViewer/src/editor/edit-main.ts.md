@@ -688,7 +688,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   no GPS" setting, the details, a restore. `runStep` cancels a 3D
   gesture, commits the inspector's typing, ends the delete toast, takes the step and says it in a
   toast ("Undone: the delete of "Fountain".", "Nothing to undo.", or the
-  session's refusal while a save runs); a step is an edit, so it tells
+  session's refusal while a save runs); a step that took the selected row
+  away (an undone paste's copy) selects the station that held it, so a
+  Paste after it still has a target; a step is an edit, so it tells
   autosave. In a field (the inspector's, a dialog's input) and
   while a dialog shows, the keys are left to the browser: the field's own
   undo. A photo brought back after a save wrote its delete is drawn from
@@ -853,7 +855,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `pasteSelection` (Ctrl+V, the Edit menu's Paste) pastes the
     clipboard into the station the selection names (`pasteOf`, then the
     session's `paste`): one undo step, the station's rows unfolded, the
-    first copy selected (a second Ctrl+V pastes again into the same
+    copy selected, several copies picked (`picked`, as their sources
+    were; a second Ctrl+V pastes again into the same
     station; a copy pasted into another station stands where its original
     stands in its own, so repeated pastes stack on the previous copy),
     "Pasted a copy" or "Pasted <n> copies"; while the pictures are read a

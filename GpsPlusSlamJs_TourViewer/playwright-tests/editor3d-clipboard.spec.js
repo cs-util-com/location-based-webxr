@@ -98,8 +98,13 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await expect.poll(() => childCount(page, to.id)).toBe(was + 1);
 
   // The Edit menu's Paste does what Ctrl+V does. The undo took the
-  // selected copy away, so the station is selected again as the target.
-  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
+  // selected copy away and left its station selected, so the target is
+  // still there.
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.selected(),
+    ),
+  ).toBe(`station:${to.id}`);
   await edit.click();
   await expect(page.locator("#edit-paste")).not.toHaveAttribute(
     "aria-disabled",
@@ -285,4 +290,67 @@ test("Ctrl+X and Ctrl+V move a note to another station as one step that keeps it
   await page.keyboard.press("Control+z");
   await expect.poll(() => holds(page, from.id, note.id)).toBe(true);
   expect(await holds(page, to.id, note.id)).toBe(false);
+});
+
+test("a copied station is pasted after the selected one, and two pasted notes are both selected", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const stations = /** @type {any[]} */ ((await tour(page)).stations);
+  const [from, to] = stations;
+  const note = /** @type {any} */ (from?.children ?? []).find(
+    (/** @type {any} */ c) => c.kind === "shortText" || c.kind === "longText",
+  );
+  if (from === undefined || to === undefined || note === undefined) {
+    throw new Error("the sample has no text note in its first station");
+  }
+  const ids = async () =>
+    /** @type {any[]} */ ((await tour(page)).stations).map((s) => s.id);
+  const selected = () =>
+    page.evaluate(() => /** @type {any} */ (window).__tourEditor.selected());
+
+  // The first station copied, pasted with the second selected: the copy
+  // follows the second.
+  await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
+  await page.keyboard.press("Control+c");
+  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
+  await page.keyboard.press("Control+v");
+  await expect.poll(async () => (await ids()).length).toBe(stations.length + 1);
+  const order = await ids();
+  const copy = order[order.indexOf(to.id) + 1];
+  expect(stations.some((s) => s.id === copy)).toBe(false);
+  expect(await selected()).toBe(`station:${copy}`);
+
+  // Two notes in the second station (the note pasted there twice), picked
+  // and pasted into the first: both copies are selected, as their
+  // sources were.
+  await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
+  await page.locator(`#tree-body [data-select="${note.id}"]`).click();
+  await page.keyboard.press("Control+c");
+  const had = await childCount(page, to.id);
+  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
+  await page.keyboard.press("Control+v");
+  await expect.poll(() => childCount(page, to.id)).toBe(had + 1);
+  const first = await selected();
+  await page.keyboard.press("Control+v");
+  await expect.poll(() => childCount(page, to.id)).toBe(had + 2);
+  const second = await selected();
+  await page.locator(`#tree-body [data-select="${first}"]`).click();
+  await page
+    .locator(`#tree-body [data-select="${second}"]`)
+    .click({ modifiers: ["Control"] });
+  await page.keyboard.press("Control+c");
+  const was = await childCount(page, from.id);
+  await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
+  await page.keyboard.press("Control+v");
+  await expect.poll(() => childCount(page, from.id)).toBe(was + 2);
+  const picked = /** @type {string[]} */ (
+    await page.evaluate(() => /** @type {any} */ (window).__tourEditor.picked())
+  );
+  expect(picked).toHaveLength(2);
+  expect(picked).not.toContain(first);
+  expect(picked).not.toContain(second);
 });
