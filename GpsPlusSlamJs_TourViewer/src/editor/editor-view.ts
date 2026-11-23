@@ -90,10 +90,16 @@ const isIndex = (v: unknown): v is number =>
 /** The two halves of opening a tour with a scan, in their forced order. */
 export type EditorEntryStep = "opening" | "adding-scan";
 
-/** What Copy put on the editor's clipboard (`EditorViewState.clipboard`). */
+/** What Copy or Cut put on the editor's clipboard
+ *  (`EditorViewState.clipboard`): a cut is moved by its Paste, a copy
+ *  copied. */
 interface EditorClipboard {
-  readonly mode: "copy";
+  readonly mode: "copy" | "cut";
   readonly ids: readonly string[];
+  /** How often a copy was pasted, by the station pasted into; none
+   *  before its first paste. A repeated paste stands further east
+   *  (`clipboard.ts`). */
+  readonly pastes?: Readonly<Record<string, number>>;
 }
 
 export interface EditorViewState {
@@ -170,8 +176,9 @@ export interface EditorViewState {
   /** The plain folders the tree lists folded (to their row), by id: a
    *  folder is listed open until folded. */
   readonly foldedFolders: readonly string[];
-  /** The editor's own clipboard (Copy, Ctrl+C): the selection ids it
-   *  holds (an item's id, `folder:<id>`), in the order copied, or none.
+  /** The editor's own clipboard (Copy, Ctrl+C; Cut, Ctrl+X, marked as a
+   *  cut): the selection ids it holds (an item's id, `folder:<id>`,
+   *  `station:<id>`, `story:<id>`), in the order copied, or none.
    *  Ids, not content: a paste re-checks them against the tour as it is
    *  then (`clipboard.ts`). Not the system clipboard, so it never leaves
    *  this tab; the open tour's, emptied with another tour or none. */
@@ -327,17 +334,49 @@ const editorViewSlice = createSlice({
         state.entryStep = step;
       }
     },
-    /** What Copy copied, in order, repeats and blanks left out; none
-     *  empties the clipboard. Anything but a list changes nothing. */
-    copied(state, action: PayloadAction<{ ids: readonly string[] }>) {
+    /** What Copy copied (or Cut cut, `mode: "cut"`), in order, repeats
+     *  and blanks left out; none empties the clipboard. Anything but a
+     *  list changes nothing. */
+    copied(
+      state,
+      action: PayloadAction<{
+        ids: readonly string[];
+        mode?: "copy" | "cut";
+      }>,
+    ) {
       const { ids } = action.payload;
       if (!Array.isArray(ids)) return;
+      const mode = action.payload.mode === "cut" ? "cut" : "copy";
       const kept = [
         ...new Set(
           ids.filter((id): id is string => typeof id === "string" && id !== ""),
         ),
       ];
-      state.clipboard = kept.length === 0 ? null : { mode: "copy", ids: kept };
+      state.clipboard = kept.length === 0 ? null : { mode, ids: kept };
+    },
+    /** The clipboard emptied: a cut cancelled (Escape) or moved by its
+     *  Paste, or one whose source is gone. */
+    clipboardCleared(state) {
+      state.clipboard = null;
+    },
+    /** A copy on the clipboard pasted into the station `stationId`, one
+     *  more time. Nothing for a cut (moved, not copied), an empty
+     *  clipboard or a station id that is no text. */
+    clipboardPastedInto(state, action: PayloadAction<{ stationId: string }>) {
+      const { stationId } = action.payload;
+      const clipboard = state.clipboard;
+      if (
+        clipboard === null ||
+        clipboard.mode !== "copy" ||
+        typeof stationId !== "string" ||
+        stationId === ""
+      ) {
+        return;
+      }
+      clipboard.pastes = {
+        ...clipboard.pastes,
+        [stationId]: (clipboard.pastes?.[stationId] ?? 0) + 1,
+      };
     },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;

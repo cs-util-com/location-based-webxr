@@ -970,6 +970,49 @@ describe("a station item's move", () => {
   });
 });
 
+// Why: a Paste of a cut moves several items onto another station at once
+// (`moveChildren`): one step for the lot, the answers that lost their
+// jump counted for the page's toast, and a choice or a quiz among them
+// refuses the lot in words, moving nothing.
+describe("a cut pasted onto another station", () => {
+  it("moves the lot as one step counting the answers, and refuses a choice in words", async () => {
+    const { session, manifest } = await opened();
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const tour = () => manifestToWrite(store.getState().tourDocument);
+    const other = tour()?.stations[1]?.id ?? "";
+    const onto = { place: "station", station: other } as const;
+    const before = tour();
+    const revision = editor.revision();
+    expect(
+      editor.moveChildren([
+        { id: "c1", to: onto },
+        { id: "free", to: onto },
+      ]),
+    ).toEqual({
+      kind: "refused",
+      reason: expect.stringContaining("choice") as unknown,
+    });
+    expect(editor.revision()).toBe(revision);
+    expect(
+      editor.moveChildren([
+        { id: "free", to: onto },
+        { id: "l2", to: onto },
+      ]),
+      // l2 is a card, which stands free as a pin: its floor view.
+    ).toEqual({ kind: "moved", answers: 1, floored: true });
+    expect(editor.revision()).toBe(revision + 1);
+    editor.undo();
+    expect(tour()).toEqual(before);
+    await session.close();
+  });
+});
+
 describe("a station item's move, counted and kept", () => {
   /** The session over the story tour, with a draft when `stores` is given. */
   async function editorOver(stores?: ReturnType<typeof memoryDraftStores>) {

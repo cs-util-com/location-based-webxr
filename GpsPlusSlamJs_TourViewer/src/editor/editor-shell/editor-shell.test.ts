@@ -35,15 +35,15 @@ import type { DockHost, mountDockHost } from "./dock-host.js";
 import type { DockPanelId } from "./dock-layout.js";
 import {
   createEditorShell,
-  EDIT_STILL_RUNNING,
   type EditorShellDeps,
   type TypedEditOutcome,
 } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
+import { EDIT_STILL_RUNNING } from "../held-edit-flow.js";
 import {
   NOTHING_COPIED,
   NOTHING_SELECTED,
-  ONLY_NOTES_AND_FOLDERS,
+  NOTHING_TO_CUT,
 } from "../clipboard.js";
 import {
   stationContent,
@@ -194,7 +194,7 @@ function setUp() {
       duplicate: vi.fn(),
       remove: vi.fn(),
     },
-    clipboard: { copy: vi.fn(), paste: vi.fn() },
+    clipboard: { copy: vi.fn(), cut: vi.fn(), paste: vi.fn() },
     edits,
     // The real folder commands on the real store: the tree's Group and
     // Ungroup are tested through to the tour.
@@ -2787,6 +2787,45 @@ describe("the tree's plain folders", () => {
     expect(titles()).toEqual(["Benches"]);
     shell.hide();
   });
+
+  // Why: a phone has no Ctrl+C, X or V and its Edit menu sits behind a
+  // fold, so the picks' own bar must copy and cut them, and the bottom bar
+  // must paste once a target is selected - offered only when it would.
+  it("copies and cuts the picks from their bar, and pastes from the bottom bar onto a valid target", () => {
+    const { store, deps, shell } = setUpFolders();
+    click(row("p"));
+    click(row("q"), { ctrlKey: true });
+    const selbar = (what: string) =>
+      bar().querySelector<HTMLButtonElement>(`[data-selbar="${what}"]`);
+    expect(selbar("copy")?.disabled).toBe(false);
+    expect(selbar("cut")?.disabled).toBe(false);
+    selbar("copy")?.click();
+    expect(deps.clipboard.copy).toHaveBeenCalledOnce();
+    selbar("cut")?.click();
+    expect(deps.clipboard.cut).toHaveBeenCalledOnce();
+
+    const paste = () =>
+      document.querySelector<HTMLButtonElement>(
+        '#shell-acts [data-bar="paste"]',
+      );
+    store.dispatch(editorViewActions.selected({ id: "station:w" }));
+    expect(paste()).toBeNull();
+    store.dispatch(editorViewActions.copied({ ids: ["p"] }));
+    expect(paste()?.title).toBe("Paste into Station w (Ctrl+V)");
+    paste()?.click();
+    expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    // While a paste or a duplicate still runs, another would make
+    // nothing: the bar offers none.
+    store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
+    expect(paste()).toBeNull();
+    store.dispatch(
+      editorViewActions.duplicatingChanged({ duplicating: false }),
+    );
+    expect(paste()).not.toBeNull();
+    store.dispatch(editorViewActions.selected({ id: null }));
+    expect(paste()).toBeNull();
+    shell.hide();
+  });
 });
 
 describe("the add menu's Character", () => {
@@ -3105,8 +3144,7 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(disabled("edit-delete")).toBe(true);
 
     select("station:a");
-    expect(disabled("edit-copy")).toBe(true);
-    expect(item("edit-copy").title).toBe(ONLY_NOTES_AND_FOLDERS);
+    expect(disabled("edit-copy")).toBe(false);
     expect(disabled("edit-duplicate")).toBe(false);
     expect(disabled("edit-delete")).toBe(false);
     item("edit-duplicate").click();
@@ -3126,6 +3164,44 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(item("edit-paste").title).toBe("Paste into Station b (Ctrl+V)");
     item("edit-paste").click();
     expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+
+    // A copied station goes after the selected one.
+    store.dispatch(editorViewActions.copied({ ids: ["station:a"] }));
+    expect(item("edit-paste").title).toBe("Paste after Station b (Ctrl+V)");
+    shell.hide();
+  });
+
+  // Why: Cut is the menu's as Ctrl+X is the page's: offered for what
+  // the selection allows, and what it cut stays visible, dimmed in the
+  // tree, until a Paste moves it - whose title says it moves, not copies.
+  it("offers Cut, dims what is cut, and titles a Paste of it as a move", () => {
+    const { shell, store, select, deps } = setUp();
+    expect(disabled("edit-cut")).toBe(true);
+    expect(item("edit-cut").title).toBe(NOTHING_TO_CUT);
+    select("pa");
+    expect(disabled("edit-cut")).toBe(false);
+    expect(item("edit-cut").title).toBe("Cut (Ctrl+X)");
+    item("edit-cut").click();
+    expect(deps.clipboard.cut).toHaveBeenCalledOnce();
+
+    store.dispatch(editorViewActions.stationFolded({ id: "a", open: true }));
+    store.dispatch(editorViewActions.copied({ ids: ["pa"], mode: "cut" }));
+    const row = (id: string) =>
+      document.querySelector<HTMLElement>(`#tree-body [data-select="${id}"]`);
+    expect(row("pa")?.dataset["cut"]).toBe("true");
+    expect(row("station:a")?.dataset["cut"]).toBeUndefined();
+    select("station:b");
+    expect(disabled("edit-paste")).toBe(false);
+    expect(item("edit-paste").title).toBe("Move to Station b (Ctrl+V)");
+
+    store.dispatch(
+      editorViewActions.copied({ ids: ["station:a"], mode: "cut" }),
+    );
+    expect(row("station:a")?.dataset["cut"]).toBe("true");
+    expect(row("pa")?.dataset["cut"]).toBeUndefined();
+    expect(item("edit-paste").title).toBe("Move after Station b (Ctrl+V)");
+    store.dispatch(editorViewActions.clipboardCleared());
+    expect(row("station:a")?.dataset["cut"]).toBeUndefined();
     shell.hide();
   });
 

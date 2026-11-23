@@ -62,7 +62,9 @@ stationsHead, fold, body }` (`#shell-tree`, `#tree-stations`,
   (`#tree-selbar`) from `selectionBarOf` (`folder-commands.ts`): hidden
   when `show` is false; else `.cnt` ("Tick rows" or "N selected"), the
   `.abtn.primary` Group (`data-selbar="group"`), Ungroup
-  (`data-selbar="ungroup"`), Done in the Select mode
+  (`data-selbar="ungroup"`), Copy and Cut (`data-selbar="copy"`,
+  `"cut"`; the model's `copy` and `cut`, from `../clipboard.ts`: a phone
+  has no Ctrl+C or X), Done in the Select mode
   (`data-selbar="done"`), then `.why` when there is a line to say. A
   button that cannot act is drawn disabled, not left out, and the focus
   stays on the button that had it.

@@ -38,6 +38,9 @@ describe("placeShellIcons", () => {
       "right",
       "up",
       "down",
+      // The phone's Cut and Paste buttons (Copy draws `dup`).
+      "cut",
+      "paste",
     ] as const) {
       expect(shellIcon(name).childElementCount, name).toBeGreaterThan(0);
     }

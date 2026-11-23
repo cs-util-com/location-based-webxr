@@ -1,4 +1,6 @@
 // @ts-check
+import { readFileSync } from "node:fs";
+
 import { expect, test } from "@playwright/test";
 
 import {
@@ -1066,7 +1068,47 @@ async function crowdTheBar(page) {
 
 /** Where the top bar folds a step (`editor-shell.css`): each is checked
  *  at its edges. */
-const FOLD_STEPS = [840, 780, 610, 420];
+const FOLD_STEPS = [840, 780, 720, 610, 420];
+
+/** The edges under 420 px where only the tour name's minimum narrows,
+ *  checked by the widths 390 and 320 rather than at their edges. */
+const NAME_EDGES_UNDER_420 = [440, 375];
+
+/**
+ * The widths of the top bar's fold section of `editor-shell.css`: its
+ * `@media (width <= Npx)` blocks, in order, up to the first top-level
+ * rule that is not one.
+ * @param {string} css
+ */
+function foldSectionWidths(css) {
+  const start = css.indexOf("/* --- the top bar's fold steps");
+  if (start < 0) throw new Error("no fold section in editor-shell.css");
+  const chunks = css.slice(start).split(/\n\n(?=\S)/);
+  const widths = [];
+  for (const chunk of chunks.slice(
+    chunks.findIndex((c) => c.startsWith("@media")),
+  )) {
+    const width = /^@media \(width <= (\d+)px\) \{/.exec(chunk)?.[1];
+    if (width === undefined) break;
+    widths.push(Number(width));
+  }
+  return widths;
+}
+
+// Why: the fold test checks only the widths listed above, so a step the
+// stylesheet gains, or one dropped from the list, goes unchecked without a
+// word (the 720 px step once was: its band's tightest width, 721, never
+// ran). The list and the stylesheet must name the same widths.
+test("the fold test checks every width where the top bar's stylesheet folds", () => {
+  const css = readFileSync(
+    new URL("../src/editor/editor-shell/editor-shell.css", import.meta.url),
+    "utf8",
+  );
+  const byWidth = (/** @type {number} */ a, /** @type {number} */ b) => b - a;
+  expect(foldSectionWidths(css).sort(byWidth)).toEqual(
+    [...FOLD_STEPS, ...NAME_EDGES_UNDER_420].sort(byWidth),
+  );
+});
 
 test("the top bar holds every control in its most crowded state, at every step it folds", async ({
   page,

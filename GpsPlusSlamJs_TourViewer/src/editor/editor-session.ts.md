@@ -200,15 +200,20 @@ never state). Design:
       last station is refused (`LAST_STATION`).
       Its photos' pictures are kept for the undo, as `remove` keeps one.
     - `reorderStations(order)` - every station once (`NOT_AN_ORDER`
-      otherwise): `reordered` or `unchanged`.
+      otherwise): `reordered` or `unchanged`, `held` while the draft
+      question waits.
     - `duplicateStation(stationId)` / `duplicateObject(id)` (async) - a
       copy beside the original (a station twice its found radius plus 5 m
       east, an item 1.5 m east); a photo's picture is read first (the
       page's copy, `loadPhoto`, then the newest zip; `PICTURE_UNREAD` when
-      none reads) and held under the copy's id, so the save writes the
+      none reads) and held under the copy's id (a note gone, or the tour
+      closed, during that read is `NOT_IN_TOUR`), so the save writes the
       copy's own `content/<id>.<ext>` and the draft keeps it. A station's
       copy mints a new id for every block of it, its story's too (block
-      ids are unique across the tour).
+      ids are unique across the tour). Held by the draft gate either
+      returns `{ kind: "held", landed }` as `duplicateFolder` does,
+      `landed` giving the `duplicated` result once the copy is in the
+      tour, null (its held pictures dropped) otherwise.
     - `addStory(stationId)` (named "New story", or "New story n" with the
       least n from 2 while that name is taken, so a delete never makes a
       name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
@@ -281,11 +286,37 @@ never state). Design:
       `duplicated` result once the copy is in the tour, or null when the
       edit was dropped or the tour refused it by then (its held pictures
       dropped too, `heldUntilLanded`).
+    - `pasteStations({ afterStationId, stations })` (async) - copies of
+      the stations, each after the one before (the first after
+      `afterStationId`) and beside it, `stationsPasted` as one step named
+      `the paste of <name>` or `the paste of <n> stations`; pictures read
+      first as for `duplicateStation`, which runs through the same
+      `copyStations`; `{ kind: "pasted", stations }`, `held` while the
+      draft question waits, refused for a station the tour lacks. The
+      stations' items are read again after the picture read: a tour
+      closed meanwhile is `NOT_IN_TOUR`, a station gone or its items
+      changed (by id or order) is refused, so a note deleted meanwhile
+      never comes back as a copy.
+    - `pasteStories({ toStationId, afterStory, stories })` - copies of the
+      stories into the station, in order after `afterStory` (null: after
+      its last story), every child under a new id, `storiesPasted` as one
+      step; `{ kind: "pasted", stories }` or refused for a story the tour
+      lacks (`NO_SUCH_STORY`); `held` while the draft question waits,
+      landing as `pasted` once every copy is in the tour, else null.
+    - `moveChildren(moves)` - a Paste of a cut: each move checked with
+      `childMoveChange` as `moveChild` checks one (its refusals in the
+      same words), then `childrenMoved`, one step named
+      `the move of "<name>"` or `the move of <n> items`; `{ kind:
+"moved", answers, floored }` summed over the moves; `held` while the
+      draft question waits, landing as `moved` once every item stands in
+      its target station, else null. `reorderStations` is held the same
+      way, landing as `reordered` once the stations stand in that order.
     - `paste(plan)` (async) - the clipboard's notes and plain folders
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the
       copies' ids, in the plan's order). Each copy keeps its pose within
-      its station, so it lands where its source sat in its own; every
+      its station, so it lands where its source sat in its own, moved
+      `plan.shiftM` east for a repeated paste (`clipboard.ts`); every
       copied folder and item gets a new id; each photo's picture is read
       first and held under its copy's id, as `duplicateFolder` does, and
       the step re-checks after that read that every source and the
@@ -293,7 +324,9 @@ never state). Design:
       for an id or a target station the tour lacks, a picture that cannot
       be read, and a copy the document refuses (`FOLDER_TOO_FAR` when
       folders are pasted, else `TOO_FAR_FROM_STATION`: past the reach;
-      the scale rules `clipboard.ts` says first); the held pictures are
+      the scale rules `clipboard.ts` says first, and a refusal caused by
+      a folder resized during the read is said by `clipboard.ts`'s
+      `pasteScaleRefusal`, as the resize it is); the held pictures are
       dropped then. Held by the draft gate it returns
       `{ kind: "held", landed }` as `duplicateFolder` does, `landed`
       giving the `pasted` result once every copy is in the tour. Its

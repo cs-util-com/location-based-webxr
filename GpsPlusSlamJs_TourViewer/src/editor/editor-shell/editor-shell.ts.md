@@ -4,9 +4,9 @@
 
 The 3D view's studio shell: the top bar's studio controls
 (Undo, Redo, Help), the Edit menu (Undo and Redo, where
-those fold at a phone's width; Copy, Paste, Duplicate and Delete, drawn
+those fold at a phone's width; Copy, Cut, Paste, Duplicate and Delete, drawn
 for the selection by `drawEditItems`, Paste and Duplicate disabled
-with `EDIT_STILL_RUNNING`, "A paste or a duplicate is still running",
+with `EDIT_STILL_RUNNING` (`../held-edit-flow.ts`), "A paste or a duplicate is still running",
 while one of them reads its pictures: the store's `duplicating`), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, the bottom bar's toggles and the
@@ -93,7 +93,13 @@ ground menu one where it
 was pressed (the editor kit's `scene-menu.ts`); a card's grip reorders the tour by drag
 (`tree-drag.ts`), the inspector's Earlier and Later by the keyboard; the
 inspector's Delete and "Move to a new station"; the bottom bar's power
-actions (`bar-actions.ts`: Duplicate, Align to station, Copy position).
+actions (`bar-actions.ts`: Duplicate, Align to station, Copy position)
+and its Paste (`data-bar="paste"`, shown only while `clipboard.ts`'s
+`pasteOf` would paste onto the selection and no paste runs, titled as the
+Edit menu's Paste: a phone has no Ctrl+V). Four actions (a note's three
+and Paste) fold their words to their icons below 1200 px
+(`editor-shell.css`), where with words they would run under the panel's
+toggles; fewer fold only at a tablet's width.
 Each is a page command (`deps.stations`), one undo step; the shell writes
 nothing to the tour itself.
 
@@ -326,8 +332,8 @@ value)` (a block's other text field, B2c), `scene(edit)` (a pose
     proposed name; Ctrl+Shift+G (or the bar's Ungroup) ungroups the
     picked folders and picks the items they freed. Neither runs inside a
     field or a dialog. The selection bar (`#tree-selbar`,
-    `drawSelectionBar`) shows its count, its buttons and why Group is
-    off.
+    `drawSelectionBar`) shows its count, its buttons (Copy and Cut
+    among them, `deps.clipboard`) and why Group is off.
   - **Rename.** The pen, F2 on a selected folder, or a new group opens the
     name field; Enter or leaving it writes the name, Escape keeps the old
     one; the focus returns to the folder's row.
@@ -586,7 +592,12 @@ else shell.hide();
 - "the Edit menu's Copy, Paste, Duplicate and Delete" in
   `editor-shell.test.ts`: each item disabled with the refusal as its
   title until the selection allows it, Paste's title naming the target
-  station, and a click calling the clipboard, the station commands or
+  station, and a click calling the clipboard, Cut's states, the tree's
+  `data-cut` dimming of a pending cut and Paste titled "Move to" or
+  "Move after" for it, Paste titled "Paste after" for copied stations,
+  the picks' bar's Copy and Cut and the bottom bar's Paste (shown only
+  for a valid target),
+  the station commands or
   the delete; Duplicate offered for a plain folder and a story, as
   Ctrl+D copies them; Paste and Duplicate disabled with
   `EDIT_STILL_RUNNING` while the store's `duplicating` is set; the fold steps at every band in

@@ -688,7 +688,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   no GPS" setting, the details, a restore. `runStep` cancels a 3D
   gesture, commits the inspector's typing, ends the delete toast, takes the step and says it in a
   toast ("Undone: the delete of "Fountain".", "Nothing to undo.", or the
-  session's refusal while a save runs); a step is an edit, so it tells
+  session's refusal while a save runs); a step that took the selected row
+  away (an undone paste's copy) selects the station that held it, so a
+  Paste after it still has a target; a step is an edit, so it tells
   autosave. In a field (the inspector's, a dialog's input) and
   while a dialog shows, the keys are left to the browser: the field's own
   undo. A photo brought back after a save wrote its delete is drawn from
@@ -841,34 +843,63 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     no better), selects the copy and says "Duplicated ..."; while a
     folder, an item or a station reads its pictures a held "Duplicating..."
     toast shows (`aria-busy`) and the store's `duplicating` makes another
-    Duplicate do nothing, so a second Ctrl+D makes no second copy; a
+    Duplicate do nothing but say so (`EDIT_STILL_RUNNING`), so a second
+    Ctrl+D makes no second copy; each runs through `runHeldEdit`, so one
+    that waits for the draft question is said only once it lands; a
     story's entry has no Duplicate (the bar offers none), so its Ctrl+D
     does nothing;
   - `copySelection` (Ctrl+C, the Edit menu's Copy) puts the selected note
     or plain folder, or every picked row, on the store's clipboard
     (`clipboard.ts`'s `copyOf`, then `copied`) and says "Copied ..."; a
-    refusal is said ("Only notes and folders can be copied");
+    refusal is said (`NOT_COPYABLE`, `COPY_ONE_KIND`);
   - `pasteSelection` (Ctrl+V, the Edit menu's Paste) pastes the
     clipboard into the station the selection names (`pasteOf`, then the
     session's `paste`): one undo step, the station's rows unfolded, the
-    first copy selected (a second Ctrl+V pastes again into the same
-    station; a copy pasted into another station stands where its original
-    stands in its own, so repeated pastes stack on the previous copy),
+    copy selected, several copies picked (`picked`, as their sources
+    were; a second Ctrl+V pastes again into the same
+    station; a first copy pasted into another station stands where its
+    original stands in its own, and each further paste of the same
+    clipboard into the same station half a metre further east, counted by
+    `clipboardPastedInto` once the paste lands and only while the
+    clipboard is still the one pasted, `clipboard.ts`),
     "Pasted a copy" or "Pasted <n> copies"; while the pictures are read a
     held "Pasting..." toast shows (`aria-busy`) and the store's
-    `duplicating` makes another paste or Duplicate do nothing (the Edit
-    menu shows both disabled meanwhile); the toast goes either way, and a
+    `duplicating` makes another paste or Duplicate do nothing but say so
+    (`EDIT_STILL_RUNNING`; the Edit menu shows both disabled meanwhile); the toast goes either way, and a
     refusal is said with the tour unchanged. The run is
     `held-edit-flow.ts`'s `runHeldEdit` (with `heldEditOnPage`): a paste
     that waits for the draft question is said, and its copy selected,
     only once it lands, and not at all when it is dropped (the draft gate
     says that). A folder's Duplicate (`duplicateFolderSelection`) runs
     the same way;
-  - `clipboardKeys` takes Ctrl/Cmd+C and Ctrl/Cmd+V (without Shift)
+  - `cutSelection` (Ctrl+X, the Edit menu's Cut) puts the selection on
+    the clipboard as a cut (`cutOf`, then `copied({ mode: "cut" })`) and
+    says where to go next; nothing moves yet, the tree dims what is cut;
+    Escape cancels it (`escapeAction`'s `clearCut`, "Cut cancelled"), and
+    `refresh` empties a cut whose source an edit or an undo removed
+    (`cutGone`);
+  - a Paste of copied stations (the session's `pasteStations`, through
+    `runHeldEdit`) shows and selects the first copy (`showNewStation`);
+    one of copied stories (`pasteStories`) unfolds the target station and
+    selects the first copy; either says "Pasted a copy" or "Pasted <n>
+    copies", one undo step; any Paste, of whatever the clipboard holds,
+    does nothing but say `EDIT_STILL_RUNNING` while a paste or a
+    Duplicate still runs;
+  - a Paste of a cut (`pasteCut`) moves the items onto the target
+    station (the session's `moveChildren`) or reorders the stations, ONE
+    undo step that keeps ids, with no station-move question first (the
+    Cut was the decision); the clipboard emptied, the first cut row
+    selected, and the toast says the items stand at the station's centre,
+    answers that now go on and a view floored to the kind's usual one.
+    A move (or a stories' paste) held by the draft question does all
+    that only once it lands, and nothing when it is dropped
+    (`sayLanded`, `held-edit-flow.ts`'s `isHeld`): the clipboard keeps
+    a cut whose move never happened;
+  - `clipboardKeys` takes Ctrl/Cmd+C, Ctrl/Cmd+X and Ctrl/Cmd+V (without Shift)
     only where `editKeysFree` holds and the page has no text selected,
     so a field, a dialog, a menu and selected text keep the browser's
-    own copy and paste; a held Ctrl+V's repeats paste nothing (one press,
-    one paste); the 3D view's `sceneKey` leaves both alone;
+    own copy and paste; a held key's repeats do nothing (one press, one
+    copy or paste, one toast); the 3D view's `sceneKey` leaves both alone;
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
   - `keysFree` (`editKeysFree`, shared with `clipboardKeys`) is false in a field, in a menu, for the pattern's keys on a menu's button,
@@ -879,9 +910,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     A gesture under way counts as an edit being made (`editing()`, the
     `gesture` field of the view slice), and an undo or a redo cancels it
     first (`runStep`).
-- **The clipboard**, given to the shell as `clipboard`: `copy` and
-  `paste`, which the Edit menu's Copy and Paste call (`copySelection`,
-  `pasteSelection`).
+- **The clipboard**, given to the shell as `clipboard`: `copy`, `cut`
+  and `paste`, which the Edit menu's Copy, Cut and Paste call
+  (`copySelection`, `cutSelection`, `pasteSelection`).
 - **The tree's station commands** (G2 M3b), given to the shell as
   `stations` with a `say` (a toast), each one undo step that ends a
   delete's Undo offer, refreshes the views and tells autosave:
