@@ -1,7 +1,7 @@
 /**
  * Property test of the content watcher: random sequences of adds, attaches,
- * absolute and relative writes, removals, re-parenting, capture hints and
- * jumps, checked against an independent model of "the object's pose in the
+ * absolute and relative writes, removals, re-parenting, capture hints (also
+ * from a store listener while a jump is pending), container moves and jumps, checked against an independent model of "the object's pose in the
  * current raw frame".
  */
 import { describe, expect, it } from 'vitest';
@@ -57,7 +57,20 @@ const op = fc.oneof(
     back: fc.integer({ min: 0, max: 600 }),
     pose: rigid,
   }),
-  fc.record({ k: fc.constant('jump' as const), jump: rigid }),
+  {
+    // Weighted up: most behaviour needs two or more jumps after a placement.
+    weight: 3,
+    arbitrary: fc.record({
+      k: fc.constant('jump' as const),
+      jump: rigid,
+      // A capture hint the app gives from its own store listener, which
+      // runs before the registry has applied this jump.
+      late: fc.option(
+        fc.record({ i: item, back: fc.integer({ min: 0, max: 600 }) }),
+        { freq: 2 }
+      ),
+    }),
+  },
   fc.record({ k: fc.constant('excluded' as const), where }),
   fc.record({ k: fc.constant('moveBox' as const), pose: rigid }),
   fc.record({ k: fc.constant('noop' as const) })
@@ -81,6 +94,13 @@ describe('ar-content-watcher (properties)', () => {
       fc.property(fc.array(op, { maxLength: 25 }), (ops) => {
         const store = configureStore({
           reducer: { arSpaceCorrection: arSpaceCorrectionReducer },
+        });
+        // Subscribed before the watcher, so it runs before the registry.
+        let lateHint: (() => void) | null = null;
+        store.subscribe(() => {
+          const fire = lateHint;
+          lateHint = null;
+          fire?.();
         });
         const arWorldGroup = new THREE.Group();
         const { arContent, arCorrection } = enableArSpaceCorrection({
@@ -110,10 +130,18 @@ describe('ar-content-watcher (properties)', () => {
           { length: ITEMS },
           () => new THREE.Object3D()
         );
+        // placed: the pose of the last placement directly in arContent
+        // (before any jump), while the app has not rewritten it since.
         const model = objects.map(() => ({
           L: new THREE.Matrix4(),
           tracked: false,
+          placed: null as THREE.Matrix4 | null,
         }));
+        const fromPlacement = (placed: THREE.Matrix4, capturedAt: number) => {
+          const L = placed.clone();
+          for (const j of jumps) if (j.t > capturedAt) L.premultiply(j.d);
+          return L;
+        };
         const excludedObj = new THREE.Object3D();
         excludedObj.position.set(0.3, 0.1, 0.2);
         arCorrection.exclude(excludedObj);
@@ -131,10 +159,29 @@ describe('ar-content-watcher (properties)', () => {
             rotation: [q.x, q.y, q.z, q.w] as [number, number, number, number],
           };
         };
+        /**
+         * Arms the store listener with a late hint for an object placed
+         * directly in arContent and not rewritten since (a re-date holds
+         * only then); returns how its pose follows, or null.
+         */
+        const lateHintOf = (
+          late: { i: number; back: number } | null
+        ): { i: number; model: () => THREE.Matrix4 } | null => {
+          const m = late === null ? undefined : model[late.i];
+          const obj = late === null ? undefined : objects[late.i];
+          if (!m?.tracked || !m.placed || obj?.parent !== arContent) {
+            return null;
+          }
+          const capturedAt = t - late!.back;
+          const placed = m.placed;
+          lateHint = () => arCorrection.track(obj, { capturedAt });
+          return { i: late!.i, model: () => fromPlacement(placed, capturedAt) };
+        };
         type Of<K extends Op['k']> = Extract<Op, { k: K }>;
         const run: { [K in Op['k']]: (o: Of<K>) => void } = {
           jump(o) {
             if (!jumpOps.includes(o)) return;
+            const late = lateHintOf(o.late);
             const camera = new THREE.Matrix4().makeTranslation(0, 1.5, 0);
             store.dispatch(
               relocalizationObserved({
@@ -160,13 +207,18 @@ describe('ar-content-watcher (properties)', () => {
                 .multiply(p)
                 .multiply(model[i]!.L);
             });
+            if (late !== null) model[late.i]!.L = late.model();
           },
           place(o) {
             const obj = objects[o.i]!;
             obj.removeFromParent();
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             parents[o.where].add(obj);
-            model[o.i] = { L: o.pose.clone(), tracked: o.where !== 'outside' };
+            model[o.i] = {
+              L: o.pose.clone(),
+              tracked: o.where !== 'outside',
+              placed: o.where === 'content' ? o.pose.clone() : null,
+            };
           },
           attach(o) {
             const obj = objects[o.i]!;
@@ -179,17 +231,20 @@ describe('ar-content-watcher (properties)', () => {
                 .multiply(from)
                 .multiply(model[o.i]!.L),
               tracked: o.where !== 'outside',
+              placed: null,
             };
           },
           remove(o) {
             objects[o.i]!.removeFromParent();
             model[o.i]!.tracked = false;
+            model[o.i]!.placed = null;
           },
           absolute(o) {
             const obj = objects[o.i]!;
             if (obj.parent === null) return;
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             model[o.i]!.L = o.pose.clone();
+            model[o.i]!.placed = null;
           },
           relative(o) {
             const obj = objects[o.i]!;
@@ -198,6 +253,7 @@ describe('ar-content-watcher (properties)', () => {
             model[o.i]!.L = new THREE.Matrix4()
               .makeTranslation(...o.dv)
               .multiply(model[o.i]!.L);
+            model[o.i]!.placed = null;
           },
           hint(o) {
             const obj = objects[o.i]!;
@@ -206,9 +262,11 @@ describe('ar-content-watcher (properties)', () => {
             arCorrection.track(obj, { capturedAt });
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             arContent.add(obj);
-            const L = o.pose.clone();
-            for (const j of jumps) if (j.t > capturedAt) L.premultiply(j.d);
-            model[o.i] = { L, tracked: true };
+            model[o.i] = {
+              L: fromPlacement(o.pose, capturedAt),
+              tracked: true,
+              placed: o.pose.clone(),
+            };
           },
           excluded(o) {
             parents[o.where].add(excludedObj);
@@ -246,7 +304,7 @@ describe('ar-content-watcher (properties)', () => {
         }
         arCorrection.dispose();
       }),
-      { numRuns: 150 }
+      { numRuns: 300 }
     );
   });
 });

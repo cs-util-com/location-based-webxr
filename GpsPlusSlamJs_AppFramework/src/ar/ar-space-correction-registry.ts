@@ -95,7 +95,8 @@ export interface ArSpaceCorrectionRegistry {
    * transform. Jumps the object missed are applied at once. Tracking a
    * tracked object again WITH a hint re-dates its placement: the jumps
    * between the hint's epoch and the epoch it was tracked with are applied
-   * (or taken back), so a late hint is right even after a jump. Without a
+   * (or taken back), so a late hint is right even after a jump, as long as
+   * the app has not rewritten the pose nor moved its container since. Without a
    * hint it restarts from its current transform, unmoved. Throws when no
    * store is attached, the object is not under the group, the options are
    * invalid, or another committer owns the object.
@@ -348,8 +349,10 @@ export function createArSpaceCorrectionRegistry(options: {
 
   /**
    * Re-date a tracked placement from epoch `start` to `target`: it holds
-   * the jumps `[start, applied)` and needs `[target, n)`, so in O it gets
-   * `Delta(target) * Delta(applied) * Delta(start)^-1`.
+   * the jumps `[start, applied)`, which is `Delta(applied)^-1 * Delta(start)`
+   * in O, and needs `[target, n)`, which is `Delta(target)`; so it gets
+   * `Delta(target) * Delta(start)^-1 * Delta(applied)`. `applied` may be
+   * below `n` (a hint from a store listener that runs before this one).
    */
   function redate(
     object: THREE.Object3D,
@@ -363,7 +366,7 @@ export function createArSpaceCorrectionRegistry(options: {
     const deltas = selectCorrectionTrack(state);
     const delta = composeRigid(
       deltas[target]!,
-      composeRigid(deltas[entry.applied]!, invertRigid(deltas[entry.start]!))
+      composeRigid(invertRigid(deltas[entry.start]!), deltas[entry.applied]!)
     );
     entry.start = target;
     apply(object, entry, prepare(delta, p), delta, n);

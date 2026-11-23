@@ -612,4 +612,60 @@ describe('ar-space-correction-registry', () => {
     expect(maxDiff(localOf(late), before)).toBe(0);
     registry.dispose();
   });
+
+  it('a hint given while a jump is pending (from a store listener that runs before the registry) re-dates exactly', () => {
+    // Why this test matters: a store listener of the app that runs before
+    // the registry's own sees an entry that has not received the newest
+    // jump yet (applied < n). The re-date must take back the jumps the
+    // entry holds in their own order; with non-commuting jumps any other
+    // factor order misplaces the object by metres. The same hint again at
+    // that moment must only deliver the pending jump.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    const inListener: Array<() => void> = [];
+    store.subscribe(() => inListener.shift()?.());
+    registry.attach(store);
+    const step = (t: number, x: number, yaw: number) =>
+      store.dispatch(
+        relocalizationObserved(
+          jumpObservation(t, {
+            position: [x, 0, 0.5],
+            rotation: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)],
+          })
+        )
+      );
+    const placeAt = (x: number, yaw: number) => {
+      const m = new THREE.Matrix4().compose(
+        new THREE.Vector3(x, 0.3, -1),
+        new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0)),
+        new THREE.Vector3(1, 1, 1)
+      );
+      const o = new THREE.Object3D();
+      m.decompose(o.position, o.quaternion, o.scale);
+      group.add(o);
+      return { o, m };
+    };
+    step(1000, 0.5, 0.3); // J0
+    const late = placeAt(2, 0.4);
+    registry.track(late.o, { capturedAt: 500 }); // start 0, J0 applied
+    const same = placeAt(-1, -0.7);
+    registry.track(same.o, { capturedAt: 1500 }); // start 1
+    step(2000, 3, 0); // J1: 3 m, received by both (applied 2)
+    // J2, a quarter turn: both hints are given before the registry sees it.
+    inListener.push(() => {
+      expect(registry.entryOf(late.o)).toMatchObject({ start: 0, applied: 2 });
+      registry.track(late.o, { capturedAt: 1500 }); // needs J2 J1 only
+      registry.track(same.o, { capturedAt: 1500 }); // unchanged hint
+    });
+    step(3000, 0, Math.PI / 2);
+    expect(inListener).toHaveLength(0);
+    const d = selectCorrectionTrack(store.getState());
+    const want = (m: THREE.Matrix4) =>
+      matrixOfPose(d[1]!).multiply(m).toArray();
+    expect(maxDiff(localOf(late.o), want(late.m))).toBeLessThan(1e-9);
+    expect(maxDiff(localOf(same.o), want(same.m))).toBeLessThan(1e-9);
+    expect(registry.entryOf(late.o)).toMatchObject({ start: 1, applied: 3 });
+    registry.dispose();
+  });
 });
