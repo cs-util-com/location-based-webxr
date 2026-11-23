@@ -86,6 +86,15 @@ const labelledHost = fc
 
 const foreignHost = fc.oneof(fc.domain(), labelledHost);
 
+/**
+ * A label inside a generated camelCase prefix that is a labelled coordinate
+ * by the scrubber's own rules: `lat`, `lon` or `lng` (also `clat`) after no
+ * letter, with four or more digits behind it (`lon0000`, `0lat12345`). Those
+ * digits are removed, word or not; fewer digits running on into the next
+ * label (`lat123Lat`) stay, and so does a label inside a word (`xlat0000`).
+ */
+const LABEL_IN_PREFIX = /(?<![a-z])(c?(?:lat|lon|lng))\d{4,}/g;
+
 /** A link reduced to its host, however much of the host a label cost it. */
 const HOST_ONLY = /^https:\/\/[^/?#]*\/\[redacted\]$/;
 
@@ -198,9 +207,14 @@ describe('scrubText properties', () => {
         coordinate(180, 0),
         (prefix, label, sep, value) => {
           const out = scrubText(`{${prefix}${label}${sep}${value}}`, OWN);
-          expect(out).toBe(`{${prefix}${label}${sep}${REDACTED}}`);
+          const head = prefix.replace(LABEL_IN_PREFIX, `$1${REDACTED}`);
+          expect(out).toBe(`{${head}${label}${sep}${REDACTED}}`);
         }
-      )
+      ),
+      // Why this example matters: seed -629018731 drew the prefix `lon0000`,
+      // which is a labelled coordinate of its own (four digits behind `lon`),
+      // so its digits go too; the value behind `Lat` must go all the same.
+      { examples: [['lon0000', 'Lat', '=', '0']] }
     );
   });
 
