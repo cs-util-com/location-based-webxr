@@ -2781,9 +2781,15 @@ test("the background measuring test goes from Start to a result card and copies 
   await copy.click();
   await expect(copy).toHaveText("Copied");
   const copied = await page.evaluate(() => navigator.clipboard.readText());
-  // The log names both workers' answers and the verdict with its sweep.
+  // The log names both workers' answers and the verdict with its sweep,
+  // and the card's yes or no is the log's verdict, not a second opinion.
   expect(copied).toContain("pair 2: done in");
-  expect(copied).toContain("camera verdict:");
+  const verdict = copied.match(
+    /camera verdict: (smooth|stutter); factor 1\.1: [Yn]{3}, 1\.25: [Yn]{3}, 1\.5: [Yn]{3} \(caps 150\/250\/400 ms\)/,
+  );
+  expect(verdict).not.toBeNull();
+  const card = (await page.locator("#spike-camera").textContent()) ?? "";
+  expect(card.startsWith("Yes")).toBe(verdict?.[1] === "smooth");
   expect(copied).toContain("RESULT XFeat in a worker: Could not start");
   expect(copied).toContain("SPIKE-DONE");
   expect(errors).toEqual([]);

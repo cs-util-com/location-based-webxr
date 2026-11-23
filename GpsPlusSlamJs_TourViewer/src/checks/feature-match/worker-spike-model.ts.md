@@ -15,13 +15,15 @@ The pure rules and words of the worker spike page (`feature-match-check.html?spi
 - `REASON_MAX` (140) and `shortReason(text)`: an error's first line without the `init:` prefix, cut to `REASON_MAX`.
 - `methodTimes(pairs)` -> `MethodTime[]`: per method, the median pair time (2 x extract median + match median over the sizes that ran, load left out) and the first load, or "could not run: reason" with an empty backend.
 - `xfeatOutcome(results, error)` -> `XFeatOutcome { started, text }`: "Started: X s per pair on backend." or "Could not start: reason".
+- `xfeatTimedOut(seconds)`: `started: null`, "Not known: no answer in N s." (a probe still downloading did not fail to start).
 - `plainError(where, e)` -> `PlainError { message, todo }`: a plain sentence and what to do, for the camera (blocked, missing, busy, other), the worker, the models, a hidden page and a page error.
 - `spikeSummary({ run, base, xfeat, methods, workerCrashed?, hidden? })` -> `SpikeResult { camera, xfeat, methods, notice }`.
 
 ## Invariants and defensive measures
 
 - The verdict never reads NaN: `gapStats` drops broken gaps and an empty side gives "unknown".
-- A stutter names the rule it broke: one gap over the cap ("the worst frame gap was X ms ... the limit is 250 ms"), or late frames under the cap ("95% of gaps within X ms, at rest Y ms (the limit is 1.25x)").
+- A stutter names the rule it broke: one gap over the cap ("the worst frame gap was X ms ... the limit is 250 ms"), or late frames under the cap, quoting the p95 when that rule broke and the p99 otherwise ("95% of gaps within X ms, at rest Y ms (the limit is 1.25x)").
+- No pair measured (no method, or every method failed) gives "unknown" ("Not known: no pair was measured."): with no load on the phone, smooth frames answer nothing. An empty window on either side gives "Not known: there were no camera frames to compare."
 - The card's notice has one priority: a hidden page first (its numbers are throttled), then models that never loaded (every method failed), then a worker crash.
 - The progress never goes back and never passes 1: `fraction` is clamped and the pair count is capped at the plan.
 - Texts carry no stack: `shortReason` keeps one line; the stacks go to the log.

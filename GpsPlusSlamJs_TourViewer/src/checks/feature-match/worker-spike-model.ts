@@ -309,8 +309,17 @@ export function methodTimes(
 }
 
 export interface XFeatOutcome {
-  readonly started: boolean;
+  /** `null`: not known (the probe never answered). */
+  readonly started: boolean | null;
   readonly text: string;
+}
+
+/** The probe gave no answer in `seconds`: not a failure to start. */
+export function xfeatTimedOut(seconds: number): XFeatOutcome {
+  return {
+    started: null,
+    text: `Not known: no answer in ${String(seconds)} s.`,
+  };
 }
 
 /** Whether XFeat started in its worker, from its results or the error. */
@@ -426,11 +435,18 @@ export function spikeSummary(input: {
   readonly hidden?: boolean;
 }): SpikeResult {
   const { run, base } = input;
-  const verdict = cameraVerdict(run, base);
+  const noneRan =
+    input.methods.length > 0 && input.methods.every((m) => m.failed);
+  // No pair measured: the worker put no load on the phone, so the frames
+  // answer nothing.
+  const measured = input.methods.some((m) => !m.failed);
+  const verdict = measured ? cameraVerdict(run, base) : "unknown";
   const worst = `The worst frame gap was ${msText(run.max)} (at rest ${msText(base.max)}`;
   // A stutter names the rule it broke: one long gap, or late frames that
-  // stayed under the cap but came more often than at rest.
-  const late = `No. Frames came late more often: 95% of gaps within ${msText(run.p95)}, at rest ${msText(base.p95)} (the limit is ${String(GAP_FACTOR)}x).`;
+  // stayed under the cap but came more often than at rest (p95 when that
+  // broke, else p99).
+  const p95Broke = run.p95 > GAP_FACTOR * base.p95;
+  const late = `No. Frames came late more often: ${p95Broke ? "95" : "99"}% of gaps within ${msText(p95Broke ? run.p95 : run.p99)}, at rest ${msText(p95Broke ? base.p95 : base.p99)} (the limit is ${String(GAP_FACTOR)}x).`;
   const text =
     verdict === "smooth"
       ? `Yes. ${worst}).`
@@ -438,9 +454,9 @@ export function spikeSummary(input: {
         ? run.max > GAP_CAP_MS
           ? `No. ${worst}; the limit is ${String(GAP_CAP_MS)} ms).`
           : late
-        : "Not known: the camera showed no frames while the worker measured.";
-  const noneRan =
-    input.methods.length > 0 && input.methods.every((m) => m.failed);
+        : measured
+          ? "Not known: there were no camera frames to compare."
+          : "Not known: no pair was measured.";
   return {
     camera: { verdict, text },
     xfeat: input.xfeat,

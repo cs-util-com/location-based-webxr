@@ -11,6 +11,7 @@
  */
 import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 
+import { sleep } from "../../sleep.js";
 import { captureFrame, framePng } from "./bench-dom";
 import { CAPTURE_MAX } from "./bench-engine";
 import { errorText } from "./bench-net";
@@ -36,6 +37,7 @@ import {
   spikeSummary,
   verdictSweep,
   xfeatOutcome,
+  xfeatTimedOut,
   type GapStats,
   type SpikePlan,
   type SpikeStep,
@@ -54,7 +56,7 @@ const METHODS: MeasureJob["methods"] = {
   siftLightGlue: false,
 };
 /** How long the XFeat probe may take, its download included. */
-const XFEAT_TIMEOUT_MS = 120_000;
+const XFEAT_TIMEOUT_MS = 300_000;
 
 const VIEW = `
 <section id="spike" class="screen run spike" data-phase="starting">
@@ -123,9 +125,6 @@ const VIEW = `
   </div>
 </section>`;
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
 /** An error's stack for the log (never for the screen). */
 const stackOf = (e: unknown): string =>
   e instanceof Error && e.stack ? e.stack : errorText(e);
@@ -175,8 +174,8 @@ function recordGaps(video: HTMLVideoElement): GapRecorder {
   };
 }
 
-const spawnFrom = (url: URL) => (): MeasureWorker =>
-  new Worker(url, { type: "module" }) as unknown as MeasureWorker;
+/** The probe gave no answer within its limit. */
+class ProbeTimeout extends Error {}
 
 /** The page's parts the run uses. */
 interface RunDeps {
@@ -350,8 +349,14 @@ async function runSpike(d: RunDeps): Promise<boolean> {
 
     // 3. Every pair in the photo test's measuring worker.
     step({ kind: "pairs", done: 0 });
+    // The URL is written inside `new Worker(...)`: only that form makes
+    // the build bundle the worker (a separate URL ships its raw source).
     const client = createMeasureClient(
-      spawnFrom(new URL("./feature-match-measure.worker.ts", import.meta.url)),
+      () =>
+        new Worker(
+          new URL("./feature-match-measure.worker.ts", import.meta.url),
+          { type: "module" },
+        ) as unknown as MeasureWorker,
     );
     const pairs: MethodResult[][] = [];
     const live = setInterval(() => {
@@ -434,13 +439,16 @@ async function tryXFeat(
   log: (line: string) => void,
 ): Promise<XFeatOutcome> {
   const client = createMeasureClient(
-    spawnFrom(new URL("./xfeat-probe.worker.ts", import.meta.url)),
+    () =>
+      new Worker(new URL("./xfeat-probe.worker.ts", import.meta.url), {
+        type: "module",
+      }) as unknown as MeasureWorker,
   );
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
       reject(
-        new Error(
+        new ProbeTimeout(
           `the worker did not answer in ${String(XFEAT_TIMEOUT_MS / 1000)} s`,
         ),
       );
@@ -457,7 +465,9 @@ async function tryXFeat(
     return xfeatOutcome(done.results, null);
   } catch (e) {
     log(`ERROR xfeat: ${stackOf(e)}`);
-    return xfeatOutcome(null, errorText(e));
+    return e instanceof ProbeTimeout
+      ? xfeatTimedOut(XFEAT_TIMEOUT_MS / 1000)
+      : xfeatOutcome(null, errorText(e));
   } finally {
     clearTimeout(timer);
     client.close();
@@ -532,7 +542,8 @@ function draw(
         ? ""
         : String(r.camera.verdict === "smooth");
     $("spike-xfeat").textContent = r.xfeat.text;
-    $("spike-xfeat-row").dataset.good = String(r.xfeat.started);
+    $("spike-xfeat-row").dataset.good =
+      r.xfeat.started === null ? "" : String(r.xfeat.started);
     const list = $("spike-methods");
     list.replaceChildren(
       ...r.methods.map((m) => {

@@ -14,6 +14,7 @@ import {
   spikeSummary,
   verdictSweep,
   xfeatOutcome,
+  xfeatTimedOut,
   type GapStats,
 } from "./worker-spike-model";
 
@@ -326,11 +327,23 @@ describe("xfeatOutcome", () => {
     });
     expect(xfeatOutcome([], null).started).toBe(false);
   });
+
+  // Why: a probe that never answered did not fail to start; it may still
+  // be downloading. The card must not call that "could not start".
+  it("reads a timeout as not known", () => {
+    expect(xfeatTimedOut(300)).toEqual({
+      started: null,
+      text: "Not known: no answer in 300 s.",
+    });
+  });
 });
 
 describe("spikeSummary", () => {
   const base = stats(40, 50, 70);
   const xfeat = { started: false, text: "Could not start: x" } as const;
+  const methods = [
+    { id: "sift", label: "SIFT", backend: "js", failed: false, text: "1 s" },
+  ];
 
   // Why: the result card answers in plain words, with the worst gap.
   it("says yes with the worst gap when smooth", () => {
@@ -338,7 +351,7 @@ describe("spikeSummary", () => {
       run: stats(41, 51, 120),
       base,
       xfeat,
-      methods: [],
+      methods,
     });
     expect(r.camera).toEqual({
       verdict: "smooth",
@@ -352,7 +365,7 @@ describe("spikeSummary", () => {
       run: stats(41, 51, 900),
       base,
       xfeat,
-      methods: [],
+      methods,
     });
     expect(r.camera.verdict).toBe("stutter");
     expect(r.camera.text).toBe(
@@ -367,7 +380,7 @@ describe("spikeSummary", () => {
       run: stats(60, 67, 67),
       base,
       xfeat,
-      methods: [],
+      methods,
     });
     expect(r.camera.verdict).toBe("stutter");
     expect(r.camera.text).toBe(
@@ -375,15 +388,51 @@ describe("spikeSummary", () => {
     );
   });
 
-  it("says it is not known without frames", () => {
+  // Why: an empty window on either side (at rest or while measuring)
+  // leaves nothing to compare; the text must not blame one of them.
+  it("says it is not known without frames on either side", () => {
+    for (const [run, at] of [
+      [stats(0, 0, 0, 0), base],
+      [stats(41, 51, 120), stats(0, 0, 0, 0)],
+    ] as const) {
+      const r = spikeSummary({ run, base: at, xfeat, methods });
+      expect(r.camera).toEqual({
+        verdict: "unknown",
+        text: "Not known: there were no camera frames to compare.",
+      });
+    }
+  });
+
+  // Why: with no pair measured the worker put no load on the phone, so
+  // smooth frames say nothing; a "Yes" there was a false answer.
+  it("says it is not known when no pair was measured", () => {
+    const failed = [{ ...methods[0]!, backend: "", failed: true }];
+    for (const m of [[], failed]) {
+      const r = spikeSummary({
+        run: stats(41, 51, 120),
+        base,
+        xfeat,
+        methods: m,
+      });
+      expect(r.camera).toEqual({
+        verdict: "unknown",
+        text: "Not known: no pair was measured.",
+      });
+    }
+  });
+
+  // Why: when only the p99 rule broke, quoting the p95 (which passed)
+  // read as a "No" with numbers that agree with each other.
+  it("quotes the p99 when only the p99 rule broke", () => {
     const r = spikeSummary({
-      run: stats(0, 0, 0, 0),
+      run: stats(41, 80, 120),
       base,
       xfeat,
-      methods: [],
+      methods,
     });
+    expect(r.camera.verdict).toBe("stutter");
     expect(r.camera.text).toBe(
-      "Not known: the camera showed no frames while the worker measured.",
+      "No. Frames came late more often: 99% of gaps within 80 ms, at rest 50 ms (the limit is 1.25x).",
     );
   });
 

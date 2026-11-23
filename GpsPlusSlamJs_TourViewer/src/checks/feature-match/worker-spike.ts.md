@@ -18,7 +18,7 @@ It runs the shipped worker through its client (`measure-client.ts`, `feature-mat
 1. **At rest** (`baselineMs`, default 10 s): the gaps between camera frames (`requestVideoFrameCallback`) with nothing else running.
 2. **Photos** (2 x `pairs`, default 6 pairs, `photoGapMs` 500 ms apart): frames captured at most 1280 px on the long side (`CAPTURE_MAX`) and encoded as PNG; each encode time is logged.
 3. **Pairs**: each pair measured by the measuring worker with SIFT and ALIKED + LightGlue (SIFT + LightGlue off), sizes 320, 480 and 640, one run, no warm-up, WebGPU else WASM (the worker's own settings), while the frame gaps are recorded. A live verdict every second feeds the status line.
-4. **XFeat**: the probe worker on the first pair, with a 120 s limit.
+4. **XFeat**: the probe worker on the first pair, with a 300 s limit (its download included); no answer in that time reads as "not known", not as "could not start".
 
 The camera is smooth when the gaps' p95 and p99 during the pairs are at most 1.25 x those at rest and no gap is over 250 ms; the log adds the verdict at factors 1.1/1.25/1.5 and caps 150/250/400 ms. `?baseline=` (seconds) and `?pairs=` shorten a test run.
 
@@ -32,6 +32,8 @@ The camera is smooth when the gaps' p95 and p99 during the pairs are at most 1.2
 
 ## Invariants and defensive measures
 
+- Each worker URL is written inside `new Worker(new URL(..., import.meta.url))`: only that form makes the build bundle the worker; a URL built apart ships the raw source and fails on the phone while the dev server works.
+
 - The run status lives in the store (`worker-spike-slice.ts`); the frame gaps, the camera, the workers and the photos stay in this module's run, never in module variables.
 - The view redraws on every store change and once a second while running, so the time left moves even while one pair takes long.
 - Every worker is closed when the run ends, in success or failure; the XFeat probe never holds the page longer than its limit.
@@ -39,5 +41,6 @@ The camera is smooth when the gaps' p95 and p99 during the pairs are at most 1.2
 
 ## Tests
 
-- `playwright-tests/feature-match-check.spec.js`: Start to result with a faked camera and the network refused (the card, the notice, Copy log turning to "Copied", the log hidden until opened), and a refused camera (the plain error, no stack on screen).
+- `playwright-tests/feature-match-check.spec.js`: Start to result with a faked camera, SIFT stubbed and the other models refused (the card with its camera and XFeat answers and one line per method, Copy log turning to "Copied", the log closed until opened, the copied log holding the verdict with its sweep and agreeing with the card), and a refused camera (the plain error, no stack on screen).
+- `tests/repo-config/worker-url-inside-new-worker.test.js`: both worker URLs are written inside `new Worker(...)`, the only form the build bundles.
 - The rules are unit-tested in `worker-spike-model.test.ts`, the status in `worker-spike-slice.test.ts`.
