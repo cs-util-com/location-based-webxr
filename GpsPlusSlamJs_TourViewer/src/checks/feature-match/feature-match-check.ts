@@ -10,6 +10,7 @@ import { startBenchEngine } from "./bench-engine";
 import { sessionToken } from "./bench-export";
 import { errorText } from "./bench-net";
 import { createCameraControl } from "./camera-control";
+import { sameDrawing } from "./cockpit-model";
 import { cockpitVideo, startCockpitView } from "./cockpit-view";
 import { featureMatchActions as A } from "./feature-match-slice";
 import { guidedVideo, startGuidedView } from "./guided-view";
@@ -96,7 +97,15 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   const view = guided ? startGuidedView(viewDeps) : startCockpitView(viewDeps);
 
   window.addEventListener("pagehide", camera.stop);
+  // A motion reading writes the store up to 60 times a second; the page
+  // draws only when what it shows changed (`sameDrawing`).
+  let drawn = store.getState();
   store.subscribe(() => {
+    const s = store.getState();
+    if (sameDrawing(drawn, s)) {
+      return;
+    }
+    drawn = s;
     engine.render();
     view();
   });

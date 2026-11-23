@@ -50,7 +50,7 @@ import {
   type SpeedOptions,
 } from "./feature-match-slice";
 import type { FeatureMatchStore } from "./feature-match-store";
-import { planPairOf } from "./guided-model";
+import { planPairOf, speedPairOf, type PlanPair } from "./guided-model";
 import { ortWasmThreads } from "./method-aliked";
 import type { DinoVariant } from "./method-dino";
 import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
@@ -72,7 +72,7 @@ const PICTURE_LINE_CAP = 200;
 const PICTURE_GAP = 8;
 
 /** The input pairs a benchmark run can measure. */
-type BenchKind = "camera" | "synthetic" | "plan";
+type BenchKind = "synthetic" | "plan";
 
 export const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -371,7 +371,10 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
 
   // --- runs -------------------------------------------------------------------
 
-  const pairOf = (kind: BenchKind): RunPair | null => {
+  const pairOf = (
+    kind: BenchKind,
+    plan: PlanPair | null = planPairOf(state(), sides.frames),
+  ): RunPair | null => {
     if (kind === "synthetic") {
       const p = syntheticPair(640, 480, SYNTHETIC_SEED);
       return {
@@ -380,29 +383,15 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
         pair: null,
       };
     }
-    const s = state();
-    if (kind === "plan") {
-      const p = planPairOf(s, sides.frames);
-      if (!p) {
-        fail("input", new Error("take photo A and B of this pair first"));
-        return null;
-      }
-      return {
-        input: { a: p.a.frame, b: p.b.frame, warp: null },
-        text: `pair ${p.slot.id} ${frameText("A", p.a.frame)}; ${frameText("B", p.b.frame)}`,
-        pair: p.slot.key,
-      };
-    }
-    const a = s.photos.a ? sides.frames.get(s.photos.a.id) : undefined;
-    const b = s.photos.b ? sides.frames.get(s.photos.b.id) : undefined;
-    if (!a || !b) {
-      fail("input", new Error("take photo A and B first"));
+    const p = plan;
+    if (!p) {
+      fail("input", new Error("take photo A and B of this pair first"));
       return null;
     }
     return {
-      input: { a: a.frame, b: b.frame, warp: null },
-      text: `camera ${frameText("A", a.frame)}; ${frameText("B", b.frame)}`,
-      pair: s.pairInProgress?.pair ?? null,
+      input: { a: p.a.frame, b: p.b.frame, warp: null },
+      text: `pair ${p.slot.id} ${frameText("A", p.a.frame)}; ${frameText("B", p.b.frame)}`,
+      pair: p.slot.key,
     };
   };
 
@@ -517,9 +506,6 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     store.dispatch(A.tableSet([]));
     ui.pictures.replaceChildren();
     store.dispatch(A.reportSet(""));
-    if (kind !== "camera") {
-      store.dispatch(A.cameraRunWithdrawn());
-    }
     const images = {
       a: frameCanvas(pair.input.a),
       b: frameCanvas(pair.input.b),
@@ -581,10 +567,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   /** Ends the run in progress; a photo pair's results are kept beside the state. */
   const finishRun = (text: string, results: MethodResult[] | null): void => {
     const kind = state().running;
-    const resultsId =
-      results && (kind === "camera" || kind === "plan")
-        ? newId("results")
-        : null;
+    const resultsId = results && kind === "plan" ? newId("results") : null;
     put(
       sides.results,
       resultsId && results ? [[resultsId, results]] : [],
@@ -617,19 +600,16 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fallback: T,
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
-  /** The speed test's pair: the camera pair, else the plan's, else synthetic. */
+  /** The speed test's pair: a photo pair (`speedPairOf`), else synthetic. */
   const speedPair = (): RunPair | null => {
-    const s = state();
-    if (s.photos.a !== null && s.photos.b !== null) {
-      return pairOf("camera");
-    }
-    return pairOf(planPairOf(s, sides.frames) ? "plan" : "synthetic");
+    const p = speedPairOf(state(), sides.frames);
+    return p ? pairOf("plan", p) : pairOf("synthetic");
   };
 
   /**
    * The speed test: the ticked arms per backend on a photo pair when one
    * is taken, else on the synthetic pair; its report replaces the report
-   * text, so a camera run it hides is withdrawn first.
+   * text.
    */
   const runSpeedOnce = async (): Promise<string> => {
     store.dispatch(A.errorsCleared());
@@ -664,7 +644,6 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     }
     const runs = parseTimingRuns(o.runs);
     stopCamera();
-    store.dispatch(A.cameraRunWithdrawn());
     const startedAt = new Date().toISOString();
     const device = await deviceInfo();
     store.dispatch(A.reportSet(""));

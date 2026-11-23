@@ -75,7 +75,8 @@ async function chooseSiftOnly(page) {
  * A stand-in camera: a 320x240 canvas stream, left half black and right
  * half white, so the captured frames' grey values are known (mean and
  * standard deviation both 127.5). `mode` "reject" refuses the camera,
- * "hold" keeps the start pending until `window.__releaseCamera()`.
+ * "hold" keeps each start pending until `window.__releaseCamera()`, which
+ * releases the oldest start still pending.
  *
  * @param {import("@playwright/test").Page} page
  * @param {"ok" | "reject" | "hold"} [mode]
@@ -98,6 +99,9 @@ async function fakeCamera(page, mode = "ok") {
       requestAnimationFrame(paint);
     };
     paint();
+    /** @type {(() => void)[]} */
+    const held = [];
+    w.__releaseCamera = () => held.shift()?.();
     const open = () => {
       const s = canvas.captureStream(30);
       w.__lastStream = s;
@@ -114,7 +118,7 @@ async function fakeCamera(page, mode = "ok") {
           }
           if (m === "hold") {
             return new Promise((resolve) => {
-              w.__releaseCamera = () => resolve(open());
+              held.push(() => resolve(open()));
             });
           }
           return Promise.resolve(open());
@@ -125,90 +129,41 @@ async function fakeCamera(page, mode = "ok") {
 }
 
 /**
- * Dims the fake camera and waits until the video shows a frame painted
- * after it (the stream lags the canvas by a frame or two).
+ * Dims the fake camera (or lights it again with `dim` false) and waits
+ * until the cockpit's video shows a frame painted after it (the stream lags
+ * the canvas by a frame or two). The camera must be on.
  *
  * @param {import("@playwright/test").Page} page
+ * @param {boolean} [dim]
  */
-async function dimCamera(page) {
+async function dimCamera(page, dim = true) {
   await page.evaluate(
-    () =>
+    (d) =>
       new Promise((resolve) => {
-        /** @type {Window & Record<string, unknown>} */ (window).__dim = true;
+        /** @type {Window & Record<string, unknown>} */ (window).__dim = d;
         const video = /** @type {HTMLVideoElement} */ (
-          document.querySelector("#video")
+          document.querySelector("#c-video")
         );
         video.requestVideoFrameCallback(() =>
           video.requestVideoFrameCallback(() => resolve(undefined)),
         );
       }),
+    dim,
   );
 }
 
 /**
- * The frames JSON inside a Download all zip.
+ * The frames JSON inside a pair zip.
  *
  * @param {import("@playwright/test").Download} download
  */
 async function framesJsonOf(download) {
-  const reader = new ZipReader(
-    new Uint8ArrayReader(new Uint8Array(await readDownload(download))),
-  );
-  const entry = (await reader.getEntries()).find(
-    (e) => e.filename === "feature-match-frames.json",
-  );
-  if (!entry || entry.directory) {
+  const { texts } = await zipContents(await readDownload(download));
+  const json = texts["feature-match-frames.json"];
+  if (json === undefined) {
     throw new Error("no frames JSON in the zip");
   }
-  const json = JSON.parse(await entry.getData(new TextWriter()));
-  await reader.close();
-  return json;
-}
-
-/**
- * Save, then tap Download all; returns the download.
- *
- * @param {import("@playwright/test").Page} page
- */
-async function saveAll(page) {
-  await page.locator("#save-frames").click();
-  await expect(page.locator("#save-links a")).toHaveCount(5);
-  const [download] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#save-links a").first().click(),
-  ]);
-  return download;
-}
-
-/**
- * Steps 1 and 2: the first tap starts the camera, the second takes A,
- * then B (which starts the run by itself).
- *
- * @param {import("@playwright/test").Page} page
- * @param {() => Promise<void>} [afterA] runs between photo A and photo B
- */
-async function takePhotos(page, afterA = async () => undefined) {
-  await expect(page.locator("#capture-a")).toHaveText("Start camera");
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#capture-a")).toHaveText("Take photo A");
-  await expect(page.locator("#state-a")).toHaveText(
-    "camera on: aim, then tap Take photo A",
-  );
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#state-a")).toHaveText("taken, 320x240");
-  await expect(page.locator("#step-2")).toHaveAttribute(
-    "data-state",
-    "current",
-  );
-  await afterA();
-  await page.locator("#capture-b").click();
-}
-
-/** @param {import("@playwright/test").Page} page */
-async function stepStates(page) {
-  return page
-    .locator(".steps > li")
-    .evaluateAll((lis) => lis.map((li) => li.getAttribute("data-state")));
+  return JSON.parse(json);
 }
 
 /** @param {import("@playwright/test").Page} page */
@@ -218,14 +173,124 @@ async function pageOverflow(page) {
   );
 }
 
+const COCKPIT = "/feature-match-check.html?ui=cockpit";
+
+/** @param {import("@playwright/test").Page} page */
+async function openCockpit(page) {
+  await page.goto(COCKPIT);
+  await expect(page.locator("#log")).toContainText("ready");
+}
+
+/**
+ * Without a save dialog (most phones) a zip goes out through a download
+ * link, which the test can catch.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function noSavePicker(page) {
+  await page.addInitScript(() => {
+    delete (/** @type {any} */ (window).showSaveFilePicker);
+  });
+}
+
+/**
+ * Opens the Details drawer on `tab`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {"pairs" | "guide" | "results" | "settings"} tab
+ */
+async function openTab(page, tab) {
+  if (await page.locator("#c-drawer").isHidden()) {
+    await page.locator("#c-details").click();
+  }
+  await page.locator(`#c-drawer [data-tab="${tab}"]`).click();
+  await expect(page.locator(`#c-drawer [data-panel="${tab}"]`)).toBeVisible();
+}
+
+/** @param {import("@playwright/test").Page} page */
+async function closeDrawer(page) {
+  await page.locator("#c-drawer-close").click();
+  await expect(page.locator("#c-drawer")).toBeHidden();
+}
+
+/**
+ * The Settings tab: how each pair is saved, and the countdown (off by
+ * default here, so each tap shoots at once).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {{ save?: "each" | "end", countdown?: "0" | "3" | "5" }} [o]
+ */
+async function cockpitSettings(page, { save = "end", countdown = "0" } = {}) {
+  await openTab(page, "settings");
+  await page.locator(`input[name="c-save"][value="${save}"]`).check();
+  await page.locator(`input[name="c-countdown"][value="${countdown}"]`).check();
+  await closeDrawer(page);
+}
+
+/**
+ * SIFT only (the Options sit in the Results tab), plus `sizes`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string[]} [sizes] further sizes to tick
+ */
+async function siftOnly(page, sizes = []) {
+  await openTab(page, "results");
+  await chooseSiftOnly(page);
+  for (const s of sizes) {
+    await page.locator(`input[name="size"][value="${s}"]`).check();
+  }
+  await closeDrawer(page);
+}
+
+/**
+ * Photo A, then photo B of the current pair with the big button (the
+ * camera started first when it is off); `afterA` runs between the two.
+ * Photo B starts the run by itself.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {() => Promise<void>} [afterA]
+ */
+async function takeCockpitPair(page, afterA = async () => undefined) {
+  const shutter = page.locator("#c-shutter");
+  const text = page.locator("#c-shutter-text");
+  await expect(text).toHaveText(/^(Start|Take A)$/);
+  if ((await text.textContent()) === "Start") {
+    await shutter.click();
+  }
+  await expect(text).toHaveText("Take A");
+  // The camera counts as on before its first picture arrives.
+  await page.waitForFunction(
+    () =>
+      /** @type {HTMLVideoElement} */ (document.querySelector("#c-video"))
+        .videoWidth > 0,
+  );
+  await shutter.click();
+  await expect(page.locator("#c-state-a")).toHaveText("taken");
+  await expect(text).toHaveText("Take B");
+  await afterA();
+  await shutter.click();
+}
+
+/**
+ * The number of log lines holding `part`.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} part
+ */
+async function logLines(page, part) {
+  return ((await page.locator("#log").textContent()) ?? "")
+    .split("\n")
+    .filter((l) => l.includes(part)).length;
+}
+
 /**
  * Why this test matters: the benchmark page is opened on a phone from a
  * branch preview and is linked from nothing, so no other test opens it.
  * With sift.js replaced by a stub (no network), it proves the page loads,
- * fits a phone's width, runs the synthetic pair through the whole loop,
- * fills the table, the copyable report and a result picture, and that its
- * button shows its running and final states. The real methods and their
- * timings need the phone and are not tested here.
+ * fits a phone's width, runs the synthetic pair through the whole loop
+ * from the Results tab, fills the table, the copyable report and a result
+ * picture, and that its button shows its running and final states. The
+ * real methods and their timings need the phone and are not tested here.
  */
 test("the feature matching benchmark runs a stubbed SIFT on the synthetic pair", async ({
   page,
@@ -234,9 +299,8 @@ test("the feature matching benchmark runs a stubbed SIFT on the synthetic pair",
   page.on("pageerror", (error) => errors.push(error.message));
   await routeNetwork(page, fulfillSift);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  expect(await stepStates(page)).toEqual(["current", "todo", "todo", "todo"]);
+  await openCockpit(page);
+  await openTab(page, "results");
   await chooseSiftOnly(page);
 
   await page.locator("#run-synthetic").click();
@@ -262,8 +326,8 @@ test("the feature matching benchmark runs a stubbed SIFT on the synthetic pair",
     "SIFT (plain JS) @320 (320x240), last round: keypoints A 40, B 40 | matches 40 | correct",
   );
   await expect(picture.locator("canvas")).toHaveCount(1);
-  // The synthetic run is not the camera pair: the steps do not move.
-  expect(await stepStates(page)).toEqual(["current", "todo", "todo", "todo"]);
+  // The synthetic run is not a photo pair: the dock stays on pair 1a.
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
 
   expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
   expect(errors).toEqual([]);
@@ -280,8 +344,8 @@ test("the feature matching benchmark reports a method that fails to load", async
   await routeNetwork(page, (route) =>
     route.fulfill({ status: 404, body: "not found" }),
   );
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
+  await openCockpit(page);
+  await openTab(page, "results");
   await chooseSiftOnly(page);
 
   await page.locator("#run-synthetic").click();
@@ -327,19 +391,18 @@ async function readDownload(download) {
 }
 
 /**
- * Why this test matters: the page is a guided flow so no step can be
+ * Why this test matters: the cockpit is a hands-off flow so no step can be
  * forgotten on the phone: photo A, photo B, a run that starts by itself
- * with nothing to switch on, then save. During the run nothing else may
- * start (a capture or an encode would skew the timed rounds), the camera
- * is off, and the result picture appears. The saved files are handed over
- * to be checked offline, so they must be exactly the captured pixels,
- * carry nothing but pixels (no EXIF, text or time chunk), and the
- * keypoints and matches must be in the saved frames' own pixels. Every
- * saved file is named by the pair picked before photo A (no written list
- * of the order is kept), and Download all moves the picker on. Nothing
- * is uploaded: every request leaving the machine is refused.
+ * with nothing to switch on, the pair's zip saved by itself, and the next
+ * pair. During the run nothing else may start (a capture or an encode
+ * would skew the timed rounds), the camera is off and covered, and the
+ * result picture appears. The zip is handed over to be checked offline,
+ * so its photos must be exactly the captured pixels, carry nothing but
+ * pixels (no EXIF, text or time chunk), and the keypoints and matches
+ * must be in the saved frames' own pixels. Nothing is uploaded: every
+ * request leaving the machine is refused.
  */
-test("the feature matching benchmark guides photo A, photo B, an automatic run and the save", async ({
+test("the feature matching cockpit measures a pair by itself and saves its zip", async ({
   page,
 }) => {
   const errors = /** @type {string[]} */ ([]);
@@ -354,64 +417,65 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     await fulfillSift(route);
   });
   await fakeCamera(page);
+  await noSavePicker(page);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await expect(page.locator("#save-frames")).toBeDisabled();
-  await expect(page.locator("#capture-b")).toBeDisabled();
-  await chooseSiftOnly(page);
+  await openCockpit(page);
+  await expect(page.locator("#c-download-all")).toBeDisabled();
   // A second size whose computed frame (480x360) differs from the captured
   // one (320x240), so the saved coordinates show the mapping between them.
-  await page.locator('input[name="size"][value="480"]').check();
-  // The pair is picked before photo A and fixed there: changing the
-  // selector between A and B must not relabel the pair in progress.
-  await page.locator("#pair").selectOption("1b");
-  await page.locator("#spot").fill("2");
+  await siftOnly(page, ["480"]);
+  await cockpitSettings(page, { save: "each" });
 
-  await takePhotos(page, async () => {
-    await expect(page.locator("#pair-state")).toHaveText(
-      "now: pair 1, 1b light: dimmed, spot 2",
-    );
-    await page.locator("#pair").selectOption("3a");
-    // A dimmed pair: the light changes between A and B.
-    await dimCamera(page);
-  });
+  const saved = page.waitForEvent("download");
+  await takeCockpitPair(page);
   // The run starts by itself; while it lasts nothing else can start.
-  await expect(page.locator("#run")).toHaveText("Running...");
-  expect(await stepStates(page)).toEqual(["done", "done", "current", "todo"]);
-  for (const id of ["#capture-a", "#capture-b", "#save-frames", "#run"]) {
+  await expect(page.locator("#c-shutter-text")).toHaveText("Measuring");
+  for (const id of [
+    "#c-shutter",
+    "#c-retake",
+    "#c-next",
+    "#c-download-all",
+    "#c-shot-a",
+    "#c-shot-b",
+  ]) {
     await expect(page.locator(id)).toBeDisabled();
   }
+  await expect(page.locator("#c-cover")).toBeVisible();
   await expect(page.locator("#log")).toContainText("camera off");
-  releaseSift();
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  await expect(page.locator("#run")).toHaveText("Run again");
-  await expect(page.locator("#run")).toBeEnabled();
-  expect(await stepStates(page)).toEqual(["done", "done", "done", "current"]);
-  await expect(page.locator("#save-state")).toHaveText(
-    "ready: tap to prepare the files",
-  );
+  // The flat target cannot open over a run: it would take the camera.
+  await openTab(page, "results");
+  await expect(page.locator("#c-open-flat")).toBeDisabled();
+  await closeDrawer(page);
   expect(
     await page.evaluate(
       () =>
-        /** @type {HTMLVideoElement} */ (document.querySelector("#video"))
+        /** @type {HTMLVideoElement} */ (document.querySelector("#c-video"))
           .srcObject,
     ),
   ).toBeNull();
-  await expect(page.locator("#camera-box")).toBeHidden();
-  await expect(page.locator("#capture-a")).toHaveText("Start camera");
+  releaseSift();
 
-  // Grey values of the half black, half white camera: 127.5 each, within
-  // what the stream's colour conversion may move them.
-  const logText = (await page.locator("#log").textContent()) ?? "";
-  const grey = logText.match(
-    /captured A 320x240 \(camera 320x240\), grey mean (\d+\.\d) sd (\d+\.\d) \(0-255\)/,
+  // The zip saves itself, and the next pair comes up with the camera on.
+  const stem = "feature-match-01-1a-s1-light-control-same-light";
+  const zipFile = await saved;
+  expect(zipFile.suggestedFilename()).toBe(`${stem}.zip`);
+  await expect(page.locator("#c-status")).toHaveText(
+    `Download started: ${stem}.zip (allow multiple downloads if Chrome asks).`,
   );
+  await expect(page.locator("#c-chip-key")).toHaveText("1b");
+  await expect(page.locator("#c-retake-label")).toHaveText("Retake B of 01");
+  await expect(page.locator("#c-shutter-text")).toHaveText("Take A");
+  await expect(page.locator("#c-segs i").first()).toHaveClass("saved");
+  await expect(page.locator("#c-download-all")).toHaveText("Download all");
+
+  // Grey values of the half black, half white camera: 127.5, within what
+  // the stream's colour conversion may move them.
+  const logText = (await page.locator("#log").textContent()) ?? "";
+  const grey = logText.match(/photo A: 1a-s1 #1 320x240 grey mean (\d+\.\d)/);
   expect(grey).not.toBeNull();
   expect(Math.abs(Number(grey?.[1]) - 127.5)).toBeLessThanOrEqual(6);
-  expect(Math.abs(Number(grey?.[2]) - 127.5)).toBeLessThanOrEqual(12);
   expect(await page.locator("#report").inputValue()).toMatch(
-    /input: camera A 320x240, grey mean [\d.]+ sd [\d.]+ \(0-255\); B 320x240, grey mean/,
+    /input: pair 1a-s1 A 320x240, grey mean [\d.]+ sd [\d.]+ \(0-255\); B 320x240, grey mean/,
   );
   await expect(page.locator("#pictures .picture canvas")).toHaveCount(2);
   // The caption counts the round the picture shows.
@@ -419,28 +483,9 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "last round: keypoints A 40, B 40 | matches 40",
   );
 
-  await page.locator("#save-frames").click();
-  await expect(page.locator("#save-state")).toHaveText(
-    "ready: tap Download all (zip), or each file",
-  );
-  await expect(page.locator("#save-links a")).toHaveCount(5);
-  expect(await stepStates(page)).toEqual(["done", "done", "done", "done"]);
-
-  // One tap saves everything: the zip holds each offered file and the
-  // page log, so nothing has to be copied out by hand.
-  const zipLink = page.locator("#save-links a").first();
-  const stem = "feature-match-01-1b-s2-light-dimmed";
-  await expect(zipLink).toHaveAttribute("download", `${stem}.zip`);
-  await expect(zipLink).toContainText("Download all (zip)");
-  const [zipFile] = await Promise.all([
-    page.waitForEvent("download"),
-    zipLink.click(),
-  ]);
-  const reader = new ZipReader(
-    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
-  );
-  const entries = await reader.getEntries();
-  expect(entries.map((e) => e.filename).sort()).toEqual([
+  const bytes = await readDownload(zipFile);
+  const { names, texts } = await zipContents(bytes);
+  expect(names.sort()).toEqual([
     "feature-match-frame-a.png",
     "feature-match-frame-b.png",
     "feature-match-frames.json",
@@ -448,33 +493,12 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "feature-match-matches.json",
     "feature-match-report.txt",
   ]);
-  const zipText = async (/** @type {string} */ name) => {
-    const entry = entries.find((e) => e.filename === name);
-    if (!entry || entry.directory) {
-      throw new Error(`no ${name} in the zip`);
-    }
-    return entry.getData(new TextWriter());
-  };
-  expect(await zipText("feature-match-log.txt")).toContain(
-    "captured A 320x240",
-  );
-  expect(await zipText("feature-match-report.txt")).toContain(
-    "SIFT (plain JS)",
-  );
-  await reader.close();
-  // After Download all the selector moves on to the next pair, from the
-  // pair in progress (1b), not from what the selector was changed to.
-  await expect(page.locator("#pair")).toHaveValue("1c");
-  await expect(page.locator("#spot")).toHaveValue("2");
+  expect(texts["feature-match-log.txt"]).toContain("photo A: 1a-s1 #1 320x240");
+  expect(texts["feature-match-report.txt"]).toContain("SIFT (plain JS)");
 
-  for (const name of [`${stem}-frame-a.png`, `${stem}-frame-b.png`]) {
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      page.locator(`#save-links a[download="${name}"]`).click(),
-    ]);
-    expect(download.suggestedFilename()).toBe(name);
-    const bytes = await readDownload(download);
-    const types = chunkTypes(bytes);
+  for (const name of ["frame-a", "frame-b"]) {
+    const png = await zipEntryBytes(bytes, new RegExp(`${name}\\.png$`));
+    const types = chunkTypes(png);
     expect(types[0]).toBe("IHDR");
     expect(types.at(-1)).toBe("IEND");
     expect(
@@ -484,16 +508,10 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
       ),
     ).toEqual([]);
     // IHDR: the captured size, unchanged.
-    expect([bytes.readUInt32BE(16), bytes.readUInt32BE(20)]).toEqual([
-      320, 240,
-    ]);
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([320, 240]);
   }
 
-  const [json] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator(`#save-links a[download="${stem}-frames.json"]`).click(),
-  ]);
-  const info = JSON.parse((await readDownload(json)).toString("utf8"));
+  const info = JSON.parse(texts["feature-match-frames.json"] ?? "");
   expect(Object.keys(info).sort()).toEqual([
     "captureMaxLongEdge",
     "device",
@@ -507,25 +525,13 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
     "spot",
   ]);
   expect(info.session).toMatch(/^[0-9a-f]{8}$/);
-  expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
-    "1b",
-    "light: dimmed",
-    2,
-    1,
-  ]);
+  expect([info.pair, info.spot, info.sequence]).toEqual(["1a", 1, 1]);
   expect(info.lightCheck).toBe("ok");
-  await expect(page.locator("#light-warning")).toBeHidden();
   expect(
     info.frames.map((/** @type {{ width: number }} */ f) => f.width),
   ).toEqual([320, 320]);
 
-  const [matchesFile] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator(`#save-links a[download="${stem}-matches.json"]`).click(),
-  ]);
-  const matches = JSON.parse(
-    (await readDownload(matchesFile)).toString("utf8"),
-  );
+  const matches = JSON.parse(texts["feature-match-matches.json"] ?? "");
   expect(Object.keys(matches).sort()).toEqual([
     "coordinates",
     "format",
@@ -547,118 +553,345 @@ test("the feature matching benchmark guides photo A, photo B, an automatic run a
   const size480 = matches.methods[0].sizes[1];
   expect([size480.width, size480.height]).toEqual([480, 360]);
   expect(size480.keypointsA[0]).toEqual([19.83, 23.83]);
-
-  // A synthetic run replaces the camera run's results on screen, so the
-  // camera run and its offered files are withdrawn with them: Save must
-  // never offer files for results no longer shown.
-  await page.locator("#run-synthetic").click();
-  await expect(page.locator("#synthetic-state")).toHaveText("done: 1 methods");
-  await expect(page.locator("#save-links a")).toHaveCount(0);
-  await expect(page.locator("#save-frames")).toBeDisabled();
-  await expect(page.locator("#run-state")).toHaveText(
-    "replaced by the synthetic run: tap Run again",
-  );
-  expect(await stepStates(page)).toEqual(["done", "done", "current", "todo"]);
   expect(errors).toEqual([]);
 });
 
 /**
- * Why this test matters: the async rule for the page's buttons: Save must
- * show its in-progress state, keep the captures from changing under it
- * (a capture during the encode would offer the old files as the new
- * ones), and on a failed encode withdraw every offered file, log the
- * error and come back; a refused camera must say so on the step and in
- * the log.
+ * Why this test matters: with "keep them for Download all" set, a pair's
+ * zip is made at once but kept in the page, and Download all is the one
+ * file sent back: it must hold the kept pair zip under its own name, plus
+ * the summary and the log, and say so on the status line.
  */
-test("the feature matching benchmark shows a failed save and a refused camera", async ({
+test("the feature matching cockpit keeps each pair for Download all", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.addInitScript(() => {
-    const w = /** @type {Window & Record<string, unknown>} */ (window);
-    const held = new Promise((resolve) => {
-      w.__releaseEncode = resolve;
-    });
-    // The encoder fails, once released: as a phone out of memory would.
-    HTMLCanvasElement.prototype.toBlob = function (callback) {
-      void held.then(() => callback(null));
-    };
-  });
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await chooseSiftOnly(page);
-  await takePhotos(page);
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-
-  await page.locator("#save-frames").click();
-  await expect(page.locator("#save-state")).toHaveText("preparing...");
-  for (const id of ["#save-frames", "#capture-a", "#capture-b", "#run"]) {
-    await expect(page.locator(id)).toBeDisabled();
-  }
-  await page.evaluate(() =>
-    /** @type {() => void} */ (
-      /** @type {Window & Record<string, unknown>} */ (window).__releaseEncode
-    )(),
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitPair(page);
+  const stem = "feature-match-01-1a-s1-light-control-same-light";
+  await expect(page.locator("#c-status")).toHaveText(
+    new RegExp(`^Kept ${stem}\\.zip here \\(.+\\)\\.$`),
   );
-  await expect(page.locator("#save-state")).toHaveText("failed (see log)");
-  await expect(page.locator("#log")).toContainText(
-    "ERROR save: Error: frame A: PNG encoding failed",
+  await expect(page.locator("#c-segs i").first()).toHaveClass("kept");
+  const all = page.locator("#c-download-all");
+  await expect(all).toHaveText("Download all (1)");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    all.click(),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^feature-match-run-.+\.zip$/);
+  await expect(page.locator("#c-status")).toHaveText(
+    /^Saved feature-match-run-.+\.zip \(.+\)\. Send this file\.$/,
   );
-  await expect(page.locator("#save-links a")).toHaveCount(0);
-  await expect(page.locator("#save-frames")).toBeEnabled();
-  await expect(page.locator("#step-4")).toHaveAttribute(
-    "data-state",
-    "current",
-  );
+  const { names } = await zipContents(await readDownload(download));
+  expect(names).toContain(`${stem}.zip`);
+  expect(names).toContain("feature-match-summary.txt");
+  expect(names).toContain("feature-match-log.txt");
+  await expect(all).toHaveText("Download all");
 });
 
 /**
- * Why this test matters: a camera run that measured nothing (a ticked
- * method left without a backend, or a run that threw) must say so on the
- * run step and in the log, and Save must not read "ready" as if there
- * were results: it offers the photos only, and says that.
+ * Why this test matters: a pair already kept for Download all, then its
+ * photo B taken again, must not ship the old zip with the old photo B:
+ * the retake drops the take's kept zip, and Download all packs the new
+ * photo (here a dimmed B, which fails the same-light check, so no new
+ * pair zip is made and the loose files carry it).
  */
-test("the feature matching benchmark names a run that measured nothing", async ({
+test("the feature matching cockpit ships the retaken photo B, not the old zip", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await chooseSiftOnly(page);
-  // A protocol pair would set the backend itself; "none" uses the Options.
-  await page.locator("#pair").selectOption("none");
-  // XFeat ticked, but no backend: it would drop out without a word.
-  await page.locator("#m-xfeat").check();
-  for (const b of ["webgpu", "wasm"]) {
-    await page.locator(`input[name="backend"][value="${b}"]`).uncheck();
-  }
-  await takePhotos(page);
-  await expect(page.locator("#run-state")).toHaveText(
-    "not run: a ticked method has nothing to run on (see log)",
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitPair(page);
+  const stem = "feature-match-01-1a-s1-light-control-same-light";
+  await expect(page.locator("#c-status")).toContainText(
+    `Kept ${stem}.zip here`,
   );
-  await expect(page.locator("#log")).toContainText(
-    "ERROR options: Error: XFeat is ticked but no backend is",
-  );
-  await expect(page.locator("#save-state")).toHaveText(
-    "nothing measured: tap to save the photos anyway",
-  );
-  await expect(page.locator("#save-frames")).toBeEnabled();
+  await expect(page.locator("#c-retake-label")).toHaveText("Retake B of 01");
+  await page.locator("#c-retake").click();
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
+  await expect(page.locator("#c-shutter-text")).toHaveText("Retake B");
+  await dimCamera(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-read-light")).toHaveText("light changed");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#c-download-all").click(),
+  ]);
+  const { names, texts } = await zipContents(await readDownload(download));
+  expect(names).not.toContain(`${stem}.zip`);
+  const info = JSON.parse(texts[`${stem}-frames.json`] ?? "null");
+  expect(info.frames[0].greyMean).toBeGreaterThan(100);
+  expect(info.frames[1].greyMean).toBeLessThan(60);
+});
 
-  // A run that throws: an unknown backend value is refused.
-  await page.locator('input[name="backend"][value="wasm"]').evaluate((el) => {
-    const box = /** @type {HTMLInputElement} */ (el);
-    box.value = "unknown";
-    box.checked = true;
-  });
-  await page.locator("#run").click();
-  await expect(page.locator("#run-state")).toHaveText("failed (see log)");
-  await expect(page.locator("#log")).toContainText("ERROR run: RangeError");
-  await expect(page.locator("#save-state")).toHaveText(
-    "nothing measured: tap to save the photos anyway",
+/**
+ * Why this test matters: two save paths that lose nothing but say so. A
+ * method that cannot load (sift.js missing) leaves the pair unmeasured,
+ * and its zip line says "Not measured" in red; a save dialog closed in
+ * "each pair by itself" keeps the zip for Download all.
+ */
+test("the feature matching cockpit says when a pair was not measured or not saved", async ({
+  page,
+}) => {
+  await routeNetwork(page, (route) =>
+    route.fulfill({ status: 404, body: "not found" }),
   );
-  await expect(page.locator("#save-frames")).toBeEnabled();
+  await fakeCamera(page);
+  await savePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "each" });
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__saveAnswer = "cancel";
+  });
+  await takeCockpitPair(page);
+  const status = page.locator("#c-status");
+  await expect(status).toHaveText(
+    "Not saved: the save dialog was closed. The pair is kept here for Download all. Not measured: see Results.",
+  );
+  await expect(status).toHaveClass(/bad/);
+  await expect(page.locator("#c-segs i").first()).toHaveClass("kept");
+  await expect(page.locator("#c-download-all")).toHaveText("Download all (1)");
+});
+
+/**
+ * Starts synthetic `devicemotion` readings at about 60 a second with the
+ * rotation rate `rate` (deg/s per axis); a new call replaces the old feed,
+ * and `null` stops it, as a sensor that falls silent.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number | null} rate
+ */
+async function motionFeed(page, rate) {
+  await page.evaluate((r) => {
+    const w = /** @type {any} */ (window);
+    clearInterval(w.__motionFeed);
+    if (r === null) {
+      return;
+    }
+    w.__motionFeed = setInterval(() => {
+      w.__motionCount = (w.__motionCount ?? 0) + 1;
+      window.dispatchEvent(
+        new DeviceMotionEvent("devicemotion", {
+          rotationRate: { alpha: r, beta: -r, gamma: r / 2 },
+        }),
+      );
+    }, 16);
+  }, rate);
+}
+
+/**
+ * Waits until the feed has sent `n` more readings (about 16 ms each).
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} n
+ */
+async function motionReadings(page, n) {
+  const from = await page.evaluate(
+    () => /** @type {any} */ (window).__motionCount ?? 0,
+  );
+  await page.waitForFunction(
+    (f) => /** @type {any} */ (window.__motionCount ?? 0) >= f,
+    from + n,
+  );
+}
+
+/**
+ * Photo A of the current pair with the big button, the camera started
+ * first; photo B is left to the test.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function takeCockpitA(page) {
+  const shutter = page.locator("#c-shutter");
+  const text = page.locator("#c-shutter-text");
+  await shutter.click();
+  await expect(text).toHaveText("Take A");
+  await page.waitForFunction(
+    () =>
+      /** @type {HTMLVideoElement} */ (document.querySelector("#c-video"))
+        .videoWidth > 0,
+  );
+  await shutter.click();
+  await expect(page.locator("#c-state-a")).toHaveText("taken");
+}
+
+/**
+ * Why this test matters: with the phone on its stand, photo B of a pair
+ * the motion sensor can judge takes itself once the phone has rested for
+ * the dwell, so the tap that shook the phone for A never blurs B; the
+ * pair is then measured and kept like a tapped one. A shaking phone keeps
+ * it waiting. The motion is synthetic `devicemotion` events.
+ */
+test("the feature matching cockpit takes photo B by itself once the phone is still", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitA(page);
+  const text = page.locator("#c-shutter-text");
+  await expect(text).toHaveText("Take B");
+  await motionFeed(page, 40);
+  await expect(text).toHaveText("Hold still");
+  await expect(page.locator("#c-read-mode")).toHaveText("auto");
+  await expect(page.locator("#c-status")).toHaveText(
+    "Hold still, or tap: photo B takes itself.",
+  );
+  await expect(page.locator("#c-read-still")).toHaveText("moving");
+  await expect(page.locator("#c-state-b")).toHaveText("now");
+  // About 2.5 s of shaking: B keeps waiting.
+  await motionReadings(page, 150);
+  await expect(text).toHaveText("Hold still");
+  expect(await logLines(page, "hands-off photo B")).toBe(0);
+  // The drawer pauses the wait for as long; closing it waits again, and
+  // the pause does not count as readings lost.
+  await openTab(page, "settings");
+  await motionReadings(page, 150);
+  await closeDrawer(page);
+  await expect(text).toHaveText("Hold still");
+  await expect(page.locator("#c-status")).toHaveText(
+    "Hold still, or tap: photo B takes itself.",
+  );
+  await motionFeed(page, 0.3);
+  // B is packed and the next pair comes up at once, so the durable end
+  // state is the status line, not tile B.
+  await expect(page.locator("#c-status")).toHaveText(
+    /^Kept feature-match-01-1a-s1-light-control-same-light\.zip here/,
+  );
+  await motionFeed(page, null);
+  expect(await logLines(page, "hands-off photo B: taken")).toBe(1);
+  await expect(page.locator("#c-segs i").first()).toHaveClass("kept");
+});
+
+/**
+ * Why this test matters: the ways out of a hands-off wait. With "At a
+ * tap" set, readings never start one; a sensor that falls silent ends the
+ * wait with a line that says so, and the big button takes B at a tap.
+ */
+test("the feature matching cockpit falls back to the tap when motion readings stop", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await openTab(page, "settings");
+  await page.locator('input[name="c-capture"][value="tap"]').check();
+  await closeDrawer(page);
+  await takeCockpitA(page);
+  const text = page.locator("#c-shutter-text");
+  await motionFeed(page, 0.3);
+  await expect(page.locator("#c-read-still")).toHaveText("steady");
+  await expect(text).toHaveText("Take B");
+  await expect(page.locator("#c-read-mode")).toHaveText("tap");
+
+  // Back to "By itself": the wait starts once the drawer closes.
+  await openTab(page, "settings");
+  await page.locator('input[name="c-capture"][value="auto"]').check();
+  await motionFeed(page, 40);
+  await closeDrawer(page);
+  await expect(text).toHaveText("Hold still");
+  await motionFeed(page, null);
+  await expect(page.locator("#c-status")).toHaveText(
+    "No motion readings: tap to take photo B.",
+  );
+  await expect(page.locator("#c-status")).toHaveClass(/bad/);
+  await expect(text).toHaveText("Take B");
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-status")).toHaveText(/^Kept .+\.zip here/);
+  expect(await logLines(page, "hands-off photo B")).toBe(0);
+});
+
+/**
+ * Why this test matters: the async rule for the pair's zip: while it is
+ * packed the big button says so and nothing else can start, and a failed
+ * encode (a phone out of memory) must say so, log the error and lose
+ * nothing: Download all still packs the photos afterwards.
+ */
+test("the feature matching cockpit shows packing, then a failed pack that loses nothing", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await noSavePicker(page);
+  await page.addInitScript(() => {
+    const w = /** @type {any} */ (window);
+    const real = HTMLCanvasElement.prototype.toBlob;
+    w.__toBlob = "ok";
+    HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
+      if (w.__toBlob === "hold") {
+        w.__toBlob = "null";
+        w.__releaseBlob = () => setTimeout(() => cb(null), 0);
+        return;
+      }
+      if (w.__toBlob === "null") {
+        setTimeout(() => cb(null), 0);
+        return;
+      }
+      real.call(this, cb, ...rest);
+    };
+  });
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await takeCockpitPair(page, async () => {
+    await page.evaluate(() => {
+      /** @type {any} */ (window).__toBlob = "hold";
+    });
+  });
+  await expect(page.locator("#c-shutter-text")).toHaveText("Saving");
+  await expect(page.locator("#c-shutter")).toBeDisabled();
+  await expect(page.locator("#c-download-all")).toBeDisabled();
+  await page.waitForFunction(
+    () => typeof (/** @type {any} */ (window).__releaseBlob) === "function",
+  );
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__releaseBlob();
+  });
+  await expect(page.locator("#c-status")).toHaveText(
+    /^Could not pack the pair: .*PNG encoding failed.*\. The photos are kept\.$/,
+  );
+  await expect(page.locator("#log")).toContainText("ERROR save:");
+
+  // Download all fails the same way, says so in red, and loses nothing.
+  const all = page.locator("#c-download-all");
+  await expect(all).toBeEnabled();
+  await all.click();
+  await expect(page.locator("#c-status")).toContainText(
+    "Could not prepare the zip:",
+  );
+  await expect(page.locator("#c-status")).toContainText(
+    "Nothing was lost; try again.",
+  );
+  await expect(page.locator("#c-status")).toHaveClass(/bad/);
+  await expect(all).toBeEnabled();
+
+  await page.evaluate(() => {
+    /** @type {any} */ (window).__toBlob = "ok";
+  });
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    all.click(),
+  ]);
+  const { names } = await zipContents(await readDownload(download));
+  expect(
+    names.filter((n) => /^feature-match-01-1a-s1-.*\.png$/.test(n)),
+  ).toHaveLength(2);
 });
 
 /**
@@ -677,20 +910,14 @@ test("the feature matching benchmark retries a camera start that failed at once"
       value: undefined,
     });
   });
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#state-a")).toHaveText(
-    "camera unavailable (see log)",
+  await openCockpit(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-shutter-text")).toHaveText("Retry camera");
+  await expect(page.locator("#c-status")).toHaveText(
+    "Camera unavailable: tap Retry camera.",
   );
-  await page.locator("#capture-a").click();
-  await expect
-    .poll(async () =>
-      ((await page.locator("#log").textContent()) ?? "")
-        .split("\n")
-        .filter((l) => l.includes("ERROR camera:")),
-    )
-    .toHaveLength(2);
+  await page.locator("#c-shutter").click();
+  await expect.poll(() => logLines(page, "ERROR camera:")).toBe(2);
 });
 
 test("the feature matching benchmark says when the camera is refused", async ({
@@ -698,17 +925,13 @@ test("the feature matching benchmark says when the camera is refused", async ({
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page, "reject");
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#state-a")).toHaveText(
-    "camera unavailable (see log)",
-  );
+  await openCockpit(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-shutter-text")).toHaveText("Retry camera");
   await expect(page.locator("#log")).toContainText(
     "ERROR camera: NotAllowedError",
   );
-  await expect(page.locator("#capture-a")).toBeEnabled();
-  await expect(page.locator("#capture-a")).toHaveText("Start camera");
+  await expect(page.locator("#c-shutter")).toBeEnabled();
 });
 
 /**
@@ -722,11 +945,12 @@ test("the feature matching benchmark keeps the camera off when a run starts duri
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page, "hold");
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
+  await openCockpit(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-shutter-text")).toHaveText("Starting");
+  await expect(page.locator("#c-status")).toHaveText("Starting the camera...");
+  await openTab(page, "results");
   await chooseSiftOnly(page);
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#state-a")).toHaveText("starting camera...");
   await page.locator("#run-synthetic").click();
   await expect(page.locator("#synthetic-state")).toHaveText("done: 1 methods");
   await page.evaluate(() =>
@@ -734,29 +958,28 @@ test("the feature matching benchmark keeps the camera off when a run starts duri
       /** @type {Window & Record<string, unknown>} */ (window).__releaseCamera
     )(),
   );
-  await expect(page.locator("#state-a")).toHaveText(
-    "camera stopped: tap again",
-  );
+  await expect(page.locator("#c-shutter-text")).toHaveText("Start");
   const state = await page.evaluate(() => {
     const w = /** @type {Window & Record<string, unknown>} */ (window);
     const s = /** @type {MediaStream} */ (w.__lastStream);
     return {
-      video: /** @type {HTMLVideoElement} */ (document.querySelector("#video"))
-        .srcObject,
+      video: /** @type {HTMLVideoElement} */ (
+        document.querySelector("#c-video")
+      ).srcObject,
       tracks: s.getTracks().map((t) => t.readyState),
     };
   });
   expect(state.video).toBeNull();
   expect(state.tracks).toEqual(["ended"]);
-  await expect(page.locator("#camera-box")).toBeHidden();
 });
 
 /**
  * Why this test matters: the photo tests are taken from what the page says
- * on the phone, so the card under the selector must always show the
- * selected pair's purpose, numbered steps and what to avoid, and follow the
- * selector; the general rules are open on the first visit only; the Options
- * and Copy log say they are not part of the photo tests.
+ * on the phone. The welcome card with the general rules shows on the first
+ * visit only; the Guide tab always shows the current pair's purpose,
+ * numbered steps and what to avoid, and follows a pair picked in the
+ * Pairs tab; the countdown can be stopped; the Options and Copy log say
+ * they are not part of the photo tests; Escape closes the drawer.
  */
 test("the feature matching benchmark guides each pair and the first visit", async ({
   page,
@@ -764,57 +987,84 @@ test("the feature matching benchmark guides each pair and the first visit", asyn
   const errors = /** @type {string[]} */ ([]);
   page.on("pageerror", (error) => errors.push(error.message));
   await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
   await page.setViewportSize({ width: 360, height: 740 });
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
+  await openCockpit(page);
 
-  await expect(page.locator("#before-start")).toHaveAttribute("open", "");
-  await expect(page.locator("#before-start-list")).toContainText(
+  await expect(page.locator("#c-welcome")).toBeVisible();
+  await expect(page.locator("#c-welcome-list")).toContainText(
     "Lock the screen rotation. Do not zoom.",
   );
-  await expect(page.locator("#before-start-list li")).toHaveCount(5);
+  await expect(page.locator("#c-welcome-list li")).toHaveCount(6);
+  await expect(page.locator("#c-status")).toHaveText(
+    "First time here? Read the card, then tap Start.",
+  );
 
-  await expect(page.locator("#pair")).toHaveValue("1a");
-  await expect(page.locator("#guide-purpose")).toHaveText(
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
+  await openTab(page, "guide");
+  await expect(page.locator("#c-guide-title")).toHaveText(
+    "1a: Same light twice",
+  );
+  await expect(page.locator("#c-guide-purpose")).toHaveText(
     "How many matches survive when nothing changes.",
   );
-  await expect(page.locator("#guide-steps li")).toHaveCount(4);
-  await expect(page.locator("#guide-avoid")).toHaveText(
+  await expect(page.locator("#c-guide-steps li")).toHaveCount(4);
+  await expect(page.locator("#c-guide-avoid")).toHaveText(
     "Avoid: Moving the phone, changing the light.",
   );
-  await expect(page.locator("#guide-spot")).toBeVisible();
+  await expect(page.locator("#c-guide-spot")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#c-drawer")).toBeHidden();
 
-  await page.locator("#pair").selectOption("2b");
-  await expect(page.locator("#guide-purpose")).toHaveText(
+  await openTab(page, "pairs");
+  await page
+    .locator("#c-pair-list button", { hasText: "Quarter turn" })
+    .click();
+  await expect(page.locator("#c-drawer")).toBeHidden();
+  await expect(page.locator("#c-chip-key")).toHaveText("2b");
+  await openTab(page, "guide");
+  await expect(page.locator("#c-guide-purpose")).toHaveText(
     "Does a method cope with a quarter turn?",
   );
-  await expect(page.locator("#guide-steps li")).toHaveCount(3);
-  await expect(page.locator("#guide-steps li").last()).toHaveText(
+  await expect(page.locator("#c-guide-steps li")).toHaveCount(3);
+  await expect(page.locator("#c-guide-steps li").last()).toHaveText(
     "Turn the phone sideways (either way) and aim at the same centre: photo B.",
   );
-  await expect(page.locator("#guide-avoid")).toHaveText(
+  await expect(page.locator("#c-guide-avoid")).toHaveText(
     "Avoid: Stepping closer or away.",
   );
-  await expect(page.locator("#guide-spot")).toBeHidden();
+  await expect(page.locator("#c-guide-spot")).toBeHidden();
 
-  await page.locator("#pair").selectOption("none");
-  await expect(page.locator("#guide-purpose")).toContainText(
-    "the Options decide what runs",
-  );
+  await openTab(page, "results");
   await expect(page.locator("#options-note")).toContainText(
     "WASM where the phone has no WebGPU",
   );
   await expect(page.locator("#options-note")).toContainText(
-    "Photo tests set these themselves",
+    "A run on a photo pair sets the rest itself",
   );
   await expect(page.locator("#copy-note")).toHaveText(
     "Not needed for the photo tests - the zip already contains the log. Use it to paste a quick timing run into a chat.",
   );
   expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
+  await closeDrawer(page);
+
+  // The default countdown: 3 s, and a second tap stops it.
+  const shutter = page.locator("#c-shutter");
+  const text = page.locator("#c-shutter-text");
+  await shutter.click();
+  await expect(page.locator("#c-welcome")).toBeHidden();
+  await expect(text).toHaveText("A in 3 s");
+  await shutter.click();
+  await expect(text).toHaveText("Tap to stop");
+  await shutter.click();
+  await expect(text).toHaveText("A in 3 s");
+  await expect(page.locator("#log")).toContainText("countdown: cancelled");
+  await expect(page.locator("#c-state-a")).toHaveText("now");
 
   await page.reload();
   await expect(page.locator("#log")).toContainText("ready");
-  await expect(page.locator("#before-start")).not.toHaveAttribute("open");
+  await expect(page.locator("#c-welcome")).toBeHidden();
+  await expect(page.locator("#c-chip-key")).toHaveText("2b");
   expect(errors).toEqual([]);
 });
 
@@ -833,11 +1083,11 @@ async function reportHeaders(page) {
  * Why this test matters: the first zip of the photo tests ran 5 runs after
  * a warm-up on WebGPU and WASM with both XFeat files, because the protocol's
  * settings had to be set by hand in Options. With the Options untouched, a
- * picked pair must run once, without a warm-up, on WebGPU only with one
- * XFeat file, and say so in the log and the report; where the browser has
- * no WebGPU it falls back to WASM and says that. The real methods cannot
- * load here (the network is refused), so their report headers name what
- * would have run.
+ * pair must run once, without a warm-up, on WebGPU only with one XFeat
+ * file, and say so in the log and the report; where the browser has no
+ * WebGPU it falls back to WASM and says that. The real methods cannot load
+ * here (the network is refused), so their report headers name what would
+ * have run.
  */
 for (const gpuCase of /** @type {const} */ ([
   "adapter",
@@ -864,11 +1114,15 @@ for (const gpuCase of /** @type {const} */ ([
       });
     }, gpuCase);
     const gpu = gpuCase === "adapter";
-    await page.goto("/feature-match-check.html?ui=cockpit");
-    await expect(page.locator("#log")).toContainText("ready");
-    await page.locator("#pair").selectOption("2a");
-    await takePhotos(page);
-    await expect(page.locator("#run-state")).toContainText("done: 3 methods");
+    await openCockpit(page);
+    await cockpitSettings(page);
+    await openTab(page, "pairs");
+    await page
+      .locator("#c-pair-list button", { hasText: "Upright twice" })
+      .click();
+    await expect(page.locator("#c-chip-key")).toHaveText("2a");
+    await takeCockpitPair(page);
+    await expect(page.locator("#log")).toContainText("done: 3 methods");
 
     const backend = gpu ? "webgpu" : "wasm";
     await expect(page.locator("#log")).toContainText(
@@ -888,129 +1142,111 @@ for (const gpuCase of /** @type {const} */ ([
 /**
  * Why this test matters: on the first evening the light was dimmed before
  * photo A, so the dimmed pairs had A and B equally dark and measured
- * nothing about light. Photo B of a dimmed pair that is not darker must
- * say so above the results, be recorded in the frames JSON, and keep the
- * selector on the pair after Download all so it is taken again; the
- * control pair warns the other way, when its light changed.
+ * nothing about light. A pair whose light did not change as it needs (the
+ * control pair's changed, a dimmed pair's did not) must say so in the dock
+ * and the Results tab, be recorded in the frames JSON, and be taken again
+ * before it is measured and saved, never moved past; a retake after a
+ * single file was saved gets a new running number, so its files never
+ * share the old ones' names.
  */
 test("the feature matching benchmark warns when the light did not change as the pair needs", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await chooseSiftOnly(page);
-  await page.locator("#pair").selectOption("1b");
-  await takePhotos(page);
-  await expect(page.locator("#light-warning")).toContainText(
-    "Photo B is not darker than photo A - the light has to change BETWEEN the two photos. Take this pair again: photo A in normal light, then dim, then photo B.",
-  );
-  await expect(page.locator("#light-warning")).toContainText(
-    "dim further (switch off more lights)",
-  );
-  await expect(page.locator("#light-warning")).toBeVisible();
-  await expect(page.locator("#log")).toContainText("light check: not-darker");
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  await page.locator("#save-frames").click();
-  await expect(page.locator("#save-links a")).toHaveCount(5);
-  const stem = "feature-match-01-1b-s1-light-dimmed";
-  const [zipFile] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#save-links a").first().click(),
-  ]);
-  const reader = new ZipReader(
-    new Uint8ArrayReader(new Uint8Array(await readDownload(zipFile))),
-  );
-  const entry = (await reader.getEntries()).find(
-    (e) => e.filename === "feature-match-frames.json",
-  );
-  if (!entry || entry.directory) {
-    throw new Error("no frames JSON in the zip");
-  }
-  expect(JSON.parse(await entry.getData(new TextWriter())).lightCheck).toBe(
-    "not-darker",
-  );
-  await reader.close();
-  expect(zipFile.suggestedFilename()).toBe(`${stem}.zip`);
-  // The pair is taken again: the selector stays.
-  await expect(page.locator("#log")).toContainText("pair kept: take 1b again");
-  await expect(page.locator("#pair")).toHaveValue("1b");
-
-  // Retaking only photo B after the save is a new take: a new running
-  // number, so its files never share the old ones' names.
-  await page.locator("#capture-b").click();
-  await expect(page.locator("#capture-b")).toHaveText("Take photo B");
-  await dimCamera(page);
-  await page.locator("#capture-b").click();
-  await expect(page.locator("#pair-state")).toHaveText(
-    "now: pair 2, 1b light: dimmed, spot 1",
-  );
-  await expect(page.locator("#light-warning")).toBeHidden();
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  const retake = await saveAll(page);
-  expect(retake.suggestedFilename()).toBe(
-    "feature-match-02-1b-s1-light-dimmed.zip",
-  );
-  expect((await framesJsonOf(retake)).lightCheck).toBe("ok");
-  await expect(page.locator("#pair")).toHaveValue("1c");
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "each" });
+  const text = page.locator("#c-shutter-text");
 
   // The control pair: A in the normal light, B dimmed, is a changed light.
-  // The camera is off after the run, so the light goes back on without
-  // waiting for a frame: the next start paints fresh ones.
-  await page.evaluate(() => {
-    /** @type {Window & Record<string, unknown>} */ (window).__dim = false;
-  });
-  await page.locator("#pair").selectOption("1a");
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#capture-a")).toHaveText("Take photo A");
-  await page.locator("#capture-a").click();
-  // A new photo A withdraws the old warning.
-  await expect(page.locator("#light-warning")).toBeHidden();
-  await dimCamera(page);
-  await page.locator("#capture-b").click();
-  await expect(page.locator("#light-warning")).toContainText(
+  await takeCockpitPair(page, () => dimCamera(page));
+  await expect(page.locator("#log")).toContainText(
+    "light check 1a-s1: changed",
+  );
+  await expect(text).toHaveText("Retake B");
+  await expect(page.locator("#c-instr")).toHaveText(
+    "The light changed during the control pair. Retake B with the same light.",
+  );
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
+  await openTab(page, "results");
+  await expect(page.locator("#c-light-warn")).toContainText(
     "the light changed during the control pair",
   );
-  await expect(page.locator("#log")).toContainText("light check: changed");
+  const [infoFile] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#c-file-info").click(),
+  ]);
+  const stem1a = "light-control-same-light";
+  expect(infoFile.suggestedFilename()).toBe(
+    `feature-match-01-1a-s1-${stem1a}-frames.json`,
+  );
+  expect(
+    JSON.parse((await readDownload(infoFile)).toString("utf8")).lightCheck,
+  ).toBe("changed");
+  await closeDrawer(page);
+
+  await dimCamera(page, false);
+  let saved = page.waitForEvent("download");
+  await page.locator("#c-shutter").click();
+  let zip = await saved;
+  expect(zip.suggestedFilename()).toBe(`feature-match-02-1a-s1-${stem1a}.zip`);
+  expect((await framesJsonOf(zip)).lightCheck).toBe("ok");
+  await expect(page.locator("#c-chip-key")).toHaveText("1b");
+
+  // A dimmed pair whose photo B is not darker.
+  await takeCockpitPair(page);
+  await expect(page.locator("#log")).toContainText(
+    "light check 1b-s1: not-darker",
+  );
+  await expect(text).toHaveText("Retake B");
+  await openTab(page, "results");
+  await expect(page.locator("#c-light-warn")).toContainText(
+    "Photo B is not darker than photo A - the light has to change BETWEEN the two photos.",
+  );
+  await closeDrawer(page);
+  await dimCamera(page);
+  saved = page.waitForEvent("download");
+  await page.locator("#c-shutter").click();
+  zip = await saved;
+  expect(zip.suggestedFilename()).toBe(
+    "feature-match-03-1b-s1-light-dimmed.zip",
+  );
+  expect((await framesJsonOf(zip)).lightCheck).toBe("ok");
 });
 
 /**
  * Why this test matters: a reload or a discarded tab restarted the running
- * number, and two downloads of one evening shared a name. The number, the
- * pair and the spot carry over a reload; with storage blocked every load
- * starts at 1, and the session token in the frames JSON keeps the two runs
- * apart.
+ * number, and two downloads of one evening shared a name. The number and
+ * the pair carry over a reload; with storage blocked every load starts at
+ * 1, and the session token in the frames JSON keeps the two runs apart.
  */
 test("the feature matching benchmark keeps the running number across a reload", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await chooseSiftOnly(page);
-  await page.locator("#pair").selectOption("2a");
-  await takePhotos(page);
-  await expect(page.locator("#pair-state")).toHaveText(
-    "now: pair 1, 2a rotation: control (both upright), spot 1",
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "each" });
+  let saved = page.waitForEvent("download");
+  await takeCockpitPair(page);
+  const first = await saved;
+  expect(first.suggestedFilename()).toBe(
+    "feature-match-01-1a-s1-light-control-same-light.zip",
   );
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  const first = await saveAll(page);
-  await expect(page.locator("#pair")).toHaveValue("2b");
 
   await page.reload();
   await expect(page.locator("#log")).toContainText("ready");
-  await expect(page.locator("#pair")).toHaveValue("2b");
-  await chooseSiftOnly(page);
-  await takePhotos(page);
-  await expect(page.locator("#pair-state")).toHaveText(
-    "now: pair 2, 2b rotation: 90 deg, spot 1",
-  );
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  const second = await saveAll(page);
+  await expect(page.locator("#c-chip-key")).toHaveText("1b");
+  await siftOnly(page);
+  saved = page.waitForEvent("download");
+  await takeCockpitPair(page, () => dimCamera(page));
+  const second = await saved;
   expect(second.suggestedFilename()).toBe(
-    "feature-match-02-2b-s1-rotation-90-deg.zip",
+    "feature-match-02-1b-s1-light-dimmed.zip",
   );
   const [a, b] = [await framesJsonOf(first), await framesJsonOf(second)];
   expect(a.session).toMatch(/^[0-9a-f]{8}$/);
@@ -1018,46 +1254,48 @@ test("the feature matching benchmark keeps the running number across a reload", 
 });
 
 /**
- * Why this test matters: a tester may save a pair's files one by one
- * instead of as the zip. Only the zip used to mark the pair saved, so a
- * photo B taken again afterwards was offered under the names already on
- * the device. Any save link marks the pair saved, and the retake gets a
- * new running number.
+ * Why this test matters: a tester may save a pair's files one by one from
+ * the Results tab. A photo B taken again afterwards must not be offered
+ * under the names already on the device: any single file marks the pair
+ * saved, and the retake gets a new running number. It also proves "Retake
+ * B of NN" goes back to the pair finished last.
  */
 test("the feature matching benchmark numbers a retake after a single-file download", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
-  await page.goto("/feature-match-check.html?ui=cockpit");
-  await expect(page.locator("#log")).toContainText("ready");
-  await chooseSiftOnly(page);
-  await page.locator("#pair").selectOption("2a");
-  await takePhotos(page);
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  /** Save, then tap the frame B link; returns its download. */
-  const saveFrameB = async () => {
-    await page.locator("#save-frames").click();
-    await expect(page.locator("#save-links a")).toHaveCount(5);
-    const link = page.locator("#save-links a", { hasText: "frame B (PNG)" });
-    const [download] = await Promise.all([
-      page.waitForEvent("download"),
-      link.click(),
-    ]);
-    return download;
-  };
-  const stem = "feature-match-01-2a-s1-rotation-control-both-upright";
-  expect((await saveFrameB()).suggestedFilename()).toBe(`${stem}-frame-b.png`);
-
-  await page.locator("#capture-b").click();
-  await expect(page.locator("#capture-b")).toHaveText("Take photo B");
-  await page.locator("#capture-b").click();
-  await expect(page.locator("#pair-state")).toHaveText(
-    "now: pair 2, 2a rotation: control (both upright), spot 1",
+  await noSavePicker(page);
+  await openCockpit(page);
+  await siftOnly(page);
+  await cockpitSettings(page, { save: "end" });
+  await openTab(page, "pairs");
+  await page
+    .locator("#c-pair-list button", { hasText: "Upright twice" })
+    .click();
+  await takeCockpitPair(page);
+  const stem = "rotation-control-both-upright";
+  await expect(page.locator("#c-status")).toHaveText(
+    new RegExp(`^Kept feature-match-01-2a-s1-${stem}\\.zip here`),
   );
-  await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-  expect((await saveFrameB()).suggestedFilename()).toBe(
-    "feature-match-02-2a-s1-rotation-control-both-upright-frame-b.png",
+  await expect(page.locator("#c-chip-key")).toHaveText("2b");
+  await page.locator("#c-retake").click();
+  await expect(page.locator("#c-chip-key")).toHaveText("2a");
+  await expect(page.locator("#c-shutter-text")).toHaveText("Retake B");
+
+  await openTab(page, "results");
+  const [frameB] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator("#c-file-b").click(),
+  ]);
+  expect(frameB.suggestedFilename()).toBe(
+    `feature-match-01-2a-s1-${stem}-frame-b.png`,
+  );
+  await closeDrawer(page);
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#log")).toContainText("photo B: 2a-s1 #2");
+  await expect(page.locator("#c-status")).toHaveText(
+    new RegExp(`^Kept feature-match-02-2a-s1-${stem}\\.zip here`),
   );
 });
 
@@ -1066,6 +1304,7 @@ test("the feature matching benchmark tells two runs apart with storage blocked",
 }) => {
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
+  await noSavePicker(page);
   await page.addInitScript(() => {
     for (const m of ["getItem", "setItem"]) {
       Object.defineProperty(Storage.prototype, m, {
@@ -1078,18 +1317,167 @@ test("the feature matching benchmark tells two runs apart with storage blocked",
   });
   const sessions = [];
   for (let i = 0; i < 2; i++) {
-    await page.goto("/feature-match-check.html?ui=cockpit");
-    await expect(page.locator("#log")).toContainText("ready");
-    await chooseSiftOnly(page);
-    await takePhotos(page);
-    await expect(page.locator("#run-state")).toHaveText("done: 1 methods");
-    const zip = await saveAll(page);
+    await openCockpit(page);
+    await siftOnly(page);
+    await cockpitSettings(page, { save: "each" });
+    const saved = page.waitForEvent("download");
+    await takeCockpitPair(page);
+    const zip = await saved;
     expect(zip.suggestedFilename()).toMatch(/^feature-match-01-1a-/);
     sessions.push((await framesJsonOf(zip)).session);
   }
   expect(sessions[0]).toMatch(/^[0-9a-f]{8}$/);
   expect(sessions[1]).not.toBe(sessions[0]);
 });
+
+/**
+ * Why this test matters: the cockpit is used on a phone upright, a phone
+ * on its side and a foldable's inner screen, as in the chosen prototype.
+ * Upright the dock sits under the viewfinder; wider, beside it on the
+ * right. Inside the dock the order is fixed (chip, instruction, the big
+ * button with its side buttons and photo tiles, readouts, status, the
+ * foot with Details and Download all), the controls are apart and wholly
+ * on screen, and the page never scrolls. A phone on its side is short: the
+ * prototype cut its foot off there, so the foot must keep room for the
+ * taller fonts of other systems (about 30 px). Below 360 px of height the
+ * dock alone scrolls, the big button still on screen without scrolling.
+ */
+for (const vp of [
+  { width: 412, height: 915 },
+  { width: 360, height: 740 },
+  { width: 915, height: 412 },
+  { width: 800, height: 360 },
+  { width: 800, height: 300 },
+  { width: 880, height: 790 },
+]) {
+  test(`the cockpit dock fits ${String(vp.width)}x${String(vp.height)}`, async ({
+    page,
+  }) => {
+    await page.setViewportSize(vp);
+    await routeNetwork(page, fulfillSift);
+    await openCockpit(page);
+    const m = await page.evaluate(() => {
+      const box = (/** @type {string} */ sel) => {
+        const r = /** @type {Element} */ (
+          document.querySelector(sel)
+        ).getBoundingClientRect();
+        return {
+          left: r.left,
+          top: r.top,
+          right: r.right,
+          bottom: r.bottom,
+          width: r.width,
+          height: r.height,
+        };
+      };
+      return {
+        stage: box("#c-stage"),
+        dock: box("#c-dock"),
+        chip: box("#c-chip"),
+        instr: box("#c-instr"),
+        shotA: box("#c-shot-a"),
+        shotB: box("#c-shot-b"),
+        shutter: box("#c-shutter"),
+        retake: box("#c-retake"),
+        next: box("#c-next"),
+        readouts: box(".c-readouts"),
+        status: box("#c-status"),
+        details: box("#c-details"),
+        download: box("#c-download-all"),
+        scrollW: document.documentElement.scrollWidth,
+        scrollH: document.documentElement.scrollHeight,
+        dockScroll: (() => {
+          const d = /** @type {HTMLElement} */ (
+            document.querySelector("#c-dock")
+          );
+          const range = d.scrollHeight - d.clientHeight;
+          d.scrollTop = d.scrollHeight;
+          const foot = box("#c-details").bottom;
+          d.scrollTop = 0;
+          return { range, foot };
+        })(),
+      };
+    });
+    const near = (/** @type {number} */ got, /** @type {number} */ want) =>
+      expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
+    /** `a` wholly left of `b`, at least 4 px apart. */
+    const leftOf = (
+      /** @type {{ right: number }} */ a,
+      /** @type {{ left: number }} */ b,
+    ) => expect(a.right + 4).toBeLessThanOrEqual(b.left + 0.5);
+    /** `a` wholly above `b`. */
+    const above = (
+      /** @type {{ bottom: number }} */ a,
+      /** @type {{ top: number }} */ b,
+    ) => expect(a.bottom).toBeLessThanOrEqual(b.top + 0.5);
+    const { stage, dock, chip, instr, shotA, shotB, shutter, retake, next } = m;
+    const { readouts, status, details, download } = m;
+    expect(m.scrollW).toBeLessThanOrEqual(vp.width);
+    expect(m.scrollH).toBeLessThanOrEqual(vp.height);
+    near(stage.left, 0);
+    near(stage.top, 0);
+    near(dock.right, vp.width);
+    near(dock.bottom, vp.height);
+    if (vp.width < vp.height) {
+      // The dock under the viewfinder, both the full width.
+      near(stage.right, vp.width);
+      near(dock.left, 0);
+      near(dock.top, stage.bottom);
+    } else {
+      // The dock on the right, both the full height.
+      near(stage.bottom, vp.height);
+      near(dock.top, 0);
+      near(dock.left, stage.right);
+    }
+    const controls = [chip, instr, shotA, shotB, shutter, retake, next];
+    for (const r of [...controls, readouts, status, details, download]) {
+      expect(r.left).toBeGreaterThanOrEqual(dock.left - 0.5);
+      expect(r.right).toBeLessThanOrEqual(dock.right + 0.5);
+      expect(r.top).toBeGreaterThanOrEqual(dock.top - 0.5);
+      expect(r.bottom).toBeLessThanOrEqual(
+        vp.height + m.dockScroll.range + 0.5,
+      );
+    }
+    // Only a very short dock scrolls, and the big button stays on screen
+    // without scrolling; scrolled to its end, the foot is on screen.
+    if (vp.height >= 360) expect(m.dockScroll.range).toBeLessThanOrEqual(0);
+    expect(shutter.bottom).toBeLessThanOrEqual(vp.height + 0.5);
+    expect(m.dockScroll.foot).toBeLessThanOrEqual(vp.height + 0.5);
+    // Top to bottom.
+    above(chip, instr);
+    above(instr, shotA);
+    above(instr, retake);
+    above(shutter, readouts);
+    above(shotA, readouts);
+    above(readouts, status);
+    above(status, details);
+    // The big button between its side buttons, centred on one line, round
+    // and thumb-sized; the side buttons tall enough to hit.
+    near(retake.top + retake.height / 2, shutter.top + shutter.height / 2);
+    near(next.top + next.height / 2, shutter.top + shutter.height / 2);
+    leftOf(retake, shutter);
+    leftOf(shutter, next);
+    near(shutter.width, shutter.height);
+    expect(shutter.height).toBeGreaterThanOrEqual(76);
+    expect(Math.min(retake.height, next.height)).toBeGreaterThanOrEqual(48);
+    // The photo tiles: beside the big button, or a row above it.
+    leftOf(shotA, shotB);
+    if (shotA.bottom <= shutter.top) {
+      above(shotB, shutter);
+    } else {
+      leftOf(retake, shotA);
+      leftOf(shotA, shutter);
+      leftOf(shutter, shotB);
+      leftOf(shotB, next);
+    }
+    // The foot: two buttons side by side, on screen.
+    near(details.top, download.top);
+    leftOf(details, download);
+    if (vp.height <= 560 && m.dockScroll.range <= 0) {
+      expect(details.bottom + 30).toBeLessThanOrEqual(vp.height);
+    }
+  });
+}
 
 /**
  * Dims the fake camera and waits for two frames of the flat mode's video.
@@ -1188,6 +1576,18 @@ async function expectFlatControlsOnScreen(page, phase) {
   await page.setViewportSize(FLAT_VIEWPORTS[0]);
 }
 
+/**
+ * Opens the flat target capture from the Results tab.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function openFlat(page) {
+  await openTab(page, "results");
+  await page.locator("#c-open-flat").click();
+  await expect(page.locator("#flat")).toBeVisible();
+  await expect(page.locator("#c-drawer")).toBeHidden();
+}
+
 /** Each photo waits for its 3 s countdown. */
 const AFTER_COUNTDOWN = { timeout: 10_000 };
 
@@ -1195,13 +1595,13 @@ const AFTER_COUNTDOWN = { timeout: 10_000 };
  * Why this test matters: the flat target capture is used on a phone resting
  * on something steady, one surface after another, with photos that exist
  * only in the page until downloaded. It proves the whole loop for one
- * surface: the mode opens from the pair selector, the reference waits for
+ * surface: the mode opens from the Results tab, the reference waits for
  * its countdown (which a second tap cancels), the four corner taps are
  * guided in order and can be redone, the straightened check is shown
  * before it is kept, the full-light and a darker shot of a pose get their
  * light bin from the luma ratio (shown live too), and one tap downloads
  * one zip with every photo, the corners and the tags in the file names
- * and the JSON. The progress survives a reload, every control is on
+ * and the JSON. The progress survives a reload (the mode is opened again by hand), every control is on
  * screen at the three viewports without scrolling, Exit gives the photo
  * pairs back, and nothing is uploaded (every request off the machine is
  * refused).
@@ -1218,8 +1618,7 @@ test("the feature matching page captures a flat target surface end to end", asyn
   await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
 
-  await page.locator("#pair").selectOption("flat");
-  await expect(page.locator("#flat")).toBeVisible();
+  await openFlat(page);
   await expect(page.locator("#flat-where")).toHaveText("Overview");
   await expect(page.locator("#flat-classes li")).toHaveText([
     "busy picture: 0 of 5 complete, 0 started",
@@ -1406,10 +1805,10 @@ test("the feature matching page captures a flat target surface end to end", asyn
   });
   expect(info.shots[1].lumaRatio).toBeLessThan(0.35);
 
-  // After a reload the mode and the downloaded progress are back.
+  // After a reload the downloaded progress is back.
   await page.reload();
   await expect(page.locator("#log")).toContainText("ready");
-  await expect(page.locator("#flat")).toBeVisible();
+  await openFlat(page);
   await expect(page.locator("#flat-where")).toHaveText(
     "Surface 1, busy picture, pose 40 % wide, 0 deg",
   );
@@ -1431,11 +1830,9 @@ test("the feature matching page captures a flat target surface end to end", asyn
   // Exit gives the photo pairs back, and they still work.
   await page.locator("#flat-exit").click();
   await expect(page.locator("#flat")).toBeHidden();
-  await expect(page.locator("#pair")).toHaveValue("1a");
-  await page.locator("#capture-a").click();
-  await expect(page.locator("#state-a")).toHaveText(
-    "camera on: aim, then tap Take photo A",
-  );
+  await expect(page.locator("#c-chip-key")).toHaveText("1a");
+  await page.locator("#c-shutter").click();
+  await expect(page.locator("#c-shutter-text")).toHaveText("A in 3 s");
   expect(await pageOverflow(page)).toBeLessThanOrEqual(0);
   expect(errors).toEqual([]);
 });
@@ -1459,7 +1856,7 @@ test("the flat target capture keeps the photos when the zip fails, and attaches 
   await page.setViewportSize(FLAT_VIEWPORTS[0]);
   await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
-  await page.locator("#pair").selectOption("flat");
+  await openFlat(page);
 
   await page.locator("#flat-new-file").setInputFiles({
     name: "Poster.PNG",
@@ -1556,7 +1953,7 @@ test("the flat target capture asks before leaving with only an attached original
   await fakeCamera(page);
   await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
-  await page.locator("#pair").selectOption("flat");
+  await openFlat(page);
   await page.locator("#flat-new-file").setInputFiles({
     name: "poster.png",
     mimeType: "image/png",
@@ -1633,6 +2030,7 @@ test("the feature matching speed test reports an arm that cannot load", async ({
   });
   await page.goto("/feature-match-check.html?ui=cockpit");
   await expect(page.locator("#log")).toContainText("ready");
+  await openTab(page, "results");
   await page.locator("#speed summary").click();
   for (const box of ["#t-xfeat", "#t-dino-int8", "#t-dino-q4f16"]) {
     await page.locator(box).uncheck();
@@ -2096,6 +2494,8 @@ test("the guided view starts the camera again after the help while the prompt wa
   await expect(page.locator("#g-intro")).toBeVisible();
   await page.locator("#g-intro-start").click();
   await expect(page.locator("#g-run")).toBeVisible();
+  // Two starts are pending: the one the help stopped, then the new one.
+  // Each is released in turn; the stopped one's late stream must not count.
   for (let i = 0; i < 2; i++) {
     await page.evaluate(() => {
       /** @type {any} */ (window).__releaseCamera();

@@ -125,7 +125,7 @@ function primaryView(s: FeatureMatchState, due: "a" | "b" | null): PrimaryView {
       label: "Next pair",
       sub: warn
         ? "or tap A or B to retake first"
-        : `${next.key}: ${GUIDED_STEPS[next.key as keyof typeof GUIDED_STEPS].title}`,
+        : `${next.key}: ${GUIDED_STEPS[next.key].title}`,
     };
   }
   if (step.kind === "missing") {
@@ -150,7 +150,7 @@ export function runView(s: FeatureMatchState): RunView {
   const list = planSlots(s.plan);
   const i = Math.min(Math.max(0, s.plan.current), list.length - 1);
   const slot = list[i]!;
-  const key = slot.key as keyof typeof GUIDED_STEPS;
+  const key = slot.key;
   const card = guidedCard(key);
   const rec = s.plan.slots[slot.id];
   const g = s.guided;
@@ -229,7 +229,7 @@ const STATUS_WORDS: Readonly<Record<SlotStatus, string>> = {
 export function pairRows(s: FeatureMatchState): PairRow[] {
   return planSlots(s.plan).map((slot, index) => {
     const status = slotStatus(s.plan.slots[slot.id]);
-    const title = GUIDED_STEPS[slot.key as keyof typeof GUIDED_STEPS].title;
+    const title = GUIDED_STEPS[slot.key].title;
     return {
       index,
       label: isLight(slot.key)
@@ -318,10 +318,37 @@ export function planPairOf(
   frames: ReadonlyMap<string, SavedFrame>,
 ): PlanPair | null {
   const slot = planSlots(s.plan)[s.plan.current];
-  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  return slot ? pairAt(s, frames, slot.id) : null;
+}
+
+/** The pair of `slotId`, or null for a half pair or a frame not loaded. */
+export function pairAt(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+  slotId: string,
+): PlanPair | null {
+  const slot = planSlots(s.plan).find((sl) => sl.id === slotId);
+  const rec = s.plan.slots[slotId];
   const a = rec?.a ? frames.get(rec.a.id) : undefined;
   const b = rec?.b ? frames.get(rec.b.id) : undefined;
   return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
+}
+
+/**
+ * The speed test's photo pair: the current one, else the take the last
+ * photo-pair run measured (after the automatic move the current pair is
+ * empty), else null for the synthetic pair.
+ */
+export function speedPairOf(
+  s: FeatureMatchState,
+  frames: ReadonlyMap<string, SavedFrame>,
+): PlanPair | null {
+  const now = planPairOf(s, frames);
+  if (now || !s.planRun) {
+    return now;
+  }
+  const last = pairAt(s, frames, s.planRun.slot);
+  return last && last.seq === s.planRun.seq ? last : null;
 }
 
 /**
@@ -402,25 +429,41 @@ export const deviceSummary = (d: DeviceInfo): string =>
  */
 export const STEADY_THRESHOLD = 6;
 
-type RotationRate = {
+export type RotationRate = {
   readonly alpha: number | null;
   readonly beta: number | null;
   readonly gamma: number | null;
 } | null;
 
+/**
+ * The finite rotation rates of a reading. A value that is not a finite
+ * number counts as missing: one NaN would latch the level to NaN for good.
+ */
+const finiteRates = (r: RotationRate): number[] =>
+  r
+    ? [r.alpha, r.beta, r.gamma].filter(
+        (v): v is number => typeof v === "number" && Number.isFinite(v),
+      )
+    : [];
+
+/** Whether a `devicemotion` reading carries a usable rotation rate. */
+export const hasRate = (r: RotationRate): boolean => finiteRates(r).length > 0;
+
+/**
+ * The summed absolute finite rotation rates of a reading, or null for a
+ * reading without any, or whose sum overflows past the largest number.
+ */
+export function rateSum(r: RotationRate): number | null {
+  const rates = finiteRates(r);
+  if (rates.length === 0) return null;
+  const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
+  return Number.isFinite(m) ? m : null;
+}
+
 /** The next smoothed motion level from a `devicemotion` rotation rate. */
 export function motionStep(level: number, r: RotationRate): number {
-  if (!r) return level;
-  // A value that is not a finite number counts as missing: one NaN would
-  // latch the level to NaN for good.
-  const rates = [r.alpha, r.beta, r.gamma].filter(
-    (v): v is number => typeof v === "number" && Number.isFinite(v),
-  );
-  if (rates.length === 0) return level;
-  const m = rates.reduce((sum, v) => sum + Math.abs(v), 0);
-  // Absurdly large rates can sum past the largest number: ignore that too.
-  if (!Number.isFinite(m)) return level;
-  return level * 0.8 + m * 0.2;
+  const m = rateSum(r);
+  return m === null ? level : level * 0.8 + m * 0.2;
 }
 
 export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;
