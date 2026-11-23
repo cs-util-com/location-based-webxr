@@ -6,7 +6,7 @@ The worker spike page's run status as one Redux slice: the phase (starting, read
 
 ## Public API
 
-- `createWorkerSpikeStore(plan)` -> `WorkerSpikeStore`: a store for one run of `plan`.
+- `createWorkerSpikeStore(plan)`: a store for one run of `plan`.
 - `workerSpikeActions`: `cameraOn`, `cameraFailed(error)`, `runStarted(now)`, `stepBegan({ step, now })`, `photoTaken`, `pairMeasured({ ms, now })`, `liveVerdict(verdict)`, `finished(result)`, `runFailed(error)`, `logged(line)`.
 - `SpikePhase`, `WorkerSpikeState`.
 

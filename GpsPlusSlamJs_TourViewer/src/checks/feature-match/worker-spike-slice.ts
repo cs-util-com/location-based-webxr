@@ -124,5 +124,3 @@ export function createWorkerSpikeStore(plan: SpikePlan) {
     preloadedState: initial(plan),
   });
 }
-
-export type WorkerSpikeStore = ReturnType<typeof createWorkerSpikeStore>;

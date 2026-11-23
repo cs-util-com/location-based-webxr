@@ -11,6 +11,7 @@
 import { lowerMedian } from "gps-plus-slam-app-framework/utils/median";
 import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
 
+import { clamp01 } from "../../landing/clamp01.js";
 import type { MethodResult } from "./bench-run";
 import { measureMsOf } from "./measure-worker-core";
 
@@ -155,8 +156,6 @@ export interface SpikeProgress {
   readonly status: string;
 }
 
-const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
-
 function leftText(ms: number): string {
   if (ms <= 0) {
     return "almost done";
@@ -299,12 +298,12 @@ export function methodTimes(
         text: `could not run: ${shortReason(why)}`,
       };
     }
-    const median = lowerMedian(ok.map((r) => measureMsOf([r])));
+    const typical = lowerMedian(ok.map((r) => measureMsOf([r])));
     return {
       ...head,
       backend: ok[0]!.backend,
       failed: false,
-      text: `${seconds(median)} per pair, first load ${seconds(ok[0]!.initMs)} (${String(ok.length)} pair${ok.length === 1 ? "" : "s"})`,
+      text: `${seconds(typical)} per pair, first load ${seconds(ok[0]!.initMs)} (${String(ok.length)} pair${ok.length === 1 ? "" : "s"})`,
     };
   });
 }
