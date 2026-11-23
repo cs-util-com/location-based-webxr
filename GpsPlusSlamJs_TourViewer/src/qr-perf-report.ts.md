@@ -15,7 +15,7 @@ the main thread. It measures, per capture:
   median (relative, so a 30 fps and a 60 fps phone are judged alike).
 
 Its report is a section of the visitor's `?debug=1` Copy log
-(`travelling-box-log.ts`, `wireTravelLogButtons`' appendix), so a field
+(`travelling-box-log.ts`, `wireTravelLogButtons`' appendices), so a field
 test reads it as `?debug=1&qrperf=1`. A diagnostic buffer, not app state:
 it lives beside the store, like the Copy log's other sections. Modelled on
 the QR demo's instrument, kept small and in this app.
