@@ -52,7 +52,7 @@ import { cameraNue, type ArPoseLike } from "./visitor-position.js";
 export const QR_BURST_MS = 10_000;
 /** QR's rate while no code is near, and while the position is unknown:
  *  codes without a position and other tours' codes are read at it. */
-export const QR_SLOW_HZ = 1;
+const QR_SLOW_HZ = 1;
 
 /** A station as a code's reach reads it. */
 export interface CodeStation {

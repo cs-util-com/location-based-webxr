@@ -31,7 +31,7 @@ would veto every frame. `ar-entry.ts` builds one per session.
 - `codeTargets({ levels, levelIdByText, stations, zero, detections, params })`:
   the codes as kernel targets, keyed by level id.
 - `codeReachM(code, stations, otherCodes)`, `newestHitAtMs(detections)`.
-- `QR_BURST_MS` (10 000), `QR_SLOW_HZ` (1); types `CodeStation`,
+- `QR_BURST_MS` (10 000; the 1 Hz slow rate `QR_SLOW_HZ` is internal); types `CodeStation`,
   `QrDetectionsView`, `TrackerCaptureWiringDeps`, `TrackerCaptureWiring`.
 
 ## The rules
