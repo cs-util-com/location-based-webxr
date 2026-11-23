@@ -126,6 +126,7 @@ import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
   duplicateItemGeo,
+  eastOf,
   duplicateStationGeo,
   isStationRadius,
   preloadRadiusM,
@@ -5002,6 +5003,7 @@ function folderIdsIn(folder: TourFolder): string[] {
 function folderDuplicate(
   before: TourDocumentState,
   payload: FolderDuplicatePayload,
+  shiftM = 0,
 ): TourDocumentState {
   const source = folderCopySource(before, payload);
   if (source === null) return before;
@@ -5016,7 +5018,7 @@ function folderDuplicate(
     ...was,
     position: decomposeTourFolderPath(
       holders,
-      localPoseOf(duplicateItemGeo(origin), frame.geo),
+      localPoseOf(eastOf(duplicateItemGeo(origin), shiftM), frame.geo),
     ).position,
   });
   if (pose === null) return before;
@@ -5152,14 +5154,16 @@ function withFolderCopy(
  *  (beside itself, in its folder); into another one, a copy standing
  *  there as the original stands in its own station (its pose in the
  *  station's frame kept, a rigid move, so it fits the format's bound
- *  there as it fits it here), out of any folder. The same state for an
- *  unknown item or station, an entry of a story, and a taken new id. */
+ *  there as it fits it here), out of any folder; either moved `shiftM`
+ *  further east. The same state for an unknown item or station, an entry
+ *  of a story, a taken new id, and a copy past its station's bound. */
 function objectPasteInto(
   before: TourDocumentState,
   payload: {
     readonly id: string;
     readonly newId: string;
     readonly toStationId: string;
+    readonly shiftM: number;
     readonly createdAtIso: string;
     readonly what: string;
   },
@@ -5175,7 +5179,12 @@ function objectPasteInto(
   ) {
     return before;
   }
-  if (from === payload.toStationId) return objectDuplicate(before, payload);
+  if (from === payload.toStationId) {
+    return objectDuplicate(before, {
+      ...payload,
+      geo: eastOf(duplicateItemGeo(found.object.geo), payload.shiftM),
+    });
+  }
   const source = frameOf(before, from);
   const target = frameOf(before, payload.toStationId);
   if (source === undefined || target === undefined) return before;
@@ -5191,7 +5200,10 @@ function objectPasteInto(
       {
         id: payload.newId,
         createdAtIso: payload.createdAtIso,
-        geo: rigidlyMoved(found.object.geo, source.geo, target.geo),
+        geo: eastOf(
+          rigidlyMoved(found.object.geo, source.geo, target.geo),
+          payload.shiftM,
+        ),
         station: target.id,
       },
       before.addedAssets,
@@ -5207,23 +5219,35 @@ function objectPasteInto(
  *  Duplicate makes (`folderDuplicate`); into another one, a copy after
  *  that station's own children, standing there as the original stands in
  *  its station (its pose in the station's frame kept, nested or not),
- *  everything it holds copied as `withFolderCopy` copies it. The same
- *  state where `folderCopySource` refuses, for an unknown target, and for
- *  a pose the format would refuse. */
+ *  everything it holds copied as `withFolderCopy` copies it; either
+ *  moved `shiftM` further east. The same state where `folderCopySource`
+ *  refuses, for an unknown target, and for a pose the format would
+ *  refuse. */
 function folderPasteInto(
   before: TourDocumentState,
-  payload: FolderDuplicatePayload & { readonly toStationId: string },
+  payload: FolderDuplicatePayload & {
+    readonly toStationId: string;
+    readonly shiftM: number;
+  },
 ): TourDocumentState {
   if (payload.toStationId === payload.stationId) {
-    return folderDuplicate(before, payload);
+    return folderDuplicate(before, payload, payload.shiftM);
   }
   const source = folderCopySource(before, payload);
   const target = frameOf(before, payload.toStationId);
   if (source === null || target === undefined) return before;
   const { chain, old, renamed } = source;
-  const pose = readPose(
-    composeTourFolderPath(chain.slice(0, -1), old.pose ?? NO_FOLDER_POSE),
+  const kept = composeTourFolderPath(
+    chain.slice(0, -1),
+    old.pose ?? NO_FOLDER_POSE,
   );
+  const pose = readPose({
+    ...kept,
+    position: localPoseOf(
+      eastOf(itemGeoPose(kept, target.geo), payload.shiftM),
+      target.geo,
+    ).position,
+  });
   // Out of the folders around it, it takes their scale as its own, so
   // what it holds keeps its place and size.
   const scale = pastedFolderScale(chain);
@@ -5266,9 +5290,12 @@ function pastedFolderScale(chain: readonly TourFolder[]): number | null {
 /** What `clipboardPasted` carries: the station pasted into, and the
  *  clipboard's items and plain folders with the new ids minted outside
  *  the reducer, by the page (it copies their photos' pictures under them
- *  first). */
+ *  first); `shiftM`, how much further east than a first paste the copies
+ *  stand (m, none: 0), which the page raises for each repeated paste of
+ *  the same clipboard into the same station. */
 export interface ClipboardPastePayload {
   readonly toStationId: string;
+  readonly shiftM?: number;
   readonly objects: readonly { readonly id: string; readonly newId: string }[];
   readonly folders: readonly (FolderAt & {
     readonly newIds: Readonly<Record<string, string>>;
@@ -5281,15 +5308,18 @@ export interface ClipboardPastePayload {
  * The clipboard's items and plain folders pasted into one station
  * (`clipboardPasted`), as ONE undo step however many there are: each
  * copied as `objectPasteInto` and `folderPasteInto` copy it, the items
- * first, each in the order given. All or nothing: the same state when
- * there is nothing to paste, when an item or a folder is named twice,
- * and when any one copy is refused.
+ * first, each in the order given, each moved `shiftM` east. All or
+ * nothing: the same state when there is nothing to paste, when an item
+ * or a folder is named twice, for a shift that is not a finite distance
+ * of 0 or more, and when any one copy is refused.
  */
 function clipboardPaste(
   before: TourDocumentState,
   payload: ClipboardPastePayload,
 ): TourDocumentState {
   const { toStationId, createdAtIso, what } = payload;
+  const shiftM = payload.shiftM ?? 0;
+  if (!Number.isFinite(shiftM) || shiftM < 0) return before;
   const named = [
     ...payload.objects.map((o) => o.id),
     ...payload.folders.map((f) => f.folderId),
@@ -5302,6 +5332,7 @@ function clipboardPaste(
     const next = objectPasteInto(after, {
       ...object,
       toStationId,
+      shiftM,
       createdAtIso,
       what,
     });
@@ -5312,6 +5343,7 @@ function clipboardPaste(
     const next = folderPasteInto(after, {
       ...folder,
       toStationId,
+      shiftM,
       createdAtIso,
       what,
     });

@@ -1212,6 +1212,7 @@ export interface EditorSession {
    *  for the draft question, as for `duplicateFolder`. */
   paste(plan: {
     readonly toStationId: string;
+    readonly shiftM?: number;
     readonly objects: readonly string[];
     readonly folders: readonly {
       readonly stationId: string;
@@ -3938,6 +3939,7 @@ export function createEditorSession(input: {
       const out = store.dispatch(
         tourDocumentActions.clipboardPasted({
           toStationId: plan.toStationId,
+          shiftM: plan.shiftM ?? 0,
           objects,
           folders,
           what,

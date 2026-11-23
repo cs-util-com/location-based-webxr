@@ -1662,10 +1662,20 @@ async function pasteSelection(): Promise<void> {
     return;
   }
   endUndo();
+  const clipboard = store.getState().editorView.clipboard;
   await runHeldEdit({
     ...heldEditOnPage(mine, "Pasting..."),
     run: () => mine.paste(plan),
     made: (outcome) => {
+      // Counted for the clipboard pasted only: the next paste of it into
+      // this station stands further east (`pasteOf`).
+      if (store.getState().editorView.clipboard === clipboard) {
+        store.dispatch(
+          editorViewActions.clipboardPastedInto({
+            stationId: plan.toStationId,
+          }),
+        );
+      }
       showRowsOf(plan.toStationId);
       // Every copy selected, as its source was picked: a Ctrl+X moves them
       // on, a Delete takes them back.

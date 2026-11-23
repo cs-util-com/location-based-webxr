@@ -857,8 +857,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     session's `paste`): one undo step, the station's rows unfolded, the
     copy selected, several copies picked (`picked`, as their sources
     were; a second Ctrl+V pastes again into the same
-    station; a copy pasted into another station stands where its original
-    stands in its own, so repeated pastes stack on the previous copy),
+    station; a first copy pasted into another station stands where its
+    original stands in its own, and each further paste of the same
+    clipboard into the same station half a metre further east, counted by
+    `clipboardPastedInto` once the paste lands and only while the
+    clipboard is still the one pasted, `clipboard.ts`),
     "Pasted a copy" or "Pasted <n> copies"; while the pictures are read a
     held "Pasting..." toast shows (`aria-busy`) and the store's
     `duplicating` makes another paste or Duplicate do nothing but say so

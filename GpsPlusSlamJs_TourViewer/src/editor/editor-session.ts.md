@@ -305,7 +305,8 @@ never state). Design:
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the
       copies' ids, in the plan's order). Each copy keeps its pose within
-      its station, so it lands where its source sat in its own; every
+      its station, so it lands where its source sat in its own, moved
+      `plan.shiftM` east for a repeated paste (`clipboard.ts`); every
       copied folder and item gets a new id; each photo's picture is read
       first and held under its copy's id, as `duplicateFolder` does, and
       the step re-checks after that read that every source and the

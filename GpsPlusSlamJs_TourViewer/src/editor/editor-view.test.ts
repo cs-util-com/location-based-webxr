@@ -622,6 +622,35 @@ describe("the editor's clipboard", () => {
     expect(copy.clipboard).toEqual({ mode: "copy", ids: ["a"] });
   });
 
+  // Why: a repeated paste of the same clipboard into the same station
+  // must not stack its copy on the previous one, so the clipboard counts
+  // its pastes per station; a new Copy or Cut is a new clipboard and
+  // starts again, and a cut (moved, never copied) counts nothing.
+  it("counts the pastes of a copy per station, from nothing at each Copy", () => {
+    let state = reduce(initialEditorViewState, act.copied({ ids: ["a"] }));
+    for (const stationId of ["s", "s", "t", "s"]) {
+      state = reduce(state, act.clipboardPastedInto({ stationId }));
+    }
+    expect(state.clipboard).toEqual({
+      mode: "copy",
+      ids: ["a"],
+      pastes: { s: 3, t: 1 },
+    });
+    const again = reduce(state, act.copied({ ids: ["a"] }));
+    expect(again.clipboard).toEqual({ mode: "copy", ids: ["a"] });
+    for (const start of [
+      initialEditorViewState,
+      reduce(initialEditorViewState, act.copied({ ids: ["a"], mode: "cut" })),
+    ]) {
+      expect(reduce(start, act.clipboardPastedInto({ stationId: "s" }))).toBe(
+        start,
+      );
+    }
+    for (const stationId of ["", 3 as unknown as string]) {
+      expect(reduce(state, act.clipboardPastedInto({ stationId }))).toBe(state);
+    }
+  });
+
   it("ignores a Copy that carries no list", () => {
     const full = reduce(initialEditorViewState, act.copied({ ids: ["a"] }));
     const bad = act.copied({ ids: "a" as unknown as string[] });

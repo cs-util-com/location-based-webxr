@@ -39,6 +39,42 @@ async function childCount(page, id) {
   return stations.find((s) => s.id === id)?.children.length ?? -1;
 }
 
+/**
+ * The id of the selected row.
+ * @param {import("@playwright/test").Page} page
+ * @returns {Promise<string>}
+ */
+function selectedId(page) {
+  return page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.selected(),
+  );
+}
+
+/**
+ * Where the child `id` of station `stationId` stands in its frame.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} stationId
+ * @param {string} id
+ * @returns {Promise<number[]>}
+ */
+async function positionOf(page, stationId, id) {
+  const stations = /** @type {any[]} */ ((await tour(page)).stations);
+  const child = stations
+    .find((s) => s.id === stationId)
+    ?.children.find((/** @type {any} */ c) => c.id === id);
+  if (child === undefined) throw new Error(`no ${id} in ${stationId}`);
+  return child.pose.position;
+}
+
+/**
+ * How far apart two positions are (m).
+ * @param {number[]} a
+ * @param {number[]} b
+ */
+function distance(a, b) {
+  return Math.hypot(...a.map((v, i) => v - (b[i] ?? 0)));
+}
+
 test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the Edit menu offering only what the selection allows", async ({
   page,
 }) => {
@@ -89,9 +125,21 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await expect(
     page.locator(".toast", { hasText: "Pasted a copy" }),
   ).not.toHaveCount(0);
+  const first = await selectedId(page);
   // The copy is selected, so the next paste goes into its station too.
   await page.keyboard.press("Control+v");
   await expect.poll(() => childCount(page, to.id)).toBe(was + 2);
+  // The first copy stands in the other station exactly where the note
+  // stands in its own; the second, pasted into the same station again,
+  // half a metre beside it, so the two never stack.
+  const second = await selectedId(page);
+  const [noteAt, firstAt, secondAt] = await Promise.all([
+    positionOf(page, from.id, note.id),
+    positionOf(page, to.id, first),
+    positionOf(page, to.id, second),
+  ]);
+  expect(distance(firstAt, noteAt)).toBeLessThan(1e-3);
+  expect(Math.abs(distance(secondAt, firstAt) - 0.5)).toBeLessThan(1e-2);
 
   // One undo takes one paste back.
   await page.keyboard.press("Control+z");

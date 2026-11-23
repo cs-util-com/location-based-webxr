@@ -85,6 +85,11 @@ chrome reads, one copy for every view of the page.
     dropped; an empty list empties it; anything but a list is ignored);
   - `clipboardCleared()` - the clipboard emptied (a cut pasted or
     cancelled, or its source gone);
+  - `clipboardPastedInto({ stationId })` - one more paste of the copy on
+    the clipboard into that station (`clipboard.pastes`, by station id;
+    absent until the first paste, dropped by the next Copy or Cut, which
+    sets a new clipboard); nothing for a cut, an empty clipboard or a
+    blank or non-text id. `clipboard.ts` shifts a repeated paste by it;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - the 3D view's opener's (`view3d-opener.ts` dispatches them):
     `view3dRequested()` (loading; nothing while loading or shown),

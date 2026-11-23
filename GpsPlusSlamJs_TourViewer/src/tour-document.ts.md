@@ -502,7 +502,7 @@ geo?, after?, what })` - a copy inserted after the original (after
       stays untitled). One step. Refused: an unknown folder, a missing,
       taken or repeated new id, an item the copy would take beyond its
       station's reach.
-  - `clipboardPasted({ toStationId, objects: [{ id, newId }], folders: [{ stationId, folderId, newIds }], createdAtIso?, what })`
+  - `clipboardPasted({ toStationId, shiftM?, objects: [{ id, newId }], folders: [{ stationId, folderId, newIds }], createdAtIso?, what })`
     - the editor's Paste (`editor/clipboard.ts` says what is pasted):
       copies of the notes and plain folders into the station
       `toStationId`, the notes first, each in the order given, as ONE
@@ -519,8 +519,13 @@ geo?, after?, what })` - a copy inserted after the original (after
       follow `folderDuplicated`'s rules. A nested folder pasted out of
       the folders around it takes the product of their scales and its
       own as its scale (`pastedFolderScale`), so what it holds keeps its
-      place and size. Refused, all or nothing: nothing to paste, an item
-      or a folder named twice, a story's entry, an unknown item, folder
+      place and size. `shiftM` (m, none: 0) moves every copy that much
+      further east, a folder's with all it holds, for a repeated paste
+      into the same station (`editor/clipboard.ts` sets it); a copy it
+      takes past its station's bound is refused. Refused, all or
+      nothing: nothing to paste, a shift that is not a finite distance of
+      0 or more, an item or a folder named twice, a story's entry, an
+      unknown item, folder
       or station, any refused copy; into another station also a note its
       folders resize (their scales multiply to other than 1: out of them
       it would change size) and a folder whose scale product lies past
@@ -1071,7 +1076,11 @@ store.dispatch(tourDocumentActions.undone());
   the opened tour gives back the same `manifestToWrite`; an edit of a
   station a delete or a move emptied (its radius, a title set then
   cleared) does not list it again, as a reload does not.
-- `tour-document-paste.test.ts` pins `clipboardPasted`: a note into
+- `tour-document-paste.test.ts` pins `clipboardPasted`: `shiftM` moves
+  every copy that far east of the plain paste's (a note and a folder,
+  into another station and into its own; swept over 0.5, 1 and 2 m and
+  the target's heading 0, 90 and 179 degrees; 0 is the plain paste; a
+  negative, NaN or infinite shift refused); a note into
   another station keeps its pose in the station's frame (swept over the
   target's heading 0, 90 and 179 degrees and 100 m and 5 km away), a note
   in a folder lands at the top, a folder (nested or not) lands as the

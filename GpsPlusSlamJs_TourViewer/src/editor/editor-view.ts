@@ -96,6 +96,10 @@ export type EditorEntryStep = "opening" | "adding-scan";
 interface EditorClipboard {
   readonly mode: "copy" | "cut";
   readonly ids: readonly string[];
+  /** How often a copy was pasted, by the station pasted into; none
+   *  before its first paste. A repeated paste stands further east
+   *  (`clipboard.ts`). */
+  readonly pastes?: Readonly<Record<string, number>>;
 }
 
 export interface EditorViewState {
@@ -353,6 +357,25 @@ const editorViewSlice = createSlice({
      *  Paste, or one whose source is gone. */
     clipboardCleared(state) {
       state.clipboard = null;
+    },
+    /** A copy on the clipboard pasted into the station `stationId`, one
+     *  more time. Nothing for a cut (moved, not copied), an empty
+     *  clipboard or a station id that is no text. */
+    clipboardPastedInto(state, action: PayloadAction<{ stationId: string }>) {
+      const { stationId } = action.payload;
+      const clipboard = state.clipboard;
+      if (
+        clipboard === null ||
+        clipboard.mode !== "copy" ||
+        typeof stationId !== "string" ||
+        stationId === ""
+      ) {
+        return;
+      }
+      clipboard.pastes = {
+        ...clipboard.pastes,
+        [stationId]: (clipboard.pastes?.[stationId] ?? 0) + 1,
+      };
     },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;

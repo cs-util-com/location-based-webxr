@@ -21,6 +21,11 @@ may use it (top-level modules never import `src/editor/`).
   found radius plus 5 m east, at its height, turned like it, so the copy's
   circle never overlaps the original's preload ring.
 - `duplicateItemGeo(geo)`: 1.5 m east, at the same height and facing.
+- `PASTE_REPEAT_STEP_M` (0.5): how much further east each repeated
+  paste of the same clipboard into the same station stands
+  (`editor/clipboard.ts`).
+- `eastOf(geo, metres)`: `geo` moved that far east, at its height and
+  facing (the tour document's paste shifts its copies with it).
 - `altKeepingHeight({ alt, groundBefore, groundAfter })`: the altitude
   that keeps an item's height above the ground when the ground under it
   changes (all ellipsoidal metres). No caller yet: the 3D editor's drag

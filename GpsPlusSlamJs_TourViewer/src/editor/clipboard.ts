@@ -15,6 +15,7 @@ import type {
   TourObject,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { ChildMoveTo } from "../station-children-moves.js";
+import { PASTE_REPEAT_STEP_M } from "../station-geometry.js";
 import {
   isTourFolder,
   TOUR_FOLDER_MAX_SCALE,
@@ -76,6 +77,10 @@ export type PasteOutcome =
       readonly toStationId: string;
       readonly objects: readonly string[];
       readonly folders: readonly PastedFolder[];
+      /** How much further east than a first paste the copies stand (m):
+       *  `PASTE_REPEAT_STEP_M` per earlier paste of this clipboard into
+       *  the same station. */
+      readonly shiftM: number;
     }
   | {
       readonly kind: "pasteStations";
@@ -361,6 +366,7 @@ export function pasteOf(
     folders: kept
       .filter((s) => s.kind === "folder")
       .map((s) => ({ stationId: s.stationId, folderId: s.id })),
+    shiftM: PASTE_REPEAT_STEP_M * (clipboard.pastes?.[toStationId] ?? 0),
   };
 }
 

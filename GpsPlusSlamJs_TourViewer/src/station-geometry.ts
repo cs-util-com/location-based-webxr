@@ -30,6 +30,12 @@ export const STATION_RADIUS_MAX_M = 300;
 /** How far east of its original an item's copy stands (m). */
 export const ITEM_DUPLICATE_OFFSET_M = 1.5;
 
+/** How much further east each repeated paste of the same clipboard into
+ *  the same station stands than the one before (m): clear of the previous
+ *  copy to the eye and to a tap, while a handful of copies still stand
+ *  within the smallest found radius. */
+export const PASTE_REPEAT_STEP_M = 0.5;
+
 /** How far a station's copy stands beyond the original's preload ring,
  *  east (m): the copy's circle never overlaps the original's. */
 const STATION_DUPLICATE_GAP_M = 5;
@@ -49,7 +55,7 @@ export function preloadRadiusM(foundRadiusM: number): number {
 }
 
 /** `geo` moved `metres` east, at its own height and facing. */
-function eastOf(geo: QrGeoPose, metres: number): QrGeoPose {
+export function eastOf(geo: QrGeoPose, metres: number): QrGeoPose {
   const moved = offsetGeo(geo, { east: metres, north: 0, up: 0 });
   return { ...geo, lat: moved.latitude, lon: moved.longitude };
 }

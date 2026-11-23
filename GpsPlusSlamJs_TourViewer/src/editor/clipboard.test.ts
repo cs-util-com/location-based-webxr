@@ -43,6 +43,7 @@ import {
   pasteOf,
   SELECT_A_TARGET,
 } from "./clipboard.js";
+import { PASTE_REPEAT_STEP_M } from "../station-geometry.js";
 import { initialEditorViewState, type EditorViewState } from "./editor-view.js";
 
 function pin(id: string) {
@@ -265,6 +266,27 @@ describe("what Paste pastes", () => {
     });
   });
 
+  // Why: each further paste of the same copy into the same station
+  // stands a little further east, so the copies never stack where they
+  // cannot be told apart; a paste into another station keeps the copied
+  // pose exactly until that station, too, is pasted into again.
+  it("shifts a repeated paste into the same station by half a metre per earlier paste there", () => {
+    const pastes = { b: 2, a: 1 };
+    expect(PASTE_REPEAT_STEP_M).toBe(0.5);
+    expect(
+      pasteOf(
+        doc,
+        view("station:b", { clipboard: { ...copied(["n"]), pastes } }),
+      ),
+    ).toMatchObject({ kind: "paste", toStationId: "b", shiftM: 1 });
+    expect(
+      pasteOf(
+        doc,
+        view("e", { clipboard: { ...copied(["n"]), pastes: { a: 3 } } }),
+      ),
+    ).toMatchObject({ kind: "paste", toStationId: "b", shiftM: 0 });
+  });
+
   it("pastes into the selected station, or the station of the selected row", () => {
     for (const selected of ["station:b", "e"]) {
       expect(
@@ -274,6 +296,7 @@ describe("what Paste pastes", () => {
         toStationId: "b",
         objects: ["n"],
         folders: [],
+        shiftM: 0,
       });
     }
     expect(
@@ -358,6 +381,7 @@ describe("what Paste pastes", () => {
       toStationId: "b",
       objects: ["n"],
       folders: [{ stationId: "a", folderId: "f" }],
+      shiftM: 0,
     });
     expect(
       pasteOf(doc, view("station:b", { clipboard: copied(["k", "folder:g"]) })),
@@ -366,6 +390,7 @@ describe("what Paste pastes", () => {
       toStationId: "b",
       objects: [],
       folders: [{ stationId: "a", folderId: "g" }],
+      shiftM: 0,
     });
   });
 });

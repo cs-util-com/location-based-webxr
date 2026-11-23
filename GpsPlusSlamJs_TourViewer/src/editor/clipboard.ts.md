@@ -28,7 +28,7 @@ toStationId, afterStory, stories }`: into that station, after the
   null) after its last story. Both refused `SELECT_A_TARGET` (no station)
   and `COPIED_GONE` (a copied station or story gone since).
 - `pasteOf(doc, view): PasteOutcome` for notes and folders - `{ kind: "paste", toStationId,
-objects, folders }`: the clipboard's notes and plain folders (by
+objects, folders, shiftM }`: the clipboard's notes and plain folders (by
   `{ stationId, folderId }`), each once, into the station the selection
   names (`pasteTargetOf`: a selected station, or the station holding
   the selected note or folder). A row inside a copied folder (a note or
@@ -91,11 +91,23 @@ afterStationId, order }` for `reorderStations`;
   and goes with it).
 - A cut keeps ids: its paste moves the items, so links to them (an
   answer's jump, a code) keep pointing at them.
-- Open question: a copy pasted into another station stands where its
-  original stands in its own, so repeated pastes stack exactly on the
-  previous copy. That is kept for now; an offset would go into the
-  session's `paste` (the poses it copies), not into this file, which
-  only plans which items go where.
+- Repeated pastes shift only within the same station: `shiftM` is
+  `PASTE_REPEAT_STEP_M` (0.5 m, `station-geometry.ts`) times the
+  pastes of this clipboard already made into the target station
+  (`clipboard.pastes`, counted per station by `editorView`'s
+  `clipboardPastedInto` after each paste lands). The first paste into a
+  station shifts nothing: into another station the copy keeps the exact
+  copied offset, into its own it is Duplicate's copy, 1.5 m east. Each
+  further paste of the same clipboard into the same station stands half
+  a metre further east (world east, as Duplicate's offset), so copies
+  never stack where they cannot be told apart or picked; half a metre
+  keeps them apart to the eye and to a tap while a handful still stand
+  within the smallest found radius (2 m). A new Copy or Cut starts the
+  count again; an undone paste is not uncounted, so the next one still
+  stands clear of the copies that remain. A copy the shift would take
+  past its station's bound is refused, as any paste beyond it is.
+  Stations and stories are not shifted: a station's copies already go
+  beside the one before, and a story has no place of its own.
 
 ## Examples
 
@@ -104,7 +116,7 @@ const copy = copyOf(doc, view); // { kind: "copy", ids: ["n1", "folder:f"] }
 store.dispatch(editorViewActions.copied({ ids: copy.ids }));
 const plan = pasteOf(doc, { ...view, selected: "station:b" });
 // { kind: "paste", toStationId: "b", objects: ["n1"],
-//   folders: [{ stationId: "a", folderId: "f" }] }
+//   folders: [{ stationId: "a", folderId: "f" }], shiftM: 0 }
 ```
 
 ## Tests
@@ -116,7 +128,9 @@ selected station and from a selected row, its refusals (empty clipboard,
 no target: a story, a story's entry and a code's level id among them;
 something gone), rows inside a copied folder dropped, and the scale
 refusals into another station (a note in a resized folder, folders that
-cancel out, a nested folder past 10 or below 0.1, exactly at 10).
+cancel out, a nested folder past 10 or below 0.1, exactly at 10), and
+the repeated paste's shift (half a metre per earlier paste into the
+target station, none for a station not pasted into yet).
 Stations and stories: their Copy, a mix of kinds refused, a Paste after
 the selected station and into a station after a story or at the end of
 its stories, its refusals (no target, a copied station or story gone).

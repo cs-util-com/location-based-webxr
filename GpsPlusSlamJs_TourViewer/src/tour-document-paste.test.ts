@@ -204,6 +204,7 @@ function paste(
     toStationId: input.toStationId ?? "gate",
     objects: input.objects ?? [],
     folders: input.folders ?? [],
+    ...(input.shiftM === undefined ? {} : { shiftM: input.shiftM }),
     createdAtIso: WHEN,
     what: "the paste",
   });
@@ -468,6 +469,97 @@ describe("pasting a folder into another station", () => {
       act.folderDuplicated({ ...OUTER, createdAtIso: WHEN, what: "the paste" }),
     );
     expect(saved(pasted)).toEqual(saved(duplicated));
+  });
+});
+
+/** How far east and north `geo` stands of `from` (m), on a local
+ *  sphere: good to a millimetre over the few metres compared here. */
+function eastNorthOf(
+  geo: { lat: number; lon: number },
+  from: { lat: number; lon: number },
+) {
+  const perDegree = 111_320;
+  return {
+    east:
+      (geo.lon - from.lon) * perDegree * Math.cos((from.lat * Math.PI) / 180),
+    north: (geo.lat - from.lat) * perDegree,
+  };
+}
+
+/** How far a repeated paste's copy may sit from `shiftM` east of the
+ *  plain paste's (m): the local sphere above against the geo offset. */
+const SHIFT_TOLERANCE_M = 5e-3;
+
+// Why: a repeated paste of the same clipboard into the same station must
+// not stack its copy exactly on the previous one, where it cannot be told
+// apart or picked; the editor asks for each further copy a little further
+// east (`shiftM`). The copy is the plain paste's moved east by exactly
+// that, for a note and for a folder with all it holds, into its own
+// station (Duplicate's copy moved on) and into another one, however that
+// station is turned. Swept: the shift (0.5, 1 and 2 m) and the target's
+// heading (0, 90 and 179 degrees).
+describe("a repeated paste into the same station", () => {
+  const cases: [string, Partial<ClipboardPastePayload>, string[]][] = [
+    [
+      "a note into another station",
+      { objects: [{ id: "p", newId: "c1" }] },
+      ["c1"],
+    ],
+    [
+      "a note into its own station",
+      { toStationId: "well", objects: [{ id: "a", newId: "c1" }] },
+      ["c1"],
+    ],
+    ["a folder into another station", { folders: [OUTER] }, ["a2", "b2"]],
+    [
+      "a folder into its own station",
+      { toStationId: "well", folders: [OUTER] },
+      ["a2", "b2"],
+    ],
+  ];
+  for (const [what, input, copies] of cases) {
+    it(`stands ${what} shiftM east of the plain paste's copy`, () => {
+      for (const gateYaw of [0, 90, 179]) {
+        const start = opened(tour(gateYaw));
+        const plain = reduce(start, paste(input));
+        expect(plain).not.toBe(start);
+        for (const shiftM of [0.5, 1, 2]) {
+          const shifted = reduce(start, paste({ ...input, shiftM }));
+          expect(shifted.past).toHaveLength(start.past.length + 1);
+          expectOriginalsKept(start, shifted);
+          for (const id of copies) {
+            const got = objectOf(shifted, id).geo;
+            const was = objectOf(plain, id).geo;
+            const moved = eastNorthOf(got, was);
+            expect(Math.abs(moved.east - shiftM)).toBeLessThanOrEqual(
+              SHIFT_TOLERANCE_M,
+            );
+            expect(Math.abs(moved.north)).toBeLessThanOrEqual(
+              SHIFT_TOLERANCE_M,
+            );
+            expect(got.alt).toBeCloseTo(was.alt, 9);
+            expect(
+              rotationGap(
+                got.rotation ?? [0, 0, 0, 1],
+                was.rotation ?? [0, 0, 0, 1],
+              ),
+            ).toBeLessThanOrEqual(ROTATION_TOLERANCE);
+          }
+        }
+        expect(saved(reduce(start, paste({ ...input, shiftM: 0 })))).toEqual(
+          saved(plain),
+        );
+      }
+    });
+  }
+
+  it("refuses a shift that is not a finite distance of 0 or more", () => {
+    const start = opened(tour());
+    for (const shiftM of [-0.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(
+        reduce(start, paste({ objects: [{ id: "p", newId: "c1" }], shiftM })),
+      ).toBe(start);
+    }
   });
 });
 
