@@ -8,7 +8,7 @@ A bench method: SIFT keypoints from the plain-JS sift.js matched by LightGlue, C
 
 - `SIFT_LIGHTGLUE_PATH` (`/api/model/sift-lightglue-3.13.0.onnx`, the site worker's mirror of the COLMAP 3.13.0 release asset, 45,806,253 bytes) and `SIFT_LIGHTGLUE_SHA256`. Keypoints per frame default to 512.
 - `sha256Hex(bytes)`: lower-case hex via `crypto.subtle`.
-- `siftLightGlueMethod(backend, deps, { modelUrl?, sha256?, maxFeatures? })`: a `BenchMethod`. `init()` loads the ORT runtime and sift.js, downloads the model (by default from the mirror route on the page's origin), checks its sha256 before any session is created (an error names the URL and both hashes), then creates the session; the hash time is a note, not part of init. `extract` runs sift.js on the main thread and converts with `sift-lightglue-io.ts`; `match` feeds both frames and reads `matches0` (int64, -1 for none). A frame with no keypoints gives no matches without running the model.
+- `siftLightGlueMethod(backend, deps, { modelUrl?, sha256?, maxFeatures?, context? })`: a `BenchMethod`. `init()` loads the ORT runtime and sift.js, downloads the model (by default from the mirror route on the page's origin), checks its sha256 before any session is created (an error names the URL and both hashes), then creates the session; the hash time is a note, not part of init. `extract` runs sift.js on the thread that built the method (`context`, `"main thread"` by default, named in the first note) and converts with `sift-lightglue-io.ts`; `match` feeds both frames and reads `matches0` (int64, -1 for none). A frame with no keypoints gives no matches without running the model.
 
 ## Invariants and assumptions
 

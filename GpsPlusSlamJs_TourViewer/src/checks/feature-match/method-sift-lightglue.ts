@@ -15,7 +15,12 @@ import {
   type DownloadRecord,
   type LoadDeps,
 } from "./bench-net";
-import type { BenchMethod, Features, MethodRunner } from "./bench-run";
+import type {
+  BenchMethod,
+  Features,
+  MethodRunner,
+  RunContext,
+} from "./bench-run";
 import { pairsFromMatches, pickName } from "./aliked-io";
 import {
   loadOrtRuntime,
@@ -49,6 +54,8 @@ export interface SiftLightGlueOptions {
   /** The expected sha256 (hex); the pinned model's by default. */
   readonly sha256?: string;
   readonly maxFeatures?: number;
+  /** Where SIFT runs, named in the notes; the main thread by default. */
+  readonly context?: RunContext;
 }
 
 const DIM = 128;
@@ -148,7 +155,7 @@ export function siftLightGlueMethod(
         downloads,
         initMs,
         notes: [
-          `max ${String(max)} SIFT keypoints per frame (sift.js, main thread), RootSIFT descriptors, sigma scales, orientations in (-pi, pi]`,
+          `max ${String(max)} SIFT keypoints per frame (sift.js, ${options.context ?? "main thread"}), RootSIFT descriptors, sigma scales, orientations in (-pi, pi]`,
           `init = session created; model sha256 checked in ${hashMs.toFixed(0)} ms (not in init)`,
         ],
         extract: (frame) => {

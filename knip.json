@@ -211,6 +211,7 @@
         "src/checks/item-lab.ts",
         "src/checks/asset-optimizer-check-page.ts",
         "src/checks/feature-match/feature-match-check.ts",
+        "src/checks/feature-match/worker-spike.ts",
         "src/characters/maker-main.ts",
         "src/splat-trainer/splat-main.ts",
         "src/checks/splat-scene/splat-scene.ts",

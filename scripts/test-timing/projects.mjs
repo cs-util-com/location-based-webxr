@@ -624,6 +624,7 @@ export const PROJECTS = [
         "./src/editor/asset-shelf/asset-optimizer.worker.ts",
         "./src/editor/model-convert/model-import.worker.ts",
         "./src/characters/character-cut.worker.ts",
+        "./src/checks/feature-match/worker-spike.worker.ts",
       ]).map((stage) =>
         stage.name === "lint:css"
           ? {

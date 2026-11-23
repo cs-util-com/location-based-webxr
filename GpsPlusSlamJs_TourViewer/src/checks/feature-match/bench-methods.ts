@@ -5,7 +5,7 @@
  * @see bench-methods.ts.md
  */
 import type { LoadDeps } from "./bench-net";
-import type { BenchMethod } from "./bench-run";
+import type { BenchMethod, RunContext } from "./bench-run";
 import { alikedMethod } from "./method-aliked";
 import { siftMethod } from "./method-sift";
 import { siftLightGlueMethod } from "./method-sift-lightglue";
@@ -26,15 +26,17 @@ export interface MethodSelection {
 /**
  * One method per (method, backend[, precision]) chosen, cheapest first so
  * a slow download does not hold up the quick numbers. SIFT has no backend
- * choice and runs once.
+ * choice and runs once. `context` names where they run (in SIFT's backend
+ * and SIFT + LightGlue's note).
  */
 export function buildMethods(
   s: MethodSelection,
   deps: LoadDeps,
+  context: RunContext = "main thread",
 ): BenchMethod[] {
   const out: BenchMethod[] = [];
   if (s.sift) {
-    out.push(siftMethod(deps));
+    out.push(siftMethod(deps, context));
   }
   if (s.xfeat) {
     for (const b of s.backends) {
@@ -50,7 +52,7 @@ export function buildMethods(
   }
   if (s.siftLightGlue === true) {
     for (const b of s.backends) {
-      out.push(siftLightGlueMethod(b, deps));
+      out.push(siftLightGlueMethod(b, deps, { context }));
     }
   }
   return out;

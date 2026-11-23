@@ -66,6 +66,29 @@ describe("buildMethods", () => {
     ]);
   });
 
+  // Why: the worker queue builds its methods with buildMethods too; the
+  // context must reach the methods whose notes name a thread.
+  it("passes the run context on to SIFT (main thread by default)", async () => {
+    const sel = {
+      sift: true,
+      xfeat: false,
+      aliked: false,
+      backends: [] as Backend[],
+      precisions: [] as XFeatPrecision[],
+    };
+    const withSift: LoadDeps = {
+      ...deps,
+      importModule: () =>
+        Promise.resolve({
+          detectSift: () => ({ n: 0, x: [], y: [], desc: new Uint8Array() }),
+        }),
+    };
+    const backend = async (context?: "main thread" | "worker") =>
+      (await buildMethods(sel, withSift, context)[0]!.init()).backend;
+    expect(await backend()).toBe("js (main thread)");
+    expect(await backend("worker")).toBe("js (worker)");
+  });
+
   it("gives nothing when nothing is chosen", () => {
     expect(
       buildMethods(

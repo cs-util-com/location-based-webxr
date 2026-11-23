@@ -100,3 +100,18 @@ describe("siftMethod", () => {
     expect(Array.from(await runner.match(a, a))).toEqual([0, 0, 1, 1]);
   });
 });
+
+// Why: the backend string is the only place a result says where it ran;
+// the background queue measures in a worker, so a worker run must not
+// read "main thread" (and the page's own runs must keep saying so).
+describe("siftMethod context", () => {
+  it("names the main thread by default and the worker when built for it", async () => {
+    const mod = { detectSift: () => fakeResult() };
+    expect((await siftMethod(deps(mod)).init()).backend).toBe(
+      "js (main thread)",
+    );
+    expect((await siftMethod(deps(mod), "worker").init()).backend).toBe(
+      "js (worker)",
+    );
+  });
+});

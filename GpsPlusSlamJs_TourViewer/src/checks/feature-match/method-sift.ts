@@ -7,7 +7,12 @@
 import { toGray } from "./bench-image";
 import { mutualNearestBytes } from "./bench-mnn";
 import { summarizeResources, type LoadDeps } from "./bench-net";
-import type { BenchMethod, Features, MethodRunner } from "./bench-run";
+import type {
+  BenchMethod,
+  Features,
+  MethodRunner,
+  RunContext,
+} from "./bench-run";
 
 /** sift.js at a pinned commit; one file, no imports. */
 export const SIFT_URL =
@@ -78,8 +83,11 @@ export function siftFeatures(r: SiftResult, max = Infinity): Features {
   };
 }
 
-/** The SIFT method; runs on the main thread. */
-export function siftMethod(deps: LoadDeps): BenchMethod {
+/** The SIFT method; runs on the thread that built it (`context`). */
+export function siftMethod(
+  deps: LoadDeps,
+  context: RunContext = "main thread",
+): BenchMethod {
   return {
     id: "sift",
     label: "SIFT (plain JS)",
@@ -93,7 +101,7 @@ export function siftMethod(deps: LoadDeps): BenchMethod {
         "sift.js",
       );
       return {
-        backend: "js (main thread)",
+        backend: `js (${context})`,
         downloads: download === null ? [] : [download],
         initMs,
         notes: [

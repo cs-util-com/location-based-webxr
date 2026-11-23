@@ -195,3 +195,19 @@ describe("sha256Hex", () => {
     );
   });
 });
+
+// Why: SIFT's keypoints run on whatever thread built the method; the note
+// must say which, or a worker result reads as a main-thread one.
+describe("siftLightGlueMethod context", () => {
+  it("names the thread SIFT runs on in its note", async () => {
+    const notes = async (context?: "main thread" | "worker") =>
+      (
+        await siftLightGlueMethod("wasm", deps(fakeOrt().api, []), {
+          sha256: await sha256Hex(MODEL),
+          context,
+        }).init()
+      ).notes[0];
+    expect(await notes()).toContain("(sift.js, main thread)");
+    expect(await notes("worker")).toContain("(sift.js, worker)");
+  });
+});

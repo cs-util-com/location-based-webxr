@@ -37,6 +37,12 @@ export interface MethodRunner {
   dispose(): void;
 }
 
+/**
+ * Where a method runs, for the backend and note strings that say so: the
+ * page's own runs on the main thread, the background measuring in a worker.
+ */
+export type RunContext = "main thread" | "worker";
+
 /** A method to run: its name and how to load it. */
 export interface BenchMethod {
   readonly id: string;

@@ -1176,8 +1176,14 @@
     </script>
     <script type="module">
       import { startFeatureMatchCheck } from "./src/checks/feature-match/feature-match-check.ts";
+      import { startWorkerSpike } from "./src/checks/feature-match/worker-spike.ts";
 
-      startFeatureMatchCheck(document);
+      // ?spike=worker: the throwaway worker spike instead of the page.
+      if (new URLSearchParams(location.search).get("spike") === "worker") {
+        startWorkerSpike(document);
+      } else {
+        startFeatureMatchCheck(document);
+      }
     </script>
   </body>
 </html>
