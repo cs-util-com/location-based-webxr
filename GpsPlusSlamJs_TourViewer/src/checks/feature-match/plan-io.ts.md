@@ -15,7 +15,7 @@ The photo test's browser side, shared by both views of the feature matching page
   - `moved()`: the phone moved; named in the photo's log line if a count runs.
   - `summaryOf(s)`: `summaryText` (`scenes.ts`) with the results, the ticked methods (the summary names those the phone measures) and the device line.
   - `downloadAll()`: `runZipStarted` (refused unless idle with a ready pair), awaits `fm.restore()` (right after a load the stored log and results may not be back yet, and the zip would miss them), packs the run zip (`runZipFiles` of `run-zip.ts`, the photos read through `fm.readPhoto`, the matches through `fm.readMatches`, then `packFilesAsZip` with `timeless`: no clock time in the archive, and the same run packs to the same bytes), saves it with `downloadBlob` under `runZipName(session)`. Saved: `runZipEnded("saved")`. A closed dialog: `idle`, "Nothing was lost". A failure (a photo storage cannot read, a zip error): `failed` with its error.
-  - `copyText(text, out)`: the clipboard, "copied" or "copy refused: select the text and copy by hand".
+  - `copyText(text, out)`: the clipboard; `out` says "copying..." while it waits, then "copied" or "copy refused by the browser".
 - Types `PlanIoDeps`, `PlanIo`.
 
 ## The run zip

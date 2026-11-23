@@ -901,6 +901,109 @@ describe("the measuring queue", () => {
   });
 });
 
+describe("the guided screens, the retake choice and the end choice", () => {
+  const all13 = [
+    "light-s1/L1",
+    "light-s1/L2",
+    "light-s1/L3",
+    "light-s1/L4",
+    "flat-s1/F1",
+    "flat-s1/F2",
+    "flat-s1/F3",
+    "flat-s1/F4",
+    "flat-s1/F5",
+    "flat-s1/F6",
+    "deep-s1/D1",
+    "deep-s1/D2",
+    "deep-s1/D3",
+  ];
+  const greys: Readonly<Record<string, number>> = {
+    "light-s1/L3": 60,
+    "light-s1/L4": 20,
+  };
+  const take = (id: string, p = id): FeatureMatchAction =>
+    A.planShotTaken({ shot: id, photo: photo(p, greys[id] ?? 120) });
+
+  // Why: the screen the tester is on is app state: a fresh run starts on
+  // the intro, a run with photos resumes on the run screen.
+  it("starts on the intro, or on the run screen once a shot is taken", () => {
+    expect(start().guided.screen).toBe("intro");
+    const s = run([A.guidedShown("run"), take(all13[0]!)]);
+    const back = initialFeatureMatchState({ session: "s2", plan: s.plan });
+    expect(back.guided.screen).toBe("run");
+    expect(run([A.guidedShown("nowhere" as "run")])).toEqual(start());
+  });
+
+  // Why: the shot that closes the last open shot opens the end view by
+  // itself; a skip that closes it does too.
+  it("opens the end view when the last open shot is taken or skipped", () => {
+    const s = run([
+      A.guidedShown("run"),
+      ...all13.slice(0, 12).map((id) => take(id)),
+    ]);
+    expect(s.guided.screen).toBe("run");
+    expect(run([take(all13[12]!)], s).guided.screen).toBe("end");
+    expect(run([A.planSkipped([all13[12]!])], s).guided.screen).toBe("end");
+  });
+
+  // Why: with every shot taken the card says "all done"; a tap on a
+  // taken photo marks it for a retake, and any move or photo ends that.
+  it("marks a chosen taken shot for a retake until the run moves", () => {
+    const s = run([...all13.map((id) => take(id))]);
+    const r = run([A.planMoved(0), A.retakeChosen(true)], s);
+    expect(r.guided.retake).toBe(true);
+    expect(run([take(all13[0]!, "again")], r).guided.retake).toBe(false);
+    expect(run([A.planMoved(1)], r).guided.retake).toBe(false);
+    expect(run([A.retakeChosen(false)], r).guided.retake).toBe(false);
+    // A shot without a photo cannot be retaken.
+    const fresh = start();
+    expect(run([A.retakeChosen(true)], fresh)).toBe(fresh);
+  });
+
+  // Why: "Good enough" and "Wait for the rest" are the tester's choice
+  // on the end view; any other value is refused.
+  it("keeps the end view's choice", () => {
+    expect(start().guided.choice).toBe("now");
+    expect(run([A.endChoiceSet("wait")]).guided.choice).toBe("wait");
+    const s = start();
+    expect(run([A.endChoiceSet("later" as "now")], s)).toBe(s);
+  });
+
+  // Why: "Retry failed" re-queues every failure kept for this page load
+  // only (a crash, a failed download) and resets the crash count, so a
+  // stopped queue starts again; a failure the method reported stays.
+  it("retries the unpersisted failures and resets the crashes", () => {
+    const k12 = "light-s1/L1-L2@p1+p2";
+    const k13 = "light-s1/L1-L3@p1+p3";
+    const k14 = "light-s1/L1-L4@p1+p4";
+    const s = run([
+      take("light-s1/L1", "p1"),
+      take("light-s1/L2", "p2"),
+      take("light-s1/L3", "p3"),
+      take("light-s1/L4", "p4"),
+      A.restoreFinished({ stored: [], results: {}, log: [] }),
+      A.queueStarted(k12),
+      A.workerCrashed({ key: k12, text: "crashed" }),
+      A.queueStarted(k13),
+      A.workerCrashed({ key: k13, text: "crashed" }),
+    ]);
+    expect(measureProgress(s).stopped).toBe(true);
+    const withReported = {
+      ...s,
+      results: {
+        ...s.results,
+        [k14]: { status: "failed" as const, text: "bad", persisted: true },
+      },
+    };
+    const r = run([A.failedRetried()], withReported);
+    expect(r.queue.crashes).toBe(0);
+    expect(Object.keys(r.results)).toEqual([k14]);
+    expect(nextMeasureKey(r)).toBe(k12);
+    const none = start();
+    expect(run([A.failedRetried()], none)).toBe(none);
+  });
+});
+
 describe("benchWaitText", () => {
   // Why this test matters: the speed and synthetic buttons go dead while
   // the queue measures a pair (it would time against the run); a dead

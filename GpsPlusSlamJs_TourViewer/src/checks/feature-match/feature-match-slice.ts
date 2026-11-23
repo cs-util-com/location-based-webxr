@@ -39,6 +39,7 @@ import {
 } from "./flat-target";
 import {
   EMPTY_PLAN,
+  planNextOpen,
   planPhotoIds,
   planPhotos,
   planReducer,
@@ -134,9 +135,24 @@ export interface FlatState {
 }
 
 /** A countdown before the current shot's photo; its timer is the view's. */
+/** The guided view's screens. */
+export type GuidedScreen = "intro" | "run" | "end";
+const GUIDED_SCREENS: readonly string[] = ["intro", "run", "end"];
+
+/** The end view's choice: the zip now with what is finished, or wait. */
+export type EndChoice = "now" | "wait";
+
 interface GuidedState {
   /** The shot it counts down for. */
   readonly count: { readonly shot: string; readonly left: number } | null;
+  /** The screen the guided view shows. */
+  readonly screen: GuidedScreen;
+  /**
+   * The current shot, already taken, was chosen for a retake; only needed
+   * while no other shot is open (else a taken current shot is one anyway).
+   */
+  readonly retake: boolean;
+  readonly choice: EndChoice;
 }
 
 /**
@@ -295,12 +311,25 @@ export interface InitialInput {
   readonly plan?: RunPlan;
 }
 
+/** A fresh run starts on the intro; a started one on the run or the end. */
+function startScreen(p: RunPlan): GuidedScreen {
+  if (Object.keys(p.shots).length === 0 && p.skipped.length === 0) {
+    return "intro";
+  }
+  return planNextOpen(p, -1) === null ? "end" : "run";
+}
+
 /** The first state. */
 export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
   return {
     session: i.session,
     plan: i.plan ?? EMPTY_PLAN,
-    guided: { count: null },
+    guided: {
+      count: null,
+      screen: startScreen(i.plan ?? EMPTY_PLAN),
+      retake: false,
+      choice: "now",
+    },
     handsOff: HANDS_OFF_IDLE,
     runZip: { phase: "idle", text: "" },
     cameraStart: "idle",
@@ -576,7 +605,16 @@ const planCase =
     s.plan = next;
     keepNamed(s);
     if (TARGET_CHANGES.has(action.type)) {
-      s.guided = { count: null };
+      s.guided = { ...s.guided, count: null, retake: false };
+    }
+    // The shot or skip that closes the last open shot opens the end view.
+    if (
+      (action.type === "photo" || action.type === "skip") &&
+      s.guided.screen === "run" &&
+      planNextOpen(before, -1) !== null &&
+      planNextOpen(next, -1) === null
+    ) {
+      s.guided = { ...s.guided, screen: "end" };
     }
     // A new run's log: its zip must not carry every earlier run's lines.
     if (action.type === "reset") {
@@ -628,6 +666,7 @@ const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([
 const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
   "photo",
   "move",
+  "skip",
   "size",
   "reset",
 ]);
@@ -665,7 +704,7 @@ const slice = createSlice({
       }
       endHandsOff(s);
       // A count that ran on would shoot into a refused photo.
-      s.guided = { count: null };
+      s.guided = { ...s.guided, count: null };
       s.busy = "running";
       s.running = kind;
       setStatus(s, kind, "running");
@@ -718,6 +757,53 @@ const slice = createSlice({
       ...p,
     })),
     planShotLost: planCase((shot: string) => ({ type: "lost", shot })),
+    /** "Skip photo" / "Skip scene": the open shots named are left for later. */
+    planSkipped: planCase((shots: readonly string[]) => ({
+      type: "skip",
+      shots,
+    })),
+    /** The guided view shows `screen`; refused for an unknown one. */
+    guidedShown(s: Draft, a: PayloadAction<GuidedScreen>) {
+      if (GUIDED_SCREENS.includes(a.payload) && s.guided.screen !== a.payload) {
+        s.guided = { ...s.guided, screen: a.payload };
+      }
+    },
+    /** The current shot is chosen for a retake (true), or not any more. */
+    retakeChosen(s: Draft, a: PayloadAction<boolean>) {
+      const shot = currentShot(s.plan);
+      const on = a.payload === true && !!shot && !!s.plan.shots[shot.id];
+      if (on !== s.guided.retake) {
+        s.guided = { ...s.guided, retake: on };
+      }
+    },
+    /** The end view's choice; refused for an unknown one. */
+    endChoiceSet(s: Draft, a: PayloadAction<EndChoice>) {
+      if (
+        (a.payload === "now" || a.payload === "wait") &&
+        s.guided.choice !== a.payload
+      ) {
+        s.guided = { ...s.guided, choice: a.payload };
+      }
+    },
+    /**
+     * "Retry failed": every failure kept for this page load only (a crash,
+     * a model that could not load) is dropped, so the queue measures those
+     * pairs again, and the crash count starts over. A failure the method
+     * reported (persisted) stays.
+     */
+    failedRetried(s: Draft) {
+      const keep = Object.entries(s.results).filter(
+        ([, e]) => e.status !== "failed" || e.persisted,
+      );
+      if (
+        keep.length === Object.keys(s.results).length &&
+        s.queue.crashes === 0
+      ) {
+        return;
+      }
+      s.results = Object.fromEntries(keep);
+      s.queue = { ...s.queue, crashes: 0 };
+    },
     planSettingsChanged: planCase(
       (settings: Readonly<Record<string, unknown>>) => ({
         type: "settings",
@@ -849,7 +935,7 @@ const slice = createSlice({
         return;
       }
       s.busy = "saving";
-      s.guided = { count: null };
+      s.guided = { ...s.guided, count: null };
       s.runZip = {
         phase: "preparing",
         text: "Packing the photos. Keep this page open.",

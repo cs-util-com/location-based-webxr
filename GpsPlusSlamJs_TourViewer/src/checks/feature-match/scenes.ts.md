@@ -43,7 +43,7 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `ShotLight` (re-exported from `bench-export.ts`): the `LightCheck` values plus `"not-darker-than-dimmed"`.
 - `lightOf(shot, photos)`: a light shot's check against its scene's L1 (L2 by the control rule `1a`, L3 by `1b`, L4 by `1c`), and L4 against L3 (`"not-darker-than-dimmed"` when L4 passes against L1 but is brighter than L3); null for any other shot or while a photo it needs is missing.
 - `needsRetake(shot, photos)`: its light check exists and is not `"ok"`.
-- `nextOpen(list, photos, from)`: the first shot without a photo after `from`, else the first one before it; null when every shot has one (or only `from` is open).
+- `nextOpen(list, photos, from, skipped = empty)`: the first open shot (no photo, not in `skipped`) after `from`, else the first one before it; null when no other shot is open.
 - `runZipName(session)`: `feature-match-run-<session>.zip`.
 - `summaryText({ session, spots, extra, photos, retakes, results, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Pairs measured on this phone: X, failed: Y, pending (to be measured on the PC): Z" over the ready pairs' current result keys, "Timings: N measured beside the camera, M idle, K with the page hidden", the methods line when `methods` is given ("Methods on this phone: SIFT, ALIKED + LightGlue (XFeat is not measured on this phone: it is for the PC)"), the file name, the phone, and a line that no location, time or names are included.
 

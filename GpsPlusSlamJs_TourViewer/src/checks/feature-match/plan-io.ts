@@ -79,6 +79,7 @@ export interface PlanIo {
   summaryOf(s: FeatureMatchState): string;
   /** Download all: the run zip read from storage (`run-zip.ts`). */
   downloadAll(): Promise<void>;
+  /** Copies `text`; `out` says "copying...", then "copied" or the refusal. */
   copyText(text: string, out: HTMLElement): Promise<void>;
 }
 
@@ -368,11 +369,12 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
   };
 
   const copyText = async (text: string, out: HTMLElement): Promise<void> => {
+    out.textContent = "copying...";
     try {
       await navigator.clipboard.writeText(text);
       out.textContent = "copied";
     } catch {
-      out.textContent = "copy refused: select the text and copy by hand";
+      out.textContent = "copy refused by the browser";
     }
   };
 

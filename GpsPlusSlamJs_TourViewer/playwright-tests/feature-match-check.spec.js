@@ -1996,16 +1996,48 @@ async function zipContents(bytes) {
 }
 
 /**
- * Countdown off (the pairs sheet's setting), so each tap shoots at once.
+ * Opens the guided menu (the sheet with the settings and the side paths).
  *
  * @param {import("@playwright/test").Page} page
  */
-async function countdownOff(page) {
-  await page.locator("#g-open-pairs").click();
-  const off = page.locator('#g-sheet-pairs [data-countdown="0"]');
-  await off.click();
-  await expect(off).toHaveAttribute("aria-checked", "true");
-  await page.locator("#g-close-pairs").click();
+async function openMenu(page) {
+  await page.locator("#g-open-menu").click();
+  await expect(page.locator("#g-sheet-menu")).toBeVisible();
+}
+
+/**
+ * Sets the countdown in the menu to `secs` (0 is off) and closes it.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} secs
+ */
+async function setCountdown(page, secs) {
+  await openMenu(page);
+  const b = page.locator(`#g-sheet-menu [data-countdown="${String(secs)}"]`);
+  await b.click();
+  await expect(b).toHaveAttribute("aria-checked", "true");
+  await page.locator("#g-close-menu").click();
+  await expect(page.locator("#g-sheet-menu")).toBeHidden();
+}
+
+/**
+ * The strip's thumb of the shot at `index` in the run.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {number} index
+ */
+const thumb = (page, index) =>
+  page.locator(`#g-thumbs .th[data-index="${String(index)}"]`);
+
+/**
+ * Menu, then Finish now: the end view.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function goEnd(page) {
+  await openMenu(page);
+  await page.locator('#g-sheet-menu [data-act="finish"]').click();
+  await expect(page.locator("#g-end")).toBeVisible();
 }
 
 /**
@@ -2017,16 +2049,13 @@ async function countdownOff(page) {
 async function guidedFirstShots(page) {
   await page.locator("#g-intro-start").click();
   await expect(page.locator("#g-run")).toBeVisible();
-  await expect(page.locator("#g-cam-chip")).toBeHidden();
-  await countdownOff(page);
+  await expect(page.locator("#g-cam-wait")).toBeHidden();
+  await setCountdown(page, 0);
   const primary = page.locator("#g-primary-label");
   await expect(primary).toHaveText("Capture L1");
   await page.locator("#g-primary").click();
   await expect(primary).toHaveText("Capture L2");
-  await expect(page.locator("#g-slot-a")).toHaveAttribute(
-    "data-filled",
-    "true",
-  );
+  await expect(thumb(page, 0)).toHaveAttribute("data-st", "taken");
   await page.locator("#g-primary").click();
   await expect(primary).toHaveText("Capture L3");
 }
@@ -2035,13 +2064,13 @@ async function guidedFirstShots(page) {
  * Why this test matters: the guided view is what a tester sees by
  * default, so its whole path must work with nothing but taps: the intro,
  * the camera starting by itself, a countdown that can be cancelled, each
- * next shot coming up by itself with the ghost of the scene's previous
- * photo while it is due (and gone once the run moves on), a shot picked
- * from the shots sheet, the review naming what a retake of F1 redoes, and
- * the end screen's one download. The zip is what gets sent back, so it
- * must hold the ready pair's folder plus the summary and the log, and a
- * dismissed save dialog must lose nothing and count no download. Nothing
- * leaves the machine.
+ * next shot coming up by itself with the base photo of the scene as a
+ * ghost while it is due (and gone once the run moves on), a shot picked
+ * from another scene's strip, a retake of F1 that names what it redoes and
+ * can be left again, and the end view's one download. The zip is what
+ * gets sent back, so it must hold the ready pair's folder plus the summary
+ * and the log, and a dismissed save dialog must lose nothing and count no
+ * download. Nothing leaves the machine.
  */
 test("the guided photo test walks the shots from the intro to a saved zip", async ({
   page,
@@ -2057,12 +2086,13 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
   await expect(page.locator("#g-intro")).toBeVisible();
   await expect(page.locator("#g-intro-start")).toHaveText("Start");
   await page.locator("#g-intro-start").click();
-  const pos = page.locator("#g-head-pos");
-  const key = page.locator("#g-card-key");
+  const code = page.locator("#g-card-code");
   const label = page.locator("#g-primary-label");
-  await expect(pos).toHaveText("Shot 1 of 13");
-  await expect(key).toHaveText("L1");
-  await expect(page.locator("#g-cam-chip")).toBeHidden();
+  await expect(page.locator("#g-scene-kicker")).toHaveText("Scene 1 of 3");
+  await expect(page.locator("#g-scene-name")).toHaveText("Light");
+  await expect(page.locator("#g-card-count")).toHaveText("photo 1 of 4");
+  await expect(code).toHaveText("L1");
+  await expect(page.locator("#g-cam-wait")).toBeHidden();
 
   // The default countdown: 3 s with the big button as Cancel.
   await page.locator("#g-primary").click();
@@ -2071,82 +2101,82 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
   await page.locator("#g-primary").click();
   await expect(page.locator("#g-count")).toBeHidden();
   await expect(label).toHaveText("Capture L1");
-  await expect(page.locator("#g-slot-b")).toHaveAttribute(
-    "data-filled",
-    "false",
-  );
+  await expect(thumb(page, 0)).toHaveAttribute("data-st", "open");
 
-  await countdownOff(page);
+  await setCountdown(page, 0);
   await expect(page.locator("#g-primary-sub")).toHaveText("shoots at once");
   await page.locator("#g-primary").click();
-  // The next shot comes up by itself; while it is due, the scene's
-  // previous photo can be laid over the finder.
-  await expect(pos).toHaveText("Shot 2 of 13");
-  await expect(key).toHaveText("L2");
+  // The next shot comes up by itself; while it is due, the scene's base
+  // photo can be laid over the finder.
+  await expect(code).toHaveText("L2");
+  await expect(page.locator("#g-card-count")).toHaveText("photo 2 of 4");
+  await expect(page.locator("#g-ghost-toggle")).toHaveText("Show L1");
   await page.locator("#g-ghost-toggle").click();
   await expect(page.locator("#g-ghost")).toBeVisible();
   await page.locator("#g-primary").click();
-  await expect(pos).toHaveText("Shot 3 of 13");
+  await expect(code).toHaveText("L3");
   await expect(page.locator("#g-ghost")).toBeHidden();
   const log = page.locator("#log");
-  await expect(log).toContainText("run: light tests at 1 place(s), 13 shots");
+  await expect(log).toContainText("run: light scene at 1 place(s), 13 shots");
   await expect(log).toContainText("countdown: cancelled");
   await expect(log).toContainText(
     "photo light-s1/L1 take 1: 320x240 grey mean 127.5",
   );
   await expect(log).toContainText("light check light-s1/L2: ok");
 
-  // F1 from the shots sheet; F2 comes up, and going back to F1 reviews it
-  // with what a retake costs.
-  await page.locator("#g-open-pairs").click();
-  await page.locator('#g-pair-grid button[data-index="4"]').click();
-  await expect(key).toHaveText("F1");
+  // F1 from the flat scene's strip; F2 comes up, and F1 picked again is a
+  // retake that says what it redoes and can be left with the back button.
+  await page.locator('#g-segs [data-scene="flat-s1"]').click();
+  await expect(thumb(page, 4)).toBeVisible();
+  await thumb(page, 4).click();
+  await expect(code).toHaveText("F1");
+  await expect(page.locator("#g-scene-kicker")).toHaveText("Scene 2 of 3");
   await page.locator("#g-primary").click();
-  await expect(key).toHaveText("F2");
-  await page.locator("#g-slot-a").click();
-  await expect(key).toHaveText("F1");
-  await expect(page.locator("#g-review")).toBeVisible();
-  await expect(page.locator("#g-review-note")).toHaveText(
-    "Photo taken. Check it is sharp. Retaking F1 redoes 7 measurements.",
+  await expect(code).toHaveText("F2");
+  await thumb(page, 4).click();
+  await expect(code).toHaveText("F1");
+  await expect(page.locator("#g-banner-title")).toHaveText(
+    "Retake F1, the base photo",
   );
-  await expect(label).toHaveText("Next shot");
-  await page.locator("#g-primary").click();
-  await expect(key).toHaveText("F2");
-  await expect(log).toContainText("next shot: flat-s1/F2");
+  await expect(label).toHaveText("Retake F1");
+  await expect(page.locator("#g-secondary")).toHaveText("Back to L3");
+  await page.locator("#g-secondary").click();
+  await expect(code).toHaveText("L3");
+  await expect(page.locator("#g-card-banner")).toBeHidden();
 
-  await page.locator("#g-open-pairs").click();
-  await expect(page.locator("#g-pair-grid button").first()).toContainText(
-    "done",
+  await goEnd(page);
+  await expect(page.locator("#g-end-kicker")).toHaveText(
+    "3 of 13 photos taken",
   );
-  await page.locator("#g-go-end").click();
-  await expect(page.locator("#g-end-kicker")).toHaveText("3 of 13 shots taken");
+  // The end view says how far the measuring worker got.
+  await expect(page.locator("#g-end-title")).toHaveText(
+    "Everything is measured",
+  );
+  await expect(page.locator("#g-end-eta")).toHaveText("all done");
+  await expect(page.locator("#g-choice")).toBeHidden();
+  const dl = page.locator("#g-download");
+  await expect(page.locator("#g-dl-label")).toHaveText("Download the zip");
+  await expect(page.locator("#g-dl-sub")).toHaveText("3 photos, 1 result");
   const state = page.locator("#g-download-state");
-  await expect(state).toHaveText(
-    "One zip with 1 pair, saved to this phone only.",
-  );
-  await expect(page.locator("#g-summary")).toHaveValue(/Pairs ready: 1 of/);
-  // The end screen says how far the measuring worker got.
-  await expect(page.locator("#g-end-lede")).toContainText(
-    "Measured on this phone: 1 of 1 pairs.",
-  );
 
   // A dismissed save dialog loses nothing and counts no download.
   await page.evaluate(() => {
     /** @type {any} */ (window).__saveAnswer = "cancel";
   });
-  await page.locator("#g-download-all").click();
+  await dl.click();
   await expect(state).toHaveText(
     "Not saved: the save dialog was closed. Nothing was lost.",
   );
-  await expect(page.locator("#g-download-all")).toHaveText("Download all");
+  await expect(page.locator("#g-dl-label")).toHaveText("Download the zip");
+  await expect(dl).toBeEnabled();
 
   await page.evaluate(() => {
     /** @type {any} */ (window).__saveAnswer = "save";
   });
-  await page.locator("#g-download-all").click();
+  await dl.click();
   await expect(state).toHaveText(/^Saved feature-match-run-.+\.zip \(/);
   await expect(state).toHaveClass(/ok/);
-  await expect(page.locator("#g-download-all")).toHaveText("Download again");
+  await expect(page.locator("#g-dl-label")).toHaveText("Download again");
   const zipName = /** @type {string} */ (
     await page.evaluate(
       () => Object.keys(/** @type {any} */ (window).__saved)[0],
@@ -2173,24 +2203,59 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
 });
 
 /**
+ * Why this test matters: a run whose photos are all taken or skipped must
+ * reach the end view by itself, and the skip paths must not lose a shot:
+ * Skip scene on a scene's first shot skips every open shot of it, Skip
+ * photo one shot, and each skipped shot stays in the end view's list,
+ * from where one tap takes it after all.
+ */
+test("the guided skip paths reach the end view and keep the skipped shots", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  await page.locator("#g-intro-start").click();
+  const secondary = page.locator("#g-secondary");
+  await expect(secondary).toHaveText("Skip scene");
+  await secondary.click();
+  await expect(page.locator("#g-card-code")).toHaveText("F1");
+  await secondary.click();
+  await expect(page.locator("#g-card-code")).toHaveText("D1");
+  await secondary.click();
+  // The last open shot closed: the end view opens by itself.
+  await expect(page.locator("#g-end")).toBeVisible();
+  await expect(page.locator("#g-end-kicker")).toHaveText(
+    "0 of 13 photos taken",
+  );
+  const missing = page.locator("#g-missing-list button");
+  await expect(missing).toHaveCount(13);
+  await expect(missing.first()).toHaveText("L1, skipped");
+  await expect(page.locator("#g-dl-label")).toHaveText("Download the zip");
+  await expect(page.locator("#g-download")).toBeDisabled();
+  await missing.nth(4).click();
+  await expect(page.locator("#g-run")).toBeVisible();
+  await expect(page.locator("#g-card-code")).toHaveText("F1");
+  await expect(page.locator("#log")).toContainText(
+    "run: skipped light-s1/L1, light-s1/L2, light-s1/L3, light-s1/L4",
+  );
+});
+
+/**
  * Download all through the link fallback; returns the zip's bytes. With
- * `measured` ("2 of 2 pairs") it first waits until the end screen says the
- * worker measured that many.
+ * `measured` it first waits until the end view says every pair is measured.
  *
  * @param {import("@playwright/test").Page} page
- * @param {string} [measured]
+ * @param {boolean} [measured]
  */
-async function downloadAllBytes(page, measured) {
-  await page.locator("#g-open-pairs").click();
-  await page.locator("#g-go-end").click();
-  if (measured !== undefined) {
-    await expect(page.locator("#g-end-lede")).toContainText(
-      `Measured on this phone: ${measured}.`,
-    );
+async function downloadAllBytes(page, measured = false) {
+  await goEnd(page);
+  if (measured) {
+    await expect(page.locator("#g-end-eta")).toHaveText("all done");
   }
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.locator("#g-download-all").click(),
+    page.locator("#g-download").click(),
   ]);
   expect(download.suggestedFilename()).toMatch(/^feature-match-run-.+\.zip$/);
   await expect(page.locator("#g-download-state")).toHaveText(/^Saved /);
@@ -2248,8 +2313,8 @@ test("the guided photo test downloads through a link and keeps its photos across
   await page.reload();
   await expect(page.locator("#g-run")).toBeVisible();
   await expect(page.locator("#g-intro")).toBeHidden();
-  await expect(page.locator("#g-card-key")).toHaveText("L3");
-  await expect(page.locator("#g-slot-a canvas")).toBeVisible();
+  await expect(page.locator("#g-card-code")).toHaveText("L3");
+  await expect(thumb(page, 0).locator("canvas")).toBeVisible();
 
   await page.evaluate(
     () =>
@@ -2264,8 +2329,8 @@ test("the guided photo test downloads through a link and keeps its photos across
       }),
   );
   await page.locator("#g-primary").click();
-  await expect(page.locator("#g-card-key")).toHaveText("L4");
-  const zip = await downloadAllBytes(page, "2 of 2 pairs");
+  await expect(page.locator("#g-card-code")).toHaveText("L4");
+  const zip = await downloadAllBytes(page, true);
   // L1-L2 and L1-L3 are ready and measured; L4 is not taken yet.
   expect(await zipFiles(zip)).toEqual([
     shotPng("light-s1/L1"),
@@ -2326,18 +2391,13 @@ test("the guided photo test refuses a second tab", async ({
     "another tab holds this test: this one takes no photo",
   );
   await second.locator("#g-intro-start").click();
-  const chip = second.locator("#g-store-chip");
-  await expect(chip).toBeVisible();
-  await expect(chip).toHaveText(
+  await expect(second.locator("#g-saved-text")).toHaveText(
     "This test is open in another tab: this one takes no photo. Close the other tab, then reload this one.",
   );
-  // Its settings are refused too, so the default 3 s countdown runs first.
-  await second.locator("#g-primary").click();
-  await expect(second.locator("#log")).toContainText(
-    "capture: photo of light-s1/L1 refused",
-    { timeout: 10_000 },
-  );
-  await expect(second.locator("#g-card-key")).toHaveText("L1");
+  await expect(second.locator("#g-saved-chip")).toHaveClass(/warn/);
+  // Every button that would take a photo is off.
+  await expect(second.locator("#g-primary")).toBeDisabled();
+  await expect(second.locator("#g-card-code")).toHaveText("L1");
 
   // The first tab runs on.
   await guidedFirstShots(page);
@@ -2356,7 +2416,7 @@ test("the guided countdown counts 3, 2, 1 and then takes the photo", async ({
   await fakeCamera(page);
   await page.goto("/feature-match-check.html");
   await page.locator("#g-intro-start").click();
-  await expect(page.locator("#g-cam-chip")).toBeHidden();
+  await expect(page.locator("#g-cam-wait")).toBeHidden();
   await page.locator("#g-primary").click();
   const num = page.locator("#g-count-num");
   await expect(num).toHaveText("3");
@@ -2364,16 +2424,10 @@ test("the guided countdown counts 3, 2, 1 and then takes the photo", async ({
   await expect(num).toHaveText("2");
   await page.clock.runFor(1000);
   await expect(num).toHaveText("1");
-  await expect(page.locator("#g-slot-a")).toHaveAttribute(
-    "data-filled",
-    "false",
-  );
+  await expect(thumb(page, 0)).toHaveAttribute("data-st", "open");
   await page.clock.runFor(1000);
   await expect(page.locator("#g-count")).toBeHidden();
-  await expect(page.locator("#g-slot-a")).toHaveAttribute(
-    "data-filled",
-    "true",
-  );
+  await expect(thumb(page, 0)).toHaveAttribute("data-st", "taken");
   await expect(page.locator("#log")).toContainText(
     "photo light-s1/L1 take 1: 320x240",
   );
@@ -2382,7 +2436,8 @@ test("the guided countdown counts 3, 2, 1 and then takes the photo", async ({
 
 /**
  * Why this test matters: while the camera permission prompt is open the
- * finder must say the camera is starting, not that it is off.
+ * finder must say the camera is starting, not that it is off, and the
+ * capture button waits for it.
  */
 test("the guided finder says the camera is starting while it waits", async ({
   page,
@@ -2391,19 +2446,24 @@ test("the guided finder says the camera is starting while it waits", async ({
   await fakeCamera(page, "hold");
   await page.goto("/feature-match-check.html");
   await page.locator("#g-intro-start").click();
-  const chip = page.locator("#g-cam-chip");
-  await expect(chip).toHaveText("starting camera...");
+  const wait = page.locator("#g-cam-wait");
+  await expect(wait).toHaveText("Starting the camera...");
+  await expect(page.locator("#g-primary-sub")).toHaveText(
+    "waiting for the camera",
+  );
+  await expect(page.locator("#g-primary")).toBeDisabled();
   await page.evaluate(() => {
     /** @type {any} */ (window).__releaseCamera();
   });
-  await expect(chip).toBeHidden();
+  await expect(wait).toBeHidden();
+  await expect(page.locator("#g-primary")).toBeEnabled();
 });
 
 /**
- * Why this test matters: leaving the run screen (the help) while the camera
- * permission prompt is still open stops that start; coming back must start
- * the camera again, not wait for a start that was stopped. The intro then
- * also names the countdown as it is set, not a fixed 3 s.
+ * Why this test matters: leaving the run screen (the help in the menu)
+ * while the camera permission prompt is still open stops that start;
+ * coming back must start the camera again, not wait for a start that was
+ * stopped.
  */
 test("the guided view starts the camera again after the help while the prompt was open", async ({
   page,
@@ -2412,10 +2472,12 @@ test("the guided view starts the camera again after the help while the prompt wa
   await fakeCamera(page, "hold");
   await page.goto("/feature-match-check.html");
   await page.locator("#g-intro-start").click();
-  const chip = page.locator("#g-cam-chip");
-  await expect(chip).toHaveText("starting camera...");
-  await page.locator("#g-open-help").click();
+  const wait = page.locator("#g-cam-wait");
+  await expect(wait).toHaveText("Starting the camera...");
+  await openMenu(page);
+  await page.locator('#g-sheet-menu [data-act="help"]').click();
   await expect(page.locator("#g-intro")).toBeVisible();
+  await expect(page.locator("#g-sheet-menu")).toBeHidden();
   await page.locator("#g-intro-start").click();
   await expect(page.locator("#g-run")).toBeVisible();
   // Two starts are pending: the one the help stopped, then the new one.
@@ -2425,15 +2487,8 @@ test("the guided view starts the camera again after the help while the prompt wa
       /** @type {any} */ (window).__releaseCamera();
     });
   }
-  await expect(chip).toBeHidden();
-  await expect(page.locator("#g-intro-still")).toContainText(
-    "3 seconds after your tap",
-  );
-  await countdownOff(page);
-  await page.locator("#g-open-help").click();
-  await expect(page.locator("#g-intro-still")).toContainText(
-    "the countdown is off",
-  );
+  await expect(wait).toBeHidden();
+  await expect(page.locator("#g-primary")).toBeEnabled();
 });
 
 /**
@@ -2444,9 +2499,7 @@ test("the guided view starts the camera again after the help while the prompt wa
  */
 async function countdownOnL3(page) {
   await guidedFirstShots(page);
-  await page.locator("#g-open-pairs").click();
-  await page.locator('#g-sheet-pairs [data-countdown="3"]').click();
-  await page.locator("#g-close-pairs").click();
+  await setCountdown(page, 3);
   await expect(page.locator("#g-primary-sub")).toHaveText("then 3 s hands off");
 }
 
@@ -2456,8 +2509,8 @@ async function countdownOnL3(page) {
  * reducer refuses. The save must end the countdown at once: no frozen
  * digit, no photo at its end, and the shot still due once the save is
  * done. The page clock drives the seconds; the held save dialog keeps the
- * page busy. Download all is clicked by a dispatched event: it sits on the
- * end screen, and leaving the run screen would cancel the countdown first;
+ * page busy. The download is clicked by a dispatched event: it sits on the
+ * end view, and leaving the run screen would cancel the countdown first;
  * the event stands in for any save under a countdown.
  */
 test("the guided countdown ends when a save starts under it", async ({
@@ -2476,7 +2529,7 @@ test("the guided countdown ends when a save starts under it", async ({
 
   await primary.click();
   await expect(page.locator("#g-count-num")).toHaveText("3");
-  await page.locator("#g-download-all").dispatchEvent("click");
+  await page.locator("#g-download").dispatchEvent("click");
   await expect(page.locator("#g-count")).toBeHidden();
   await expect(primary).toBeDisabled();
   await page.clock.runFor(3000);
@@ -2491,23 +2544,20 @@ test("the guided countdown ends when a save starts under it", async ({
     })
     .toBe(true);
   await expect(page.locator("#g-count")).toBeHidden();
-  await expect(page.locator("#g-slot-b")).toHaveAttribute(
-    "data-filled",
-    "false",
-  );
+  await expect(thumb(page, 2)).toHaveAttribute("data-st", "open");
   await expect(page.locator("#g-primary-label")).toHaveText("Capture L3");
   expect(await logLines(page, "photo light-s1/L3")).toBe(0);
 });
 
 /**
- * Why this test matters: Download all is the one file a tester sends, so
- * its failure path must be as clear as its success: while packing the
- * button says so and is off, a PNG that cannot be encoded ends in a
- * "Could not prepare the zip" line with the button back on, and the run
- * goes on (the next photo can still be taken). A stored photo's read is
- * held once, then fails.
+ * Why this test matters: the zip is the one file a tester sends, so its
+ * failure path must be as clear as its success: while packing the button
+ * says so and is off, a PNG that cannot be encoded ends in a "Could not
+ * prepare the zip" line with the button back on, red and saying the
+ * download failed, and the run goes on (the next photo can still be
+ * taken). A stored photo's read is held once, then fails.
  */
-test("the guided Download all shows packing, then a failure that loses nothing", async ({
+test("the guided download shows packing, then a failure that loses nothing", async ({
   page,
 }) => {
   await routeNetwork(page, fulfillSift);
@@ -2516,19 +2566,23 @@ test("the guided Download all shows packing, then a failure that loses nothing",
   await controlPhotoReads(page);
   await page.goto("/feature-match-check.html");
   await guidedFirstShots(page);
-  await page.locator("#g-open-pairs").click();
-  await page.locator("#g-go-end").click();
+  await goEnd(page);
   await page.evaluate(() => {
     /** @type {any} */ (window).__photoReads = "hold";
   });
-  const button = page.locator("#g-download-all");
+  const button = page.locator("#g-download");
+  const label = page.locator("#g-dl-label");
   await button.click();
-  await expect(button).toHaveText("Preparing the zip...");
+  await expect(label).toHaveText("Packing the zip...");
   await expect(button).toBeDisabled();
   // The label turns before the first photo is read: wait for the held one.
-  await page.waitForFunction(
-    () => typeof (/** @type {any} */ (window).__releaseRead) === "function",
-  );
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => typeof (/** @type {any} */ (window).__releaseRead) === "function",
+      ),
+    )
+    .toBe(true);
   await page.evaluate(() => {
     /** @type {any} */ (window).__releaseRead();
   });
@@ -2538,25 +2592,22 @@ test("the guided Download all shows packing, then a failure that loses nothing",
   );
   await expect(state).toHaveClass(/err/);
   await expect(button).toBeEnabled();
-  await expect(button).toHaveText("Download all");
+  await expect(label).toHaveText("Download failed - try again");
+  await expect(button).toHaveClass(/\berr\b/);
   await expect(page.locator("#log")).toContainText("ERROR download:");
 
   await page.locator("#g-end-back").click();
-  await expect(page.locator("#g-card-key")).toHaveText("L3");
+  await expect(page.locator("#g-card-code")).toHaveText("L3");
   await page.locator("#g-primary").click();
-  await expect(page.locator("#g-slot-b")).toHaveAttribute(
-    "data-filled",
-    "true",
-  );
+  await expect(thumb(page, 2)).toHaveAttribute("data-st", "taken");
 });
 
 /**
  * Why this test matters: the measure sheet is where the guided view keeps
- * the benchmark; nothing is measured on the run's photos on the phone, but
- * the synthetic run must work from the sheet and fill the moved Results.
- * On a phone the results table scrolls in its own box, its header with it,
- * and the page never scrolls sideways. With sift.js stubbed nothing is
- * downloaded from outside.
+ * the benchmark, reached from the menu; the synthetic run must work from
+ * the sheet and fill the moved Results. On a phone the results table
+ * scrolls in its own box, its header with it, and the page never scrolls
+ * sideways. With sift.js stubbed nothing is downloaded from outside.
  */
 test("the guided measure sheet runs the synthetic pair", async ({ page }) => {
   await page.setViewportSize({ width: 412, height: 915 });
@@ -2564,9 +2615,9 @@ test("the guided measure sheet runs the synthetic pair", async ({ page }) => {
   await fakeCamera(page);
   await page.goto("/feature-match-check.html");
   await page.locator("#g-intro-start").click();
-  await page.locator("#g-open-pairs").click();
-  await page.locator("#g-go-end").click();
-  await page.locator("#g-open-measure").click();
+  await openMenu(page);
+  await page.locator('#g-sheet-menu [data-act="measure"]').click();
+  await expect(page.locator("#g-sheet-menu")).toBeHidden();
   await expect(page.locator("#g-sheet-measure #options")).toBeAttached();
   await expect(page.locator("#g-sheet-measure #run-synthetic")).toBeVisible();
   await chooseSiftOnly(page);
@@ -2594,88 +2645,114 @@ test("the guided measure sheet runs the synthetic pair", async ({ page }) => {
 /**
  * Why this test matters: the guided run screen is laid out for a phone
  * held upright, a phone on its side and a desktop window, as in the chosen
- * prototype (whose boxes these numbers are, measured side by side). Upright,
- * header, step card, viewfinder and action bar stack in one column; wider,
- * the viewfinder takes the right side. The edges, the 10 px gaps and the
- * thumb-sized big button are pinned, the page must not scroll sideways,
- * and the step chip carries the colour of the photo that is due.
+ * prototype (whose boxes these numbers are, measured side by side; the
+ * build's own changes are the larger pair diagram upright and the lower
+ * action bar on a 360 px high screen, which make the card fit). Upright,
+ * header, strip, card, viewfinder and action bar stack in one column;
+ * wider, the viewfinder takes the right side. The edges, the gaps and the
+ * big button's height are pinned, the first shot's card fits without
+ * scrolling (a phone on its side once clipped its steps), and the page
+ * never scrolls sideways.
  */
 for (const vp of [
-  { width: 412, height: 915 },
-  { width: 915, height: 412 },
+  {
+    width: 412,
+    height: 915,
+    edge: 12,
+    gap: 8,
+    strip: 64,
+    button: 76,
+    split: null,
+  },
+  {
+    width: 915,
+    height: 412,
+    edge: 8,
+    gap: 6,
+    strip: 54,
+    button: 60,
+    split: 6,
+  },
   // A common Android phone on its side, shorter than 915x412.
-  { width: 800, height: 360 },
-  { width: 880, height: 790 },
+  {
+    width: 800,
+    height: 360,
+    edge: 8,
+    gap: 4,
+    strip: 52,
+    button: 52,
+    split: 6,
+  },
+  {
+    width: 880,
+    height: 790,
+    edge: 12,
+    gap: 8,
+    strip: 64,
+    button: 76,
+    split: 12,
+  },
 ]) {
   test(`the guided run screen fits ${String(vp.width)}x${String(vp.height)}`, async ({
     page,
   }) => {
-    await page.setViewportSize(vp);
+    await page.setViewportSize({ width: vp.width, height: vp.height });
     await routeNetwork(page, fulfillSift);
     await fakeCamera(page);
     await page.goto("/feature-match-check.html");
     await page.locator("#g-intro-start").click();
-    await expect(page.locator("#g-cam-chip")).toBeHidden();
+    await expect(page.locator("#g-cam-wait")).toBeHidden();
     const m = await page.evaluate(() => {
       const box = (/** @type {string} */ sel) => {
         const e = /** @type {Element} */ (document.querySelector(sel));
         const r = e.getBoundingClientRect();
-        return {
-          left: r.left,
-          top: r.top,
-          right: r.right,
-          bottom: r.bottom,
-          height: r.height,
-        };
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
       };
+      const card = /** @type {HTMLElement} */ (
+        document.querySelector("#g-run .card")
+      );
       return {
         head: box("#g-run .run-head"),
+        strip: box("#g-strip"),
         card: box("#g-run .card"),
         finder: box("#g-finder"),
         actions: box("#g-run .actions"),
         primary: box("#g-primary"),
-        seqB: box("#g-seq-b"),
-        foot: box("#g-run .foot-lines"),
-        chip: getComputedStyle(
-          /** @type {Element} */ (document.querySelector("#g-card-shot")),
-        ).backgroundColor,
+        steps: box("#g-card-steps"),
+        cardFits: card.scrollHeight <= card.clientHeight,
         scrollW: document.documentElement.scrollWidth,
       };
     });
     const near = (/** @type {number} */ got, /** @type {number} */ want) =>
       expect(Math.abs(got - want)).toBeLessThanOrEqual(1);
-    const { head, card, finder, actions, primary, seqB, foot } = m;
+    const { head, strip, card, finder, actions, primary, steps } = m;
     near(head.left, 16);
-    near(head.top, 12);
-    near(card.top - head.bottom, 10);
+    near(head.top, vp.edge);
+    near(strip.top, vp.strip);
+    near(strip.top - head.bottom, vp.gap);
+    near(card.top - strip.bottom, vp.gap);
     near(card.left, 16);
     near(actions.left, 16);
-    near(actions.bottom, vp.height - 12);
-    near(primary.height, 92);
-    if (vp.width < vp.height) {
-      // One column: card, viewfinder, action bar, 10 px apart.
-      for (const r of [head, card, finder, actions]) {
+    near(actions.bottom, vp.height - vp.edge);
+    near(primary.bottom - primary.top, vp.button);
+    if (vp.split === null) {
+      // One column: card, viewfinder, action bar, a gap apart.
+      for (const r of [head, strip, card, finder, actions]) {
         near(r.right, vp.width - 16);
       }
-      near(finder.top - card.bottom, 10);
-      near(actions.top - finder.bottom, 10);
+      near(finder.top - card.bottom, vp.gap);
+      near(actions.top - finder.bottom, vp.gap);
     } else {
       // The viewfinder on the right, the column beside it.
-      near(actions.top - card.bottom, 10);
-      near(finder.left - card.right, 10);
+      expect(actions.top).toBeGreaterThanOrEqual(card.bottom + vp.gap - 1);
+      near(finder.left - card.right, vp.split);
       near(finder.right, vp.width - 16);
-      near(finder.top, 12);
-      near(finder.bottom, vp.height - 12);
+      near(finder.top, vp.edge);
+      near(finder.bottom, vp.height - vp.edge);
     }
-    // The step card's whole sequence is on screen, inside the card and
-    // above the action bar, and the foot lines sit below it, not over it
-    // (a phone on its side once clipped "then" and B).
-    expect(seqB.bottom).toBeLessThanOrEqual(card.bottom + 0.5);
-    expect(seqB.bottom).toBeLessThanOrEqual(actions.top + 0.5);
-    expect(foot.top).toBeGreaterThanOrEqual(seqB.bottom - 0.5);
-    expect(foot.bottom).toBeLessThanOrEqual(card.bottom + 0.5);
+    expect(m.cardFits).toBe(true);
+    expect(steps.bottom).toBeLessThanOrEqual(card.bottom + 0.5);
     expect(m.scrollW).toBeLessThanOrEqual(vp.width);
-    expect(m.chip).not.toBe("rgba(0, 0, 0, 0)");
   });
 }
 

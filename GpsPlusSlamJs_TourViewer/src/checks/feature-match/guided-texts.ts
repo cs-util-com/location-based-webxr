@@ -31,6 +31,15 @@ export const SCENE_SETUP: Readonly<Record<SceneKind, string>> = {
   own: "Anything you want to test.",
 };
 
+/** The guided view's "New scene" banner: what the scene asks of the tester. */
+export const SCENE_INTRO: Readonly<Record<SceneKind, string>> = {
+  light:
+    "Stand the phone on a table or shelf, aimed at a detailed part of the room. It stays there for all four photos.",
+  flat: "Pick the phone up: from here it is hand-held. Find a flat surface with detail, like a poster or a patterned door.",
+  deep: "Still hand-held. Aim into a hallway or a deep room, with things near and far.",
+  own: "Anything you want to test: two photos, one change between them.",
+};
+
 const STILL = "Change nothing.";
 const AGAIN = "Capture again.";
 const NO_MOVE = "Capture without moving the phone.";

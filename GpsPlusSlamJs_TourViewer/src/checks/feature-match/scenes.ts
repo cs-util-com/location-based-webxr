@@ -306,17 +306,19 @@ export const needsRetake = (shot: string, photos: ShotPhotos): boolean => {
 };
 
 /**
- * The first shot without a photo after `from`, else the first one before
- * it; null when every shot has one.
+ * The first open shot (no photo, not skipped) after `from`, else the
+ * first one before it; null when no other shot is open.
  */
 export function nextOpen(
   list: readonly Shot[],
   photos: ShotPhotos,
   from: number,
+  skipped: ReadonlySet<string> = new Set(),
 ): number | null {
-  const after = list.findIndex((s, i) => i > from && !photos[s.id]);
+  const open = (s: Shot): boolean => !photos[s.id] && !skipped.has(s.id);
+  const after = list.findIndex((s, i) => i > from && open(s));
   if (after >= 0) return after;
-  const first = list.findIndex((s) => !photos[s.id]);
+  const first = list.findIndex(open);
   return first >= 0 && first !== from ? first : null;
 }
 

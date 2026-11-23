@@ -9,7 +9,7 @@ The page as a whole is described below, whichever module implements a rule:
 - `camera-control.ts`: the camera start, stop and generation guard.
 - `bench-engine.ts`: Options, Speed test, the synthetic run, results table, pictures, report, Copy log and log.
 - `plan-io.ts`: what both views do with the run plan in the browser: the camera start, the countdown, the photo, Download all (one zip, a folder per ready pair) and the summary.
-- `guided-view.ts`: the default view, one shot of the run at a time (intro, step card, viewfinder with countdown, shots sheet, end screen with Download all and the summary, and the measure sheet holding the measuring block). Its rules are in `guided-view.ts.md`.
+- `guided-view.ts`: the default view, three scenes one photo at a time (intro, scene strip, step card, viewfinder with countdown, the end view with the measuring per scene and one download, a menu, and the measure sheet holding the measuring block). Its rules are in `guided-view.ts.md`.
 - `cockpit-view.ts` (`?ui=cockpit`): the viewfinder and one fixed dock over the same run plan, the next shot coming up by itself, and a drawer with the shots, the guide, the results (the measuring block, the flat target) and the settings. Its rules are in `cockpit-view.ts.md`.
 
 ## Picking the view

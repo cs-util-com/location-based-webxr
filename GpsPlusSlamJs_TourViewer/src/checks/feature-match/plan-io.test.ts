@@ -230,3 +230,39 @@ describe("the photo and the run zip", () => {
     );
   });
 });
+
+describe("copyText", () => {
+  // Why this test matters: the clipboard write is awaited, and a tap that
+  // shows nothing until it settles reads as a dead button; a refused write
+  // must replace the in-progress word, never leave "copying..." behind.
+  it("says copying while the write runs, then copied", async () => {
+    let done = (): void => undefined;
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        writeText: () =>
+          new Promise<void>((r) => {
+            done = r;
+          }),
+      },
+    });
+    const { io } = setUp(memory(), mapDb().db);
+    const out = { textContent: "" } as HTMLElement;
+    const copying = io.copyText("log", out);
+    expect(out.textContent).toBe("copying...");
+    done();
+    await copying;
+    expect(out.textContent).toBe("copied");
+    vi.unstubAllGlobals();
+  });
+
+  it("says the copy was refused when the write fails", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    const { io } = setUp(memory(), mapDb().db);
+    const out = { textContent: "" } as HTMLElement;
+    await io.copyText("log", out);
+    expect(out.textContent).toBe("copy refused by the browser");
+    vi.unstubAllGlobals();
+  });
+});
