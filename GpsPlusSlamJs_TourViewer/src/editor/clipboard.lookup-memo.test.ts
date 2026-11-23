@@ -25,8 +25,11 @@ import { copyOf, cutOf, pasteOf } from "./clipboard.js";
 import { initialEditorViewState } from "./editor-view.js";
 
 vi.mock("../tour-document.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../tour-document.js")>();
-  return { ...actual, documentObjects: vi.fn(actual.documentObjects) };
+  const actual: Record<string, unknown> = await importOriginal();
+  return {
+    ...actual,
+    documentObjects: vi.fn(actual["documentObjects"] as typeof documentObjects),
+  };
 });
 
 function pin(id: string) {
