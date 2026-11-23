@@ -25,6 +25,7 @@ const photoOf = (id: string, greyMean = 120): PhotoMeta => ({
   height: 480,
   source: { width: 1920, height: 1080 },
   greyMean,
+  greySd: 40.123,
 });
 
 const shoot = (plan: RunPlan, shots: [string, string][]): RunPlan =>
@@ -125,6 +126,7 @@ describe("the run zip from storage", () => {
           sourceWidth: 1920,
           sourceHeight: 1080,
           greyMean: 120,
+          greySd: 40.12,
           crop: { x: 80, y: 0, side: 480 },
         },
         {
@@ -137,6 +139,7 @@ describe("the run zip from storage", () => {
           sourceWidth: 1920,
           sourceHeight: 1080,
           greyMean: 120,
+          greySd: 40.12,
           crop: { x: 80, y: 0, side: 480 },
         },
       ],
@@ -172,6 +175,7 @@ describe("the run zip from storage", () => {
         "sourceWidth",
         "sourceHeight",
         "greyMean",
+        "greySd",
         "crop",
       ],
     );

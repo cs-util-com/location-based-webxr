@@ -2189,7 +2189,7 @@ test("the guided photo test refuses a second tab", async ({
   const chip = second.locator("#g-store-chip");
   await expect(chip).toBeVisible();
   await expect(chip).toHaveText(
-    "This test is open in another tab: this one takes no photo.",
+    "This test is open in another tab: this one takes no photo. Close the other tab, then reload this one.",
   );
   // Its settings are refused too, so the default 3 s countdown runs first.
   await second.locator("#g-primary").click();

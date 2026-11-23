@@ -234,6 +234,11 @@ export interface FeatureMatchState {
   readonly photoStoreFailing: boolean;
   /** The photos, results and log of the last load were read back. */
   readonly restored: boolean;
+  /**
+   * The run was reset before the restore finished: the stored log belongs
+   * to the dropped run and is not read back.
+   */
+  readonly resetBeforeRestore: boolean;
   /** Plan photo ids whose storage write succeeded or that were read back. */
   readonly storedIds: readonly string[];
   /** The ready pairs' measured outcomes, by result key (`scenes.ts`). */
@@ -279,6 +284,7 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     cameraStart: "idle",
     photoStoreFailing: false,
     restored: false,
+    resetBeforeRestore: false,
     storedIds: [],
     results: {},
     otherTab: false,
@@ -457,6 +463,9 @@ const planCase =
     // A new run's log: its zip must not carry every earlier run's lines.
     if (action.type === "reset") {
       s.log = [];
+      if (!s.restored) {
+        s.resetBeforeRestore = true;
+      }
     }
     if (action.type === "photo") {
       endHandsOff(s);
@@ -785,7 +794,8 @@ const slice = createSlice({
     /**
      * The restore after a load finished: the photos read back count as
      * stored, the results of the ready pairs come back, and the stored log
-     * goes before this load's lines with a reload line between. Once only.
+     * goes before this load's lines with a reload line between, unless
+     * the run was reset meanwhile (that log is the dropped run's). Once only.
      */
     restoreFinished(
       s: Draft,
@@ -813,7 +823,7 @@ const slice = createSlice({
         ),
         ...s.results,
       };
-      if (a.payload.log.length > 0) {
+      if (a.payload.log.length > 0 && !s.resetBeforeRestore) {
         s.log = [...a.payload.log, RELOAD_LINE, ...s.log];
       }
     },

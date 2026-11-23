@@ -691,6 +691,31 @@ describe("what storage holds", () => {
     expect(fresh.log).toEqual(["this load"]);
   });
 
+  // Why: "Start over" right after a load clears the log; a restore that
+  // lands after it must not bring back the run the tester just dropped,
+  // or the next log write would store the old lines again.
+  it("drops the stored log when the run was reset during the restore", () => {
+    const s = run(
+      [A.logged("old run"), A.planReset(), A.logged("new run")],
+      pair(),
+    );
+    expect(s.log).toEqual(["new run"]);
+    const r = featureMatchReducer(
+      s,
+      A.restoreFinished({ stored: [], results: {}, log: ["stored 1"] }),
+    );
+    expect(r.restored).toBe(true);
+    expect(r.log).toEqual(["new run"]);
+    // A refused reset (another tab holds the run) does not count as one.
+    const refused = run([A.otherTabFound(), A.planReset()], pair());
+    expect(
+      featureMatchReducer(
+        refused,
+        A.restoreFinished({ stored: [], results: {}, log: ["stored 1"] }),
+      ).log,
+    ).toEqual(["stored 1", "page reloaded"]);
+  });
+
   // Why: two tabs would write the same plan and database; the second one
   // takes no photo and changes nothing of the run.
   it("refuses every plan action once another tab holds the run", () => {

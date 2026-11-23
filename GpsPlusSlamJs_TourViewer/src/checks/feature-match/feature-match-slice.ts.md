@@ -58,9 +58,9 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### What storage holds
 
-- `storedIds`: the plan photos whose write succeeded. `photoStored(id)`: refused for an id the plan does not name; never twice.
+- `storedIds`: the plan photos whose write succeeded. `photoStored(id)`: refused for an id the plan does not name; never twice. No view reads it yet: today's views show a shot as taken at once; a "stored" mark per shot comes with the scene views built from the chosen prototypes.
 - `results`: per current result key a `ResultEntry`. `resultStored({ key, text })` (done, kept) and `resultFailed({ key, text, persisted })`: refused for a key that is not a ready pair's current one. Nothing produces results yet; the on-phone measuring will.
-- `restored`: the stored photos, results and log were read back. `restoreFinished({ stored, results, log })`: once only; keeps the named ids and current keys, and puts the stored log first with `RELOAD_LINE` between it and this load's lines.
+- `restored`: the stored photos, results and log were read back. `restoreFinished({ stored, results, log })`: once only; keeps the named ids and current keys, and puts the stored log first with `RELOAD_LINE` between it and this load's lines. `resetBeforeRestore`: set by a `planReset` accepted before the restore finished; the stored log is then the dropped run's and is not read back (the reset emptied the log, and the next log write stores only the new run's lines).
 - `otherTab`: another tab holds the run. `otherTabFound()` sets it; from then on every plan action is refused.
 
 ### Flat target actions

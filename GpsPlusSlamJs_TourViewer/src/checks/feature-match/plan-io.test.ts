@@ -134,6 +134,16 @@ describe("the photo and the run zip", () => {
   // Why: a PNG that could not be encoded used to stay in the plan as a
   // photo nobody can read, so every zip failed with "try again" forever.
   // The shot must ask to be taken again, and the zip go on without it.
+  it("records the photo's grey mean and spread at capture", () => {
+    // Why: the frames JSON carries both for the PC's light and contrast
+    // reading; the capture is the one place the full frame is at hand.
+    const { fm, io } = setUp(memory(), mapDb().db);
+    expect(io.shoot()).toBe(true);
+    const photo = fm.store.getState().plan.shots["light-s1/L1"]?.photo;
+    expect(photo?.greyMean).toBeCloseTo(120, 5);
+    expect(photo?.greySd).toBeCloseTo(0, 5);
+  });
+
   it("asks again for a shot whose PNG could not be encoded", async () => {
     const { fm, io, fail } = setUp(memory(), mapDb().db);
     await fm.restore();

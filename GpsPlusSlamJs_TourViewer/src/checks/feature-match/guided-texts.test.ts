@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DIAGRAM_KINDS } from "./guided-diagram";
 import {
   LIGHT_NOTE,
+  OTHER_TAB_TEXT,
   retakeText,
   SCENE_SETUP,
   SHOT_WORDS,
@@ -90,5 +91,16 @@ describe("retakeText", () => {
   it("names the shot and the pairs it redoes, singular for one", () => {
     expect(retakeText("F1", 7)).toBe("Retaking F1 redoes 7 measurements.");
     expect(retakeText("L2", 1)).toBe("Retaking L2 redoes 1 measurement.");
+  });
+});
+
+// Why this test matters: the tab lock is asked once at load, so a refused
+// tab stays refused after the other tab closes; its text must say how to
+// get the run back (reload), not leave the tester stuck.
+describe("OTHER_TAB_TEXT", () => {
+  it("tells the tester to reload this tab once the other one is closed", () => {
+    expect(OTHER_TAB_TEXT).toMatch(/close the other tab/i);
+    expect(OTHER_TAB_TEXT).toMatch(/reload this/i);
+    expect(OTHER_TAB_TEXT).not.toMatch(DASHES);
   });
 });

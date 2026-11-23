@@ -5,8 +5,8 @@
  *
  * @see speed-test.ts.md
  */
-import { resizeFrame, sizeForLongEdge } from "./bench-image";
-import type { LoadDeps } from "./bench-net";
+import { resizeFrame, sizeForLongEdge, type Frame } from "./bench-image";
+import { errorText, type LoadDeps } from "./bench-net";
 import type { BenchInput } from "./bench-run";
 import { methodTimingArm, type TimingArm } from "./bench-timing";
 import { dinoTimingArm, type DinoVariant } from "./method-dino";
@@ -22,6 +22,30 @@ export interface SpeedTestChoice {
   readonly longEdge: number;
   /** SIFT keypoints per frame for SIFT + LightGlue. */
   readonly siftCap: number;
+}
+
+/**
+ * The speed test's photo pair, the flat scene's F1 and F2, as frames; or
+ * why the test falls back to the synthetic pair: a shot not taken, or a
+ * photo that cannot be read or decoded (storage lost it, or its write was
+ * refused and memory no longer holds it). Never rejects.
+ */
+export async function speedFrames(
+  ids: { readonly a: string | undefined; readonly b: string | undefined },
+  readFrame: (id: string) => Promise<Frame>,
+): Promise<
+  { readonly a: Frame; readonly b: Frame } | { readonly fallback: string }
+> {
+  if (ids.a === undefined || ids.b === undefined) {
+    return { fallback: "F1 and F2 not both taken" };
+  }
+  try {
+    const a = await readFrame(ids.a);
+    const b = await readFrame(ids.b);
+    return { a, b };
+  } catch (e) {
+    return { fallback: `a photo could not be read: ${errorText(e)}` };
+  }
 }
 
 /** The long edges and SIFT caps the page offers. */

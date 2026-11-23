@@ -36,7 +36,7 @@ The frames JSON, pretty-printed (2 spaces) with a final newline, fields in this 
 - `session`: the page load's `sessionToken` (8 hex).
 - `lightCheck`: `lightOf(B)` (`ok`, `changed`, `not-darker`, `too-dark-a`, `too-dark-b`, `not-darker-than-dimmed`), null for a non-light pair.
 - `captureMaxLongEdge`: the long edge photos were captured at, at most.
-- `frames`: A then B, each `{ name, shot, take, file, width, height, sourceWidth, sourceHeight, greyMean }` (`file` the `shots/...` entry above, `greyMean` 0-255 rounded to 2 decimals), and for a rotation pair also `crop: { x, y, side }`, the centre square (`centreCrop` of `rotation-square.ts`).
+- `frames`: A then B, each `{ name, shot, take, file, width, height, sourceWidth, sourceHeight, greyMean, greySd }` (`file` the `shots/...` entry above, `greyMean` and `greySd` 0-255 rounded to 2 decimals; `greySd` is left out for a photo whose plan was stored before it was recorded), and for a rotation pair also `crop: { x, y, side }`, the centre square (`centreCrop` of `rotation-square.ts`).
 - `turn`: only for a rotation pair, `{ degrees: 0 | 90 | 180, direction: "cw" }`, the clockwise turn of B's square.
 - `device`: the device facts (`DeviceInfo` of `bench-report.ts`).
 

@@ -3,7 +3,9 @@ import fc from "fast-check";
 
 import type { LoadDeps } from "./bench-net";
 import { syntheticPair } from "./bench-synthetic";
+import type { Frame } from "./bench-image";
 import {
+  speedFrames,
   speedTestArms,
   speedTestInput,
   speedTestSettings,
@@ -101,5 +103,42 @@ describe("speedTestInput and speedTestSettings", () => {
     ).toBe(
       "long edge 480 (480x360) for the keypoint arms, DINOv2 input 224x224, SIFT cap 512 per frame, XFeat fp16 as the reference, backends wasm (no WebGPU on this device: WASM instead), ort wasm threads 1",
     );
+  });
+});
+
+// Why this test matters: the speed test falls back to the synthetic pair
+// when the flat scene's photos cannot be had; a photo that storage lost or
+// never took (its read rejects) must take that fallback too, not end the
+// test with an error.
+describe("speedFrames", () => {
+  const frame = (w: number): Frame => ({
+    width: w,
+    height: 1,
+    rgba: new Uint8ClampedArray(4 * w),
+  });
+
+  it("reads both photos when both are taken", async () => {
+    const got = await speedFrames({ a: "p1", b: "p2" }, (id) =>
+      Promise.resolve(frame(id === "p1" ? 1 : 2)),
+    );
+    expect("a" in got && [got.a.width, got.b.width]).toEqual([1, 2]);
+  });
+
+  it("falls back when a photo is not taken", async () => {
+    const got = await speedFrames({ a: "p1", b: undefined }, () =>
+      Promise.resolve(frame(1)),
+    );
+    expect(got).toEqual({ fallback: "F1 and F2 not both taken" });
+  });
+
+  it("falls back, naming why, when a photo cannot be read", async () => {
+    const got = await speedFrames({ a: "p1", b: "p2" }, (id) =>
+      id === "p2"
+        ? Promise.reject(new Error("the photo p2 is not stored"))
+        : Promise.resolve(frame(1)),
+    );
+    expect(got).toEqual({
+      fallback: "a photo could not be read: Error: the photo p2 is not stored",
+    });
   });
 });

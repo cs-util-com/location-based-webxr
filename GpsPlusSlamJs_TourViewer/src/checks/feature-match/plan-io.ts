@@ -199,6 +199,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
           height: f.height,
           source,
           greyMean: grey.mean,
+          greySd: grey.sd,
         },
       }),
     );

@@ -51,6 +51,7 @@ import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
 import {
   SPEED_LONG_EDGES,
   SPEED_SIFT_CAPS,
+  speedFrames,
   speedTestArms,
   speedTestSettings,
   type SpeedTestChoice,
@@ -560,22 +561,29 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fallback: T,
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
-  /** The speed test's pair: the flat scene's F1 and F2 when taken, else synthetic. */
+  /**
+   * The speed test's pair: the flat scene's F1 and F2 when both can be
+   * read, else synthetic (the log says why when a taken photo could not).
+   */
   const speedPair = async (): Promise<RunPair> => {
     const shots = state().plan.shots;
-    const frame = async (shot: string): Promise<Frame | undefined> => {
-      const id = shots[shot]?.photo.id;
-      return id === undefined ? undefined : blobFrame(await fm.readPhoto(id));
+    const got = await speedFrames(
+      {
+        a: shots[SPEED_SHOTS.a]?.photo.id,
+        b: shots[SPEED_SHOTS.b]?.photo.id,
+      },
+      async (id) => blobFrame(await fm.readPhoto(id)),
+    );
+    if ("fallback" in got) {
+      log(`speed test: synthetic pair (${got.fallback})`);
+      return syntheticInput();
+    }
+    const { a, b } = got;
+    return {
+      input: { a, b, warp: null },
+      text: `pair ${SPEED_SHOTS.a} + ${SPEED_SHOTS.b} ${frameText("A", a)}; ${frameText("B", b)}`,
+      pair: "2a",
     };
-    const a = await frame(SPEED_SHOTS.a);
-    const b = await frame(SPEED_SHOTS.b);
-    return a && b
-      ? {
-          input: { a, b, warp: null },
-          text: `pair ${SPEED_SHOTS.a} + ${SPEED_SHOTS.b} ${frameText("A", a)}; ${frameText("B", b)}`,
-          pair: "2a",
-        }
-      : syntheticInput();
   };
 
   /**
