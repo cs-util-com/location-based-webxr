@@ -153,9 +153,11 @@ function harness(
   const hooks = createUnwiredHooks();
   // The viewer pipeline (stood in here) owns the controller and its source.
   hooks.startViewerPipeline = () => {
-    ctx.qrController = { dispose } as unknown as NonNullable<
-      typeof ctx.qrController
-    >;
+    ctx.qrController = {
+      dispose,
+      offerFrame: vi.fn(),
+      isBusy: () => false,
+    } as unknown as NonNullable<typeof ctx.qrController>;
     ctx.fusedPose = {} as NonNullable<typeof ctx.fusedPose>;
     return true;
   };
@@ -194,7 +196,30 @@ function harness(
     clear: toastResets,
   });
   const arStore = createTourViewerStore();
+  /** The render loop's registrations (the framework's `registerFrameUpdate`)
+   *  and its page clock in seconds; `frames.end()` drops them all, as the
+   *  framework does at every session end. */
+  const frameUpdates = new Set<(dt: number, elapsedS: number) => void>();
+  const frameClock = { elapsedS: 10 };
+  const frames = {
+    run(n: number, dtMs = 1000 / 60): void {
+      for (let i = 0; i < n; i += 1) {
+        frameClock.elapsedS += dtMs / 1000;
+        for (const fn of [...frameUpdates])
+          fn(dtMs / 1000, frameClock.elapsedS);
+      }
+    },
+    end(): void {
+      frameUpdates.clear();
+    },
+  };
   const seams = {
+    registerFrameUpdate: (fn: (dt: number, elapsedS: number) => void) => {
+      frameUpdates.add(fn);
+      return () => {
+        frameUpdates.delete(fn);
+      };
+    },
     stopCameraFrameCapture: () => undefined,
     // Enough of a scene for the runtime start to go through.
     getArWorldGroup: () => ({}),
@@ -276,6 +301,8 @@ function harness(
     toasts,
     toastResets,
     enabledConfig: () => enabled,
+    frames,
+    frameUpdates,
     permission,
     refusals,
     meshSurface,
@@ -1820,3 +1847,80 @@ describe("the walk's surfaces in AR", () => {
 type TourViewerSessionGate = ReturnType<
   typeof createTourViewerSession
 >["scanGate"];
+
+describe("the per-frame UI runs on the render loop, not on captured frames", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A visitor in a running session, counting the station ticks the
+   *  render loop makes from here on. */
+  async function ticking(options: Parameters<typeof harness>[0] = {}) {
+    const h = harness({ enableOk: true, ...options });
+    await h.enter();
+    const ticks = { count: 0 };
+    h.hooks.tickStations = () => {
+      ticks.count += 1;
+    };
+    return { h, ticks };
+  }
+
+  // Why this test matters: the tracker capture gate vetoes captures far
+  // from every code. The stations, the HUD and the status line must keep
+  // their pace then: one second of render frames with no capture at all
+  // still ticks the stations at about 8 Hz (the capture cadence).
+  it("ticks the stations at about 8 Hz while no frame is captured", async () => {
+    const { h, ticks } = await ticking();
+    h.frames.run(60);
+    expect(ticks.count).toBeGreaterThanOrEqual(7);
+    expect(ticks.count).toBeLessThanOrEqual(9);
+  });
+
+  // Why this test matters: a captured frame no longer ticks anything, so
+  // the rate is the render loop's alone and cannot double.
+  it("a captured frame counts and is offered to the code tracker, but ticks nothing", async () => {
+    const { h, ticks } = await ticking();
+    const frame = {
+      image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      capturedAtMs: 1,
+    };
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(ticks.count).toBe(0);
+    expect(h.ctx.cameraFrameCount).toBe(1);
+    expect(h.ctx.latestFrame).toBe(frame);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: every session end clears the frame loop's
+  // registrations, so the ticks are registered per session. A tick
+  // registered once at load would be gone after the first exit; one
+  // registered per tap without that clear would tick twice as fast.
+  it("ticks at about 8 Hz again in a second session after the first ended", async () => {
+    const { h, ticks } = await ticking();
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    h.frames.end();
+    await h.enter();
+    expect(h.frameUpdates.size).toBe(1);
+    ticks.count = 0;
+    h.frames.run(60);
+    expect(ticks.count).toBeGreaterThanOrEqual(7);
+    expect(ticks.count).toBeLessThanOrEqual(9);
+  });
+
+  // Why this test matters: a start that failed has no session whose end
+  // would clear a registration; it must leave none behind.
+  it("a failed start registers no tick", async () => {
+    const h = harness({ enableOk: false });
+    await h.enter();
+    expect(h.frameUpdates.size).toBe(0);
+  });
+
+  // Why this test matters: the clock comes from the render loop; a
+  // non-finite time must neither throw nor tick.
+  it("a frame with a non-finite time ticks nothing", async () => {
+    const { h, ticks } = await ticking();
+    for (const fn of h.frameUpdates) fn(0.016, Number.NaN);
+    expect(ticks.count).toBe(0);
+  });
+});

@@ -24,6 +24,7 @@ import {
   getCurrentArPose,
   getRenderer,
   getScene,
+  registerFrameUpdate,
   rgbaImageToJpegBlob,
   startCameraFrameCapture,
   startDepthCapture,
@@ -32,6 +33,7 @@ import {
   stopCameraFrameCapture,
   stopDepthCapture,
   type EnableGpsArDeps,
+  type FrameUpdate,
   type HitTestReticleHandle,
   type SelectTargetRay,
 } from "gps-plus-slam-app-framework/ar";
@@ -117,6 +119,11 @@ export interface TourViewerSeams {
   }): unknown;
   startCameraFrameCapture(config?: { intervalMs?: number }): void;
   stopCameraFrameCapture(): void;
+  /** Run `fn` on every rendered frame until the session ends (the
+   *  framework's frame loop; it clears every registration at each session
+   *  end). Returns the unregister. A seam so the e2e, which renders no XR
+   *  frames, drives the per-frame UI with its fake frames. */
+  registerFrameUpdate(fn: FrameUpdate): () => void;
   /** Start / stop the depth sampler of a recorded entry (the sampler
    *  exists only when the entry asked for depth). */
   startDepthCapture(config: Partial<DepthSamplerConfig>): void;
@@ -302,6 +309,7 @@ export const realSeams: TourViewerSeams = {
   enableArWorldGroupAlignment,
   startCameraFrameCapture,
   stopCameraFrameCapture,
+  registerFrameUpdate,
   startDepthCapture,
   stopDepthCapture,
   createQrFrontEnd: () => createBarcodeDetectorFrontEnd(),

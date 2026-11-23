@@ -37,6 +37,7 @@ import {
   COPY_LINK_LABELS,
   visitorStep,
   buildArEnableConfig,
+  CAMERA_FRAME_INTERVAL_MS,
   type ArEnableHooks,
   endTourArRuntime,
   startTourArRuntime,
@@ -789,6 +790,30 @@ export function wireArEntry(deps: {
     return hooks.creatorCanStartOnCodes() ? "code-can-start" : "no-code";
   }
 
+  /**
+   * The per-frame UI (the status line, the stations and what they drive)
+   * runs on the render loop at the capture cadence, never on captured
+   * frames: a capture the tracker gate vetoes must not slow it. Registered
+   * per session, after the runtime started: every session end clears the
+   * frame loop's registrations, so nothing is unregistered by hand. Unlike
+   * the captures it also runs during a tracking loss and without camera
+   * access; the stations then judge no arrival (no position).
+   */
+  function startFrameTicks(): void {
+    let dueMs = Number.NEGATIVE_INFINITY;
+    seams.registerFrameUpdate((_dt, elapsedS) => {
+      const nowMs = elapsedS * 1000;
+      if (!Number.isFinite(nowMs) || nowMs < dueMs) return;
+      // On the cadence's grid, unless a stall left it a whole step behind.
+      dueMs =
+        nowMs - dueMs >= CAMERA_FRAME_INTERVAL_MS
+          ? nowMs + CAMERA_FRAME_INTERVAL_MS
+          : dueMs + CAMERA_FRAME_INTERVAL_MS;
+      renderArStatus();
+      hooks.tickStations();
+    });
+  }
+
   /** A start is under way: a second tap meanwhile starts nothing (it
    *  would build a second pipeline over the first). */
   let entering = false;
@@ -858,8 +883,6 @@ export function wireArEntry(deps: {
           // carries its own capture pose, which the photo is placed with.
           ctx.latestFrame = frame;
           ctx.qrController?.offerFrame(frame);
-          renderArStatus();
-          hooks.tickStations();
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -910,6 +933,7 @@ export function wireArEntry(deps: {
       await arController.disable();
       return;
     }
+    startFrameTicks();
     startEntryDepth(depth);
     // The world group exists only AFTER initAR built the scene graph —
     // creating the glue check earlier made it dead code in production

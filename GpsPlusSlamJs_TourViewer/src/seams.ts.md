@@ -22,7 +22,7 @@ Keeps `main.ts` glue-only.
 
 - `interface TourViewerSeams { controllerDeps; getArWorldGroup; getStationAnchorParent;
 enableArWorldGroupAlignment; startCameraFrameCapture;
-stopCameraFrameCapture; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
+stopCameraFrameCapture; registerFrameUpdate; startDepthCapture; stopDepthCapture; createQrFrontEnd; solveQrPose; estimateQrPrintSize;
 getIntrinsics; createQrDebugView; getScene; getArPose;
 queryGeolocationPermission;
 requestLocationOnce; shareOrDownloadZip; downloadZip; canShareZip; downloadPdf; openPdfTab; copyText;
@@ -30,6 +30,11 @@ startHitTestReticle; pickObjectInView; encodeFrameJpeg;
 createLabel; schedule; createWayfindingHud; loadGlbModel;
 getViewerCamera; enableClipping; uploadTexture;
 createAudioElement; xrProjection0 }`
+  - `registerFrameUpdate(fn)` - the framework's frame-loop registration
+    (`gps-plus-slam-app-framework/ar`), which every session end clears;
+    returns the unregister. The AR entry's per-frame UI runs on it. The e2e
+    fake keeps its own set, cleared at each fake initAR, and runs it once
+    after every emitted fake frame.
   - `xrProjection0()` - the session
     camera's `projectionMatrix.elements[0]`, null without a camera; the
     radar's view cone is `2*atan(1/P[0])` (`walk-radar-model.ts`
