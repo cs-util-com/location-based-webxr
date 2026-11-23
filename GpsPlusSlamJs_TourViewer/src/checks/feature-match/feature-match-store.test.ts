@@ -864,6 +864,34 @@ describe("the log in storage", () => {
     expect(data.get(LOG_KEY)).toContain("last\n");
     fm.dispose();
   });
+
+  // Why: a log read that fails is not an empty log. Writing this load's
+  // lines then would overwrite the earlier loads' log for good; the page
+  // keeps logging on screen, and the next start reads the old log back.
+  it("writes no log for a load whose log read failed", async () => {
+    const { data, db } = mapDb({ [LOG_KEY]: "old\n" });
+    let fails = 1;
+    const flaky: KeyValueStore = {
+      ...db,
+      get: (k: string) =>
+        k === LOG_KEY && fails-- > 0
+          ? Promise.reject(new Error("busy"))
+          : db.get(k),
+    };
+    const storage = memory({ [PLAN_KEY]: planText(EMPTY_PLAN) }).storage;
+    const first = makeWith(storage, flaky);
+    await first.restore();
+    expect(first.failed).toHaveBeenCalled();
+    first.store.dispatch(A.logged("this load"));
+    expect(first.store.getState().log).toEqual(["this load"]);
+    first.flushLog();
+    await settle(2);
+    expect(data.get(LOG_KEY)).toBe("old\n");
+    first.dispose();
+    const next = makeWith(storage, flaky);
+    await next.restore();
+    expect(next.store.getState().log).toEqual(["old", RELOAD_LINE]);
+  });
 });
 
 describe("the tab lock", () => {

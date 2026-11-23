@@ -530,6 +530,12 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   }
 
   let logTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The stored log could not be read this load: no log is written, so the
+   * next start reads the earlier loads' log back (the screen keeps this
+   * load's lines).
+   */
+  let logUnread = false;
   /** A failed log write was reported; reset by a write that succeeds. */
   let logReported = false;
   /** Writes the log now, once the stored one was read back. */
@@ -539,7 +545,7 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
       logTimer = null;
     }
     const s = store.getState();
-    if (!db || !s.restored) {
+    if (!db || !s.restored || logUnread) {
       return;
     }
     db.put(LOG_KEY, logText(s)).then(
@@ -663,7 +669,14 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
         inDb.add(resultDbKey(key));
       }
     }
-    const text = await read(LOG_KEY);
+    let text: unknown;
+    try {
+      text = db ? await db.get(LOG_KEY) : undefined;
+    } catch (e) {
+      // Not an empty log: writing this load's lines would overwrite it.
+      dbFailed(e);
+      logUnread = true;
+    }
     const log = typeof text === "string" ? text.split("\n") : [];
     if (log.at(-1) === "") {
       log.pop();
