@@ -34,7 +34,8 @@ stations at the open (`capture-bake.ts`); that half went with M1.
 ## Invariants & assumptions
 
 - **Every decline is the join's own** (`preflightCaptureJoin`: no
-  recording, era, segmenting actions; `assessReplayedJoin`: no GPS, too
+  recording, era, segmenting actions other than a relocalization, which
+  the join corrects (`correctsRelocalization: true`); `assessReplayedJoin`: no GPS, too
   few fixes, an unsolved or malformed alignment, no captures), plus the
   ones decided right after the replay, before the GPS verdict, when the
   walk names no capture file the tour carries:

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Quaternion as ThreeQuaternion, Vector3 as ThreeVector3 } from "three";
+import {
+  Matrix4 as ThreeMatrix4,
+  Quaternion as ThreeQuaternion,
+  Vector3 as ThreeVector3,
+} from "three";
+import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 
@@ -8,6 +13,7 @@ import {
   preflightCaptureJoin,
   computeCaptureGeoJoin,
   createCapturePickTracker,
+  type CaptureWorldPose,
   type ReplayedJoinState,
 } from "./capture-geo-join";
 
@@ -98,20 +104,35 @@ describe("assessReplayForJoin", () => {
   });
 
   it.each([
-    ["gpsData/odometryTrackingRestarted"],
-    ["gpsData/arLoopClosureDetected"],
-    ["arSpaceCorrection/relocalizationObserved"],
+    ["gpsData/odometryTrackingRestarted", {}],
+    ["gpsData/arLoopClosureDetected", {}],
+    ["arSpaceCorrection/relocalizationObserved", {}],
+    ["gpsData/odometryTrackingRestarted", { correctsRelocalization: true }],
+    ["gpsData/arLoopClosureDetected", { correctsRelocalization: true }],
   ])(
-    "declines when the recording contains %s — the final alignment is only valid for the last segment",
-    (type) => {
-      // Why this test matters: the join reads the shared segmenting list,
-      // so a relocalized recording is declined like a tracking restart,
-      // and its plain-words reason names the relocalization.
-      const verdict = preflightCaptureJoin(CURRENT_ERA, [type]);
+    "declines when the recording contains %s (%o) - the final alignment is only valid for the last segment",
+    (type, options) => {
+      // Why this test matters: the join reads the shared segmenting list; a
+      // tracking restart is declined even by a caller that corrects
+      // relocalizations, and a caller reading raw poses (the splat
+      // trainer) declines a relocalized recording too.
+      const verdict = preflightCaptureJoin(CURRENT_ERA, [type], options);
       expect(verdict.ok).toBe(false);
       expect(verdict.ok ? "" : verdict.reason).toMatch(/relocalization/);
     },
   );
+
+  it("a caller that corrects relocalizations accepts a relocalized recording", () => {
+    // Why this test matters: once the recorder records every ARCore
+    // relocalization, declining them would make most long walks unjoinable.
+    expect(
+      preflightCaptureJoin(
+        CURRENT_ERA,
+        ["arSpaceCorrection/relocalizationObserved"],
+        { correctsRelocalization: true },
+      ),
+    ).toEqual({ ok: true });
+  });
 
   it("declines a null gpsData, a missing zero, too few pairs, and no captures — each with plain words", () => {
     expect(assessReplayedJoin({ gpsData: null }).ok).toBe(false);
@@ -477,5 +498,233 @@ describe("createCapturePickTracker - each photo through the first settled alignm
     const north = (lat: number) => (lat - 47.5) * 111_320;
     expect(north(viaFinal!.geo.lat)).toBeCloseTo(10, 0);
     expect(north(viaPick!.geo.lat)).toBeCloseTo(4, 0);
+  });
+});
+
+describe("computeCaptureGeoJoin - across a relocalization", () => {
+  // Why these tests matter: once the recorder records every ARCore
+  // relocalization, a photo taken before one sits in the old raw frame
+  // while the final alignment was solved in the new one. Placed raw, it
+  // lands as far off as the jump moved (metres); dropped, the walk loses
+  // its early photos. The join must move it by the recorded jump, exactly
+  // as an independently corrected recording would place it.
+  const B = new ThreeMatrix4().copy(WEBXR_TO_NUE);
+  const turn = new ThreeQuaternion().setFromAxisAngle(
+    new ThreeVector3(0, 1, 0),
+    Math.PI / 6,
+  );
+  const jump = {
+    t: 2000,
+    tLast: 1990,
+    lastPose: {
+      position: [0, 1.5, 0] as [number, number, number],
+      rotation: [0, 0, 0, 1] as [number, number, number, number],
+    },
+    tPrev: null,
+    prevPose: null,
+    newPose: {
+      position: [3, 1.5, -2] as [number, number, number],
+      rotation: [turn.x, turn.y, turn.z, turn.w] as [
+        number,
+        number,
+        number,
+        number,
+      ],
+    },
+  };
+  /** The jump in NUE, built with three.js: B * (P_new * P_old^-1) * B^-1. */
+  function oracleJumpNue(): ThreeMatrix4 {
+    const pose = (p: typeof jump.lastPose) =>
+      new ThreeMatrix4().compose(
+        new ThreeVector3(...p.position),
+        new ThreeQuaternion(...p.rotation),
+        new ThreeVector3(1, 1, 1),
+      );
+    const inR = pose(jump.newPose).multiply(pose(jump.lastPose).invert());
+    return B.clone().multiply(inR).multiply(B.clone().invert());
+  }
+  function moved(
+    m: ThreeMatrix4,
+    point: { position: readonly number[]; rotation: readonly number[] },
+  ) {
+    const p = new ThreeVector3(
+      point.position[0],
+      point.position[1],
+      point.position[2],
+    ).applyMatrix4(m);
+    const q = new ThreeQuaternion()
+      .setFromRotationMatrix(m)
+      .multiply(
+        new ThreeQuaternion(
+          point.rotation[0],
+          point.rotation[1],
+          point.rotation[2],
+          point.rotation[3],
+        ),
+      );
+    return {
+      position: [p.x, p.y, p.z] as [number, number, number],
+      rotation: [q.x, q.y, q.z, q.w] as [number, number, number, number],
+    };
+  }
+  const early = {
+    imageFile: "images/early.jpg",
+    position: [1, 0.2, -4] as [number, number, number],
+    // A unit quaternion: the join refuses a rotation that is not one.
+    rotation: (() => {
+      const q = new ThreeQuaternion(0.1, 0.2, 0.05, 0.97).normalize();
+      return [q.x, q.y, q.z, q.w] as [number, number, number, number];
+    })(),
+    capturedAt: 1500,
+  };
+  const late = {
+    imageFile: "images/late.jpg",
+    position: [6, 0, 2] as [number, number, number],
+    rotation: [0, 0, 0, 1] as [number, number, number, number],
+    capturedAt: 2500,
+  };
+  function relocalized(
+    points: NonNullable<ReplayedJoinState["gpsData"]>["odometryPath"]["points"],
+  ): ReplayedJoinState {
+    return {
+      ...baseState({ points }),
+      arSpaceCorrection: { observations: [jump] },
+    };
+  }
+  function expectSamePose(
+    actual: CaptureWorldPose | undefined,
+    expected: CaptureWorldPose | undefined,
+  ) {
+    expect(actual).toBeDefined();
+    expect(expected).toBeDefined();
+    expect(actual!.geo.lat).toBeCloseTo(expected!.geo.lat, 9);
+    expect(actual!.geo.lon).toBeCloseTo(expected!.geo.lon, 9);
+    expect(actual!.geo.altitude).toBeCloseTo(expected!.geo.altitude, 6);
+    const a = new ThreeQuaternion(...actual!.rotationNue);
+    const e = new ThreeQuaternion(...expected!.rotationNue);
+    expect(a.angleTo(e)).toBeLessThan(1e-6);
+  }
+
+  it("places a photo from before the jump where the oracle-corrected photo lands", () => {
+    const [actual] = computeCaptureGeoJoin(relocalized([early]));
+    const [expected] = computeCaptureGeoJoin(
+      baseState({ points: [{ ...early, ...moved(oracleJumpNue(), early) }] }),
+    );
+    expectSamePose(actual, expected);
+    // The jump is not a no-op: the raw placement is metres away.
+    const [raw] = computeCaptureGeoJoin(baseState({ points: [early] }));
+    expect(
+      Math.abs(raw!.geo.lat - actual!.geo.lat) * 111_320 +
+        Math.abs(raw!.geo.lon - actual!.geo.lon) * 75_000,
+    ).toBeGreaterThan(1);
+  });
+
+  it("leaves a photo from after the jump as captured", () => {
+    const [actual] = computeCaptureGeoJoin(relocalized([late]));
+    const [expected] = computeCaptureGeoJoin(baseState({ points: [late] }));
+    expectSamePose(actual, expected);
+  });
+
+  it("drops a photo without a capture time instead of guessing its frame", () => {
+    const timeless = {
+      imageFile: early.imageFile,
+      position: early.position,
+      rotation: early.rotation,
+    };
+    const poses = computeCaptureGeoJoin(relocalized([timeless, late]));
+    expect(poses.map((p) => p.imageFile)).toEqual(["images/late.jpg"]);
+  });
+
+  it("keeps a photo with a missing time when the recording never relocalized", () => {
+    // The default path: no observation, nothing changes for older walks.
+    const timeless = {
+      imageFile: early.imageFile,
+      position: early.position,
+      rotation: early.rotation,
+    };
+    expect(
+      computeCaptureGeoJoin(baseState({ points: [timeless] })),
+    ).toHaveLength(1);
+  });
+
+  it("an alignment picked before the jump places an early photo raw and a late one moved back", () => {
+    const picked = {
+      matrix: translation(2, 0, 3),
+      rotation: [0, 0, 0, 1] as const,
+      epoch: 0,
+    };
+    const [earlyPose, latePose] = computeCaptureGeoJoin(
+      relocalized([early, late]),
+      () => picked,
+    );
+    const [earlyRaw] = computeCaptureGeoJoin(baseState({ points: [early] }));
+    expectSamePose(earlyPose, earlyRaw);
+    const [lateBack] = computeCaptureGeoJoin(
+      baseState({
+        points: [{ ...late, ...moved(oracleJumpNue().invert(), late) }],
+      }),
+    );
+    expectSamePose(latePose, lateBack);
+  });
+
+  it("between two jumps, an alignment picked after the first moves an early photo by the first jump only", () => {
+    // Why: the correction is Delta(a)^-1 * Delta(c); with two jumps the
+    // order of that product decides where the photo lands.
+    const second = {
+      ...jump,
+      t: 3000,
+      tLast: 2990,
+      lastPose: {
+        position: [5, 1.5, 0] as [number, number, number],
+        rotation: [0, 0, 0, 1] as [number, number, number, number],
+      },
+      newPose: {
+        position: [1, 1.5, 4] as [number, number, number],
+        rotation: [0, 0.6, 0, 0.8] as [number, number, number, number],
+      },
+    };
+    const picked = {
+      matrix: translation(2, 0, 3),
+      rotation: [0, 0, 0, 1] as const,
+      epoch: 1,
+    };
+    const [actual] = computeCaptureGeoJoin(
+      {
+        ...baseState({ points: [early] }),
+        arSpaceCorrection: { observations: [jump, second] },
+      },
+      () => picked,
+    );
+    const [expected] = computeCaptureGeoJoin(
+      baseState({ points: [{ ...early, ...moved(oracleJumpNue(), early) }] }),
+      () => picked,
+    );
+    expectSamePose(actual, expected);
+  });
+
+  it("drops a photo whose picked alignment names an epoch the recording does not have", () => {
+    const bad = {
+      matrix: translation(2, 0, 3),
+      rotation: [0, 0, 0, 1] as const,
+      epoch: 7,
+    };
+    expect(computeCaptureGeoJoin(relocalized([early]), () => bad)).toEqual([]);
+  });
+
+  it("the pick tracker stamps each pick with the epoch of its moment", () => {
+    // Why: the epoch is what tells the join which raw frame the picked
+    // alignment was solved in.
+    const t = createCapturePickTracker({ extentOf: () => 100 });
+    const at = (n: number) => ({
+      ...baseState(),
+      arSpaceCorrection: {
+        observations: new Array<typeof jump>(n).fill(jump),
+      },
+    });
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: "images/a.jpg" } },
+      at(1),
+    );
+    expect(t.alignmentFor("images/a.jpg")?.epoch).toBe(1);
   });
 });

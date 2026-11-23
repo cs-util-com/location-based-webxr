@@ -18,9 +18,12 @@ capture and never runs a join.
   uses both to decide whether an empty replay may be read as "the walk
   took no camera capture" (only for a known era with no capture action;
   PR #638 review) - else its decline says none could be placed.
-- `preflightCaptureJoin(meta, actionTypes)` — the BEFORE-replay half (the era
+- `preflightCaptureJoin(meta, actionTypes, options?)` — the BEFORE-replay half (the era
   gate and the segmenting-action scan) so a declined zip never pays the
-  seconds-long replay.
+  seconds-long replay. `options.correctsRelocalization: true` (the debug
+  layer, which places through `computeCaptureGeoJoin`) skips
+  `arSpaceCorrection/relocalizationObserved`; a caller reading raw poses
+  itself (the splat trainer) leaves it off and still declines it.
   - The era gate is `odomCoordVersion >= MIN_SUPPORTED_ODOM_COORD_VERSION`
     (**4**), and the value must also be a **number** and an **integer** — a
     hand-edited `session.json` carrying `null` or `"9"` would otherwise slip
@@ -34,7 +37,9 @@ capture and never runs a join.
     WIPES and a loop closure DEFORMS the alignment's odometry history
     while `odometryPath.points` keeps every capture, so the final
     alignment is only valid for the last segment; V1 declines whole
-    recordings, per-segment joins are the filed follow-up).
+    recordings, per-segment joins are the filed follow-up). A
+    relocalization is in the same list but is corrected, not declined,
+    when the caller says so (see the next item).
   - State declines: null `gpsData`, missing zero, pairs <
     `MIN_ALIGNMENT_SAMPLES`, malformed or IDENTITY alignment (the
     degenerate solve's default), zero captures.
@@ -79,6 +84,18 @@ capture and never runs a join.
   the trailing basis factor is LOAD-BEARING because the state stores
   CONJUGATED quaternions (milestone review, finding 1; the directional
   tests pin it). D3: photos face as captured. Throws if called without a passing assessment.
+  - **Across relocalizations** (`state.arSpaceCorrection.observations`
+    not empty): each capture is first moved from the raw frame of its own
+    epoch `c = epochAt(times, capturedAt)` into the raw frame of the
+    alignment that places it (epoch `a`: the pick's `epoch`, else the
+    last one), by `Delta(a)^-1 * Delta(c)` from `selectCorrectionTrack`,
+    in the replayed state's NUE frame: `p' = T p`, `R_nue' = q_T * R_nue`.
+    A capture without a finite `capturedAt`, or picked at an epoch the
+    recording does not have, is DROPPED: its frame is unknown. Without
+    observations nothing changes, also for captures without a time.
+    Provisional, like the live correction: the alignment at epoch `a` is
+    taken to be valid in that epoch's raw frame, although its GPS pairs
+    were solved from poses of every earlier epoch too.
   - **Returns FEWER poses than captures when a capture cannot be placed**
     (PR #370 review). A capture whose fused geo has a missing or non-finite
     lat/lon/altitude is DROPPED. It used to default the altitude to 0, and
@@ -137,7 +154,8 @@ capture and never runs a join.
     pass each photo's own pick (`createCapturePickTracker`, through
     `debug-captures.ts`), so the constellation is rigid only among photos
     sharing a pick; `computeCaptureGeoJoin(state)` without the argument
-    keeps the old end-of-walk behaviour.
+    keeps the old end-of-walk behaviour. Each pick carries the
+    relocalization `epoch` of its moment (the observation count).
 - This module never touches the zip: the caller feeds it `loadSessionMeta()`,
   the action-type list, and the replayed state.
 
@@ -168,4 +186,9 @@ against a degrees/metres confusion), the rotation composition, the
 assess-first throw. `capture-geo-join.property.test.ts` — the round-trip
 property: geo re-projected into the zero's NUE equals the aligned odom
 position for arbitrary translations and capture positions (mm-level
-geodesy tolerance).
+geodesy tolerance); and the relocalization property: over 1 to 3 random
+jumps and captures in random epochs, each capture lands where its copy,
+moved by an independent three.js product of the later jumps, lands in a
+recording without jumps. The unit tests pin the oracle case, a capture
+after the jump, the dropped timeless capture, a pick at epoch 0 and 1 of
+two jumps (the product order), and an unknown pick epoch.

@@ -84,9 +84,11 @@ export async function debugCapturesOf(
   if (actions === null) {
     return { kind: "declined", reason: "no recording in this tour" };
   }
+  // The join maps captures across a relocalization itself.
   const pre = preflightCaptureJoin(
     meta,
     actions.map((a) => a.type),
+    { correctsRelocalization: true },
   );
   if (!pre.ok) return { kind: "declined", reason: pre.reason };
   const tracker = createCapturePickTracker(

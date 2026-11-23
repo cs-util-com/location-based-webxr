@@ -21,7 +21,11 @@
  * @see capture-geo-join.ts.md
  */
 
-import { Quaternion as ThreeQuaternion } from "three";
+import {
+  Matrix4 as ThreeMatrix4,
+  Quaternion as ThreeQuaternion,
+  Vector3 as ThreeVector3,
+} from "three";
 import { fusedGpsFromOdom } from "gps-plus-slam-app-framework/utils/fused-path";
 import { isIdentityMatrix4 } from "gps-plus-slam-app-framework/core";
 import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
@@ -35,6 +39,17 @@ import { MIN_ALIGNMENT_SAMPLES } from "gps-plus-slam-app-framework/ar/qr/qr-mint
 // DECLINES such a recording while the recorder's QR fold SEGMENTS it, and two
 // copies that drifted would let one accept what the other refuses.
 import { SEGMENTING_ACTION_TYPES } from "gps-plus-slam-app-framework/state/segmenting-actions";
+import {
+  relocalizationObserved,
+  selectArSpaceObservations,
+  selectCorrectionTrack,
+  type ArSpaceCorrectionState,
+} from "gps-plus-slam-app-framework/state/ar-space-correction-slice";
+import {
+  composeRigid,
+  epochAt,
+  invertRigid,
+} from "gps-plus-slam-app-framework/ar/ar-space-correction";
 import {
   isMatureAlignment,
   isUsableAlignment,
@@ -61,6 +76,8 @@ function toAlignmentMatrix(values: readonly number[]): AlignmentMatrix {
 /** The slice of the replayed state the join reads — structural on purpose
  *  so tests and the caller need not build a full CombinedRootState. */
 export interface ReplayedJoinState {
+  /** The raw relocalization observations; absent or empty: none. */
+  arSpaceCorrection?: ArSpaceCorrectionState;
   gpsData: {
     zero: { lat: number; lon: number } | null;
     gpsEvents: {
@@ -74,6 +91,8 @@ export interface ReplayedJoinState {
         imageFile: string;
         position: Vec3;
         rotation: Quat;
+        /** Capture time, epoch ms: picks the capture's raw frame. */
+        capturedAt?: number;
         width?: number;
         height?: number;
       }[];
@@ -126,6 +145,16 @@ export const NEWEST_KNOWN_ODOM_COORD_VERSION = 5;
 export function preflightCaptureJoin(
   meta: { odomCoordVersion?: unknown } | null,
   actionTypes: readonly string[],
+  options?: {
+    /**
+     * The caller places captures through {@link computeCaptureGeoJoin},
+     * which maps each capture across the relocalizations recorded after it
+     * (`Delta(e)`), so a relocalization does not decline the recording. A
+     * tracking restart and the old loop-closure action still do. A caller
+     * that reads raw poses itself leaves this off.
+     */
+    readonly correctsRelocalization?: boolean;
+  },
 ): { ok: true } | { ok: false; reason: string } {
   // TYPE-checked, not just compared (PR #367 review): session.json is
   // hand-editable, and `null < 4` is false — a null/string version would
@@ -141,6 +170,12 @@ export function preflightCaptureJoin(
     };
   }
   for (const type of SEGMENTING_ACTION_TYPES) {
+    if (
+      options?.correctsRelocalization === true &&
+      type === relocalizationObserved.type
+    ) {
+      continue;
+    }
     if (actionTypes.includes(type)) {
       return {
         ok: false,
@@ -216,6 +251,11 @@ export function assessReplayedJoin(state: ReplayedJoinState): JoinAssessment {
 export interface CaptureAlignment {
   readonly matrix: readonly number[];
   readonly rotation: Quat;
+  /**
+   * The relocalization epoch the alignment was solved in (the observation
+   * count at that moment); absent: the recording's last epoch.
+   */
+  readonly epoch?: number;
 }
 
 /**
@@ -225,7 +265,9 @@ export interface CaptureAlignment {
  */
 function checkedAlignment(
   a: CaptureAlignment | undefined,
-): { matrix: AlignmentMatrix; quat: ThreeQuaternion } | undefined {
+):
+  | { matrix: AlignmentMatrix; quat: ThreeQuaternion; epoch?: number }
+  | undefined {
   if (a === undefined || a.matrix.length !== 16) return undefined;
   // The store's alignment starts as the IDENTITY, which the maturity rule
   // counts as usable once a zero exists: a pick from before the first solve
@@ -237,6 +279,56 @@ function checkedAlignment(
   return {
     matrix: toAlignmentMatrix(a.matrix),
     quat: new ThreeQuaternion(x, y, z, w),
+    ...(a.epoch === undefined ? {} : { epoch: a.epoch }),
+  };
+}
+
+/** A rigid NUE transform as three.js parts. */
+interface RigidParts {
+  readonly m: ThreeMatrix4;
+  readonly q: ThreeQuaternion;
+}
+
+/**
+ * The relocalization correction of the join: maps a capture from the raw
+ * frame of its epoch into the raw frame of the alignment that places it,
+ * `Delta(a)^-1 * Delta(c)` (both in the replayed state's NUE frame, where
+ * the captures live). `null` when the recording holds no observation.
+ */
+function relocalizationCorrection(state: ReplayedJoinState) {
+  const observations = selectArSpaceObservations(state);
+  if (observations.length === 0) return null;
+  const track = selectCorrectionTrack(state);
+  const times = observations.map((o) => o.t);
+  const n = observations.length;
+  const cache = new Map<string, RigidParts>();
+  return {
+    /** The capture's epoch, or undefined when its time is unknown. */
+    epochOf(capturedAt: unknown): number | undefined {
+      return typeof capturedAt === "number" && Number.isFinite(capturedAt)
+        ? epochAt(times, capturedAt)
+        : undefined;
+    },
+    /** `Delta(a)^-1 * Delta(c)`; `a` defaults to the last epoch. */
+    between(c: number, a: number = n): RigidParts | undefined {
+      if (!Number.isInteger(a) || a < 0 || a > n) return undefined;
+      const key = `${String(c)}:${String(a)}`;
+      let parts = cache.get(key);
+      if (parts === undefined) {
+        const t = composeRigid(invertRigid(track[a]!), track[c]!);
+        const q = new ThreeQuaternion(...t.rotation).normalize();
+        parts = {
+          q,
+          m: new ThreeMatrix4().compose(
+            new ThreeVector3(...t.position),
+            q,
+            new ThreeVector3(1, 1, 1),
+          ),
+        };
+        cache.set(key, parts);
+      }
+      return parts;
+    },
   };
 }
 
@@ -288,14 +380,33 @@ export function computeCaptureGeoJoin(
   const [ax, ay, az, aw] = alignmentRotation;
   const alignmentQuat = new ThreeQuaternion(ax, ay, az, aw);
   const basisQuat = new ThreeQuaternion().setFromRotationMatrix(WEBXR_TO_NUE);
+  const correction = relocalizationCorrection(state);
   return gpsData.odometryPath.points.flatMap((point) => {
-    const { matrix: pointMatrix, quat: pointAlignmentQuat } = checkedAlignment(
-      alignmentFor?.(point.imageFile),
-    ) ?? {
+    const {
+      matrix: pointMatrix,
+      quat: pointAlignmentQuat,
+      epoch: alignmentEpoch,
+    } = checkedAlignment(alignmentFor?.(point.imageFile)) ?? {
       matrix,
       quat: alignmentQuat,
     };
-    const geo = fusedGpsFromOdom(pointMatrix, [...point.position], zero);
+    // Across a relocalization the capture's raw pose is in the frame of
+    // its own epoch; it is moved into the frame of the alignment that
+    // places it. A capture whose time is unknown cannot be given a frame
+    // and is dropped, never placed in a guessed one.
+    let position: Vec3 = point.position;
+    let delta: RigidParts | undefined;
+    if (correction !== null) {
+      const epoch = correction.epochOf(point.capturedAt);
+      delta =
+        epoch === undefined
+          ? undefined
+          : correction.between(epoch, alignmentEpoch);
+      if (delta === undefined) return [];
+      const p = new ThreeVector3(...point.position).applyMatrix4(delta.m);
+      position = [p.x, p.y, p.z];
+    }
+    const geo = fusedGpsFromOdom(pointMatrix, [...position], zero);
     // A capture the solve cannot place is DROPPED, never defaulted (PR #370
     // review). `main.ts` converts these back with
     // `calcRelativeCoordsInMeters(zero, {lat, lon}, altitude, 0)`, so NUE y
@@ -342,9 +453,13 @@ export function computeCaptureGeoJoin(
     // factor is LOAD-BEARING. Without it every plane is yawed 90° about Up
     // (this milestone's cold review, finding 1; the directional test below
     // pins South-facing for a North-looking capture).
+    // A relocalization turns the stored NUE rotation on the LEFT, as it
+    // turns the position: R_nue' = q_delta * R_nue.
+    const captured = new ThreeQuaternion(cx, cy, cz, cw);
+    if (delta !== undefined) captured.premultiply(delta.q);
     const world = pointAlignmentQuat
       .clone()
-      .multiply(new ThreeQuaternion(cx, cy, cz, cw))
+      .multiply(captured)
       .multiply(basisQuat);
     // The guard above narrowed altitude to a finite number, so this is a
     // read rather than a default.
@@ -362,10 +477,13 @@ export function computeCaptureGeoJoin(
 interface CaptureMoment extends AlignmentMoment {
   readonly alignmentMatrix: readonly number[] | null;
   readonly alignmentRotation: Quat | null;
+  /** The relocalization epoch of the moment (the observation count). */
+  readonly epoch: number;
 }
 
 /** A replayed state as far as the pick tracker reads it. */
 export interface PickTrackerState {
+  readonly arSpaceCorrection?: ArSpaceCorrectionState;
   readonly gpsData: {
     readonly zero: { lat: number; lon: number } | null;
     readonly gpsEvents: {
@@ -437,6 +555,7 @@ export function createCapturePickTracker(options?: {
       alignmentRotation: gps?.gpsEvents.alignmentRotation ?? null,
       zero: gps?.zero ?? null,
       gpsExtentM: extentOf(state),
+      epoch: selectArSpaceObservations(state).length,
     };
   }
 
@@ -479,6 +598,7 @@ export function createCapturePickTracker(options?: {
       return {
         matrix: moment.alignmentMatrix,
         rotation: moment.alignmentRotation,
+        epoch: moment.epoch,
       };
     },
   };
