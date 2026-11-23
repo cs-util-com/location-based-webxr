@@ -270,10 +270,14 @@ describe('ar-space-correction', () => {
             }
             const compP50 = percentile(comp, 0.5);
             const plainP50 = percentile(plain, 0.5);
-            if (motion.walkMS > 0 && ratio > 4) {
-              expect(compP50).toBeLessThan(plainP50);
-            }
-            if (motion.walkMS === 0) expect(compP50).toBeGreaterThan(plainP50);
+            // A still camera favours the plain form; a moving one at a long
+            // gap favours compensation; other cells are reported only.
+            const better = compP50 < plainP50 ? 'comp' : 'plain';
+            const pinned =
+              motion.walkMS === 0 ? 'plain' : ratio > 4 ? 'comp' : better;
+            expect(`${motion.name} ratio ${ratio}: ${better}`).toBe(
+              `${motion.name} ratio ${ratio}: ${pinned}`
+            );
             rows.push(
               `${motion.name} jitter=${jitter.posM * 1000}mm/${jitter.rotDeg}deg ` +
                 `ratio=${ratio}: comp p50=${percentile(comp, 0.5).toFixed(3)} ` +
@@ -389,5 +393,102 @@ describe('ar-space-correction', () => {
         xRaw.toArray()
       )
     ).toThrow(RangeError);
+  });
+});
+
+describe('ar-space-correction quaternion handling', () => {
+  /** A camera moving at 1 m/s and turning about a tilted axis at `degS`. */
+  const turning = (degS: number) => (tMs: number) =>
+    new THREE.Matrix4().compose(
+      new THREE.Vector3(1, 0, 0.5).multiplyScalar(tMs / 1000),
+      new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0.3, 1, 0.2).normalize(),
+        THREE.MathUtils.degToRad((degS * tMs) / 1000)
+      ),
+      new THREE.Vector3(1, 1, 1)
+    );
+  const jumpAt = (
+    at: (tMs: number) => THREE.Matrix4,
+    t: number
+  ): RelocalizationJump => ({
+    t,
+    tLast: 20,
+    lastPose: fromThree(at(20)),
+    tPrev: 0,
+    prevPose: fromThree(at(0)),
+    newPose: fromThree(JUMP.clone().multiply(at(t))),
+  });
+  const maxDiff = (a: Pose, b: Pose): number => {
+    const ma = matrixOf(a).elements;
+    const mb = matrixOf(b).elements;
+    return Math.max(...ma.map((v, i) => Math.abs(v - mb[i]!)));
+  };
+  const scaled = (q: Pose['rotation'], k: number): Pose['rotation'] => [
+    q[0] * k,
+    q[1] * k,
+    q[2] * k,
+    q[3] * k,
+  ];
+
+  it('q and -q are the same rotation: a step written in the other hemisphere extrapolates the short way', () => {
+    // Why this test matters: a pose source may hand over either sign of the
+    // same orientation. Raising the step quaternion to a fractional power
+    // in the wrong hemisphere turns the long way round (or about the
+    // reversed axis), so a half-frame gap (ratio 0.5) must give the same D
+    // for both signs. An integer ratio would hide the difference.
+    const jump = jumpAt(turning(90), 30);
+    const flipped: RelocalizationJump = {
+      ...jump,
+      prevPose: {
+        ...jump.prevPose!,
+        rotation: scaled(jump.prevPose!.rotation, -1),
+      },
+    };
+    expect(maxDiff(jumpTransform(flipped), jumpTransform(jump))).toBeLessThan(
+      1e-12
+    );
+    const cam = new THREE.Vector3().setFromMatrixPosition(turning(90)(30));
+    expect(residualAt(jumpTransform(flipped), cam, 10)).toBeLessThan(1e-9);
+  });
+
+  it('rotations that are not unit length are normalised before use', () => {
+    // Why this test matters: a serialised pose can come back slightly or
+    // grossly off unit length; scaling a quaternion must not scale the
+    // matrix or the extrapolated turn.
+    const jump = jumpAt(turning(45), 70);
+    const off: RelocalizationJump = {
+      ...jump,
+      lastPose: {
+        ...jump.lastPose,
+        rotation: scaled(jump.lastPose.rotation, 3),
+      },
+      prevPose: {
+        ...jump.prevPose!,
+        rotation: scaled(jump.prevPose!.rotation, 0.5),
+      },
+      newPose: { ...jump.newPose, rotation: scaled(jump.newPose.rotation, 2) },
+    };
+    expect(maxDiff(jumpTransform(off), jumpTransform(jump))).toBeLessThan(
+      1e-12
+    );
+    const d = jumpTransform(jump);
+    expect(maxDiff({ ...d, rotation: scaled(d.rotation, 4) }, d)).toBeLessThan(
+      1e-12
+    );
+  });
+
+  it('a very small per-frame turn extrapolates to full precision', () => {
+    // Why this test matters: a near-still camera turns by microradians per
+    // frame, where acos(w) keeps only half the digits of the angle. With no
+    // jump at all (the new pose is the extrapolated one), D must be the
+    // identity to rounding, not to a few percent of the step.
+    const at = turning(0.000005); // 1e-7 rad per 20 ms frame
+    const still: RelocalizationJump = {
+      ...jumpAt(at, 40),
+      newPose: fromThree(at(40)),
+    };
+    const d = jumpTransform(still);
+    const angle = 2 * Math.hypot(d.rotation[0], d.rotation[1], d.rotation[2]);
+    expect(angle).toBeLessThan(1e-14);
   });
 });
