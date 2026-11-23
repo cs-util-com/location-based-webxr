@@ -5,6 +5,7 @@ import {
   featureMatchActions as A,
   featureMatchReducer,
   initialFeatureMatchState,
+  MAX_CRASHES,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
@@ -263,6 +264,7 @@ describe("measureText", () => {
     waiting: 2,
     running: "light-s1/L1-L3",
     stopped: false,
+    crashes: 0,
     estimateMs: 150_000,
   };
   it("says the progress, the estimate and that the rest goes to the PC", () => {
@@ -290,8 +292,17 @@ describe("measureText", () => {
     ).toBe(
       "Measured on this phone: 3 of 4 pairs, 1 failed (the PC measures it).",
     );
-    expect(measureText({ ...p, running: null, stopped: true })).toBe(
-      "Measuring stopped: the worker crashed twice. 1 of 4 pairs measured; the rest go to the PC.",
+    expect(
+      measureText({
+        ...p,
+        running: null,
+        stopped: true,
+        crashes: MAX_CRASHES,
+      }),
+    ).toBe(
+      // Why: the count comes from MAX_CRASHES, so the text cannot drift
+      // from the rule that stops the queue.
+      `Measuring stopped: the worker crashed ${String(MAX_CRASHES)} times in a row. 1 of 4 pairs measured; the rest go to the PC.`,
     );
     expect(measureText({ ...p, running: null })).toBe(
       "1 of 4 pairs measured on this phone; the rest go to the PC.",
@@ -313,6 +324,7 @@ describe("endView", () => {
       waiting: 0,
       running: null,
       stopped: false,
+      crashes: 0,
       estimateMs: 0,
     };
     expect(endView(pair).lede).not.toContain("Measured");

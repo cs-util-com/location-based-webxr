@@ -451,6 +451,8 @@ export interface MeasureProgress {
   readonly running: string | null;
   /** The queue stopped after `MAX_CRASHES` crashes in a row. */
   readonly stopped: boolean;
+  /** The worker crashes in a row so far. */
+  readonly crashes: number;
   /**
    * The median measuring time per pair so far times the pairs left (the
    * running one counted whole); null before a pair is done.
@@ -475,17 +477,19 @@ export function measureProgress(s: FeatureMatchState): MeasureProgress {
     waiting,
     running: running?.id ?? null,
     stopped: s.queue.crashes >= MAX_CRASHES,
+    crashes: s.queue.crashes,
     estimateMs: times.length > 0 ? lowerMedian(times) * left : null,
   };
 }
 
-/** Ends the queue's running pair when `key` names it. */
-function endRunning(s: Draft, key: string): boolean {
-  if (s.queue.running !== key) {
-    return false;
+/**
+ * Ends the queue's running pair when `key` names it. Only a pair the
+ * worker measured (`resetCrashes`) clears the crashes in a row.
+ */
+function endRunning(s: Draft, key: string, resetCrashes = false): void {
+  if (s.queue.running === key) {
+    s.queue = { running: null, crashes: resetCrashes ? 0 : s.queue.crashes };
   }
-  s.queue = { running: null, crashes: 0 };
-  return true;
 }
 
 /** The first pose not yet complete, else the first. */
@@ -894,7 +898,7 @@ const slice = createSlice({
       }>,
     ) {
       const p = a.payload;
-      endRunning(s, p.key);
+      endRunning(s, p.key, true);
       if (planResultKeys(plain(s.plan)).has(p.key)) {
         const ms = p.measureMs;
         s.results = {

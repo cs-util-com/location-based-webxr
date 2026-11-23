@@ -77,9 +77,11 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
       .map(Number)
       .filter((v) => Number.isFinite(v) && v > 0);
     // Every outcome is logged too: the run zip's log says what the phone
-    // measured.
+    // measured. A pair retaken meanwhile has its outcome dropped by the
+    // store, and the log says that instead.
     const said = (text: string): string => {
-      log(`${pair.id}: ${text}`);
+      const fresh = planResultKeys(store.getState().plan).has(key);
+      log(`${pair.id}: ${fresh ? text : "discarded, retaken meanwhile"}`);
       return text;
     };
     const failed = (text: string) =>

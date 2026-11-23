@@ -70,9 +70,9 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `queueHasWork(options)` (module-private): a worker method is ticked (SIFT, ALIKED + LightGlue, SIFT + LightGlue; XFeat's runtime does not start in a module worker) and a size is above 0.
 - `nextMeasureKey(s)`: the first ready pair in run order without a result, once the restore finished, in the tab that holds the run, while no pair and no run is going, before `MAX_CRASHES` (2) crashes in a row and with work ticked. Null when none.
 - `queueStarted(key)`: refused unless `key` is `nextMeasureKey`.
-- `resultStored` and `resultFailed` free the queue when they name the running pair and reset the crash count; a stale key still frees it.
+- `resultStored` and `resultFailed` free the queue when they name the running pair; a stale key still frees it. Only `resultStored` (the worker measured the pair) resets the crash count: a failure that may not have involved the worker (a photo that could not be read) leaves it.
 - `workerCrashed({ key, text })`: only for the running pair; counts the crash and fails the pair for this load only (not persisted).
-- `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
+- `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, crashes, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
 
 ### Flat target actions
 

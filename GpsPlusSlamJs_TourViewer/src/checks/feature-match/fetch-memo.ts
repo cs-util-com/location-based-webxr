@@ -54,7 +54,8 @@ export function memoFetch(fetchFn: Fetch): Fetch {
       drop();
       return k.clone();
     }
-    return new Response(k.bytes.slice(0), {
+    // The Response copies the bytes it is given: no copy of our own.
+    return new Response(k.bytes, {
       status: k.status,
       statusText: k.statusText,
       headers: k.headers,

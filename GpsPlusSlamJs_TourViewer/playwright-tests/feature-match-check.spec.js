@@ -578,6 +578,9 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   const clock = () => page.evaluate(() => performance.now());
   await expect.poll(async () => (await frames()).length).toBeGreaterThan(60);
   const firstPair = await clock();
+  // No pair is ready yet, so nothing has loaded sift.js: every load the
+  // counter sees later is the worker's, through the page's routes.
+  expect(siftLoads).toBe(0);
   await takeShot(page, "L2");
   await expect(page.locator("#c-chip-key")).toHaveText("L3");
   await expect(page.locator("#log")).toContainText(
@@ -608,11 +611,15 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     baseline: gapStats(all3, 0, firstPair),
     measuring: gapStats(all3, firstPair, drained),
   };
+  // The frame gaps are only logged, not judged: the fake camera in a
+  // headless browser under load has no usable baseline, so whether the
+  // preview stays smooth is judged on the phone.
   console.log(`frame gaps (ms): ${JSON.stringify(gaps)}`);
   expect(gaps.measuring.frames).toBeGreaterThan(10);
   await expect(page.locator("#results tbody tr")).toHaveCount(0);
   // The worker's import of sift.js went through the page's routes too, so
-  // nothing left the machine.
+  // nothing left the machine (the zip's matches carry the stub's 40
+  // keypoints, below).
   expect(siftLoads).toBeGreaterThan(0);
 
   const [download] = await Promise.all([
@@ -702,6 +709,13 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     measured.methods.find((/** @type {{ id: string }} */ m) => m.id === "sift")
       ?.error,
   ).toBeNull();
+  // The worker ran the routed stub, not a real sift.js: its 40 keypoints.
+  const lightMeasured = await zipJson(bytes, matchesJson("light-s1/L1-L2"));
+  expect(
+    lightMeasured.methods.find(
+      (/** @type {{ id: string }} */ m) => m.id === "sift",
+    )?.sizes[0]?.keypointsA,
+  ).toHaveLength(40);
   // The browser was asked once to keep the stored photos.
   expect(await logLines(page, "storage persist: ")).toBe(1);
 

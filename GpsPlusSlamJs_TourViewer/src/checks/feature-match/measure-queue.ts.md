@@ -25,7 +25,7 @@ The store decides (`nextMeasureKey`, `queueStarted` in `feature-match-slice.ts`)
 - A result whose methods all failed to load is `resultFailed` (not persisted, so a reload tries again). A result with some failed to load is `resultStored` with `persisted: false` and "k could not load" in its text.
 - The matches JSON (`matchesInfo` with the shot files, context, hidden flag, settings, methods and sizes) goes in with `resultStored`.
 - A photo that cannot be read is `resultFailed` ("not measured: a photo could not be read (...)"). `WorkerCrashed` is `workerCrashed` (counted; the queue stops at `MAX_CRASHES`). Any other error is `resultFailed`.
-- Log lines name the pair id first; every outcome (the result or failure text) is logged too, so the run zip's log says what the phone measured.
+- Log lines name the pair id first; every outcome (the result or failure text) is logged too, so the run zip's log says what the phone measured. An outcome for a pair retaken meanwhile (its key no longer in the plan) is logged as "discarded, retaken meanwhile" instead, since the store drops it.
 
 ## Invariants
 
@@ -49,5 +49,5 @@ window.addEventListener("pagehide", stop);
 
 ## Tests
 
-- `measure-queue.test.ts` (the harness in `src/test-support/measure-queue-harness.ts`): each ready pair measured once in run order after the restore, a pair measured with the camera off flagged idle and a hidden page flagged, a photo that cannot be read failing for this load only (both outcomes logged), methods that could not all load kept for this load only, a crash counted and the stop after two in a row, nothing started once stopped.
-- `measure-queue.property.test.ts`: random shots, retakes, speed runs, the restore and worker answers (done, failed, crash) against a model: nothing starts before the restore or during a speed run, never two pairs in the worker, no result key measured twice, the stop after two crashes in a row, and otherwise every ready pair gets a result.
+- `measure-queue.test.ts` (the harness in `src/test-support/measure-queue-harness.ts`): each ready pair measured once in run order after the restore, a pair measured with the camera off flagged idle and a hidden page flagged, a photo that cannot be read failing for this load only (both outcomes logged), methods that could not all load kept for this load only, a crash counted and the stop after two in a row, a result for a pair retaken meanwhile logged as discarded, nothing started once stopped.
+- `measure-queue.property.test.ts`: random shots, retakes (each step a new photo id), speed runs, the restore and worker answers (done, failed, crash) against a model; each call's key is derived from the job itself (its photos, legacy key and turn) and must name one ready pair of the plan: nothing starts before the restore or during a speed run, never two pairs in the worker, no result key measured twice, the stop after two crashes in a row, and otherwise every ready pair gets a result.

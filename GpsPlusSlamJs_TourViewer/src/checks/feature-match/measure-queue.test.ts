@@ -153,6 +153,23 @@ describe("startMeasureQueue", () => {
     expect(h.calls).toHaveLength(2);
   });
 
+  // Why: a pair retaken while it was measured has its result dropped by
+  // the store; the log must say so instead of "done", or the run zip's
+  // log claims a measurement the zip does not hold.
+  it("logs a result as discarded when its pair was retaken meanwhile", async () => {
+    const h = harness();
+    for (const a of [restore, shot(L1, "p1"), shot(L2, "p2")]) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.store.dispatch(shot(L2, "p9"));
+    h.calls[0]!.resolve(doneOf([result("sift")]));
+    await settle();
+    expect(h.state().results[k12]).toBeUndefined();
+    expect(h.lines).toContain("light-s1/L1-L2: discarded, retaken meanwhile");
+    expect(h.lines.filter((l) => l.includes(": done in"))).toEqual([]);
+  });
+
   it("starts nothing more once stopped", async () => {
     const h = harness();
     h.stop();

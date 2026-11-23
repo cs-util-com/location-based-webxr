@@ -11,6 +11,7 @@ import {
   featureMatchActions as A,
   featureMatchReducer,
   initialFeatureMatchState,
+  planResultKeys,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "../checks/feature-match/feature-match-slice";
@@ -20,8 +21,14 @@ import type {
 } from "../checks/feature-match/measure-protocol";
 import { startMeasureQueue } from "../checks/feature-match/measure-queue";
 import type { PhotoMeta } from "../checks/feature-match/run-plan";
+import { turnOf } from "../checks/feature-match/rotation-square";
 
 interface Call {
+  /**
+   * The result key the job's own content names (its two photos, legacy
+   * pair key and turn) in the plan when it was sent; null when no ready
+   * pair, or more than one, matches it.
+   */
   readonly key: string | null;
   readonly job: MeasureJob;
   readonly resolve: (d: MeasureDone) => void;
@@ -77,22 +84,39 @@ export function harness(
     middleware: (d) => d({ serializableCheck: false, immutableCheck: false }),
   });
   const calls: Call[] = [];
+  // The photo id behind each Blob the reader handed out, so a call's key
+  // comes from what the job carries, not from the store's own record.
+  const idOf = new WeakMap<Blob, string>();
+  const keyOf = (job: MeasureJob): string | null => {
+    const ab = `@${idOf.get(job.a) ?? "?"}+${idOf.get(job.b) ?? "?"}`;
+    const found = [...planResultKeys(store.getState().plan)].filter(
+      ([k, p]) =>
+        k === `${p.id}${ab}` &&
+        p.legacy === job.pair &&
+        turnOf(p.kind) === job.turn,
+    );
+    return found.length === 1 ? found[0]![0] : null;
+  };
   const matches = new Map<string, string>();
   const lines: string[] = [];
   let guards = 0;
   let ended = 0;
   const stop = startMeasureQueue({
     store,
-    readPhoto: (id) =>
-      over.unreadable?.has(id)
-        ? Promise.reject(new Error(`the photo ${id} is not stored`))
-        : Promise.resolve(new Blob([id], { type: "image/png" })),
+    readPhoto: (id) => {
+      if (over.unreadable?.has(id)) {
+        return Promise.reject(new Error(`the photo ${id} is not stored`));
+      }
+      const blob = new Blob([id], { type: "image/png" });
+      idOf.set(blob, id);
+      return Promise.resolve(blob);
+    },
     client: {
       measure: (job, onLine) =>
         new Promise<MeasureDone>((resolve, reject) => {
           onLine?.("SIFT: loading");
           calls.push({
-            key: store.getState().queue.running,
+            key: keyOf(job),
             job,
             resolve,
             reject,

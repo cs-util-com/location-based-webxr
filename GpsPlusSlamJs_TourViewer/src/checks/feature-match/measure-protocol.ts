@@ -85,7 +85,10 @@ export function requestOf(data: unknown): MeasureRequest | null {
     typeof m.aliked === "boolean" &&
     typeof m.siftLightGlue === "boolean" &&
     Array.isArray(data.sizes) &&
-    data.sizes.every((s) => typeof s === "number" && s > 0) &&
+    data.sizes.length > 0 &&
+    data.sizes.every(
+      (s) => typeof s === "number" && Number.isFinite(s) && s > 0,
+    ) &&
     typeof data.pair === "string";
   return ok ? (data as unknown as MeasureRequest) : null;
 }

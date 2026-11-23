@@ -835,6 +835,23 @@ describe("the measuring queue", () => {
     expect(s.queue.crashes).toBe(0);
   });
 
+  // Why: only a pair the worker measured shows the worker is healthy
+  // again; a photo that could not be read never reached the worker, so
+  // it must not wipe the count of crashes in a row.
+  it("keeps the crash count when a pair fails without the worker", () => {
+    const s = run(
+      [
+        restore,
+        A.queueStarted(k12),
+        A.workerCrashed({ key: k12, text: "c" }),
+        A.queueStarted(k13),
+        A.resultFailed({ key: k13, text: "unreadable", persisted: false }),
+      ],
+      three(),
+    );
+    expect(s.queue).toEqual({ running: null, crashes: 1 });
+  });
+
   // Why: nothing ticked that the worker can run means nothing to measure;
   // the queue must not start a pair it would only fail.
   it("starts nothing when no method the worker runs is ticked", () => {

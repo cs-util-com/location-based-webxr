@@ -40,6 +40,14 @@ export class MeasureFailed extends Error {
   }
 }
 
+/**
+ * How long one pair may stay in the worker before it counts as a crash.
+ * The first pair also downloads the models (about 66 MB with the default
+ * methods), so this must outlast that download on a slow phone line:
+ * 10 min covers about 0.9 Mbit/s. See the sidecar for 5 and 20 min.
+ */
+export const MEASURE_TIMEOUT_MS = 10 * 60_000;
+
 export interface MeasureClient {
   measure(
     job: MeasureJob,
@@ -58,15 +66,28 @@ interface Held {
 
 export function createMeasureClient(spawn: () => MeasureWorker): MeasureClient {
   let worker: MeasureWorker | null = null;
-  let running: { readonly id: number; readonly held: Held } | null = null;
+  let running: {
+    readonly id: number;
+    readonly held: Held;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null = null;
   const waiting: Held[] = [];
   let seq = 0;
+
+  /** Ends the running pair and its timer; returns what it held. */
+  function endRunning(): Held | undefined {
+    const r = running;
+    running = null;
+    if (r !== null) {
+      clearTimeout(r.timer);
+    }
+    return r?.held;
+  }
 
   function dropAll(error: () => unknown): void {
     const dead = worker;
     worker = null;
-    const held = [running?.held, ...waiting.splice(0)];
-    running = null;
+    const held = [endRunning(), ...waiting.splice(0)];
     for (const h of held) {
       h?.reject(error());
     }
@@ -74,16 +95,28 @@ export function createMeasureClient(spawn: () => MeasureWorker): MeasureClient {
   }
 
   function onAnswer(event: MessageEvent): void {
+    if (running === null) {
+      return;
+    }
     const answer = answerOf(event.data);
-    if (answer === null || running === null || answer.job !== running.id) {
+    if (answer === null) {
+      // A malformed message naming the running pair fails it, or the
+      // queue would wait for an answer that never comes.
+      const job = (event.data as { job?: unknown } | null)?.job;
+      if (job === running.id) {
+        endRunning()?.reject(new MeasureFailed("malformed answer"));
+        startNext();
+      }
       return;
     }
-    const { held } = running;
+    if (answer.job !== running.id) {
+      return;
+    }
     if (answer.type === "progress") {
-      held.onLine(answer.line);
+      running.held.onLine(answer.line);
       return;
     }
-    running = null;
+    const held = endRunning()!;
     if (answer.type === "done") {
       const { results, frames, settings, measureMs } = answer;
       held.resolve({ results, frames, settings, measureMs });
@@ -99,7 +132,9 @@ export function createMeasureClient(spawn: () => MeasureWorker): MeasureClient {
     }
     const spawned = spawn();
     spawned.onmessage = onAnswer;
-    spawned.onerror = () => {
+    spawned.onerror = (event) => {
+      // Handled here: the page's error log need not report it again.
+      event.preventDefault();
       if (worker === spawned) {
         dropAll(
           () => new WorkerCrashed("the measuring worker stopped unexpectedly"),
@@ -127,7 +162,14 @@ export function createMeasureClient(spawn: () => MeasureWorker): MeasureClient {
       return;
     }
     const id = ++seq;
-    running = { id, held };
+    // A worker that never answers (a hung GPU call, a lost message) would
+    // stall the queue for good: after the timeout it counts as a crash.
+    const timer = setTimeout(() => {
+      if (running?.id === id) {
+        dropAll(() => new WorkerCrashed("timed out"));
+      }
+    }, MEASURE_TIMEOUT_MS);
+    running = { id, held, timer };
     target.postMessage({ type: "measure", job: id, ...held.job });
   }
 

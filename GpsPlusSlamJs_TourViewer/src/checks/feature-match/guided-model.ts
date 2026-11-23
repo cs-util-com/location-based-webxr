@@ -351,7 +351,7 @@ export function measureText(p: MeasureProgress): string {
   }
   const of = `${String(p.done)} of ${String(p.total)} pairs`;
   if (p.stopped) {
-    return `Measuring stopped: the worker crashed twice. ${of} measured; the rest go to the PC.`;
+    return `Measuring stopped: the worker crashed ${String(p.crashes)} times in a row. ${of} measured; the rest go to the PC.`;
   }
   if (p.running !== null) {
     const left =
