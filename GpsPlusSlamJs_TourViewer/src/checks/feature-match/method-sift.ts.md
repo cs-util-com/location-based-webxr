@@ -18,7 +18,7 @@ The SIFT method of the benchmark: Splat.js `sift.js` imported at run time, match
 
 ## Invariants
 
-- Runs on the main thread: long frames block the page while they run (the measurement includes that).
+- Runs where it is built: `siftMethod(deps, place)` with `place` `main thread` (the synthetic run and the speed test: long frames block the page, and the measurement includes that) or `worker` (the measuring queue). The backend reads `js (main thread)` or `js (worker)`.
 - Descriptors: 128 bytes per keypoint; matching by squared L2.
 
 ## Tests

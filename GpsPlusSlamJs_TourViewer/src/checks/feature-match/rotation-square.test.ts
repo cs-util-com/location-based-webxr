@@ -2,7 +2,7 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { quarterTurnFits, turnQuarter, type Frame } from "./bench-image";
-import { centreCrop, rotationSquare } from "./rotation-square";
+import { centreCrop, rotationSquare, turnOf } from "./rotation-square";
 
 /** A frame whose pixel (x, y) holds red x, green y. */
 function coords(width: number, height: number): Frame {
@@ -103,5 +103,16 @@ describe("the rotation square", () => {
         },
       ),
     );
+  });
+});
+
+// Why this test matters: the zip's frames JSON and the worker must turn
+// the same pair by the same angle, so both read it from one place.
+describe("turnOf", () => {
+  it("gives the turn of a rotation pair and null for a real pair", () => {
+    expect(turnOf("turn0")).toBe(0);
+    expect(turnOf("turn90")).toBe(90);
+    expect(turnOf("turn180")).toBe(180);
+    expect(turnOf("real")).toBeNull();
   });
 });

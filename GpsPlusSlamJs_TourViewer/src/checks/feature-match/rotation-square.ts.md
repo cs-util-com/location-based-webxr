@@ -4,7 +4,7 @@
 
 The frames of the synthetic rotation pairs (`F1-T0`, `F1-T90`, `F1-T180` in `scenes.ts`): a photo cut to its centre square and turned clockwise by an exact quarter or half turn. The turn is a pixel copy with no resampling, so the only change between the control and a turned pair is the turn itself. A square is never turned again by the XFeat input rule (`quarterTurnFits` in `bench-image.ts` is false for a square), so every method sees the same turn.
 
-The run zip carries the full F1 and F2 and names the crop and turn in the frames JSON (`run-zip.ts`); the PC side and the on-phone measuring of a later milestone cut the same squares with these functions.
+The run zip carries the full F1 and F2 and names the crop and turn in the frames JSON (`run-zip.ts`); the PC side and the measuring worker (`measure-worker-core.ts`) cut the same squares with these functions. `turnOf(kind)`: the turn of a derived pair's kind (`turn0` 0, `turn90` 90, `turn180` 180), null for every other pair; the run zip and the measuring queue share it.
 
 ## Public API
 

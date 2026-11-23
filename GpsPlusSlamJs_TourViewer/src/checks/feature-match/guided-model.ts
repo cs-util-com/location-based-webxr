@@ -8,7 +8,8 @@
  * @see guided-model.ts.md
  */
 import type { DeviceInfo } from "./bench-report";
-import type { FeatureMatchState } from "./feature-match-slice";
+// Types only: the slice imports still-detector, which imports this module.
+import type { FeatureMatchState, MeasureProgress } from "./feature-match-slice";
 import type { DiagramKind } from "./guided-diagram";
 import {
   LIGHT_NOTE,
@@ -333,8 +334,48 @@ function downloadView(
   }
 }
 
-/** The end screen: what is captured and whether the zip can be made. */
-export function endView(s: FeatureMatchState): EndView {
+/** "about 3 min" or "under a minute", rounded up to whole minutes. */
+const minutesText = (ms: number): string =>
+  ms < 60_000
+    ? "under a minute"
+    : `about ${String(Math.ceil(ms / 60_000))} min`;
+
+/**
+ * The end screen's measuring line: how far the phone got with the ready
+ * pairs, about how long the rest takes, and that what is not measured
+ * goes to the PC. Empty while no pair is ready.
+ */
+export function measureText(p: MeasureProgress): string {
+  if (p.total === 0) {
+    return "";
+  }
+  const of = `${String(p.done)} of ${String(p.total)} pairs`;
+  if (p.stopped) {
+    return `Measuring stopped: the worker crashed twice. ${of} measured; the rest go to the PC.`;
+  }
+  if (p.running !== null) {
+    const left =
+      p.estimateMs === null ? "" : `, ${minutesText(p.estimateMs)} left`;
+    return `Measuring on this phone: ${of}${left}. You can download now: pairs not measured yet go to the PC.`;
+  }
+  if (p.waiting === 0) {
+    const failed =
+      p.failed > 0
+        ? `, ${String(p.failed)} failed (the PC measures ${p.failed === 1 ? "it" : "them"})`
+        : "";
+    return `Measured on this phone: ${of}${failed}.`;
+  }
+  return `${of} measured on this phone; the rest go to the PC.`;
+}
+
+/**
+ * The end screen: what is captured and whether the zip can be made, and
+ * with `progress` how far the phone got with measuring the pairs.
+ */
+export function endView(
+  s: FeatureMatchState,
+  progress?: MeasureProgress,
+): EndView {
   const { done, total } = shotCounts(s);
   const ready = readyCount(s);
   const all = done === total;
@@ -346,9 +387,14 @@ export function endView(s: FeatureMatchState): EndView {
       ? "All shots taken"
       : `${String(done)} of ${String(total)} shots taken`,
     title: all ? "Thank you. One last step." : "You can send what you have.",
-    lede: all
-      ? "Download the zip, then send it together with the summary below."
-      : "Only pairs with both shots go into the zip. Go back to the shots any time to add the rest.",
+    lede: [
+      all
+        ? "Download the zip, then send it together with the summary below."
+        : "Only pairs with both shots go into the zip. Go back to the shots any time to add the rest.",
+      progress ? measureText(progress) : "",
+    ]
+      .filter((t) => t !== "")
+      .join(" "),
     canDownload: ready > 0 && s.busy === "idle",
     download: downloadView(s, ready),
   };

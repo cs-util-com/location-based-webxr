@@ -49,6 +49,8 @@ export interface SiftLightGlueOptions {
   /** The expected sha256 (hex); the pinned model's by default. */
   readonly sha256?: string;
   readonly maxFeatures?: number;
+  /** The thread sift.js runs in, named in the notes; the main thread by default. */
+  readonly place?: "main thread" | "worker";
 }
 
 const DIM = 128;
@@ -148,7 +150,7 @@ export function siftLightGlueMethod(
         downloads,
         initMs,
         notes: [
-          `max ${String(max)} SIFT keypoints per frame (sift.js, main thread), RootSIFT descriptors, sigma scales, orientations in (-pi, pi]`,
+          `max ${String(max)} SIFT keypoints per frame (sift.js, ${options.place ?? "main thread"}), RootSIFT descriptors, sigma scales, orientations in (-pi, pi]`,
           `init = session created; model sha256 checked in ${hashMs.toFixed(0)} ms (not in init)`,
         ],
         extract: (frame) => {

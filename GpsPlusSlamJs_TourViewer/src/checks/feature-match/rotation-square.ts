@@ -7,8 +7,26 @@
  * @see rotation-square.ts.md
  */
 import { turnQuarter, type Frame } from "./bench-image";
+import type { DerivedPair } from "./scenes";
 
 export type TurnDegrees = 0 | 90 | 180;
+
+/**
+ * The clockwise turn of B in a synthetic rotation pair, in degrees; null
+ * for a real pair (two photos, measured as taken).
+ */
+export function turnOf(kind: DerivedPair["kind"]): TurnDegrees | null {
+  switch (kind) {
+    case "turn0":
+      return 0;
+    case "turn90":
+      return 90;
+    case "turn180":
+      return 180;
+    default:
+      return null;
+  }
+}
 
 /** The square cut from a frame, in that frame's pixels. */
 export interface SquareCrop {

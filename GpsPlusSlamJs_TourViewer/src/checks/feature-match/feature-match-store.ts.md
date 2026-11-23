@@ -29,7 +29,7 @@ The store of the feature matching check page (`configureStore` over `feature-mat
 - **Persistence is a listener.** The flat progress and the run plan are written when they changed. Reading and writing run in try/catch: with storage blocked the page starts over and its progress lasts as long as the page. After a reload only downloaded flat captures remain (`afterReload`). The run plan (`run-plan.ts`) is written as `planText` whenever it changed and read back through `parsePlan`; a plan of the earlier version is dropped (`isOldPlan`, `oldPlanDiscarded`).
 - **What the database holds (`photoDb`, IndexedDB in the page):**
   - `photo:<id>`: a plan photo's PNG Blob, for every photo id the plan's shots hold;
-  - `result:<result key>`: `{ entry, matches? }` for every ready pair whose result is kept (`entry.persisted`; a crash is not kept, so the pair is measured again);
+  - `result:<result key>`: `{ entry, matches? }` for every ready pair whose result is kept (`entry.persisted`; a crash or a method that could not load is not kept, so the pair is measured again). On read the optional `measureMs` (finite, at least 0), `context` (`beside-camera` or `idle`) and `hidden` (boolean) are checked; a record with a bad one is dropped;
   - `log`: the page log as text.
 - **The mirror.** After every plan or results change each newly named record is written once and a record no longer named is deleted. A record counts as stored only after its write succeeded: then a photo's PNG leaves memory and `photoStored(id)` names it in `state.storedIds`, a result's matches leave memory. A refusing database is tried again sparingly: when a new record comes or a write succeeds, and then only the oldest unstored record still named, one retry at a time. Each new record's own write starts at once beside that retry, so the writes in flight are the new records not yet written plus at most one retry; the store test "runs one retry at a time beside every new photo's own write" shows four at once (three new photos and one retry). Each record's failure is reported once (`photoDbFailed`) however often it is retried; while any named record is not stored `photoStoreChanged(true)` sets `state.photoStoreFailing`. A failed write of a record no longer named (retaken, or a photo whose PNG could not be encoded) is neither kept nor reported. A record dropped while its write ran is deleted once the write ends; a failure of that cleanup delete is reported but does not count as unstored.
 - **Memory.** A photo is in memory as its PNG only until stored, and always as its preview (`PREVIEW_EDGE` 320: 320x180x4 bytes, about 230 KB for a 16:9 photo), so a full run of 13 photos holds about 3 MB of previews instead of 13 full frames (about 48 MB at 1280x720).
@@ -53,7 +53,7 @@ const fm = createFeatureMatchStore({
   session,
   revokeUrl: (u) => URL.revokeObjectURL(u),
   photoDb,
-  previewOf: async (png) => previewFrame(await blobFrame(png)),
+  previewOf: async (png) => previewFrame(await pngFrame(png)),
   lock: () => holdTabLock(navigator.locks),
 });
 void fm.restore();

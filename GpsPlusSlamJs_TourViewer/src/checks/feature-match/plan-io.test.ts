@@ -144,6 +144,16 @@ describe("the photo and the run zip", () => {
     expect(photo?.greySd).toBeCloseTo(0, 5);
   });
 
+  it("names the methods the phone measures in the summary", () => {
+    // Why: the PC reads the summary to know which methods it must still
+    // run; without the methods line it cannot tell an unticked method
+    // from one the phone measured.
+    const { fm, io } = setUp(memory(), mapDb().db);
+    expect(io.summaryOf(fm.store.getState())).toContain(
+      "Methods on this phone: SIFT, ALIKED + LightGlue",
+    );
+  });
+
   it("asks again for a shot whose PNG could not be encoded", async () => {
     const { fm, io, fail } = setUp(memory(), mapDb().db);
     await fm.restore();

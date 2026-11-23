@@ -13,6 +13,9 @@ import { xfeatMethod, type XFeatPrecision } from "./method-xfeat";
 
 export type Backend = "webgpu" | "wasm";
 
+/** The thread a method runs in; its backend and notes name it. */
+export type RunPlace = "main thread" | "worker";
+
 export interface MethodSelection {
   readonly sift: boolean;
   readonly xfeat: boolean;
@@ -31,10 +34,11 @@ export interface MethodSelection {
 export function buildMethods(
   s: MethodSelection,
   deps: LoadDeps,
+  place: RunPlace = "main thread",
 ): BenchMethod[] {
   const out: BenchMethod[] = [];
   if (s.sift) {
-    out.push(siftMethod(deps));
+    out.push(siftMethod(deps, place));
   }
   if (s.xfeat) {
     for (const b of s.backends) {
@@ -50,7 +54,7 @@ export function buildMethods(
   }
   if (s.siftLightGlue === true) {
     for (const b of s.backends) {
-      out.push(siftLightGlueMethod(b, deps));
+      out.push(siftLightGlueMethod(b, deps, { place }));
     }
   }
   return out;

@@ -10,6 +10,8 @@ import {
   handsOffDue,
   initialFeatureMatchState,
   logText,
+  measureProgress,
+  nextMeasureKey,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
@@ -729,5 +731,154 @@ describe("what storage holds", () => {
     ]) {
       expect(featureMatchReducer(s, a)).toBe(s);
     }
+  });
+});
+
+describe("the measuring queue", () => {
+  const L1 = "light-s1/L1";
+  const L2 = "light-s1/L2";
+  const L3 = "light-s1/L3";
+  const k12 = "light-s1/L1-L2@p1+p2";
+  const k13 = "light-s1/L1-L3@p1+p3";
+  const restore = A.restoreFinished({ stored: [], results: {}, log: [] });
+  const three = (): FeatureMatchState =>
+    run([shot(L1, "p1"), shot(L2, "p2"), shot(L3, "p3")]);
+  const done = (key: string, measureMs = 100): FeatureMatchAction =>
+    A.resultStored({
+      key,
+      text: "ok",
+      measureMs,
+      context: "beside-camera",
+      hidden: false,
+    });
+
+  // Why: right after a load a stored result may still be on its way back;
+  // measuring before the restore would measure that pair twice.
+  it("starts nothing before the restore", () => {
+    expect(nextMeasureKey(three())).toBeNull();
+    expect(nextMeasureKey(run([restore], three()))).toBe(k12);
+  });
+
+  // Why: one pair at a time, in run order, each result key once; a refused
+  // start must not mark a pair as running.
+  it("measures the ready pairs one at a time in run order", () => {
+    const s = run([restore], three());
+    expect(featureMatchReducer(s, A.queueStarted(k13))).toBe(s);
+    const r = run([A.queueStarted(k12)], s);
+    expect(r.queue.running).toBe(k12);
+    expect(nextMeasureKey(r)).toBeNull();
+    const after = run([done(k12)], r);
+    expect(after.queue.running).toBeNull();
+    expect(nextMeasureKey(after)).toBe(k13);
+  });
+
+  // Why: a retake during a measurement makes its key stale; the answer
+  // must still free the queue, while its result is dropped.
+  it("frees the queue for a stale answer and drops its result", () => {
+    const s = run([restore, A.queueStarted(k12), shot(L2, "p9")], three());
+    expect(s.queue.running).toBe(k12);
+    const r = run([done(k12)], s);
+    expect(r.queue.running).toBeNull();
+    expect(r.results).toEqual({});
+    expect(nextMeasureKey(r)).toBe("light-s1/L1-L2@p1+p9");
+  });
+
+  // Why: a speed test or synthetic run times the device; the queue waits
+  // for it, and neither may start while a pair is being measured.
+  it("pauses for a run, and refuses a run while a pair is measured", () => {
+    const s = run([restore, A.runStarted("speed")], three());
+    expect(nextMeasureKey(s)).toBeNull();
+    const m = run([restore, A.queueStarted(k12)], three());
+    expect(featureMatchReducer(m, A.runStarted("speed"))).toBe(m);
+  });
+
+  // Why: a phone that cannot hold the models crashes the worker each time;
+  // after two crashes in a row the queue stops instead of downloading again
+  // and again, and the crash is not kept in storage.
+  it("stops after two worker crashes in a row", () => {
+    const s = run(
+      [restore, A.queueStarted(k12), A.workerCrashed({ key: k12, text: "c" })],
+      three(),
+    );
+    expect(s.queue.crashes).toBe(1);
+    expect(s.results[k12]).toMatchObject({
+      status: "failed",
+      persisted: false,
+    });
+    expect(nextMeasureKey(s)).toBe(k13);
+    const t = run(
+      [A.queueStarted(k13), A.workerCrashed({ key: k13, text: "c" })],
+      s,
+    );
+    expect(t.queue.crashes).toBe(2);
+    expect(nextMeasureKey(t)).toBeNull();
+    expect(measureProgress(t).stopped).toBe(true);
+    // A crash answer for a pair not running changes nothing.
+    expect(
+      featureMatchReducer(t, A.workerCrashed({ key: k13, text: "c" })),
+    ).toBe(t);
+  });
+
+  // Why: "crashes in a row": a measured pair between two crashes resets
+  // the count.
+  it("counts only crashes in a row", () => {
+    const s = run(
+      [
+        restore,
+        A.queueStarted(k12),
+        A.workerCrashed({ key: k12, text: "c" }),
+        A.queueStarted(k13),
+        done(k13),
+      ],
+      three(),
+    );
+    expect(s.queue.crashes).toBe(0);
+  });
+
+  // Why: nothing ticked that the worker can run means nothing to measure;
+  // the queue must not start a pair it would only fail.
+  it("starts nothing when no method the worker runs is ticked", () => {
+    const s = run([restore], three());
+    const none = run(
+      [
+        A.optionsChanged({
+          ...s.options,
+          methods: {
+            sift: false,
+            xfeat: true,
+            aliked: false,
+            siftLightGlue: false,
+          },
+        }),
+      ],
+      s,
+    );
+    expect(nextMeasureKey(none)).toBeNull();
+    const noSize = run([A.optionsChanged({ ...s.options, sizes: [] })], s);
+    expect(nextMeasureKey(noSize)).toBeNull();
+  });
+
+  // Why: the end screen shows how far the phone got and an estimate from
+  // the measuring time alone (downloads and model loads happen once).
+  it("reports progress and an estimate from the median measuring time", () => {
+    const s = run([restore], three());
+    expect(measureProgress(s)).toMatchObject({
+      total: 2,
+      done: 0,
+      waiting: 2,
+      running: null,
+      estimateMs: null,
+    });
+    const r = run(
+      [A.queueStarted(k12), done(k12, 3000), A.queueStarted(k13)],
+      s,
+    );
+    expect(measureProgress(r)).toMatchObject({
+      total: 2,
+      done: 1,
+      waiting: 0,
+      running: "light-s1/L1-L3",
+      estimateMs: 3000,
+    });
   });
 });

@@ -12,6 +12,7 @@ import {
   deviceSummary,
   endView,
   hasRate,
+  measureText,
   introCountdownText,
   isMoving,
   motionStep,
@@ -251,7 +252,75 @@ describe("shotCounts and readyCount", () => {
   });
 });
 
+// Why: the end screen is where the tester decides to send now or wait;
+// it must say how far the phone got, about how long the rest takes, and
+// that what is not measured goes to the PC (no new element: the lede).
+describe("measureText", () => {
+  const p = {
+    total: 4,
+    done: 1,
+    failed: 0,
+    waiting: 2,
+    running: "light-s1/L1-L3",
+    stopped: false,
+    estimateMs: 150_000,
+  };
+  it("says the progress, the estimate and that the rest goes to the PC", () => {
+    expect(measureText(p)).toBe(
+      "Measuring on this phone: 1 of 4 pairs, about 3 min left. You can download now: pairs not measured yet go to the PC.",
+    );
+    expect(measureText({ ...p, estimateMs: null })).toBe(
+      "Measuring on this phone: 1 of 4 pairs. You can download now: pairs not measured yet go to the PC.",
+    );
+    expect(measureText({ ...p, estimateMs: 20_000 })).toContain(
+      "under a minute left",
+    );
+  });
+
+  it("says when it is finished, stopped, or waits for nothing", () => {
+    expect(
+      measureText({
+        ...p,
+        done: 3,
+        failed: 1,
+        waiting: 0,
+        running: null,
+        estimateMs: 0,
+      }),
+    ).toBe(
+      "Measured on this phone: 3 of 4 pairs, 1 failed (the PC measures it).",
+    );
+    expect(measureText({ ...p, running: null, stopped: true })).toBe(
+      "Measuring stopped: the worker crashed twice. 1 of 4 pairs measured; the rest go to the PC.",
+    );
+    expect(measureText({ ...p, running: null })).toBe(
+      "1 of 4 pairs measured on this phone; the rest go to the PC.",
+    );
+    expect(
+      measureText({ ...p, total: 0, done: 0, waiting: 0, running: null }),
+    ).toBe("");
+  });
+});
+
 describe("endView", () => {
+  // Why: no new element: the measuring line goes into the lede.
+  it("adds the measuring line to the lede when given the progress", () => {
+    const pair = run([shot("light-s1/L1"), shot("light-s1/L2")]);
+    const p = {
+      total: 1,
+      done: 1,
+      failed: 0,
+      waiting: 0,
+      running: null,
+      stopped: false,
+      estimateMs: 0,
+    };
+    expect(endView(pair).lede).not.toContain("Measured");
+    expect(endView(pair, p).lede).toMatch(
+      / Measured on this phone: 1 of 1 pairs.$/,
+    );
+  });
+
   it("asks for the rest while shots are missing", () => {
     const some = endView(run([shot("light-s1/L1"), shot("light-s1/L2")]));
     expect(some).toMatchObject({

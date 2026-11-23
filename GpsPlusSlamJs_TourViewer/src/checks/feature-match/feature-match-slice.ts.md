@@ -13,12 +13,12 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - The options start at the controls' starting values in the HTML (module-private defaults); the view mirrors the controls into the state on every change and once more at each run start.
 - `planResultKeys(plan)`: the result keys of the plan's ready pairs (`readyResultKeys`).
 - `RELOAD_LINE` (`page reloaded`): the log line between the stored log and a new load's.
-- Types: `FeatureMatchState`, `FlatState`, `BenchOptions`, `SpeedOptions`, `FlatPhase`, `ResultEntry { status: "done" | "failed", text, persisted }`.
+- Types: `FeatureMatchState`, `FlatState`, `BenchOptions`, `SpeedOptions`, `FlatPhase`, `ResultEntry { status: "done" | "failed", text, persisted, measureMs?, context?, hidden? }`, `RunContext` (`beside-camera` or `idle`).
 
 ### Runs, log and options
 
 - `cameraChanged(on)`.
-- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. `speed` times the methods on the flat scene's F1 and F2; nothing else is measured on the phone's photos in this version, and the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
+- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. Also refused while the queue measures a pair (the two would time each other). `speed` times the methods on the flat scene's F1 and F2; the run's pairs are measured by the queue below, and the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
 - `statusSet`, `tableSet`, `reportSet`, `logged(line)` (stamped by the view), `failed({ line, stamped })` (kept in `errors` for the run's report and logged), `errorsCleared`, `optionsChanged`, `speedOptionsChanged`.
 
 ### Run plan actions
@@ -59,9 +59,20 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 ### What storage holds
 
 - `storedIds`: the plan photos whose write succeeded. `photoStored(id)`: refused for an id the plan does not name; never twice. No view reads it yet: today's views show a shot as taken at once; a "stored" mark per shot comes with the scene views built from the chosen prototypes.
-- `results`: per current result key a `ResultEntry`. `resultStored({ key, text })` (done, kept) and `resultFailed({ key, text, persisted })`: refused for a key that is not a ready pair's current one. Nothing produces results yet; the on-phone measuring will.
+- `results`: per current result key a `ResultEntry`. `resultStored({ key, text, persisted?, measureMs?, context?, hidden? })` (done; kept unless `persisted` is false, as when a method's model could not load; a time that is not finite and at least 0 and an unknown context are dropped) and `resultFailed({ key, text, persisted })`: a key that is not a ready pair's current one is not kept. The measuring queue (`measure-queue.ts`) produces them.
 - `restored`: the stored photos, results and log were read back. `restoreFinished({ stored, results, log })`: once only; keeps the named ids and current keys, and puts the stored log first with `RELOAD_LINE` between it and this load's lines. `resetBeforeRestore`: set by a `planReset` accepted before the restore finished; the stored log is then the dropped run's and is not read back (the reset emptied the log, and the next log write stores only the new run's lines).
 - `otherTab`: another tab holds the run. `otherTabFound()` sets it; from then on every plan action is refused.
+
+### Measuring queue
+
+`state.queue` `{ running, crashes }`: the result key the measuring worker holds, and the worker crashes in a row. The queue's status is store state; the worker, its Blobs and the wake lock are resources outside it (`measure-queue.ts`).
+
+- `queueHasWork(options)` (module-private): a worker method is ticked (SIFT, ALIKED + LightGlue, SIFT + LightGlue; XFeat's runtime does not start in a module worker) and a size is above 0.
+- `nextMeasureKey(s)`: the first ready pair in run order without a result, once the restore finished, in the tab that holds the run, while no pair and no run is going, before `MAX_CRASHES` (2) crashes in a row and with work ticked. Null when none.
+- `queueStarted(key)`: refused unless `key` is `nextMeasureKey`.
+- `resultStored` and `resultFailed` free the queue when they name the running pair and reset the crash count; a stale key still frees it.
+- `workerCrashed({ key, text })`: only for the running pair; counts the crash and fails the pair for this load only (not persisted).
+- `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
 
 ### Flat target actions
 
@@ -87,5 +98,5 @@ currentShot(store.getState().plan)?.id; // "light-s1/L2"
 
 ## Tests
 
-- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
+- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), the measuring queue (the next key and its refusals, one pair at a time, a stale result freeing the queue, the crash count and its stop, the progress and estimate, a run refused while a pair measures), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
 - `feature-match-slice.property.test.ts`: random run, save, countdown and shot sequences keep the busy invariants above and a countdown only on the current shot, and the flat prepared zip is always valid.

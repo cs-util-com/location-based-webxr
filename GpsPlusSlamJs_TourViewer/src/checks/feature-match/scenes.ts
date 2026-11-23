@@ -335,9 +335,33 @@ export interface SummaryInput {
   readonly retakes: number;
   /** The measured outcomes by result key; a stale key counts as nothing. */
   readonly results: Readonly<
-    Record<string, { readonly status: "done" | "failed" }>
+    Record<
+      string,
+      {
+        readonly status: "done" | "failed";
+        readonly context?: "beside-camera" | "idle";
+        readonly hidden?: boolean;
+      }
+    >
   >;
   readonly device: string;
+  /** The methods ticked; the summary names those the phone measures. */
+  readonly methods?: {
+    readonly sift: boolean;
+    readonly xfeat: boolean;
+    readonly aliked: boolean;
+    readonly siftLightGlue: boolean;
+  };
+}
+
+/** The methods line: the ones the phone measures, XFeat left for the PC. */
+function methodsLine(m: NonNullable<SummaryInput["methods"]>): string {
+  const names = [
+    m.sift ? "SIFT" : null,
+    m.aliked ? "ALIKED + LightGlue" : null,
+    m.siftLightGlue ? "SIFT + LightGlue" : null,
+  ].filter((n) => n !== null);
+  return `Methods on this phone: ${names.length ? names.join(", ") : "none"}${m.xfeat ? " (XFeat is not measured on this phone: it is for the PC)" : ""}`;
 }
 
 /** The plain text in the zip: what is taken, missing, ready and checked. */
@@ -356,6 +380,11 @@ export function summaryText(i: SummaryInput): string {
     keys.filter((k) => i.results[k]?.status === status).length;
   const measured = count("done");
   const failed = count("failed");
+  const done = keys.flatMap((k) => {
+    const r = i.results[k];
+    return r?.status === "done" ? [r] : [];
+  });
+  const timings = `Timings: ${String(done.filter((r) => r.context === "beside-camera").length)} measured beside the camera, ${String(done.filter((r) => r.context === "idle").length)} idle, ${String(done.filter((r) => r.hidden === true).length)} with the page hidden`;
   return [
     "Feature matcher photo test - summary",
     `Session: ${i.session}`,
@@ -365,6 +394,8 @@ export function summaryText(i: SummaryInput): string {
     `Light checks: ${light.length ? light.join(", ") : "-"}`,
     `Retakes: ${String(i.retakes)}`,
     `Pairs measured on this phone: ${String(measured)}, failed: ${String(failed)}, pending (to be measured on the PC): ${String(keys.length - measured - failed)}`,
+    ...(i.methods ? [methodsLine(i.methods)] : []),
+    timings,
     `File: ${runZipName(i.session)}`,
     `Phone: ${i.device}`,
     "No location, no time and no names are included.",

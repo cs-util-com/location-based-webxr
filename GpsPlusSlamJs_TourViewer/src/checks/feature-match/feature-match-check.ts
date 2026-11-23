@@ -6,7 +6,6 @@
  *
  * @see feature-match-check.ts.md
  */
-import { blobFrame } from "./bench-dom";
 import { startBenchEngine } from "./bench-engine";
 import { sessionToken } from "./bench-export";
 import { previewFrame } from "./bench-image";
@@ -24,6 +23,10 @@ import {
   PHOTO_STORE,
   type KeyValueStorage,
 } from "./feature-match-store";
+import { createMeasureClient, type MeasureWorker } from "./measure-client";
+import { startMeasureQueue } from "./measure-queue";
+import { pngFrame } from "./png-frame";
+import { guardRun } from "./run-guard";
 
 /** `localStorage` behind calls, so a blocked storage throws inside them. */
 const pageStorage: KeyValueStorage = {
@@ -49,7 +52,7 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     photoDbFailed: (e) => {
       fail("photo storage", e);
     },
-    previewOf: async (png) => previewFrame(await blobFrame(png)),
+    previewOf: async (png) => previewFrame(await pngFrame(png)),
     lock: () => holdTabLock(navigator.locks),
   });
   const { store } = fm;
@@ -100,6 +103,39 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   });
   const viewDeps = { root, fm, engine, camera, log, fail };
   const view = guided ? startGuidedView(viewDeps) : startCockpitView(viewDeps);
+
+  // The ready pairs are measured in a worker while the tester shoots;
+  // the worker, its Blobs and the wake lock are resources, the queue's
+  // status is the store's.
+  const client = createMeasureClient(
+    () =>
+      new Worker(
+        new URL("./feature-match-measure.worker.ts", import.meta.url),
+        { type: "module" },
+      ) as unknown as MeasureWorker,
+  );
+  const stopQueue = startMeasureQueue({
+    store,
+    readPhoto: fm.readPhoto,
+    client,
+    putMatches: (key, json, action) => {
+      fm.put(fm.sides.results, [[key, json]], action);
+    },
+    guard: () =>
+      guardRun({
+        doc: document,
+        wakeLock: "wakeLock" in navigator ? navigator.wakeLock : undefined,
+        log,
+      }),
+    log,
+  });
+  window.addEventListener("pagehide", (ev) => {
+    // A page kept in the back-forward cache comes back with its worker.
+    if (!ev.persisted) {
+      stopQueue();
+      client.close();
+    }
+  });
 
   window.addEventListener("pagehide", camera.stop);
   // The log is written a second after a line; a closing page writes it now.

@@ -192,6 +192,14 @@ function isResultRecord(v: unknown): v is ResultRecord {
     (e.status === "done" || e.status === "failed") &&
     typeof e.text === "string" &&
     typeof e.persisted === "boolean" &&
+    (e.measureMs === undefined ||
+      (typeof e.measureMs === "number" &&
+        Number.isFinite(e.measureMs) &&
+        e.measureMs >= 0)) &&
+    (e.context === undefined ||
+      e.context === "beside-camera" ||
+      e.context === "idle") &&
+    (e.hidden === undefined || typeof e.hidden === "boolean") &&
     (r.matches === undefined || typeof r.matches === "string")
   );
 }

@@ -195,3 +195,26 @@ describe("sha256Hex", () => {
     );
   });
 });
+
+// Why this test matters: SIFT + LightGlue's keypoints come from sift.js in
+// the same thread as the model; its note must name that thread.
+describe("siftLightGlueMethod in a worker", () => {
+  it("names the worker in its keypoint note", async () => {
+    const ort = fakeOrt();
+    const options = {
+      modelUrl: "https://example.test/m.onnx",
+      sha256: await sha256Hex(MODEL),
+    };
+    const page = await siftLightGlueMethod(
+      "wasm",
+      deps(ort.api, []),
+      options,
+    ).init();
+    const worker = await siftLightGlueMethod("wasm", deps(ort.api, []), {
+      ...options,
+      place: "worker",
+    }).init();
+    expect(page.notes[0]).toContain("(sift.js, main thread)");
+    expect(worker.notes[0]).toContain("(sift.js, worker)");
+  });
+});

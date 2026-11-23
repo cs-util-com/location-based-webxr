@@ -302,6 +302,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
       photos: planPhotos(s.plan),
       retakes: planRetakes(s.plan),
       results: s.results,
+      methods: s.options.methods,
       device: deviceLine,
     });
 

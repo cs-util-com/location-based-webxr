@@ -253,6 +253,47 @@ describe("the run summary", () => {
   });
 });
 
+describe("the summary's methods and timings", () => {
+  // Why: the PC reads from the summary which methods the phone ran (XFeat
+  // never: its runtime cannot start in the worker) and what ran beside
+  // the measuring, so phone timings are not compared with idle ones.
+  it("names the methods measured, XFeat left for the PC, and the timing contexts", () => {
+    const shots = photos({
+      "light-s1/L1": 100,
+      "light-s1/L2": 100,
+      "light-s1/L3": 100,
+      "light-s1/L4": 100,
+    });
+    const text = summaryText({
+      session: "abcd1234",
+      spots: 1,
+      extra: 0,
+      photos: shots,
+      retakes: 0,
+      results: {
+        "light-s1/L1-L2@p-light-s1/L1+p-light-s1/L2": {
+          status: "done",
+          context: "beside-camera",
+        },
+        "light-s1/L1-L3@p-light-s1/L1+p-light-s1/L3": {
+          status: "done",
+          context: "idle",
+          hidden: true,
+        },
+        "light-s1/L1-L4@p-light-s1/L1+p-light-s1/L4": { status: "failed" },
+      },
+      device: "Pixel test",
+      methods: { sift: true, xfeat: true, aliked: true, siftLightGlue: false },
+    });
+    expect(text).toContain(
+      "Methods on this phone: SIFT, ALIKED + LightGlue (XFeat is not measured on this phone: it is for the PC)",
+    );
+    expect(text).toContain(
+      "Timings: 1 measured beside the camera, 1 idle, 1 with the page hidden",
+    );
+  });
+});
+
 describe("the summary's measured pairs", () => {
   // Why: the zip goes to the PC; the summary says which ready pairs the
   // phone measured, which failed, and which the PC must still measure. A

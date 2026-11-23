@@ -20,6 +20,7 @@ import type { CameraControl } from "./camera-control";
 import {
   featureMatchActions as A,
   logText,
+  measureProgress,
   type FeatureMatchState,
 } from "./feature-match-slice";
 import type { FeatureMatchStore } from "./feature-match-store";
@@ -371,7 +372,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   };
 
   const renderEnd = (s: FeatureMatchState): void => {
-    const v = endView(s);
+    const v = endView(s, measureProgress(s));
     ui.endKicker.textContent = v.kicker;
     ui.endTitle.textContent = v.title;
     ui.endLede.textContent = v.lede;

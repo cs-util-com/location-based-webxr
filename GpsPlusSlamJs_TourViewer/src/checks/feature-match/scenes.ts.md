@@ -45,7 +45,7 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `needsRetake(shot, photos)`: its light check exists and is not `"ok"`.
 - `nextOpen(list, photos, from)`: the first shot without a photo after `from`, else the first one before it; null when every shot has one (or only `from` is open).
 - `runZipName(session)`: `feature-match-run-<session>.zip`.
-- `summaryText({ session, spots, extra, photos, retakes, results, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Pairs measured on this phone: X, failed: Y, pending (to be measured on the PC): Z" over the ready pairs' current result keys, the file name, the phone, and a line that no location, time or names are included.
+- `summaryText({ session, spots, extra, photos, retakes, results, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Pairs measured on this phone: X, failed: Y, pending (to be measured on the PC): Z" over the ready pairs' current result keys, "Timings: N measured beside the camera, M idle, K with the page hidden", the methods line when `methods` is given ("Methods on this phone: SIFT, ALIKED + LightGlue (XFeat is not measured on this phone: it is for the PC)"), the file name, the phone, and a line that no location, time or names are included.
 
 ## Invariants and assumptions
 
@@ -68,5 +68,5 @@ runZipName("0a1b2c3d"); // "feature-match-run-0a1b2c3d.zip"
 
 ## Tests
 
-- `scenes.test.ts`: the scene and shot lists and their clamping, the pair table with its legacy keys and controls, the pairs a retake of F1 redoes, ready pairs, the light check of L2-L4 (L4 against L3), the next open shot with its wrap, the previous shot in a scene, the zip name, the summary text and its measured, failed and pending counts.
+- `scenes.test.ts`: the scene and shot lists and their clamping, the pair table with its legacy keys and controls, the pairs a retake of F1 redoes, ready pairs, the light check of L2-L4 (L4 against L3), the next open shot with its wrap, the previous shot in a scene, the zip name, the summary text and its measured, failed and pending counts, the timings line and the methods line.
 - `scenes.property.test.ts`: for any sizes (clamped ones included), the derived pairs name shots of the list only; a pair is ready exactly when both shots have a photo; a retake changes the result keys of exactly `pairsUsing`; the shot light checks equal the old pair checks on the same means; `nextOpen` finds an open shot inside the list, or none when all are taken.

@@ -260,6 +260,69 @@ const shotPng = (shot, take = 1) => `shots/${shot}-t${String(take)}.png`;
 const pairJson = (pair) => `pairs/${pair}/feature-match-frames.json`;
 
 /**
+ * A measured pair's matches JSON in the run zip.
+ *
+ * @param {string} pair the derived pair id, as `light-s1/L1-L2`
+ */
+const matchesJson = (pair) => `pairs/${pair}/feature-match-matches.json`;
+
+/**
+ * Keeps the time of every frame the cockpit's video shows
+ * (`requestVideoFrameCallback`) in `window.__frames`, so a test can read
+ * the frame gaps while the measuring worker runs.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function recordFrames(page) {
+  await page.addInitScript(() => {
+    const w = /** @type {any} */ (window);
+    w.__frames = [];
+    const hook = () => {
+      const video = /** @type {HTMLVideoElement | null} */ (
+        document.querySelector("#c-video")
+      );
+      if (!video) {
+        requestAnimationFrame(hook);
+        return;
+      }
+      /** @param {number} now */
+      const onFrame = (now) => {
+        w.__frames.push(now);
+        video.requestVideoFrameCallback(onFrame);
+      };
+      video.requestVideoFrameCallback(onFrame);
+    };
+    hook();
+  });
+}
+
+/**
+ * The p95, p99 and largest gap (ms) between the frame times in [from, to].
+ *
+ * @param {number[]} frames
+ * @param {number} from
+ * @param {number} to
+ */
+function gapStats(frames, from, to) {
+  const inside = frames.filter((f) => f >= from && f <= to);
+  const gaps = inside
+    .slice(1)
+    .map((f, i) => f - /** @type {number} */ (inside[i]));
+  const sorted = [...gaps].sort((a, b) => a - b);
+  /** @param {number} q */
+  const at = (q) =>
+    Math.round(
+      sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? 0,
+    );
+  return {
+    frames: inside.length,
+    p95: at(0.95),
+    p99: at(0.99),
+    max: Math.round(sorted.at(-1) ?? 0),
+  };
+}
+
+/**
  * Makes the page's IndexedDB reads of photos controllable, as a phone
  * whose stored photos cannot be read: `window.__photoReads` "ok" reads
  * them, "hold" keeps the next photo read waiting until
@@ -488,8 +551,13 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
 }) => {
   const errors = /** @type {string[]} */ ([]);
   page.on("pageerror", (error) => errors.push(error.message));
-  await routeNetwork(page, fulfillSift);
+  let siftLoads = 0;
+  await routeNetwork(page, (route) => {
+    siftLoads += 1;
+    return fulfillSift(route);
+  });
   await fakeCamera(page);
+  await recordFrames(page);
   await noSavePicker(page);
   await page.setViewportSize({ width: 360, height: 740 });
   await openCockpit(page);
@@ -502,6 +570,14 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   await expect(page.locator("#c-chip-key")).toHaveText("L2");
   await expect(page.locator("#c-state-a")).toHaveText("L1");
   await expect(page.locator("#c-progress-text")).toHaveText("1 / 13");
+  // The baseline frame gaps: the camera on, no pair ready, the worker idle.
+  const frames = () =>
+    page.evaluate(
+      () => /** @type {number[]} */ (/** @type {any} */ (window).__frames),
+    );
+  const clock = () => page.evaluate(() => performance.now());
+  await expect.poll(async () => (await frames()).length).toBeGreaterThan(60);
+  const firstPair = await clock();
   await takeShot(page, "L2");
   await expect(page.locator("#c-chip-key")).toHaveText("L3");
   await expect(page.locator("#log")).toContainText(
@@ -519,8 +595,25 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   await takeShot(page, "F2");
   await expect(page.locator("#c-chip-key")).toHaveText("F3");
   await expect(all).toHaveText("Download all (5)");
-  // Nothing is measured on the phone.
+  // The five ready pairs are measured in the worker beside the running
+  // camera, which keeps showing frames; the measuring block's own table
+  // stays empty.
+  await expect.poll(() => logLines(page, ": done in")).toBe(5);
+  const drained = await clock();
+  await expect
+    .poll(async () => (await frames()).at(-1) ?? 0)
+    .toBeGreaterThan(drained);
+  const all3 = await frames();
+  const gaps = {
+    baseline: gapStats(all3, 0, firstPair),
+    measuring: gapStats(all3, firstPair, drained),
+  };
+  console.log(`frame gaps (ms): ${JSON.stringify(gaps)}`);
+  expect(gaps.measuring.frames).toBeGreaterThan(10);
   await expect(page.locator("#results tbody tr")).toHaveCount(0);
+  // The worker's import of sift.js went through the page's routes too, so
+  // nothing left the machine.
+  expect(siftLoads).toBeGreaterThan(0);
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -540,10 +633,15 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     shotPng("flat-s1/F1"),
     shotPng("flat-s1/F2"),
     pairJson("light-s1/L1-L2"),
+    matchesJson("light-s1/L1-L2"),
     pairJson("flat-s1/F1-F2"),
+    matchesJson("flat-s1/F1-F2"),
     pairJson("flat-s1/F1-T0"),
+    matchesJson("flat-s1/F1-T0"),
     pairJson("flat-s1/F1-T90"),
+    matchesJson("flat-s1/F1-T90"),
     pairJson("flat-s1/F1-T180"),
+    matchesJson("flat-s1/F1-T180"),
     "feature-match-summary.txt",
     "feature-match-log.txt",
   ]);
@@ -591,6 +689,19 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     turn: { degrees: 90, direction: "cw" },
   });
   expect(turn.frames[1].crop).toEqual(turn.frames[0].crop);
+  // The worker measured the turned pair on the 240 px centre squares, beside
+  // the camera; SIFT ran, ALIKED's runtime could not load (no network).
+  const measured = await zipJson(bytes, matchesJson("flat-s1/F1-T90"));
+  expect(measured.frames.B).toMatchObject({
+    file: shotPng("flat-s1/F2"),
+    width: 240,
+    height: 240,
+  });
+  expect(measured.measured).toMatchObject({ context: "beside-camera" });
+  expect(
+    measured.methods.find((/** @type {{ id: string }} */ m) => m.id === "sift")
+      ?.error,
+  ).toBeNull();
   // The browser was asked once to keep the stored photos.
   expect(await logLines(page, "storage persist: ")).toBe(1);
 
@@ -605,7 +716,7 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   const { texts } = await zipContents(bytes);
   expect(texts["feature-match-summary.txt"]).toContain("Pairs ready: 5 of");
   expect(texts["feature-match-summary.txt"]).toContain(
-    "Pairs measured on this phone: 0, failed: 0, pending (to be measured on the PC): 5",
+    "Pairs measured on this phone: 5, failed: 0, pending (to be measured on the PC): 0",
   );
   expect(texts["feature-match-log.txt"]).toContain("download: 5 pairs as");
   expect(errors).toEqual([]);
@@ -2000,6 +2111,10 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
     "One zip with 1 pair, saved to this phone only.",
   );
   await expect(page.locator("#g-summary")).toHaveValue(/Pairs ready: 1 of/);
+  // The end screen says how far the measuring worker got.
+  await expect(page.locator("#g-end-lede")).toContainText(
+    "Measured on this phone: 1 of 1 pairs.",
+  );
 
   // A dismissed save dialog loses nothing and counts no download.
   await page.evaluate(() => {
@@ -2030,6 +2145,7 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
     shotPng("light-s1/L2"),
     shotPng("flat-s1/F1"),
     pairJson("light-s1/L1-L2"),
+    matchesJson("light-s1/L1-L2"),
     "feature-match-summary.txt",
     "feature-match-log.txt",
   ]);
@@ -2043,13 +2159,21 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
 });
 
 /**
- * Download all through the link fallback; returns the zip's bytes.
+ * Download all through the link fallback; returns the zip's bytes. With
+ * `measured` ("2 of 2 pairs") it first waits until the end screen says the
+ * worker measured that many.
  *
  * @param {import("@playwright/test").Page} page
+ * @param {string} [measured]
  */
-async function downloadAllBytes(page) {
+async function downloadAllBytes(page, measured) {
   await page.locator("#g-open-pairs").click();
   await page.locator("#g-go-end").click();
+  if (measured !== undefined) {
+    await expect(page.locator("#g-end-lede")).toContainText(
+      `Measured on this phone: ${measured}.`,
+    );
+  }
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     page.locator("#g-download-all").click(),
@@ -2127,14 +2251,16 @@ test("the guided photo test downloads through a link and keeps its photos across
   );
   await page.locator("#g-primary").click();
   await expect(page.locator("#g-card-key")).toHaveText("L4");
-  const zip = await downloadAllBytes(page);
-  // L1-L2 and L1-L3 are ready; L4 is not taken yet.
+  const zip = await downloadAllBytes(page, "2 of 2 pairs");
+  // L1-L2 and L1-L3 are ready and measured; L4 is not taken yet.
   expect(await zipFiles(zip)).toEqual([
     shotPng("light-s1/L1"),
     shotPng("light-s1/L2"),
     shotPng("light-s1/L3"),
     pairJson("light-s1/L1-L2"),
+    matchesJson("light-s1/L1-L2"),
     pairJson("light-s1/L1-L3"),
+    matchesJson("light-s1/L1-L3"),
     "feature-match-summary.txt",
     "feature-match-log.txt",
   ]);
@@ -2538,3 +2664,61 @@ for (const vp of [
     expect(m.chip).not.toBe("rgba(0, 0, 0, 0)");
   });
 }
+
+/**
+ * Why this test matters: the phone measures the stored PNG of a shot, not
+ * the frame it captured, and the PC measures the PNG in the zip. Both
+ * equal the captured frame only if the PNG round trip is lossless: a frame
+ * encoded the way the capture encodes it and decoded in a module worker
+ * the way the measuring worker decodes it must give the very same bytes.
+ */
+test("a shot's PNG decodes in a module worker to the very bytes it was made from", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await openCockpit(page);
+  const same = await page.evaluate(async () => {
+    const width = 64;
+    const height = 48;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    let seed = 1;
+    for (let i = 0; i < rgba.length; i++) {
+      seed = (seed * 1103515245 + 12345) >>> 0;
+      // The camera's frames are opaque.
+      rgba[i] = i % 4 === 3 ? 255 : seed >>> 24;
+    }
+    const base = `${location.origin}/src/checks/feature-match/`;
+    const domUrl = `${base}bench-dom.ts`;
+    const dom = /** @type {any} */ (await import(/* @vite-ignore */ domUrl));
+    const png = await dom.framePng({ width, height, rgba }, "round trip");
+    const source = [
+      `import { pngFrame } from "${base}png-frame.ts";`,
+      "self.onmessage = async (e) => {",
+      "  const f = await pngFrame(e.data);",
+      "  self.postMessage({ width: f.width, height: f.height, rgba: f.rgba });",
+      "};",
+    ].join("\n");
+    const url = URL.createObjectURL(
+      new Blob([source], { type: "text/javascript" }),
+    );
+    const worker = new Worker(url, { type: "module" });
+    const back = await new Promise((resolve, reject) => {
+      worker.onmessage = (e) => resolve(e.data);
+      worker.onerror = (e) => reject(new Error(e.message));
+      worker.postMessage(png);
+    });
+    worker.terminate();
+    URL.revokeObjectURL(url);
+    const f =
+      /** @type {{ width: number, height: number, rgba: Uint8ClampedArray }} */ (
+        back
+      );
+    return (
+      f.width === width &&
+      f.height === height &&
+      f.rgba.length === rgba.length &&
+      f.rgba.every((v, i) => v === rgba[i])
+    );
+  });
+  expect(same).toBe(true);
+});

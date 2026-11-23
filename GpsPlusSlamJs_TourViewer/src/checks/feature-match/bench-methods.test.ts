@@ -209,3 +209,27 @@ describe("runSettings", () => {
     );
   });
 });
+
+// Why this test matters: a timing measured in the worker must say so in
+// the method's backend and notes; read as main-thread numbers they would
+// be compared against the wrong baseline.
+describe("buildMethods in a worker", () => {
+  const siftDeps: LoadDeps = {
+    ...deps,
+    importModule: () => Promise.resolve({ detectSift: () => ({}) }),
+  };
+  const sel = {
+    sift: true,
+    xfeat: false,
+    aliked: false,
+    backends: [],
+    precisions: [],
+  };
+
+  it("names the place SIFT runs in", async () => {
+    const [page] = buildMethods(sel, siftDeps);
+    const [worker] = buildMethods(sel, siftDeps, "worker");
+    expect((await page!.init()).backend).toBe("js (main thread)");
+    expect((await worker!.init()).backend).toBe("js (worker)");
+  });
+});

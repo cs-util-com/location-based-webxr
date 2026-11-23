@@ -18,7 +18,7 @@ The zip is named `runZipName(session)` = `feature-match-run-<session>.zip` (`sce
 
 1. `shots/<scene id>/<shot key>-t<take>.png`, one per shot that has a photo, in run order (`planShots`), e.g. `shots/light-s1/L1-t1.png`, `shots/flat-s1/F1-t1.png`. Only the photo the plan keeps for a shot goes in; `take` is its take (2 after one retake). The PNG is the captured frame at its captured size (at most `CAPTURE_MAX` on the long side), plain (`assertPlainPng`: no EXIF, text or time chunks).
 2. Per ready derived pair, in `derivedPairs` order: `pairs/<pair id>/feature-match-frames.json`, e.g. `pairs/light-s1/L1-L2/feature-match-frames.json`, `pairs/flat-s1/F1-T90/feature-match-frames.json`. A pair is ready when both its shots have a photo.
-3. Right after a pair's frames JSON, only when its result is `done` and its matches are stored: `pairs/<pair id>/feature-match-matches.json` (the text the on-phone measuring stored; no producer exists yet).
+3. Right after a pair's frames JSON, only when its result is `done` and its matches are stored: `pairs/<pair id>/feature-match-matches.json` (the text the measuring queue stored, `measure-queue.ts`).
 4. `feature-match-summary.txt` (`summaryText` of `scenes.ts`).
 5. `feature-match-log.txt` (the page log, the log of earlier loads first, a `page reloaded` line between loads).
 
@@ -69,4 +69,4 @@ const zip = await packFilesAsZip(files);
 
 - `run-zip.test.ts`: the entry list of a run with L1, L2, F1 and F2 (each shot once, five frames JSON, summary and log last), the frames JSON of a turned pair field by field (and its key order, for the pair and a frame), `t0` as control, the light check, a retake's take in the shot file, a measured pair's matches file only when done and stored, and a photo that cannot be read failing the zip.
 - `run-zip.property.test.ts`: for any shots taken, every named file is in the zip, no path twice, one PNG per shot and a frames JSON per ready pair.
-- The saved zip in the browser: `playwright-tests/feature-match-check.spec.js` (the cockpit and guided zips with their exact file lists, the zip after a reload, a retake's take).
+- The saved zip in the browser: `playwright-tests/feature-match-check.spec.js` (the cockpit and guided zips with their exact file lists, matches files included once the worker measured the pairs, the zip after a reload, a retake's take).
