@@ -34,7 +34,7 @@ const run = size.chain(({ spots, extra }) => {
       taken.forEach((id) => {
         photos[id] = { id: `p-${id}`, greyMean: means[ids.indexOf(id)]! };
       });
-      return { spots, extra, photos: photos as ShotPhotos };
+      return { spots, extra, photos };
     });
 });
 
@@ -128,18 +128,14 @@ describe("scenes properties", () => {
       fc.property(run, fc.integer({ min: -2, max: 40 }), (r, from) => {
         const list = shotList(r.spots, r.extra);
         const n = nextOpen(list, r.photos, from);
-        if (n === null) {
-          expect(
-            list.filter((s) => !r.photos[s.id]).length,
-          ).toBeLessThanOrEqual(
-            from >= 0 && from < list.length && !r.photos[list[from]!.id]
-              ? 1
-              : 0,
-          );
-        } else {
-          expect(n >= 0 && n < list.length).toBe(true);
-          expect(r.photos[list[n]!.id]).toBeUndefined();
-        }
+        const open = list.filter((s) => !r.photos[s.id]).length;
+        const fromOpen =
+          from >= 0 && from < list.length && !r.photos[list[from]!.id] ? 1 : 0;
+        // None only when no open shot is left but `from` itself.
+        expect(n === null).toBe(open === fromOpen);
+        const inside = n === null || (n >= 0 && n < list.length);
+        expect(inside).toBe(true);
+        expect(n === null ? undefined : r.photos[list[n]!.id]).toBeUndefined();
       }),
     );
   });

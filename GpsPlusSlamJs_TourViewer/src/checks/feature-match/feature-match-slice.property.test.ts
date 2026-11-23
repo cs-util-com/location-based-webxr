@@ -169,11 +169,19 @@ describe("guided capture state properties", () => {
       fc.property(fc.array(guidedAction, { maxLength: 40 }), (actions) => {
         for (const s of states(actions)) {
           const { count } = s.guided;
-          if (count) {
-            expect(count.shot).toBe(currentShot(s.plan)?.id);
-            expect(count.left).toBeGreaterThanOrEqual(1);
-            expect(s.busy).toBe("idle");
-          }
+          expect(
+            count && {
+              shot: count.shot,
+              atLeast1: count.left >= 1,
+              busy: s.busy,
+            },
+          ).toEqual(
+            count && {
+              shot: currentShot(s.plan)?.id,
+              atLeast1: true,
+              busy: "idle",
+            },
+          );
         }
       }),
     );

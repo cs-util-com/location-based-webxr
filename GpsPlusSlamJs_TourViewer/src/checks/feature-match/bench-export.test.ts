@@ -664,7 +664,9 @@ describe("framesInfo extra fields", () => {
 
   it("writes them after the fixed fields and before the device", () => {
     const keys = Object.keys(
-      JSON.parse(framesInfo(...args, { shots: { A: "x" }, turn: 90 })),
+      JSON.parse(
+        framesInfo(...args, { shots: { A: "x" }, turn: 90 }),
+      ) as Record<string, unknown>,
     );
     expect(keys.slice(-3)).toEqual(["shots", "turn", "device"]);
     expect(keys.indexOf("frames")).toBeLessThan(keys.indexOf("shots"));

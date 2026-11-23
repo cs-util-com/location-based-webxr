@@ -337,9 +337,9 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     if (key !== segKey) {
       segKey = key;
       ui.segs.replaceChildren(
-        ...segs.map((c) => {
+        ...segs.map((cls) => {
           const i = document.createElement("i");
-          i.className = c;
+          i.className = cls;
           return i;
         }),
       );

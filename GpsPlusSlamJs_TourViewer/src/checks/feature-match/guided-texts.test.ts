@@ -37,11 +37,7 @@ describe("SHOT_WORDS", () => {
   // shot must name its one change, or the tester takes the same photo twice.
   it("names a change on every later shot and none on a first shot", () => {
     for (const [key, w] of Object.entries(SHOT_WORDS)) {
-      if (FIRST.includes(key as ShotKey)) {
-        expect(w.change, key).toBe("");
-      } else {
-        expect(w.change.trim(), key).not.toBe("");
-      }
+      expect(w.change.trim() === "", key).toBe(FIRST.includes(key as ShotKey));
     }
   });
 
@@ -80,9 +76,7 @@ describe("LIGHT_NOTE", () => {
   it("asks for a retake on every failed light check", () => {
     expect(LIGHT_NOTE.ok).toMatch(/ok/);
     for (const [k, t] of Object.entries(LIGHT_NOTE)) {
-      if (k !== "ok") {
-        expect(t, k).toMatch(/retake/i);
-      }
+      expect(/retake/i.test(t), k).toBe(k !== "ok");
       expect(t, k).not.toMatch(DASHES);
     }
     expect(LIGHT_NOTE["too-dark-a"]).toMatch(/L1/);

@@ -95,12 +95,8 @@ describe("the previous shot in a scene", () => {
     const list = shotList(2, 1);
     list.forEach((s, i) => {
       const prev = previousInScene(list, i);
-      if (s.step === 0) {
-        expect(prev, s.id).toBeUndefined();
-      } else {
-        expect(prev?.id, s.id).toBe(list[i - 1]!.id);
-        expect(prev?.scene, s.id).toBe(s.scene);
-      }
+      expect(prev?.id, s.id).toBe(s.step === 0 ? undefined : list[i - 1]!.id);
+      expect(prev?.scene ?? s.scene, s.id).toBe(s.scene);
     });
     expect(previousInScene(list, -1)).toBeUndefined();
     expect(previousInScene(list, list.length)).toBeUndefined();
