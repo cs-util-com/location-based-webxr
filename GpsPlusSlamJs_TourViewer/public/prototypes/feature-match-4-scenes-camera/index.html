@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#000000" />
+    <title>Photo test - camera</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <video id="video" playsinline muted autoplay></video>
+      <canvas id="view" aria-label="Camera preview"></canvas>
+      <img id="ghost" alt="" />
+      <div id="frameGuide" aria-hidden="true"><span>Fit the poster in here</span></div>
+      <div id="flash" aria-hidden="true"></div>
+
+      <header id="top">
+        <div id="segments" aria-hidden="true"></div>
+        <div class="top-row">
+          <div class="titles">
+            <div id="sceneLabel"></div>
+            <div id="shotTitle"><span id="shotCode"></span><span id="shotName"></span></div>
+          </div>
+          <button id="menuBtn" class="icon-btn" aria-label="Menu" aria-haspopup="menu">
+            <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+              <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
+        </div>
+        <div class="chips">
+          <span id="motionChip" class="chip"></span>
+          <button id="ghostBtn" class="chip chip-btn" hidden></button>
+        </div>
+        <div id="banner" hidden></div>
+      </header>
+
+      <div id="resumePill" hidden></div>
+
+      <footer id="bottom">
+        <div id="toast" hidden></div>
+        <div id="instr">
+          <div id="instrMain"></div>
+          <div id="instrSub"></div>
+        </div>
+        <div id="controls">
+          <button id="thumbBtn" aria-label="Last photo">
+            <img id="thumbImg" alt="" hidden />
+            <span id="thumbEmpty"></span>
+            <span id="savedTick" aria-hidden="true">
+              <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3 8.5l3 3 7-7" /></svg>
+            </span>
+          </button>
+          <button id="shutter" aria-label="Take photo">
+            <span id="shutterInner"></span>
+            <span id="countdown"></span>
+            <span id="timerTag" hidden>2 s timer</span>
+          </button>
+          <button id="counterBtn" aria-label="All shots">
+            <svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
+              <circle class="ring-bg" cx="32" cy="32" r="29" />
+              <circle id="ringFg" class="ring-fg" cx="32" cy="32" r="29" />
+            </svg>
+            <span id="counterText"></span>
+            <span id="procPill" hidden></span>
+          </button>
+        </div>
+        <div id="swipeHint"><span class="grab"></span>Swipe up for all shots</div>
+      </footer>
+
+      <div id="menu" role="menu" hidden></div>
+
+      <div id="backdrop" hidden></div>
+      <section id="sheet" class="sheet" hidden aria-label="All shots"></section>
+      <section id="review" class="sheet small" hidden aria-label="Last photo"></section>
+      <section id="setup" class="sheet" hidden aria-label="Before you start"></section>
+      <section id="endView" class="sheet full" hidden aria-label="Results"></section>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>
