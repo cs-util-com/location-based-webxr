@@ -2,28 +2,30 @@
 
 ## Purpose
 
-The guided view's words per photo pair of the protocol: a short title, the three steps (before photo A, the change, photo B) and the diagram kind, plus the review note after a light check. The purpose and avoid lines are not repeated here: `guidedCard` takes them from `PAIR_GUIDE` (`bench-guide.ts`), so both views say the same thing about what a pair tests.
+The words per shot of the photo test, shared by both views (the guided view and the cockpit): a short title, the change after the scene's previous shot, how to take the shot, the diagram kind, what the shot's pair measures and what spoils it, and each scene's setup; plus the note after a shot's light check and the line that says what a retake costs. Plain text, set as text.
 
 ## Public API
 
-- `ProtocolKey`: a key of `PAIRS` (every pair but the manual run `none`).
-- `GUIDED_STEPS: Record<ProtocolKey, { title, a, change, b, diagram }>`; `diagram` is a `DiagramKind` of `guided-diagram.ts`.
-- `guidedCard(key)`: the steps plus `purpose` and `avoid` from `PAIR_GUIDE`.
-- `LIGHT_NOTE: Record<LightCheck, string>`: one line per light check result; every failed one names the photo to retake.
+- `ShotWords { title, change, capture, diagram, purpose, avoid }`: `change` is empty on a scene's first shot; `diagram` is a `DiagramKind` of `guided-diagram.ts`.
+- `SHOT_WORDS: Record<ShotKey, ShotWords>`: one entry per shot key of `scenes.ts` (L1-L4, F1-F6, D1-D3, X1, X2).
+- `SCENE_SETUP: Record<SceneKind, string>`: where a scene's first shot is taken from; shown on every shot of the scene.
+- `ShotCard` and `shotCard(shot)`: the shot's words plus its scene's `setup`.
+- `LIGHT_NOTE: Record<ShotLight, string>`: one line per light check result; every failed one says what to retake (an almost black L1: go back to L1).
+- `retakeText(key, pairs)`: "Retaking F1 redoes 7 measurements." (singular for one).
 
 ## Invariants
 
-- Plain English, plain hyphens, no markup: the view sets them as text.
-- The dimmed pairs `1b` and `1c` keep the light on for photo A and dim in the change step, between the photos.
-- Titles are unique per pair.
+- Plain English, plain hyphens, no markup.
+- L1 is taken with the light on; L3 and L4 dim the light in their change step, without moving the phone.
+- Titles are unique per shot.
 
 ## Example
 
 ```ts
-const c = guidedCard("2b");
-// c.title === "Quarter turn", c.diagram === "rot-90"
+const c = shotCard(shot); // a shot of the flat scene
+// c.setup === SCENE_SETUP.flat
 ```
 
 ## Tests
 
-`guided-texts.test.ts`: every protocol key has a filled title, steps and a known diagram, no dash or markup, unique titles, the dimmed pairs' order, purpose and avoid taken from `PAIR_GUIDE`, and the light notes naming the photo to retake.
+`guided-texts.test.ts`: every shot has a title, purpose, avoid line and known diagram; a change on every later shot and none on a first shot; the light order of L1, L3 and L4; unique titles; the scene's setup added to the card; a retake asked for on every failed light check; the retake line with its singular.

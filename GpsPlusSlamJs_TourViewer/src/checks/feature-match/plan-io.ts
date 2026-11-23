@@ -1,11 +1,11 @@
 /**
  * The photo test's browser side, shared by both views of the feature
  * matching page: the camera start with its generation guard, the countdown
- * with its beep, vibration and flash, the plan photo itself, a pair's own
- * zip, the run's zip (Download all), the single files and the summary.
- * Every outcome is an action on the shared store; what stays here is a
- * browser resource or a guard (the timer, the audio context, the newest
- * camera start, the device line, whether the phone moved during a count).
+ * with its beep, vibration and flash, the shot's photo itself, the run's
+ * zip (Download all) and the summary. Every outcome is an action on the
+ * shared store; what stays here is a browser resource or a guard (the
+ * timer, the audio context, the newest camera start, the device line,
+ * whether the phone moved during a count).
  *
  * @see plan-io.ts.md
  */
@@ -13,49 +13,32 @@ import {
   downloadBlob,
   packFilesAsZip,
   ZIP_FILE_TYPE,
-  type DownloadFileType,
 } from "gps-plus-slam-app-framework/storage";
 import { captureFrame, framePng } from "./bench-dom";
 import { CAPTURE_MAX, type BenchEngine } from "./bench-engine";
-import {
-  allFilesZip,
-  FRAME_FILES,
-  framesInfo,
-  matchesInfo,
-  pairFileNames,
-  pairTag,
-} from "./bench-export";
+import { FRAME_FILES, framesInfo, pairFileNames } from "./bench-export";
 import { greyStats } from "./bench-image";
 import { errorText, formatBytes } from "./bench-net";
 import type { CameraControl } from "./camera-control";
 import {
+  currentShot,
   featureMatchActions as A,
   logText,
   type FeatureMatchState,
 } from "./feature-match-slice";
-import type { FeatureMatchStore } from "./feature-match-store";
+import type { FeatureMatchStore, ShotFrame } from "./feature-match-store";
+import { deviceSummary } from "./guided-model";
+import { centreCrop } from "./rotation-square";
+import { planPhotos } from "./run-plan";
 import {
-  deviceSummary,
-  planPairOf,
-  runPairs,
-  runView,
-  type PlanPair,
-} from "./guided-model";
-import { runZipName, summaryText } from "./plan-slots";
-import { planSlots } from "./run-plan";
-
-type Shot = "a" | "b";
-
-const PNG_FILE_TYPE: DownloadFileType = {
-  description: "PNG image",
-  mimeType: "image/png",
-  extension: ".png",
-};
-const JSON_FILE_TYPE: DownloadFileType = {
-  description: "JSON file",
-  mimeType: "application/json",
-  extension: ".json",
-};
+  derivedPairs,
+  lightOf,
+  pairFolderTag,
+  readyPairs,
+  runZipName,
+  summaryText,
+  type DerivedPair,
+} from "./scenes";
 
 /** The summary file inside the run zip. */
 const SUMMARY_FILE = "feature-match-summary.txt";
@@ -63,8 +46,15 @@ const SUMMARY_FILE = "feature-match-summary.txt";
 /** How long the white flash after a photo stays, in ms. */
 const FLASH_MS = 360;
 
-/** A file of the measure sheet or the Results tab. */
-type FileKind = "A" | "B" | "info" | "matches";
+/** The clockwise turn of B in each synthetic rotation pair, in degrees. */
+const TURNS: Readonly<Partial<Record<DerivedPair["kind"], 0 | 90 | 180>>> = {
+  turn0: 0,
+  turn90: 90,
+  turn180: 180,
+};
+
+type Device = Awaited<ReturnType<BenchEngine["deviceInfo"]>>;
+type ZipFile = { path: string; data: Blob | string };
 
 export interface PlanIoDeps {
   readonly fm: FeatureMatchStore;
@@ -81,38 +71,27 @@ export interface PlanIoDeps {
   readonly moving: () => boolean;
   /** Called once the device line for the summary is known. */
   readonly deviceKnown: () => void;
-  /** Called after the store took a photo, with its slot. */
-  readonly shot?: (slot: string, which: Shot) => void;
 }
 
 export interface PlanIo {
   /** Starts the camera; only the newest start reports back. */
   readonly startCamera: () => Promise<void>;
-  /** Starts the countdown for `shot`, or shoots at once with none. */
-  beginCount(shot: Shot): void;
+  /** Starts the countdown for the current shot, or shoots at once with none. */
+  beginCount(): void;
   /** Ends a running countdown without a photo; `why` goes to the log. */
   readonly cancelCount: (why: string) => void;
   /** Stops the count timer when the state says no count runs. */
   syncTimer(): void;
   /**
-   * Takes `shot` of the current slot now; true when the store took it.
-   * The cockpit's hands-off photo B calls it directly, without a count.
+   * Takes the current shot's photo now; true when the store took it. The
+   * cockpit's hands-off shot calls it directly, without a count.
    */
-  shoot(shot: Shot): boolean;
+  shoot(): boolean;
   /** The phone moved: named in the photo's log line if a count runs. */
   moved(): void;
   summaryOf(s: FeatureMatchState): string;
-  /** The current take's results, when a plan run on it finished. */
-  matchesOf(
-    s: FeatureMatchState,
-    pair: PlanPair | null,
-  ): ReturnType<FeatureMatchStore["sides"]["results"]["get"]>;
-  /** One pair as one zip: photos, frames JSON, matches, log and report. */
-  pairZip(s: FeatureMatchState, pair: PlanPair): Promise<Blob>;
-  /** Download all: the run's zip, then its downloaded marks. */
+  /** Download all: every ready pair's folder, the summary and the log. */
   downloadAll(): Promise<void>;
-  /** One file of the current pair. */
-  saveFile(kind: FileKind): Promise<void>;
   copyText(text: string, out: HTMLElement): Promise<void>;
 }
 
@@ -196,8 +175,11 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     log(`countdown: ${why}`);
   };
 
-  const shoot = (shot: Shot): boolean => {
-    const slot = runView(state()).slot;
+  const shoot = (): boolean => {
+    const shot = currentShot(state().plan);
+    if (!shot) {
+      return false;
+    }
     if (video.videoWidth === 0) {
       log("capture: the camera has no picture yet");
       d.note.show("No photo: the camera had no picture yet. Tap again.");
@@ -207,13 +189,11 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     const source = { width: video.videoWidth, height: video.videoHeight };
     const grey = greyStats(f);
     const id = newId("photo");
-    const name = shot === "a" ? "A" : "B";
     const ok = put(
       sides.frames,
-      [[id, { name, frame: f, source }]],
-      A.planPhotoTaken({
-        slot,
-        which: shot,
+      [[id, { frame: f, source }]],
+      A.planShotTaken({
+        shot: shot.id,
         photo: {
           id,
           width: f.width,
@@ -226,21 +206,21 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     const moved = movedDuringCount;
     movedDuringCount = false;
     if (!ok) {
-      log(`capture: photo ${name} of ${slot} refused`);
-      d.note.show(`No photo ${name}: the page was busy. Tap again.`);
+      log(`capture: photo of ${shot.id} refused`);
+      d.note.show(`No photo of ${shot.key}: the page was busy. Tap again.`);
       return false;
     }
     d.note.clear();
     beep(1320, 60);
     flash();
-    const rec = state().plan.slots[slot];
+    const take = state().plan.shots[shot.id]?.take ?? 0;
     log(
-      `photo ${name}: ${slot} #${String(rec?.seq ?? 0)} ${String(f.width)}x${String(f.height)} grey mean ${grey.mean.toFixed(1)}${moved ? " (phone moved during countdown)" : ""}`,
+      `photo ${shot.id} take ${String(take)}: ${String(f.width)}x${String(f.height)} grey mean ${grey.mean.toFixed(1)}${moved ? " (phone moved during countdown)" : ""}`,
     );
-    if (rec?.a && rec.b && rec.light) {
-      log(`light check ${slot}: ${rec.light}`);
+    const light = lightOf(shot.id, planPhotos(state().plan));
+    if (light) {
+      log(`light check ${shot.id}: ${light}`);
     }
-    d.shot?.(slot, shot);
     return true;
   };
 
@@ -253,7 +233,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     if (c.left <= 1) {
       stopTimer();
       store.dispatch(A.guidedCountSet(null));
-      shoot(c.shot);
+      shoot();
       return;
     }
     if (!accepted(A.guidedCountSet({ shot: c.shot, left: c.left - 1 }))) {
@@ -263,14 +243,18 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     beep(660, 90);
   };
 
-  const beginCount = (shot: Shot): void => {
+  const beginCount = (): void => {
+    const shot = currentShot(state().plan);
     const secs = state().plan.settings.countdown;
     buzz(30);
-    if (!secs) {
-      shoot(shot);
+    if (!shot) {
       return;
     }
-    if (!accepted(A.guidedCountSet({ shot, left: secs }))) {
+    if (!secs) {
+      shoot();
+      return;
+    }
+    if (!accepted(A.guidedCountSet({ shot: shot.id, left: secs }))) {
       return;
     }
     movedDuringCount = d.moving();
@@ -285,89 +269,96 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     summaryText({
       session: s.session,
       spots: s.plan.spots,
-      list: planSlots(s.plan),
-      pairs: s.plan.slots,
-      shots: s.plan.shots,
-      downloads: s.plan.downloads,
+      extra: s.plan.extra,
+      photos: planPhotos(s.plan),
+      shotsTaken: s.plan.shotsTaken,
       device: deviceLine,
     });
 
-  const matchesOf = (s: FeatureMatchState, pair: PlanPair | null) => {
-    const r = s.planRun;
-    if (!pair || !r || r.slot !== pair.slot.id || r.seq !== pair.seq) {
-      return undefined;
+  /** A shot's frame from the side table; throws when a restore failed. */
+  const frameOf = (s: FeatureMatchState, shot: string): ShotFrame => {
+    const id = s.plan.shots[shot]?.photo.id;
+    const f = id === undefined ? undefined : sides.frames.get(id);
+    if (!f) {
+      throw new Error(`the photo of ${shot} is not loaded`);
     }
-    return r.resultsId ? sides.results.get(r.resultsId) : undefined;
-  };
-
-  const json = (text: string): Blob =>
-    new Blob([text], { type: "application/json" });
-
-  const pairZip = async (
-    s: FeatureMatchState,
-    pair: PlanPair,
-  ): Promise<Blob> => {
-    const rec = s.plan.slots[pair.slot.id];
-    const tag = pairTag(pair.slot.key, pair.slot.spot, pair.seq);
-    const info = framesInfo(
-      [pair.a, pair.b],
-      await engine.deviceInfo(),
-      CAPTURE_MAX,
-      tag,
-      { light: rec?.light ?? null, session: s.session },
-    );
-    // A run that measured nothing still saves the photos: an empty list.
-    const matches = matchesInfo(matchesOf(s, pair) ?? [], {
-      a: pair.a.frame,
-      b: pair.b.frame,
-    });
-    const now = state();
-    return allFilesZip(
-      [
-        { name: FRAME_FILES.A, blob: await framePng(pair.a.frame, "frame A") },
-        { name: FRAME_FILES.B, blob: await framePng(pair.b.frame, "frame B") },
-        { name: FRAME_FILES.info, blob: json(info) },
-        { name: FRAME_FILES.matches, blob: json(matches) },
-      ],
-      { log: logText(now), report: now.report },
-    );
+    return f;
   };
 
   /**
-   * Every complete pair: its kept zip when this take has one on the page
-   * (it holds the matches), else its photos and frames JSON; then the
-   * summary and the log.
+   * One ready pair's folder: both photos (full frames, also for the
+   * rotation pairs) and a frames JSON naming the legacy key, the shots and
+   * their takes, and for a rotation pair the centre squares and the turn.
    */
-  const packRun = async (s: FeatureMatchState): Promise<Blob> => {
-    const pairs = runPairs(s, sides.frames);
-    const device = await engine.deviceInfo();
-    const files: { path: string; data: Blob | string }[] = [];
-    for (const p of pairs) {
-      const kept = s.plan.kept.find(
-        (k) => k.slot === p.slot.id && k.seq === p.tag.sequence,
-      );
-      const zip = kept ? sides.blobs.get(kept.id) : undefined;
-      if (kept && zip) {
-        files.push({ path: kept.name, data: zip });
-        continue;
-      }
-      files.push(
-        { path: p.names.A, data: await framePng(p.a.frame, "frame A") },
-        { path: p.names.B, data: await framePng(p.b.frame, "frame B") },
-        {
-          path: p.names.info,
-          data: framesInfo(
-            [p.a, p.b],
-            device,
-            CAPTURE_MAX,
-            p.tag,
-            { light: p.light, session: s.session },
-            { A: p.names.A, B: p.names.B },
-          ),
+  const pairFiles = async (
+    s: FeatureMatchState,
+    p: DerivedPair,
+    n: number,
+    device: Device,
+  ): Promise<ZipFile[]> => {
+    const tag = pairFolderTag(p, n);
+    const dir = pairFileNames(tag).all.replace(/\.zip$/, "");
+    const a = frameOf(s, p.a);
+    const b = frameOf(s, p.b);
+    const turn = TURNS[p.kind];
+    const rotation =
+      turn === undefined
+        ? {}
+        : {
+            rotation: {
+              cropA: centreCrop(a.frame.width, a.frame.height),
+              cropB: centreCrop(b.frame.width, b.frame.height),
+              turnB: turn,
+              direction: "cw",
+            },
+          };
+    const info = framesInfo(
+      [
+        { name: "A", ...a },
+        { name: "B", ...b },
+      ],
+      device,
+      CAPTURE_MAX,
+      tag,
+      { light: lightOf(p.b, planPhotos(s.plan)), session: s.session },
+      FRAME_FILES,
+      {
+        derivedPair: p.id,
+        kind: p.kind,
+        axis: p.axis,
+        controlFor: p.controlFor,
+        shots: {
+          A: { id: p.a, take: s.plan.shots[p.a]?.take ?? 0 },
+          B: { id: p.b, take: s.plan.shots[p.b]?.take ?? 0 },
         },
-      );
+        ...rotation,
+      },
+    );
+    return [
+      {
+        path: `${dir}/${FRAME_FILES.A}`,
+        data: await framePng(a.frame, "frame A"),
+      },
+      {
+        path: `${dir}/${FRAME_FILES.B}`,
+        data: await framePng(b.frame, "frame B"),
+      },
+      { path: `${dir}/${FRAME_FILES.info}`, data: info },
+    ];
+  };
+
+  /** Every ready pair's folder in run order, then the summary and the log. */
+  const packRun = async (s: FeatureMatchState): Promise<Blob> => {
+    const all = derivedPairs(s.plan.spots, s.plan.extra);
+    const ready = new Set(readyPairs(all, planPhotos(s.plan)));
+    const device = await engine.deviceInfo();
+    const files: ZipFile[] = [];
+    for (const [i, p] of all.entries()) {
+      if (ready.has(p)) {
+        files.push(...(await pairFiles(s, p, i + 1, device)));
+      }
     }
-    log(`download: ${String(pairs.length)} pairs as ${runZipName(s.session)}`);
+    log(`download: ${String(ready.size)} pairs as ${runZipName(s.session)}`);
     const now = state();
     files.push(
       { path: SUMMARY_FILE, data: summaryOf(now) },
@@ -382,8 +373,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     }
     const name = runZipName(state().session);
     try {
-      const packed = state();
-      const zip = await packRun(packed);
+      const zip = await packRun(state());
       const saved = await downloadBlob(zip, name, ZIP_FILE_TYPE);
       if (saved) {
         store.dispatch(
@@ -392,11 +382,6 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
             text: `Saved ${name} (${formatBytes(zip.size)}). Send this file.`,
           }),
         );
-        store.dispatch(A.planRunDownloaded());
-        store.dispatch(
-          A.planFilesDownloaded(packed.plan.kept.map((k) => k.id)),
-        );
-        store.dispatch(A.planKeptDropped());
         log(`download: saved ${name}`);
       } else {
         store.dispatch(
@@ -416,61 +401,6 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
         }),
       );
     }
-  };
-
-  const saveFile = async (kind: FileKind): Promise<void> => {
-    const s = state();
-    const pair = planPairOf(s, sides.frames);
-    if (!pair || !accepted(A.planFileSaveStarted())) {
-      return;
-    }
-    let note: string;
-    try {
-      const rec = s.plan.slots[pair.slot.id];
-      const tag = pairTag(pair.slot.key, pair.slot.spot, pair.seq);
-      const names = pairFileNames(tag);
-      let blob: Blob;
-      let type = JSON_FILE_TYPE;
-      if (kind === "A" || kind === "B") {
-        const f = kind === "A" ? pair.a : pair.b;
-        blob = await framePng(f.frame, `frame ${kind}`);
-        type = PNG_FILE_TYPE;
-      } else if (kind === "info") {
-        blob = json(
-          framesInfo(
-            [pair.a, pair.b],
-            await engine.deviceInfo(),
-            CAPTURE_MAX,
-            tag,
-            { light: rec?.light ?? null, session: s.session },
-            { A: names.A, B: names.B },
-          ),
-        );
-      } else {
-        const res = matchesOf(s, pair);
-        if (!res) {
-          throw new Error("no finished run on this pair");
-        }
-        blob = json(matchesInfo(res, { a: pair.a.frame, b: pair.b.frame }));
-      }
-      const name = names[kind];
-      if (await downloadBlob(blob, name, type)) {
-        // Kept and dropped at once: only the take's downloaded mark stays,
-        // so no Blob goes into the side table.
-        const id = newId("file");
-        store.dispatch(A.planFileKept({ id, name, slot: pair.slot.id }));
-        store.dispatch(A.planFilesDownloaded([id]));
-        store.dispatch(A.planKeptDropped());
-        note = `saved ${name} (${formatBytes(blob.size)})`;
-        log(`file saved: ${name}`);
-      } else {
-        note = "not saved: the save dialog was closed";
-      }
-    } catch (e) {
-      fail("save", e);
-      note = `could not save: ${errorText(e)}`;
-    }
-    store.dispatch(A.planFileSaveEnded(note));
   };
 
   const copyText = async (text: string, out: HTMLElement): Promise<void> => {
@@ -498,10 +428,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
       }
     },
     summaryOf,
-    matchesOf,
-    pairZip,
     downloadAll,
-    saveFile,
     copyText,
   };
 }

@@ -115,5 +115,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   void fm.restorePhotos().then(view, (e: unknown) => {
     fail("photo storage", e);
   });
+  if (fm.oldPlanDiscarded) {
+    log("stored plan of version 1 discarded (no migration)");
+  }
   log("ready");
 }

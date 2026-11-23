@@ -1,11 +1,11 @@
 /**
  * The feature matching check page's store and its side effects: the
- * stored progress read back at start and written by a listener whenever
- * it changes, and the side tables beside the state - frames, results,
- * Blob URLs, kept pair zips and the flat target photos - kept in step with
- * it (an entry the state no longer names is dropped, a URL revoked). The
- * run plan is stored too, and its photos are mirrored into the browser's
- * database so a reload brings them back. The camera, canvases, ORT
+ * stored run plan and flat progress read back at start and written by a
+ * listener whenever they change, and the side tables beside the state -
+ * the shots' frames, Blob URLs and the flat target photos - kept in step
+ * with it (an entry the state no longer names is dropped, a URL revoked).
+ * The plan's photos are mirrored into the browser's database so a reload
+ * brings them back. The camera, canvases, ORT
  * sessions and timers stay in the views.
  *
  * @see feature-match-store.ts.md
@@ -16,9 +16,7 @@ import {
   type UnknownAction,
 } from "@reduxjs/toolkit";
 
-import { parseProgress, progressText, type SavedFrame } from "./bench-export";
 import type { Frame } from "./bench-image";
-import type { MethodResult } from "./bench-run";
 import {
   featureMatchActions as A,
   featureMatchReducer,
@@ -33,17 +31,9 @@ import {
   type SurfaceProgress,
 } from "./flat-progress";
 import type { PoseId } from "./flat-target";
-import {
-  parsePlan,
-  planAfterReload,
-  planPhotoIds,
-  planSlots,
-  planText,
-} from "./run-plan";
+import { isOldPlan, parsePlan, planPhotoIds, planText } from "./run-plan";
 import type { KeyValueStore } from "../../key-value-db";
 
-/** The running number, pair and spot, kept across a reload. */
-export const PROGRESS_KEY = "feature-match-check.progress";
 /** The flat target progress, kept across reloads. */
 export const FLAT_PROGRESS_KEY = "feature-match-check.flat-progress";
 /** The photo test run plan, kept across reloads. */
@@ -69,14 +59,16 @@ export interface SurfacePhotos {
   camera: { width: number; height: number } | null;
 }
 
+/** A shot's camera frame and the camera size it was taken from. */
+export interface ShotFrame {
+  readonly frame: Frame;
+  readonly source: { readonly width: number; readonly height: number };
+}
+
 /** What lives beside the store, keyed by the ids the state holds. */
 export interface FeatureMatchSides {
   /** The plan's camera photos, by `PhotoMeta.id`. */
-  readonly frames: Map<string, SavedFrame>;
-  /** The plan's kept pair zips, by `KeptFile.id`. */
-  readonly blobs: Map<string, Blob>;
-  /** Run results, by `planRun.resultsId`. */
-  readonly results: Map<string, readonly MethodResult[]>;
+  readonly frames: Map<string, ShotFrame>;
   /** The Blob URL of the prepared flat zip, by id. */
   readonly urls: Map<string, string>;
   /** The flat reference being marked and its preview, by `FrameMeta.id`. */
@@ -119,16 +111,15 @@ function write(storage: KeyValueStorage, key: string, text: string): void {
 const isDim = (n: unknown): boolean =>
   typeof n === "number" && Number.isInteger(n) && n > 0;
 
-/** Whether a value read back from the database is a whole saved frame. */
-function isSavedFrame(v: unknown): v is SavedFrame {
+/** Whether a value read back from the database is a whole shot frame. */
+function isShotFrame(v: unknown): v is ShotFrame {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const s = v as Partial<Record<keyof SavedFrame, unknown>>;
+  const s = v as Partial<Record<keyof ShotFrame, unknown>>;
   const f = s.frame as Partial<Record<keyof Frame, unknown>> | undefined;
   const src = s.source as Record<string, unknown> | undefined;
   return (
-    (s.name === "A" || s.name === "B") &&
     typeof f === "object" &&
     f !== null &&
     isDim(f.width) &&
@@ -152,18 +143,6 @@ function reconcile(
   for (const id of sides.frames.keys()) {
     if (!photoIds.has(id)) {
       sides.frames.delete(id);
-    }
-  }
-  const keptIds = new Set(s.plan.kept.map((k) => k.id));
-  for (const id of sides.blobs.keys()) {
-    if (!keptIds.has(id)) {
-      sides.blobs.delete(id);
-    }
-  }
-  const resultIds = new Set([s.planRun?.resultsId]);
-  for (const id of sides.results.keys()) {
-    if (!resultIds.has(id)) {
-      sides.results.delete(id);
     }
   }
   const urlIds = new Set(s.flat.prepared ? [s.flat.prepared.urlId] : []);
@@ -225,27 +204,22 @@ export const flatHasUnsaved = (
   s.flat.progress.surfaces.some((x) => unsavedHere(x, sides) > 0);
 
 export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
-  const progress = readStored(
-    () => parseProgress(deps.storage.getItem(PROGRESS_KEY)),
-    undefined,
-  );
   const flat = readStored(
     () =>
       afterReload(parseFlatProgress(deps.storage.getItem(FLAT_PROGRESS_KEY))),
     undefined,
   );
-  const plan = readStored(
-    () => parsePlan(deps.storage.getItem(PLAN_KEY)),
-    undefined,
-  );
+  const planStored = readStored(() => deps.storage.getItem(PLAN_KEY), null);
+  const plan = parsePlan(planStored);
+  /** A stored plan of the pair-slot version was found and not read. */
+  const oldPlanDiscarded = isOldPlan(planStored);
   const listener = createListenerMiddleware<FeatureMatchState>();
   const store = configureStore({
     reducer: featureMatchReducer,
     preloadedState: initialFeatureMatchState({
       session: deps.session,
-      ...(progress ? { progress } : {}),
       ...(flat ? { flat } : {}),
-      ...(plan ? { plan: planAfterReload(plan) } : {}),
+      ...(plan ? { plan } : {}),
     }),
     // Frames, results and URLs are side tables: the state holds only
     // plain data, so the default checks stay on.
@@ -253,21 +227,11 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   });
   const sides: FeatureMatchSides = {
     frames: new Map(),
-    blobs: new Map(),
-    results: new Map(),
     urls: new Map(),
     flatFrames: new Map(),
     flatPhotos: new Map(),
   };
 
-  listener.startListening({
-    predicate: (_a, cur, prev) =>
-      cur.progress.sequence !== prev.progress.sequence,
-    effect: (_a, api) => {
-      const { sequence } = api.getState().progress;
-      write(deps.storage, PROGRESS_KEY, progressText({ sequence }));
-    },
-  });
   listener.startListening({
     predicate: (_a, cur, prev) => cur.flat.progress !== prev.flat.progress,
     effect: (_a, api) => {
@@ -331,7 +295,7 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     }
   };
   /** Writes one photo; it counts as stored only once the write succeeded. */
-  async function storePhoto(id: string, saved: SavedFrame): Promise<void> {
+  async function storePhoto(id: string, saved: ShotFrame): Promise<void> {
     if (!db) {
       return;
     }
@@ -421,18 +385,13 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
   /**
    * After a reload: brings the plan's photos back from the database into
    * the frames table, marks a photo it does not hold (or holds damaged) as
-   * lost, and deletes what no slot names. Without a database every stored
+   * lost, and deletes what no shot names. Without a database every stored
    * photo is lost. Never rejects.
    */
   async function restorePhotos(): Promise<void> {
-    const s = store.getState().plan;
-    const wanted = planSlots(s).flatMap((slot) => {
-      const r = s.slots[slot.id];
-      return (["a", "b"] as const).flatMap((which) => {
-        const id = r?.[which]?.id;
-        return id === undefined ? [] : [{ slot: slot.id, which, id }];
-      });
-    });
+    const wanted = Object.entries(store.getState().plan.shots).map(
+      ([shot, r]) => ({ shot, id: r.photo.id }),
+    );
     if (db) {
       try {
         for (const key of await db.keys()) {
@@ -453,16 +412,16 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
         dbFailed(e);
       }
       // A retake while this was reading has replaced the photo: leave it.
-      const still = store.getState().plan.slots[w.slot]?.[w.which]?.id === w.id;
+      const still = store.getState().plan.shots[w.shot]?.photo.id === w.id;
       if (!still) {
         continue;
       }
-      if (isSavedFrame(value)) {
+      if (isShotFrame(value)) {
         // Named by the state already, so no action is needed to keep it.
         inDb.add(w.id);
         sides.frames.set(w.id, value);
       } else {
-        store.dispatch(A.planPhotoLost({ slot: w.slot, which: w.which }));
+        store.dispatch(A.planShotLost(w.shot));
       }
     }
   }
@@ -537,6 +496,7 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     put,
     restorePhotos,
     dispose,
+    oldPlanDiscarded,
   };
 }
 

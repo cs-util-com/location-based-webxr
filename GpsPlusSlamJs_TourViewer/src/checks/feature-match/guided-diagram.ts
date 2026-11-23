@@ -1,5 +1,5 @@
 /**
- * The guided view's picture of one pair: panel A, an arrow naming the
+ * The picture of one shot against the one before it: panel A, an arrow naming the
  * change, panel B, as one SVG string from constants only (no input text
  * reaches it). Colours come from the page's `--a`, `--b` and `--accent`.
  *
@@ -11,13 +11,9 @@ export const DIAGRAM_KINDS = [
   "light-dim",
   "light-dark",
   "rot-0",
-  "rot-90",
-  "rot-180",
   "rot-35",
-  "dist-same",
   "dist-2x",
   "dist-3x",
-  "side-same-flat",
   "side-flat",
   "side-same-deep",
   "side-deep",
@@ -117,33 +113,12 @@ function parts(kind: DiagramKind): Parts {
         mid: "nothing",
         label: "Both photos with the phone upright.",
       };
-    case "rot-90":
-      return {
-        a: phone(0) + caption("upright"),
-        b: phone(90) + caption("sideways"),
-        mid: "turn",
-        label: "Photo A upright, photo B sideways.",
-      };
-    case "rot-180":
-      return {
-        a: phone(0) + caption("upright"),
-        b: phone(180) + caption("upside down"),
-        mid: "turn",
-        label: "Photo A upright, photo B upside down.",
-      };
     case "rot-35":
       return {
         a: phone(0) + caption("upright"),
         b: phone(35) + caption("tilted 30-45"),
         mid: "tilt",
         label: "Photo A upright, photo B tilted 30 to 45 degrees.",
-      };
-    case "dist-same":
-      return {
-        a: distView(54, "1.5 m"),
-        b: distView(54, "1.5 m"),
-        mid: "stay",
-        label: "Both photos from 1.5 m.",
       };
     case "dist-2x":
       return {
@@ -158,13 +133,6 @@ function parts(kind: DiagramKind): Parts {
         b: distView(80, "3 m"),
         mid: "step back",
         label: "Photo A from 1 m, photo B from 3 m.",
-      };
-    case "side-same-flat":
-      return {
-        a: topView(65, 76, false) + caption("flat"),
-        b: topView(65, 76, false) + caption("same place"),
-        mid: "stay",
-        label: "Both photos of a flat surface from the same place.",
       };
     case "side-flat":
       return {

@@ -1,21 +1,18 @@
 /**
  * The cockpit view's dock as plain data, read from the page state: what
- * the big button does and says, the side buttons, the A and B tiles, the
- * instruction line, the readouts, the progress segments and the status
- * line. Pure, so the view only copies fields into its fixed boxes and
- * every rule is unit-tested.
+ * the big button does and says, the side buttons, the two tiles (the
+ * scene's previous shot and the current one), the instruction line, the
+ * readouts, the progress segments and the status line. Pure, so the view
+ * only copies fields into its fixed boxes and every rule is unit-tested.
  *
  * @see cockpit-model.ts.md
  */
-import type { LightCheck } from "./bench-export";
 import type { FeatureMatchState } from "./feature-match-slice";
-import { guidedCard } from "./guided-texts";
-import { doneCount, nextStep, shotDue, slotStatus } from "./plan-slots";
-import { keptState, planSlots } from "./run-plan";
+import { readyCount, shotContext, warned } from "./guided-model";
+import { LIGHT_NOTE } from "./guided-texts";
+import { planPhotos, planShots } from "./run-plan";
+import { lightOf, nextOpen } from "./scenes";
 import { stillProgress } from "./still-detector";
-
-type Shot = "a" | "b";
-const up = (w: Shot): string => w.toUpperCase();
 
 type ShutterMode =
   "start" | "capture" | "cancel" | "busy" | "retake" | "next" | "save";
@@ -26,20 +23,14 @@ export interface ShutterView {
   /** The prototype's `data-mode`: armed, busy, save or none. */
   readonly tone: "" | "armed" | "busy" | "save";
   readonly disabled: boolean;
-  /** The photo "capture" and "retake" take; null otherwise. */
-  readonly shot: Shot | null;
-  /** The slot "next" moves to; -1 otherwise. */
+  /** The shot "next" moves to; -1 otherwise. */
   readonly index: number;
-}
-
-/** The pair finished last, for "Retake B of NN" after the automatic move. */
-export interface LastPair {
-  readonly index: number;
-  readonly seq: number;
 }
 
 type RetakeAction =
-  | { readonly kind: "toggle"; readonly which: Shot }
+  /** Take the current shot again. */
+  | { readonly kind: "shoot" }
+  /** Go back to the scene's previous shot. */
   | { readonly kind: "back"; readonly index: number };
 
 export interface RetakeView {
@@ -49,10 +40,9 @@ export interface RetakeView {
 }
 
 export interface TileView {
-  /** The prototype's `data-state`: armed, taken, retake or none. */
-  readonly state: "" | "armed" | "taken" | "retake";
+  /** The prototype's `data-state`: armed, taken or none. */
+  readonly state: "" | "armed" | "taken";
   readonly text: string;
-  /** A tap toggles the retake of a taken photo. */
   readonly disabled: boolean;
 }
 
@@ -66,41 +56,9 @@ export interface Line {
   readonly tone: "" | "ok" | "bad";
 }
 
-/** The current slot, its record and the photo due. */
-function current(s: FeatureMatchState) {
-  const list = planSlots(s.plan);
-  const index = Math.min(Math.max(0, s.plan.current), list.length - 1);
-  const slot = list[index]!;
-  const rec = s.plan.slots[slot.id];
-  return { list, index, slot, rec, due: shotDue(rec, s.guided.retake) };
-}
+const base = { disabled: false, index: -1, tone: "" } as const;
 
-const warned = (
-  light: LightCheck | null | undefined,
-): light is Exclude<LightCheck, "ok"> =>
-  light !== null && light !== undefined && light !== "ok";
-
-/**
- * The photo a failed light check asks to take again. Only an almost black
- * A needs A again; every other case is fixed by a new B (a B that is not
- * darker is dimmed further), so a retake never loops on the same photo.
- */
-export const warnShot = (light: Exclude<LightCheck, "ok">): Shot =>
-  light === "too-dark-a" ? "a" : "b";
-
-/** The instruction line after a failed light check, matching `warnShot`. */
-const WARN_NOTE: Readonly<Record<Exclude<LightCheck, "ok">, string>> = {
-  "not-darker": "Photo B is not darker than A. Dim further, then retake B.",
-  "too-dark-a": "Photo A is almost black. Turn the light on and retake A.",
-  "too-dark-b":
-    "Photo B is black: nothing to match. Dim a little less and retake B.",
-  changed:
-    "The light changed during the control pair. Retake B with the same light.",
-};
-
-const base = { disabled: false, shot: null, index: -1, tone: "" } as const;
-
-/** Whether photo B is waiting to take itself (armed or waiting). */
+/** Whether the current shot is waiting to take itself (armed or waiting). */
 const handsOffWaits = (s: FeatureMatchState): boolean =>
   s.handsOff.phase === "armed" || s.handsOff.phase === "waiting";
 
@@ -124,12 +82,12 @@ export function shutterView(s: FeatureMatchState): ShutterView {
       disabled: true,
     };
   }
-  const { list, index, rec, due } = current(s);
   if (s.guided.count) {
     return { ...base, mode: "cancel", text: "Tap to stop", tone: "armed" };
   }
-  const light = rec?.light;
-  const wants: Shot | null = due ?? (warned(light) ? warnShot(light) : null);
+  const c = shotContext(s);
+  const key = c.shot.key;
+  const wants = !c.photo || warned(c.light);
   if (wants && !s.camera) {
     return s.cameraStart === "starting"
       ? { ...base, mode: "start", text: "Starting", disabled: true }
@@ -143,116 +101,101 @@ export function shutterView(s: FeatureMatchState): ShutterView {
     return {
       ...base,
       mode: "busy",
-      text: "Taking B",
+      text: `Taking ${key}`,
       tone: "busy",
       disabled: true,
     };
   }
-  if (due === "b" && handsOffWaits(s)) {
-    // A tap still takes B (with the countdown): the way out of the wait.
+  if (!c.photo && handsOffWaits(s)) {
+    // A tap still takes the shot (with the countdown): the way out of the wait.
     return {
       ...base,
       mode: "capture",
-      shot: "b",
       tone: "armed",
       text: s.handsOff.phase === "armed" ? "Waiting" : "Hold still",
     };
   }
-  if (due) {
+  if (!c.photo) {
     const secs = s.plan.settings.countdown;
     return {
       ...base,
       mode: "capture",
-      shot: due,
-      text: secs
-        ? `${up(due)} in ${String(secs)} s`
-        : `${s.guided.retake ? "Retake" : "Take"} ${up(due)}`,
+      text: secs ? `${key} in ${String(secs)} s` : `Take ${key}`,
     };
   }
   if (wants) {
-    return {
-      ...base,
-      mode: "retake",
-      shot: wants,
-      text: `Retake ${up(wants)}`,
-    };
+    return { ...base, mode: "retake", text: `Retake ${key}` };
   }
-  const step = nextStep(list, s.plan.slots, index);
-  return step.kind === "end"
+  const next = nextOpen(c.list, planPhotos(s.plan), c.index);
+  return next === null
     ? { ...base, mode: "save", text: "All done", tone: "save" }
-    : { ...base, mode: "next", text: "Next pair", index: step.index };
+    : { ...base, mode: "next", text: "Next shot", index: next };
 }
 
 const OFF: RetakeView = { label: "Retake", disabled: true, action: null };
 
-/** The side button left of the big one. */
-export function retakeView(
-  s: FeatureMatchState,
-  last: LastPair | null,
-): RetakeView {
+/**
+ * The side button left of the big one: retakes the current shot once it
+ * has a photo, else goes back to the scene's previous shot.
+ */
+export function retakeView(s: FeatureMatchState): RetakeView {
   if (s.busy !== "idle" || s.guided.count) {
     return OFF;
   }
-  const { index, rec, due } = current(s);
-  const r = s.guided.retake;
-  if (r) {
+  const c = shotContext(s);
+  if (c.photo) {
     return {
-      label: "Cancel retake",
+      label: `Retake ${c.shot.key}`,
       disabled: false,
-      action: { kind: "toggle", which: r },
+      action: { kind: "shoot" },
     };
   }
-  if (due === "b" && rec?.a) {
+  if (c.prev && c.prevPhoto) {
     return {
-      label: "Retake A",
+      label: `Back to ${c.prev.key}`,
       disabled: false,
-      action: { kind: "toggle", which: "a" },
-    };
-  }
-  if (due === "a" && last && last.index !== index) {
-    return {
-      label: `Retake B of ${String(last.seq).padStart(2, "0")}`,
-      disabled: false,
-      action: { kind: "back", index: last.index },
-    };
-  }
-  if (due === null && rec?.a && rec.b) {
-    const which = warned(rec.light) ? warnShot(rec.light) : "b";
-    return {
-      label: `Retake ${up(which)}`,
-      disabled: false,
-      action: { kind: "toggle", which },
+      action: { kind: "back", index: c.index - 1 },
     };
   }
   return OFF;
 }
 
-/** The A and B tiles; a tap on a taken one toggles its retake. */
-export function tileView(s: FeatureMatchState): Record<Shot, TileView> {
-  const { rec, due } = current(s);
+/**
+ * The two tiles: "a" the scene's previous shot (a tap goes back to it),
+ * "b" the current one (armed while it is due).
+ */
+export function tileView(s: FeatureMatchState): {
+  readonly a: TileView;
+  readonly b: TileView;
+} {
+  const c = shotContext(s);
   const off = s.busy !== "idle" || s.guided.count !== null;
-  const tile = (w: Shot): TileView => {
-    const has = Boolean(rec?.[w]);
-    const disabled = !has || off;
-    if (s.guided.retake === w) {
-      return { state: "retake", text: "retake", disabled };
-    }
-    if (due === w && s.camera) {
-      const c = s.guided.count;
-      return {
-        state: "armed",
-        text: c?.shot === w ? `${String(c.left)} s` : "now",
-        disabled,
-      };
-    }
-    return { state: has ? "taken" : "", text: has ? "taken" : "-", disabled };
+  const count = s.guided.count;
+  const b: TileView =
+    !c.photo && s.camera
+      ? {
+          state: "armed",
+          text: count ? `${String(count.left)} s` : "now",
+          disabled: true,
+        }
+      : {
+          state: c.photo ? "taken" : "",
+          text: c.photo ? "taken" : "-",
+          disabled: true,
+        };
+  return {
+    a: {
+      state: c.prevPhoto ? "taken" : "",
+      text: c.prev ? c.prev.key : "-",
+      disabled: !c.prev || off,
+    },
+    b,
   };
-  return { a: tile("a"), b: tile("b") };
 }
 
-/** The instruction line: an optional bold "A:" or "B:" and its text. */
+/** The instruction line: an optional bold label and its text. */
 export function instrView(s: FeatureMatchState): {
-  readonly label: "A" | "B" | null;
+  readonly label: string | null;
   readonly text: string;
   /** A word of `text` shown bold, as the prototype marks the action. */
   readonly bold?: string;
@@ -260,102 +203,74 @@ export function instrView(s: FeatureMatchState): {
   if (s.running !== null) {
     return {
       label: null,
-      text: "Measuring the pair. The camera is paused; leave the phone where it is.",
+      text: "Measuring. The camera is paused; leave the phone where it is.",
     };
   }
-  const { list, index, slot, rec, due } = current(s);
-  if (due && !s.camera) {
+  const c = shotContext(s);
+  if (!c.photo && !s.camera) {
     return {
       label: null,
       text: "Put the phone on its stand, then tap Start to turn the camera on.",
       bold: "Start",
     };
   }
-  const card = guidedCard(slot.key);
-  if (due === "a") {
-    return { label: "A", text: card.a };
-  }
-  if (due === "b") {
+  if (!c.photo) {
     return {
-      label: "B",
-      text: s.guided.retake ? card.b : `${card.change} ${card.b}`,
+      label: c.shot.key,
+      text:
+        c.shot.step === 0
+          ? `${c.card.setup} ${c.card.capture}`
+          : `${c.card.change} ${c.card.capture}`,
     };
   }
-  if (warned(rec?.light)) {
-    return { label: null, text: WARN_NOTE[rec.light] };
+  if (warned(c.light)) {
+    return { label: c.shot.key, text: LIGHT_NOTE[c.light] };
   }
-  return nextStep(list, s.plan.slots, index).kind === "end"
+  return nextOpen(c.list, planPhotos(s.plan), c.index) === null
     ? {
         label: null,
-        text:
-          downloadCount(s) === 0
-            ? "All pairs done and downloaded."
-            : "All pairs done. Download all saves them in one zip.",
+        text: "All shots done. Download all saves the pairs in one zip.",
       }
     : {
         label: null,
-        text: "Pair done. Tap A or B to retake one, or go to the next pair.",
+        text: "Shot done. Retake it, or go to the next shot.",
       };
 }
 
-/**
- * The slot to move to once a complete pair is packed: the next open one,
- * else an earlier one still missing a photo; null after a failed light
- * check (the pair is taken again first), at the end, or on a half pair.
- */
-export function nextAfterPair(s: FeatureMatchState): number | null {
-  const { list, index, rec, due } = current(s);
-  if (due !== null || !rec?.a || !rec.b || warned(rec.light)) {
-    return null;
-  }
-  const step = nextStep(list, s.plan.slots, index);
-  return step.kind === "end" ? null : step.index;
-}
-
-/** "done / total", the pairs complete without a failed light check. */
+/** "done / total": shots with a photo whose light check did not fail. */
 export function progressText(s: FeatureMatchState): string {
-  const list = planSlots(s.plan);
+  const photos = planPhotos(s.plan);
+  const list = planShots(s.plan);
   const done = list.filter(
-    (sl) => slotStatus(s.plan.slots[sl.id]) === "done",
+    (sh) => photos[sh.id] && !warned(lightOf(sh.id, photos)),
   ).length;
   return `${String(done)} / ${String(list.length)}`;
 }
 
-/** One class per slot for the progress segments. */
+/** One class per shot for the progress segments. */
 export function segClasses(s: FeatureMatchState): string[] {
-  return planSlots(s.plan).map((sl, i) => {
-    if (i === s.plan.current) {
-      return "cur";
-    }
-    const k = keptState(s.plan, sl.id);
-    return k === "saved"
-      ? "saved"
-      : k === "warn"
-        ? "warn"
-        : k === "kept" || k === "done"
-          ? "kept"
-          : "";
-  });
-}
-
-/** Complete takes not downloaded yet: what Download all adds. */
-export function downloadCount(s: FeatureMatchState): number {
-  const list = planSlots(s.plan);
-  return (
-    doneCount(list, s.plan.slots) -
-    list.filter((sl) => {
-      const r = s.plan.slots[sl.id];
-      return r?.a && r.b && r.downloaded;
-    }).length
+  const photos = planPhotos(s.plan);
+  return planShots(s.plan).map((sh, i) =>
+    i === s.plan.current
+      ? "cur"
+      : !photos[sh.id]
+        ? ""
+        : warned(lightOf(sh.id, photos))
+          ? "warn"
+          : "kept",
   );
 }
 
-/** Between photo A and B of the dimmed pairs: the dock must not light the room. */
+/** "Download all (N)": the ready pairs, or the plain label with none. */
+export function downloadLabel(s: FeatureMatchState): string {
+  const n = readyCount(s);
+  return n > 0 ? `Download all (${String(n)})` : "Download all";
+}
+
+/** Before a dimmed shot is taken: the dock must not light the room. */
 export function nightOn(s: FeatureMatchState): boolean {
-  const { slot, rec, due } = current(s);
-  return (
-    (slot.key === "1b" || slot.key === "1c") && due === "b" && Boolean(rec?.a)
-  );
+  const c = shotContext(s);
+  return (c.shot.key === "L3" || c.shot.key === "L4") && !c.photo;
 }
 
 /** The three readouts under the buttons. */
@@ -367,16 +282,19 @@ export function readoutView(
   readonly light: Readout;
   readonly mode: Readout;
 } {
-  const { rec } = current(s);
+  const c = shotContext(s);
   const still: Readout = !motion.seen
     ? { text: "still: -", tone: "" }
     : motion.moving
       ? { text: "moving", tone: "wait" }
       : { text: "steady", tone: "good" };
-  const light: Readout = rec?.light
-    ? { text: `light ${rec.light}`, tone: rec.light === "ok" ? "good" : "wait" }
-    : rec?.a
-      ? { text: `light A ${String(Math.round(rec.a.greyMean))}`, tone: "" }
+  const light: Readout = c.light
+    ? { text: `light ${c.light}`, tone: c.light === "ok" ? "good" : "wait" }
+    : c.photo
+      ? {
+          text: `light ${c.shot.key} ${String(Math.round(c.photo.greyMean))}`,
+          tone: "",
+        }
       : { text: "light: -", tone: "" };
   const secs = s.plan.settings.countdown;
   return {
@@ -390,7 +308,7 @@ export function readoutView(
 
 /**
  * The meter ring's fill from 0 to 1: the countdown while one runs, the
- * dwell while photo B waits for the phone to rest, else empty.
+ * dwell while a shot waits for the phone to rest, else empty.
  */
 export function meterFill(s: FeatureMatchState): number {
   const c = s.guided.count;
@@ -404,43 +322,9 @@ export function meterFill(s: FeatureMatchState): number {
   return s.handsOff.phase === "waiting" && st ? stillProgress(st) : 0;
 }
 
-/** The status text of the run going (its own slot), else the photo pair's. */
-export function runStatusText(s: FeatureMatchState): string {
-  const k = s.running;
-  return k === null || k === "plan" ? s.status.run : s.status[k];
-}
-
-/** Added to a packed pair's save line when no measurement went with it. */
-export const NOT_MEASURED = "Not measured: see Results.";
-
-/** What a pair's zip needs to know of one method's result. */
-interface Measured {
-  readonly error: string | null;
-  readonly sizes: readonly { readonly error?: string | null }[];
-}
-
-/**
- * Whether the last photo-pair run measured take `seq` of `slot`: it
- * finished with results for that take, and at least one method measured
- * at least one size (a missing sift.js leaves every method in error).
- */
-export function pairMeasured(
-  s: FeatureMatchState,
-  results: readonly Measured[] | undefined,
-  slot: string,
-  seq: number,
-): boolean {
-  const r = s.planRun;
-  return (
-    r !== null &&
-    r.resultsId !== null &&
-    r.slot === slot &&
-    r.seq === seq &&
-    (results ?? []).some(
-      (m) => m.error === null && m.sizes.some((z) => !z.error),
-    )
-  );
-}
+/** The status text of the run going, else empty. */
+export const runStatusText = (s: FeatureMatchState): string =>
+  s.running === null ? "" : s.status[s.running];
 
 /** How a hands-off capture went: a throw is "failed", no picture "refused". */
 export function handsOffResult(
@@ -477,8 +361,8 @@ export function sameDrawing(
   return (
     a.phase === b.phase &&
     a.text === b.text &&
-    a.slot === b.slot &&
-    a.a === b.a &&
+    a.shot === b.shot &&
+    a.prev === b.prev &&
     Math.round(meterFill(prev) * 50) === Math.round(meterFill(next) * 50)
   );
 }
@@ -497,7 +381,7 @@ export function statusView(s: FeatureMatchState): Line {
   const c = s.guided.count;
   if (c) {
     return {
-      text: `Countdown: photo ${up(c.shot)} in ${String(c.left)} s.`,
+      text: `Countdown: ${c.shot.split("/").pop() ?? ""} in ${String(c.left)} s.`,
       tone: "",
     };
   }
@@ -513,12 +397,6 @@ export function statusView(s: FeatureMatchState): Line {
   }
   if (s.cameraStart === "failed") {
     return { text: "Camera unavailable: tap Retry camera.", tone: "bad" };
-  }
-  if (s.fileSave.text) {
-    return {
-      text: s.fileSave.text,
-      tone: s.fileSave.text.includes(NOT_MEASURED) ? "bad" : "",
-    };
   }
   const h = s.handsOff;
   if (h.phase !== "off" && h.text) {

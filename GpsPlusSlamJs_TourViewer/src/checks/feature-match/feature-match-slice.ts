@@ -1,9 +1,9 @@
 /**
  * The feature matching check page's state: one Redux slice for the whole
  * page session, shared by every view of the page. The reducers own the
- * rules of the photo test run (`run-plan.ts`: which pair a photo belongs
- * to, when a retake gets a new running number, one run or save at a
- * time), the run and speed test status, the options and the flat target
+ * rules of the photo test run (`run-plan.ts`: which shot a photo belongs
+ * to, when a retake raises its take, one run or save at a time), the run
+ * and speed test status, the options and the flat target
  * capture (its progress through `flatReducer`, the reference being
  * marked, the pose, the countdown and the prepared zip). Frames, results,
  * Blob URLs, the camera, canvases and timers live outside, in side tables
@@ -38,15 +38,14 @@ import {
 } from "./flat-target";
 import {
   EMPTY_PLAN,
-  handsOffKind,
-  maxSequence,
-  planSlots,
+  planPhotos,
   planReducer,
+  planShots,
   type PhotoMeta,
   type PlanAction,
   type RunPlan,
 } from "./run-plan";
-import { doneCount, shotDue, slotStatus } from "./plan-slots";
+import { derivedPairs, previousInScene, readyPairs, type Shot } from "./scenes";
 import {
   isStill,
   readingsLost,
@@ -58,10 +57,9 @@ import {
 
 /** One action at a time: a run (benchmark or speed test) or a save. */
 type Busy = "idle" | "running" | "saving";
-/** "plan": a run on the current plan pair's photos (the guided view). */
-type RunKind = "synthetic" | "speed" | "plan";
+type RunKind = "synthetic" | "speed";
 /** The page's one-line status texts. */
-type StatusSlot = "run" | "synthetic" | "speed" | "copy";
+type StatusSlot = "synthetic" | "speed" | "copy";
 
 /** The benchmark's options as the controls hold them (parsed at run time). */
 export interface BenchOptions {
@@ -126,30 +124,29 @@ export interface FlatState {
   readonly status: string;
 }
 
-/** What the guided view's camera button does next, beside the plan. */
+/** A countdown before the current shot's photo; its timer is the view's. */
 interface GuidedState {
-  /** The photo of the current pair being replaced; null takes the due one. */
-  readonly retake: "a" | "b" | null;
-  /** A countdown before a photo; its timer is the view's. */
-  readonly count: { readonly shot: "a" | "b"; readonly left: number } | null;
+  /** The shot it counts down for. */
+  readonly count: { readonly shot: string; readonly left: number } | null;
 }
 
 /**
- * The cockpit's hands-off photo B: "armed" after photo A until the first
- * reading (and on a move pair until the move), "waiting" for the phone to
- * rest, "taking" once it rested for the dwell (the view takes the photo),
- * then "taken", "refused" (the photo was not taken) or "failed" (the
- * readings stopped, or the capture threw). "off" with a take named means
- * that photo A is not armed again.
+ * A shot that takes itself (`handsOff` in `scenes.ts`): "armed" once the
+ * scene's previous shot has its photo, until the first reading (and on a
+ * "move" shot until the move), "waiting" for the phone to rest, "taking"
+ * once it rested for the dwell (the view takes the photo), then "taken",
+ * "refused" (the photo was not taken) or "failed" (the readings stopped,
+ * or the capture threw). "off" with a shot named means that shot is not
+ * armed again against the same previous photo.
  */
 type HandsOffPhase =
   "off" | "armed" | "waiting" | "taking" | "taken" | "refused" | "failed";
 
 interface HandsOff {
   readonly phase: HandsOffPhase;
-  /** The slot and photo A it was armed for; null arms on the next due B. */
-  readonly slot: string | null;
-  readonly a: string | null;
+  /** The shot it was armed for and the previous shot's photo id. */
+  readonly shot: string | null;
+  readonly prev: string | null;
   /** The still detector's state while armed or waiting. */
   readonly still: StillState | null;
   /** The line the status shows for it. */
@@ -158,21 +155,21 @@ interface HandsOff {
 
 const HANDS_OFF_IDLE: HandsOff = {
   phase: "off",
-  slot: null,
-  a: null,
+  shot: null,
+  prev: null,
   still: null,
   text: "",
 };
 
 export const HANDS_OFF_TEXT = {
-  still: "Hands off: photo B takes itself once the phone is still.",
-  move: "Turn the phone for photo B, or tap; it takes itself once the phone rests again.",
-  waiting: "Hold still, or tap: photo B takes itself.",
-  taking: "Taking photo B.",
-  taken: "Photo B took itself.",
-  refused: "Photo B was not taken by itself. Tap to take it.",
-  failed: "Photo B could not be taken by itself. Tap to take it.",
-  lost: "No motion readings: tap to take photo B.",
+  still: "Hands off: the photo takes itself once the phone is still.",
+  move: "Tilt the phone, or tap; the photo takes itself once the phone rests again.",
+  waiting: "Hold still, or tap: the photo takes itself.",
+  taking: "Taking the photo.",
+  taken: "The photo took itself.",
+  refused: "The photo was not taken by itself. Tap to take it.",
+  failed: "The photo could not be taken by itself. Tap to take it.",
+  lost: "No motion readings: tap to take the photo.",
 } as const;
 
 /**
@@ -185,35 +182,13 @@ interface RunZip {
   readonly text: string;
 }
 
-/**
- * A single file of the guided view's measure sheet: "preparing" holds the
- * page busy ("saving") like the run zip; the text is the line beside the
- * file buttons.
- */
-interface FileSave {
-  readonly preparing: boolean;
-  readonly text: string;
-}
-
 /** Where the page's last camera start stands, for the finder chip. */
 type CameraStart = "idle" | "starting" | "failed";
 const CAMERA_STARTS: readonly string[] = ["idle", "starting", "failed"];
 
-/** The take a plan run measured, and its results once it ended. */
-interface PlanRun {
-  readonly slot: string;
-  readonly seq: number;
-  /** Side table key of the results; null while running or with none. */
-  readonly resultsId: string | null;
-}
-
 export interface FeatureMatchState {
   /** This page load's token for the saved JSON (no time, no place). */
   readonly session: string;
-  readonly progress: {
-    /** The newest pair's running number; kept across reloads. */
-    readonly sequence: number;
-  };
   readonly camera: boolean;
   readonly busy: Busy;
   readonly running: RunKind | null;
@@ -230,9 +205,7 @@ export interface FeatureMatchState {
   readonly plan: RunPlan;
   readonly guided: GuidedState;
   readonly handsOff: HandsOff;
-  readonly planRun: PlanRun | null;
   readonly runZip: RunZip;
-  readonly fileSave: FileSave;
   readonly cameraStart: CameraStart;
   /** A plan photo the browser's database refused is not stored yet. */
   readonly photoStoreFailing: boolean;
@@ -260,33 +233,24 @@ const DEFAULT_SPEED_OPTIONS: SpeedOptions = {
 
 export interface InitialInput {
   readonly session: string;
-  readonly progress?: { readonly sequence: number };
   readonly flat?: FlatProgress;
   readonly plan?: RunPlan;
 }
 
-/**
- * The first state. The running number starts above every number the stored plan holds, so
- * a stored plan and stored progress that disagree never reuse a name.
- */
+/** The first state. */
 export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
-  const plan = i.plan ?? EMPTY_PLAN;
-  const sequence = Math.max(i.progress?.sequence ?? 0, maxSequence(plan));
   return {
     session: i.session,
-    plan,
-    guided: { retake: null, count: null },
+    plan: i.plan ?? EMPTY_PLAN,
+    guided: { count: null },
     handsOff: HANDS_OFF_IDLE,
-    planRun: null,
     runZip: { phase: "idle", text: "" },
-    fileSave: { preparing: false, text: "" },
     cameraStart: "idle",
     photoStoreFailing: false,
-    progress: { sequence },
     camera: false,
     busy: "idle",
     running: null,
-    status: { run: "", synthetic: "", speed: "", copy: "" },
+    status: { synthetic: "", speed: "", copy: "" },
     table: [],
     report: "",
     log: [],
@@ -336,28 +300,43 @@ export function flatPhase(f: FlatState): FlatPhase {
   return f.preview ? "check" : "corners";
 }
 
+/** The current shot, if the list has one at `current`. */
+export const currentShot = (p: RunPlan): Shot | undefined =>
+  planShots(p)[p.current];
+
+/** The photo of the scene's shot before the current one, if any. */
+function previousPhoto(p: RunPlan): PhotoMeta | undefined {
+  const prev = previousInScene(planShots(p), p.current);
+  return prev ? p.shots[prev.id]?.photo : undefined;
+}
+
 /**
- * Whether photo B is due to take itself: the setting is "auto", the
- * camera on, nothing busy and no countdown or retake; the current pair is
- * one the motion sensor can judge (`handsOffKind`), its photo A is taken
- * and B is missing; and this photo A was not armed before.
+ * Whether the current shot is due to take itself: the setting is "auto",
+ * the camera on, nothing busy and no countdown; the shot is one the
+ * motion sensor can judge (`handsOff`), it has no photo yet and the
+ * scene's previous shot has one; and it was not armed against that
+ * previous photo before.
  */
 export function handsOffDue(s: FeatureMatchState): boolean {
-  const slot = planSlots(s.plan)[s.plan.current];
-  const rec = slot ? s.plan.slots[slot.id] : undefined;
+  const shot = currentShot(s.plan);
+  const prev = previousPhoto(s.plan);
   const h = s.handsOff;
   return (
     s.plan.settings.capture === "auto" &&
     s.camera &&
     s.busy === "idle" &&
     s.guided.count === null &&
-    s.guided.retake === null &&
-    slot !== undefined &&
-    handsOffKind(slot.key) !== null &&
-    shotDue(rec, null) === "b" &&
-    !(h.slot === slot.id && h.a === rec?.a?.id)
+    shot !== undefined &&
+    shot.handsOff !== null &&
+    s.plan.shots[shot.id] === undefined &&
+    prev !== undefined &&
+    !(h.shot === shot.id && h.prev === prev.id)
   );
 }
+
+/** The run has a pair whose two shots have a photo. */
+export const anyPairReady = (p: RunPlan): boolean =>
+  readyPairs(derivedPairs(p.spots, p.extra), planPhotos(p)).length > 0;
 
 /** The first pose not yet complete, else the first. */
 const firstOpenPose = (s: SurfaceProgress): PoseId =>
@@ -369,9 +348,6 @@ type Draft = { -readonly [K in keyof FeatureMatchState]: FeatureMatchState[K] };
 type FlatDraft = { -readonly [K in keyof FlatState]: FlatState[K] };
 
 const plain = <T>(v: T): T => (isDraft(v) ? current(v as ImmerDraft<T>) : v);
-
-/** The status line a run writes to. */
-const statusOf = (k: RunKind): StatusSlot => (k === "plan" ? "run" : k);
 
 function setStatus(s: Draft, slot: StatusSlot, text: string): void {
   s.status = { ...s.status, [slot]: text };
@@ -429,29 +405,20 @@ const planCase =
       return;
     }
     const before = plain(s.plan);
-    const next = planReducer(before, s.progress.sequence, action);
-    if (next.plan === before) {
+    const next = planReducer(before, action);
+    if (next === before) {
       return;
     }
-    s.plan = next.plan;
-    if (next.sequence !== s.progress.sequence) {
-      s.progress = { ...s.progress, sequence: next.sequence };
-    }
+    s.plan = next;
     if (TARGET_CHANGES.has(action.type)) {
-      s.guided = { retake: null, count: null };
+      s.guided = { count: null };
     }
     if (action.type === "photo") {
       endHandsOff(s);
     } else if (TARGET_CHANGES.has(action.type) || action.type === "lost") {
-      // A lost photo A ends the wait too: B must not match a gone A.
+      // A lost previous photo ends the wait too: the shot must not be
+      // taken against a gone photo.
       s.handsOff = HANDS_OFF_IDLE;
-    }
-    if (
-      (action.type === "photo" && s.planRun?.slot === action.slot) ||
-      action.type === "reset" ||
-      action.type === "size"
-    ) {
-      s.planRun = null;
     }
     // A saved or failed zip no longer holds the plan's photos.
     if (
@@ -461,25 +428,7 @@ const planCase =
     ) {
       s.runZip = { phase: "idle", text: "" };
     }
-    // The single-file line names one pair's file; a file being prepared
-    // keeps its own line until it ends.
-    if (
-      FILE_LINE_STALE.has(action.type) &&
-      !s.fileSave.preparing &&
-      s.fileSave.text !== ""
-    ) {
-      s.fileSave = { preparing: false, text: "" };
-    }
   };
-
-/** Plan actions after which the single-file line names another pair's file. */
-const FILE_LINE_STALE: ReadonlySet<PlanAction["type"]> = new Set([
-  "photo",
-  "lost",
-  "move",
-  "size",
-  "reset",
-]);
 
 /** Plan actions after which a zip made before holds other photos. */
 const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([
@@ -489,7 +438,7 @@ const STALE_ZIP: ReadonlySet<PlanAction["type"]> = new Set([
   "reset",
 ]);
 
-/** Plan actions after which a retake target or countdown means another photo. */
+/** Plan actions after which a countdown means another shot. */
 const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
   "photo",
   "move",
@@ -497,18 +446,12 @@ const TARGET_CHANGES: ReadonlySet<PlanAction["type"]> = new Set([
   "reset",
 ]);
 
-/** Ends an armed or waiting hands-off photo; that photo A stays named. */
+/** Ends an armed or waiting hands-off shot; its previous photo stays named. */
 function endHandsOff(s: Draft): void {
   const p = s.handsOff.phase;
   if (p === "armed" || p === "waiting") {
     s.handsOff = { ...s.handsOff, phase: "off", still: null, text: "" };
   }
-}
-
-/** The current plan slot and its record, if any. */
-function currentSlot(s: Draft) {
-  const slot = planSlots(s.plan)[s.plan.current];
-  return { slot, rec: slot ? s.plan.slots[slot.id] : undefined };
 }
 
 const slice = createSlice({
@@ -528,42 +471,32 @@ const slice = createSlice({
         return;
       }
       const kind = a.payload;
-      if (kind === "plan") {
-        const { slot, rec } = currentSlot(s);
-        const st = slotStatus(rec);
-        if (!slot || !rec || (st !== "done" && st !== "retake")) {
-          return;
-        }
-        s.planRun = { slot: slot.id, seq: rec.seq, resultsId: null };
-        s.guided = { ...s.guided, count: null };
+      if (kind !== "synthetic" && kind !== "speed") {
+        return;
       }
       endHandsOff(s);
+      // A count that ran on would shoot into a refused photo.
+      s.guided = { count: null };
       s.busy = "running";
       s.running = kind;
-      setStatus(s, statusOf(kind), "running");
+      setStatus(s, kind, "running");
     },
     /** A line from the run in progress, shown on its status. */
     runProgressed(s: Draft, a: PayloadAction<string>) {
       if (s.running === null) {
         return;
       }
-      setStatus(s, statusOf(s.running), `running: ${a.payload}`);
+      setStatus(s, s.running, `running: ${a.payload}`);
     },
-    /** The run in progress ended; a plan run keeps its results' id. */
-    runFinished(
-      s: Draft,
-      a: PayloadAction<{ text: string; resultsId: string | null }>,
-    ) {
+    /** The run in progress ended. */
+    runFinished(s: Draft, a: PayloadAction<{ text: string }>) {
       const kind = s.running;
       if (s.busy !== "running" || kind === null) {
         return;
       }
       s.busy = "idle";
       s.running = null;
-      setStatus(s, statusOf(kind), a.payload.text);
-      if (kind === "plan" && s.planRun) {
-        s.planRun = { ...s.planRun, resultsId: a.payload.resultsId };
-      }
+      setStatus(s, kind, a.payload.text);
     },
     statusSet(s: Draft, a: PayloadAction<{ slot: StatusSlot; text: string }>) {
       setStatus(s, a.payload.slot, a.payload.text);
@@ -591,26 +524,11 @@ const slice = createSlice({
       ...p,
     })),
     planMoved: planCase((index: number) => ({ type: "move", index })),
-    planPhotoTaken: planCase(
-      (p: { slot: string; which: "a" | "b"; photo: PhotoMeta }) => ({
-        type: "photo",
-        ...p,
-      }),
-    ),
-    planPhotoLost: planCase((p: { slot: string; which: "a" | "b" }) => ({
-      type: "lost",
+    planShotTaken: planCase((p: { shot: string; photo: PhotoMeta }) => ({
+      type: "photo",
       ...p,
     })),
-    planFileKept: planCase((p: { id: string; name: string; slot: string }) => ({
-      type: "keep",
-      ...p,
-    })),
-    planFilesDownloaded: planCase((ids: readonly string[]) => ({
-      type: "downloaded",
-      ids,
-    })),
-    planRunDownloaded: planCase((_: void) => ({ type: "run-downloaded" })),
-    planKeptDropped: planCase((_: void) => ({ type: "drop-downloaded" })),
+    planShotLost: planCase((shot: string) => ({ type: "lost", shot })),
     planSettingsChanged: planCase(
       (settings: Readonly<Record<string, unknown>>) => ({
         type: "settings",
@@ -619,35 +537,13 @@ const slice = createSlice({
     ),
     planReset: planCase((_: void) => ({ type: "reset" })),
     /**
-     * Tap on thumbnail A or B: that photo is retaken next, a second tap
-     * takes it back. Refused while counting or busy, and for a photo the
-     * current pair does not hold.
-     */
-    guidedRetakeToggled(s: Draft, a: PayloadAction<"a" | "b">) {
-      const which = a.payload;
-      const { rec } = currentSlot(s);
-      if (
-        s.guided.count !== null ||
-        s.busy !== "idle" ||
-        (which !== "a" && which !== "b") ||
-        !rec?.[which]
-      ) {
-        return;
-      }
-      s.guided = {
-        ...s.guided,
-        retake: s.guided.retake === which ? null : which,
-      };
-      endHandsOff(s);
-    },
-    /**
      * A countdown second, or null to end it (taken or cancelled). Refused
-     * while busy, for a photo that is not the one due, and for a count
+     * while busy, for a shot that is not the current one, and for a count
      * that is not a whole number of at least 1.
      */
     guidedCountSet(
       s: Draft,
-      a: PayloadAction<{ shot: "a" | "b"; left: number } | null>,
+      a: PayloadAction<{ shot: string; left: number } | null>,
     ) {
       const c = a.payload;
       if (c === null) {
@@ -656,12 +552,11 @@ const slice = createSlice({
         }
         return;
       }
-      const { rec } = currentSlot(s);
       if (
         s.busy !== "idle" ||
         !Number.isInteger(c.left) ||
         c.left < 1 ||
-        shotDue(rec, s.guided.retake) !== c.shot
+        currentShot(s.plan)?.id !== c.shot
       ) {
         return;
       }
@@ -669,23 +564,24 @@ const slice = createSlice({
       endHandsOff(s);
     },
     /**
-     * Photo B starts waiting to take itself, from page time `t`; refused
-     * unless `handsOffDue` and `t` is finite.
+     * The current shot starts waiting to take itself, from page time `t`;
+     * refused unless `handsOffDue` and `t` is finite.
      */
     handsOffArmed(s: Draft, a: PayloadAction<number>) {
       const t = a.payload;
       if (!Number.isFinite(t) || !handsOffDue(s)) {
         return;
       }
-      const { slot, rec } = currentSlot(s);
-      const kind = slot ? handsOffKind(slot.key) : null;
-      if (!slot || !rec?.a || kind === null) {
+      const shot = currentShot(s.plan);
+      const prev = previousPhoto(s.plan);
+      const kind = shot?.handsOff;
+      if (!shot || !prev || !kind) {
         return;
       }
       s.handsOff = {
         phase: "armed",
-        slot: slot.id,
-        a: rec.a.id,
+        shot: shot.id,
+        prev: prev.id,
         still: stillStart(t, kind === "move"),
         text: HANDS_OFF_TEXT[kind],
       };
@@ -755,15 +651,13 @@ const slice = createSlice({
         s.handsOff = HANDS_OFF_IDLE;
       }
     },
-    /** Download all starts packing; refused unless idle with a complete pair. */
+    /** Download all starts packing; refused unless idle with a ready pair. */
     runZipStarted(s: Draft) {
-      if (
-        s.busy !== "idle" ||
-        doneCount(planSlots(s.plan), s.plan.slots) === 0
-      ) {
+      if (s.busy !== "idle" || !anyPairReady(plain(s.plan))) {
         return;
       }
       s.busy = "saving";
+      s.guided = { count: null };
       s.runZip = {
         phase: "preparing",
         text: "Packing the photos. Keep this page open.",
@@ -779,22 +673,6 @@ const slice = createSlice({
       }
       s.busy = "idle";
       s.runZip = { phase: a.payload.phase, text: a.payload.text };
-    },
-    /** One file of the measure sheet is prepared; refused unless idle. */
-    planFileSaveStarted(s: Draft) {
-      if (s.busy !== "idle") {
-        return;
-      }
-      s.busy = "saving";
-      s.fileSave = { preparing: true, text: "preparing..." };
-    },
-    /** That file was saved, not saved or failed, as the text says. */
-    planFileSaveEnded(s: Draft, a: PayloadAction<string>) {
-      if (s.busy !== "saving" || !s.fileSave.preparing) {
-        return;
-      }
-      s.busy = "idle";
-      s.fileSave = { preparing: false, text: a.payload };
     },
     cameraStartSet(s: Draft, a: PayloadAction<CameraStart>) {
       if (CAMERA_STARTS.includes(a.payload)) {

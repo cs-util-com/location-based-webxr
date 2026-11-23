@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
+  currentShot,
   currentSurface,
   featureMatchActions as A,
   featureMatchReducer,
@@ -11,8 +12,6 @@ import {
   type FeatureMatchState,
 } from "./feature-match-slice";
 import { POSES, SURFACE_CLASSES } from "./flat-target";
-import { shotDue } from "./plan-slots";
-import { planSlots } from "./run-plan";
 
 const start = (): FeatureMatchState =>
   initialFeatureMatchState({ session: "s" });
@@ -39,51 +38,36 @@ const planPhoto = fc.record({
   ),
 });
 
-/** Every action of runs, saves and plan photos, valid or not. */
+const SHOTS = ["light-s1/L1", "light-s1/L2", "light-s1/L3", "flat-s1/F1"];
+
+/** Every action of runs, saves and shot photos, valid or not. */
 const busyAction: fc.Arbitrary<FeatureMatchAction> = fc.oneof(
   fc
-    .record({
-      slot: fc.constantFrom("1a-s1", "1b-s1", "2a-s1"),
-      which: fc.constantFrom("a" as const, "b" as const),
-      photo: planPhoto,
-    })
-    .map((p) => A.planPhotoTaken(p)),
+    .record({ shot: fc.constantFrom(...SHOTS), photo: planPhoto })
+    .map((p) => A.planShotTaken(p)),
+  fc.constantFrom(...SHOTS).map((s) => A.planShotLost(s)),
   fc
-    .constantFrom("plan" as const, "synthetic" as const, "speed" as const)
+    .constantFrom("synthetic" as const, "speed" as const)
     .map((k) => A.runStarted(k)),
   fc.string({ maxLength: 4 }).map((t) => A.runProgressed(t)),
-  fc
-    .record({
-      text: fc.constant("done"),
-      resultsId: fc.constantFrom("r1", null),
-    })
-    .map((p) => A.runFinished(p)),
+  fc.constant(A.runFinished({ text: "done" })),
   fc.constant(A.runZipStarted()),
   fc
     .constantFrom("idle" as const, "saved" as const, "failed" as const)
     .map((phase) => A.runZipEnded({ phase, text: phase })),
-  fc.constant(A.planFileSaveStarted()),
-  fc.constant(A.planFileSaveEnded("x")),
   fc.constant(A.planReset()),
 );
 
 describe("one run or save at a time, properties", () => {
   // Why: these are the rules the page's buttons rely on; any action order
   // a user can produce must keep them.
-  it("keeps busy, the run kind, the saves and the numbering consistent", () => {
+  it("keeps busy, the run kind and the zip consistent", () => {
     fc.assert(
       fc.property(fc.array(busyAction, { maxLength: 40 }), (actions) => {
-        const all = states(actions);
-        for (const [i, s] of all.entries()) {
+        for (const s of states(actions)) {
           expect(s.busy === "running").toBe(s.running !== null);
-          // "saving" is exactly a zip or a single file in preparation.
-          expect(s.busy === "saving").toBe(
-            s.runZip.phase === "preparing" || s.fileSave.preparing,
-          );
-          // The running number never goes back.
-          expect(s.progress.sequence).toBeGreaterThanOrEqual(
-            all[i - 1]?.progress.sequence ?? 0,
-          );
+          // "saving" is exactly the run zip in preparation.
+          expect(s.busy === "saving").toBe(s.runZip.phase === "preparing");
         }
       }),
     );
@@ -160,48 +144,43 @@ describe("guided capture state properties", () => {
   });
   const guidedAction: fc.Arbitrary<FeatureMatchAction> = fc.oneof(
     fc
-      .record({
-        slot: fc.constantFrom("1a-s1", "1b-s1", "2a-s1"),
-        which: fc.constantFrom("a" as const, "b" as const),
-        photo: guidedPhoto,
-      })
-      .map((p) => A.planPhotoTaken(p)),
-    fc.integer({ min: -1, max: 4 }).map((i) => A.planMoved(i)),
-    fc
-      .constantFrom("a" as const, "b" as const)
-      .map((w) => A.guidedRetakeToggled(w)),
+      .record({ shot: fc.constantFrom(...SHOTS), photo: guidedPhoto })
+      .map((p) => A.planShotTaken(p)),
+    fc.integer({ min: -1, max: 14 }).map((i) => A.planMoved(i)),
     fc
       .option(
         fc.record({
-          shot: fc.constantFrom("a" as const, "b" as const),
+          shot: fc.constantFrom(...SHOTS),
           left: fc.integer({ min: 0, max: 5 }),
         }),
       )
       .map((c) => A.guidedCountSet(c)),
     fc
-      .constantFrom("plan" as const, "speed" as const)
+      .constantFrom("synthetic" as const, "speed" as const)
       .map((k) => A.runStarted(k)),
-    fc.constant(A.runFinished({ text: "done", resultsId: "r1" })),
+    fc.constant(A.runFinished({ text: "done" })),
     fc.constant(A.planReset()),
   );
 
-  // Why: the camera button trusts these two fields; a retake target on a
-  // photo the pair lacks, or a countdown for a photo that is not due,
-  // would take the wrong photo or none.
-  it("keeps the retake target on a held photo and the countdown on the due one", () => {
+  // Why: the camera button trusts the countdown; a countdown for a shot
+  // that is not on screen, or during a run, would take the wrong photo.
+  it("keeps the countdown on the current shot, idle and at least 1", () => {
     fc.assert(
       fc.property(fc.array(guidedAction, { maxLength: 40 }), (actions) => {
         for (const s of states(actions)) {
-          const slot = planSlots(s.plan)[s.plan.current]!;
-          const rec = s.plan.slots[slot.id];
-          const { retake, count } = s.guided;
-          expect(!retake || Boolean(rec?.[retake])).toBe(true);
-          expect(count ? count.shot : null).toBe(
-            count ? shotDue(rec, retake) : null,
-          );
-          expect(!count || count.left >= 1).toBe(true);
-          expect(s.running !== "plan" || s.planRun?.slot !== undefined).toBe(
-            true,
+          const { count } = s.guided;
+          expect(
+            count && {
+              shot: count.shot,
+              atLeast1: count.left >= 1,
+              busy: s.busy,
+            },
+          ).toEqual(
+            count && {
+              shot: currentShot(s.plan)?.id,
+              atLeast1: true,
+              busy: "idle",
+            },
           );
         }
       }),

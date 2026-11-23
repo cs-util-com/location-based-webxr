@@ -27,10 +27,10 @@ Whether the phone has come to rest, from `devicemotion` rotation rates: the rule
 
 ## Parameter sweep (the values rest on it)
 
-Synthetic traces at 60 Hz with a seeded generator (a stand 0.5 deg/s per axis, a hand 1.5, a shaky hand 2.5, carrying 40-120), 5 seeds. Every claim below is asserted in `still-detector.test.ts`:
+Synthetic traces at 60 Hz with a seeded generator (a stand 0.5 deg/s per axis, a hand 1.5, a shaky hand 2.5, carrying 40-120), 5 seeds. Every claim below is asserted in `still-detector.test.ts`, the counts over all 5 seeds:
 
-- **Threshold** 2 to 16: a stand rests at 2 and 3, a hand fails at 2, a shaky hand at 3 and mostly at 4; from 6 to 16 every resting profile fires within dwell + 100 ms. No carry with 0.4 s pauses fires at any threshold up to 16, and a slow carry (8-20 deg/s per axis) never fires.
-- **Dwell** 0.8 to 2.5 s: the dwell is what guards a pause while the phone is carried. A 1.2 s pause takes B at 0.8 s (5 of 5 seeds); at 1 s and from 1.5 s up, never.
+- **Threshold** 2 to 16: a stand rests at 2 and 3 (5 of 5 seeds), a hand fails at 2 (0 of 5), a shaky hand at 3 (0 of 5) and mostly at 4 (at most 2 of 5 rest); from 6 to 16 every resting profile fires within dwell + 100 ms. No carry with 0.4 s pauses fires at any threshold up to 16, and a slow carry (8-20 deg/s per axis) never fires.
+- **Dwell** 0.8 to 2.5 s: the dwell is what guards a pause while the phone is carried. A 1.2 s pause takes B at 0.8 s (5 of 5 seeds); at 1 s and from 1.5 s up, never (0 of 5).
 - **What would reverse it:** a tester who pauses longer than the dwell while moving the phone gets B early. A lower threshold (4 or less) would never let a shaky hand take B by itself. Neither was measured on a real phone: the traces are synthetic.
 
 ## Example
@@ -38,7 +38,8 @@ Synthetic traces at 60 Hz with a seeded generator (a stand 0.5 deg/s per axis, a
 ```ts
 let st = stillStart(performance.now(), false);
 window.addEventListener("devicemotion", (ev) => {
-  st = stillStep(st, { t: ev.timeStamp, rate: ev.rotationRate });
+  // One clock with the watchdog that calls readingsLost.
+  st = stillStep(st, { t: performance.now(), rate: ev.rotationRate });
   if (isStill(st)) takePhotoB();
 });
 ```

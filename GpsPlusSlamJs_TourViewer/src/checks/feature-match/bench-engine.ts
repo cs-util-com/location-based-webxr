@@ -1,7 +1,7 @@
 /**
  * The measuring part of the feature matching page, shared by both views:
- * the options, the benchmark runs (on the camera pair, the plan's current
- * pair or the synthetic pair), the speed test, the results table, the
+ * the options, the benchmark run on the synthetic pair, the speed test (on
+ * the flat scene's F1 and F2 when both are taken), the results table, the
  * result pictures, the report, Copy log and the log. All measuring is in
  * `bench-run.ts` and `bench-timing.ts`; this file only touches the DOM and
  * browser APIs.
@@ -28,12 +28,7 @@ import {
   type DeviceInfo,
   type TableRow,
 } from "./bench-report";
-import {
-  runBenchmark,
-  type BenchInput,
-  type MethodResult,
-  type SizeResult,
-} from "./bench-run";
+import { runBenchmark, type BenchInput, type SizeResult } from "./bench-run";
 import { formatMs } from "./bench-stats";
 import { syntheticPair } from "./bench-synthetic";
 import {
@@ -50,7 +45,6 @@ import {
   type SpeedOptions,
 } from "./feature-match-slice";
 import type { FeatureMatchStore } from "./feature-match-store";
-import { planPairOf, speedPairOf, type PlanPair } from "./guided-model";
 import { ortWasmThreads } from "./method-aliked";
 import type { DinoVariant } from "./method-dino";
 import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
@@ -70,9 +64,8 @@ const PICTURE_MAX_WIDTH = 640;
 /** Match lines drawn per picture at most (spread evenly over all). */
 const PICTURE_LINE_CAP = 200;
 const PICTURE_GAP = 8;
-
-/** The input pairs a benchmark run can measure. */
-type BenchKind = "synthetic" | "plan";
+/** The speed test's photo pair: the flat scene's two upright shots. */
+const SPEED_SHOTS = { a: "flat-s1/F1", b: "flat-s1/F2" } as const;
 
 export const $ = <T extends HTMLElement>(root: ParentNode, sel: string): T => {
   const el = root.querySelector<T>(sel);
@@ -265,8 +258,6 @@ export interface BenchEngineDeps {
 }
 
 export interface BenchEngine {
-  /** Runs the benchmark on `kind`'s pair; one run or save at a time. */
-  startRun(kind: BenchKind): void;
   /** Draws the measuring block from the state. */
   render(): void;
   /** Device facts, or dashes when the browser refuses them. */
@@ -276,7 +267,7 @@ export interface BenchEngine {
 /** Wires the measuring block found under `root`. */
 export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   const { root, fm, log, fail, stamp, stopCamera } = deps;
-  const { store, sides, newId, accepted, put } = fm;
+  const { store, sides, accepted } = fm;
   const ui = findUi(root);
   const state = (): FeatureMatchState => store.getState();
 
@@ -371,27 +362,13 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
 
   // --- runs -------------------------------------------------------------------
 
-  const pairOf = (
-    kind: BenchKind,
-    plan: PlanPair | null = planPairOf(state(), sides.frames),
-  ): RunPair | null => {
-    if (kind === "synthetic") {
-      const p = syntheticPair(640, 480, SYNTHETIC_SEED);
-      return {
-        input: { a: p.a, b: p.b, warp: p.warp },
-        text: `synthetic (seed ${String(SYNTHETIC_SEED)}, known warp) ${frameText("A", p.a)}; ${frameText("B", p.b)}`,
-        pair: null,
-      };
-    }
-    const p = plan;
-    if (!p) {
-      fail("input", new Error("take photo A and B of this pair first"));
-      return null;
-    }
+  /** The synthetic pair with its known warp. */
+  const syntheticInput = (): RunPair => {
+    const p = syntheticPair(640, 480, SYNTHETIC_SEED);
     return {
-      input: { a: p.a.frame, b: p.b.frame, warp: null },
-      text: `pair ${p.slot.id} ${frameText("A", p.a.frame)}; ${frameText("B", p.b.frame)}`,
-      pair: p.slot.key,
+      input: { a: p.a, b: p.b, warp: p.warp },
+      text: `synthetic (seed ${String(SYNTHETIC_SEED)}, known warp) ${frameText("A", p.a)}; ${frameText("B", p.b)}`,
+      pair: null,
     };
   };
 
@@ -458,14 +435,9 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fig.append(canvas);
   };
 
-  const runOnce = async (
-    kind: BenchKind,
-  ): Promise<{ text: string; results: MethodResult[] | null }> => {
+  const runOnce = async (): Promise<string> => {
     store.dispatch(A.errorsCleared());
-    const pair = pairOf(kind);
-    if (!pair) {
-      return { text: "not run: no input", results: null };
-    }
+    const pair = syntheticInput();
     const o = state().options;
     // A protocol pair sets runs, warm-up, backend and model file itself.
     const settings = runSettings(
@@ -485,10 +457,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     const gaps = selectionGaps(selection);
     if (gaps.length > 0) {
       fail("options", new Error(gaps.join("; ")));
-      return {
-        text: "not run: a ticked method has nothing to run on (see log)",
-        results: null,
-      };
+      return "not run: a ticked method has nothing to run on (see log)";
     }
     const methods = buildMethods(selection, browserDeps);
     const sizes = chosenSizes(o);
@@ -497,7 +466,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
         "options",
         new Error("tick at least one method, backend, model file and size"),
       );
-      return { text: "not run: nothing ticked", results: null };
+      return "not run: nothing ticked";
     }
     const { runs, warmup } = settings;
     stopCamera();
@@ -557,41 +526,32 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     const failed = results.filter(
       (r) => r.error !== null || r.sizes.some((s) => s.error !== null),
     ).length;
-    const text =
-      failed === 0
-        ? `done: ${String(results.length)} methods`
-        : `done: ${String(results.length)} methods, ${String(failed)} with errors (see log)`;
-    return { text, results };
+    return failed === 0
+      ? `done: ${String(results.length)} methods`
+      : `done: ${String(results.length)} methods, ${String(failed)} with errors (see log)`;
   };
 
-  /** Ends the run in progress; a photo pair's results are kept beside the state. */
-  const finishRun = (text: string, results: MethodResult[] | null): void => {
-    const kind = state().running;
-    const resultsId = results && kind === "plan" ? newId("results") : null;
-    put(
-      sides.results,
-      resultsId && results ? [[resultsId, results]] : [],
-      A.runFinished({ text, resultsId }),
-    );
+  /** Ends the run in progress. */
+  const finishRun = (text: string): void => {
+    store.dispatch(A.runFinished({ text }));
   };
 
-  function startRun(kind: BenchKind): void {
+  ui.runSynthetic.addEventListener("click", () => {
     // A control set by script fires no event: read them all once more.
     optionsChanged();
-    if (!accepted(A.runStarted(kind))) {
+    if (!accepted(A.runStarted("synthetic"))) {
       return;
     }
-    runOnce(kind)
-      .then(({ text, results }) => {
+    runOnce()
+      .then((text) => {
         log(text);
-        finishRun(text, results);
+        finishRun(text);
       })
       .catch((e: unknown) => {
         fail("run", e);
-        finishRun("failed (see log)", null);
+        finishRun("failed (see log)");
       });
-  }
-  ui.runSynthetic.addEventListener("click", () => startRun("synthetic"));
+  });
 
   /** One of `allowed` by its text, else `fallback`. */
   const pickNumber = <T extends number>(
@@ -600,10 +560,22 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fallback: T,
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
-  /** The speed test's pair: a photo pair (`speedPairOf`), else synthetic. */
-  const speedPair = (): RunPair | null => {
-    const p = speedPairOf(state(), sides.frames);
-    return p ? pairOf("plan", p) : pairOf("synthetic");
+  /** The speed test's pair: the flat scene's F1 and F2 when taken, else synthetic. */
+  const speedPair = (): RunPair => {
+    const shots = state().plan.shots;
+    const frame = (shot: string) => {
+      const id = shots[shot]?.photo.id;
+      return id === undefined ? undefined : sides.frames.get(id)?.frame;
+    };
+    const a = frame(SPEED_SHOTS.a);
+    const b = frame(SPEED_SHOTS.b);
+    return a && b
+      ? {
+          input: { a, b, warp: null },
+          text: `pair ${SPEED_SHOTS.a} + ${SPEED_SHOTS.b} ${frameText("A", a)}; ${frameText("B", b)}`,
+          pair: "2a",
+        }
+      : syntheticInput();
   };
 
   /**
@@ -614,9 +586,6 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   const runSpeedOnce = async (): Promise<string> => {
     store.dispatch(A.errorsCleared());
     const pair = speedPair();
-    if (!pair) {
-      return "not run: no input";
-    }
     const o = state().speedOptions;
     const { backends, note } = timingBackends(
       backendsFrom(o.backends),
@@ -718,11 +687,11 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     runSpeedOnce()
       .then((text) => {
         log(text);
-        finishRun(text, null);
+        finishRun(text);
       })
       .catch((e: unknown) => {
         fail("speed test", e);
-        finishRun(`failed: ${errorText(e)}`, null);
+        finishRun(`failed: ${errorText(e)}`);
       });
   });
 
@@ -742,5 +711,5 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   });
 
   optionsChanged();
-  return { startRun, render, deviceInfo };
+  return { render, deviceInfo };
 }
