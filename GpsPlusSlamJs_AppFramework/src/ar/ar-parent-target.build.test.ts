@@ -1,7 +1,8 @@
 /**
  * Why this test matters: the synthetic world jump (`?devWorldJumpM`,
- * `?devWorldJumpDeg`) moves every anchored object on purpose. It must never
- * reach a visitor, so its URL reader has to vanish from a production build.
+ * `?devWorldJumpDeg`) moves every anchored object on purpose, and the
+ * deferral switch (`?anchors=0`) lets every correction jump in view. Neither
+ * may reach a visitor, so their URL readers have to vanish from a production build.
  * This bundles the binding's module the way an app's production build sees
  * it (`import.meta.env.DEV` false, minified) and asserts the reader is gone;
  * the same build with `DEV` true is the control that it would be found.
@@ -91,15 +92,20 @@ async function bundle(dev: boolean): Promise<string> {
   );
 }
 
-describe('the dev world jump in a production build', () => {
+/** The deferral switch's URL parameter name as a string literal. */
+const ANCHORS_PARAM = /["'`]anchors["'`]/;
+
+describe('the dev readers in a production build', () => {
   it('is dropped when import.meta.env.DEV is false', async () => {
     const code = await bundle(false);
     expect(code.length).toBeGreaterThan(0);
     expect(code).not.toContain('devWorldJump');
+    expect(code).not.toMatch(ANCHORS_PARAM);
   });
 
   it('is present when import.meta.env.DEV is true (control)', async () => {
     const code = await bundle(true);
     expect(code).toContain('devWorldJump');
+    expect(code).toMatch(ANCHORS_PARAM);
   });
 });

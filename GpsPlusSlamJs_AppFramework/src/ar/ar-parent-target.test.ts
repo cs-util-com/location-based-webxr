@@ -15,9 +15,11 @@ import {
 } from 'gps-plus-slam-js';
 import {
   DEV_WORLD_JUMP_PERIOD_S,
+  anchorDeferralFromPage,
   createArParentTarget,
   devWorldJumpFromPage,
   getArParentBinding,
+  parseAnchorDeferral,
   parseDevWorldJump,
   registerArParentBinding,
   type ArParentBinding,
@@ -258,6 +260,35 @@ describe('the dev jump from the page', () => {
     } finally {
       g.location = before;
     }
+  });
+});
+
+// Why: `?anchors=0` is the field test's switch for a frame-time comparison
+// with the deferral off; any other value, or none, must keep it on, and a
+// target says which it is to the anchor sets that read it.
+describe('the anchor deferral switch from the page', () => {
+  it('is off only for anchors=0', () => {
+    expect(parseAnchorDeferral('?anchors=0')).toBe(false);
+    expect(parseAnchorDeferral('?debug=1&anchors=0')).toBe(false);
+    expect(parseAnchorDeferral('')).toBe(true);
+    expect(parseAnchorDeferral('?anchors=1')).toBe(true);
+    expect(parseAnchorDeferral('?anchors=')).toBe(true);
+    expect(parseAnchorDeferral('?anchors=off')).toBe(true);
+  });
+
+  it('reads the page under import.meta.env.DEV, and a target carries it', () => {
+    const g = globalThis as { location?: unknown };
+    const before = g.location;
+    g.location = { search: '?anchors=0' };
+    try {
+      expect(anchorDeferralFromPage()).toBe(false);
+    } finally {
+      g.location = before;
+    }
+    expect(createArParentTarget(fakeStore()).defersAnchors).toBe(true);
+    expect(
+      createArParentTarget(fakeStore(), { deferAnchors: false }).defersAnchors
+    ).toBe(false);
   });
 });
 

@@ -70,11 +70,24 @@ into)` (writes the target local position, returns the threshold below
     commit).
   - `AnchorSetMembership`: `leave()` and the test seam
     `runPassForTests(view, dt, elapsedS)`.
+- `observeDeferredAnchorPasses(observer): () => void`: a diagnostic
+  observer (one at a time; a newer one replaces) that sees every production
+  pass of every set as `DeferredAnchorPassSample { passMs, dt, counts,
+deferring }`. `passMs` is the pass's `performance.now()` span, measured
+  only while an observer is set, so a page without one pays nothing. A
+  throwing observer is logged and the frame goes on. The returned stop
+  clears it only while it is still the current one. `TypeError` for a
+  non-function. The Tour Viewer's `?debug=1` anchor log uses it.
 - `__runPassForTests(parent, cameraOrView, dt, elapsedS)`: test only. Runs
   the binding's alignment step and one pass; returns
   `{ sphereTests, traversals, windowOpen, followUpdates }`.
 
 ## Phases, in pass order
+
+With the deferral off (`target.defersAnchors` false, `?anchors=0` in
+development builds) every key follows each frame as in phase 4, and every
+pending member commits at once (`deferral-off`), so every correction lands
+at once; the set logs `deferral off` once when it is created.
 
 1. The previous frame's view is re-expressed by the parent's motion since
    then, so "in view last frame" means the same content rays after a T step.
@@ -170,7 +183,9 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   and renewed at a fresh traversal, follow in the parent frame, a correction
   frame (the group lands on T, a visible anchor holds), nesting, the
   binding-dispose fallback, the dev jump agreement and the per-pass budget
-  (20 keys x 30 meshes, follow updates skipped while the parent is still).
+  (20 keys x 30 meshes, follow updates skipped while the parent is still),
+  the deferral switch (an in-view key lands on every correction) and the
+  pass observer (production passes, stop, a throwing observer).
 - `deferred-anchors.property.test.ts`: random T, look, epoch, camera jump,
   release and maturity sequences; safety (an in-view change only at a
   release, or to the NUE pose while the oracle's own model says a follow is
@@ -182,6 +197,6 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   binding's T against the caller's alignment, nesting, a second
   above-threshold correction inside one window, a member that joined before
   the binding moved to the bound set and leaving it on dispose, a refused
-  one kept running).
+  one kept running, a member in view landing at once with the deferral off).
 - `deferred-anchors.structure.test.ts`: no dispatch and no store slice
   imports in the anchor modules.
