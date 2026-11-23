@@ -32,13 +32,12 @@ const HELD = ["landing", "setup-stage", "setup-map", "setup-card"] as const;
  *  own late layout (a picture's first frame, a font) lands within it. */
 const HOLD_GRACE_MS = 1000;
 
-/** A scroll by less than this is the hold's own position read back
- *  (sub-pixel rounding), not the reader's. */
+/** A move of the stage by less than this is the hold's own position
+ *  read back (sub-pixel rounding), not the reader's. */
 const OWN_SCROLL_PX = 1;
 
 /** The window slice the hold reads. */
 interface HoldView {
-  readonly scrollY: number;
   addEventListener(type: "scroll", listener: () => void): void;
   removeEventListener(type: "scroll", listener: () => void): void;
   setTimeout(handler: () => void, ms: number): unknown;
@@ -64,9 +63,11 @@ export interface HoldOptions {
  * now and on every resize of those parts. It ends, for good:
  * - on the reader's first wheel, touch, key or pointer input (the inline
  *   script marks `"moved"`),
- * - on a scroll to a position the hold did not set (`"moved"`): a
- *   scrollbar drag or a screen reader's browse mode sends none of those
- *   inputs, and
+ * - on a scroll that moves the stage from where the hold put it
+ *   (`"moved"`): a scrollbar drag or a screen reader's browse mode sends
+ *   none of those inputs. A scroll that leaves the stage in place (the
+ *   browser's scroll anchoring, whose scroll event may come before the
+ *   resize callback) does not end it, and
  * - `graceMs` after `until` settled (`"released"`).
  * Does nothing for a page that did not skip. Because `main.ts` runs its
  * wiring synchronously, the stage's parts are revealed before `until`
@@ -81,7 +82,12 @@ export function holdLandingSkip(
   const view: HoldView = options.view ?? window;
   const Observer =
     "Observer" in options ? options.Observer : globalThis.ResizeObserver;
-  let setY = view.scrollY;
+  const stage = doc.getElementById("setup-stage");
+  /** The stage's top in the viewport where the hold last put it. A
+   *  scroll that leaves it there (the browser's scroll anchoring, as
+   *  content mounts above the stage) is not the reader's move. */
+  const stageTop = (): number => stage?.getBoundingClientRect().top ?? 0;
+  let setTop = 0;
   let watch: ResizeObserver | undefined;
 
   const end = (as: "moved" | "released"): void => {
@@ -95,14 +101,14 @@ export function holdLandingSkip(
       return;
     }
     reassertLandingSkip(doc);
-    setY = view.scrollY;
+    setTop = stageTop();
   };
   function onScroll(): void {
     if (mark["landingSkip"] !== "applied") {
       end("released");
       return;
     }
-    if (Math.abs(view.scrollY - setY) > OWN_SCROLL_PX) end("moved");
+    if (Math.abs(stageTop() - setTop) > OWN_SCROLL_PX) end("moved");
   }
 
   putBack();

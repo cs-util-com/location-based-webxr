@@ -421,12 +421,16 @@ describe("holdLandingSkip", () => {
     const dataset: Record<string, string> =
       mark === undefined ? {} : { landingSkip: mark };
     const fake = fakeView();
+    /** Where the stage sits on the page; content mounting above it
+     *  moves it down. */
+    const stage = { y: STAGE_Y };
     const node = (id: string) => ({
       id,
       scrollIntoView: (options: ScrollIntoViewOptions) => {
         scrolled.push(options);
-        fake.view.scrollY = STAGE_Y;
+        fake.view.scrollY = stage.y;
       },
+      getBoundingClientRect: () => ({ top: stage.y - fake.view.scrollY }),
     });
     const nodes = new Map(
       ["landing", "setup-stage", "setup-map", "setup-card"].map((id) => [
@@ -438,7 +442,7 @@ describe("holdLandingSkip", () => {
       documentElement: { dataset },
       getElementById: (id: string) => nodes.get(id) ?? null,
     };
-    return { doc: doc as unknown as Document, scrolled, dataset, fake };
+    return { doc: doc as unknown as Document, scrolled, dataset, fake, stage };
   }
 
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -516,6 +520,25 @@ describe("holdLandingSkip", () => {
     FakeResize.last?.resize();
     expect(scrolled).toHaveLength(1);
     expect(fake.listening()).toBe(0);
+  });
+
+  // Content that mounts above the stage grows the page, and the browser's
+  // scroll anchoring scrolls by the same amount so the stage stays where
+  // it is. That scroll event can arrive before the resize callback puts
+  // the stage back, so it must not read as the reader's move: what the
+  // reader moves is the stage, not only the scroll position.
+  it("keeps holding through a browser scroll that leaves the stage in place", () => {
+    const { doc, dataset, fake, stage } = page("applied");
+    holdLandingSkip(doc, {
+      Observer: FakeResize as unknown as typeof ResizeObserver,
+      view: fake.view,
+    });
+    stage.y += 300;
+    fake.scrollTo(STAGE_Y + 300);
+    expect(dataset["landingSkip"]).toBe("applied");
+    FakeResize.last?.resize();
+    fake.scrollTo(stage.y - 300);
+    expect(dataset["landingSkip"]).toBe("moved");
   });
 
   it("watches nothing without a skip", () => {
