@@ -44,7 +44,6 @@ import {
   NOTHING_COPIED,
   NOTHING_SELECTED,
   NOTHING_TO_CUT,
-  ONLY_NOTES_AND_FOLDERS,
 } from "../clipboard.js";
 import {
   stationContent,
@@ -3106,8 +3105,7 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(disabled("edit-delete")).toBe(true);
 
     select("station:a");
-    expect(disabled("edit-copy")).toBe(true);
-    expect(item("edit-copy").title).toBe(ONLY_NOTES_AND_FOLDERS);
+    expect(disabled("edit-copy")).toBe(false);
     expect(disabled("edit-duplicate")).toBe(false);
     expect(disabled("edit-delete")).toBe(false);
     item("edit-duplicate").click();
@@ -3127,6 +3125,10 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(item("edit-paste").title).toBe("Paste into Station b (Ctrl+V)");
     item("edit-paste").click();
     expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+
+    // A copied station goes after the selected one.
+    store.dispatch(editorViewActions.copied({ ids: ["station:a"] }));
+    expect(item("edit-paste").title).toBe("Paste after Station b (Ctrl+V)");
     shell.hide();
   });
 

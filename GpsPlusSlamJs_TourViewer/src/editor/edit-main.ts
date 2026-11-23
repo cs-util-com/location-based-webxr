@@ -1623,6 +1623,26 @@ async function pasteSelection(): Promise<void> {
     toast(plan.reason);
     return;
   }
+  if (plan.kind === "pasteStories") {
+    pasteStories(mine, plan);
+    return;
+  }
+  if (plan.kind === "pasteStations") {
+    endUndo();
+    await runHeldEdit({
+      ...heldEditOnPage(mine, "Pasting..."),
+      run: () => mine.pasteStations(plan),
+      made: (outcome) => {
+        const n = outcome.stations.length;
+        const [first] = outcome.stations;
+        if (first === undefined) return;
+        showNewStation(first, () =>
+          n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`,
+        );
+      },
+    });
+    return;
+  }
   if (plan.kind !== "paste") {
     pasteCut(plan);
     return;
@@ -1643,6 +1663,30 @@ async function pasteSelection(): Promise<void> {
       tourChanged();
     },
   });
+}
+
+/** A Paste of copied stories into `plan.toStationId` (`pasteOf`): one
+ *  step; the first copy selected and its station shown; a refusal said. */
+function pasteStories(
+  mine: EditorSession,
+  plan: Extract<PasteOutcome, { kind: "pasteStories" }>,
+): void {
+  endUndo();
+  const outcome = mine.pasteStories(plan);
+  refresh();
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  const [first] = outcome.stories;
+  showRowsOf(plan.toStationId);
+  if (first !== undefined) {
+    store.dispatch(editorViewActions.storyFolded({ id: first, open: true }));
+    select(`${STORY_PREFIX}${first}`);
+  }
+  const n = outcome.stories.length;
+  toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
+  tourChanged();
 }
 
 /** What `runHeldEdit` takes from the page for an edit by `mine`: the

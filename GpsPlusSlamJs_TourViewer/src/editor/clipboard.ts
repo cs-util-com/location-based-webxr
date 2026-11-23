@@ -22,6 +22,7 @@ import {
   type TourFolder,
   type TourStationChild,
   tourChildPlace,
+  tourStories,
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
@@ -65,7 +66,8 @@ interface CutMove {
 }
 
 /** What a Paste would do: copy these notes and plain folders into the
- *  station `toStationId`; for a cut, move these items onto it, or put the
+ *  station `toStationId`, these stations after `afterStationId`, or
+ *  these stories into `toStationId` after `afterStory`; for a cut, move these items onto it, or put the
  *  cut stations after `afterStationId` (`order`, every station once);
  *  or why it cannot. */
 export type PasteOutcome =
@@ -74,6 +76,18 @@ export type PasteOutcome =
       readonly toStationId: string;
       readonly objects: readonly string[];
       readonly folders: readonly PastedFolder[];
+    }
+  | {
+      readonly kind: "pasteStations";
+      readonly afterStationId: string;
+      readonly stations: readonly string[];
+    }
+  | {
+      readonly kind: "pasteStories";
+      readonly toStationId: string;
+      /** The story the copies follow; null: after the station's last. */
+      readonly afterStory: string | null;
+      readonly stories: readonly string[];
     }
   | {
       readonly kind: "move";
@@ -88,12 +102,16 @@ export type PasteOutcome =
   | { readonly kind: "refused"; readonly reason: string };
 
 /** Said when there is nothing to copy. */
-export const NOTHING_SELECTED = "Select a note or a folder to copy it";
+export const NOTHING_SELECTED =
+  "Select a station, a story, a note or a folder to copy it";
 /** Said when the selection holds what Copy does not copy. */
-export const ONLY_NOTES_AND_FOLDERS = "Only notes and folders can be copied";
+export const NOT_COPYABLE =
+  "Copy a station, a story, a note or a folder - a story's entry goes with its story";
+/** Said for a selection that mixes stations, stories and notes. */
+export const COPY_ONE_KIND =
+  "Copy stations, stories, or notes and folders - one of them at a time";
 /** Said when the clipboard is empty. */
-export const NOTHING_COPIED =
-  "Nothing to paste - copy a note or a folder first";
+export const NOTHING_COPIED = "Nothing to paste - copy something first";
 /** Said when the selection names no station to paste into. */
 export const SELECT_A_TARGET =
   "Select a station, or something in one, to paste into it";
@@ -218,9 +236,33 @@ function selectionRows(view: EditorViewState): readonly string[] {
   return view.selected === null ? [] : [view.selected];
 }
 
+/** What a copied selection id is: a station, a story, or a note or plain
+ *  folder (one kind, pasted together); null for anything else. */
+type CopyKind = "station" | "story" | "item";
+
+function copyKindOf(lookup: Lookup, id: string): CopyKind | null {
+  const { manifest } = lookup;
+  if (manifest === null) return null;
+  if (id.startsWith(STATION_PREFIX)) {
+    const stationId = id.slice(STATION_PREFIX.length);
+    return manifest.stations.some((s) => s.id === stationId) ? "station" : null;
+  }
+  if (id.startsWith(STORY_PREFIX)) {
+    const storyId = id.slice(STORY_PREFIX.length);
+    return manifest.stations.some((s) =>
+      tourStories(s).some((t) => t.id === storyId),
+    )
+      ? "story"
+      : null;
+  }
+  return sourceOf(lookup, id) === null ? null : "item";
+}
+
 /** What Copy would copy with `view`'s selection in `doc`: every picked
- *  row (or the one selected) when each is a note or a plain folder;
- *  refused for nothing selected and for any other row among them. */
+ *  row (or the one selected) when they are all stations, all stories, or
+ *  all notes and plain folders; refused for nothing selected, for any
+ *  other row among them (a story's entry, a code, an unknown id) and for
+ *  a mix of those kinds. */
 export function copyOf(
   doc: TourDocumentState,
   view: EditorViewState,
@@ -228,8 +270,10 @@ export function copyOf(
   const rows = selectionRows(view);
   if (rows.length === 0) return { kind: "refused", reason: NOTHING_SELECTED };
   const lookup = lookupOf(doc);
-  if (rows.some((id) => sourceOf(lookup, id) === null)) {
-    return { kind: "refused", reason: ONLY_NOTES_AND_FOLDERS };
+  const kinds = rows.map((id) => copyKindOf(lookup, id));
+  if (kinds.includes(null)) return { kind: "refused", reason: NOT_COPYABLE };
+  if (new Set(kinds).size > 1) {
+    return { kind: "refused", reason: COPY_ONE_KIND };
   }
   return { kind: "copy", ids: rows };
 }
@@ -286,6 +330,13 @@ export function pasteOf(
   if (clipboard.mode === "cut") {
     return cutPasteOf(lookup, clipboard.ids, view.selected);
   }
+  const [first] = clipboard.ids;
+  if (first?.startsWith(STATION_PREFIX) === true) {
+    return stationsPasteOf(lookup, clipboard.ids, view.selected);
+  }
+  if (first?.startsWith(STORY_PREFIX) === true) {
+    return storiesPasteOf(lookup, clipboard.ids, view.selected);
+  }
   const toStationId = pasteTargetOf(lookup, view.selected);
   if (toStationId === null) {
     return { kind: "refused", reason: SELECT_A_TARGET };
@@ -310,6 +361,56 @@ export function pasteOf(
     folders: kept
       .filter((s) => s.kind === "folder")
       .map((s) => ({ stationId: s.stationId, folderId: s.id })),
+  };
+}
+
+/** A Paste of copied stations (D3): after the station the selection
+ *  names, whatever in it is selected; refused for no station and for a
+ *  copied station gone since. */
+function stationsPasteOf(
+  lookup: Lookup,
+  ids: readonly string[],
+  selected: string | null,
+): PasteOutcome {
+  const afterStationId = selectedStationOf(selected, lookup.manifest);
+  if (afterStationId === null) {
+    return { kind: "refused", reason: SELECT_A_TARGET };
+  }
+  if (ids.some((id) => copyKindOf(lookup, id) !== "station")) {
+    return { kind: "refused", reason: COPIED_GONE };
+  }
+  return {
+    kind: "pasteStations",
+    afterStationId,
+    stations: ids.map((id) => id.slice(STATION_PREFIX.length)),
+  };
+}
+
+/** A Paste of copied stories (D3): after the selected story, or the story
+ *  of the selected entry; else at the end of the stories of the station
+ *  the selection names. Refused for no station and for a copied story
+ *  gone since. */
+function storiesPasteOf(
+  lookup: Lookup,
+  ids: readonly string[],
+  selected: string | null,
+): PasteOutcome {
+  const { manifest } = lookup;
+  const toStationId = selectedStationOf(selected, manifest);
+  if (toStationId === null || selected === null || manifest === null) {
+    return { kind: "refused", reason: SELECT_A_TARGET };
+  }
+  if (ids.some((id) => copyKindOf(lookup, id) !== "story")) {
+    return { kind: "refused", reason: COPIED_GONE };
+  }
+  const afterStory = selected.startsWith(STORY_PREFIX)
+    ? selected.slice(STORY_PREFIX.length)
+    : (tourChildPlace(manifest, selected)?.story?.id ?? null);
+  return {
+    kind: "pasteStories",
+    toStationId,
+    afterStory,
+    stories: ids.map((id) => id.slice(STORY_PREFIX.length)),
   };
 }
 

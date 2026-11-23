@@ -588,7 +588,8 @@ else shell.hide();
   title until the selection allows it, Paste's title naming the target
   station, and a click calling the clipboard, Cut's states, the tree's
   `data-cut` dimming of a pending cut and Paste titled "Move to" or
-  "Move after" for it, the station commands or
+  "Move after" for it, Paste titled "Paste after" for copied stations,
+  the station commands or
   the delete; Duplicate offered for a plain folder and a story, as
   Ctrl+D copies them; Paste and Duplicate disabled with
   `EDIT_STILL_RUNNING` while the store's `duplicating` is set; the fold steps at every band in

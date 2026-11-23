@@ -140,3 +140,145 @@ describe("a Paste of a cut", () => {
     );
   });
 });
+
+/** New ids for the station `id` of `state` and everything in it:
+ *  `<id>2` for the station, `<child>2` for each child and each item. */
+function stationCopy(state: TourDocumentState, id: string, after: string) {
+  const station = tour(state).stations.find((s) => s.id === id);
+  if (station === undefined) throw new Error(`no station ${id}`);
+  return {
+    stationId: id,
+    newStationId: `${id}2`,
+    newItemIds: Object.fromEntries(
+      tourStationChildIds(station).map((c) => [c, `${c}2`]),
+    ),
+    createdAtIso: "2026-11-23T00:00:00.000Z",
+    after,
+  };
+}
+
+// Why: a Paste of copied stations (D3) puts each copy after the station
+// selected, in the order copied, beside it, every item under a new id;
+// the lot is ONE step one undo takes back exactly, and a copy that
+// cannot be made (a taken id) makes none of them.
+describe("a Paste of copied stations", () => {
+  it("puts the copies after the target in the order copied, under new ids, as one step", () => {
+    const start = opened();
+    const after = reduce(
+      start,
+      act.stationsPasted({
+        copies: [stationCopy(start, "a", "b"), stationCopy(start, "b", "a2")],
+        what: "the paste of 2 stations",
+      }),
+    );
+    const stations = tour(after).stations;
+    expect(stations.map((s) => s.id)).toEqual(["a", "b", "a2", "b2"]);
+    expect(childIds(after, "a2")).toEqual(
+      expect.arrayContaining(["n2", "o2", "t2", "t-card2"]),
+    );
+    expect(childIds(after, "a")).toEqual(childIds(start, "a"));
+    expect(after.past.length).toBe(start.past.length + 1);
+    expect(after.past.at(-1)?.what).toBe("the paste of 2 stations");
+    // Beside the target: the copy of a stands east of b, not of a.
+    const geo = (id: string) => stations.find((s) => s.id === id)?.geo.lon;
+    expect(geo("a2")).toBeGreaterThan(geo("b") ?? Infinity);
+    expect(geo("b2")).toBeGreaterThan(geo("a2") ?? Infinity);
+    expect(tour(reduce(after, act.undone()))).toEqual(tour(start));
+  });
+
+  it("makes none when one copy cannot be made, and none for an empty list", () => {
+    const start = opened();
+    const taken = { ...stationCopy(start, "b", "a2"), newStationId: "a" };
+    for (const copies of [[stationCopy(start, "a", "b"), taken], []]) {
+      expect(reduce(start, act.stationsPasted({ copies, what: "p" }))).toBe(
+        start,
+      );
+    }
+  });
+});
+
+// Why: a Paste of a copied story (D3) puts the copy after the selected
+// story, or at the end of the target station's stories, in any station;
+// its entries get new ids, the lot is one step, undone exactly.
+describe("a Paste of copied stories", () => {
+  const copy = (to: string, after: string | undefined, n: string) => ({
+    story: "t",
+    newIds: { t: `t${n}`, "t-card": `t-card${n}` },
+    toStationId: to,
+    ...(after === undefined ? {} : { after }),
+  });
+
+  it("puts each copy after the story named, or at the end of the station's stories, as one step", () => {
+    const start = opened();
+    const after = reduce(
+      start,
+      act.storiesPasted({
+        copies: [
+          copy("a", "t", "2"),
+          copy("a", "t2", "3"),
+          copy("b", undefined, "4"),
+        ],
+        what: "the paste of 3 stories",
+      }),
+    );
+    // Stories are listed before the free notes (the writer's order).
+    expect(childIds(after, "a")).toEqual([
+      "t",
+      "t-card",
+      "t2",
+      "t-card2",
+      "t3",
+      "t-card3",
+      "n",
+      "o",
+    ]);
+    expect(childIds(after, "b")).toEqual(
+      expect.arrayContaining(["e", "t4", "t-card4"]),
+    );
+    expect(after.past.length).toBe(start.past.length + 1);
+    expect(tour(reduce(after, act.undone()))).toEqual(tour(start));
+  });
+
+  it("makes none when a copy names a station or a story the tour lacks, or takes an id", () => {
+    const start = opened();
+    for (const copies of [
+      [copy("a", "t", "2"), copy("nope", undefined, "3")],
+      [{ ...copy("a", "t", "2"), story: "nope" }],
+      [{ ...copy("b", undefined, "2"), newIds: { t: "e", "t-card": "x" } }],
+      [],
+    ]) {
+      expect(reduce(start, act.storiesPasted({ copies, what: "p" }))).toBe(
+        start,
+      );
+    }
+  });
+
+  // The property: any number of copies into either station keeps every
+  // id unique, is one step, and is undone exactly.
+  it("keeps ids unique and is one undoable step for any set of copies (property)", () => {
+    const start = opened();
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom("a", "b"), { minLength: 1, maxLength: 4 }),
+        (targets) => {
+          const after = reduce(
+            start,
+            act.storiesPasted({
+              copies: targets.map((to, i) =>
+                copy(to, undefined, String(i + 2)),
+              ),
+              what: "p",
+            }),
+          );
+          const all = tour(after).stations.flatMap((s) =>
+            tourStationChildIds(s),
+          );
+          expect(new Set(all).size).toBe(all.length);
+          expect(all.length).toBe(5 + 2 * targets.length);
+          expect(after.past.length).toBe(start.past.length + 1);
+          expect(tour(reduce(after, act.undone()))).toEqual(tour(start));
+        },
+      ),
+    );
+  });
+});

@@ -849,7 +849,7 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `copySelection` (Ctrl+C, the Edit menu's Copy) puts the selected note
     or plain folder, or every picked row, on the store's clipboard
     (`clipboard.ts`'s `copyOf`, then `copied`) and says "Copied ..."; a
-    refusal is said ("Only notes and folders can be copied");
+    refusal is said (`NOT_COPYABLE`, `COPY_ONE_KIND`);
   - `pasteSelection` (Ctrl+V, the Edit menu's Paste) pastes the
     clipboard into the station the selection names (`pasteOf`, then the
     session's `paste`): one undo step, the station's rows unfolded, the
@@ -872,6 +872,11 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     Escape cancels it (`escapeAction`'s `clearCut`, "Cut cancelled"), and
     `refresh` empties a cut whose source an edit or an undo removed
     (`cutGone`);
+  - a Paste of copied stations (the session's `pasteStations`, through
+    `runHeldEdit`) shows and selects the first copy (`showNewStation`);
+    one of copied stories (`pasteStories`) unfolds the target station and
+    selects the first copy; either says "Pasted a copy" or "Pasted <n>
+    copies", one undo step;
   - a Paste of a cut (`pasteCut`) moves the items onto the target
     station (the session's `moveChildren`) or reorders the stations, ONE
     undo step that keeps ids, with no station-move question first (the

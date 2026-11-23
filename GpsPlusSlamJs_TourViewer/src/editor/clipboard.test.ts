@@ -25,6 +25,7 @@ import {
 } from "../tour-document.js";
 import {
   COPIED_GONE,
+  COPY_ONE_KIND,
   copyOf,
   CUT_ONE_KIND,
   CUT_SAME_STATION,
@@ -37,8 +38,8 @@ import {
   FOLDER_SCALE_TOO_FAR,
   NOTE_IN_RESIZED_FOLDER,
   NOTHING_COPIED,
+  NOT_COPYABLE,
   NOTHING_SELECTED,
-  ONLY_NOTES_AND_FOLDERS,
   pasteOf,
   SELECT_A_TARGET,
 } from "./clipboard.js";
@@ -139,24 +140,117 @@ describe("what Copy copies", () => {
     });
   });
 
-  // A station, a story, a story's entry and an unknown id are not copied
-  // yet; one of them among picked rows refuses the lot,
-  // rather than copying part of what the creator meant.
+  it("copies stations, or stories, alone or picked", () => {
+    expect(copyOf(doc, view("station:a"))).toEqual({
+      kind: "copy",
+      ids: ["station:a"],
+    });
+    expect(
+      copyOf(doc, view(null, { picked: ["station:b", "station:a"] })),
+    ).toEqual({ kind: "copy", ids: ["station:b", "station:a"] });
+    expect(copyOf(doc, view("story:t"))).toEqual({
+      kind: "copy",
+      ids: ["story:t"],
+    });
+  });
+
+  // A story's entry belongs to its story, a code is read-only, and an
+  // unknown id names nothing; one of them among picked rows refuses the
+  // lot, rather than copying part of what the creator meant.
   it.each([
-    ["a station", "station:a"],
-    ["a story", "story:t"],
     ["a story's entry", "t-card"],
     ["an unknown id", "nope"],
     ["an unknown folder", "folder:nope"],
+    ["an unknown station", "station:nope"],
+    ["an unknown story", "story:nope"],
   ])("refuses %s", (_what, id) => {
     expect(copyOf(doc, view(id))).toEqual({
       kind: "refused",
-      reason: ONLY_NOTES_AND_FOLDERS,
+      reason: NOT_COPYABLE,
     });
     expect(copyOf(doc, view(id, { picked: ["n", id] }))).toEqual({
       kind: "refused",
-      reason: ONLY_NOTES_AND_FOLDERS,
+      reason: NOT_COPYABLE,
     });
+  });
+
+  // Why: each kind pastes somewhere else (a station after a station, a
+  // story among stories, a note into a station), so one paste cannot
+  // take a mix of them; notes and folders together are one kind.
+  it.each([
+    ["a station and a note", ["station:a", "n"]],
+    ["a story and a folder", ["story:t", "folder:f"]],
+    ["a station and a story", ["station:b", "story:t"]],
+  ])("refuses %s together", (_what, picked) => {
+    expect(copyOf(doc, view(null, { picked }))).toEqual({
+      kind: "refused",
+      reason: COPY_ONE_KIND,
+    });
+  });
+});
+
+describe("what a Paste of copied stations and stories does", () => {
+  const doc = opened();
+  const copied = (ids: string[]) => ({ mode: "copy" as const, ids });
+
+  // D3: a station copy goes after the selected station in the tour's
+  // order (and is placed beside it), whatever in that station is
+  // selected.
+  it("pastes stations after the station the selection names", () => {
+    for (const [selected, after] of [
+      ["station:b", "b"],
+      ["e", "b"],
+      ["story:t", "a"],
+      ["folder:g", "a"],
+    ] as const) {
+      expect(
+        pasteOf(doc, view(selected, { clipboard: copied(["station:a"]) })),
+      ).toEqual({
+        kind: "pasteStations",
+        afterStationId: after,
+        stations: ["a"],
+      });
+    }
+  });
+
+  // D3: a story copy goes after the selected story (or the story of the
+  // selected entry), else at the end of the selected station's stories.
+  it("pastes stories after the selected story, else at the end of the station's stories", () => {
+    for (const selected of ["story:t", "t-card"]) {
+      expect(
+        pasteOf(doc, view(selected, { clipboard: copied(["story:t"]) })),
+      ).toEqual({
+        kind: "pasteStories",
+        toStationId: "a",
+        afterStory: "t",
+        stories: ["t"],
+      });
+    }
+    for (const selected of ["station:b", "e"]) {
+      expect(
+        pasteOf(doc, view(selected, { clipboard: copied(["story:t"]) })),
+      ).toEqual({
+        kind: "pasteStories",
+        toStationId: "b",
+        afterStory: null,
+        stories: ["t"],
+      });
+    }
+  });
+
+  it("refuses no target, and a copied station or story gone since", () => {
+    for (const ids of [["station:a"], ["story:t"]]) {
+      for (const selected of [null, "level-1"]) {
+        expect(
+          pasteOf(doc, view(selected, { clipboard: copied(ids) })),
+        ).toEqual({ kind: "refused", reason: SELECT_A_TARGET });
+      }
+    }
+    for (const ids of [["station:nope"], ["story:nope"]]) {
+      expect(
+        pasteOf(doc, view("station:b", { clipboard: copied(ids) })),
+      ).toEqual({ kind: "refused", reason: COPIED_GONE });
+    }
   });
 });
 
@@ -315,8 +409,7 @@ describe("what a Paste of a cut does", () => {
   const doc = opened();
   const cut = (ids: readonly string[], selected: string | null) =>
     pasteOf(doc, view(selected, { clipboard: { mode: "cut", ids } }));
-  const onto = (station: string) =>
-    ({ place: "station", station }) as const;
+  const onto = (station: string) => ({ place: "station", station }) as const;
 
   it("moves notes, stories and story entries onto the station the selection names", () => {
     expect(cut(["n", "story:t", "t-card"], "station:b")).toEqual({

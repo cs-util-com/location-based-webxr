@@ -425,6 +425,12 @@ export interface EditorHeld<T> {
   readonly landed: Promise<T | null>;
 }
 
+/** What `pasteStations` made: the copies' station ids, in order. */
+interface EditorPastedStations {
+  readonly kind: "pasted";
+  readonly stations: readonly string[];
+}
+
 /** A paste made: its copies' ids, notes and folders, in the plan's order. */
 interface EditorPasted {
   readonly kind: "pasted";
@@ -1212,6 +1218,28 @@ export interface EditorSession {
       readonly folderId: string;
     }[];
   }): Promise<EditorPasted | EditorHeld<EditorPasted> | EditorRefusal>;
+  /** Copies of the stations `plan.stations` with their items (each
+   *  photo's picture read first, as for `duplicateStation`), after the
+   *  station `plan.afterStationId` in the tour's order and beside it, in
+   *  the order given: ONE step. `stations`: the copies' ids. Refused for
+   *  a station the tour lacks and a picture that cannot be read; `held`
+   *  while the edit waits for the draft question. */
+  pasteStations(plan: {
+    readonly afterStationId: string;
+    readonly stations: readonly string[];
+  }): Promise<
+    EditorPastedStations | EditorHeld<EditorPastedStations> | EditorRefusal
+  >;
+  /** Copies of the stories `plan.stories` (everything in them under new
+   *  ids, titled "... copy") into the station `plan.toStationId`, after
+   *  the story `plan.afterStory` (null: after its last story), in the
+   *  order given: ONE step. `stories`: the copies' ids. Refused for a
+   *  story the tour lacks. */
+  pasteStories(plan: {
+    readonly toStationId: string;
+    readonly afterStory: string | null;
+    readonly stories: readonly string[];
+  }): { kind: "pasted"; stories: string[] } | EditorRefusal;
   /** Set a plain folder's scale (0.1 to 10 times): its whole group grows
    *  about its origin, sizes and distances alike. One step. Refused for a
    *  folder the tour lacks, a scale out of the bounds, and one that takes
@@ -1825,6 +1853,88 @@ export function createEditorSession(input: {
   }
 
   const notApplied: EditorRefusal = { kind: "refused", reason: NOT_APPLIED };
+
+  /** Copies of the stations `stationIds` after the station `after`, each
+   *  after the one before and beside it, as ONE step named `what`
+   *  (`stationsPasted`): every photo's picture read first and held under
+   *  its copy's id, every child under a new id. */
+  async function copyStations(
+    stationIds: readonly string[],
+    after: string,
+    what: string,
+  ): Promise<
+    EditorPastedStations | EditorHeld<EditorPastedStations> | EditorRefusal
+  > {
+    const state = mine();
+    if (state === null) return notInTour;
+    // Any station the next write carries, as the reducer reads it.
+    const stations = manifestNow(state)?.stations ?? [];
+    const frames = stationIds.map((id) => stations.find((s) => s.id === id));
+    if (
+      frames.length === 0 ||
+      !stations.some((s) => s.id === after) ||
+      frames.some((f) => f === undefined)
+    ) {
+      return noSuchStation;
+    }
+    const items = documentObjects(state)
+      .map((o) => o.object)
+      .filter((o) => o.station !== undefined && stationIds.includes(o.station));
+    const read = await picturesOf(items);
+    if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
+    const createdAtIso = new Date().toISOString();
+    let anchor = after;
+    const copies = frames.flatMap((frame) => {
+      if (frame === undefined) return [];
+      // Every child of the station gets a new id, its stories' and theirs
+      // too: child ids are unique across the tour.
+      const blockIds = new Set([
+        ...items.filter((o) => o.station === frame.id).map((o) => o.id),
+        ...tourStationChildIds(frame),
+      ]);
+      const copy = {
+        stationId: frame.id,
+        newStationId: newObjectId(),
+        newItemIds: Object.fromEntries(
+          [...blockIds].map((id) => [id, newObjectId()]),
+        ),
+        createdAtIso,
+        after: anchor,
+      };
+      anchor = copy.newStationId;
+      return [copy];
+    });
+    // The pictures under the copies' ids before the copies exist: the
+    // draft's write of each copy carries its picture.
+    const pictured: string[] = [];
+    for (const [id, blob] of read) {
+      for (const copy of copies) {
+        const copyId = copy.newItemIds[id];
+        if (copyId === undefined) continue;
+        files.set(copyId, blob);
+        pictured.push(copyId);
+      }
+    }
+    const was = doc().revision;
+    const out = store.dispatch(
+      tourDocumentActions.stationsPasted({ copies, what }),
+    );
+    const made: EditorPastedStations = {
+      kind: "pasted",
+      stations: copies.map((c) => c.newStationId),
+    };
+    const [first] = made.stations;
+    if (isHeldEdit(out)) {
+      return heldUntilLanded(out, pictured, () =>
+        manifestNow(own())?.stations.some((s) => s.id === first) === true
+          ? made
+          : null,
+      );
+    }
+    if (doc().revision !== was) return made;
+    for (const copyId of pictured) files.delete(copyId);
+    return mine() === null ? notInTour : notApplied;
+  }
   const noSuchFolder: EditorRefusal = {
     kind: "refused",
     reason: NO_SUCH_FOLDER,
@@ -3276,58 +3386,93 @@ export function createEditorSession(input: {
         : { kind: "refused", reason: NOT_AN_ORDER };
     },
     async duplicateStation(stationId) {
-      const state = mine();
-      if (state === null) return notInTour;
-      // Any station the next write carries, as the reducer reads it.
-      const frame = manifestNow(state)?.stations.find(
+      const frame = manifestNow(doc())?.stations.find(
         (s) => s.id === stationId,
       );
-      if (frame === undefined) return noSuchStation;
-      const items = documentObjects(state)
-        .map((o) => o.object)
-        .filter((o) => o.station === stationId);
-      const read = await picturesOf(items);
-      if (read === null) return { kind: "refused", reason: PICTURE_UNREAD };
-      // Every child of the station gets a new id, its stories' and theirs
-      // too: child ids are unique across the tour.
-      const blockIds = new Set([
-        ...items.map((o) => o.id),
-        ...tourStationChildIds(frame),
-      ]);
-      const newItemIds = Object.fromEntries(
-        [...blockIds].map((id) => [id, newObjectId()]),
+      if (frame === undefined)
+        return mine() === null ? notInTour : noSuchStation;
+      const outcome = await copyStations(
+        [stationId],
+        stationId,
+        `the copy of ${stationName(frame)}`,
       );
-      const newStationId = newObjectId();
-      // The pictures under the copies' ids before the copies exist: the
-      // draft's write of each copy carries its picture.
-      const pictured: string[] = [];
-      for (const [id, blob] of read) {
-        const copyId = newItemIds[id];
-        if (copyId === undefined) continue;
-        files.set(copyId, blob);
-        pictured.push(copyId);
+      const duplicated = (made: EditorPastedStations) => ({
+        kind: "duplicated" as const,
+        stationId: made.stations[0] ?? "",
+      });
+      if (outcome.kind === "pasted") return duplicated(outcome);
+      if (outcome.kind === "held") {
+        return {
+          kind: "held",
+          landed: outcome.landed.then((made) =>
+            made === null ? null : duplicated(made),
+          ),
+        };
       }
-      const was = doc().revision;
-      const out = store.dispatch(
-        tourDocumentActions.stationDuplicated({
-          stationId,
-          newStationId,
-          newItemIds,
-          what: `the copy of ${stationName(frame)}`,
-        }),
+      return outcome;
+    },
+    pasteStations(plan) {
+      const frames = plan.stations.map((id) =>
+        manifestNow(doc())?.stations.find((s) => s.id === id),
       );
-      const made = { kind: "duplicated" as const, stationId: newStationId };
-      if (isHeldEdit(out)) {
-        return heldUntilLanded(out, pictured, () =>
-          manifestNow(own())?.stations.some((s) => s.id === newStationId) ===
-          true
-            ? made
-            : null,
+      const [only] = frames;
+      return copyStations(
+        plan.stations,
+        plan.afterStationId,
+        frames.length === 1 && only !== undefined
+          ? `the paste of ${stationName(only)}`
+          : `the paste of ${String(frames.length)} stations`,
+      );
+    },
+    pasteStories(plan) {
+      const state = mine();
+      if (state === null) return notInTour;
+      let after = plan.afterStory ?? undefined;
+      const copies: {
+        story: string;
+        newIds: Record<string, string>;
+        toStationId: string;
+        after?: string;
+      }[] = [];
+      const titles: string[] = [];
+      for (const storyId of plan.stories) {
+        const story = storyNow(state, storyId);
+        if (story === undefined) {
+          return { kind: "refused", reason: NO_SUCH_STORY };
+        }
+        // The story and every child get a new id: child ids are unique
+        // across the tour.
+        const newIds = Object.fromEntries(
+          [story.id, ...story.children.map((c) => c.id)].map((id) => [
+            id,
+            newObjectId(),
+          ]),
         );
+        copies.push({
+          story: storyId,
+          newIds,
+          toStationId: plan.toStationId,
+          ...(after === undefined ? {} : { after }),
+        });
+        titles.push(story.title);
+        // The next copy follows this one, so they keep the order given.
+        after = newIds[storyId];
       }
-      if (doc().revision !== was) return made;
-      for (const copyId of pictured) files.delete(copyId);
-      return mine() === null ? notInTour : notApplied;
+      const stories = copies.map((c) => c.newIds[c.story] ?? "");
+      const [title] = titles;
+      return took(() =>
+        store.dispatch(
+          tourDocumentActions.storiesPasted({
+            copies,
+            what:
+              titles.length === 1 && title !== undefined
+                ? `the paste of the story "${title}"`
+                : `the paste of ${String(titles.length)} stories`,
+          }),
+        ),
+      )
+        ? { kind: "pasted", stories }
+        : notApplied;
     },
     async duplicateObject(id) {
       const found = find(id);

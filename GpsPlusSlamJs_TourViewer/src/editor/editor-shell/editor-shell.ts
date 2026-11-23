@@ -1153,7 +1153,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
         ? paste.reason
         : paste.kind === "reorder"
           ? `Move after ${called(paste.afterStationId)} (Ctrl+V)`
-          : `${paste.kind === "move" ? "Move to" : "Paste into"} ${called(paste.toStationId)} (Ctrl+V)`;
+          : paste.kind === "pasteStations"
+            ? `Paste after ${called(paste.afterStationId)} (Ctrl+V)`
+            : `${paste.kind === "move" ? "Move to" : "Paste into"} ${called(paste.toStationId)} (Ctrl+V)`;
     const duplicable = barActions(model).some((a) => a.action === "duplicate");
     setItemDisabled(top.editDuplicate, running || !duplicable);
     top.editDuplicate.title = running

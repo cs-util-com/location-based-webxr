@@ -13,12 +13,21 @@ the menu's items) acts on them; the document's `clipboardPasted`
 ## Public API
 
 - `copyOf(doc, view): CopyOutcome` - `{ kind: "copy", ids }`: the tree's
-  picked rows (in the order picked), else the one selected, when each is
-  a note or a plain folder (`folder:<id>`). Refused with
-  `NOTHING_SELECTED` for no selection, and with `ONLY_NOTES_AND_FOLDERS`
-  when any row is a station, a story, a story's entry, a code or an id
-  the tour does not hold (the lot, not part of it).
-- `pasteOf(doc, view): PasteOutcome` - `{ kind: "paste", toStationId,
+  picked rows (in the order picked), else the one selected, when they are
+  all stations (`station:<id>`), all stories (`story:<id>`), or all
+  notes and plain folders (`folder:<id>`). Refused with
+  `NOTHING_SELECTED` for no selection, with `NOT_COPYABLE` when any row
+  is a story's entry, a code or an id the tour does not hold, and with
+  `COPY_ONE_KIND` for a mix of the three kinds (the lot, not part of it).
+- `pasteOf(doc, view): PasteOutcome` for copied stations - `{ kind:
+"pasteStations", afterStationId, stations }`: after the station the
+  selection names (`selectedStationOf`: a station, or any row in one), in
+  the order copied; for copied stories - `{ kind: "pasteStories",
+toStationId, afterStory, stories }`: into that station, after the
+  selected story (or the story of a selected entry), else (`afterStory`
+  null) after its last story. Both refused `SELECT_A_TARGET` (no station)
+  and `COPIED_GONE` (a copied station or story gone since).
+- `pasteOf(doc, view): PasteOutcome` for notes and folders - `{ kind: "paste", toStationId,
 objects, folders }`: the clipboard's notes and plain folders (by
   `{ stationId, folderId }`), each once, into the station the selection
   names (`pasteTargetOf`: a selected station, or the station holding
@@ -57,7 +66,7 @@ objects, folders }`: the clipboard's notes and plain folders (by
     session's `moveChildren` (the tree drag's move path, one step);
     items already in the target are left out;
   - its stations put after the selected station: `{ kind: "reorder",
-    afterStationId, order }` for `reorderStations`;
+afterStationId, order }` for `reorderStations`;
   - refused `SELECT_A_TARGET` (no station), `COPIED_GONE` (a source gone),
     `FOLDER_STAYS` (a plain folder, or an item in one, to another station:
     the folder actions keep those in their station), `CUT_SAME_STATION`
@@ -78,8 +87,8 @@ objects, folders }`: the clipboard's notes and plain folders (by
 - The clipboard holds selection ids, never copies: every paste re-reads
   the tour, so a note edited after the copy is pasted as it is now, and
   a deleted one refuses the paste rather than resurrecting it.
-- A story's entry is never copied here (it belongs to its story);
-  stations and stories are not copied yet either.
+- A story's entry is never copied on its own (it belongs to its story,
+  and goes with it).
 - A cut keeps ids: its paste moves the items, so links to them (an
   answer's jump, a code) keep pointing at them.
 - Open question: a copy pasted into another station stands where its
@@ -108,6 +117,9 @@ no target: a story, a story's entry and a code's level id among them;
 something gone), rows inside a copied folder dropped, and the scale
 refusals into another station (a note in a resized folder, folders that
 cancel out, a nested folder past 10 or below 0.1, exactly at 10).
+Stations and stories: their Copy, a mix of kinds refused, a Paste after
+the selected station and into a station after a story or at the end of
+its stories, its refusals (no target, a copied station or story gone).
 Cut: each refusal of `cutOf`, the cut of stations and of items, the
 gone cut, and a cut's Paste (onto another station, a story whole, into
 its own station, a folder or an item in one to another station, the

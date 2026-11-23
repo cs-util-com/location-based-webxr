@@ -313,6 +313,11 @@ largeTour?, cannotSave? })`.
     (`{ block, pose }`) sets a story entry's pose in the station's frame
     in place (`withStoryPose`, its order kept); refused `storyPose` when
     no story holds that block or the pose is beyond the format's reach.
+  - `storiesPasted({ copies, what })` - several `storyDuplicated` copies,
+    each with `toStationId` (the station it goes into) and `after` (the
+    story it follows there; absent: after that station's last story), as
+    ONE undo step (a Paste of copied stories); any copy that cannot be
+    made, or an empty list, refuses the lot.
   - `childrenMoved({ moves: [{ id, to }], what })` - several `childMoved`
     moves applied in order as ONE undo step (a Paste of a cut); ids are
     kept; any move refused, or an empty list, refuses the lot (state
@@ -403,8 +408,15 @@ field, value }`, `withStoryText`): a key of the format's
     ahead of their new station's own, where a reload from the draft puts
     them after. A delete of another station listed it back the same way
     until it shared the rule.
+  - `stationsPasted({ copies, what })` - several `stationDuplicated`
+    copies, each with `after` (the station it follows in the order and
+    stands beside), as ONE undo step (a Paste of copied stations); any
+    copy that cannot be made, or an empty list, refuses the lot. The
+    three folded edits (`childrenMoved`, `storiesPasted`,
+    `stationsPasted`) share `foldedSteps`.
   - `stationDuplicated({ stationId, newStationId, newItemIds, createdAtIso,
-geo?, what })` - a copy inserted after the original (any station the
+geo?, after?, what })` - a copy inserted after the original (after
+    `after` and beside it when given) (any station the
     next write carries, as for `stationEdited`), titled `<title> copy`
     (the original's title shortened so the copy's fits 80 characters,
     `copyTitle`), its card image kept when it names a free image asset (`freeImageAssets`) and

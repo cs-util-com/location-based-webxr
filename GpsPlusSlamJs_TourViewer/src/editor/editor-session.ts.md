@@ -284,11 +284,23 @@ never state). Design:
       `duplicated` result once the copy is in the tour, or null when the
       edit was dropped or the tour refused it by then (its held pictures
       dropped too, `heldUntilLanded`).
+    - `pasteStations({ afterStationId, stations })` (async) - copies of
+      the stations, each after the one before (the first after
+      `afterStationId`) and beside it, `stationsPasted` as one step named
+      `the paste of <name>` or `the paste of <n> stations`; pictures read
+      first as for `duplicateStation`, which runs through the same
+      `copyStations`; `{ kind: "pasted", stations }`, `held` while the
+      draft question waits, refused for a station the tour lacks.
+    - `pasteStories({ toStationId, afterStory, stories })` - copies of the
+      stories into the station, in order after `afterStory` (null: after
+      its last story), every child under a new id, `storiesPasted` as one
+      step; `{ kind: "pasted", stories }` or refused for a story the tour
+      lacks (`NO_SUCH_STORY`).
     - `moveChildren(moves)` - a Paste of a cut: each move checked with
       `childMoveChange` as `moveChild` checks one (its refusals in the
       same words), then `childrenMoved`, one step named
       `the move of "<name>"` or `the move of <n> items`; `{ kind:
-      "moved", answers, floored }` summed over the moves.
+"moved", answers, floored }` summed over the moves.
     - `paste(plan)` (async) - the clipboard's notes and plain folders
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the
