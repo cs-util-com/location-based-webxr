@@ -204,7 +204,7 @@ describe("siftLightGlueMethod context", () => {
       (
         await siftLightGlueMethod("wasm", deps(fakeOrt().api, []), {
           sha256: await sha256Hex(MODEL),
-          context,
+          ...(context === undefined ? {} : { context }),
         }).init()
       ).notes[0];
     expect(await notes()).toContain("(sift.js, main thread)");
