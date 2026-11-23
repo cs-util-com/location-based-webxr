@@ -14,13 +14,13 @@ Watches the raw viewer pose of every XR frame and turns a platform frame switch 
   - `isStopped()`, `dispose()`.
 - `startRelocalizationFeed(options & { timeOriginMs? })`: the same feed driven by `registerXrFrameUpdate`; each frame reads `frame.getViewerPose(referenceSpace)` and stamps `timeOriginMs + elapsed * 1000` (default `performance.timeOrigin`). `dispose` also unregisters the callback.
 - `rawCameraPose(viewerPose | null)`: `views[0]`'s transform as a `Pose`; `null` for no pose, an emulated pose or no view.
-- `describeObservation(observation)`: the readout line (`|D|` m and degrees, the compensation verdict with the camera's measured step and turn, the frame gap).
 
 ## Invariants and defensive measures
 
 - **Raw only:** the observation is `{ t, tLast, lastPose, tPrev, prevPose, newPose }` as the frames gave them (copied, so reused caller arrays change nothing). `t` is the jump frame's own time, `newPose` its own pose.
 - **Forgetting:** a `null` or emulated pose, a non-finite pose or time, a clock that did not advance, a gap over 500 ms and `forget()` all drop the earlier poses, so nothing is observed across a tracking loss, a recovery, an origin reset or a stall. After a jump the frame before it is dropped as `prevPose`: it is in the old frame.
 - **Order:** `beforeDispatch` (the QR sighting fold closes its burst) runs before the dispatch, then the readout line is logged (`ArSpaceCorrection`, info), then `onObserved`.
+- **The readout line** (info, in the copy-log buffer): `relocalization observed: |D| x m, y deg; compensation on/off (reason; camera step ... mm, turn ... deg); frame gap ... ms`. The registry adds `AR content corrected: k of n tracked objects in t ms` per observation where content correction is on.
 - **The current store:** `getStore` is read at each jump, so a per-recording store swap needs no call. `null` drops the observation with a warning.
 - **Never in the way:** a fault inside a frame (a throwing store, a throwing hook) is logged once as an error and switches the feed off for the session; the frame loop never sees a throw. A viewer pose that throws is a skipped frame.
 - **The frame order:** the XR callbacks run before the frame's image capture and depth sampler in `webxr-session.ts`, so the observation is in the store before any capture of the jump frame is stamped.

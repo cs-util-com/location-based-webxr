@@ -144,7 +144,7 @@ const copyPose = (p: Pose): Pose => ({
 });
 
 /** The readout line of one observation: what the jump was and which `D`. */
-export function describeObservation(o: RelocalizationObservation): string {
+function describeObservation(o: RelocalizationObservation): string {
   const d = jumpTransform(o);
   const meters = Math.hypot(...d.position);
   const w = Math.min(1, Math.abs(d.rotation[3]));
