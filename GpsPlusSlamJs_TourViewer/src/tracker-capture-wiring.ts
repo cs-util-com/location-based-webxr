@@ -255,9 +255,9 @@ export function createTrackerCaptureWiring(
 ): TrackerCaptureWiring {
   const params = deps.params ?? DEFAULT_NEARBY_PARAMS;
   const source = createNearbyPositionSource({
-    gpsEvents: deps.gpsEvents,
-    alignment: deps.alignment,
-    zero: deps.zero,
+    gpsEvents: () => deps.gpsEvents(),
+    alignment: () => deps.alignment(),
+    zero: () => deps.zero(),
     live: () => livePose(deps),
     lookBackMs: params.H,
   });
@@ -301,7 +301,7 @@ export function createTrackerCaptureWiring(
       burstHz: fullHz,
       burstMs: QR_BURST_MS,
     },
-    isBusy: deps.qrBusy,
+    isBusy: () => deps.qrBusy(),
     lastHitAtMs: () => newestHitAtMs(deps.detections()),
     forceOn: () => deps.forcePref() || deps.codesOnly(),
   });

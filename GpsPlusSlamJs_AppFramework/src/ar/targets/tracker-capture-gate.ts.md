@@ -91,12 +91,21 @@ const gate = createTrackerCaptureGate({
 const off = gate.register({
   kind: 'qr',
   targets: () => codeTargets(),
-  cadence: { inGateHz: 8, outsideHz: 1, unknownHz: 1, burstHz: 8, burstMs: 10_000 },
+  cadence: {
+    inGateHz: 8,
+    outsideHz: 1,
+    unknownHz: 1,
+    burstHz: 8,
+    burstMs: 10_000,
+  },
   isBusy: () => controller.isBusy(),
   lastHitAtMs: () => newestDetectionMs(),
   forceOn: () => false,
 });
-startCameraFrameCapture({ intervalMs: 125, wantsFrame: () => gate.wantsFrame(Date.now()) });
+startCameraFrameCapture({
+  intervalMs: 125,
+  wantsFrame: () => gate.wantsFrame(Date.now()),
+});
 ```
 
 ## Tests
