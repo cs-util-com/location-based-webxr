@@ -40,6 +40,11 @@ export interface Target {
   readonly accM: number | null;
   /** r_target (m): how far from its position the target can be detected. */
   readonly reachM: number;
+  /** Set for a target minted while its heading was uncertain: its
+   *  alignment's GPS extent (m). Its accuracy is then max(accM,
+   *  defaultTargetAccM) + {@link NearbyParams.headingWideningK} x this; a
+   *  value that is not finite and >= 0 widens nothing. */
+  readonly alignmentGpsExtentM?: number;
   /** The tracker's newest sighting in the current AR frame (odom-NUE). */
   readonly sighting?: ArPose;
 }
@@ -95,10 +100,9 @@ export interface NearbyParams {
   readonly defaultTargetAccM: number;
   /** acc_fix above it: `'unknown'` (m). */
   readonly ceilingM: number;
-  /** A heading-uncertain mint's widening: this many times its alignment's
-   *  GPS extent is added to the target accuracy. The kernel never reads it;
-   *  the call site that builds a target does. */
-  readonly headingUncertainExtentFactor: number;
+  /** A heading-uncertain target's widening: this many times its
+   *  `alignmentGpsExtentM` is added to its accuracy (0: none). */
+  readonly headingWideningK: number;
 }
 
 /** The defaults (the plan's section 4.6). */
@@ -112,7 +116,7 @@ export const DEFAULT_NEARBY_PARAMS: NearbyParams = Object.freeze({
   arMarginM: 1,
   defaultTargetAccM: 5,
   ceilingM: POSITION_PRECISION_CEILING_M,
-  headingUncertainExtentFactor: 1,
+  headingWideningK: 1,
 });
 
 export interface NearbyInput {
@@ -241,7 +245,7 @@ export function checkNearbyParams(p: NearbyParams): void {
     ['arMarginM', p.arMarginM >= 0],
     ['defaultTargetAccM', p.defaultTargetAccM > 0],
     ['ceilingM', p.ceilingM > 0],
-    ['headingUncertainExtentFactor', p.headingUncertainExtentFactor >= 0],
+    ['headingWideningK', p.headingWideningK >= 0],
   ];
   for (const [name, ok] of checks) {
     if (!ok || !Number.isFinite(p[name])) {
@@ -323,10 +327,21 @@ interface Scene {
   readonly p: NearbyParams;
 }
 
+/** acc_target: the target's own accuracy (the default without one); a
+ *  heading-uncertain target's is max(own, default) plus K x its extent. */
+function targetAccM(target: Target, p: NearbyParams): number {
+  const own = positive(target.accM) ?? p.defaultTargetAccM;
+  const extent = target.alignmentGpsExtentM;
+  if (extent === undefined || !Number.isFinite(extent) || extent < 0) {
+    return own;
+  }
+  return Math.max(own, p.defaultTargetAccM) + p.headingWideningK * extent;
+}
+
 /** One target: the GPS gate first, else the AR gate, else closed. A target
  *  without a finite position can still open by its sighting. */
 function openOf(target: Target, sc: Scene): OpenTarget | null {
-  const accT = positive(target.accM) ?? sc.p.defaultTargetAccM;
+  const accT = targetAccM(target, sc.p);
   const hasGeo = Number.isFinite(target.north) && Number.isFinite(target.east);
   const gps =
     sc.gpsAcc !== null && hasGeo ? gpsGate(target, accT, sc.gpsAcc, sc) : null;

@@ -47,6 +47,53 @@ function standing(n: number, e: number, accM = 5): Fix[] {
   );
 }
 
+describe('nearbyTargets: a heading-uncertain target', () => {
+  // Why this test matters: a heading-uncertain mint's spot can be off by
+  // about its alignment's GPS extent: its accuracy is max(own, default)
+  // plus headingWideningK times the extent, and K 0 adds nothing.
+  it('widens by headingWideningK x alignmentGpsExtentM over max(own, default)', () => {
+    const openAt = (t: Target, k: number) =>
+      [0, 5, 10, 15, 20, 25, 30, 35, 40].filter(
+        (d) =>
+          nearbyTargets(
+            input({
+              targets: [{ ...t, east: d }],
+              fixes: standing(0, 0, 3),
+              newestFixAtMs: NOW,
+              params: { ...P, headingWideningK: k },
+            })
+          ).open.length > 0
+      );
+    const plain = (accM: number) => target('x', 0, 0, { accM });
+    const uncertain = (accM: number) =>
+      target('x', 0, 0, { accM, alignmentGpsExtentM: 6 });
+    // K 1: own 8 + 6 = 14; own 2 rises to the default 5 first: 11.
+    expect(openAt(uncertain(8), 1)).toEqual(openAt(plain(14), 1));
+    expect(openAt(uncertain(2), 1)).toEqual(openAt(plain(11), 1));
+    expect(openAt(uncertain(2), 1)).not.toEqual(openAt(plain(8), 1));
+    // K 0: unwidened.
+    expect(openAt(uncertain(8), 0)).toEqual(openAt(plain(8), 0));
+    expect(openAt(uncertain(8), 0)).not.toEqual(openAt(plain(14), 0));
+  });
+
+  // Why this test matters: a malformed extent must not widen (or poison)
+  // the accuracy.
+  it('ignores an extent that is not finite and >= 0', () => {
+    for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
+      const r = (t: Target) =>
+        nearbyTargets(
+          input({
+            targets: [t],
+            fixes: standing(0, 0, 3),
+            newestFixAtMs: NOW,
+          })
+        ).open.length;
+      const at = target('x', 0, 12, { accM: 8 });
+      expect(r({ ...at, alignmentGpsExtentM: bad })).toBe(r(at));
+    }
+  });
+});
+
 describe('nearbyTargets: the state', () => {
   // Why this test matters: the state picks the detector's cadence; a fresh
   // fix under the ceiling is the only way into 'gps'.
@@ -172,6 +219,67 @@ describe('nearbyTargets: the state', () => {
       })
     );
     expect(far.open).toEqual([]);
+  });
+
+  // Why this test matters: a vote sample stored after the newest device
+  // sample (a lock between two fixes, or after the newest one) sits at a
+  // code's corner, not where the device was: it must never anchor 'dr'.
+  it('never anchors on a vote sample at a later t', () => {
+    const t0 = NOW - 8_000;
+    const arPoses: ArPose[] = [
+      { t: t0, pos: [0, 0, 0], device: true },
+      { t: t0 + 1_000, pos: [0, 0, 30], device: false },
+      { t: t0 + 3_000, pos: [0, 0, 30], device: false },
+    ];
+    const live: LivePose = {
+      t: NOW,
+      north: 0,
+      east: 0,
+      ar: [0, 0, 0],
+      accM: 3,
+    };
+    const r = nearbyTargets(
+      input({
+        targets: [target('x', 0, 5, { accM: 0.0001, reachM: 0 })],
+        fixes: [fix(t0, 0, 0, 3), fix(t0 + 2_000, 0, 0, 3)],
+        newestFixAtMs: t0 + 2_000,
+        arPoses,
+        live,
+      })
+    );
+    // Anchored on the device sample: no drift, R_enter 4.5 m, closed at
+    // 5 m. A vote anchor would drift 30 m: R_enter 5.85 m, open.
+    expect(r.state).toBe('dr');
+    expect(r.open).toEqual([]);
+  });
+
+  // Why this test matters: several device samples may share one t; the
+  // last stored is the anchor, so the order of storage decides, not a
+  // search that could pick either.
+  it('takes the last stored of several device samples at one t', () => {
+    const t0 = NOW - 8_000;
+    const live: LivePose = {
+      t: NOW,
+      north: 0,
+      east: 0,
+      ar: [0, 0, 0],
+      accM: 3,
+    };
+    const run = (arPoses: ArPose[]) =>
+      nearbyTargets(
+        input({
+          targets: [target('x', 0, 5, { accM: 0.0001, reachM: 0 })],
+          fixes: [fix(t0, 0, 0, 3)],
+          newestFixAtMs: t0,
+          arPoses,
+          live,
+        })
+      ).open.length;
+    const near = { t: t0, pos: [0, 0, 0] as const, device: true };
+    const far = { t: t0, pos: [0, 0, 30] as const, device: true };
+    // Last stored near: no drift, closed; last stored far: 30 m drift, open.
+    expect(run([far, near])).toBe(0);
+    expect(run([near, far])).toBe(1);
   });
 
   // Why this test matters: above the 25 m ceiling the position is too weak

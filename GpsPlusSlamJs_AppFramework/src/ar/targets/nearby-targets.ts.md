@@ -77,12 +77,13 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
 - `c` 1.5, `f` 1.3, `L` 5 m, `H` 60 000 ms, `F` 5 000 ms, `alpha` 0.03,
   `arMarginM` 1 m, `defaultTargetAccM` 5 m, `ceilingM` 25 m
   (`POSITION_PRECISION_CEILING_M`).
-- `headingUncertainExtentFactor` 1: the widening for a target minted while
-  its heading was uncertain, as the factor on the mint's GPS extent
-  (`accM + factor x alignmentGpsExtentM`). 1 is the design's stated value
-  ("plus the alignment GPS extent"); 0 and 0.5 are the cheaper settings
-  worth sweeping. The kernel never reads it: the caller that builds the
-  `Target` list applies it, so every target kind widens the same way.
+- `headingWideningK` 1: the widening for a target minted while its
+  heading was uncertain (one that carries `alignmentGpsExtentM`): its
+  acc_target is `max(accM, defaultTargetAccM) + K x alignmentGpsExtentM`.
+  1 is the design's stated value ("plus the alignment GPS extent"); 0 and
+  0.5 are the cheaper settings worth sweeping. An extent that is not
+  finite and >= 0 widens nothing. The kernel applies it, so every target
+  kind widens the same way.
 
 ## Invariants and defensive measures
 

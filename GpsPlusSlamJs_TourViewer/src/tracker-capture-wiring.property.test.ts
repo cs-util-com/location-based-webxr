@@ -118,7 +118,6 @@ describe("tracker capture wiring: the station-band property", () => {
             stations: [station],
             zero: ZERO,
             detections: { markers: {} },
-            params: DEFAULT_NEARBY_PARAMS,
           });
           const result = nearbyTargets({
             targets,

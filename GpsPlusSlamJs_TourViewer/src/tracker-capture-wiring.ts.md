@@ -28,7 +28,7 @@ would veto every frame. `ar-entry.ts` builds one per session.
     the gate wanted one.
   - `position(nowMs)`: the kernel's position inputs (fixes, AR samples, the
     live pose).
-- `codeTargets({ levels, levelIdByText, stations, zero, detections, params })`:
+- `codeTargets({ levels, levelIdByText, stations, zero, detections })`:
   the codes as kernel targets, keyed by level id.
 - `codeReachM(code, stations, otherCodes)`, `newestHitAtMs(detections)`.
 - `QR_BURST_MS` (10 000; the 1 Hz slow rate `QR_SLOW_HZ` is internal); types `CodeStation`,
@@ -43,9 +43,9 @@ would veto every frame. `ar-entry.ts` builds one per session.
   (`positionPrecision`, a code hold gives 1 m). Null without an alignment
   or a pose. The alignment is used as stored.
 - **A code's target:** its saved spot (NaN without a zero or a spot: then
-  only its sighting opens it); its accuracy is the mint's GPS accuracy,
-  widened for a heading-uncertain mint by `headingUncertainExtentFactor`
-  times its alignment's GPS extent; its sighting is the newest of the
+  only its sighting opens it); its accuracy is the mint's GPS accuracy;
+  a heading-uncertain mint's target also carries its alignment's GPS
+  extent (`alignmentGpsExtentM`), which the kernel widens it by; its sighting is the newest of the
   current AR frame epoch only.
 - **A code's reach:** over the stations it takes along (`takesAlong`:
   within 40 m and no other code nearer), the largest found radius plus

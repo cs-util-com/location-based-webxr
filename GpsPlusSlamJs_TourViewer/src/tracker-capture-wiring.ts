@@ -117,7 +117,7 @@ export function newestHitAtMs(detections: QrDetectionsView): number | null {
 /**
  * The tour's codes as the kernel's targets, keyed by level id: each at its
  * saved spot (NaN without a zero or a spot: then only its sighting opens
- * it), with its mint accuracy widened for a heading-uncertain mint, its
+ * it), with its mint accuracy (and a heading-uncertain mint's GPS extent), its
  * reach, and its newest sighting of the current AR frame (odom-NUE).
  */
 export function codeTargets(input: {
@@ -126,7 +126,6 @@ export function codeTargets(input: {
   readonly stations: readonly CodeStation[];
   readonly zero: LatLong | null;
   readonly detections: QrDetectionsView;
-  readonly params: NearbyParams;
 }): Target[] {
   if (input.levels === null) return [];
   const sightings = sightingsById(input.detections, input.levelIdByText);
@@ -149,7 +148,8 @@ export function codeTargets(input: {
       kind: "qr",
       north: nue?.[0] ?? Number.NaN,
       east: nue?.[2] ?? Number.NaN,
-      accM: codeAccuracyM(level, input.params),
+      accM: positive(level.qr.mintQuality?.gpsAccuracyM),
+      ...headingExtent(level),
       reachM:
         geo === undefined
           ? HUD_ARRIVAL_BAND_M
@@ -164,17 +164,14 @@ export function codeTargets(input: {
   return targets;
 }
 
-/** The mint's accuracy, plus the factor times its alignment's GPS extent
- *  for a heading-uncertain mint; null (the kernel's default) without one. */
-function codeAccuracyM(level: QrLevel, params: NearbyParams): number | null {
+/** A heading-uncertain mint's alignment GPS extent, which the kernel
+ *  widens the code's accuracy by; nothing for a certain mint. */
+function headingExtent(level: QrLevel): { alignmentGpsExtentM?: number } {
   const q = level.qr.mintQuality;
-  const own = positive(q?.gpsAccuracyM);
   const extent = q?.alignmentGpsExtentM;
-  if (q?.headingUncertain !== true || !isNonNegative(extent)) return own;
-  return (
-    (own ?? params.defaultTargetAccM) +
-    params.headingUncertainExtentFactor * extent
-  );
+  return q?.headingUncertain === true && isNonNegative(extent)
+    ? { alignmentGpsExtentM: extent }
+    : {};
 }
 
 /** Each level's newest sighting in the current frame epoch (odom-NUE). */
@@ -275,7 +272,6 @@ export function createTrackerCaptureWiring(
       stations: deps.stations(),
       zero: deps.zero(),
       detections: deps.detections(),
-      params,
     };
     // The text map grows in place as codes resolve: its size is the key.
     const key = [

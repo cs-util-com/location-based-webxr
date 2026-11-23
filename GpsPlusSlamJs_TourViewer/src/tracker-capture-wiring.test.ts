@@ -179,7 +179,6 @@ describe("tracker capture wiring: frames", () => {
         stations: [],
         zero: ZERO,
         detections: { markers: {} },
-        params: DEFAULT_NEARBY_PARAMS,
       });
       return {
         position,
@@ -247,7 +246,6 @@ describe("tracker capture wiring: frames", () => {
       stations: [],
       zero: ZERO,
       detections,
-      params: DEFAULT_NEARBY_PARAMS,
     });
     const a = targets.find((t) => t.key === "a");
     expect(a?.sighting?.t).toBe(T0 - 10);
@@ -380,9 +378,10 @@ describe("tracker capture wiring: targets", () => {
   });
 
   // Why this test matters: a heading-uncertain mint's spot may be off by
-  // about its alignment's GPS extent; the factor widens its accuracy, and
-  // 0 switches the widening off.
-  it("a heading-uncertain mint widens the accuracy by factor x extent", () => {
+  // about its alignment's GPS extent: its target carries that extent for
+  // the kernel to widen by; a certain mint, or one without an extent,
+  // carries none.
+  it("a heading-uncertain mint's target carries its alignment's GPS extent", () => {
     const levels = new Map([
       [
         "u",
@@ -395,29 +394,27 @@ describe("tracker capture wiring: targets", () => {
       ["s", level(geoAt(0, 0), { gpsAccuracyM: 3, headingUncertain: false })],
       ["n", level(geoAt(0, 0))],
     ]);
-    const at = (factor: number) =>
-      codeTargets({
-        levels,
-        levelIdByText: new Map(),
-        stations: [],
-        zero: ZERO,
-        detections: { markers: {} },
-        params: {
-          ...DEFAULT_NEARBY_PARAMS,
-          headingUncertainExtentFactor: factor,
-        },
-      }).map((t) => [t.key, t.accM]);
-    expect(at(1)).toEqual([
-      ["u", 9],
-      ["s", 3],
-      ["n", null],
+    levels.set(
+      "x",
+      level(geoAt(0, 0), {
+        gpsAccuracyM: 3,
+        alignmentGpsExtentM: -1,
+        headingUncertain: true,
+      }),
+    );
+    const targets = codeTargets({
+      levels,
+      levelIdByText: new Map(),
+      stations: [],
+      zero: ZERO,
+      detections: { markers: {} },
+    }).map((t) => [t.key, t.accM, t.alignmentGpsExtentM]);
+    expect(targets).toEqual([
+      ["u", 3, 6],
+      ["s", 3, undefined],
+      ["n", null, undefined],
+      ["x", 3, undefined],
     ]);
-    expect(at(0.5)).toEqual([
-      ["u", 6],
-      ["s", 3],
-      ["n", null],
-    ]);
-    expect(at(0)[0]).toEqual(["u", 3]);
   });
 
   // Why this test matters: the burst reads the newest hit of ANY code, a
@@ -443,7 +440,6 @@ describe("tracker capture wiring: targets", () => {
       levelIdByText: new Map<string, string>(),
       stations: [],
       detections: { markers: {} },
-      params: DEFAULT_NEARBY_PARAMS,
     };
     expect(codeTargets({ ...base, levels: null, zero: ZERO })).toEqual([]);
     const [t] = codeTargets({ ...base, levels: oneCode(), zero: null });
