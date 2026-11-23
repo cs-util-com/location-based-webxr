@@ -1,0 +1,105 @@
+/* The worker spike page (?spike=worker): the guided view's screens, bar,
+   card, viewfinder and buttons (guided-view.css), plus the few rules of
+   its own below. Scoped like the guided view, so the page's other views
+   never see it. */
+:where(html[data-ui="guided"]) .spike-left {
+  flex: none;
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+:where(html[data-ui="guided"]) .spike .card {
+  gap: 10px;
+}
+:where(html[data-ui="guided"]) .spike .lede {
+  font-size: 1rem;
+}
+:where(html[data-ui="guided"]) .spike-status {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+:where(html[data-ui="guided"]) .spike-actions {
+  grid-area: actions;
+  display: grid;
+  gap: 8px;
+}
+:where(html[data-ui="guided"]) .spike .hint {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* The end: no camera, no bar; the card and the buttons in one column,
+   the buttons right under the card rather than under an empty stretch; a long card scrolls
+   inside itself on a short screen. */
+:where(html[data-ui="guided"])
+  .spike:is([data-phase="done"], [data-phase="failed"]) {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, auto) auto;
+  align-content: start;
+  grid-template-areas: "card" "actions";
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+:where(html[data-ui="guided"]) .spike-answers {
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+:where(html[data-ui="guided"]) .spike-answers > div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border-left: 4px solid var(--line);
+  background: var(--panel-2);
+}
+:where(html[data-ui="guided"]) .spike-answers > div[data-good="true"] {
+  border-left-color: var(--ok);
+}
+:where(html[data-ui="guided"]) .spike-answers > div[data-good="false"] {
+  border-left-color: var(--danger);
+}
+:where(html[data-ui="guided"]) .spike-answers dt {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+:where(html[data-ui="guided"]) .spike-answers dd {
+  margin: 2px 0 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+:where(html[data-ui="guided"]) .spike-methods {
+  margin: 0;
+  padding-left: 18px;
+}
+:where(html[data-ui="guided"]) .spike-error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger);
+  border-radius: 12px;
+}
+:where(html[data-ui="guided"]) .spike-error p {
+  margin: 0;
+}
+:where(html[data-ui="guided"]) .spike-error-msg {
+  color: var(--danger);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+:where(html[data-ui="guided"]) .spike-log summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+:where(html[data-ui="guided"]) .spike-log pre {
+  margin: 0;
+  max-height: 50vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
+}
