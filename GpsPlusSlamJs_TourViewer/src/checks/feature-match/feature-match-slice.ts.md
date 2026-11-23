@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The state of the feature matching check page (`feature-match-check.html`) as one Redux Toolkit slice, shared by every view of the page: the guided view (`guided-view.ts`), the cockpit view (`cockpit-view.ts`), the measuring block (`bench-engine.ts`) and the flat target capture (`flat-capture.ts`). The reducers hold the page's rules; the views only dispatch and draw. Frames, Blob URLs, the camera, canvases and timers live outside it (`feature-match-store.ts`).
+The state of the feature matching check page (`feature-match-check.html`) as one Redux Toolkit slice, shared by every view of the page: the guided view (`guided-view.ts`), the cockpit view (`cockpit-view.ts`), the measuring block (`bench-engine.ts`) and the flat target capture (`flat-capture.ts`). The reducers hold the page's rules; the views only dispatch and draw. PNGs, previews, matches, Blob URLs, the camera, canvases and timers live outside it (`feature-match-store.ts`).
 
 ## Public API
 
@@ -11,17 +11,19 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - Selectors: `logText` (the log as one text), `currentSurface`, `flatPhase` (`overview`, `ref-live`, `corners`, `check`, `poses`), `currentShot(plan)` (the shot at `current`), `anyPairReady(plan)` (a derived pair has both photos), `handsOffDue(s)` (below).
 - `HANDS_OFF_TEXT`: the status lines of a shot that takes itself (`still`, `move`, `waiting`, `taking`, `taken`, `refused`, `failed`, `lost`).
 - The options start at the controls' starting values in the HTML (module-private defaults); the view mirrors the controls into the state on every change and once more at each run start.
-- Types: `FeatureMatchState`, `FlatState`, `BenchOptions`, `SpeedOptions`, `FlatPhase`.
+- `planResultKeys(plan)`: the result keys of the plan's ready pairs (`readyResultKeys`).
+- `RELOAD_LINE` (`page reloaded`): the log line between the stored log and a new load's.
+- Types: `FeatureMatchState`, `FlatState`, `BenchOptions`, `SpeedOptions`, `FlatPhase`, `ResultEntry { status: "done" | "failed", text, persisted }`.
 
 ### Runs, log and options
 
 - `cameraChanged(on)`.
-- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. Nothing is measured on the phone's photos in this version; the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
+- `runStarted(kind)` (`synthetic` or `speed`): refused unless idle or for another kind; ends a countdown and an armed or waiting hands-off shot. `speed` times the methods on the flat scene's F1 and F2; nothing else is measured on the phone's photos in this version, and the run plan has no run kind. `runProgressed(line)` sets the running kind's status line. `runFinished({ text })` ends the run.
 - `statusSet`, `tableSet`, `reportSet`, `logged(line)` (stamped by the view), `failed({ line, stamped })` (kept in `errors` for the run's report and logged), `errorsCleared`, `optionsChanged`, `speedOptionsChanged`.
 
 ### Run plan actions
 
-`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy. An accepted photo, move, resize or reset ends a countdown.
+`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy, and every plan action is refused in a tab that does not hold the run (`otherTab`). An accepted photo, move, resize or reset ends a countdown, and drops the stored ids and results the plan no longer names. An accepted reset also empties the log: the stored log is the run's, and a new run's zip must not carry the earlier runs' lines.
 
 ### Countdown
 
@@ -30,7 +32,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `guidedCountSet({ shot, left } | null)`: one countdown second or its end; refused while busy, for a shot other than the current one and for a count that is not a whole number of at least 1. A count ends an armed or waiting hands-off shot.
 - A run or the zip starting ends the count too: a count that ran on would shoot into a refused photo.
 
-### Hands-off photo B actions
+### Hands-off shot actions
 
 `state.handsOff` `{ phase, shot, prev, still, text }` is a shot that takes itself once the phone rests (`still-detector.ts`): L2, F2 and D2 (`still`) and F3 (`move`, the phone turns first), by `handsOff` in `scenes.ts`. Phases: `off`, `armed` (no reading yet, or a move shot waiting for its move), `waiting` (for the phone to rest), `taking` (rested for the dwell: the view takes the photo), `taken`, `refused` (the photo was not taken), `failed` (the readings stopped, or the capture threw); `text` is the status line (`HANDS_OFF_TEXT`; the waiting texts say "or tap"). `shot` and `prev` name the shot and the scene's previous photo it was armed against, so one previous photo arms a shot once.
 
@@ -45,14 +47,21 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 `state.runZip` `{ phase, text }` is Download all, shared by both views (workflow status, so it lives here).
 
-- `runZipStarted()`: refused unless idle with at least one ready pair; sets busy `saving`, phase `preparing` and ends a countdown.
+- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing` and ends a countdown.
 - `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation.
 - An accepted photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
 
 ### Camera start and photo store
 
 - `cameraStartSet("idle" | "starting" | "failed")`: the page's camera start (workflow status: the chip and the auto start read it); other values are refused.
-- `photoStoreChanged(failing)`: whether a named photo could not be written to the phone's database (set by the store, read by the run and end screens).
+- `photoStoreChanged(failing)`: whether a named photo or result could not be written to the phone's database (set by the store, read by the run and end screens).
+
+### What storage holds
+
+- `storedIds`: the plan photos whose write succeeded. `photoStored(id)`: refused for an id the plan does not name; never twice.
+- `results`: per current result key a `ResultEntry`. `resultStored({ key, text })` (done, kept) and `resultFailed({ key, text, persisted })`: refused for a key that is not a ready pair's current one. Nothing produces results yet; the on-phone measuring will.
+- `restored`: the stored photos, results and log were read back. `restoreFinished({ stored, results, log })`: once only; keeps the named ids and current keys, and puts the stored log first with `RELOAD_LINE` between it and this load's lines.
+- `otherTab`: another tab holds the run. `otherTabFound()` sets it; from then on every plan action is refused.
 
 ### Flat target actions
 
@@ -78,5 +87,5 @@ currentShot(store.getState().plan)?.id; // "light-s1/L2"
 
 ## Tests
 
-- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair, ended only while preparing, stale after a new photo), the camera start and photo store flags, and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
+- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
 - `feature-match-slice.property.test.ts`: random run, save, countdown and shot sequences keep the busy invariants above and a countdown only on the current shot, and the flat prepared zip is always valid.

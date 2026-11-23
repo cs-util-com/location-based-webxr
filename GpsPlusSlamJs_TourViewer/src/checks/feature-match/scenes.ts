@@ -8,14 +8,12 @@
  */
 import {
   lightCheck,
-  pairTag,
-  type LightCheck,
+  MAX_SPOTS,
   type PairKey,
-  type PairTag,
+  type ShotLight,
 } from "./bench-export";
 
-/** The places the light scene can be repeated at. */
-const MAX_SPOTS = 3;
+export type { ShotLight } from "./bench-export";
 /** The most own scenes a run can add. */
 export const MAX_EXTRA = 8;
 
@@ -165,7 +163,7 @@ interface PairDef {
   readonly b: ShotKey;
   readonly name: string;
   readonly kind: PairKind;
-  readonly legacy: PairKey | null;
+  readonly legacy: PairKey;
   readonly axis: string;
   readonly controlFor: readonly string[];
 }
@@ -174,7 +172,7 @@ const def = (
   a: ShotKey,
   b: ShotKey,
   kind: PairKind,
-  legacy: PairKey | null,
+  legacy: PairKey,
   axis: string,
   controlFor: readonly string[] = [],
   name = `${a}-${b}`,
@@ -189,9 +187,9 @@ const SCENE_PAIRS: Readonly<Record<SceneKind, readonly PairDef[]>> = {
   ],
   flat: [
     def("F1", "F2", "real", "2a", "control", ["scale", "side-flat", "oblique"]),
-    def("F1", "F2", "turn0", null, "rot", ["rot"], "F1-T0"),
-    def("F1", "F2", "turn90", "2b", "rot", [], "F1-T90"),
-    def("F1", "F2", "turn180", "2c", "rot", [], "F1-T180"),
+    def("F1", "F2", "turn0", "t0", "rot", ["rot"], "F1-T0"),
+    def("F1", "F2", "turn90", "t90", "rot", [], "F1-T90"),
+    def("F1", "F2", "turn180", "t180", "rot", [], "F1-T180"),
     def("F1", "F3", "real", "2d", "oblique"),
     def("F1", "F4", "real", "3b", "scale"),
     def("F5", "F4", "real", "3c", "scale"),
@@ -215,7 +213,8 @@ export interface DerivedPair {
   readonly a: string;
   readonly b: string;
   readonly kind: PairKind;
-  readonly legacy: PairKey | null;
+  /** The protocol key (`bench-export.ts` PAIRS) the PC side reads it by. */
+  readonly legacy: PairKey;
   readonly axis: string;
   /** The axes this pair is the control of; empty for a test pair. */
   readonly controlFor: readonly string[];
@@ -258,36 +257,23 @@ export const readyPairs = (
   photos: ShotPhotos,
 ): DerivedPair[] => pairs.filter((p) => photos[p.a] && photos[p.b]);
 
-/**
- * The tag that names a pair's folder in the run zip, `n` its number in
- * the run: the legacy key, so the PC side reads the folder as before; the
- * rotation control F1-T0 has none and gets its own name.
- *
- * @throws Error for an `n` that is not an integer of at least 1.
- */
-export function pairFolderTag(p: DerivedPair, n: number): PairTag {
-  if (p.legacy !== null) {
-    return pairTag(p.legacy, p.spot, n);
-  }
-  if (!Number.isInteger(n) || n < 1) {
-    throw new Error(`sequence must be 1 or more, got ${String(n)}`);
-  }
-  return {
-    pair: p.name.toLowerCase(),
-    pairLabel: "rotation: control, centre squares",
-    spot: p.spot,
-    sequence: n,
-  };
-}
-
 /** The key a pair's result is stored under: stale after either retake. */
 export const resultKey = (p: DerivedPair, idA: string, idB: string): string =>
   `${p.id}@${idA}+${idB}`;
 
-// --- the light check -----------------------------------------------------------
+/** The ready pairs by the key their result is stored under, in run order. */
+export function readyResultKeys(
+  pairs: readonly DerivedPair[],
+  photos: ShotPhotos,
+): Map<string, DerivedPair> {
+  const out = new Map<string, DerivedPair>();
+  for (const p of readyPairs(pairs, photos)) {
+    out.set(resultKey(p, photos[p.a]!.id, photos[p.b]!.id), p);
+  }
+  return out;
+}
 
-/** The old light checks, plus L4 brighter than L3. */
-export type ShotLight = LightCheck | "not-darker-than-dimmed";
+// --- the light check -----------------------------------------------------------
 
 /**
  * A light shot's check against its scene's L1 (L2 by the control rule,
@@ -345,8 +331,12 @@ export interface SummaryInput {
   readonly spots: number;
   readonly extra: number;
   readonly photos: ShotPhotos;
-  /** Photos taken in the run, retakes included. */
-  readonly shotsTaken: number;
+  /** Photos taken again over a shot that had one (lost photos are not). */
+  readonly retakes: number;
+  /** The measured outcomes by result key; a stale key counts as nothing. */
+  readonly results: Readonly<
+    Record<string, { readonly status: "done" | "failed" }>
+  >;
   readonly device: string;
 }
 
@@ -361,6 +351,11 @@ export function summaryText(i: SummaryInput): string {
     return l ? [`${s.id} ${l}`] : [];
   });
   const places = clampInt(i.spots, 1, MAX_SPOTS);
+  const keys = [...readyResultKeys(pairs, i.photos).keys()];
+  const count = (status: "done" | "failed"): number =>
+    keys.filter((k) => i.results[k]?.status === status).length;
+  const measured = count("done");
+  const failed = count("failed");
   return [
     "Feature matcher photo test - summary",
     `Session: ${i.session}`,
@@ -368,8 +363,8 @@ export function summaryText(i: SummaryInput): string {
     `Missing: ${missing.length ? missing.map((s) => s.id).join(", ") : "none"}`,
     `Pairs ready: ${String(readyPairs(pairs, i.photos).length)} of ${String(pairs.length)}`,
     `Light checks: ${light.length ? light.join(", ") : "-"}`,
-    `Retakes: ${String(Math.max(0, i.shotsTaken - taken.length))}`,
-    "Measured: none on the phone, measure on the PC",
+    `Retakes: ${String(i.retakes)}`,
+    `Pairs measured on this phone: ${String(measured)}, failed: ${String(failed)}, pending (to be measured on the PC): ${String(keys.length - measured - failed)}`,
     `File: ${runZipName(i.session)}`,
     `Phone: ${i.device}`,
     "No location, no time and no names are included.",

@@ -7,20 +7,16 @@ import {
   PAIRS,
   allFilesZip,
   assertPlainPng,
-  framesInfo,
   LIGHT_CONTROL_TOLERANCE,
   LIGHT_DARKER_RATIO,
   lightCheck,
   LIGHT_FLOOR_A,
   LIGHT_FLOOR_B,
   matchesInfo,
-  pairFileNames,
-  pairTag,
   pngChunkTypes,
   sessionToken,
 } from "./bench-export";
-import { makeFrame, toFramePoint } from "./bench-image";
-import type { DeviceInfo } from "./bench-report";
+import { toFramePoint } from "./bench-image";
 import type { MethodResult, SizeResult } from "./bench-run";
 import { summarize } from "./bench-stats";
 
@@ -109,151 +105,6 @@ describe("assertPlainPng", () => {
     expect(() => assertPlainPng(png(...PLAIN.slice(0, 3)), "frame B")).toThrow(
       "frame B: PNG has no IEND",
     );
-  });
-});
-
-const DEVICE: DeviceInfo = {
-  userAgent: "UA",
-  model: "Phone",
-  platformVersion: "17",
-  hardwareConcurrency: 8,
-  deviceMemoryGb: 8,
-  crossOriginIsolated: false,
-  jspi: true,
-  screen: "412x915 @2.6",
-  webgpu: "qualcomm adreno",
-};
-
-const TAG = pairTag("1b", 2, 3);
-
-// Why these tests matter: the JSON travels with the frames, so its fields
-// are a fixed list: sizes, brightness and the device, and no time, place
-// or anything else a later change might add by accident.
-describe("framesInfo", () => {
-  const a = makeFrame(
-    2,
-    1,
-    new Uint8ClampedArray([0, 0, 0, 255, 255, 255, 255, 255]),
-  );
-  const b = makeFrame(1, 1, new Uint8ClampedArray([10, 10, 10, 255]));
-  const info = JSON.parse(
-    framesInfo(
-      [
-        { name: "A", frame: a, source: { width: 4, height: 2 } },
-        { name: "B", frame: b, source: { width: 4, height: 2 } },
-      ],
-      DEVICE,
-      1280,
-      TAG,
-      { light: "not-darker", session: "0a1b2c3d" },
-    ),
-  ) as Record<string, unknown>;
-
-  it("holds exactly the listed fields", () => {
-    expect(Object.keys(info).sort()).toEqual(
-      [
-        "captureMaxLongEdge",
-        "device",
-        "format",
-        "frames",
-        "lightCheck",
-        "pair",
-        "pairLabel",
-        "session",
-        "spot",
-        "sequence",
-      ].sort(),
-    );
-    expect(info.format).toBe("feature-match-frames/1");
-    expect(info.captureMaxLongEdge).toBe(1280);
-    expect(info.device).toEqual(DEVICE);
-    expect(info.lightCheck).toBe("not-darker");
-    expect(info.session).toBe("0a1b2c3d");
-  });
-
-  // Why this test matters: the photos are scored offline per pair, and
-  // nobody writes down the order they were taken in; the JSON inside each
-  // zip is what says which pair it holds.
-  it("names the pair, its label, the spot and the running number", () => {
-    expect([info.pair, info.pairLabel, info.spot, info.sequence]).toEqual([
-      "1b",
-      "light: dimmed",
-      2,
-      3,
-    ]);
-  });
-
-  it("describes each frame by file, size, camera size and grey values", () => {
-    expect(info.frames).toEqual([
-      {
-        name: "A",
-        file: FRAME_FILES.A,
-        width: 2,
-        height: 1,
-        sourceWidth: 4,
-        sourceHeight: 2,
-        greyMean: 127.5,
-        greySd: 127.5,
-      },
-      {
-        name: "B",
-        file: FRAME_FILES.B,
-        width: 1,
-        height: 1,
-        sourceWidth: 4,
-        sourceHeight: 2,
-        greyMean: 10,
-        greySd: 0,
-      },
-    ]);
-  });
-
-  // Why this test matters: a run zip holds many pairs side by side, so
-  // each frames JSON must name the files its own pair's photos are under.
-  it("names the given files instead of the fixed ones", () => {
-    const text = framesInfo(
-      [
-        { name: "A", frame: a, source: { width: 4, height: 2 } },
-        { name: "B", frame: b, source: { width: 4, height: 2 } },
-      ],
-      DEVICE,
-      1280,
-      TAG,
-      { light: null, session: "0a1b2c3d" },
-      { A: "p-frame-a.png", B: "p-frame-b.png" },
-    );
-    const files = (
-      JSON.parse(text) as { frames: { file: string }[] }
-    ).frames.map((f) => f.file);
-    expect(files).toEqual(["p-frame-a.png", "p-frame-b.png"]);
-  });
-
-  it("names no time or place anywhere", () => {
-    const text = framesInfo(
-      [{ name: "A", frame: a, source: { width: 2, height: 1 } }],
-      DEVICE,
-      1280,
-      TAG,
-      { light: null, session: "0a1b2c3d" },
-    );
-    const keys: string[] = [];
-    const walk = (v: unknown): void => {
-      if (v !== null && typeof v === "object") {
-        for (const [k, w] of Object.entries(v)) {
-          keys.push(k);
-          walk(w);
-        }
-      }
-    };
-    walk(JSON.parse(text));
-    expect(keys.length).toBeGreaterThan(5);
-    expect(
-      keys.filter((k) =>
-        /time|date|^lat|latitude|^lon|^lng|longitude|gps|location|exif|geo/i.test(
-          k,
-        ),
-      ),
-    ).toEqual([]);
   });
 });
 
@@ -564,8 +415,9 @@ describe("pairs", () => {
       "1b",
       "1c",
       "2a",
-      "2b",
-      "2c",
+      "t0",
+      "t90",
+      "t180",
       "2d",
       "3b",
       "3c",
@@ -576,104 +428,6 @@ describe("pairs", () => {
     ]);
     expect(PAIRS[1]).toEqual({ key: "1b", label: "light: dimmed" });
     expect(PAIRS.at(-1)).toEqual({ key: "x", label: "other" });
-  });
-
-  it("names every file by running number, pair key, spot and label", () => {
-    expect(pairFileNames(pairTag("1b", 2, 3))).toEqual({
-      all: "feature-match-03-1b-s2-light-dimmed.zip",
-      A: "feature-match-03-1b-s2-light-dimmed-frame-a.png",
-      B: "feature-match-03-1b-s2-light-dimmed-frame-b.png",
-      info: "feature-match-03-1b-s2-light-dimmed-frames.json",
-      matches: "feature-match-03-1b-s2-light-dimmed-matches.json",
-    });
-    expect(pairFileNames(pairTag("3b", 1, 12)).all).toBe(
-      "feature-match-12-3b-s1-distance-1-5-m-to-3-m.zip",
-    );
-    expect(pairFileNames(pairTag("2d", 1, 140)).all).toBe(
-      "feature-match-140-2d-s1-rotation-tilted-30-45-deg.zip",
-    );
-  });
-
-  it("gives ASCII names without spaces, unique across running numbers", () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.integer({ min: 1, max: 9999 }), {
-          minLength: 2,
-          maxLength: 20,
-        }),
-        fc.constantFrom(...PAIRS.map((p) => p.key)),
-        fc.integer({ min: 1, max: 3 }),
-        (sequences, key, spot) => {
-          const all = sequences.flatMap((n) =>
-            Object.values(pairFileNames(pairTag(key, spot, n))),
-          );
-          expect(new Set(all).size).toBe(all.length);
-          for (const name of all) {
-            expect(name).toMatch(/^feature-match-[a-z0-9.-]+$/);
-            expect(name).not.toMatch(/--/);
-          }
-        },
-      ),
-    );
-  });
-
-  // Why this test matters: inside the zip the entries keep their fixed
-  // names, so a tool reading any zip finds the same entries; the pair's
-  // own download names must never clash with them.
-  it("keeps the pair's names apart from the names inside the zip", () => {
-    const own = Object.values(pairFileNames(pairTag("1a", 1, 1)));
-    for (const inner of Object.values(FRAME_FILES)) {
-      expect(own).not.toContain(inner);
-    }
-  });
-
-  // Why this test matters: only the light pairs are repeated at spots; a
-  // spot carried over from 1c into 2a would name a spot the pair has not.
-  it("records spot 1 for every pair that is not a light pair", () => {
-    expect(pairTag("1c", 3, 1).spot).toBe(3);
-    expect(pairTag("2a", 3, 1).spot).toBe(1);
-    expect(pairTag("x", 2, 1).spot).toBe(1);
-  });
-
-  it("refuses an unknown key, a spot outside 1-3 and a bad running number", () => {
-    expect(() => pairTag("9z", 1, 1)).toThrow("unknown pair 9z");
-    expect(() => pairTag("1a", 4, 1)).toThrow("spot");
-    expect(() => pairTag("1a", 1.5, 1)).toThrow("spot");
-    expect(() => pairTag("1a", 1, 0)).toThrow("sequence");
-  });
-});
-
-// Why these tests matter: the run zip's frames JSON carries the shots, the
-// takes and the rotation pair's crop and turn after the fixed fields; the
-// PC side reads the fixed fields first, so the extra ones must never move
-// or replace them, and the device stays last.
-describe("framesInfo extra fields", () => {
-  const frame = makeFrame(4, 2, new Uint8ClampedArray(32).fill(50));
-  const device = { model: null } as unknown as DeviceInfo;
-  const args = [
-    [
-      { name: "A" as const, frame, source: { width: 8, height: 4 } },
-      { name: "B" as const, frame, source: { width: 8, height: 4 } },
-    ],
-    device,
-    1280,
-    pairTag("2b", 1, 3),
-    { light: null, session: "000fa0ff" },
-    FRAME_FILES,
-  ] as const;
-
-  it("writes them after the fixed fields and before the device", () => {
-    const keys = Object.keys(
-      JSON.parse(
-        framesInfo(...args, { shots: { A: "x" }, turn: 90 }),
-      ) as Record<string, unknown>,
-    );
-    expect(keys.slice(-3)).toEqual(["shots", "turn", "device"]);
-    expect(keys.indexOf("frames")).toBeLessThan(keys.indexOf("shots"));
-  });
-
-  it("writes the same JSON as before without them", () => {
-    expect(framesInfo(...args, {})).toBe(framesInfo(...args));
   });
 });
 

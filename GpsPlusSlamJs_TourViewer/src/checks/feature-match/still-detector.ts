@@ -1,6 +1,6 @@
 /**
  * Whether the phone has come to rest, from `devicemotion` rotation rates:
- * the rule behind the cockpit's hands-off photo B. Pure, so the slice
+ * the rule behind the cockpit's hands-off shots. Pure, so the slice
  * keeps its state and every threshold is unit- and property-tested.
  *
  * @see still-detector.ts.md

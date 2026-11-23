@@ -7,6 +7,7 @@ import {
   parsePlan,
   planPhotoIds,
   planReducer,
+  planRetakes,
   planText,
   type PhotoMeta,
   type PlanAction,
@@ -36,7 +37,7 @@ describe("the run plan by shots", () => {
     const p = run([shoot("light-s1/L1", "p1")]);
     expect(p.shots["light-s1/L1"]).toEqual({ photo: photo("p1"), take: 1 });
     expect(p.current).toBe(1);
-    expect(p.shotsTaken).toBe(1);
+    expect(planRetakes(p)).toBe(0);
   });
 
   // Why: a retake raises the take (it names the file, never reused) and
@@ -49,7 +50,26 @@ describe("the run plan by shots", () => {
     ]);
     expect(p.shots["light-s1/L1"]?.take).toBe(2);
     expect(planPhotoIds(p)).toEqual(["p2"]);
-    expect(p.shotsTaken).toBe(2);
+    expect(planRetakes(p)).toBe(1);
+  });
+
+  // Why: the summary's retake count must not count a photo the browser
+  // lost (after a reload) as a retake: the tester did not retake it.
+  it("counts retakes as the takes past the first, never a lost photo", () => {
+    const p = run([
+      shoot("light-s1/L1", "p1"),
+      { type: "lost", shot: "light-s1/L1" },
+      { type: "move", index: 0 },
+      shoot("light-s1/L1", "p2"),
+      shoot("light-s1/L2", "p3"),
+      { type: "move", index: 1 },
+      shoot("light-s1/L2", "p4"),
+      { type: "move", index: 1 },
+      shoot("light-s1/L2", "p5"),
+    ]);
+    expect(p.shots["light-s1/L1"]?.take).toBe(1);
+    expect(p.shots["light-s1/L2"]?.take).toBe(3);
+    expect(planRetakes(p)).toBe(2);
   });
 
   // Why: a failed light check keeps the shot current so the tester

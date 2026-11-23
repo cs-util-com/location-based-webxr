@@ -254,10 +254,9 @@
       <details id="options">
         <summary>Options: everything is on, untick to leave out</summary>
         <p id="options-note" class="hint">
-          The methods apply to every run. A run on a photo pair sets the rest
-          itself: 1 run, no warm-up, WebGPU only (WASM where the phone has no
-          WebGPU, named in the log) and xfeat_fp16.tflite only. Runs, warm-up,
-          backends and model files apply to the synthetic run.
+          These options apply to the synthetic run. The speed test on F1 and F2
+          has its own options below. The photo pairs are not measured on this
+          phone: the zip takes them to the PC.
         </p>
         <fieldset>
           <legend>Methods</legend>
@@ -921,7 +920,7 @@
             Back to the pairs
           </button>
           <button id="g-open-measure" type="button" class="secondary">
-            Measure on this phone (optional)
+            Speed and synthetic tests (optional)
           </button>
         </div>
       </section>
@@ -993,7 +992,7 @@
       >
         <div class="sheet-box measure">
           <div class="sheet-head">
-            <h2 id="g-measure-title">Measure on this phone</h2>
+            <h2 id="g-measure-title">Speed and synthetic tests</h2>
             <button
               id="g-close-measure"
               type="button"

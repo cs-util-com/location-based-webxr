@@ -6,8 +6,10 @@
  *
  * @see feature-match-check.ts.md
  */
+import { blobFrame } from "./bench-dom";
 import { startBenchEngine } from "./bench-engine";
 import { sessionToken } from "./bench-export";
+import { previewFrame } from "./bench-image";
 import { errorText } from "./bench-net";
 import { createCameraControl } from "./camera-control";
 import { sameDrawing } from "./cockpit-model";
@@ -17,6 +19,7 @@ import { guidedVideo, startGuidedView } from "./guided-view";
 import { indexedDbKeyValueStore } from "../../key-value-db";
 import {
   createFeatureMatchStore,
+  holdTabLock,
   PHOTO_DB,
   PHOTO_STORE,
   type KeyValueStorage,
@@ -46,6 +49,8 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
     photoDbFailed: (e) => {
       fail("photo storage", e);
     },
+    previewOf: async (png) => previewFrame(await blobFrame(png)),
+    lock: () => holdTabLock(navigator.locks),
   });
   const { store } = fm;
 
@@ -97,6 +102,13 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   const view = guided ? startGuidedView(viewDeps) : startCockpitView(viewDeps);
 
   window.addEventListener("pagehide", camera.stop);
+  // The log is written a second after a line; a closing page writes it now.
+  window.addEventListener("pagehide", fm.flushLog);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      fm.flushLog();
+    }
+  });
   // A motion reading writes the store up to 60 times a second; the page
   // draws only when what it shows changed (`sameDrawing`).
   let drawn = store.getState();
@@ -111,10 +123,16 @@ export function startFeatureMatchCheck(root: ParentNode = document): void {
   });
   engine.render();
   view();
-  // The restore fills the photo side table without an action: draw again.
-  void fm.restorePhotos().then(view, (e: unknown) => {
-    fail("photo storage", e);
-  });
+  void fm.restore().then(
+    () => {
+      if (store.getState().otherTab) {
+        log("another tab holds this test: this one takes no photo");
+      }
+    },
+    (e: unknown) => {
+      fail("photo storage", e);
+    },
+  );
   if (fm.oldPlanDiscarded) {
     log("stored plan of version 1 discarded (no migration)");
   }

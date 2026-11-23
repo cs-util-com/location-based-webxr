@@ -13,7 +13,7 @@ export const DIAGRAM_KINDS = [
   "rot-0",
   "rot-35",
   "dist-2x",
-  "dist-3x",
+  "dist-forward",
   "side-flat",
   "side-same-deep",
   "side-deep",
@@ -127,12 +127,12 @@ function parts(kind: DiagramKind): Parts {
         mid: "step back",
         label: "Photo A from 1.5 m, photo B from 3 m.",
       };
-    case "dist-3x":
+    case "dist-forward":
       return {
-        a: distView(36, "1 m"),
-        b: distView(80, "3 m"),
-        mid: "step back",
-        label: "Photo A from 1 m, photo B from 3 m.",
+        a: distView(80, "3 m"),
+        b: distView(36, "1 m"),
+        mid: "step forward",
+        label: "Photo A from 3 m, photo B from 1 m.",
       };
     case "side-flat":
       return {

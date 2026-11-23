@@ -18,7 +18,7 @@ import {
   ZipReader,
   type FileEntry,
 } from '@zip.js/zip.js';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { packFilesAsZip, ZipPackagingError } from './pack-files-as-zip';
 import { readStoredCentralDirectory } from '../test-utils/zip-central-directory';
@@ -116,5 +116,37 @@ describe('packFilesAsZip', () => {
     await expect(
       packFilesAsZip([{ path: 'a.bin', data: broken }])
     ).rejects.toBeInstanceOf(ZipPackagingError);
+  });
+});
+
+describe('packFilesAsZip timeless', () => {
+  // Why this test matters: an archive that must not carry the time it was
+  // made (a measurement upload says "no time anywhere") has to come out
+  // byte-identical whenever it is packed; the default keeps the clock.
+  it('packs the same entries to the same bytes at any clock time', async () => {
+    const entries = [
+      { path: 'a/b.txt', data: 'hello' },
+      { path: 'c.bin', data: new Uint8Array([1, 2, 3]) },
+    ];
+    const bytesAt = async (
+      iso: string,
+      options?: { timeless: boolean }
+    ): Promise<Uint8Array> => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(iso));
+      try {
+        const blob = await packFilesAsZip(entries, options);
+        return new Uint8Array(await blob.arrayBuffer());
+      } finally {
+        vi.useRealTimers();
+      }
+    };
+    const timeless = { timeless: true };
+    expect(await bytesAt('2031-05-06T07:08:09Z', timeless)).toEqual(
+      await bytesAt('2042-11-12T13:14:15Z', timeless)
+    );
+    expect(await bytesAt('2031-05-06T07:08:09Z')).not.toEqual(
+      await bytesAt('2042-11-12T13:14:15Z')
+    );
   });
 });

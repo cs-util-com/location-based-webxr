@@ -6,7 +6,6 @@ import {
   lightOf,
   MAX_EXTRA,
   nextOpen,
-  pairFolderTag,
   pairsUsing,
   previousInScene,
   readyPairs,
@@ -108,16 +107,16 @@ describe("the derived pairs", () => {
   // legacy keys; the table of the plan is pinned here row by row.
   it("derives the plan's table with its legacy keys", () => {
     const rows = derivedPairs(1, 1).map(
-      (p) => `${p.id} ${p.a}+${p.b} ${p.kind} ${p.legacy ?? "-"}`,
+      (p) => `${p.id} ${p.a}+${p.b} ${p.kind} ${p.legacy}`,
     );
     expect(rows).toEqual([
       "light-s1/L1-L2 light-s1/L1+light-s1/L2 real 1a",
       "light-s1/L1-L3 light-s1/L1+light-s1/L3 real 1b",
       "light-s1/L1-L4 light-s1/L1+light-s1/L4 real 1c",
       "flat-s1/F1-F2 flat-s1/F1+flat-s1/F2 real 2a",
-      "flat-s1/F1-T0 flat-s1/F1+flat-s1/F2 turn0 -",
-      "flat-s1/F1-T90 flat-s1/F1+flat-s1/F2 turn90 2b",
-      "flat-s1/F1-T180 flat-s1/F1+flat-s1/F2 turn180 2c",
+      "flat-s1/F1-T0 flat-s1/F1+flat-s1/F2 turn0 t0",
+      "flat-s1/F1-T90 flat-s1/F1+flat-s1/F2 turn90 t90",
+      "flat-s1/F1-T180 flat-s1/F1+flat-s1/F2 turn180 t180",
       "flat-s1/F1-F3 flat-s1/F1+flat-s1/F3 real 2d",
       "flat-s1/F1-F4 flat-s1/F1+flat-s1/F4 real 3b",
       "flat-s1/F5-F4 flat-s1/F5+flat-s1/F4 real 3c",
@@ -175,26 +174,6 @@ describe("the derived pairs", () => {
   it("keys a result by the pair and both photo ids", () => {
     const [p] = derivedPairs(1, 0);
     expect(resultKey(p!, "a1", "b2")).toBe("light-s1/L1-L2@a1+b2");
-  });
-});
-
-describe("the zip folder of a pair", () => {
-  // Why: the PC side finds a pair by its old key in the folder name; the
-  // rotation control has no old key and must still get a unique folder.
-  it("uses the legacy key, else the pair's own name, and the run number", () => {
-    const pairs = derivedPairs(2, 1);
-    for (const [i, p] of pairs.entries()) {
-      const t = pairFolderTag(p, i + 1);
-      expect(t.sequence).toBe(i + 1);
-      expect(t.spot).toBe(p.spot);
-      expect(t.pair).toBe(p.legacy ?? p.name.toLowerCase());
-    }
-    const control = pairs.find((p) => p.legacy === null)!;
-    expect(pairFolderTag(control, 3).pair).toBe("f1-t0");
-    for (const n of [0, 1.5, Number.NaN]) {
-      expect(() => pairFolderTag(control, n)).toThrow(/sequence/);
-      expect(() => pairFolderTag(pairs[0]!, n)).toThrow();
-    }
   });
 });
 
@@ -257,7 +236,8 @@ describe("the run summary", () => {
       spots: 1,
       extra: 0,
       photos: photos({ "light-s1/L1": 100, "light-s1/L2": 40 }),
-      shotsTaken: 3,
+      retakes: 1,
+      results: {},
       device: "Pixel test",
     });
     expect(text).toContain("Session: abcd1234");
@@ -267,6 +247,38 @@ describe("the run summary", () => {
     expect(text).toContain("Light checks: light-s1/L2 changed");
     expect(text).toContain("Retakes: 1");
     expect(text).toContain(`File: ${runZipName("abcd1234")}`);
-    expect(text).toContain("Measured: none on the phone, measure on the PC");
+    expect(text).toContain(
+      "Pairs measured on this phone: 0, failed: 0, pending (to be measured on the PC): 1",
+    );
+  });
+});
+
+describe("the summary's measured pairs", () => {
+  // Why: the zip goes to the PC; the summary says which ready pairs the
+  // phone measured, which failed, and which the PC must still measure. A
+  // result whose key no ready pair has (a retake made it stale) counts as
+  // nothing.
+  it("counts measured, failed and pending pairs by their result keys", () => {
+    const shots = photos({
+      "light-s1/L1": 100,
+      "light-s1/L2": 100,
+      "light-s1/L3": 60,
+    });
+    const text = summaryText({
+      session: "abcd1234",
+      spots: 1,
+      extra: 0,
+      photos: shots,
+      retakes: 0,
+      results: {
+        "light-s1/L1-L2@p-light-s1/L1+p-light-s1/L2": { status: "done" },
+        "light-s1/L1-L3@p-light-s1/L1+p-light-s1/L3": { status: "failed" },
+        "light-s1/L1-L4@x+y": { status: "done" },
+      },
+      device: "Pixel test",
+    });
+    expect(text).toContain(
+      "Pairs measured on this phone: 1, failed: 1, pending (to be measured on the PC): 0",
+    );
   });
 });

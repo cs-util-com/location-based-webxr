@@ -25,7 +25,13 @@ import {
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
-import { LIGHT_NOTE, SCENE_SETUP, SHOT_WORDS } from "./guided-texts";
+import { OTHER_TAB_TEXT } from "./guided-texts";
+import {
+  LIGHT_NOTE,
+  retakeText,
+  SCENE_SETUP,
+  SHOT_WORDS,
+} from "./guided-texts";
 import { planShots, type PhotoMeta } from "./run-plan";
 
 const run = (
@@ -59,6 +65,10 @@ const allTaken = (): FeatureMatchAction[] => {
 /** L1, L2 taken and L3 as bright as L1: its light check fails. */
 const warnedL3 = (): FeatureMatchState =>
   run([camOn, shot(L1, 120), shot(L2, 120), shot(L3, 120)]);
+
+/** L1 almost black (L2 alike): L3's check fails with "too-dark-a". */
+const darkL1 = (): FeatureMatchState =>
+  run([camOn, shot(L1, 5), shot(L2, 5), shot(L3, 2)]);
 
 // Why these tests matter: the cockpit view only copies what this model
 // says into its fixed dock, so every rule of the big button, the side
@@ -130,6 +140,18 @@ describe("shutterView", () => {
     });
   });
 
+  // Why: an almost black L1 fails L3's check, and no retake of L3 can
+  // fix that: only a new L1 can. The big button must lead back to L1
+  // instead of holding the tester on L3 for retakes that keep failing,
+  // with or without the camera on.
+  it("leads back to L1 when L1 is too dark to dim from", () => {
+    const want = { mode: "next", text: "Back to L1", index: 0 };
+    expect(shutterView(darkL1())).toMatchObject(want);
+    expect(shutterView(run([A.cameraChanged(false)], darkL1()))).toMatchObject(
+      want,
+    );
+  });
+
   it("says all done at the end, once every shot is taken", () => {
     expect(shutterView(run([camOn, ...allTaken()]))).toMatchObject({
       mode: "save",
@@ -148,16 +170,31 @@ describe("retakeView", () => {
       label: "Back to L1",
       disabled: false,
       action: { kind: "back", index: 0 },
+      hint: "",
     });
+    // Why the hint: a retake of a shared first shot redoes several
+    // measurements; the tester is told how many before tapping.
     expect(retakeView(run([A.planMoved(0)], s))).toEqual({
       label: "Retake L1",
       disabled: false,
       action: { kind: "shoot" },
+      hint: retakeText("L1", 3),
+    });
+  });
+
+  // Why: a retake of L3 cannot fix an almost black L1, so the side button
+  // goes back to L1 instead, as the big button does.
+  it("goes back to L1 when L1 is too dark to dim from", () => {
+    expect(retakeView(darkL1())).toEqual({
+      label: "Back to L1",
+      disabled: false,
+      action: { kind: "back", index: 0 },
+      hint: "",
     });
   });
 
   it("is off on a first shot, while busy and while counting", () => {
-    const off = { label: "Retake", disabled: true, action: null };
+    const off = { label: "Retake", disabled: true, action: null, hint: "" };
     expect(retakeView(run([camOn]))).toEqual(off);
     const s = run([camOn, shot(L1), shot(L2), A.planMoved(0)]);
     expect(retakeView(run([A.runStarted("speed")], s))).toEqual(off);
@@ -214,6 +251,15 @@ describe("instrView", () => {
       "Measuring",
     );
     expect(instrView(run([camOn, ...allTaken()])).text).toMatch(/Download all/);
+  });
+
+  // Why: before a retake the tester should know what it costs: a retake of
+  // a scene's first shot redoes every pair that shares it.
+  it("says what a retake of a done shot redoes", () => {
+    const back = run([camOn, shot(L1), shot(L2), A.planMoved(0)]);
+    expect(instrView(back).text).toBe(
+      `Shot done. Retake it, or go to the next shot. ${retakeText("L1", 3)}`,
+    );
   });
 
   // Why: as in the prototype, the instruction marks the word to tap.
@@ -318,6 +364,11 @@ describe("cockpit model: status order and the run's own line", () => {
     expect(statusView(run([A.cameraStartSet("failed")], pair)).text).toBe(
       "Camera unavailable: tap Retry camera.",
     );
+    // Another tab holding the run outranks every other line.
+    expect(statusView(run([A.otherTabFound()], failed))).toEqual({
+      text: OTHER_TAB_TEXT,
+      tone: "bad",
+    });
   });
 
   // Why: the hands-off photo's outcome is what the status line reports;

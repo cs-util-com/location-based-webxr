@@ -245,23 +245,97 @@ async function takeShot(page, key) {
 }
 
 /**
- * The name pattern of a file in the run zip's folder of pair number `n`
- * (two digits) with the legacy key `key`, at place 1.
+ * A shot's photo in the run zip: `shots/<scene>/<key>-t<take>.png`.
  *
- * @param {string} n
- * @param {string} key
- * @param {string} file
+ * @param {string} shot the shot id, as `light-s1/L1`
+ * @param {number} [take]
  */
-const pairFile = (n, key, file) =>
-  new RegExp(
-    `^feature-match-${n}-${key}-s1-[a-z0-9-]+/feature-match-${file.replace(".", "\\.")}$`,
-  );
+const shotPng = (shot, take = 1) => `shots/${shot}-t${String(take)}.png`;
 
 /**
- * The JSON of the zip entry whose name matches `pattern`.
+ * A ready pair's frames JSON in the run zip.
+ *
+ * @param {string} pair the derived pair id, as `light-s1/L1-L2`
+ */
+const pairJson = (pair) => `pairs/${pair}/feature-match-frames.json`;
+
+/**
+ * Makes the page's IndexedDB reads of photos controllable, as a phone
+ * whose stored photos cannot be read: `window.__photoReads` "ok" reads
+ * them, "hold" keeps the next photo read waiting until
+ * `window.__releaseRead()` (and fails every later one), "fail" aborts
+ * each photo read.
+ *
+ * @param {import("@playwright/test").Page} page
+ */
+async function controlPhotoReads(page) {
+  await page.addInitScript(() => {
+    const w = /** @type {any} */ (window);
+    const realGet = IDBObjectStore.prototype.get;
+    w.__photoReads = "ok";
+    IDBObjectStore.prototype.get = function (key) {
+      const request = realGet.call(this, key);
+      if (!String(key).startsWith("photo:") || w.__photoReads === "ok") {
+        return request;
+      }
+      const tx = this.transaction;
+      if (w.__photoReads === "hold") {
+        w.__photoReads = "fail";
+        // The reader's completion handler is kept until the test lets go.
+        Object.defineProperty(tx, "oncomplete", {
+          configurable: true,
+          set(fn) {
+            w.__releaseRead = () => fn.call(tx, new Event("complete"));
+          },
+        });
+        return request;
+      }
+      tx.abort();
+      return request;
+    };
+  });
+}
+
+/**
+ * Waits until the page's database holds a log with `part` in it. Polled
+ * through `page.evaluate`, which awaits the read: `waitForFunction` would
+ * take the returned promise itself as a truthy answer and not wait.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} part
+ */
+async function storedLogHas(page, part) {
+  const storedLog = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const open = indexedDB.open("feature-match-check-photos");
+          open.onerror = () => resolve("");
+          open.onsuccess = () => {
+            const db = open.result;
+            const get = db
+              .transaction("photos", "readonly")
+              .objectStore("photos")
+              .get("log");
+            get.onsuccess = () => {
+              db.close();
+              resolve(typeof get.result === "string" ? get.result : "");
+            };
+            get.onerror = () => {
+              db.close();
+              resolve("");
+            };
+          };
+        }),
+    );
+  await expect.poll(storedLog).toContain(part);
+}
+
+/**
+ * The JSON of the zip entry named `pattern` (or whose name matches it).
  *
  * @param {Buffer} zip
- * @param {RegExp} pattern
+ * @param {RegExp | string} pattern
  */
 async function zipJson(zip, pattern) {
   return JSON.parse((await zipEntryBytes(zip, pattern)).toString("utf8"));
@@ -459,74 +533,66 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
     /^Saved feature-match-run-.+\.zip \(.+\)\. Send this file\.$/,
   );
   const bytes = await readDownload(download);
-  const files = await zipFiles(bytes);
-  expect(files).toHaveLength(5 * 3 + 2);
-  expect(files).toContain("feature-match-summary.txt");
-  expect(files).toContain("feature-match-log.txt");
-  for (const [n, key] of [
-    ["01", "1a"],
-    ["04", "2a"],
-    ["05", "f1-t0"],
-    ["06", "2b"],
-    ["07", "2c"],
-  ]) {
-    for (const file of ["frame-a.png", "frame-b.png", "frames.json"]) {
-      expect(files.filter((f) => pairFile(n, key, file).test(f))).toHaveLength(
-        1,
-      );
-    }
+  // Each shot once, then a frames JSON per ready pair naming its shots.
+  expect(await zipFiles(bytes)).toEqual([
+    shotPng("light-s1/L1"),
+    shotPng("light-s1/L2"),
+    shotPng("flat-s1/F1"),
+    shotPng("flat-s1/F2"),
+    pairJson("light-s1/L1-L2"),
+    pairJson("flat-s1/F1-F2"),
+    pairJson("flat-s1/F1-T0"),
+    pairJson("flat-s1/F1-T90"),
+    pairJson("flat-s1/F1-T180"),
+    "feature-match-summary.txt",
+    "feature-match-log.txt",
+  ]);
+
+  for (const shot of ["light-s1/L1", "light-s1/L2", "flat-s1/F1"]) {
+    const png = await zipEntryBytes(bytes, shotPng(shot));
+    const types = chunkTypes(png);
+    expect(types[0]).toBe("IHDR");
+    expect(types.at(-1)).toBe("IEND");
+    expect(
+      types.filter(
+        (t) =>
+          !["IHDR", "sRGB", "gAMA", "cHRM", "iCCP", "IDAT", "IEND"].includes(t),
+      ),
+    ).toEqual([]);
+    // IHDR: the captured size, unchanged.
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([320, 240]);
   }
 
-  for (const [n, key] of [
-    ["01", "1a"],
-    ["06", "2b"],
-  ]) {
-    for (const name of ["frame-a.png", "frame-b.png"]) {
-      const png = await zipEntryBytes(bytes, pairFile(n, key, name));
-      const types = chunkTypes(png);
-      expect(types[0]).toBe("IHDR");
-      expect(types.at(-1)).toBe("IEND");
-      expect(
-        types.filter(
-          (t) =>
-            !["IHDR", "sRGB", "gAMA", "cHRM", "iCCP", "IDAT", "IEND"].includes(
-              t,
-            ),
-        ),
-      ).toEqual([]);
-      // IHDR: the captured size, unchanged, also in a turned pair.
-      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([320, 240]);
-    }
-  }
-
-  const light = await zipJson(bytes, pairFile("01", "1a", "frames.json"));
+  const light = await zipJson(bytes, pairJson("light-s1/L1-L2"));
   expect(light).toMatchObject({
+    format: "feature-match-frames/2",
     pair: "1a",
+    derivedPair: "light-s1/L1-L2",
     spot: 1,
-    sequence: 1,
     lightCheck: "ok",
     kind: "real",
     axis: "light",
-    shots: {
-      A: { id: "light-s1/L1", take: 1 },
-      B: { id: "light-s1/L2", take: 1 },
-    },
+    frames: [
+      { name: "A", shot: "light-s1/L1", take: 1, file: shotPng("light-s1/L1") },
+      { name: "B", shot: "light-s1/L2", take: 1, file: shotPng("light-s1/L2") },
+    ],
   });
   expect(light.session).toMatch(/^[0-9a-f]{8}$/);
-  expect(light.rotation).toBeUndefined();
+  expect(light.turn).toBeUndefined();
   expect(
     light.frames.map((/** @type {{ width: number }} */ f) => f.width),
   ).toEqual([320, 320]);
 
-  const turn = await zipJson(bytes, pairFile("06", "2b", "frames.json"));
+  const turn = await zipJson(bytes, pairJson("flat-s1/F1-T90"));
   expect(turn).toMatchObject({
-    pair: "2b",
-    sequence: 6,
+    pair: "t90",
     kind: "turn90",
-    shots: { A: { id: "flat-s1/F1" }, B: { id: "flat-s1/F2" } },
-    rotation: { turnB: 90, direction: "cw" },
+    frames: [{ shot: "flat-s1/F1" }, { shot: "flat-s1/F2" }],
+    turn: { degrees: 90, direction: "cw" },
   });
-  expect(turn.rotation.cropB).toEqual(turn.rotation.cropA);
+  expect(turn.frames[1].crop).toEqual(turn.frames[0].crop);
+  // The browser was asked once to keep the stored photos.
+  expect(await logLines(page, "storage persist: ")).toBe(1);
 
   // Grey values of the half black, half white camera: 127.5, within what
   // the stream's colour conversion may move them.
@@ -538,6 +604,9 @@ test("the feature matching cockpit walks the shots by itself and saves every rea
   expect(Math.abs(Number(grey?.[1]) - 127.5)).toBeLessThanOrEqual(6);
   const { texts } = await zipContents(bytes);
   expect(texts["feature-match-summary.txt"]).toContain("Pairs ready: 5 of");
+  expect(texts["feature-match-summary.txt"]).toContain(
+    "Pairs measured on this phone: 0, failed: 0, pending (to be measured on the PC): 5",
+  );
   expect(texts["feature-match-log.txt"]).toContain("download: 5 pairs as");
   expect(errors).toEqual([]);
 });
@@ -677,8 +746,8 @@ test("the feature matching cockpit falls back to the tap when motion readings st
  * tester sends: while the zip is prepared the big button says so and
  * nothing else can start, and a failed encode (a phone out of memory) must
  * say so in red, log the error and lose nothing: the next try packs the
- * same photos. The canvas encoder is replaced: held once, then answering
- * null until set back.
+ * same photos. The zip reads the photos from storage, so a storage read
+ * is held once, then fails until set back.
  */
 test("the feature matching cockpit shows Download all preparing, then a failure that loses nothing", async ({
   page,
@@ -686,29 +755,13 @@ test("the feature matching cockpit shows Download all preparing, then a failure 
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await noSavePicker(page);
-  await page.addInitScript(() => {
-    const w = /** @type {any} */ (window);
-    const real = HTMLCanvasElement.prototype.toBlob;
-    w.__toBlob = "ok";
-    HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
-      if (w.__toBlob === "hold") {
-        w.__toBlob = "null";
-        w.__releaseBlob = () => setTimeout(() => cb(null), 0);
-        return;
-      }
-      if (w.__toBlob === "null") {
-        setTimeout(() => cb(null), 0);
-        return;
-      }
-      real.call(this, cb, ...rest);
-    };
-  });
+  await controlPhotoReads(page);
   await openCockpit(page);
   await cockpitSettings(page);
   await takeShot(page, "L1");
   await takeShot(page, "L2");
   await page.evaluate(() => {
-    /** @type {any} */ (window).__toBlob = "hold";
+    /** @type {any} */ (window).__photoReads = "hold";
   });
   const all = page.locator("#c-download-all");
   await all.click();
@@ -716,31 +769,32 @@ test("the feature matching cockpit shows Download all preparing, then a failure 
   await expect(page.locator("#c-shutter")).toBeDisabled();
   await expect(all).toBeDisabled();
   await page.waitForFunction(
-    () => typeof (/** @type {any} */ (window).__releaseBlob) === "function",
+    () => typeof (/** @type {any} */ (window).__releaseRead) === "function",
   );
   await page.evaluate(() => {
-    /** @type {any} */ (window).__releaseBlob();
+    /** @type {any} */ (window).__releaseRead();
   });
   const status = page.locator("#c-status");
-  await expect(status).toContainText("Could not prepare the zip:");
+  await expect(status).toContainText(
+    "Could not prepare the zip: Error: the photo",
+  );
   await expect(status).toContainText("Nothing was lost; try again.");
   await expect(status).toHaveClass(/bad/);
   await expect(page.locator("#log")).toContainText("ERROR download:");
   await expect(all).toBeEnabled();
 
   await page.evaluate(() => {
-    /** @type {any} */ (window).__toBlob = "ok";
+    /** @type {any} */ (window).__photoReads = "ok";
   });
   const [download] = await Promise.all([
     page.waitForEvent("download"),
     all.click(),
   ]);
   const files = await zipFiles(await readDownload(download));
-  expect(
-    files.filter((f) =>
-      /^feature-match-01-1a-s1-[^/]+\/feature-match-frame-[ab]\.png$/.test(f),
-    ),
-  ).toHaveLength(2);
+  expect(files.filter((f) => f.startsWith("shots/"))).toEqual([
+    shotPng("light-s1/L1"),
+    shotPng("light-s1/L2"),
+  ]);
 });
 
 /**
@@ -880,7 +934,7 @@ test("the feature matching benchmark guides each shot and the first visit", asyn
 
   await openTab(page, "results");
   await expect(page.locator("#options-note")).toContainText(
-    "WASM where the phone has no WebGPU",
+    "These options apply to the synthetic run.",
   );
   await expect(page.locator("#copy-note")).toHaveText(
     "Not needed for the photo tests - the zip already contains the log. Use it to paste a quick timing run into a chat.",
@@ -968,10 +1022,16 @@ test("the feature matching cockpit holds a light shot whose light did not change
     page.locator("#c-download-all").click(),
   ]);
   const bytes = await readDownload(download);
-  const control = await zipJson(bytes, pairFile("01", "1a", "frames.json"));
+  const control = await zipJson(bytes, pairJson("light-s1/L1-L2"));
   expect(control.lightCheck).toBe("ok");
-  expect(control.shots.B.take).toBe(2);
-  const dimmed = await zipJson(bytes, pairFile("02", "1b", "frames.json"));
+  expect(control.frames[1]).toMatchObject({
+    take: 2,
+    file: shotPng("light-s1/L2", 2),
+  });
+  // Only the photo kept for a shot goes in, under its take.
+  expect(await zipFiles(bytes)).toContain(shotPng("light-s1/L2", 2));
+  expect(await zipFiles(bytes)).not.toContain(shotPng("light-s1/L2", 1));
+  const dimmed = await zipJson(bytes, pairJson("light-s1/L1-L3"));
   expect(dimmed.lightCheck).toBe("ok");
   expect(dimmed.frames[1].greyMean).toBeLessThan(dimmed.frames[0].greyMean);
   const { texts } = await zipContents(bytes);
@@ -1965,14 +2025,17 @@ test("the guided photo test walks the shots from the intro to a saved zip", asyn
   );
   expect(zipName).toMatch(/^feature-match-run-.+\.zip$/);
   const bytes = await savedBytes(page, zipName);
-  const files = await zipFiles(bytes);
-  expect(files).toHaveLength(5);
-  for (const file of ["frame-a.png", "frame-b.png"]) {
-    expect(files.some((f) => pairFile("01", "1a", file).test(f))).toBe(true);
-  }
-  const frames = await zipJson(bytes, pairFile("01", "1a", "frames.json"));
+  expect(await zipFiles(bytes)).toEqual([
+    shotPng("light-s1/L1"),
+    shotPng("light-s1/L2"),
+    shotPng("flat-s1/F1"),
+    pairJson("light-s1/L1-L2"),
+    "feature-match-summary.txt",
+    "feature-match-log.txt",
+  ]);
+  const frames = await zipJson(bytes, pairJson("light-s1/L1-L2"));
   expect(frames.pair).toBe("1a");
-  expect(JSON.stringify(frames)).toContain("feature-match-frame-a.png");
+  expect(frames.frames[0].file).toBe(shotPng("light-s1/L1"));
   const { texts } = await zipContents(bytes);
   expect(texts["feature-match-summary.txt"]).toContain("Shots taken: 3 of 13");
   expect(texts["feature-match-log.txt"]).toContain("photo light-s1/L2 take 1");
@@ -1997,15 +2060,17 @@ async function downloadAllBytes(page) {
 }
 
 /**
- * The bytes of the zip entry whose name matches `pattern`.
+ * The bytes of the zip entry named `pattern` (or whose name matches it).
  *
  * @param {Buffer} zip
- * @param {RegExp} pattern
+ * @param {RegExp | string} pattern
  */
 async function zipEntryBytes(zip, pattern) {
   const reader = new ZipReader(new Uint8ArrayReader(new Uint8Array(zip)));
   const entry = (await reader.getEntries()).find((e) =>
-    pattern.test(e.filename),
+    typeof pattern === "string"
+      ? e.filename === pattern
+      : pattern.test(e.filename),
   );
   if (!entry || entry.directory || !entry.getData) {
     throw new Error(`no ${String(pattern)} in the zip`);
@@ -2019,10 +2084,11 @@ async function zipEntryBytes(zip, pattern) {
  * Why this test matters: without a save dialog (most phones) the zip
  * goes out through a download link, and the photos of the run live in
  * the page's database: after a reload the run continues where it was,
- * with the taken photos drawn again from storage. A photo taken after the
- * reload must get an id of its own: one handed out again would overwrite
- * a restored shot's photo in the zip (the camera is dimmed for it, so a
- * swapped photo has other pixels).
+ * with the taken photos drawn again from storage, and the zip built after
+ * it holds every shot once, the ready pairs and the log of both loads. A
+ * photo taken after the reload must get an id of its own: one handed out
+ * again would overwrite a restored shot's photo in the zip (the camera is
+ * dimmed for it, so a swapped photo has other pixels).
  */
 test("the guided photo test downloads through a link and keeps its photos across a reload", async ({
   page,
@@ -2036,9 +2102,11 @@ test("the guided photo test downloads through a link and keeps its photos across
   await page.goto("/feature-match-check.html");
   await guidedFirstShots(page);
   const first = await downloadAllBytes(page);
-  const photo = (/** @type {string} */ name) => pairFile("01", "1a", name);
-  const beforeA = await zipEntryBytes(first, photo("frame-a.png"));
-  const beforeB = await zipEntryBytes(first, photo("frame-b.png"));
+  const beforeA = await zipEntryBytes(first, shotPng("light-s1/L1"));
+  const beforeB = await zipEntryBytes(first, shotPng("light-s1/L2"));
+  // The log is written a second after a line; a reload sooner than that
+  // may lose the last second (a closing page's own write is best effort).
+  await storedLogHas(page, "download: saved");
   await page.reload();
   await expect(page.locator("#g-run")).toBeVisible();
   await expect(page.locator("#g-intro")).toBeHidden();
@@ -2060,16 +2128,79 @@ test("the guided photo test downloads through a link and keeps its photos across
   await page.locator("#g-primary").click();
   await expect(page.locator("#g-card-key")).toHaveText("L4");
   const zip = await downloadAllBytes(page);
-  const files = await zipFiles(zip);
   // L1-L2 and L1-L3 are ready; L4 is not taken yet.
-  expect(files.filter((n) => n.endsWith(".png"))).toHaveLength(4);
-  expect(files).toContain("feature-match-summary.txt");
-  expect((await zipEntryBytes(zip, photo("frame-a.png"))).equals(beforeA)).toBe(
-    true,
+  expect(await zipFiles(zip)).toEqual([
+    shotPng("light-s1/L1"),
+    shotPng("light-s1/L2"),
+    shotPng("light-s1/L3"),
+    pairJson("light-s1/L1-L2"),
+    pairJson("light-s1/L1-L3"),
+    "feature-match-summary.txt",
+    "feature-match-log.txt",
+  ]);
+  expect(
+    (await zipEntryBytes(zip, shotPng("light-s1/L1"))).equals(beforeA),
+  ).toBe(true);
+  expect(
+    (await zipEntryBytes(zip, shotPng("light-s1/L2"))).equals(beforeB),
+  ).toBe(true);
+  expect(
+    (await zipEntryBytes(zip, shotPng("light-s1/L3"))).equals(beforeA),
+  ).toBe(false);
+  // The log of the first load comes back before the second's.
+  const zipLog = (await zipContents(zip)).texts["feature-match-log.txt"] ?? "";
+  const reloaded = zipLog.indexOf("page reloaded");
+  expect(reloaded).toBeGreaterThan(zipLog.indexOf("photo light-s1/L2 take 1"));
+  expect(zipLog.indexOf("photo light-s1/L3 take 1")).toBeGreaterThan(reloaded);
+});
+
+/**
+ * Why this test matters: two tabs of the page would write one database,
+ * each sweeping the other's photos as orphans. The second tab must say
+ * that the test is open elsewhere and take no photo, while the first one
+ * runs on.
+ */
+test("the guided photo test refuses a second tab", async ({
+  page,
+  context,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.goto("/feature-match-check.html");
+  // Polled through evaluate: waitForFunction would take the returned
+  // promise as a truthy answer and not wait.
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        ((await navigator.locks.query()).held ?? []).some(
+          (l) => l.name === "feature-match-run",
+        ),
+      ),
+    )
+    .toBe(true);
+  const second = await context.newPage();
+  await routeNetwork(second, fulfillSift);
+  await fakeCamera(second);
+  await second.goto("/feature-match-check.html");
+  await expect(second.locator("#log")).toContainText(
+    "another tab holds this test: this one takes no photo",
   );
-  expect((await zipEntryBytes(zip, photo("frame-b.png"))).equals(beforeB)).toBe(
-    true,
+  await second.locator("#g-intro-start").click();
+  const chip = second.locator("#g-store-chip");
+  await expect(chip).toBeVisible();
+  await expect(chip).toHaveText(
+    "This test is open in another tab: this one takes no photo.",
   );
+  // Its settings are refused too, so the default 3 s countdown runs first.
+  await second.locator("#g-primary").click();
+  await expect(second.locator("#log")).toContainText(
+    "capture: photo of light-s1/L1 refused",
+    { timeout: 10_000 },
+  );
+  await expect(second.locator("#g-card-key")).toHaveText("L1");
+
+  // The first tab runs on.
+  await guidedFirstShots(page);
 });
 
 /**
@@ -2233,8 +2364,8 @@ test("the guided countdown ends when a save starts under it", async ({
  * its failure path must be as clear as its success: while packing the
  * button says so and is off, a PNG that cannot be encoded ends in a
  * "Could not prepare the zip" line with the button back on, and the run
- * goes on (the next photo can still be taken). The canvas encoder is
- * replaced: held once, then answering null.
+ * goes on (the next photo can still be taken). A stored photo's read is
+ * held once, then fails.
  */
 test("the guided Download all shows packing, then a failure that loses nothing", async ({
   page,
@@ -2242,44 +2373,28 @@ test("the guided Download all shows packing, then a failure that loses nothing",
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await savePicker(page);
-  await page.addInitScript(() => {
-    const w = /** @type {any} */ (window);
-    const real = HTMLCanvasElement.prototype.toBlob;
-    w.__toBlob = "ok";
-    HTMLCanvasElement.prototype.toBlob = function (cb, ...rest) {
-      if (w.__toBlob === "hold") {
-        w.__toBlob = "null";
-        w.__releaseBlob = () => setTimeout(() => cb(null), 0);
-        return;
-      }
-      if (w.__toBlob === "null") {
-        setTimeout(() => cb(null), 0);
-        return;
-      }
-      real.call(this, cb, ...rest);
-    };
-  });
+  await controlPhotoReads(page);
   await page.goto("/feature-match-check.html");
   await guidedFirstShots(page);
   await page.locator("#g-open-pairs").click();
   await page.locator("#g-go-end").click();
   await page.evaluate(() => {
-    /** @type {any} */ (window).__toBlob = "hold";
+    /** @type {any} */ (window).__photoReads = "hold";
   });
   const button = page.locator("#g-download-all");
   await button.click();
   await expect(button).toHaveText("Preparing the zip...");
   await expect(button).toBeDisabled();
-  // The label turns before the first PNG is encoded: wait for the held one.
+  // The label turns before the first photo is read: wait for the held one.
   await page.waitForFunction(
-    () => typeof (/** @type {any} */ (window).__releaseBlob) === "function",
+    () => typeof (/** @type {any} */ (window).__releaseRead) === "function",
   );
   await page.evaluate(() => {
-    /** @type {any} */ (window).__releaseBlob();
+    /** @type {any} */ (window).__releaseRead();
   });
   const state = page.locator("#g-download-state");
   await expect(state).toHaveText(
-    /^Could not prepare the zip: .*PNG encoding failed.*. Nothing was lost; try again.$/,
+    /^Could not prepare the zip: .*the photo .* is not stored.*. Nothing was lost; try again.$/,
   );
   await expect(state).toHaveClass(/err/);
   await expect(button).toBeEnabled();

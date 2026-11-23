@@ -263,7 +263,6 @@ describe("the run plan inside the page state", () => {
   it("moves on to the next open shot after a photo of the current one", () => {
     const s = run([shot("light-s1/L1")]);
     expect(currentShot(s.plan)?.id).toBe("light-s1/L2");
-    expect(s.plan.shotsTaken).toBe(1);
   });
 
   // Why: the stored plan is the one the page starts with.
@@ -365,6 +364,17 @@ describe("Download all", () => {
     expect(featureMatchReducer(going, A.planReset())).toBe(going);
     const busy = run([A.runStarted("speed")], withPair());
     expect(featureMatchReducer(busy, A.runZipStarted())).toBe(busy);
+    // A tab refused the run would pack a plan the other tab has moved on.
+    const other = run([A.otherTabFound()], withPair());
+    expect(featureMatchReducer(other, A.runZipStarted())).toBe(other);
+  });
+
+  // Why: the stored log is the run's log; after a reset a new run's zip
+  // must not carry every earlier run's lines.
+  it("starts the log afresh on a reset", () => {
+    const s = run([A.logged("old run"), A.planReset()], withPair());
+    expect(s.log).toEqual([]);
+    expect(run([A.logged("new run")], s).log).toEqual(["new run"]);
   });
 
   // Why: the end screen says what happened to the zip: saved, refused by
@@ -595,5 +605,104 @@ describe("the hands-off shot", () => {
         }),
       ),
     ).toBe(w);
+  });
+});
+
+describe("what storage holds", () => {
+  const L1 = "light-s1/L1";
+  const L2 = "light-s1/L2";
+  const key = "light-s1/L1-L2@p1+p2";
+  const pair = (): FeatureMatchState => run([shot(L1, "p1"), shot(L2, "p2")]);
+
+  // Why: a view may say "stored" only once the write succeeded, and an id
+  // the plan no longer names is stored for nothing.
+  it("marks a named photo stored, and forgets it once retaken", () => {
+    const s = run([A.photoStored("p1"), A.photoStored("nope")], pair());
+    expect(s.storedIds).toEqual(["p1"]);
+    expect(featureMatchReducer(s, A.photoStored("p1"))).toBe(s);
+    const again = run([shot(L1, "p3")], s);
+    expect(again.storedIds).toEqual([]);
+  });
+
+  // Why: a result belongs to the two photos it was measured on; a retake
+  // of either makes it stale, and a key no ready pair has is refused.
+  it("keeps a result only for a ready pair's current photos", () => {
+    const s = run(
+      [
+        A.resultStored({ key, text: "ok" }),
+        A.resultFailed({
+          key: "light-s1/L1-L3@p1+p9",
+          text: "e",
+          persisted: true,
+        }),
+      ],
+      pair(),
+    );
+    expect(s.results).toEqual({
+      [key]: { status: "done", text: "ok", persisted: true },
+    });
+    expect(run([shot(L2, "p4")], s).results).toEqual({});
+  });
+
+  // Why: only a failure the method itself reported is kept in storage; a
+  // crash is measured again after a reload.
+  it("records whether a failure is kept in storage", () => {
+    const s = run(
+      [A.resultFailed({ key, text: "worker crashed", persisted: false })],
+      pair(),
+    );
+    expect(s.results[key]).toEqual({
+      status: "failed",
+      text: "worker crashed",
+      persisted: false,
+    });
+  });
+
+  // Why: a reload brings back what storage held, but only what the plan
+  // still names, and the log continues the old one with a reload mark.
+  it("takes the restored photos, results and log once", () => {
+    const s = run([A.logged("this load")], pair());
+    expect(s.restored).toBe(false);
+    const r = featureMatchReducer(
+      s,
+      A.restoreFinished({
+        stored: ["p1", "gone"],
+        results: {
+          [key]: { status: "done", text: "ok", persisted: true },
+          "x@a+b": { status: "done", text: "old", persisted: true },
+        },
+        log: ["old 1", "old 2"],
+      }),
+    );
+    expect(r.restored).toBe(true);
+    expect(r.storedIds).toEqual(["p1"]);
+    expect(Object.keys(r.results)).toEqual([key]);
+    expect(r.log).toEqual(["old 1", "old 2", "page reloaded", "this load"]);
+    expect(
+      featureMatchReducer(
+        r,
+        A.restoreFinished({ stored: [], results: {}, log: ["x"] }),
+      ),
+    ).toBe(r);
+    const fresh = featureMatchReducer(
+      s,
+      A.restoreFinished({ stored: [], results: {}, log: [] }),
+    );
+    expect(fresh.log).toEqual(["this load"]);
+  });
+
+  // Why: two tabs would write the same plan and database; the second one
+  // takes no photo and changes nothing of the run.
+  it("refuses every plan action once another tab holds the run", () => {
+    const s = run([A.otherTabFound()], pair());
+    expect(s.otherTab).toBe(true);
+    for (const a of [
+      shot("light-s1/L3", "p5"),
+      A.planReset(),
+      A.planMoved(0),
+      A.planSized({ spots: 2, extra: 0 }),
+    ]) {
+      expect(featureMatchReducer(s, a)).toBe(s);
+    }
   });
 });

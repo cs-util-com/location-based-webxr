@@ -35,6 +35,7 @@ import {
   shotContext,
   shotRows,
 } from "./guided-model";
+import { OTHER_TAB_TEXT, STORE_CHIP_TEXT } from "./guided-texts";
 import { createPlanIo } from "./plan-io";
 import { planShots } from "./run-plan";
 import { MAX_EXTRA } from "./scenes";
@@ -243,10 +244,10 @@ export function startGuidedView(deps: GuidedDeps): () => void {
 
   /** Draws the frame `id` onto `canvas` once; hides it while there is none. */
   const drawFrame = (canvas: HTMLCanvasElement, id: string | null): void => {
-    const f = id ? sides.frames.get(id) : undefined;
+    const f = id ? sides.previews.get(id) : undefined;
     canvas.hidden = !f;
     if (f && id && canvas.dataset.id !== id) {
-      frameCanvas(f.frame, canvas);
+      frameCanvas(f, canvas);
       canvas.dataset.id = id;
     }
   };
@@ -292,7 +293,8 @@ export function startGuidedView(deps: GuidedDeps): () => void {
         : s.cameraStart === "failed"
           ? "camera unavailable: tap Capture to retry"
           : "camera off: tap Capture";
-    ui.storeChip.hidden = !s.photoStoreFailing;
+    ui.storeChip.hidden = !s.photoStoreFailing && !s.otherTab;
+    ui.storeChip.textContent = s.otherTab ? OTHER_TAB_TEXT : STORE_CHIP_TEXT;
     ui.ghostToggle.hidden = !v.ghost;
     if (ghostFor !== v.shot) {
       ghostFor = null;

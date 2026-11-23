@@ -9,7 +9,7 @@
  * @see bench-engine.ts.md
  */
 import { drawMatches, sideBySide } from "./bench-draw";
-import { frameCanvas } from "./bench-dom";
+import { blobFrame, frameCanvas } from "./bench-dom";
 import { describeGrey, greyStats, type Frame } from "./bench-image";
 import {
   backendsFrom,
@@ -267,7 +267,7 @@ export interface BenchEngine {
 /** Wires the measuring block found under `root`. */
 export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   const { root, fm, log, fail, stamp, stopCamera } = deps;
-  const { store, sides, accepted } = fm;
+  const { store, accepted } = fm;
   const ui = findUi(root);
   const state = (): FeatureMatchState => store.getState();
 
@@ -439,7 +439,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     store.dispatch(A.errorsCleared());
     const pair = syntheticInput();
     const o = state().options;
-    // A protocol pair sets runs, warm-up, backend and model file itself.
+    // The synthetic run takes runs, warm-up, backends and model files from the options.
     const settings = runSettings(
       {
         pair: pair.pair,
@@ -561,14 +561,14 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
   /** The speed test's pair: the flat scene's F1 and F2 when taken, else synthetic. */
-  const speedPair = (): RunPair => {
+  const speedPair = async (): Promise<RunPair> => {
     const shots = state().plan.shots;
-    const frame = (shot: string) => {
+    const frame = async (shot: string): Promise<Frame | undefined> => {
       const id = shots[shot]?.photo.id;
-      return id === undefined ? undefined : sides.frames.get(id)?.frame;
+      return id === undefined ? undefined : blobFrame(await fm.readPhoto(id));
     };
-    const a = frame(SPEED_SHOTS.a);
-    const b = frame(SPEED_SHOTS.b);
+    const a = await frame(SPEED_SHOTS.a);
+    const b = await frame(SPEED_SHOTS.b);
     return a && b
       ? {
           input: { a, b, warp: null },
@@ -585,7 +585,7 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
    */
   const runSpeedOnce = async (): Promise<string> => {
     store.dispatch(A.errorsCleared());
-    const pair = speedPair();
+    const pair = await speedPair();
     const o = state().speedOptions;
     const { backends, note } = timingBackends(
       backendsFrom(o.backends),

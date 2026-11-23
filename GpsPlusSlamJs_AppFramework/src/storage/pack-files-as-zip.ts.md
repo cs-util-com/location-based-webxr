@@ -11,7 +11,7 @@ its private review (2026-08-26).
 
 ## Public API
 
-- `packFilesAsZip(entries: readonly ZipEntryInput[]): Promise<Blob>`
+- `packFilesAsZip(entries: readonly ZipEntryInput[], options?: PackZipOptions): Promise<Blob>`
   - Returns an `application/zip` Blob with every entry written at its
     path, method STORE (`level: 0`). An empty list yields a valid empty
     archive.
@@ -20,6 +20,11 @@ its private review (2026-08-26).
     BEFORE any bytes are written) or when the underlying writer fails
     (the partial archive is abandoned, never returned).
 - `interface ZipEntryInput { path: string; data: Blob | Uint8Array | string }`
+- `interface PackZipOptions { timeless?: boolean }` - `timeless` stamps
+  every entry 1980-01-01 00:00 (the DOS date's first day, local time) and
+  leaves out the extended time field, so the archive carries no clock time
+  and the same entries pack to the same bytes. Default off: entries carry
+  the time they were packed, as before.
 - `class ZipPackagingError extends Error` - `cause` carries the original.
 - `assertWritableZipEntries(entries, caller)` - the pre-write checks, and
   a composition of the two below. Use it unless a caller needs only one
@@ -34,7 +39,7 @@ its private review (2026-08-26).
   a name it read out of the input archive, while keeping every payload
   rule. Filtering those entries out of the composed assertion skipped both
   halves, which is the hole this shape removes (PR #438 review).
-- `writeStoreZip(entries, caller)` - the writer WITHOUT validation, for a
+- `writeStoreZip(entries, caller, options?)` - the writer WITHOUT validation, for a
   caller that validated its own inputs (`zip-rebuild.ts` validates only
   its new entries).
 
@@ -65,4 +70,5 @@ zip read; STORE mode verified from the bytes by the hand-rolled
 central-directory reader in `test-utils/zip-central-directory.ts`
 (independent of zip.js); the empty list; unsafe and duplicate paths
 rejected before writing, and so is an `undefined` payload; a mid-write
-failure surfaced as `ZipPackagingError`.
+failure surfaced as `ZipPackagingError`; a `timeless` pack gives the same
+bytes at two clock times, the default does not.

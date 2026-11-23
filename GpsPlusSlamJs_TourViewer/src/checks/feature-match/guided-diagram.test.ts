@@ -2,6 +2,10 @@
 import { describe, expect, it } from "vitest";
 
 import { DIAGRAM_KINDS, diagramSvg } from "./guided-diagram";
+import { shotCard } from "./guided-texts";
+import { shotList } from "./scenes";
+
+const shotOf = (key: string) => shotList(1, 0).find((s) => s.key === key)!;
 
 const parse = (svg: string): Document =>
   new DOMParser().parseFromString(svg, "image/svg+xml");
@@ -40,6 +44,10 @@ describe("diagramSvg", () => {
     expect(diagramSvg("light-dim")).toContain(">dim<");
     expect(diagramSvg("rot-35")).toContain(">tilt<");
     expect(diagramSvg("dist-2x")).toContain(">step back<");
+    // Why: F5 is taken after F4 at 3 m by stepping forward to 1 m; a
+    // picture saying "step back" contradicts the card next to it.
+    expect(diagramSvg("dist-forward")).toContain(">step forward<");
+    expect(shotCard(shotOf("F5")).diagram).toBe("dist-forward");
     expect(diagramSvg("side-flat")).toContain(">step aside<");
   });
 });

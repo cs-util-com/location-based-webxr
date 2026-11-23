@@ -16,7 +16,7 @@ The measuring block of the feature matching page, shared by its views: the Optio
 ## Invariants and assumptions
 
 - The synthetic run measures the synthetic pair (seed 1, known warp). Nothing is measured on the run's photos on the phone in this version: the photos go to the PC in the run zip.
-- The speed test times the flat scene's F1 and F2 (`SPEED_SHOTS`, the flat control pair `2a`) when both are taken and loaded, else the synthetic pair. Both views share the plan, and it and its photos are restored at every load, so either view times the photos the other one took.
+- The speed test times the flat scene's F1 and F2 (`SPEED_SHOTS`, the flat control pair `2a`) when both are taken, read from storage (`fm.readPhoto`, decoded by `blobFrame`), else the synthetic pair. Both views share the plan, and it and its photos are restored at every load, so either view times the photos the other one took.
 - `stopCamera` is called before anything is timed; the speed test holds `guardRun` (wake lock, hidden-page report line).
 - WebGPU counts only when `requestAdapter()` gives an adapter, asked once per page.
 

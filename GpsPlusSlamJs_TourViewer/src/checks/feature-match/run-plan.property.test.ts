@@ -4,11 +4,14 @@ import { describe, expect, it } from "vitest";
 import {
   EMPTY_PLAN,
   parsePlan,
+  planPhotos,
   planReducer,
   planShots,
   planText,
   type PlanAction,
+  type RunPlan,
 } from "./run-plan";
+import { needsRetake, nextOpen } from "./scenes";
 
 const shotArb = fc.constantFrom(
   "light-s1/L1",
@@ -54,6 +57,31 @@ const actionArb: fc.Arbitrary<PlanAction> = fc.oneof(
   fc.constant({ type: "reset" as const }),
 );
 
+/** What a photo action did: refused (the same plan), or its take and position. */
+const photoStep = (p: RunPlan, next: RunPlan, shot: string) =>
+  next === p
+    ? { refused: true }
+    : { take: next.shots[shot]?.take, current: next.current };
+
+/** What the photo rule says that action must do. */
+function expectedStep(p: RunPlan, a: PlanAction & { type: "photo" }) {
+  const list = planShots(p);
+  const index = list.findIndex((s) => s.id === a.shot);
+  if (index < 0 || a.photo.width <= 0) return { refused: true };
+  const take = (p.shots[a.shot]?.take ?? 0) + 1;
+  const photos = planPhotos({
+    ...p,
+    shots: { ...p.shots, [a.shot]: { photo: a.photo, take } },
+  });
+  const current =
+    index !== p.current
+      ? p.current
+      : needsRetake(a.shot, photos)
+        ? index
+        : (nextOpen(list, photos, index) ?? index);
+  return { take, current };
+}
+
 describe("run plan properties", () => {
   // Why: any sequence of taps keeps the run inside its list and every
   // stored shot a shot of the list, and the plan survives storage.
@@ -70,6 +98,30 @@ describe("run plan properties", () => {
           }
         }
         expect(parsePlan(planText(p))).toEqual(p);
+      }),
+    );
+  });
+
+  // Why: the walk through the shots is the reducer's main rule and both
+  // views trust it; a unit test pins a few paths, this pins every path:
+  // an accepted photo of the current shot moves on unless its light check
+  // failed, a photo of any other shot leaves the position alone, the take
+  // rises by one, and a refused photo changes nothing at all.
+  it("walks the shots by the photo rule", () => {
+    fc.assert(
+      fc.property(fc.array(actionArb, { maxLength: 40 }), (actions) => {
+        let p: RunPlan = EMPTY_PLAN;
+        const got: unknown[] = [];
+        const want: unknown[] = [];
+        for (const a of actions) {
+          const next = planReducer(p, a);
+          if (a.type === "photo") {
+            got.push(photoStep(p, next, a.shot));
+            want.push(expectedStep(p, a));
+          }
+          p = next;
+        }
+        expect(got).toEqual(want);
       }),
     );
   });

@@ -107,7 +107,7 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
     title: "From 1 m",
     change: "Step forward to about 1 m, keep it centred.",
     capture: "Capture from 1 m.",
-    diagram: "dist-3x",
+    diagram: "dist-forward",
     purpose: "Matched against the 3 m shot: a third of the size.",
     avoid: "Zooming instead of stepping.",
   },
@@ -171,6 +171,13 @@ export const shotCard = (shot: Shot): ShotCard => ({
   ...SHOT_WORDS[shot.key],
   setup: SCENE_SETUP[shot.kind],
 });
+
+/** The guided chip while the photos are not stored on this phone. */
+export const STORE_CHIP_TEXT = "not stored on this phone: download soon";
+
+/** Said while another tab of the page holds the run. */
+export const OTHER_TAB_TEXT =
+  "This test is open in another tab: this one takes no photo.";
 
 /** The note after a shot's light check (against L1, and L4 against L3). */
 export const LIGHT_NOTE: Readonly<Record<ShotLight, string>> = {

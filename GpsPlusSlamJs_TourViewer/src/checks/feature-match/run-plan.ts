@@ -56,8 +56,6 @@ export interface RunPlan {
   /** By shot id. */
   readonly shots: Readonly<Record<string, ShotRecord>>;
   readonly settings: PlanSettings;
-  /** Photos taken in the run, retakes included. */
-  readonly shotsTaken: number;
 }
 
 export type PlanAction =
@@ -83,7 +81,6 @@ export const EMPTY_PLAN: RunPlan = {
   current: 0,
   shots: {},
   settings: DEFAULT_SETTINGS,
-  shotsTaken: 0,
 };
 
 /** The plan's shots in run order. */
@@ -151,7 +148,7 @@ function photo(p: RunPlan, a: PlanAction & { type: "photo" }): RunPlan | null {
   if (index < 0 || !isPhoto(a.photo)) return null;
   const take = (p.shots[a.shot]?.take ?? 0) + 1;
   const shots = { ...p.shots, [a.shot]: { photo: a.photo, take } };
-  const next = { ...p, shots, shotsTaken: p.shotsTaken + 1 };
+  const next = { ...p, shots };
   if (index !== p.current || needsRetake(a.shot, planPhotos(next))) return next;
   return { ...next, current: nextOpen(list, planPhotos(next), index) ?? index };
 }
@@ -213,6 +210,14 @@ export const planReducer = (p: RunPlan, a: PlanAction): RunPlan =>
 export const planPhotoIds = (p: RunPlan): string[] =>
   Object.values(p.shots).map((r) => r.photo.id);
 
+/**
+ * Photos taken again over a shot that had one: the takes past the first.
+ * A photo the browser lost is not a retake: its record is gone, so the
+ * next photo of that shot is take 1 again.
+ */
+export const planRetakes = (p: RunPlan): number =>
+  Object.values(p.shots).reduce((n, r) => n + r.take - 1, 0);
+
 // --- persistence -------------------------------------------------------------
 
 const VERSION = 2;
@@ -269,6 +274,5 @@ export function parsePlan(text: string | null): RunPlan | undefined {
       isCount(raw.current) && raw.current < list.length ? raw.current : 0,
     shots,
     settings: settingsOver(DEFAULT_SETTINGS, settings) ?? DEFAULT_SETTINGS,
-    shotsTaken: isCount(raw.shotsTaken) ? raw.shotsTaken : 0,
   };
 }

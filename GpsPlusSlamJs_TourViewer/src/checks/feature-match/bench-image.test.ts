@@ -7,6 +7,8 @@ import {
   greyStats,
   fromQuarterTurn,
   makeFrame,
+  PREVIEW_EDGE,
+  previewFrame,
   quarterTurnFits,
   resizeFrame,
   turnQuarter,
@@ -335,5 +337,20 @@ describe("quarter turn", () => {
     expect(quarterTurnFits(480, 640, 480, 640)).toBe(false);
     expect(quarterTurnFits(500, 500, 640, 480)).toBe(false);
     expect(quarterTurnFits(549, 1280, 480, 480)).toBe(false);
+  });
+});
+
+describe("previewFrame", () => {
+  // Why: the views keep only a small copy of each photo in memory (the
+  // PNG lives in storage); it must keep the photo's shape and never grow
+  // a photo smaller than the preview size.
+  it("shrinks to the preview's long edge and keeps a small frame's size", () => {
+    const big = makeFrame(1280, 720, new Uint8ClampedArray(1280 * 720 * 4));
+    const p = previewFrame(big);
+    expect([p.width, p.height]).toEqual([PREVIEW_EDGE, 180]);
+    const tall = previewFrame(
+      makeFrame(9, 16, new Uint8ClampedArray(9 * 16 * 4)),
+    );
+    expect([tall.width, tall.height]).toEqual([9, 16]);
   });
 });
