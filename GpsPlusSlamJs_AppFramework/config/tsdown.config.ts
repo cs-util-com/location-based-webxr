@@ -26,10 +26,12 @@ const entryFiles = [
   // Content anchors that re-place only out of view - deep-imported by apps.
   'src/ar/deferred-anchors.ts',
   // AR-space content correction: pure math, the registry that bakes each
-  // relocalization jump into tracked objects, and the one-committer claim -
+  // relocalization jump into tracked objects, the `arContent` watcher that
+  // tracks app content automatically, and the one-committer claim -
   // deep-imported by apps.
   'src/ar/ar-space-correction.ts',
   'src/ar/ar-space-correction-registry.ts',
+  'src/ar/ar-content-watcher.ts',
   'src/ar/pose-committer.ts',
   // Shared scene-graph builder for live AR and replay. Both `webxr-session.ts`
   // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`

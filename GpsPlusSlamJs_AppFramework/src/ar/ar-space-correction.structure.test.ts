@@ -54,8 +54,15 @@ describe('AR-space correction: module structure', () => {
     expect(registry).not.toMatch(/\bdispatch\s*\(/);
   });
 
+  it('the content watcher never dispatches to the store', () => {
+    // Why this test matters: the watcher reacts to scene events inside the
+    // store notification; a dispatch from there would re-enter the bake.
+    expect(source('ar-content-watcher.ts')).not.toMatch(/\bdispatch\s*\(/);
+  });
+
   for (const entry of [
     'ar-space-correction-registry.ts',
+    'ar-content-watcher.ts',
     '../state/ar-space-correction-slice.ts',
   ]) {
     it(`${entry} reaches neither the GPS alignment nor the composed selectors through any import`, () => {

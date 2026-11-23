@@ -21,7 +21,15 @@
     odometry, they misplace content by about the jump size after a
     relocalization. Inspection and tests only.
   - **`ar/ar-space-correction-registry`** (deep import):
-    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`).
+    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`); every
+    corrected object receives an `arcorrected` event per jump carrying the
+    applied local correction `M`.
+  - **`ar/ar-content-watcher`** (deep import): `enableArSpaceCorrection`
+    creates the `arContent` group under `arWorldGroup`; whatever is added
+    to it (or to a group marked with `arCorrection.container`) is corrected
+    with no further call. `arCorrection.track` takes a `capturedAt` hint
+    before or after the add, `exclude` keeps an object out, `attach`
+    follows a new store.
   - **`ar/pose-committer`** (deep import): one committer per object, now
     shared by GPS anchors, deferred anchors and the registry.
 - **Content anchors that re-place only while none of it is in view**, at

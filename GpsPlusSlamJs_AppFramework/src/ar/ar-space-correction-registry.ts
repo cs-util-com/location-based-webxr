@@ -49,9 +49,31 @@ interface ArSpaceCorrectionStore {
  * camera). `capturedAt` (epoch-ms XR clock) for a pose computed from older
  * data; `epoch` when the caller knows it. At most one of the two.
  */
-interface TrackOptions {
+export interface TrackOptions {
   readonly capturedAt?: number;
   readonly epoch?: number;
+}
+
+/** The event a tracked object receives right after a correction is baked in. */
+interface ArCorrectedEvent {
+  /**
+   * `M`, the transform applied to the object's local matrix
+   * (`local := M * local`), column-major. Frozen and shared by every object
+   * with the same parent and epoch in one jump: read it, never keep a
+   * mutable reference to it.
+   */
+  readonly matrix: Matrix4;
+}
+
+declare module 'three' {
+  interface Object3DEventMap {
+    /**
+     * Dispatched on an object the AR-space correction tracks, once per
+     * bake that moved it (a jump, or jumps it missed applied at tracking).
+     * A physics body or an app's own copy of the position follows here.
+     */
+    arcorrected: ArCorrectedEvent;
+  }
 }
 
 /** What the registry keeps per tracked object (read-only view). */
@@ -183,18 +205,40 @@ function stillUnder(
   return p === group;
 }
 
-const scratchM = new THREE.Matrix4();
-const scratchT = new THREE.Vector3();
-const scratchQ = new THREE.Quaternion();
-const scratchS = new THREE.Vector3();
+/**
+ * One `M = P^-1 * Delta(applied) * P`, decomposed once and shared by every
+ * entry with the same `P` and `applied` within one sync (the common case:
+ * every direct child of the content group shares the identity `P`).
+ */
+interface PreparedCorrection {
+  /** `M`, column-major and frozen: it is handed to `arcorrected` listeners. */
+  readonly matrix: Matrix4;
+  readonly m: THREE.Matrix4;
+  readonly t: THREE.Vector3;
+  readonly q: THREE.Quaternion;
+  /** `Q` before the bake to `Q` after it, so equal `Q`s stay shared. */
+  readonly corrections: Map<Pose, Pose>;
+}
+
+/** Per sync: `P` (by reference), then `applied`, to the prepared `M`. */
+type CorrectionCache = Map<Matrix4, Map<number, PreparedCorrection>>;
+
+function prepare(delta: Pose, parentToGroup: Matrix4): PreparedCorrection {
+  const matrix = Object.freeze(
+    shownLocalMatrix(delta, parentToGroup, IDENTITY_MATRIX)
+  );
+  const m = new THREE.Matrix4().fromArray(matrix);
+  const t = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  m.decompose(t, q, new THREE.Vector3());
+  return { matrix, m, t, q, corrections: new Map() };
+}
 
 /** `local := M * local`, M rigid; the scale is untouched. */
-function bakeInto(object: THREE.Object3D, m: Matrix4): void {
-  scratchM.fromArray(m);
-  scratchM.decompose(scratchT, scratchQ, scratchS);
-  object.position.applyQuaternion(scratchQ).add(scratchT);
-  object.quaternion.premultiply(scratchQ);
-  if (!object.matrixAutoUpdate) object.matrix.premultiply(scratchM);
+function bakeInto(object: THREE.Object3D, c: PreparedCorrection): void {
+  object.position.applyQuaternion(c.q).add(c.t);
+  object.quaternion.premultiply(c.q);
+  if (!object.matrixAutoUpdate) object.matrix.premultiply(c.m);
   object.matrixWorldNeedsUpdate = true;
 }
 
@@ -209,6 +253,7 @@ export function createArSpaceCorrectionRegistry(options: {
     );
   }
   const entries = new Map<THREE.Object3D, Entry>();
+  const sharedP = new WeakMap<THREE.Object3D, Matrix4>();
   let store: ArSpaceCorrectionStore | null = null;
   let unsubscribe: (() => void) | null = null;
   let seenObservations: unknown = null;
@@ -216,7 +261,8 @@ export function createArSpaceCorrectionRegistry(options: {
   function bake(
     object: THREE.Object3D,
     entry: Entry,
-    state: RootWithArSpaceCorrection
+    state: RootWithArSpaceCorrection,
+    cache: CorrectionCache = new Map()
   ): void {
     const n = selectArSpaceCorrectionEpoch(state);
     if (entry.applied === n) return;
@@ -234,13 +280,26 @@ export function createArSpaceCorrectionRegistry(options: {
       entry.correction = IDENTITY_POSE;
       return;
     }
+    let byApplied = cache.get(entry.parentToGroup);
+    if (byApplied === undefined) {
+      byApplied = new Map();
+      cache.set(entry.parentToGroup, byApplied);
+    }
     const delta = selectCorrectionTrack(state)[entry.applied]!;
-    bakeInto(
-      object,
-      shownLocalMatrix(delta, entry.parentToGroup, IDENTITY_MATRIX)
-    );
-    entry.correction = composeRigid(delta, entry.correction);
+    let c = byApplied.get(entry.applied);
+    if (c === undefined) {
+      c = prepare(delta, entry.parentToGroup);
+      byApplied.set(entry.applied, c);
+    }
+    bakeInto(object, c);
+    let correction = c.corrections.get(entry.correction);
+    if (correction === undefined) {
+      correction = composeRigid(delta, entry.correction);
+      c.corrections.set(entry.correction, correction);
+    }
+    entry.correction = correction;
     entry.applied = n;
+    object.dispatchEvent({ type: 'arcorrected', matrix: c.matrix });
   }
 
   function sync(): void {
@@ -249,9 +308,10 @@ export function createArSpaceCorrectionRegistry(options: {
     const observations = selectArSpaceObservations(state);
     if (observations === seenObservations) return;
     seenObservations = observations;
+    const cache: CorrectionCache = new Map();
     for (const [object, entry] of [...entries]) {
       try {
-        bake(object, entry, state);
+        bake(object, entry, state, cache);
       } catch (error) {
         // One broken object must not stop the others from being corrected.
         log.error(`correction of one object failed; skipped: ${String(error)}`);
@@ -294,7 +354,15 @@ export function createArSpaceCorrectionRegistry(options: {
       }
       const state = store.getState();
       const epoch = epochFor(state, opts);
-      const parentToGroup = parentToGroupOf(object, group);
+      const fresh = parentToGroupOf(object, group);
+      // One `P` array per parent while its transform holds, so the bake's
+      // per-sync cache (keyed by reference) prepares `M` once per parent.
+      const known = sharedP.get(object.parent!);
+      const parentToGroup =
+        known !== undefined && known.every((v, i) => v === fresh[i])
+          ? known
+          : fresh;
+      sharedP.set(object.parent!, parentToGroup);
       if (!entries.has(object)) claimPose(object, 'AR-space correction');
       const entry: Entry = {
         applied: epoch,
