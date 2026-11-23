@@ -298,6 +298,38 @@ async function controlPhotoReads(page) {
 
 /**
  * The JSON of the zip entry whose name matches `pattern`./**
+ * Waits until the page's database holds a log with `part` in it.
+ *
+ * @param {import("@playwright/test").Page} page
+ * @param {string} part
+ */
+async function storedLogHas(page, part) {
+  await page.waitForFunction(
+    (p) =>
+      new Promise((resolve) => {
+        const open = indexedDB.open("feature-match-check-photos");
+        open.onerror = () => resolve(false);
+        open.onsuccess = () => {
+          const db = open.result;
+          const get = db
+            .transaction("photos", "readonly")
+            .objectStore("photos")
+            .get("log");
+          get.onsuccess = () => {
+            db.close();
+            resolve(typeof get.result === "string" && get.result.includes(p));
+          };
+          get.onerror = () => {
+            db.close();
+            resolve(false);
+          };
+        };
+      }),
+    part,
+  );
+}
+
+/**
  * The JSON of the zip entry named `pattern` (or whose name matches it).
  *
  * @param {Buffer} zip
@@ -2070,6 +2102,9 @@ test("the guided photo test downloads through a link and keeps its photos across
   const first = await downloadAllBytes(page);
   const beforeA = await zipEntryBytes(first, shotPng("light-s1/L1"));
   const beforeB = await zipEntryBytes(first, shotPng("light-s1/L2"));
+  // The log is written a second after a line; a reload sooner than that
+  // may lose the last second (a closing page's own write is best effort).
+  await storedLogHas(page, "download: saved");
   await page.reload();
   await expect(page.locator("#g-run")).toBeVisible();
   await expect(page.locator("#g-intro")).toBeHidden();
