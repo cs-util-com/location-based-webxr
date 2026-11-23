@@ -71,6 +71,8 @@
         "src/ar/tour-media.ts",
         "src/ar/tour-short-text.ts",
         "src/ar/ar-content-watcher.ts",
+        "src/ar/targets/nearby-targets.ts",
+        "src/ar/targets/nearby-position.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],

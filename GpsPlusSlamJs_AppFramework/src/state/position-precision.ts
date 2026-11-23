@@ -219,6 +219,34 @@ function errorLengthM(precision: PositionPrecision): number | null {
   }
 }
 
+/**
+ * The device accuracy AS OF each stored reading: for index i, the median of
+ * the latest {@link DEVICE_ACCURACY_WINDOW_FIXES} device fixes up to and
+ * including reading i that state a usable accuracy (the rule
+ * {@link positionPrecision} applies to the newest one), or null when none
+ * does yet. A position series judged sample by sample (the nearby-targets
+ * gate) reads its history from here; the last entry equals the accuracy an
+ * aligned, code-free {@link positionPrecision} reports.
+ */
+export function deviceAccuracySeriesM(
+  points: readonly PrecisionGpsPoint[]
+): (number | null)[] {
+  const out: (number | null)[] = [];
+  const recent: number[] = [];
+  for (const p of points) {
+    const accuracy =
+      gpsPointSourceOf(p) === GPS_POINT_SOURCE_DEVICE
+        ? usableAccuracy(p.latLongAccuracy)
+        : null;
+    if (accuracy !== null) {
+      recent.push(accuracy);
+      if (recent.length > DEVICE_ACCURACY_WINDOW_FIXES) recent.shift();
+    }
+    out.push(recent.length === 0 ? null : interpolatingMedian(recent));
+  }
+  return out;
+}
+
 /** The median reported accuracy of the latest device fixes, or null when
  *  none states a usable one. */
 function deviceAccuracyM(points: readonly PrecisionGpsPoint[]): number | null {
