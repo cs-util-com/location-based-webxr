@@ -25,7 +25,9 @@
  *   follow phase for the session and closes the window;
  * - with the deferral off (`defersAnchors` false, `?anchors=0` in a
  *   development build) the set follows for the whole session, as content
- *   did before deferral existed.
+ *   did before deferral existed, and its position members land every
+ *   correction at once: a GPS anchor loses its own `snap-when-offscreen`
+ *   view gate too, in view or not.
  *
  * A debug readout may observe every production pass
  * ({@link observeDeferredAnchorPasses}): its time, its counts and the

@@ -610,7 +610,9 @@ describe('the anchor set: position members', () => {
 
 // Why: with the deferral switched off (`?anchors=0`, the field test's
 // frame-time comparison) a GPS anchor must land on a correction at once,
-// in view too, as before deferral; the gated case above is the control.
+// in view too: the switch drops the set's gate AND the anchor's own
+// `snap-when-offscreen` view gate, so it moves in view as no anchor in
+// that mode otherwise does; the gated case above is the control.
 describe('createGpsAnchor in the anchor set: the deferral switch', () => {
   it('lands at once in view with ?anchors=0', () => {
     const g = globalThis as { location?: unknown };

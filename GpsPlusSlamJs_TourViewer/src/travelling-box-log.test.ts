@@ -13,7 +13,10 @@
  * docks later on a retreat, a wider keep band changes place less often at
  * the edge, and the lock after a release holds across a logged release.
  */
+import { LogLevel } from "gps-plus-slam-app-framework/utils/logger";
 import { describe, expect, it } from "vitest";
+
+import { createAnchorDebugLog } from "./anchor-debug-log.js";
 
 import type { TravelFrameSample } from "./travelling-box.js";
 import {
@@ -212,6 +215,50 @@ describe("the travelling box's field log", () => {
     // 6 m: the sign grew by 6 / 4.5.
     expect(read.samples[0]!.growth).toBeCloseTo(6 / 4.5, 2);
     expect(parseTravelLog("").samples).toEqual([]);
+  });
+
+  // Why: Copy log appends the anchor section (anchor-debug-log.ts) to the
+  // travel text, so a normal paste carries it. The replay must read the
+  // travel part exactly as without it, and count the appended lines as
+  // skipped, one each, rather than misread or throw on one.
+  it("reads a paste with the anchor appendix like the travel text alone", () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    frames(log, 1, 30, (t) => ({ px: 20 - t / 100, distM: 6 }));
+    log.mark(300);
+    const anchors = createAnchorDebugLog();
+    for (let i = 1; i <= 5; i += 1) {
+      anchors.pass({
+        passMs: i / 10,
+        dt: 1 / 60,
+        deferring: true,
+        counts: {
+          sphereTests: 0,
+          traversals: i % 2,
+          windowOpen: false,
+          followUpdates: 0,
+        },
+      });
+    }
+    anchors.entry({
+      timestamp: 0,
+      level: LogLevel.INFO,
+      tag: "DeferredAnchors",
+      message: "window opened (jump)",
+    });
+    const travel = log.text();
+    const appendix = anchors.text();
+    const appendixLines = appendix
+      .split("\n")
+      .filter((line) => line.trim() !== "").length;
+    expect(appendixLines).toBeGreaterThan(3);
+
+    const alone = parseTravelLog(travel);
+    const pasted = parseTravelLog(`${travel}\n${appendix}`);
+    expect(pasted.knobs).toEqual(alone.knobs);
+    expect(pasted.samples).toEqual(alone.samples);
+    expect(pasted.events).toEqual(alone.events);
+    expect(pasted.skipped).toBe(alone.skipped + appendixLines);
+    expect(alone.skipped).toBe(0);
   });
 
   // Why: the plateau (where the sign's growth cancels the distance) is

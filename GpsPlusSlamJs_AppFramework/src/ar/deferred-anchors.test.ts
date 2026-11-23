@@ -38,6 +38,7 @@ import {
   observeDeferredAnchorPasses,
   type DeferredAnchorPassSample,
 } from './deferred-anchors';
+import { LogLevel, subscribeToLogs, type LogEntry } from '../utils/logger';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
@@ -1286,15 +1287,29 @@ describe('deferredAnchor: the pass observer', () => {
         seen.push(sample.deferring);
         throw new Error('observer bug');
       });
+      // The catch must log the throw, not swallow it in silence.
+      const logged: LogEntry[] = [];
+      const unsubscribe = subscribeToLogs((entry) => {
+        logged.push(entry);
+      });
       try {
         s.store.setT(tOf(3, 0));
         expect(() => {
           runFrameUpdates(DT, 1);
         }).not.toThrow();
         expect(seen).toEqual([false]);
+        expect(
+          logged.filter(
+            (entry) =>
+              entry.tag === 'DeferredAnchors' &&
+              entry.level === LogLevel.ERROR &&
+              entry.message.includes('pass observer threw')
+          )
+        ).toHaveLength(1);
         root.updateMatrixWorld(true);
         expectMatrixClose(root.matrixWorld, IDENTITY, 1e-9);
       } finally {
+        unsubscribe();
         stop();
       }
     });
