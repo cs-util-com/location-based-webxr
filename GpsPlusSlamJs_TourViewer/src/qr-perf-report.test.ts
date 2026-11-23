@@ -86,7 +86,7 @@ describe("createQrPerfReport", () => {
         c.advance(30);
         return Promise.resolve(
           hit ? { text: "a", corners: [P, P, P, P] } : null,
-        ) as ReturnType<QrFrontEnd["detect"]>;
+        );
       },
       dispose,
     };

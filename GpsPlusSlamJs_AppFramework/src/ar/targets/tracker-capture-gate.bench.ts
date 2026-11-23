@@ -91,9 +91,9 @@ describe('tracker capture gate', () => {
     const { latency } = result as {
       latency?: { p50?: number; p99?: number };
     };
-    process.stderr.write(
-      `wantsFrame median ${String(latency?.p50)} ms, p99 ${String(latency?.p99)} ms
-`
+    // eslint-disable-next-line no-console -- a bench prints its figure for a person to read.
+    console.info(
+      `wantsFrame median ${String(latency?.p50)} ms, p99 ${String(latency?.p99)} ms`
     );
   });
 });
