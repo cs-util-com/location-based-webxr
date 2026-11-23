@@ -139,14 +139,19 @@ describe('nearbyTargets properties', () => {
     );
   });
 
-  // Why this test matters: a fix older than F is not GPS any more.
+  // Why this test matters: a fix older than F is not GPS any more, from
+  // one millisecond past F on (the unit test pins exactly F).
   it("never reads 'gps' when every fix is older than F", () => {
     fc.assert(
       fc.property(
         fc.integer({ min: P.F + 1, max: 10 * P.H }),
         fc.array(pointBetween(0, 60), { minLength: 1, maxLength: 10 }),
         (age, points) => {
-          const fixes = series(points).map((f) => ({ ...f, t: f.t - age }));
+          // series() ends at NOW - 1 s: the newest fix is exactly age old.
+          const fixes = series(points).map((f) => ({
+            ...f,
+            t: f.t + 1_000 - age,
+          }));
           expect(nearbyTargets(run(fixes)).state).not.toBe('gps');
         }
       )

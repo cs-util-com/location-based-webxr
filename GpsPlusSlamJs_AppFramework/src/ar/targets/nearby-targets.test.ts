@@ -50,7 +50,9 @@ function standing(n: number, e: number, accM = 5): Fix[] {
 describe('nearbyTargets: a heading-uncertain target', () => {
   // Why this test matters: a heading-uncertain mint's spot can be off by
   // about its alignment's GPS extent: its accuracy is max(own, default)
-  // plus headingWideningK times the extent, and K 0 adds nothing.
+  // plus headingWideningK times the extent. K 0 (or an extent of 0) leaves
+  // the target exactly as it was: its own accuracy, not raised to the
+  // default.
   it('widens by headingWideningK x alignmentGpsExtentM over max(own, default)', () => {
     const openAt = (t: Target, k: number) =>
       [0, 5, 10, 15, 20, 25, 30, 35, 40].filter(
@@ -74,22 +76,37 @@ describe('nearbyTargets: a heading-uncertain target', () => {
     // K 0: unwidened.
     expect(openAt(uncertain(8), 0)).toEqual(openAt(plain(8), 0));
     expect(openAt(uncertain(8), 0)).not.toEqual(openAt(plain(14), 0));
+    // Own 2 at K 0 stays 2 (R_enter 8.4 m), not the default 5 (11.7 m).
+    expect(openAt(uncertain(2), 0)).toEqual(openAt(plain(2), 0));
+    expect(openAt(uncertain(2), 0)).not.toEqual(openAt(plain(5), 0));
+    const flat = target('x', 0, 0, { accM: 2, alignmentGpsExtentM: 0 });
+    expect(openAt(flat, 1)).toEqual(openAt(plain(2), 1));
   });
 
   // Why this test matters: a malformed extent must not widen (or poison)
-  // the accuracy.
+  // the accuracy. Own 8 m, fixes 3 m: R_enter = 3 + 1.5 x hypot(3, 8) =
+  // 15.8 m, R_leave 25.6 m. A negative extent applied (8 - 1 = 7 m) gives
+  // R_enter 14.4 m, closed at 15 m; an infinite one opens at 30 m; NaN
+  // decides nothing, closed at 15 m.
   it('ignores an extent that is not finite and >= 0', () => {
+    const opens = (east: number, extent?: number) =>
+      nearbyTargets(
+        input({
+          targets: [
+            target('x', 0, east, {
+              accM: 8,
+              ...(extent === undefined ? {} : { alignmentGpsExtentM: extent }),
+            }),
+          ],
+          fixes: standing(0, 0, 3),
+          newestFixAtMs: NOW,
+        })
+      ).open.length;
+    expect(opens(15)).toBe(1);
+    expect(opens(30)).toBe(0);
     for (const bad of [Number.NaN, -1, Number.POSITIVE_INFINITY]) {
-      const r = (t: Target) =>
-        nearbyTargets(
-          input({
-            targets: [t],
-            fixes: standing(0, 0, 3),
-            newestFixAtMs: NOW,
-          })
-        ).open.length;
-      const at = target('x', 0, 12, { accM: 8 });
-      expect(r({ ...at, alignmentGpsExtentM: bad })).toBe(r(at));
+      expect(opens(15, bad)).toBe(1);
+      expect(opens(30, bad)).toBe(0);
     }
   });
 });
@@ -100,6 +117,16 @@ describe('nearbyTargets: the state', () => {
   it("reads 'gps' with a fix no older than F", () => {
     const r = nearbyTargets(
       input({ fixes: standing(0, 0), newestFixAtMs: NOW - 1_000 })
+    );
+    expect(r.state).toBe('gps');
+  });
+
+  // Why this test matters: F is inclusive: a fix exactly F old is still
+  // GPS, one millisecond older is not (the property pins the other side).
+  it("reads 'gps' with the newest fix exactly F old", () => {
+    const at = NOW - P.F;
+    const r = nearbyTargets(
+      input({ fixes: [fix(at, 0, 0)], newestFixAtMs: at })
     );
     expect(r.state).toBe('gps');
   });
@@ -570,8 +597,8 @@ describe('nearbyTargets: the AR gate', () => {
   it('opens within reachM + margin + alpha x path walked since the sighting', () => {
     const sighting: ArPose = { t: NOW - 20_000, pos: [0, 0, 0] };
     const arPoses: ArPose[] = [
-      { t: NOW - 10_000, pos: [50, 0, 0] },
-      { t: NOW - 5_000, pos: [0, 0, 0] },
+      { t: NOW - 10_000, pos: [50, 0, 0], device: true },
+      { t: NOW - 5_000, pos: [0, 0, 0], device: true },
     ];
     const run = (liveN: number, poses: ArPose[]) =>
       nearbyTargets(
@@ -587,6 +614,35 @@ describe('nearbyTargets: the AR gate', () => {
     // Without the walk out and back: path 5 m, R_AR = 2.15 m.
     expect(run(5, [])).toEqual([]);
     expect(run(2, [])).toHaveLength(1);
+  });
+
+  // Why this test matters: a lock's keep-alive stores vote rings at the
+  // code's corners, about three per device fix for minutes. Counted as a
+  // walk, the path would zig-zag camera, code, camera, and a just-scanned
+  // code would stay open by AR far away. Only device samples are a walk.
+  it('counts device samples only: vote rings between them leave R_AR unchanged', () => {
+    const sighting: ArPose = { t: NOW - 20_000, pos: [0, 0, 0] };
+    const device: ArPose[] = [
+      { t: NOW - 10_000, pos: [0, 0, 0], device: true },
+      { t: NOW - 5_000, pos: [0, 0, 0], device: true },
+    ];
+    const rings: ArPose[] = [0, 1, 2].map((i) => ({
+      t: NOW - 8_000 + i,
+      pos: [100, 0, i],
+      device: false,
+    }));
+    const run = (poses: ArPose[]) =>
+      nearbyTargets(
+        input({
+          ...base,
+          arPoses: poses,
+          live: { t: NOW, north: 999, east: 999, ar: [3, 0, 0], accM: 5 },
+          targets: [target('s', 900, 900, { reachM: 1, sighting, accM: 1 })],
+        })
+      ).open;
+    // Path 3 m: R_AR = 2.09 m, closed at 3 m. The rings would add 200 m.
+    expect(run(device)).toEqual([]);
+    expect(run([device[0]!, ...rings, device[1]!])).toEqual([]);
   });
 
   // Why this test matters: a code minted without a geo pose has no GPS
@@ -621,6 +677,77 @@ describe('nearbyTargets: the AR gate', () => {
       })
     );
     expect(r.open).toEqual([]);
+  });
+});
+
+describe('nearbyTargets: the look-back H caps the kernel itself', () => {
+  // Why this test matters: the kernel's memory is H whatever it is fed: a
+  // caller handing it the whole series must not keep 'dr' alive on an
+  // anchor older than H.
+  it("anchors 'dr' within H only, even when handed the whole series", () => {
+    const live: LivePose = {
+      t: NOW,
+      north: 0,
+      east: 0,
+      ar: [0, 0, 0],
+      accM: 3,
+    };
+    const at = (age: number) =>
+      nearbyTargets(
+        input({
+          fixes: [fix(NOW - age, 0, 0, 3)],
+          newestFixAtMs: NOW - age,
+          arPoses: [{ t: NOW - age, pos: [0, 0, 0], device: true }],
+          live,
+        })
+      ).state;
+    expect(at(59_000)).toBe('dr');
+    expect(at(61_000)).toBe('unknown');
+  });
+
+  // Why this test matters: the AR path is the walk within H; samples older
+  // than H must not widen R_AR when a caller hands the whole series.
+  it('counts the AR path within H only, even when handed the whole series', () => {
+    const sighting: ArPose = { t: NOW - 70_000, pos: [0, 0, 0] };
+    const inside: ArPose = { t: NOW - 50_000, pos: [0, 0, 0], device: true };
+    const old: ArPose = { t: NOW - 65_000, pos: [50, 0, 0], device: true };
+    const run = (arPoses: ArPose[]) =>
+      nearbyTargets(
+        input({
+          arPoses,
+          live: { t: NOW, north: 999, east: 999, ar: [5, 0, 0], accM: 5 },
+          targets: [target('s', 900, 900, { reachM: 1, sighting, accM: 1 })],
+        })
+      ).open;
+    // Within H the walk is 5 m: R_AR = 2.15 m, closed at 5 m. The old
+    // sample would add 100 m (R_AR 5.15 m, open).
+    expect(run([inside])).toEqual([]);
+    expect(run([old, inside])).toEqual([]);
+  });
+});
+
+describe('nearbyTargets: the live drift', () => {
+  // Why this test matters: a live pose without a finite AR position has no
+  // drift to add; a NaN drift would make the live sample decide nothing and
+  // hand the decision to an older fix.
+  it('adds no drift for a live pose without a finite AR position', () => {
+    const r = nearbyTargets(
+      input({
+        targets: [target('t', 0, 0, { accM: 0.0001 })],
+        fixes: [fix(NOW - 1_000, 0, 100, 3)],
+        newestFixAtMs: NOW - 1_000,
+        arPoses: [{ t: NOW - 1_000, pos: [0, 0, 0], device: true }],
+        live: {
+          t: NOW,
+          north: 0,
+          east: 0,
+          ar: [Number.NaN, 0, Number.NaN],
+          accM: 3,
+        },
+      })
+    );
+    expect(r.state).toBe('gps');
+    expect(r.open.map((o) => o.key)).toEqual(['t']);
   });
 });
 

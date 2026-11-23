@@ -24,6 +24,7 @@
  */
 
 import { POSITION_PRECISION_CEILING_M } from '../../state/position-precision.js';
+import { finitePositive } from '../../utils/finite-positive.js';
 
 /** The kinds of trackable target. */
 export type TargetKind = 'qr' | 'image' | 'object' | 'keyframe';
@@ -41,9 +42,10 @@ export interface Target {
   /** r_target (m): how far from its position the target can be detected. */
   readonly reachM: number;
   /** Set for a target minted while its heading was uncertain: its
-   *  alignment's GPS extent (m). Its accuracy is then max(accM,
-   *  defaultTargetAccM) + {@link NearbyParams.headingWideningK} x this; a
-   *  value that is not finite and >= 0 widens nothing. */
+   *  alignment's GPS extent (m). A positive widening
+   *  ({@link NearbyParams.headingWideningK} x this) makes its accuracy
+   *  max(accM, defaultTargetAccM) + the widening; a zero widening, or a
+   *  value that is not finite and >= 0, leaves the target unwidened. */
   readonly alignmentGpsExtentM?: number;
   /** The tracker's newest sighting in the current AR frame (odom-NUE). */
   readonly sighting?: ArPose;
@@ -101,11 +103,12 @@ export interface NearbyParams {
   /** acc_fix above it: `'unknown'` (m). */
   readonly ceilingM: number;
   /** A heading-uncertain target's widening: this many times its
-   *  `alignmentGpsExtentM` is added to its accuracy (0: none). */
+   *  `alignmentGpsExtentM` is added to its accuracy (0: none, the target
+   *  keeps its own accuracy). */
   readonly headingWideningK: number;
 }
 
-/** The defaults (the plan's section 4.6). */
+/** The defaults (values and sweeps: the sidecar). */
 export const DEFAULT_NEARBY_PARAMS: NearbyParams = Object.freeze({
   c: 1.5,
   f: 1.3,
@@ -157,15 +160,18 @@ export function nearbyTargets(input: NearbyInput): NearbyResult {
   if (!Number.isFinite(nowMs)) {
     throw new RangeError(`nowMs must be finite; got ${String(nowMs)}`);
   }
+  // The kernel's memory is H whatever it is fed: no sample older counts.
+  const fromMs = nowMs - params.H;
   const live = usableLive(input.live);
   const accFix = accuracyNow(live, input.fixes);
-  const anchor = drAnchor(input.arPoses, input.newestFixAtMs);
+  const anchor = drAnchor(input.arPoses, input.newestFixAtMs, fromMs);
   const state = stateOf(input, live, accFix, anchor);
-  const fromMs = nowMs - params.H;
   // The live sample's drift: the horizontal AR distance since the anchor.
   const driftM =
-    live !== null && anchor !== null ? horizontal(anchor.pos, live.ar) : 0;
-  const path = live === null ? null : arPath(input.arPoses, live);
+    live !== null && live.arOk && anchor !== null
+      ? horizontal(anchor.pos, live.ar)
+      : 0;
+  const path = live === null ? null : arPath(input.arPoses, live, fromMs);
 
   const scene: Scene = {
     fixes: input.fixes,
@@ -271,26 +277,29 @@ function usableLive(live: LivePose | null): Live | null {
 
 /** acc_fix now: the live pose's, else the newest usable fix's. */
 function accuracyNow(live: Live | null, fixes: readonly Fix[]): number | null {
-  const own = live === null ? null : positive(live.accM);
+  const own = live === null ? null : finitePositive(live.accM);
   if (own !== null) return own;
   for (let i = fixes.length - 1; i >= 0; i -= 1) {
-    const a = positive(fixes[i]?.accM);
+    const a = finitePositive(fixes[i]?.accM);
     if (a !== null) return a;
   }
   return null;
 }
 
-/** The newest device sample at or before the newest device fix: a fix may
- *  have no odometry sample (distance gating, dropped values), and several
- *  samples may share one t, so t is no key. */
+/** The newest device sample at or before the newest device fix and within
+ *  H: a fix may have no odometry sample (distance gating, dropped values),
+ *  and several samples may share one t, so t is no key. */
 function drAnchor(
   arPoses: readonly ArPose[],
-  newestFixAtMs: number | null
+  newestFixAtMs: number | null,
+  fromMs: number
 ): ArPose | null {
   if (newestFixAtMs === null || !Number.isFinite(newestFixAtMs)) return null;
   for (let i = arPoses.length - 1; i >= 0; i -= 1) {
     const p = arPoses[i]!;
-    if (p.device !== true || !(p.t <= newestFixAtMs)) continue;
+    if (p.device !== true || !(p.t <= newestFixAtMs && p.t >= fromMs)) {
+      continue;
+    }
     if (Number.isFinite(p.pos[0]) && Number.isFinite(p.pos[2])) return p;
   }
   return null;
@@ -328,14 +337,16 @@ interface Scene {
 }
 
 /** acc_target: the target's own accuracy (the default without one); a
- *  heading-uncertain target's is max(own, default) plus K x its extent. */
+ *  heading-uncertain target with a positive widening (K x its extent) has
+ *  max(own, default) plus that widening. */
 function targetAccM(target: Target, p: NearbyParams): number {
-  const own = positive(target.accM) ?? p.defaultTargetAccM;
+  const own = finitePositive(target.accM) ?? p.defaultTargetAccM;
   const extent = target.alignmentGpsExtentM;
-  if (extent === undefined || !Number.isFinite(extent) || extent < 0) {
-    return own;
-  }
-  return Math.max(own, p.defaultTargetAccM) + p.headingWideningK * extent;
+  const widening =
+    extent !== undefined && Number.isFinite(extent) && extent >= 0
+      ? p.headingWideningK * extent
+      : 0;
+  return widening > 0 ? Math.max(own, p.defaultTargetAccM) + widening : own;
 }
 
 /** One target: the GPS gate first, else the AR gate, else closed. A target
@@ -390,7 +401,7 @@ function gpsGate(
 function usableFixAccuracy(f: Fix, fromMs: number): number | null {
   if (!(f.t >= fromMs)) return null;
   if (!Number.isFinite(f.north) || !Number.isFinite(f.east)) return null;
-  return positive(f.accM);
+  return finitePositive(f.accM);
 }
 
 /** The AR path walked: cumulative horizontal steps along the series. */
@@ -401,11 +412,19 @@ interface ArPath {
   readonly live: Live;
 }
 
-function arPath(arPoses: readonly ArPose[], live: Live): ArPath | null {
+/** The walk within H: device samples only. A code's vote samples (a
+ *  lock's, its keep-alive's rings) sit at the code's corners, not where the
+ *  device was; counted, the path would zig-zag camera, code, camera. */
+function arPath(
+  arPoses: readonly ArPose[],
+  live: Live,
+  fromMs: number
+): ArPath | null {
   if (!live.arOk) return null;
   const poses = arPoses.filter(
     (p) =>
-      Number.isFinite(p.t) &&
+      p.device === true &&
+      p.t >= fromMs &&
       Number.isFinite(p.pos[0]) &&
       Number.isFinite(p.pos[2])
   );
@@ -460,9 +479,4 @@ function horizontal(
   b: readonly [number, number, number]
 ): number {
   return Math.hypot(a[0] - b[0], a[2] - b[2]);
-}
-
-/** A finite positive number, or null. */
-function positive(v: unknown): number | null {
-  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null;
 }

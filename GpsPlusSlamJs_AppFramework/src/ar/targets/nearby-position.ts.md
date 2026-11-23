@@ -76,7 +76,7 @@ const position = source.position(Date.now());
 
 - `nearby-position.test.ts`: device-only fixes and `newestFixAtMs`, aligned
   and lone fixes with their accuracies, one rebuild per reference (a getter
-  spy), only the window's samples on a 3 600-fix series, a fix gap longer
+  spy; a new zero alone rebuilds the lone-fix path), only the window's samples on a 3 600-fix series, a fix gap longer
   than H reading `'unknown'` (and `'dr'` just inside H), a sighting older
   than H with its path cut, non-finite and unsorted input, the live pose
   per call, `odomNueOfWebXr`.

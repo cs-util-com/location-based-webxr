@@ -11,7 +11,7 @@ import {
   nearbyTargets,
   type LivePose,
 } from './nearby-targets.js';
-import { calcRelativeCoordsInMeters } from '../../core/index.js';
+import { calcRelativeCoordsInMeters, type LatLong } from '../../core/index.js';
 
 const NOW = 1_800_000_000_000;
 const ZERO = { lat: 47, lon: 8 };
@@ -132,6 +132,26 @@ describe('createNearbyPositionSource', () => {
     current = counted;
     s.position(NOW + 40);
     expect(reads).toBe(2);
+  });
+
+  // Why this test matters: on the lone-fix path (no alignment) a fix's
+  // position is taken from the zero; a new zero with the same series must
+  // rebuild, or every fix would stay placed from the old origin.
+  it('rebuilds when only the zero changes on the lone-fix path', () => {
+    const rows = events([[point(NOW - 1_000), [0, 0, 0]]]);
+    let zero: LatLong = ZERO;
+    const s = createNearbyPositionSource({
+      gpsEvents: () => rows,
+      alignment: () => null,
+      zero: () => zero,
+      live: () => null,
+      lookBackMs: H,
+    });
+    const before = s.position(NOW).fixes[0]!.north;
+    zero = { lat: ZERO.lat + 0.001, lon: ZERO.lon };
+    const after = s.position(NOW).fixes[0]!.north;
+    // 0.001 degrees of latitude is about 111 m.
+    expect(before - after).toBeCloseTo(111, -1);
   });
 
   // Why this test matters (cost): only the samples within H reach the
