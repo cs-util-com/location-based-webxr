@@ -297,36 +297,38 @@ async function controlPhotoReads(page) {
 }
 
 /**
- * The JSON of the zip entry whose name matches `pattern`./**
- * Waits until the page's database holds a log with `part` in it.
+ * Waits until the page's database holds a log with `part` in it. Polled
+ * through `page.evaluate`, which awaits the read: `waitForFunction` would
+ * take the returned promise itself as a truthy answer and not wait.
  *
  * @param {import("@playwright/test").Page} page
  * @param {string} part
  */
 async function storedLogHas(page, part) {
-  await page.waitForFunction(
-    (p) =>
-      new Promise((resolve) => {
-        const open = indexedDB.open("feature-match-check-photos");
-        open.onerror = () => resolve(false);
-        open.onsuccess = () => {
-          const db = open.result;
-          const get = db
-            .transaction("photos", "readonly")
-            .objectStore("photos")
-            .get("log");
-          get.onsuccess = () => {
-            db.close();
-            resolve(typeof get.result === "string" && get.result.includes(p));
+  const storedLog = () =>
+    page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const open = indexedDB.open("feature-match-check-photos");
+          open.onerror = () => resolve("");
+          open.onsuccess = () => {
+            const db = open.result;
+            const get = db
+              .transaction("photos", "readonly")
+              .objectStore("photos")
+              .get("log");
+            get.onsuccess = () => {
+              db.close();
+              resolve(typeof get.result === "string" ? get.result : "");
+            };
+            get.onerror = () => {
+              db.close();
+              resolve("");
+            };
           };
-          get.onerror = () => {
-            db.close();
-            resolve(false);
-          };
-        };
-      }),
-    part,
-  );
+        }),
+    );
+  await expect.poll(storedLog).toContain(part);
 }
 
 /**
