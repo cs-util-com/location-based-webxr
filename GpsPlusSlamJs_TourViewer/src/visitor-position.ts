@@ -65,7 +65,7 @@ export interface VisitorPosition {
 
 /** A WebXR pose (`getCurrentArPose`'s shape); its orientation is
  *  optional here (the fakes and older callers pass a position alone). */
-interface ArPoseLike {
+export interface ArPoseLike {
   readonly position: {
     readonly x: number;
     readonly y: number;
@@ -138,7 +138,9 @@ function usableAlignment(alignment: ArrayLike<number> | null): boolean {
   return true;
 }
 
-function cameraNue(
+/** The camera in GPS-world NUE: the raw AR pose through the alignment;
+ *  null without either, or for a pose that is not finite. */
+export function cameraNue(
   alignment: ArrayLike<number> | null,
   arPose: ArPoseLike | null,
 ): readonly [number, number, number] | null {

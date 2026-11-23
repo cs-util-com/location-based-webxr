@@ -62,6 +62,14 @@ since the flows plan M6.
     `CapturedCameraFrame`: pixels plus the pose and time of its capture) is
     kept as `ctx.latestFrame` for the photo capture (M4) and offered to the
     QR controller. A captured frame renders and ticks nothing.
+  - **The tracker capture gate is the visitor's:** a visitor's session with
+    a QR controller builds one `createTrackerCaptureWiring`
+    ([tracker-capture-wiring.ts.md](tracker-capture-wiring.ts.md)) and
+    passes its `wantsFrame` in the capture config; a frame is offered to QR
+    only when the gate routed it there (every frame before the gate
+    decided). Force-on is the stored `trackerCaptureForceOn` pref or a
+    codes-only tour. A creator's capture keeps `{ intervalMs }` alone.
+    Each session builds a new gate; the session end drops it.
   - **The per-frame UI runs on the render loop:** once the runtime started,
     each session registers one `seams.registerFrameUpdate` that calls
     `renderArStatus()` then `hooks.tickStations()` at the capture cadence

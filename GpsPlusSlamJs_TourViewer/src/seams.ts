@@ -32,6 +32,7 @@ import {
   startXrSelectListener,
   stopCameraFrameCapture,
   stopDepthCapture,
+  type CameraFrameCaptureConfig,
   type EnableGpsArDeps,
   type FrameUpdate,
   type HitTestReticleHandle,
@@ -117,7 +118,8 @@ export interface TourViewerSeams {
     store: SubscribableStore;
     arWorldGroup: Object3D;
   }): unknown;
-  startCameraFrameCapture(config?: { intervalMs?: number }): void;
+  /** A visitor's capture carries the tracker gate's `wantsFrame`. */
+  startCameraFrameCapture(config?: CameraFrameCaptureConfig): void;
   stopCameraFrameCapture(): void;
   /** Run `fn` on every rendered frame until the session ends (the
    *  framework's frame loop; it clears every registration at each session

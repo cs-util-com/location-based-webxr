@@ -14,6 +14,10 @@ Keeps `main.ts` glue-only.
   frames, can send GPS fixes through the page's real path
   (`createGpsPositionHandler` -> `recordDeviceFix` -> the vote sink).
 
+- `startCameraFrameCapture(config?)` - the framework's capture with its
+  `CameraFrameCaptureConfig` (`intervalMs`, and a visitor's `wantsFrame`
+  from the tracker capture gate).
+
 - `getStationAnchorParent()` - where the visitor's stations stand as
   deferred anchors (`station-content.ts` `anchorParent`): production
   returns `getArWorldGroup()`; the e2e fake returns null, since its

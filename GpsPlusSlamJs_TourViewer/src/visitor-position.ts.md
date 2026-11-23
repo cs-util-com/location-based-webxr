@@ -39,6 +39,9 @@ guide). Plan:
     judges it by the worse of this and the device median: one ±40 m Wi-Fi fix
     after a run of ±5 m GPS fixes leaves the median at 5 m (r881
     re-review M-A).
+- `cameraNue(alignment, arPose)` - `nue` alone, for a caller that needs
+  nothing else per call (the tracker capture wiring asks at up to 60 Hz).
+- `ArPoseLike` - the WebXR pose shape both take.
 
 ## Invariants & assumptions
 

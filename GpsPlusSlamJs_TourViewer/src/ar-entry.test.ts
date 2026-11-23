@@ -224,7 +224,11 @@ function harness(
     // Enough of a scene for the runtime start to go through.
     getArWorldGroup: () => ({}),
     enableArWorldGroupAlignment: () => undefined,
-    startCameraFrameCapture: () => undefined,
+    getArPose: () => null,
+    startCameraFrameCapture: vi.fn(
+      (_config?: { intervalMs?: number; wantsFrame?: () => boolean }) =>
+        undefined,
+    ),
     createQrDebugView: () => ({
       update: () => undefined,
       dispose: () => undefined,
@@ -303,6 +307,8 @@ function harness(
     enabledConfig: () => enabled,
     frames,
     frameUpdates,
+    /** The newest capture's config (`startCameraFrameCapture`). */
+    captureConfig: () => seams.startCameraFrameCapture.mock.calls.at(-1)?.[0],
     permission,
     refusals,
     meshSurface,
@@ -1922,5 +1928,87 @@ describe("the per-frame UI runs on the render loop, not on captured frames", () 
     const { h, ticks } = await ticking();
     for (const fn of h.frameUpdates) fn(0.016, Number.NaN);
     expect(ticks.count).toBe(0);
+  });
+});
+
+describe("the tracker capture gate is the visitor's", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A whole second: the 1 Hz slot is open. */
+  const SLOT_OPEN = 1_800_000_000_000;
+
+  const frame = {
+    image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+    cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    capturedAtMs: 1,
+  };
+
+  // Why this test matters: the visitor's capture asks the gate before each
+  // frame; a creator registers no tracker, so a gate there would veto
+  // every frame: the creator's capture carries none and gets every frame
+  // at today's cadence.
+  it("a visitor's capture carries wantsFrame; a creator's does not", async () => {
+    const visitor = harness({ enableOk: true });
+    await visitor.enter();
+    expect(visitor.captureConfig()?.intervalMs).toBe(125);
+    expect(typeof visitor.captureConfig()?.wantsFrame).toBe("function");
+    const creator = harness({ enableOk: true, mode: "creator" });
+    await creator.enter();
+    expect(creator.captureConfig()).toEqual({ intervalMs: 125 });
+  });
+
+  // Why this test matters: without a QR controller (no detector) there is
+  // nothing to gate for; the session captures as before.
+  it("a visitor without a QR controller captures without a gate", async () => {
+    const h = harness({ enableOk: true });
+    h.hooks.startViewerPipeline = () => false;
+    await h.enter();
+    expect(h.captureConfig()).toEqual({ intervalMs: 125 });
+  });
+
+  // Why this test matters: the gate's routes decide whether a captured
+  // frame goes to QR; a frame it wanted reaches the controller, and a
+  // busy controller is asked for no frame at all.
+  it("a wanted frame goes to QR; a busy controller wants none", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(SLOT_OPEN);
+    const wantsFrame = h.captureConfig()!.wantsFrame!;
+    expect(wantsFrame()).toBe(true);
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+    // Half a second on: outside the 1 Hz slot, no code near, no read.
+    vi.setSystemTime(SLOT_OPEN + 500);
+    expect(wantsFrame()).toBe(false);
+    vi.setSystemTime(SLOT_OPEN + 1000);
+    (h.ctx.qrController as unknown as { isBusy: () => boolean }).isBusy = () =>
+      true;
+    expect(wantsFrame()).toBe(false);
+  });
+
+  // Why this test matters: a frame source that never asks the gate (the
+  // e2e's fake camera) still feeds QR: before the gate decided anything,
+  // a frame is offered as it was without a gate.
+  it("a frame before any gate decision is offered", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: the session's gate goes with the session; the
+  // next entry builds its own, so an old gate's routes never decide.
+  it("a second session gets a gate of its own", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    const first = h.captureConfig()!.wantsFrame;
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    h.frames.end();
+    await h.enter();
+    expect(h.captureConfig()!.wantsFrame).not.toBe(first);
   });
 });

@@ -19,8 +19,10 @@ import {
   clearAllQrMarkers,
   computeOnboardingGuidance,
   recordDepthSample,
+  selectAlignmentMatrix,
   selectGpsPositions,
   selectTrackingQuality,
+  selectZeroReference,
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
 
@@ -58,9 +60,15 @@ import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
 import {
   arStatusLine,
+  codeLinedUp,
   type ArStatusInput,
   type LocationRefusal,
 } from "./tour-flow.js";
+import {
+  createTrackerCaptureWiring,
+  type TrackerCaptureWiring,
+} from "./tracker-capture-wiring.js";
+import { selectTrackerCaptureForceOn } from "./visitor-prefs-slice.js";
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,
@@ -204,6 +212,9 @@ export function wireArEntry(deps: {
   let depthRecorded = false;
   /** The creator's mesh of the surroundings (M5; off with `?mesh=0`). */
   let meshSurface: MeshSurface | null = null;
+  /** THIS session's tracker capture gate (a visitor's with a QR
+   *  controller), or null: then every frame is captured and offered. */
+  let captureWiring: TrackerCaptureWiring | null = null;
   /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
   const gpsExtent = createGpsExtentTracker();
   /** That line's inputs, recomputed only when the GPS list changed: the
@@ -693,6 +704,7 @@ export function wireArEntry(deps: {
     }
     meshSurface?.dispose();
     meshSurface = null;
+    captureWiring = null;
     arStore.dispatch(clearAllQrMarkers());
     endTourArRuntime(arStore, {
       stopCameraFrameCapture: () => {
@@ -814,6 +826,39 @@ export function wireArEntry(deps: {
     });
   }
 
+  /**
+   * The visitor's tracker capture gate for this session: QR's frames at
+   * full cadence near the tour's codes and after a read, at 1 Hz
+   * elsewhere. Null for a creator (who registers nothing, so a gate would
+   * veto every frame) and without a QR controller (plain AR).
+   */
+  function visitorCaptureWiring(): TrackerCaptureWiring | null {
+    if (authorMode || ctx.qrController === null) return null;
+    return createTrackerCaptureWiring({
+      // The QR controller's clock: detections are stamped in epoch ms.
+      now: () => Date.now(),
+      captureIntervalMs: CAMERA_FRAME_INTERVAL_MS,
+      gpsEvents: () => arStore.getState().gpsData?.gpsEvents ?? null,
+      alignment: () => selectAlignmentMatrix(arStore.getState()),
+      zero: () => selectZeroReference(arStore.getState()),
+      gpsPoints: () => selectGpsPositions(arStore.getState()),
+      arPose: () => seams.getArPose(),
+      codeLinedUp: () =>
+        codeLinedUp({
+          lockedText: ctx.viewerLockedText,
+          votedLocks: ctx.viewerVotedLocks,
+        }),
+      levels: () => ctx.currentLevels,
+      levelIdByText: () => ctx.levelIdByText,
+      stations: () => ctx.tourDocument.manifest()?.stations ?? [],
+      detections: () => arStore.getState().qrDetected,
+      // Gone or busy: the frame would be dropped anyway.
+      qrBusy: () => ctx.qrController?.isBusy() ?? true,
+      forcePref: () => selectTrackerCaptureForceOn(arStore.getState()),
+      codesOnly: () => ctx.codesOnly,
+    });
+  }
+
   /** A start is under way: a second tap meanwhile starts nothing (it
    *  would build a second pipeline over the first). */
   let entering = false;
@@ -882,7 +927,12 @@ export function wireArEntry(deps: {
           // `flippedPixelCopy`), so keeping the reference is safe. The frame
           // carries its own capture pose, which the photo is placed with.
           ctx.latestFrame = frame;
-          ctx.qrController?.offerFrame(frame);
+          // Only a frame the gate routed to QR; every frame without a
+          // gate, or before it decided (a source that does not ask).
+          const routes = captureWiring?.lastRoutes() ?? null;
+          if (routes === null || routes.some((r) => r.kind === "qr")) {
+            ctx.qrController?.offerFrame(frame);
+          }
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -919,16 +969,23 @@ export function wireArEntry(deps: {
       }
       return;
     }
+    const wiring = visitorCaptureWiring();
+    captureWiring = wiring;
     const runtime = startTourArRuntime(arStore, {
       getArWorldGroup: () => seams.getArWorldGroup(),
       enableArWorldGroupAlignment: (options) =>
         seams.enableArWorldGroupAlignment(options),
       startCameraFrameCapture: (config) => {
-        seams.startCameraFrameCapture(config);
+        seams.startCameraFrameCapture(
+          wiring === null
+            ? config
+            : { ...config, wantsFrame: () => wiring.wantsFrame() },
+        );
       },
       now: Date.now,
     });
     if (!runtime.ok) {
+      captureWiring = null;
       dom.errorBox.textContent = runtime.error;
       await arController.disable();
       return;

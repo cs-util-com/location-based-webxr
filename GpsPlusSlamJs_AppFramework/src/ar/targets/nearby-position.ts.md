@@ -83,3 +83,5 @@ const position = source.position(Date.now());
 - `nearby-position.property.test.ts`: for any arrival order, the windowed
   samples are handed over sorted and `newestFixAtMs` is the newest device
   time.
+- See also the gate that consumes it,
+  [tracker-capture-gate.ts.md](tracker-capture-gate.ts.md).

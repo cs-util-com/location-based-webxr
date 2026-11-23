@@ -129,4 +129,5 @@ if (r.open.length > 0) captureFrame();
   band stays closed, band longer than H closes, monotone in both
   accuracies, never `'gps'` with fixes older than F, invariant to target
   order.
-- See also [nearby-position.ts.md](nearby-position.ts.md).
+- See also [nearby-position.ts.md](nearby-position.ts.md) and the gate on
+  top, [tracker-capture-gate.ts.md](tracker-capture-gate.ts.md).

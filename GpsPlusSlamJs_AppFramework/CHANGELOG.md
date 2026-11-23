@@ -15,6 +15,15 @@
     `createNearbyPositionSource` (the store's GPS event series as the
     kernel's input, memoised per series and trimmed to the look-back by
     binary search) and `odomNueOfWebXr`.
+  - **`ar/targets/tracker-capture-gate`** (deep import):
+    `createTrackerCaptureGate`, the generic tracker capture gate. Each
+    tracker (QR now; images and objects later) registers its targets, its
+    cadence per situation (in gate, outside, unknown, burst after a hit),
+    `isBusy`, `lastHitAtMs` and `forceOn`; `wantsFrame(nowMs)` tells the
+    camera whether any tracker wants the frame (pass it as the capture's
+    `wantsFrame`), `kindsFor(nowMs)` which trackers get it and for which
+    targets (capped at k, default 3). Stateless per call; with every
+    tracker busy it returns before reading the position.
   - **`state/position-precision`**: `deviceAccuracySeriesM`, the rolling
     device accuracy median per reading.
 

@@ -73,6 +73,7 @@
         "src/ar/ar-content-watcher.ts",
         "src/ar/targets/nearby-targets.ts",
         "src/ar/targets/nearby-position.ts",
+        "src/ar/targets/tracker-capture-gate.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],

@@ -56,9 +56,10 @@ entirely after confirming they were only transitively pulled in.
   block and story readers (`src/ar/tour-blocks.ts`, `src/ar/tour-story.ts`)
   and the short text's look (`src/ar/tour-short-text.ts`) are such entries: their member types
   (`TourPictureBlock`, `TourStoryStep` and the like) are the public API a
-  renderer narrows to. The nearby-targets kernel and its position source
-  (`src/ar/targets/nearby-targets.ts`, `src/ar/targets/nearby-position.ts`)
-  are deep-import entries for the same reason. `dpdm` is in `ignoreDependencies` because the framework's
+  renderer narrows to. The nearby-targets kernel, its position source and the tracker capture
+  gate (`src/ar/targets/nearby-targets.ts`, `src/ar/targets/nearby-position.ts`,
+  `src/ar/targets/tracker-capture-gate.ts`) are deep-import entries for the
+  same reason. `dpdm` is in `ignoreDependencies` because the framework's
   `check:cycles` command moved from an inline package.json script into
   `scripts/test-timing/projects.mjs` (2026-07-21 gate wiring), where
   knip's package.json-script analysis cannot see it — the standard

@@ -37,10 +37,12 @@ const entryFiles = [
   // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`
   // exports wildcard advertises the subpath, so it must be built per-file.
   'src/ar/ar-scene-hierarchy.ts',
-  // The nearby-targets kernel and its position source: which trackable
-  // targets are near enough to search for - deep-imported by apps.
+  // The nearby-targets kernel, its position source and the tracker capture
+  // gate on top: which trackable targets are near enough to search for, and
+  // which camera frames a tracker wants - deep-imported by apps.
   'src/ar/targets/nearby-targets.ts',
   'src/ar/targets/nearby-position.ts',
+  'src/ar/targets/tracker-capture-gate.ts',
   'src/ar/bresenham3d.ts',
   // Packed integer cell keys - deep-imported by the Tour Viewer's splat
   // ownership grid, so it must be built per-file.
