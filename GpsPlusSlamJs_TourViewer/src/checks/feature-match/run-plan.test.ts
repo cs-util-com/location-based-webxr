@@ -374,3 +374,28 @@ describe("skipped shots", () => {
     expect(run([{ type: "reset" }], p).skipped).toEqual([]);
   });
 });
+
+// Why this test matters: each photo keeps what the camera reported (focus
+// distance, zoom) for the desk; a stored plan with a mangled report must
+// not bring it back as a photo, and one without a report is still read.
+describe("the camera report of a photo", () => {
+  it("keeps a report through storage and refuses a mangled one", () => {
+    const camera = { focusDistance: 0.42, zoom: 1, focusMode: "continuous" };
+    const p = planReducer(EMPTY_PLAN, {
+      type: "photo",
+      shot: "flat-s1/F1",
+      photo: { ...photo("p1"), camera },
+    });
+    expect(parsePlan(planText(p))?.shots["flat-s1/F1"]?.photo.camera).toEqual(
+      camera,
+    );
+    for (const bad of [{ deviceId: "x" }, { zoom: "1" }, [], "x"]) {
+      const a = {
+        type: "photo",
+        shot: "flat-s1/F1",
+        photo: { ...photo("p2"), camera: bad },
+      } as unknown as PlanAction;
+      expect(planReducer(EMPTY_PLAN, a)).toBe(EMPTY_PLAN);
+    }
+  });
+});

@@ -7,6 +7,7 @@
  *
  * @see run-plan.ts.md
  */
+import { isCameraReport, type CameraReport } from "./camera-report";
 import type { Size } from "./flat-target";
 import {
   needsRetake,
@@ -30,6 +31,11 @@ export interface PhotoMeta {
    * in a plan stored before it was recorded.
    */
   readonly greySd?: number;
+  /**
+   * What the camera reported at the photo (focus distance, zoom, size),
+   * for the desk. Absent when the camera gave nothing to read.
+   */
+  readonly camera?: CameraReport;
 }
 
 /** "auto": photos take themselves when the phone is still; "tap": countdown. */
@@ -133,7 +139,8 @@ function isPhoto(v: unknown): v is PhotoMeta {
       (typeof v.greySd === "number" &&
         Number.isFinite(v.greySd) &&
         v.greySd >= 0 &&
-        v.greySd <= 255))
+        v.greySd <= 255)) &&
+    (v.camera === undefined || isCameraReport(v.camera))
   );
 }
 

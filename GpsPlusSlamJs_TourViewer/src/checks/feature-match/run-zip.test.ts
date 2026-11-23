@@ -244,3 +244,22 @@ describe("the run zip from storage", () => {
     await expect(files).rejects.toThrow("the photo f2 is not stored");
   });
 });
+
+// Why this test matters: the desk reads the camera's focus distance and
+// zoom per frame from the frames JSON; a frame without a report has none.
+describe("the camera report in the frames JSON", () => {
+  it("carries a frame's camera report after its grey values", async () => {
+    const camera = { focusDistance: 0.42, zoom: 1 };
+    const plan = planReducer(shoot(EMPTY_PLAN, BASE), {
+      type: "photo",
+      shot: "light-s1/L2",
+      photo: { ...photoOf("a3"), camera },
+    });
+    const files = await runZipFiles(input(plan));
+    const frames = json(files, "pairs/light-s1/L1-L2/feature-match-frames.json")
+      .frames as Record<string, unknown>[];
+    expect(frames[0]).not.toHaveProperty("camera");
+    expect(frames[1]!.camera).toEqual(camera);
+    expect(Object.keys(frames[1]!).slice(-2)).toEqual(["greySd", "camera"]);
+  });
+});

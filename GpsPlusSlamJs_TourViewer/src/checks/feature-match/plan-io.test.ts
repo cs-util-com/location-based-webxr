@@ -96,7 +96,9 @@ const setUp = (storage: KeyValueStorage, db: KeyValueStore) => {
     engine: {
       deviceInfo: () => Promise.resolve(device),
     } as unknown as BenchEngine,
-    camera: {} as CameraControl,
+    camera: {
+      report: () => ({ focusDistance: 0.5, focusMode: "manual" }),
+    } as unknown as CameraControl,
     video: { videoWidth: 8, videoHeight: 6 } as HTMLVideoElement,
     flash: { hidden: true } as HTMLElement,
     note: { show: () => undefined, clear: () => undefined },
@@ -142,6 +144,18 @@ describe("the photo and the run zip", () => {
     const photo = fm.store.getState().plan.shots["light-s1/L1"]?.photo;
     expect(photo?.greyMean).toBeCloseTo(120, 5);
     expect(photo?.greySd).toBeCloseTo(0, 5);
+  });
+
+  it("records and logs what the camera reports at each photo", () => {
+    // Why: the desk checks whether the phone reports a usable focus
+    // distance; the shot keeps the report and the log says it.
+    const { fm, io, lines } = setUp(memory(), mapDb().db);
+    expect(io.shoot()).toBe(true);
+    const photo = fm.store.getState().plan.shots["light-s1/L1"]?.photo;
+    expect(photo?.camera).toEqual({ focusDistance: 0.5, focusMode: "manual" });
+    expect(lines).toContain(
+      "camera at light-s1/L1: focusDistance 0.5, focusMode manual",
+    );
   });
 
   it("names the methods the phone measures in the summary", () => {

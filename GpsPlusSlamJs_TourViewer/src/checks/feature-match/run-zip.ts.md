@@ -36,7 +36,7 @@ The frames JSON, pretty-printed (2 spaces) with a final newline, fields in this 
 - `session`: the page load's `sessionToken` (8 hex).
 - `lightCheck`: `lightOf(B)` (`ok`, `changed`, `not-darker`, `too-dark-a`, `too-dark-b`, `not-darker-than-dimmed`), null for a non-light pair.
 - `captureMaxLongEdge`: the long edge photos were captured at, at most.
-- `frames`: A then B, each `{ name, shot, take, file, width, height, sourceWidth, sourceHeight, greyMean, greySd }` (`file` the `shots/...` entry above, `greyMean` and `greySd` 0-255 rounded to 2 decimals; `greySd` is left out for a photo whose plan was stored before it was recorded), and for a rotation pair also `crop: { x, y, side }`, the centre square (`centreCrop` of `rotation-square.ts`).
+- `frames`: A then B, each `{ name, shot, take, file, width, height, sourceWidth, sourceHeight, greyMean, greySd }` (`file` the `shots/...` entry above, `greyMean` and `greySd` 0-255 rounded to 2 decimals; `greySd` is left out for a photo whose plan was stored before it was recorded; then `camera`, what the camera reported at the photo, when there is a report), and for a rotation pair also `crop: { x, y, side }`, the centre square (`centreCrop` of `rotation-square.ts`).
 - `turn`: only for a rotation pair, `{ degrees: 0 | 90 | 180, direction: "cw" }`, the clockwise turn of B's square.
 - `device`: the device facts (`DeviceInfo` of `bench-report.ts`).
 
@@ -68,5 +68,6 @@ const zip = await packFilesAsZip(files);
 ## Tests
 
 - `run-zip.test.ts`: the entry list of a run with L1, L2, F1 and F2 (each shot once, five frames JSON, summary and log last), the frames JSON of a turned pair field by field (and its key order, for the pair and a frame), `t0` as control, the light check, a retake's take in the shot file, a measured pair's matches file only when done and stored, and a photo that cannot be read failing the zip.
+- `run-zip.test.ts` also: a frame's camera report after its grey values, none on a frame without one.
 - `run-zip.property.test.ts`: for any shots taken, every named file is in the zip, no path twice, one PNG per shot and a frames JSON per ready pair.
 - The saved zip in the browser: `playwright-tests/feature-match-check.spec.js` (the cockpit and guided zips with their exact file lists, matches files included once the worker measured the pairs, the zip after a reload, a retake's take).

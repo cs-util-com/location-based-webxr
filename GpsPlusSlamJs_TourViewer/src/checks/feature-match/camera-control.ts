@@ -6,6 +6,7 @@
  *
  * @see camera-control.ts.md
  */
+import { cameraReport, type CameraReport } from "./camera-report";
 
 /** What a camera start came to: running, refused, or stopped meanwhile. */
 type CameraStart = "on" | "failed" | "stopped";
@@ -24,6 +25,8 @@ export interface CameraControl {
   /** Stops the camera; a start still pending stops its own stream. */
   readonly stop: () => void;
   readonly on: () => boolean;
+  /** What the running track reports (`camera-report.ts`); null when off. */
+  readonly report: () => CameraReport | null;
 }
 
 const CONSTRAINTS: MediaStreamConstraints = {
@@ -109,5 +112,10 @@ export function createCameraControl(
     return mine;
   };
 
-  return { start, stop, on: () => stream !== null };
+  return {
+    start,
+    stop,
+    on: () => stream !== null,
+    report: () => (stream ? cameraReport(stream.getTracks()[0]) : null),
+  };
 }

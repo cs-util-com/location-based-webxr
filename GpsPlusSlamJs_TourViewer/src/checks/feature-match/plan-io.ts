@@ -21,6 +21,7 @@ import { CAPTURE_MAX, type BenchEngine } from "./bench-engine";
 import { greyStats, previewFrame } from "./bench-image";
 import { errorText, formatBytes } from "./bench-net";
 import type { CameraControl } from "./camera-control";
+import { cameraReportText } from "./camera-report";
 import {
   currentShot,
   featureMatchActions as A,
@@ -178,6 +179,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     const f = captureFrame(video, CAPTURE_MAX);
     const source = { width: video.videoWidth, height: video.videoHeight };
     const grey = greyStats(f);
+    const report = d.camera.report();
     const id = newId("photo");
     const png = framePng(f, `photo ${shot.id}`);
     // A failed encode loses the photo: the shot asks to be taken again and
@@ -201,6 +203,7 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
           source,
           greyMean: grey.mean,
           greySd: grey.sd,
+          ...(report ? { camera: report } : {}),
         },
       }),
     );
@@ -223,6 +226,9 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     log(
       `photo ${shot.id} take ${String(take)}: ${String(f.width)}x${String(f.height)} grey mean ${grey.mean.toFixed(1)}${moved ? " (phone moved during countdown)" : ""}`,
     );
+    if (report) {
+      log(`camera at ${shot.id}: ${cameraReportText(report)}`);
+    }
     const light = lightOf(shot.id, planPhotos(state().plan));
     if (light) {
       log(`light check ${shot.id}: ${light}`);
