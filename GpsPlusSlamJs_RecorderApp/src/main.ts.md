@@ -59,7 +59,7 @@ This module is the entry point that runs on page load. It also exports the follo
   `arSessionScope.dispose()` plus the app-lifetime resets. Disposal runs in
   reverse creation order — per block, subscriptions unwind before the
   visualizers they feed. Gated layers (stats overlay, compass cubes, frame
-  tiles, live occluder, loop-closure capture, QR recording) go through
+  tiles, live occluder, loop-closure capture, relocalization feed, QR recording) go through
   `arSessionScope.wire(name, enabled, factory)`, which also owns the
   best-effort try/catch: a wiring failure logs a warning and recording
   continues without that layer. The occupancy-grid block is wired with
@@ -75,7 +75,7 @@ This module is the entry point that runs on page load. It also exports the follo
   functions live in ONE record,
   [`ar/ar-session-resources.ts`](ar/ar-session-resources.ts.md) — `mapOverlay`,
   `cameraFollower`, `alignmentLerper`, `statsOverlay`, `loopClosureHandler`,
-  `qrProducer`, `refPointViews` — read at FIRE time through
+  `relocalizationFeed`, `qrProducer`, `refPointViews` — read at FIRE time through
   `arSessionResources.<slot>`. Holding them together is what lets the scene
   wiring live outside this file; the per-RECORDING
   `activeImageQualityAnalyzer` stays a module `let` here because it is

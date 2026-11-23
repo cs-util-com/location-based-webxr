@@ -66,6 +66,7 @@ import {
   type DepthSample,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import { registerXrFrameUpdate } from 'gps-plus-slam-app-framework/ar/xr-frame-loop';
+import { startRelocalizationFeed } from 'gps-plus-slam-app-framework/ar/relocalization-feed';
 import { registerSessionDisposer } from 'gps-plus-slam-app-framework/ar/session-disposers';
 import {
   attachSunCheckToSession,
@@ -571,6 +572,30 @@ function wireLoopClosureCapture(): () => void {
   return () => {
     unregisterFrame();
     arSessionResources.loopClosureHandler = null;
+  };
+}
+
+/**
+ * Wire the relocalization feed: each XR frame's raw viewer pose goes to the
+ * framework feed, which records an ARCore relocalization (a platform frame
+ * switch) as one raw `arSpaceCorrection/relocalizationObserved` action in
+ * the CURRENT store, so the recording carries it and replays can correct
+ * content and captures across it. Before the dispatch the QR sighting fold
+ * closes its burst (the frame moved under the stored QR poses). The feed
+ * never throws into the frame loop and switches itself off on a fault.
+ *
+ * Returns the teardown, for registration in `arSessionScope`.
+ */
+function wireRelocalizationFeed(): () => void {
+  const feed = startRelocalizationFeed({
+    getStore: () => store,
+    beforeDispatch: () =>
+      arSessionResources.qrSightingFeeder?.noteFrameChange(),
+  });
+  arSessionResources.relocalizationFeed = feed;
+  return () => {
+    feed.dispose();
+    arSessionResources.relocalizationFeed = null;
   };
 }
 
@@ -1157,6 +1182,15 @@ async function handleEnterAR(): Promise<void> {
       recordingOptions.loopClosureDebug.detectorEnabled,
       () => wireLoopClosureCapture()
     );
+    // The relocalization feed runs by default. While the legacy loop-closure
+    // detector is on it stays off, so one frame jump is never recorded
+    // twice (as a loop closure and as a relocalization). A start failure is
+    // logged by the scope and never stops Enter AR.
+    arSessionScope.wire(
+      'Relocalization feed',
+      !recordingOptions.loopClosureDebug.detectorEnabled,
+      () => wireRelocalizationFeed()
+    );
 
     // F3 (2026-07-04): react to a SYSTEM-initiated session end (Android back
     // gesture ends the XRSession directly — uncancelable). Mid-recording this
@@ -1225,6 +1259,8 @@ async function handleEnterAR(): Promise<void> {
           // closing segment ended with, for that segment's codes, and the
           // restart's reducer wipes it.
           arSessionResources.qrSightingFeeder?.noteFrameChange();
+          // An origin reset is not a relocalization: the feed starts over.
+          arSessionResources.relocalizationFeed?.forget();
           store.dispatch(odometryTrackingRestarted(payload));
           // Origin reset: clear the loop-closure handler's last-pose memory
           // (deactivate ⇒ reset) before re-arming — the reference-space jump
@@ -1239,6 +1275,7 @@ async function handleEnterAR(): Promise<void> {
           // Stop feeding poses + forget the last pose: the pose jump across a
           // loss must never be recorded as a loop closure.
           arSessionResources.loopClosureHandler?.setTrackingActive(false);
+          arSessionResources.relocalizationFeed?.forget();
           showError(
             'AR tracking lost. Try moving to a well-lit area with more visual features.'
           );
@@ -1247,6 +1284,7 @@ async function handleEnterAR(): Promise<void> {
         // "LOST" UI warning without dispatching an alignment correction.
         onRecovered: () => {
           arSessionResources.loopClosureHandler?.setTrackingActive(true);
+          arSessionResources.relocalizationFeed?.forget();
           updateArInfo('');
           log.info('AR tracking recovered (same coordinate frame)');
         },
