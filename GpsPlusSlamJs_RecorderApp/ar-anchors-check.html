@@ -29,6 +29,7 @@
 
       /* During the AR session the overlay lies over the camera image: no
          background, and only the panel takes taps away from the scene. */
+      /* stylelint-disable-next-line selector-pseudo-class-no-unknown -- :xr-overlay is the WebXR DOM Overlay pseudo-class; the linter does not know it (false positive). */
       #ac-overlay:xr-overlay {
         padding: 8px;
         background: transparent;
@@ -58,6 +59,7 @@
         padding-left: 20px;
       }
 
+      /* stylelint-disable-next-line selector-pseudo-class-no-unknown -- :xr-overlay is the WebXR DOM Overlay pseudo-class; the linter does not know it (false positive). */
       #ac-overlay:xr-overlay .ac-intro {
         display: none;
       }
