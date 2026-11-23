@@ -21,15 +21,16 @@
     odometry, they misplace content by about the jump size after a
     relocalization. Inspection and tests only.
   - **`ar/ar-space-correction-registry`** (deep import):
-    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`); every
-    corrected object receives an `arcorrected` event per jump carrying the
-    applied local correction `M`.
+    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`,
+    `isAttached`); every corrected object receives an `arcorrected` event
+    per jump carrying the applied local correction `M`. A removed object is
+    untracked at once; a hint given after tracking re-dates the placement.
   - **`ar/ar-content-watcher`** (deep import): `enableArSpaceCorrection`
     creates the `arContent` group under `arWorldGroup`; whatever is added
     to it (or to a group marked with `arCorrection.container`) is corrected
-    with no further call. `arCorrection.track` takes a `capturedAt` hint
-    before or after the add, `exclude` keeps an object out, `attach`
-    follows a new store.
+    with no further call, also after a container is moved.
+    `arCorrection.track` takes a `capturedAt` hint before or after the add,
+    `exclude` keeps an object out, `attach` follows a new store.
   - **`ar/pose-committer`** (deep import): one committer per object, now
     shared by GPS anchors, deferred anchors and the registry.
 - **Content anchors that re-place only while none of it is in view**, at
@@ -247,8 +248,8 @@
     a relocalization, and the QR sighting fold segments at it.
   - GPS anchors and deferred anchors claim their objects through
     `ar/pose-committer`: putting an anchored object under another anchor, or
-    tracking it for the correction, now throws (`... is already committed
-by ...` or `nested pose committers are not supported ...`).
+    tracking it for the correction, now throws (`is already committed by`
+    or `nested pose committers are not supported`).
 
 - **A GPS anchor waits like a deferred anchor** (`visualization`,
   `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in

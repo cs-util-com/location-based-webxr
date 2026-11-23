@@ -59,6 +59,7 @@ const op = fc.oneof(
   }),
   fc.record({ k: fc.constant('jump' as const), jump: rigid }),
   fc.record({ k: fc.constant('excluded' as const), where }),
+  fc.record({ k: fc.constant('moveBox' as const), pose: rigid }),
   fc.record({ k: fc.constant('noop' as const) })
 );
 
@@ -95,7 +96,7 @@ describe('ar-content-watcher (properties)', () => {
         outside.rotation.y = -0.6;
         arWorldGroup.add(outside);
         const parents = { content: arContent, box, outside } as const;
-        // Oracle: each parent's fixed transform into O, built by hand.
+        // Oracle: each parent's current transform into O, read by hand.
         const pOf = (parent: THREE.Object3D): THREE.Matrix4 =>
           parent === arContent
             ? new THREE.Matrix4()
@@ -212,6 +213,11 @@ describe('ar-content-watcher (properties)', () => {
           excluded(o) {
             parents[o.where].add(excludedObj);
           },
+          moveBox(o) {
+            // A container moves (and turns) while it holds tracked items:
+            // they keep their local transforms and move with it.
+            o.pose.decompose(box.position, box.quaternion, box.scale);
+          },
           noop() {
             store.dispatch({ type: 'unrelated/action' });
           },
@@ -231,7 +237,7 @@ describe('ar-content-watcher (properties)', () => {
             });
             expect(maxDiff(localOf(excludedObj), excludedLocal)).toBe(0);
             expect(poseCommitterOf(excludedObj)).toBeNull();
-            expect(maxDiff(localOf(box), pOf(box))).toBe(0);
+            expect(poseCommitterOf(box)).toBeNull();
           };
           check();
           // A second sync (a notification with no new observation) moves nothing.

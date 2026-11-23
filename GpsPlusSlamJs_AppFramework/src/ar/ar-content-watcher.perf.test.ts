@@ -16,9 +16,10 @@
  * printed and appended to AR_SPACE_SWEEP_OUT when that is set, and the 2 ms
  * budget is judged from a local run, never tuned to pass.
  *
- * Local runs (Windows, node 22, three runs, best of 9 each): direct
- * children 0.6-0.8 ms at 100, 1.1-1.5 ms at 1,000, 5.2-6.0 ms at 10,000;
- * in 10 containers 0.5-0.9, 0.8-1.1 and 4.9-5.6 ms. About 0.5 ms of each is
+ * Local runs (Windows, node 24, three runs, best of 9 each, P read fresh
+ * once per parent at every jump): direct children 0.75-0.87 ms at 100,
+ * 1.06-1.70 ms at 1,000, 6.7-7.5 ms at 10,000; in 10 containers
+ * 0.55-0.66, 0.71-0.96 and 4.3-7.0 ms. About 0.5 ms of each is
  * the store dispatch itself (development-mode checks included). Before the
  * correction was shared per parent, 1,000 direct children took 15-24 ms;
  * the sibling test in ar-content-watcher.test.ts pins that sharing exactly,

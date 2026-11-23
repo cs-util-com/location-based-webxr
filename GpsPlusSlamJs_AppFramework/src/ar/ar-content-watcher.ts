@@ -48,13 +48,17 @@ export interface ArSpaceCorrection {
   untrack(object: THREE.Object3D): void;
   /**
    * Mark `group` as a container: never corrected itself, its direct
-   * children tracked one by one. Its transform must stay fixed relative to
-   * `arContent` while it holds tracked items. Returns `group`.
+   * children tracked one by one. It may move: every jump reads its current
+   * transform. Returns `group`.
    */
   container<T extends THREE.Object3D>(group: T): T;
   /** Never track `object`, now or after any later add. */
   exclude(object: THREE.Object3D): void;
-  /** Follow another store (a new recording in the same AR session). */
+  /**
+   * Follow another store (a new recording in the same AR session). Content
+   * added while no store is attached (after a detach) is tracked, with its
+   * hint, at the next attach.
+   */
   attach(store: ArSpaceCorrectionStore): () => void;
   /** Stop watching, untrack everything and detach. `arContent` stays. */
   dispose(): void;
@@ -115,6 +119,8 @@ export function enableArSpaceCorrection(options: {
   const excluded = new WeakSet<THREE.Object3D>();
   const hints = new WeakMap<THREE.Object3D, TrackOptions>();
   const watched = new Set<THREE.Object3D>();
+  /** Watched content added while no store was attached. */
+  const pending = new Set<THREE.Object3D>();
 
   const onChildAdded = (event: { child: THREE.Object3D }): void => {
     place(event.child);
@@ -128,7 +134,27 @@ export function enableArSpaceCorrection(options: {
     watched.add(node);
     node.addEventListener('childadded', onChildAdded);
     node.addEventListener('childremoved', onChildRemoved);
-    for (const child of [...node.children]) place(child);
+    placeAll([...node.children]);
+  }
+
+  /**
+   * Place each child even when one throws (a claim conflict, a parent chain
+   * that is not a similarity, a throwing `arcorrected` listener), then
+   * rethrow the first failure; the others are logged.
+   */
+  function placeAll(children: readonly THREE.Object3D[]): void {
+    const failures: unknown[] = [];
+    for (const child of children) {
+      try {
+        place(child);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    for (const extra of failures.slice(1)) {
+      log.error(`one more child could not be tracked: ${String(extra)}`);
+    }
+    if (failures.length > 0) throw failures[0];
   }
 
   function unwatch(node: THREE.Object3D): void {
@@ -144,12 +170,19 @@ export function enableArSpaceCorrection(options: {
       watch(child);
       return;
     }
+    if (!registry.isAttached()) {
+      // Between a detach and the next attach: kept, with its hint.
+      log.warn('content added while no store is attached; tracked at attach');
+      pending.add(child);
+      return;
+    }
     const hint = hints.get(child);
     hints.delete(child);
     registry.track(child, hint);
   }
 
   function leave(child: THREE.Object3D): void {
+    pending.delete(child);
     if (containers.has(child)) unwatch(child);
     else registry.untrack(child);
   }
@@ -171,12 +204,12 @@ export function enableArSpaceCorrection(options: {
         );
       }
       assertOptions(opts);
-      if (isUnder(object, arWorldGroup)) {
-        hints.delete(object);
-        registry.track(object, opts);
-      } else {
+      if (pending.has(object) || !isUnder(object, arWorldGroup)) {
         hints.set(object, opts);
+        return;
       }
+      hints.delete(object);
+      registry.track(object, opts);
     },
     untrack(object) {
       hints.delete(object);
@@ -202,7 +235,13 @@ export function enableArSpaceCorrection(options: {
       registry.untrack(object);
     },
     attach(next) {
-      return registry.attach(next);
+      const detach = registry.attach(next);
+      const waiting = [...pending].filter(
+        (child) => child.parent !== null && watched.has(child.parent)
+      );
+      pending.clear();
+      placeAll(waiting);
+      return detach;
     },
     dispose() {
       for (const node of watched) {
@@ -210,6 +249,7 @@ export function enableArSpaceCorrection(options: {
         node.removeEventListener('childremoved', onChildRemoved);
       }
       watched.clear();
+      pending.clear();
       registry.dispose();
     },
   };

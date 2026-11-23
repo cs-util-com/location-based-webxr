@@ -334,10 +334,16 @@ describe('ar-content-watcher', () => {
     box.add(item);
     arContent.add(coin, box, helper);
     const events = new Map<THREE.Object3D, Array<readonly number[]>>();
+    // The pose a listener reads inside the event: it must already be baked.
+    const seen = new Map<THREE.Object3D, THREE.Matrix4[]>();
     const before = new Map<THREE.Object3D, THREE.Matrix4>();
     for (const o of [coin, item, box, helper]) {
       events.set(o, []);
-      o.addEventListener('arcorrected', (e) => events.get(o)!.push(e.matrix));
+      seen.set(o, []);
+      o.addEventListener('arcorrected', (e) => {
+        events.get(o)!.push(e.matrix);
+        seen.get(o)!.push(localOf(o));
+      });
     }
     for (const [i, t] of [1000, 2000].entries()) {
       for (const o of [coin, item]) before.set(o, localOf(o));
@@ -348,27 +354,136 @@ describe('ar-content-watcher', () => {
         const got = events.get(o)!;
         expect(got).toHaveLength(i + 1);
         const m = new THREE.Matrix4().fromArray([...got[i]!]);
-        expect(maxDiff(localOf(o), m.multiply(before.get(o)!))).toBeLessThan(
-          1e-9
-        );
+        const want = m.multiply(before.get(o)!);
+        expect(maxDiff(localOf(o), want)).toBeLessThan(1e-9);
+        expect(maxDiff(seen.get(o)![i]!, want)).toBeLessThan(1e-9);
         expect(Object.isFrozen(got[i])).toBe(true);
       }
     }
-    // Siblings share one M per jump: the correction is prepared once per
-    // parent, not once per object (the bake's cost at 1,000 items rests on it).
+    // Siblings share one M per jump, directly under arContent and inside
+    // one container: the correction is prepared once per parent object,
+    // not once per item (the bake's cost at 1,000 items rests on it).
     const twin = new THREE.Object3D();
     arContent.add(twin);
+    const boxTwin = new THREE.Object3D();
+    box.add(boxTwin);
     const twinEvents: Array<readonly number[]> = [];
     twin.addEventListener('arcorrected', (e) => twinEvents.push(e.matrix));
+    const boxTwinEvents: Array<readonly number[]> = [];
+    boxTwin.addEventListener('arcorrected', (e) =>
+      boxTwinEvents.push(e.matrix)
+    );
     store.dispatch(
       relocalizationObserved(stillJump(3000, rawRigid(0.1, 1, 0, 0)))
     );
     expect(twinEvents).toHaveLength(1);
     expect(twinEvents[0]).toBe(events.get(coin)![2]);
+    expect(boxTwinEvents).toHaveLength(1);
+    expect(boxTwinEvents[0]).toBe(events.get(item)![2]);
+    expect(boxTwinEvents[0]).not.toBe(twinEvents[0]);
     store.dispatch({ type: 'unrelated/action' });
     expect(events.get(coin)).toHaveLength(3);
     expect(events.get(box)).toEqual([]);
     expect(events.get(helper)).toEqual([]);
+    arCorrection.dispose();
+  });
+
+  it('a container moved after its items were added carries them, and the next jump lands them on their physical spot', () => {
+    // Why this test matters: a chest that collects coins may be carried
+    // to a new place (and turned). Each jump must read the chest where it
+    // is now; a transform remembered from the add misplaces every coin in
+    // it by the chest's move turned through the jump (metres for a 90 deg
+    // turn and a 3 m jump).
+    const store = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store,
+      arWorldGroup,
+    });
+    const chest = arCorrection.container(new THREE.Group());
+    chest.position.set(1, 0, -1);
+    arContent.add(chest);
+    const coin = new THREE.Object3D();
+    coin.position.set(0.3, 0.1, 0);
+    chest.add(coin);
+    // Carried 10 m and turned a quarter.
+    chest.position.set(-6, 0, 7);
+    chest.rotation.y = Math.PI / 2;
+    const placedInO = inGroup(coin, arWorldGroup);
+    const J = rawRigid(Math.PI / 2, 3, 0, 0);
+    store.dispatch(relocalizationObserved(stillJump(1000, J)));
+    expect(
+      maxDiff(inGroup(coin, arWorldGroup), inO(J).multiply(placedInO))
+    ).toBeLessThan(1e-9);
+    // The chest itself never moves with the correction.
+    expect(chest.position.toArray()).toEqual([-6, 0, 7]);
+    arCorrection.dispose();
+  });
+
+  it('content added while no store is attached keeps its hint and is tracked at the next attach', () => {
+    // Why this test matters: between a recording's detach and the next
+    // store, the app keeps placing content. An add must not throw, and the
+    // hint it was given must not be lost.
+    const first = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store: first,
+      arWorldGroup,
+    });
+    const detach = arCorrection.attach(first);
+    detach();
+    const second = newStore();
+    const J0 = rawRigid(0.2, 1, 0, 0);
+    second.dispatch(relocalizationObserved(stillJump(1000, J0)));
+    const hinted = new THREE.Object3D();
+    hinted.position.set(1, 0, 0);
+    arCorrection.track(hinted, { capturedAt: 500 }); // before J0
+    const plain = new THREE.Object3D();
+    plain.position.set(0, 0, -1);
+    expect(() => arContent.add(hinted, plain)).not.toThrow();
+    const box = arCorrection.container(new THREE.Group());
+    const inBox = new THREE.Object3D();
+    box.add(inBox);
+    arContent.add(box);
+    for (const o of [hinted, plain, inBox]) {
+      expect(poseCommitterOf(o)).toBeNull();
+    }
+    const hintedAt = localOf(hinted);
+    const plainAt = localOf(plain);
+    arCorrection.attach(second);
+    // The hint dates the pose before J0: J0 is applied at the attach.
+    expect(maxDiff(localOf(hinted), inO(J0).multiply(hintedAt))).toBeLessThan(
+      1e-9
+    );
+    expect(maxDiff(localOf(plain), plainAt)).toBe(0);
+    for (const o of [hinted, plain, inBox]) {
+      expect(poseCommitterOf(o)).toBe('AR-space correction');
+    }
+    arCorrection.dispose();
+  });
+
+  it('one child that cannot be tracked does not stop its siblings when a container with children is added', () => {
+    // Why this test matters: a container added with many items, one of
+    // which another committer owns, must still track the rest; the failure
+    // is thrown out of add after all siblings were placed.
+    const store = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store,
+      arWorldGroup,
+    });
+    const box = arCorrection.container(new THREE.Group());
+    const items = Array.from({ length: 4 }, () => new THREE.Object3D());
+    box.add(...items);
+    claimPose(items[1]!, 'deferred anchor');
+    expect(() => arContent.add(box)).toThrow(/deferred anchor/);
+    expect(items.map((o) => poseCommitterOf(o))).toEqual([
+      'AR-space correction',
+      'deferred anchor',
+      'AR-space correction',
+      'AR-space correction',
+    ]);
+    releasePose(items[1]!, 'deferred anchor');
     arCorrection.dispose();
   });
 

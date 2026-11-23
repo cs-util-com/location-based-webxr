@@ -22,6 +22,7 @@ import type { Matrix4 } from 'gps-plus-slam-js';
 import {
   IDENTITY_POSE,
   composeRigid,
+  invertRigid,
   shownLocalMatrix,
 } from './ar-space-correction';
 import type { Pose } from './qr/qr-pose';
@@ -84,17 +85,20 @@ interface TrackedEntry {
   readonly correction: Pose;
   /** The `capturedAt` hint the object was tracked with, or `null`. */
   readonly stampedAt: number | null;
-  /** Parent-to-group transform `P` at tracking time, column-major. */
-  readonly parentToGroup: Matrix4;
+  /** The epoch the placement belongs to; its jumps from there are baked in. */
+  readonly start: number;
 }
 
 export interface ArSpaceCorrectionRegistry {
   /**
    * Track `object` (a descendant of the group) from its current local
-   * transform. Tracking an object again restarts it from its current local
-   * transform with the new options. Jumps the object missed are applied at
-   * once. Throws when no store is attached, the object is not under the
-   * group, the options are invalid, or another committer owns the object.
+   * transform. Jumps the object missed are applied at once. Tracking a
+   * tracked object again WITH a hint re-dates its placement: the jumps
+   * between the hint's epoch and the epoch it was tracked with are applied
+   * (or taken back), so a late hint is right even after a jump. Without a
+   * hint it restarts from its current transform, unmoved. Throws when no
+   * store is attached, the object is not under the group, the options are
+   * invalid, or another committer owns the object.
    */
   track(object: THREE.Object3D, options?: TrackOptions): void;
   /** Stop correcting `object`; its transform keeps its current value. */
@@ -105,6 +109,8 @@ export interface ArSpaceCorrectionRegistry {
    * the current frame). Returns the detach function.
    */
   attach(store: ArSpaceCorrectionStore): () => void;
+  /** Whether a store is attached. */
+  isAttached(): boolean;
   /** The entry of a tracked object, or `undefined`. */
   entryOf(object: THREE.Object3D): Readonly<TrackedEntry> | undefined;
   /** Untrack everything and detach. */
@@ -115,20 +121,25 @@ interface Entry {
   applied: number;
   correction: Pose;
   stampedAt: number | null;
-  readonly parentToGroup: Matrix4;
-  /** The parent at tracking time; `P` holds only for it. */
+  start: number;
+  /** The parent at tracking time; a re-parented object is untracked. */
   readonly parent: THREE.Object3D;
+  /** The one-shot `removed` listener that untracks the object. */
+  readonly onRemoved: () => void;
 }
 
 const IDENTITY_MATRIX = new THREE.Matrix4().toArray() as unknown as Matrix4;
 
-/** `P`: the product of the local matrices from `group` down to `object.parent`. */
+/**
+ * `P`: the product of the local matrices from `group` down to `parent`,
+ * read now, so a container the app moved is read at its new transform.
+ */
 function parentToGroupOf(
-  object: THREE.Object3D,
+  parent: THREE.Object3D | null,
   group: THREE.Object3D
 ): Matrix4 {
   const chain: THREE.Object3D[] = [];
-  let p = object.parent;
+  let p = parent;
   while (p && p !== group) {
     chain.push(p);
     p = p.parent;
@@ -207,8 +218,8 @@ function stillUnder(
 
 /**
  * One `M = P^-1 * Delta(applied) * P`, decomposed once and shared by every
- * entry with the same `P` and `applied` within one sync (the common case:
- * every direct child of the content group shares the identity `P`).
+ * entry with the same parent and `applied` within one sync (the common case:
+ * every direct child of the content group, or of one container).
  */
 interface PreparedCorrection {
   /** `M`, column-major and frozen: it is handed to `arcorrected` listeners. */
@@ -220,8 +231,33 @@ interface PreparedCorrection {
   readonly corrections: Map<Pose, Pose>;
 }
 
-/** Per sync: `P` (by reference), then `applied`, to the prepared `M`. */
-type CorrectionCache = Map<Matrix4, Map<number, PreparedCorrection>>;
+/** Per parent within one sync: its `P` (or why it has none) and its `M`s. */
+interface ParentCorrections {
+  readonly p: Matrix4 | Error;
+  readonly byApplied: Map<number, PreparedCorrection>;
+}
+
+/** Per sync: parent object to its fresh `P` and prepared corrections. */
+type CorrectionCache = Map<THREE.Object3D, ParentCorrections>;
+
+function correctionsOf(
+  cache: CorrectionCache,
+  parent: THREE.Object3D,
+  group: THREE.Object3D
+): ParentCorrections {
+  let pc = cache.get(parent);
+  if (pc === undefined) {
+    let p: Matrix4 | Error;
+    try {
+      p = parentToGroupOf(parent, group);
+    } catch (error) {
+      p = error instanceof Error ? error : new Error(String(error));
+    }
+    pc = { p, byApplied: new Map() };
+    cache.set(parent, pc);
+  }
+  return pc;
+}
 
 function prepare(delta: Pose, parentToGroup: Matrix4): PreparedCorrection {
   const matrix = Object.freeze(
@@ -253,44 +289,18 @@ export function createArSpaceCorrectionRegistry(options: {
     );
   }
   const entries = new Map<THREE.Object3D, Entry>();
-  const sharedP = new WeakMap<THREE.Object3D, Matrix4>();
   let store: ArSpaceCorrectionStore | null = null;
   let unsubscribe: (() => void) | null = null;
   let seenObservations: unknown = null;
 
-  function bake(
+  /** Bake `c` (the image of `delta`) into `object`; the entry is now at `n`. */
+  function apply(
     object: THREE.Object3D,
     entry: Entry,
-    state: RootWithArSpaceCorrection,
-    cache: CorrectionCache = new Map()
+    c: PreparedCorrection,
+    delta: Pose,
+    n: number
   ): void {
-    const n = selectArSpaceCorrectionEpoch(state);
-    if (entry.applied === n) return;
-    if (!stillUnder(object, entry.parent, group)) {
-      // An explicitly tracked object the app removed or re-parented: its
-      // P no longer holds. Watched content is untracked at the removal.
-      log.warn('a tracked object left its parent or the group; untracked');
-      untrack(object);
-      return;
-    }
-    if (entry.applied > n) {
-      // Not reachable within one store: observations only grow.
-      log.warn(`entry ahead of the store (${entry.applied} > ${n}); restarted`);
-      entry.applied = n;
-      entry.correction = IDENTITY_POSE;
-      return;
-    }
-    let byApplied = cache.get(entry.parentToGroup);
-    if (byApplied === undefined) {
-      byApplied = new Map();
-      cache.set(entry.parentToGroup, byApplied);
-    }
-    const delta = selectCorrectionTrack(state)[entry.applied]!;
-    let c = byApplied.get(entry.applied);
-    if (c === undefined) {
-      c = prepare(delta, entry.parentToGroup);
-      byApplied.set(entry.applied, c);
-    }
     bakeInto(object, c);
     let correction = c.corrections.get(entry.correction);
     if (correction === undefined) {
@@ -300,6 +310,63 @@ export function createArSpaceCorrectionRegistry(options: {
     entry.correction = correction;
     entry.applied = n;
     object.dispatchEvent({ type: 'arcorrected', matrix: c.matrix });
+  }
+
+  function bake(
+    object: THREE.Object3D,
+    entry: Entry,
+    state: RootWithArSpaceCorrection,
+    cache: CorrectionCache
+  ): void {
+    const n = selectArSpaceCorrectionEpoch(state);
+    if (entry.applied === n) return;
+    if (!stillUnder(object, entry.parent, group)) {
+      // An explicitly tracked object whose parent left the group: its
+      // placement no longer holds. (A removed object is untracked at once.)
+      log.warn('a tracked object left its parent or the group; untracked');
+      untrack(object);
+      return;
+    }
+    if (entry.applied > n) {
+      // Not reachable within one store: observations only grow.
+      log.warn(`entry ahead of the store (${entry.applied} > ${n}); restarted`);
+      entry.applied = n;
+      entry.start = n;
+      entry.correction = IDENTITY_POSE;
+      return;
+    }
+    const pc = correctionsOf(cache, entry.parent, group);
+    if (pc.p instanceof Error) throw pc.p;
+    const delta = selectCorrectionTrack(state)[entry.applied]!;
+    let c = pc.byApplied.get(entry.applied);
+    if (c === undefined) {
+      c = prepare(delta, pc.p);
+      pc.byApplied.set(entry.applied, c);
+    }
+    apply(object, entry, c, delta, n);
+  }
+
+  /**
+   * Re-date a tracked placement from epoch `start` to `target`: it holds
+   * the jumps `[start, applied)` and needs `[target, n)`, so in O it gets
+   * `Delta(target) * Delta(applied) * Delta(start)^-1`.
+   */
+  function redate(
+    object: THREE.Object3D,
+    entry: Entry,
+    state: RootWithArSpaceCorrection,
+    target: number,
+    p: Matrix4
+  ): void {
+    const n = selectArSpaceCorrectionEpoch(state);
+    if (target === entry.start && entry.applied === n) return;
+    const deltas = selectCorrectionTrack(state);
+    const delta = composeRigid(
+      deltas[target]!,
+      composeRigid(deltas[entry.applied]!, invertRigid(deltas[entry.start]!))
+    );
+    entry.start = target;
+    apply(object, entry, prepare(delta, p), delta, n);
   }
 
   function sync(): void {
@@ -320,7 +387,10 @@ export function createArSpaceCorrectionRegistry(options: {
   }
 
   function untrack(object: THREE.Object3D): void {
-    if (!entries.delete(object)) return;
+    const entry = entries.get(object);
+    if (entry === undefined) return;
+    entries.delete(object);
+    object.removeEventListener('removed', entry.onRemoved);
     releasePose(object, 'AR-space correction');
   }
 
@@ -344,6 +414,32 @@ export function createArSpaceCorrectionRegistry(options: {
     return n;
   }
 
+  /** Claim `object` and track it from `epoch`, then bake the jumps since. */
+  function begin(
+    object: THREE.Object3D,
+    state: RootWithArSpaceCorrection,
+    epoch: number,
+    stampedAt: number | null,
+    p: Matrix4
+  ): void {
+    const parent = object.parent!;
+    claimPose(object, 'AR-space correction');
+    const entry: Entry = {
+      applied: epoch,
+      correction: IDENTITY_POSE,
+      stampedAt,
+      start: epoch,
+      parent,
+      onRemoved: () => untrack(object),
+    };
+    entries.set(object, entry);
+    object.addEventListener('removed', entry.onRemoved);
+    const cache: CorrectionCache = new Map([
+      [parent, { p, byApplied: new Map() }],
+    ]);
+    bake(object, entry, state, cache);
+  }
+
   return {
     track(object, opts = {}) {
       if (!(object instanceof THREE.Object3D)) {
@@ -354,25 +450,19 @@ export function createArSpaceCorrectionRegistry(options: {
       }
       const state = store.getState();
       const epoch = epochFor(state, opts);
-      const fresh = parentToGroupOf(object, group);
-      // One `P` array per parent while its transform holds, so the bake's
-      // per-sync cache (keyed by reference) prepares `M` once per parent.
-      const known = sharedP.get(object.parent!);
-      const parentToGroup =
-        known !== undefined && known.every((v, i) => v === fresh[i])
-          ? known
-          : fresh;
-      sharedP.set(object.parent!, parentToGroup);
-      if (!entries.has(object)) claimPose(object, 'AR-space correction');
-      const entry: Entry = {
-        applied: epoch,
-        correction: IDENTITY_POSE,
-        stampedAt: opts.capturedAt ?? null,
-        parentToGroup,
-        parent: object.parent!,
-      };
-      entries.set(object, entry);
-      bake(object, entry, state);
+      // Read and checked before anything is claimed.
+      const p = parentToGroupOf(object.parent, group);
+      const parent = object.parent!;
+      const known = entries.get(object);
+      const stampedAt = opts.capturedAt ?? null;
+      const hinted = stampedAt !== null || opts.epoch !== undefined;
+      if (known !== undefined && known.parent === parent && hinted) {
+        known.stampedAt = stampedAt;
+        redate(object, known, state, epoch, p);
+        return;
+      }
+      if (known !== undefined) untrack(object);
+      begin(object, state, epoch, stampedAt, p);
     },
     untrack,
     attach(next) {
@@ -382,6 +472,7 @@ export function createArSpaceCorrectionRegistry(options: {
       const n = selectArSpaceCorrectionEpoch(state);
       for (const entry of entries.values()) {
         entry.applied = n;
+        entry.start = n;
         entry.correction = IDENTITY_POSE;
       }
       seenObservations = selectArSpaceObservations(state);
@@ -394,6 +485,9 @@ export function createArSpaceCorrectionRegistry(options: {
         store = null;
       };
     },
+    isAttached() {
+      return store !== null;
+    },
     entryOf(object) {
       return entries.get(object);
     },
@@ -401,10 +495,7 @@ export function createArSpaceCorrectionRegistry(options: {
       unsubscribe?.();
       unsubscribe = null;
       store = null;
-      for (const object of entries.keys()) {
-        releasePose(object, 'AR-space correction');
-      }
-      entries.clear();
+      for (const object of [...entries.keys()]) untrack(object);
     },
   };
 }

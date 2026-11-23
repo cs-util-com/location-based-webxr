@@ -63,6 +63,13 @@ const localOf = (o: THREE.Object3D): number[] =>
 const maxDiff = (a: readonly number[], b: readonly number[]): number =>
   Math.max(...a.map((v, i) => Math.abs(v - b[i]!)));
 
+const matrixOfPose = (p: Pose): THREE.Matrix4 =>
+  new THREE.Matrix4().compose(
+    new THREE.Vector3(...p.position),
+    new THREE.Quaternion(...p.rotation),
+    new THREE.Vector3(1, 1, 1)
+  );
+
 function setLocal(o: THREE.Object3D, p: Pose, scale = 1): void {
   o.position.set(...p.position);
   o.quaternion.set(...p.rotation);
@@ -473,11 +480,13 @@ describe('ar-space-correction-registry', () => {
     registry.dispose();
   });
 
-  it('an explicitly tracked object that left its parent or the group is untracked at the next jump, not moved', () => {
-    // Why this test matters: P was read at tracking time; under a new
-    // parent, or outside the group, the bake would apply a correction in
-    // the wrong frame. The registry cannot know the new placement, so it
-    // lets go and says so.
+  it('an explicitly tracked object is untracked when removed or re-parented, and at the next jump when its parent left the group, never moved', () => {
+    // Why this test matters: under a new parent, or outside the group, the
+    // bake would apply a correction in the wrong frame. The registry cannot
+    // know the new placement, so it lets go. A removal is seen at once (a
+    // tile cache that evicts with remove() must not leave entries behind
+    // until the next jump); a parent leaving the group is seen at the jump,
+    // with a warning.
     const warnings: string[] = [];
     const unsubscribe = subscribeToLogs((entry) => {
       if (entry.tag === 'ArSpaceCorrection' && entry.level === LogLevel.WARN) {
@@ -502,6 +511,10 @@ describe('ar-space-correction-registry', () => {
     registry.track(viaHolder);
     group.remove(removed);
     otherParent.add(reparented);
+    for (const o of [removed, reparented]) {
+      expect(registry.entryOf(o)).toBeUndefined();
+      expect(poseCommitterOf(o)).toBeNull();
+    }
     group.remove(holder); // the object keeps its parent, the parent left
     store.dispatch(
       relocalizationObserved(
@@ -513,7 +526,90 @@ describe('ar-space-correction-registry', () => {
       expect(registry.entryOf(o)).toBeUndefined();
       expect(poseCommitterOf(o)).toBeNull();
     }
-    expect(warnings).toHaveLength(3);
+    expect(warnings).toHaveLength(1);
     unsubscribe();
+  });
+
+  it('a tile cache that evicts with remove() leaves no entry, claim or listener behind', () => {
+    // Why this test matters: a first-in first-out tile cache under the
+    // basis node removes old tiles and never calls untrack; each evicted
+    // tile must be released at the removal, and tracking the same object
+    // again must not stack a second removal listener.
+    const store = newStore();
+    const group = new THREE.Group();
+    const basis = new THREE.Group();
+    group.add(basis);
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const removedListeners = (o: THREE.Object3D): number =>
+      (
+        (o as unknown as { _listeners?: Record<string, unknown[]> })._listeners
+          ?.removed ?? []
+      ).length;
+    const tiles = Array.from({ length: 5 }, () => new THREE.Object3D());
+    for (const tile of tiles) {
+      basis.add(tile);
+      registry.track(tile);
+      registry.track(tile); // a restart reuses the listener
+      expect(removedListeners(tile)).toBe(1);
+    }
+    for (const tile of tiles.slice(0, 3)) basis.remove(tile);
+    for (const tile of tiles.slice(0, 3)) {
+      expect(registry.entryOf(tile)).toBeUndefined();
+      expect(poseCommitterOf(tile)).toBeNull();
+      expect(removedListeners(tile)).toBe(0);
+    }
+    registry.untrack(tiles[3]!);
+    expect(removedListeners(tiles[3]!)).toBe(0);
+    registry.dispose();
+    expect(removedListeners(tiles[4]!)).toBe(0);
+  });
+
+  it('a hint given after tracking re-dates the placement exactly, even after a jump in between', () => {
+    // Why this test matters: an app may learn the capture time of a pose
+    // only after it added the object. If a jump lands in between, the
+    // object already holds that jump; re-tracking must apply only the
+    // jumps it is still missing (or take back one it should not have),
+    // never apply one twice.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const step = (t: number, x: number, yaw: number) =>
+      store.dispatch(
+        relocalizationObserved(
+          jumpObservation(t, {
+            position: [x, 0, 0.5],
+            rotation: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)],
+          })
+        )
+      );
+    step(1000, 1, 0.2); // J0
+    const placed = new THREE.Matrix4().compose(
+      new THREE.Vector3(2, 0.3, -1),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0.4, 0)),
+      new THREE.Vector3(1, 1, 1)
+    );
+    const late = new THREE.Object3D();
+    placed.decompose(late.position, late.quaternion, late.scale);
+    group.add(late);
+    registry.track(late); // epoch 1, before the hint is known
+    step(2000, -2, -0.3); // J1, received
+    // The pose was captured before J0: it needs J0 too, applied before J1.
+    registry.track(late, { capturedAt: 500 });
+    const d = selectCorrectionTrack(store.getState());
+    const want = matrixOfPose(d[0]!).multiply(placed);
+    expect(maxDiff(localOf(late), want.toArray())).toBeLessThan(1e-9);
+    expect(registry.entryOf(late)).toMatchObject({ start: 0, stampedAt: 500 });
+    // Re-dating to a later capture takes J0 back again.
+    registry.track(late, { capturedAt: 1500 });
+    expect(
+      maxDiff(localOf(late), matrixOfPose(d[1]!).multiply(placed).toArray())
+    ).toBeLessThan(1e-9);
+    // The same hint twice changes nothing.
+    const before = localOf(late);
+    registry.track(late, { capturedAt: 1500 });
+    expect(maxDiff(localOf(late), before)).toBe(0);
+    registry.dispose();
   });
 });
