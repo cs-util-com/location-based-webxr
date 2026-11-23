@@ -2167,11 +2167,17 @@ test("the guided photo test refuses a second tab", async ({
   await routeNetwork(page, fulfillSift);
   await fakeCamera(page);
   await page.goto("/feature-match-check.html");
-  await page.waitForFunction(async () =>
-    ((await navigator.locks.query()).held ?? []).some(
-      (l) => l.name === "feature-match-run",
-    ),
-  );
+  // Polled through evaluate: waitForFunction would take the returned
+  // promise as a truthy answer and not wait.
+  await expect
+    .poll(() =>
+      page.evaluate(async () =>
+        ((await navigator.locks.query()).held ?? []).some(
+          (l) => l.name === "feature-match-run",
+        ),
+      ),
+    )
+    .toBe(true);
   const second = await context.newPage();
   await routeNetwork(second, fulfillSift);
   await fakeCamera(second);

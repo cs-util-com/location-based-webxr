@@ -454,6 +454,10 @@ const planCase =
     if (TARGET_CHANGES.has(action.type)) {
       s.guided = { count: null };
     }
+    // A new run's log: its zip must not carry every earlier run's lines.
+    if (action.type === "reset") {
+      s.log = [];
+    }
     if (action.type === "photo") {
       endHandsOff(s);
     } else if (TARGET_CHANGES.has(action.type) || action.type === "lost") {
@@ -706,9 +710,12 @@ const slice = createSlice({
         s.handsOff = HANDS_OFF_IDLE;
       }
     },
-    /** Download all starts packing; refused unless idle with a ready pair. */
+    /**
+     * Download all starts packing; refused unless idle with a ready pair,
+     * and in a tab refused the run (its plan may be stale).
+     */
     runZipStarted(s: Draft) {
-      if (s.busy !== "idle" || !anyPairReady(plain(s.plan))) {
+      if (s.otherTab || s.busy !== "idle" || !anyPairReady(plain(s.plan))) {
         return;
       }
       s.busy = "saving";

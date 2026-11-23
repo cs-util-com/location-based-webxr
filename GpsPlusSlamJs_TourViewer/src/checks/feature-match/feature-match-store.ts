@@ -414,7 +414,13 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
       sides.results.delete(key.slice("result:".length));
     }
   };
-  const flagFailing = (failing: boolean): void => {
+  /**
+   * Photo keys the restore could not read this load (a read or decode
+   * error, not an absent record): kept, and failing until retaken.
+   */
+  const unread = new Set<string>();
+  const flagFailing = (writesFailing: boolean): void => {
+    const failing = writesFailing || unread.size > 0;
     if (store.getState().photoStoreFailing !== failing) {
       store.dispatch(A.photoStoreChanged(failing));
     }
@@ -433,11 +439,14 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
       await db.put(key, await value);
       ok = true;
     } catch (e) {
-      // The record stays in memory for this page, and is tried again.
-      unstored.add(key);
-      if (!reported.has(key)) {
-        reported.add(key);
-        dbFailed(e);
+      // Still named: it stays in memory for this page, and is tried again.
+      // No longer named (retaken, or its PNG could not be encoded): gone.
+      if (wanted(store.getState()).has(key)) {
+        unstored.add(key);
+        if (!reported.has(key)) {
+          reported.add(key);
+          dbFailed(e);
+        }
       }
     }
     writing.delete(key);
@@ -507,6 +516,11 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
       if (!keys.has(key)) {
         unstored.delete(key);
         reported.delete(key);
+      }
+    }
+    for (const key of unread) {
+      if (!keys.has(key)) {
+        unread.delete(key);
       }
     }
     if (fresh) {
@@ -582,8 +596,10 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
    * After a load: takes the tab lock (another tab holding it ends here,
    * with nothing read or deleted), sweeps (`sweepAllowed`), then reads
    * back the plan's photos as previews, the ready pairs' kept results and
-   * the log. A photo storage does not hold (or holds damaged) is marked
-   * lost. Without a database every stored photo is lost. Never rejects.
+   * the log. A photo storage does not hold (or holds as something other
+   * than a Blob) is marked lost; one whose read or decode fails is kept
+   * and the page says storage is failing (the next start tries again).
+   * Without a database every stored photo is lost. Never rejects.
    * Runs once: a later call returns the first call's promise, so work
    * that needs the restored state (the run zip) awaits it again.
    */
@@ -604,24 +620,33 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
     const found: string[] = [];
     for (const [shot, r] of Object.entries(store.getState().plan.shots)) {
       const id = r.photo.id;
-      const value = await read(photoKey(id));
+      const key = photoKey(id);
+      let value: unknown;
       let preview: Frame | undefined;
-      let ok = value instanceof Blob;
-      if (value instanceof Blob && deps.previewOf) {
+      let failed = false;
+      if (db) {
         try {
-          preview = await deps.previewOf(value);
+          value = await db.get(key);
+          if (value instanceof Blob && deps.previewOf) {
+            preview = await deps.previewOf(value);
+          }
         } catch (e) {
           dbFailed(e);
-          ok = false;
+          failed = true;
         }
       }
       // A retake while this was reading has replaced the photo: leave it.
       if (store.getState().plan.shots[shot]?.photo.id !== id) {
         continue;
       }
-      if (ok) {
+      if (failed) {
+        // Perhaps only for now: the shot stays (the sweep keeps what the
+        // plan names), the page says storage is failing.
+        unread.add(key);
+        flagFailing(unstored.size > 0);
+      } else if (value instanceof Blob) {
         // Named by the state already, so no action is needed to keep it.
-        inDb.add(photoKey(id));
+        inDb.add(key);
         found.push(id);
         if (preview) {
           sides.previews.set(id, preview);

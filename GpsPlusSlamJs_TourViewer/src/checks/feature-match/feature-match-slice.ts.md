@@ -23,7 +23,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### Run plan actions
 
-`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy, and every plan action is refused in a tab that does not hold the run (`otherTab`). An accepted photo, move, resize or reset ends a countdown, and drops the stored ids and results the plan no longer names.
+`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy, and every plan action is refused in a tab that does not hold the run (`otherTab`). An accepted photo, move, resize or reset ends a countdown, and drops the stored ids and results the plan no longer names. An accepted reset also empties the log: the stored log is the run's, and a new run's zip must not carry the earlier runs' lines.
 
 ### Countdown
 
@@ -47,7 +47,7 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 `state.runZip` `{ phase, text }` is Download all, shared by both views (workflow status, so it lives here).
 
-- `runZipStarted()`: refused unless idle with at least one ready pair; sets busy `saving`, phase `preparing` and ends a countdown.
+- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing` and ends a countdown.
 - `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation.
 - An accepted photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
 
@@ -87,5 +87,5 @@ currentShot(store.getState().plan)?.id; // "light-s1/L2"
 
 ## Tests
 
-- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
+- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
 - `feature-match-slice.property.test.ts`: random run, save, countdown and shot sequences keep the busy invariants above and a countdown only on the current shot, and the flat prepared zip is always valid.

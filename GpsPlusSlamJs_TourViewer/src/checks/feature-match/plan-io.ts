@@ -179,8 +179,14 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     const grey = greyStats(f);
     const id = newId("photo");
     const png = framePng(f, `photo ${shot.id}`);
-    // A failed encode fails the photo's write, which reports it there.
-    png.catch(() => undefined);
+    // A failed encode loses the photo: the shot asks to be taken again and
+    // the reconcile drops the rejected PNG, so Download all goes on.
+    png.catch((e: unknown) => {
+      if (state().plan.shots[shot.id]?.photo.id === id) {
+        fail("capture", e);
+        store.dispatch(A.planShotLost(shot.id));
+      }
+    });
     sides.previews.set(id, previewFrame(f));
     const ok = put(
       sides.photos,
@@ -317,7 +323,8 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
       photo: fm.readPhoto,
       matches: fm.readMatches,
     });
-    return packFilesAsZip(files);
+    // No clock time in the archive: the same run packs to the same bytes.
+    return packFilesAsZip(files, { timeless: true });
   };
 
   const downloadAll = async (): Promise<void> => {

@@ -40,7 +40,7 @@ The frames JSON, pretty-printed (2 spaces) with a final newline, fields in this 
 - `turn`: only for a rotation pair, `{ degrees: 0 | 90 | 180, direction: "cw" }`, the clockwise turn of B's square.
 - `device`: the device facts (`DeviceInfo` of `bench-report.ts`).
 
-No time and no place anywhere: the JSON fields are this fixed list, and the PNGs are plain.
+No time and no place anywhere: the JSON fields are this fixed list, the PNGs are plain, and `plan-io.ts` packs the zip `timeless` (every entry dated 1980-01-01, no extended time field).
 
 ## Invariants and assumptions
 
@@ -67,6 +67,6 @@ const zip = await packFilesAsZip(files);
 
 ## Tests
 
-- `run-zip.test.ts`: the entry list of a run with L1, L2, F1 and F2 (each shot once, five frames JSON, summary and log last), the frames JSON of a turned pair field by field, `t0` as control, the light check, a retake's take in the shot file, a measured pair's matches file only when done and stored, and a photo that cannot be read failing the zip.
+- `run-zip.test.ts`: the entry list of a run with L1, L2, F1 and F2 (each shot once, five frames JSON, summary and log last), the frames JSON of a turned pair field by field (and its key order, for the pair and a frame), `t0` as control, the light check, a retake's take in the shot file, a measured pair's matches file only when done and stored, and a photo that cannot be read failing the zip.
 - `run-zip.property.test.ts`: for any shots taken, every named file is in the zip, no path twice, one PNG per shot and a frames JSON per ready pair.
 - The saved zip in the browser: `playwright-tests/feature-match-check.spec.js` (the cockpit and guided zips with their exact file lists, the zip after a reload, a retake's take).

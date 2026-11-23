@@ -485,6 +485,36 @@ describe("the run plan's storage", () => {
     expect(failing.sides.photos.has("p9")).toBe(true);
   });
 
+  // Why: a read that fails once is not a lost photo. Marking it lost
+  // drops it from the plan, and the next start's sweep would then delete
+  // a good PNG; the shot stays, the page says storage is failing.
+  it("keeps a shot whose stored photo could not be read this time", async () => {
+    const { storage } = memory();
+    take(makeWith(storage, null), L1, "p1");
+    const { data, db } = mapDb({ [photoKey("p1")]: png("p1") });
+    let fails = 1;
+    const flaky: KeyValueStore = {
+      ...db,
+      get: (k: string) =>
+        k === photoKey("p1") && fails-- > 0
+          ? Promise.reject(new Error("busy"))
+          : db.get(k),
+    };
+    const first = makeWith(storage, flaky);
+    await first.restore();
+    const s = first.store.getState();
+    expect(s.plan.shots[L1]?.photo.id).toBe("p1");
+    expect(s.storedIds).toEqual([]);
+    expect(s.photoStoreFailing).toBe(true);
+    expect(first.failed).toHaveBeenCalled();
+    first.dispose();
+    const next = makeWith(storage, flaky);
+    await next.restore();
+    expect(data.has(photoKey("p1"))).toBe(true);
+    expect(next.store.getState().storedIds).toEqual(["p1"]);
+    expect(next.store.getState().photoStoreFailing).toBe(false);
+  });
+
   // Why: the plan and its photos outlive a reload, but the side table key
   // counter did not: a new photo after a reload got a stored photo's id,
   // overwrote that shot's frame and was never written to the database.
@@ -855,6 +885,7 @@ describe("the tab lock", () => {
   // none, and a browser without the API counts as the only tab.
   it("holds the lock for the page's life, and counts no API as held", async () => {
     let held = false;
+    let kept: Promise<unknown> | undefined;
     const locks = {
       request: (
         name: string,
@@ -865,11 +896,20 @@ describe("the tab lock", () => {
         expect(opts.ifAvailable).toBe(true);
         const free = !held;
         held = true;
-        const kept = cb(free ? {} : null);
-        return Promise.resolve(kept === undefined ? undefined : "kept");
+        const back = cb(free ? {} : null);
+        kept ??= back;
+        return Promise.resolve(back === undefined ? undefined : "kept");
       },
     };
     await expect(holdTabLock(locks)).resolves.toBe(true);
+    // The browser frees the lock once the callback's promise settles.
+    let settled = false;
+    expect(kept).toBeInstanceOf(Promise);
+    void kept?.finally(() => {
+      settled = true;
+    });
+    await settle(2);
+    expect(settled).toBe(false);
     await expect(holdTabLock(locks)).resolves.toBe(false);
     await expect(holdTabLock(undefined)).resolves.toBe(true);
     const throwing = {

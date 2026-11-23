@@ -143,6 +143,38 @@ describe("the run zip from storage", () => {
       turn: { degrees: 90, direction: "cw" },
       device,
     });
+    // The PC reader may rely on the field order; toEqual ignores it.
+    expect(Object.keys(turn)).toEqual([
+      "format",
+      "pair",
+      "pairLabel",
+      "derivedPair",
+      "kind",
+      "spot",
+      "axis",
+      "control",
+      "controlFor",
+      "session",
+      "lightCheck",
+      "captureMaxLongEdge",
+      "frames",
+      "turn",
+      "device",
+    ]);
+    expect(Object.keys((turn.frames as Record<string, unknown>[])[0]!)).toEqual(
+      [
+        "name",
+        "shot",
+        "take",
+        "file",
+        "width",
+        "height",
+        "sourceWidth",
+        "sourceHeight",
+        "greyMean",
+        "crop",
+      ],
+    );
     const t0 = json(files, "pairs/flat-s1/F1-T0/feature-match-frames.json");
     expect([t0.pair, t0.control, t0.controlFor]).toEqual(["t0", true, ["rot"]]);
     const light = json(files, "pairs/light-s1/L1-L2/feature-match-frames.json");

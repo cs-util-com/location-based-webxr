@@ -364,6 +364,17 @@ describe("Download all", () => {
     expect(featureMatchReducer(going, A.planReset())).toBe(going);
     const busy = run([A.runStarted("speed")], withPair());
     expect(featureMatchReducer(busy, A.runZipStarted())).toBe(busy);
+    // A tab refused the run would pack a plan the other tab has moved on.
+    const other = run([A.otherTabFound()], withPair());
+    expect(featureMatchReducer(other, A.runZipStarted())).toBe(other);
+  });
+
+  // Why: the stored log is the run's log; after a reset a new run's zip
+  // must not carry every earlier run's lines.
+  it("starts the log afresh on a reset", () => {
+    const s = run([A.logged("old run"), A.planReset()], withPair());
+    expect(s.log).toEqual([]);
+    expect(run([A.logged("new run")], s).log).toEqual(["new run"]);
   });
 
   // Why: the end screen says what happened to the zip: saved, refused by
