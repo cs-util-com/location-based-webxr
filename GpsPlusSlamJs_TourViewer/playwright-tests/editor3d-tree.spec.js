@@ -1243,6 +1243,84 @@ test("the tree's add, its grips and the bar's actions sit in place at a phone, a
   }
 });
 
+// Why: with a note selected and something copied the bar carries its
+// most actions, Paste last among them; at the widths where the words just
+// show, or the panels close in, the row must still fit between the
+// credits and the panel's toggles, no action over another.
+test("the bar's actions with Paste among them fit beside the toggles, none over another, at 821, 1100 and 1440 px", async ({
+  page,
+}) => {
+  test.slow();
+  await useWideFont(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const manifest = await page.evaluate(() =>
+    /** @type {any} */ (window).__tourEditor.manifest(),
+  );
+  const station = /** @type {any[]} */ (manifest.stations).find((s) =>
+    s.children.some((/** @type {any} */ c) => c.kind === "shortText"),
+  );
+  const note = station?.children.find(
+    (/** @type {any} */ c) => c.kind === "shortText",
+  );
+  if (station === undefined || note === undefined) {
+    throw new Error("the sample has no text note in a station");
+  }
+  await page
+    .locator(`#tree-body [data-select="station:${station.id}"]`)
+    .click();
+  await page.locator(`#tree-body [data-select="${note.id}"]`).click();
+  await page.keyboard.press("Control+c");
+  const acts = page.locator("#shell-acts .sact");
+  await expect(page.locator('#shell-acts [data-bar="paste"]')).toHaveCount(1);
+  for (const size of [
+    { width: 1440, height: 900 },
+    { width: 1100, height: 900 },
+    { width: 821, height: 900 },
+  ]) {
+    await page.setViewportSize(size);
+    await dockSettled(page, size.width);
+    await expect(page.locator('#shell-acts [data-bar="paste"]')).toHaveCount(1);
+    const count = await acts.count();
+    expect(count, atSize(size)).toBeGreaterThanOrEqual(2);
+    expect(count, atSize(size)).toBeLessThanOrEqual(4);
+    const l = await layoutOf(page, [
+      "#shell-bar",
+      "#view3d-credits",
+      "#shell-toggles",
+      "#shell-acts .sact",
+      "#shell-acts .sact .lbl",
+    ]);
+    const bar = boxIn(l, "#shell-bar");
+    const credits = boxIn(l, "#view3d-credits");
+    const toggles = boxIn(l, "#shell-toggles");
+    const boxes = (l["#shell-acts .sact"] ?? []).map((_, i) =>
+      boxIn(l, "#shell-acts .sact", i),
+    );
+    expect(boxes, atSize(size)).toHaveLength(count);
+    for (const [i, b] of boxes.entries()) {
+      expect(b.x, atSize(size)).toBeGreaterThanOrEqual(
+        credits.x + credits.width,
+      );
+      expect(b.x + b.width, atSize(size)).toBeLessThanOrEqual(toggles.x);
+      expect(b.y, atSize(size)).toBeGreaterThanOrEqual(bar.y);
+      expect(b.y + b.height, atSize(size)).toBeLessThanOrEqual(
+        bar.y + bar.height,
+      );
+      const next = boxes[i + 1];
+      if (next !== undefined) {
+        expect(next.x, atSize(size)).toBeGreaterThanOrEqual(b.x + b.width);
+      }
+    }
+    // Four actions fold their words below 1200 px (editor-shell.css),
+    // fewer only at a tablet's width.
+    expect(shownWords(l), atSize(size)).toBe(
+      size.width > (count === 4 ? 1200 : 820),
+    );
+  }
+});
+
 /** A station name far longer than any dock is wide, with spaces to wrap at. */
 const LONG_NAME = `The long station name ${"that goes on past the edge of the list ".repeat(4).trim()}`;
 

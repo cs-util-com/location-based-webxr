@@ -591,15 +591,19 @@ interface SelectionBarModel {
   readonly ungroup: boolean;
   readonly done: boolean;
   readonly why: string | null;
+  /** Whether Copy and Cut can be pressed (`../clipboard.ts`). */
+  readonly copy: boolean;
+  readonly cut: boolean;
 }
 
 /**
  * The picked rows' bar under the tree: their count, Group (the primary
- * one), Ungroup and, in the Select mode, Done, then the line on why Group
+ * one), Ungroup, Copy and Cut (a phone has no Ctrl+C or X) and, in the
+ * Select mode, Done, then the line on why Group
  * is off; hidden when it has nothing to act on. A button that cannot act
  * is disabled, never left out, so the bar keeps its shape as rows are
  * ticked. Its clicks are the shell's: `data-selbar` (`group`, `ungroup`,
- * `done`).
+ * `copy`, `cut`, `done`).
  */
 export function drawSelectionBar(
   bar: HTMLElement,
@@ -617,7 +621,7 @@ export function drawSelectionBar(
       : null;
   const act = (
     what: string,
-    icon: "folder" | "outdent" | "check",
+    icon: "folder" | "outdent" | "dup" | "cut" | "check",
     label: string,
     on: boolean,
     primary = false,
@@ -636,6 +640,8 @@ export function drawSelectionBar(
     ),
     act("group", "folder", "Group", model.group, true),
     act("ungroup", "outdent", "Ungroup", model.ungroup),
+    act("copy", "dup", "Copy", model.copy),
+    act("cut", "cut", "Cut", model.cut),
   ];
   if (model.done) parts.push(act("done", "check", "Done", true));
   if (model.why !== null) parts.push(el("span", "why", model.why));

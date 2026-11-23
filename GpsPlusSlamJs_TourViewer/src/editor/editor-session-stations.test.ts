@@ -34,7 +34,8 @@ import {
 } from "../test-support/memory-draft-stores.js";
 import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
-import { createEditorSession } from "./editor-session.js";
+import { NOTE_IN_RESIZED_FOLDER } from "./clipboard.js";
+import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
   editedBlocks,
@@ -1437,6 +1438,260 @@ describe("the editor session's paste", () => {
     store.draftGate.release();
     expect(await kept.landed).toMatchObject({ kind: "duplicated" });
     expect(steps()).toBe(was + 1);
+    await session.close();
+  });
+
+  // Why: a note's and a station's Duplicate read pictures and write the
+  // same way, so they wait for the draft question the same way; reported
+  // as made, the page would select a copy the tour may never hold.
+  it("reports a note's and a station's duplicate that waits for the draft question as held, null when it is dropped", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    for (const duplicate of [
+      () => editor.duplicateObject("b"),
+      () => editor.duplicateStation(stationIdOf("f")),
+    ]) {
+      store.draftGate.hold(() => undefined);
+      const dropped = await duplicate();
+      if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+      store.draftGate.drop();
+      expect(await dropped.landed).toBeNull();
+      expect(steps()).toBe(was);
+    }
+    store.draftGate.hold(() => undefined);
+    const note = await editor.duplicateObject("b");
+    if (note.kind !== "held") throw new Error(JSON.stringify(note));
+    store.draftGate.release();
+    expect(await note.landed).toMatchObject({ kind: "duplicated" });
+    store.draftGate.hold(() => undefined);
+    const station = await editor.duplicateStation(stationIdOf("f"));
+    if (station.kind !== "held") throw new Error(JSON.stringify(station));
+    store.draftGate.release();
+    expect(await station.landed).toMatchObject({ kind: "duplicated" });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
+  // Why: a Paste of copied stations puts the copies after the station the
+  // selection names, in the order copied, as ONE undo step; a copied photo
+  // needs its own picture, or the save writes a tour the reader refuses.
+  it("pastes copied stations after the target in the order copied, as one step, the save writing each copied photo's picture", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    const pasted = await editor.pasteStations({
+      afterStationId: stationIdOf("a"),
+      stations: [stationIdOf("f"), stationIdOf("b")],
+    });
+    if (pasted.kind !== "pasted") throw new Error(JSON.stringify(pasted));
+    expect(steps()).toBe(was + 1);
+    const [first, second] = pasted.stations;
+    const order = (
+      manifestToWrite(store.getState().tourDocument)?.stations ?? []
+    ).map((s) => s.id);
+    const at = order.indexOf(stationIdOf("a"));
+    expect(order.slice(at, at + 3)).toEqual([stationIdOf("a"), first, second]);
+    const saved = await editor.save({ keepScan: false });
+    const tour = await savedTour(saved.blob);
+    const copy = tourObjects(tour).find((o) => o.station === first);
+    if (copy?.kind !== "picture") throw new Error("no copied photo");
+    const path = tour.assets.find((a) => a.id === copy.image)?.path ?? "";
+    expect(await entryText(saved.blob, path)).toBe("the picture of f");
+    expect(editor.undo()).toMatchObject({ kind: "undone" });
+    expect(steps()).toBe(was);
+    await session.close();
+  });
+
+  // Why: the stations' paste reads pictures like a Duplicate, so it waits
+  // for the draft question the same way; and a copied station deleted
+  // since is refused rather than pasted as a partial set.
+  it("holds a stations' paste for the draft question and refuses a station the tour lacks", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    expect(
+      await editor.pasteStations({
+        afterStationId: stationIdOf("a"),
+        stations: [stationIdOf("f"), "gone"],
+      }),
+    ).toMatchObject({ kind: "refused" });
+    store.draftGate.hold(() => undefined);
+    const held = await editor.pasteStations({
+      afterStationId: stationIdOf("a"),
+      stations: [stationIdOf("f")],
+    });
+    if (held.kind !== "held") throw new Error(JSON.stringify(held));
+    store.draftGate.release();
+    expect(await held.landed).toMatchObject({ kind: "pasted" });
+    expect(steps()).toBe(was + 1);
+    await session.close();
+  });
+
+  // Why: a Paste of a cut moves items or stations with no picture to
+  // read, yet the draft question holds its edit all the same. Reported as
+  // made, the page would empty the clipboard and say "Moved" for a move
+  // the tour may never hold; held, it says so only once the move lands.
+  it("reports a cut's move and a stations' reorder that wait for the draft question as held, null when dropped", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    const order = (
+      manifestToWrite(store.getState().tourDocument)?.stations ?? []
+    )
+      .map((s) => s.id)
+      .reverse();
+    store.draftGate.hold(() => undefined);
+    const unordered = editor.reorderStations(order);
+    if (unordered.kind !== "held") throw new Error(JSON.stringify(unordered));
+    store.draftGate.drop();
+    expect(await unordered.landed).toBeNull();
+    store.draftGate.hold(() => undefined);
+    const reordered = editor.reorderStations(order);
+    if (reordered.kind !== "held") throw new Error(JSON.stringify(reordered));
+    store.draftGate.release();
+    expect(await reordered.landed).toEqual({ kind: "reordered" });
+    expect(steps()).toBe(was + 1);
+    const move = () =>
+      editor.moveChildren([
+        { id: "b", to: { place: "station", station: stationIdOf("a") } },
+      ]);
+    store.draftGate.hold(() => undefined);
+    const dropped = move();
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    expect(steps()).toBe(was + 1);
+    store.draftGate.hold(() => undefined);
+    const moved = move();
+    if (moved.kind !== "held") throw new Error(JSON.stringify(moved));
+    store.draftGate.release();
+    expect(await moved.landed).toMatchObject({ kind: "moved" });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
+  // Why: a stations' paste and a note's Duplicate copy what they read
+  // before the picture read; a note deleted meanwhile must not come back
+  // as a copy, nor a copy be made of a note no longer in the tour.
+  it("refuses a stations' paste and a note's duplicate whose tour changed during the picture read", async () => {
+    const { session, editor, steps } = await withFolder();
+    const was = steps();
+    const pasting = editor.pasteStations({
+      afterStationId: stationIdOf("a"),
+      stations: [stationIdOf("f"), stationIdOf("b")],
+    });
+    expect(editor.remove("b")).toEqual({ kind: "deleted" });
+    expect(await pasting).toMatchObject({ kind: "refused" });
+    expect(steps()).toBe(was + 1);
+    const duplicating = editor.duplicateObject("f");
+    expect(editor.remove("f")).toEqual({ kind: "deleted" });
+    expect(await duplicating).toEqual({ kind: "refused", reason: NOT_IN_TOUR });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
+  // Why: a Paste of copied stories copies everything in them under new
+  // ids into the target station, after the story named (else at the end
+  // of its stories), as ONE step; a story deleted since is refused.
+  it("pastes copied stories into another station as one step under new ids, refusing a story the tour lacks", async () => {
+    const { session, manifest } = await opened((m) => ({
+      ...m,
+      stations: m.stations.map((s) =>
+        s.id === stationIdOf("a")
+          ? {
+              ...s,
+              ...stationContent([
+                storyOf("welcome", [
+                  {
+                    id: "intro",
+                    kind: "shortText",
+                    view: "card",
+                    caption: "Welcome",
+                    pose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+                  },
+                ]),
+                storyOf("farewell", []),
+                ...stationBlocks(s),
+              ]),
+            }
+          : s,
+      ),
+    }));
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const steps = () => store.getState().tourDocument.past.length;
+    expect(
+      editor.pasteStories({
+        toStationId: stationIdOf("f"),
+        afterStory: null,
+        stories: ["welcome", "gone"],
+      }),
+    ).toMatchObject({ kind: "refused" });
+    expect(steps()).toBe(0);
+    const pasted = editor.pasteStories({
+      toStationId: stationIdOf("f"),
+      afterStory: null,
+      stories: ["welcome", "farewell"],
+    });
+    if (pasted.kind !== "pasted") throw new Error(JSON.stringify(pasted));
+    expect(steps()).toBe(1);
+    expect(pasted.stories).toHaveLength(2);
+    expect(pasted.stories).not.toContain("welcome");
+    const tour = await savedTour((await editor.save({ keepScan: false })).blob);
+    const target = tour.stations.find((s) => s.id === stationIdOf("f"));
+    const shown = tourStationStoryBlocks(target!).map((b) => b.id);
+    expect(shown).toHaveLength(1);
+    expect(shown[0]).not.toBe("intro");
+    expect(stationBlocks(target!).find((b) => b.id === shown[0])).toMatchObject(
+      {
+        caption: "Welcome",
+      },
+    );
+    // Held by the draft question, a stories' paste is said only once it
+    // lands, and not at all when it is dropped.
+    const plan = {
+      toStationId: stationIdOf("f"),
+      afterStory: null,
+      stories: ["welcome"],
+    };
+    store.draftGate.hold(() => undefined);
+    const dropped = editor.pasteStories(plan);
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    store.draftGate.hold(() => undefined);
+    const kept = editor.pasteStories(plan);
+    if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
+    store.draftGate.release();
+    expect(await kept.landed).toMatchObject({ kind: "pasted" });
+    await session.close();
+  });
+
+  // Why: a folder resized during the picture read makes a note in it
+  // change size in another station, so the document refuses the paste.
+  // Said as "too far", the creator would look for a distance that is not
+  // the cause; it is said as the resize it is.
+  it("says a paste refused by a folder resized during the picture read as the resize", async () => {
+    const { session, store, editor } = await withFolder();
+    const pasting = editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: ["f"],
+      folders: [],
+    });
+    store.dispatch(
+      tourDocumentActions.folderScaled({
+        stationId: stationIdOf("f"),
+        folderId: "grp",
+        scale: 2,
+        what: "resize",
+      }),
+    );
+    expect(await pasting).toEqual({
+      kind: "refused",
+      reason: NOTE_IN_RESIZED_FOLDER,
+    });
     await session.close();
   });
 

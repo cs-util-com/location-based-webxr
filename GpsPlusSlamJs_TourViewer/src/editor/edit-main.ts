@@ -107,8 +107,14 @@ import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
-import { copyOf, pasteOf } from "./clipboard.js";
-import { runHeldEdit } from "./held-edit-flow.js";
+import {
+  copyOf,
+  cutGone,
+  cutOf,
+  type PasteOutcome,
+  pasteOf,
+} from "./clipboard.js";
+import { EDIT_STILL_RUNNING, isHeld, runHeldEdit } from "./held-edit-flow.js";
 import {
   openedNoticeLines,
   openTourForEditing,
@@ -189,6 +195,7 @@ import {
   createEditorSession,
   EDITOR_SESSION_SLICES,
   datedFileName,
+  type EditorHeld,
   type EditorSave,
   type EditorSession,
   type NarrationChange,
@@ -900,6 +907,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
         ) => ReturnType<Editor3dView["characterCheck"]> | null;
         manifest: () => ReturnType<typeof manifestToWrite>;
         selected: () => string | null;
+        picked: () => readonly string[];
         dropTour: (reason: string) => void;
         deleteSelection: (id: string) => void;
       };
@@ -951,6 +959,7 @@ if (import.meta.env.DEV && !import.meta.env.VITEST) {
     view3dCharacter: (id) => shown3d?.characterCheck(id) ?? null,
     manifest: () => manifestToWrite(store.getState().tourDocument),
     selected: () => ui().selected,
+    picked: () => ui().picked,
     // What a late integrity failure does to the open tour (`openFile`'s
     // `onIntegrityFailure`), at the moment an e2e chooses.
     dropTour,
@@ -1209,6 +1218,10 @@ function refresh(): void {
   if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
+  // A cut whose item an edit or an undo removed has nothing left to move.
+  if (cutGone(store.getState().tourDocument, ui())) {
+    store.dispatch(editorViewActions.clipboardCleared());
+  }
   renderSaveState();
 }
 
@@ -1237,7 +1250,19 @@ function runStep(which: "undo" | "redo"): void {
   // A drag or a held key of the 3D view ends unwritten: the step acts on
   // the tour as it was.
   shown3d?.cancelGesture();
+  const tourNow = () => manifestToWrite(store.getState().tourDocument);
+  const heldBy = selectedStationOf(ui().selected, tourNow());
   const outcome = which === "undo" ? editor.undo() : editor.redo();
+  // A step that took the selected row away (an undone paste's copy) leaves
+  // its station selected, so a Paste after it still has a target.
+  const station = heldBy === null ? null : `${STATION_PREFIX}${heldBy}`;
+  if (
+    station !== null &&
+    selectedStationOf(ui().selected, tourNow()) === null &&
+    selectedStationOf(station, tourNow()) !== null
+  ) {
+    select(station);
+  }
   refresh();
   if (outcome.kind === "refused") {
     // A delete toast stays: its Undo can be tapped again once the save ends.
@@ -1503,39 +1528,237 @@ function copySelection(): void {
 }
 
 /**
- * Paste (the Edit menu's, Ctrl+V): copies of the clipboard's notes and
- * folders into the selected station, or the station of the selected row
- * (`clipboard.ts`), ONE step; the first copy selected in its station's
- * rows and a toast saying how many. A photo's picture is read first,
- * said by a held "Pasting..." toast; another Paste or Duplicate meanwhile
- * makes nothing (the `duplicating` flag), and a tour switched meanwhile
- * drops the result. A refusal pastes nothing and is said. A paste that
- * waits for the draft question is said only once it lands
- * (`held-edit-flow.ts`).
+ * Cut (the Edit menu's, Ctrl+X): the picked rows, or the one selected, on
+ * the editor's clipboard as a cut when each is a station or each is in
+ * one (`cutOf`), shown dimmed in the tree until a Paste moves them or
+ * Escape cancels it. Cut changes nothing in the tour: the Paste moves.
+ */
+function cutSelection(): void {
+  if (editor === null) return;
+  const outcome = cutOf(store.getState().tourDocument, ui());
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  store.dispatch(editorViewActions.copied({ ids: outcome.ids, mode: "cut" }));
+  const [only] = outcome.ids;
+  const what =
+    outcome.ids.length > 1 || only === undefined
+      ? `${String(outcome.ids.length)} items`
+      : only.startsWith(FOLDER_PREFIX)
+        ? "the folder"
+        : only.startsWith(STORY_PREFIX)
+          ? "the story"
+          : itemCalled(only);
+  toast(`Cut ${what}: select where it goes and paste. Escape cancels.`);
+}
+
+/** `outcome` said by `say` now, or, for an edit held by the draft gate,
+ *  once it lands while the editor `mine` is still the page's; nothing
+ *  when it never lands (the gate says that itself). */
+async function sayLanded<T>(
+  mine: EditorSession,
+  outcome: T | EditorHeld<T>,
+  say: (outcome: T) => void,
+): Promise<void> {
+  if (!isHeld<T>(outcome)) {
+    say(outcome);
+    return;
+  }
+  refresh();
+  const landed = await outcome.landed;
+  if (landed === null || editor !== mine) return;
+  say(landed);
+}
+
+/** A Paste of a cut: its items moved onto the target station, or its
+ *  stations put after it, ONE step that keeps their ids; the clipboard
+ *  emptied and the first moved row selected, once the move is in the
+ *  tour (one held by the draft question, when it lands). No question
+ *  first (the cut was the question); the toast says that a moved item
+ *  stands at the station's centre and what else changed. */
+function pasteCut(
+  plan: Extract<PasteOutcome, { kind: "move" | "reorder" }>,
+): void {
+  const mine = editor;
+  if (mine === null) return;
+  const first = ui().clipboard?.ids[0] ?? null;
+  endUndo();
+  if (plan.kind === "reorder") {
+    void sayLanded(mine, mine.reorderStations(plan.order), (outcome) => {
+      if (cutLanded(outcome, first)) {
+        toast(`Moved after "${stationTitleOf(plan.afterStationId)}"`);
+      }
+    });
+    return;
+  }
+  void sayLanded(mine, mine.moveChildren(plan.moves), (outcome) => {
+    if (outcome.kind === "moved") showRowsOf(plan.toStationId);
+    if (cutLanded(outcome, first) && outcome.kind === "moved") {
+      sayMoved(plan, outcome);
+    }
+  });
+}
+
+/** What a Paste of a cut moved, said: where the items stand now, the
+ *  answers that lost their jump and the items that took their kind's
+ *  usual view. */
+function sayMoved(
+  plan: Extract<PasteOutcome, { kind: "move" }>,
+  outcome: { readonly answers: number; readonly floored: boolean },
+): void {
+  const n = plan.moves.length;
+  const where = stationTitleOf(plan.toStationId);
+  const notes = [
+    n === 1
+      ? `Moved it to "${where}": it stands at the station's centre; place it again there.`
+      : `Moved ${String(n)} items to "${where}": they stand at the station's centre; place them again there.`,
+  ];
+  if (outcome.answers > 0) {
+    notes.push(
+      outcome.answers === 1
+        ? "1 answer that led to it now goes on to the next entry."
+        : `${String(outcome.answers)} answers that led to it now go on to the next entry.`,
+    );
+  }
+  if (outcome.floored) {
+    notes.push(
+      n === 1
+        ? "It now stands in the world in its kind's usual view."
+        : "Some now stand in the world in their kind's usual view.",
+    );
+  }
+  toast(notes.join(" "));
+}
+
+/** After a Paste of a cut was written or refused: the page redrawn and a
+ *  refusal said; a move made empties the clipboard, selects `first` (the
+ *  cut kept its ids) and counts as a change. Whether it moved. */
+function cutLanded(
+  outcome:
+    | { readonly kind: "moved" | "reordered" | "unchanged" }
+    | { readonly kind: "refused"; readonly reason: string },
+  first: string | null,
+): boolean {
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return false;
+  }
+  if (outcome.kind === "unchanged") return false;
+  store.dispatch(editorViewActions.clipboardCleared());
+  refresh();
+  select(first);
+  tourChanged();
+  return true;
+}
+
+/**
+ * Paste (the Edit menu's, Ctrl+V): what the clipboard holds, by
+ * `clipboard.ts`'s `pasteOf` - copies of its notes and folders into the
+ * selected station, or the station of the selected row; copies of its
+ * stations after the selected one; copies of its stories into the
+ * station; or a cut moved there - ONE step; the copies selected and a
+ * toast saying how many. A photo's picture is read first, said by a held
+ * "Pasting..." toast; while a Paste or a Duplicate still runs, any Paste
+ * makes nothing and says so (the `duplicating` flag), and a tour
+ * switched meanwhile drops the result. A refusal pastes nothing and is
+ * said. A paste that waits for the draft question is said only once it
+ * lands (`held-edit-flow.ts`).
  */
 async function pasteSelection(): Promise<void> {
   const mine = editor;
-  if (mine === null || ui().duplicating) return;
+  if (mine === null) return;
   const plan = pasteOf(store.getState().tourDocument, ui());
+  if (ui().duplicating) {
+    toast(EDIT_STILL_RUNNING);
+    return;
+  }
   if (plan.kind === "refused") {
     toast(plan.reason);
     return;
   }
+  if (plan.kind === "pasteStories") {
+    pasteStories(mine, plan);
+    return;
+  }
+  if (plan.kind === "pasteStations") {
+    endUndo();
+    await runHeldEdit({
+      ...heldEditOnPage(mine, "Pasting..."),
+      run: () => mine.pasteStations(plan),
+      made: (outcome) => {
+        const n = outcome.stations.length;
+        const [first] = outcome.stations;
+        if (first === undefined) return;
+        showNewStation(first, () =>
+          n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`,
+        );
+      },
+    });
+    return;
+  }
+  if (plan.kind !== "paste") {
+    pasteCut(plan);
+    return;
+  }
   endUndo();
+  const clipboard = store.getState().editorView.clipboard;
   await runHeldEdit({
     ...heldEditOnPage(mine, "Pasting..."),
     run: () => mine.paste(plan),
     made: (outcome) => {
+      // Counted for the clipboard pasted only: the next paste of it into
+      // this station stands further east (`pasteOf`).
+      if (store.getState().editorView.clipboard === clipboard) {
+        store.dispatch(
+          editorViewActions.clipboardPastedInto({
+            stationId: plan.toStationId,
+          }),
+        );
+      }
       showRowsOf(plan.toStationId);
-      const [note] = outcome.objects;
-      const [folder] = outcome.folders;
-      select(
-        note ?? (folder === undefined ? null : `${FOLDER_PREFIX}${folder}`),
-      );
-      const n = outcome.objects.length + outcome.folders.length;
+      // Every copy selected, as its source was picked: a Ctrl+X moves them
+      // on, a Delete takes them back.
+      const copies = [
+        ...outcome.objects,
+        ...outcome.folders.map((id) => `${FOLDER_PREFIX}${id}`),
+      ];
+      const [only] = copies;
+      if (copies.length > 1) {
+        store.dispatch(editorViewActions.picked({ ids: copies }));
+      } else {
+        select(only ?? null);
+      }
+      const n = copies.length;
       toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
       tourChanged();
     },
+  });
+}
+
+/** A Paste of copied stories into `plan.toStationId` (`pasteOf`): one
+ *  step; the first copy selected and its station shown; a refusal said. */
+function pasteStories(
+  mine: EditorSession,
+  plan: Extract<PasteOutcome, { kind: "pasteStories" }>,
+): void {
+  endUndo();
+  void sayLanded(mine, mine.pasteStories(plan), (outcome) => {
+    refresh();
+    if (outcome.kind === "refused") {
+      toast(outcome.reason);
+      return;
+    }
+    const [first] = outcome.stories;
+    showRowsOf(plan.toStationId);
+    if (first !== undefined) {
+      store.dispatch(editorViewActions.storyFolded({ id: first, open: true }));
+      select(`${STORY_PREFIX}${first}`);
+    }
+    const n = outcome.stories.length;
+    toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
+    tourChanged();
   });
 }
 
@@ -1545,6 +1768,7 @@ function heldEditOnPage(mine: EditorSession, working: string) {
   return {
     working,
     current: () => editor === mine,
+    running: () => ui().duplicating,
     busy: (on: boolean) =>
       store.dispatch(editorViewActions.duplicatingChanged({ duplicating: on })),
     toast: (text: string, held: boolean) =>
@@ -1558,15 +1782,16 @@ function heldEditOnPage(mine: EditorSession, working: string) {
  * everything in it (`folder:<id>`), or a station with its notes, beside
  * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
  * is selected and a toast names it. A photo's picture is read first,
- * said by a held toast: another Duplicate meanwhile makes nothing; a tour
- * switched meanwhile drops the result. A story's entry has no Duplicate
+ * said by a held toast: another Duplicate meanwhile makes nothing and
+ * says so; a tour switched meanwhile drops the result. A story's entry has no Duplicate
  * (the bar offers none), so its Ctrl+D does nothing.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
-  if (mine === null || ui().duplicating) return;
+  if (mine === null) return;
   if (id.startsWith(STORY_PREFIX)) {
-    duplicateStorySelection(id.slice(STORY_PREFIX.length));
+    if (ui().duplicating) toast(EDIT_STILL_RUNNING);
+    else duplicateStorySelection(id.slice(STORY_PREFIX.length));
     return;
   }
   if (id.startsWith(FOLDER_PREFIX)) {
@@ -1575,47 +1800,41 @@ async function duplicateSelection(id: string): Promise<void> {
   }
   const tour = manifestToWrite(store.getState().tourDocument);
   if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
-  store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
-  const working = toast("Duplicating...", undefined, null, false);
-  working.setAttribute("aria-busy", "true");
-  try {
-    await duplicateItemSelection(mine, id);
-  } finally {
-    working.remove();
-    store.dispatch(
-      editorViewActions.duplicatingChanged({ duplicating: false }),
-    );
-  }
+  await duplicateItemSelection(mine, id);
 }
 
-/** A note or a station (`station:<id>`) copied beside itself. */
+/** A note or a station (`station:<id>`) copied beside itself: the copy
+ *  selected and named, said once it was made (for one that waits for the
+ *  draft question, once it lands); one step. */
 async function duplicateItemSelection(
   mine: EditorSession,
   id: string,
 ): Promise<void> {
-  const called = itemCalled(id);
+  const said = `Duplicated ${itemCalled(id)}`;
   endUndo();
-  const outcome = id.startsWith(STATION_PREFIX)
-    ? await mine.duplicateStation(id.slice(STATION_PREFIX.length))
-    : await mine.duplicateObject(id);
-  if (editor !== mine) return;
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
+  if (id.startsWith(STATION_PREFIX)) {
+    await runHeldEdit({
+      ...heldEditOnPage(mine, "Duplicating..."),
+      run: () => mine.duplicateStation(id.slice(STATION_PREFIX.length)),
+      made: (outcome) => showNewStation(outcome.stationId, () => said),
+    });
     return;
   }
-  const said = `Duplicated ${called}`;
-  if ("stationId" in outcome) {
-    showNewStation(outcome.stationId, () => said);
-    return;
-  }
-  const home = manifestToWrite(store.getState().tourDocument)?.stations.find(
-    (s) => tourFreeBlocks(s).some((i) => i.id === outcome.id),
-  );
-  if (home !== undefined) showRowsOf(home.id);
-  select(outcome.id);
-  toast(said);
-  tourChanged();
+  await runHeldEdit({
+    ...heldEditOnPage(mine, "Duplicating..."),
+    run: () => mine.duplicateObject(id),
+    made: (outcome) => {
+      const home = manifestToWrite(
+        store.getState().tourDocument,
+      )?.stations.find((s) =>
+        tourFreeBlocks(s).some((i) => i.id === outcome.id),
+      );
+      if (home !== undefined) showRowsOf(home.id);
+      select(outcome.id);
+      toast(said);
+      tourChanged();
+    },
+  });
 }
 
 /** The plain folder `folderId` copied beside itself with everything in
@@ -2762,21 +2981,26 @@ function editKeysFree(event: KeyboardEvent): boolean {
   );
 }
 
-/** Ctrl+C and Ctrl+V on the page: Copy and Paste of notes and folders
- *  (`copySelection`, `pasteSelection`); whether the key was the page's.
+/** Ctrl+C, Ctrl+X and Ctrl+V on the page: Copy, Cut and Paste
+ *  (`copySelection`, `cutSelection`, `pasteSelection`); whether the key
+ *  was the page's.
  *  Wherever the editor's keys are not free, and while text is selected
  *  on the page, they stay the browser's, so text still copies as text. */
 function clipboardKeys(event: KeyboardEvent): boolean {
   const c = commandKey(event, "c");
+  const x = commandKey(event, "x");
   const v = commandKey(event, "v");
-  if ((!c && !v) || event.shiftKey || editor === null) return false;
+  if ((!c && !x && !v) || event.shiftKey || editor === null) return false;
   if (!editKeysFree(event) || window.getSelection()?.isCollapsed === false) {
     return false;
   }
   event.preventDefault();
+  // A held key repeats; one press copies or pastes once (a held Ctrl+C
+  // would flood the page with toasts).
+  if (event.repeat) return true;
   if (c) copySelection();
-  // A held Ctrl+V repeats; one press pastes once.
-  else if (!event.repeat) void pasteSelection();
+  else if (x) cutSelection();
+  else void pasteSelection();
   return true;
 }
 
@@ -2835,6 +3059,7 @@ document.addEventListener("keydown", (event) => {
       startShown: !modal.hidden,
       tourOpen: session !== null,
       busy: ui().busy,
+      cutPending: ui().clipboard?.mode === "cut",
     })
   ) {
     // The dialog's own Escape closes it (a native modal dialog).
@@ -2852,6 +3077,11 @@ document.addEventListener("keydown", (event) => {
       return;
     case "closeStart":
       showModal(false);
+      return;
+    // A pending Cut: Escape cancels it, the tour as it was.
+    case "clearCut":
+      store.dispatch(editorViewActions.clipboardCleared());
+      toast("Cut cancelled");
       return;
     case "deselect":
       select(null);
@@ -5450,6 +5680,7 @@ const shell = createEditorShell({
   },
   clipboard: {
     copy: copySelection,
+    cut: cutSelection,
     paste: () => {
       void pasteSelection();
     },

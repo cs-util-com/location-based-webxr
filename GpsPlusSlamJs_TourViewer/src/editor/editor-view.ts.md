@@ -35,7 +35,8 @@ chrome reads, one copy for every view of the page.
     before it writes: another one does nothing meanwhile (a second
     Ctrl+D or Ctrl+V makes no copy);
   - `clipboard` - what the editor's Copy copied (`{ mode: "copy", ids }`:
-    selection ids of notes and plain folders, in the order picked), or
+    selection ids of notes and plain folders, in the order picked) or
+    Cut cut (`{ mode: "cut", ids }`: stations, or station items), or
     null; emptied on an open or a close. It is store state, not
     transient UI: the Edit menu, the keys and the page all read it.
     It holds ids, never copies, so a paste reads the tour as it is then
@@ -79,9 +80,16 @@ chrome reads, one copy for every view of the page.
     `pickingChanged({ picking })`, `entryStepChanged({ step })` (an
     unknown step ignored), `undeliveredChanged({ waits })`,
     `duplicatingChanged({ duplicating })`;
-  - `copied({ ids })` - the clipboard set to `ids` (repeats and blank or
-    non-text ids dropped; an empty list empties it; anything but a list
-    is ignored);
+  - `copied({ ids, mode? })` - the clipboard set to `ids` as a copy, or
+    as a cut for `mode: "cut"` (repeats and blank or non-text ids
+    dropped; an empty list empties it; anything but a list is ignored);
+  - `clipboardCleared()` - the clipboard emptied (a cut pasted or
+    cancelled, or its source gone);
+  - `clipboardPastedInto({ stationId })` - one more paste of the copy on
+    the clipboard into that station (`clipboard.pastes`, by station id;
+    absent until the first paste, dropped by the next Copy or Cut, which
+    sets a new clipboard); nothing for a cut, an empty clipboard or a
+    blank or non-text id. `clipboard.ts` shifts a repeated paste by it;
   - `walkChanged({ keepsWalk?, openedWalk? })` - each given flag set;
   - the 3D view's opener's (`view3d-opener.ts` dispatches them):
     `view3dRequested()` (loading; nothing while loading or shown),

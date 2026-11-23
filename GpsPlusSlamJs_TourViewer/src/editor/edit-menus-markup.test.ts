@@ -53,6 +53,7 @@ describe("edit.html's menu items", () => {
       "edit-undo": "Control+Z",
       "edit-redo": "Control+Shift+Z",
       "edit-copy": "Control+C",
+      "edit-cut": "Control+X",
       "edit-paste": "Control+V",
       "edit-duplicate": "Control+D",
       "edit-delete": "Delete",

@@ -16,7 +16,8 @@ one; the tests here pin what the page does until then.
 
 - `EscapeState` - what shows when Escape is pressed: `charactersOpen`,
   `detailsOpen`, `doneOpen`, `pointPick` (Pick in 3D armed), `startShown`
-  (the open dialog), `tourOpen` (a tour behind it), `busy`.
+  (the open dialog), `tourOpen` (a tour behind it), `busy`, `cutPending`
+  (the clipboard holds a cut).
 - `escapeAction(state): EscapeAction` - first match wins:
   1. `native` - the characters' dialog shows; the page leaves Escape to it;
   2. `details` - Tour details closes;
@@ -24,7 +25,8 @@ one; the tests here pin what the page does until then.
   4. `pointPick` - Pick in 3D is disarmed, the selection kept;
   5. `closeStart` - the open dialog closes back to the open tour, only
      with a tour open and the page not busy;
-  6. `deselect` - the selection is cleared.
+  6. `clearCut` - a pending Cut is cancelled, the selection kept;
+  7. `deselect` - the selection is cleared.
 - `holdOutside(backdrop, body = document.body): () => void` - every
   element child of `body` but `backdrop` and scripts made inert through
   `holdPageInert` (EditorKit `chrome`); the returned function gives back

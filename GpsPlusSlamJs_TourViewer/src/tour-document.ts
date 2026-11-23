@@ -126,6 +126,7 @@ import { finishedManifest, pendingAfterRebuild } from "./finish-rebuild.js";
 import { stationHolding, type StationPoint } from "./station-assign.js";
 import {
   duplicateItemGeo,
+  eastOf,
   duplicateStationGeo,
   isStationRadius,
   preloadRadiusM,
@@ -3212,12 +3213,19 @@ interface StoryDuplicatePayload {
   /** A new id for the story and for EVERY child it holds, by its old id
    *  (child ids are unique across the tour). */
   readonly newIds: Readonly<Record<string, string>>;
+  /** The station the copy goes into (a Paste); the story's own when
+   *  absent (a Duplicate). */
+  readonly toStationId?: string;
+  /** The story the copy follows there; for a Paste without one, after
+   *  the station's last story (`withStory`). A Duplicate follows itself. */
+  readonly after?: string;
   readonly what: string;
 }
 
 /** A story copied right after itself in its station (`storyDuplicated`),
- *  as one step: titled "... copy" (shortened to fit), every child under
- *  its new id, its choices' jumps going to the copies. */
+ *  or into the station and after the story a Paste names, as one step:
+ *  titled "... copy" (shortened to fit), every child under its new id,
+ *  its choices' jumps going to the copies. */
 function storyDuplicate(
   before: TourDocumentState,
   payload: StoryDuplicatePayload,
@@ -3228,7 +3236,13 @@ function storyDuplicate(
     frame === undefined
       ? undefined
       : tourStories(frame).find((s) => s.id === payload.story);
-  if (frame === undefined || story === undefined) return before;
+  const into =
+    payload.toStationId === undefined
+      ? frame
+      : allFrames(before).find((f) => f.id === payload.toStationId);
+  if (frame === undefined || story === undefined || into === undefined) {
+    return before;
+  }
   const minted = [story.id, ...story.children.map((c) => c.id)].map(
     (id) => payload.newIds[id],
   );
@@ -3243,10 +3257,25 @@ function storyDuplicate(
     ...copy,
     title: copyTitle(story.title, TOUR_STORY_TITLE_RULE.max),
   };
-  return frameReplaced(
+  const after = payload.toStationId === undefined ? story.id : payload.after;
+  return frameReplaced(before, withStory(into, titled, after), payload.what);
+}
+
+/** Copied stories pasted (`storiesPasted`), each by `storyDuplicate`
+ *  into its station: ONE step; none when any copy cannot be made. */
+function storiesPaste(
+  before: TourDocumentState,
+  payload: {
+    readonly copies: readonly Omit<StoryDuplicatePayload, "what">[];
+    readonly what: string;
+  },
+): TourDocumentState {
+  const { what } = payload;
+  return foldedSteps(
     before,
-    withStory(frame, titled, story.id),
-    payload.what,
+    payload.copies,
+    (state, copy) => storyDuplicate(state, { ...copy, what }),
+    what,
   );
 }
 
@@ -3743,6 +3772,48 @@ export function childMoveChange(
   };
 }
 
+/** `apply` applied to each of `items` over the state the one before left,
+ *  folded into ONE step named `what` (a Paste of several things);
+ *  `before` for an empty list and when any step changes nothing. */
+function foldedSteps<T>(
+  before: TourDocumentState,
+  items: readonly T[],
+  apply: (state: TourDocumentState, item: T) => TourDocumentState,
+  what: string,
+): TourDocumentState {
+  // Checked through unknown: narrowing `items` itself would widen it to any.
+  const list: unknown = items;
+  if (!Array.isArray(list) || items.length === 0) return before;
+  let after = before;
+  for (const item of items) {
+    const next = apply(after, item);
+    if (next === after) return before;
+    after = next;
+  }
+  return items.length === 1 ? after : edited(before, after, what);
+}
+
+/** Station items moved, each by `childMove` (`childrenMoved`, a Paste of
+ *  a cut): ONE step; `before` when any move is refused. */
+function childrenMove(
+  before: TourDocumentState,
+  payload: {
+    readonly moves: readonly {
+      readonly id: string;
+      readonly to: ChildMoveTo;
+    }[];
+    readonly what: string;
+  },
+): TourDocumentState {
+  const { what } = payload;
+  return foldedSteps(
+    before,
+    payload.moves,
+    (state, { id, to }) => childMove(state, { id, to, what }),
+    what,
+  );
+}
+
 /** A station item moved (`childMoved`), as one step: the station's frame
  *  takes its stories as the move leaves them; a free item leaving is
  *  deleted as an object (a tombstone for one the file holds), and one
@@ -3960,9 +4031,12 @@ interface StationDuplicatePayload {
    *  tour). */
   readonly newItemIds: Readonly<Record<string, string>>;
   readonly createdAtIso: string;
-  /** Where the copy stands; beside the original when absent
+  /** Where the copy stands; beside `after` when absent
    *  (`duplicateStationGeo`). */
   readonly geo?: QrGeoPose;
+  /** The station the copy follows in the tour's order and stands beside
+   *  (a Paste); the original when absent (a Duplicate). */
+  readonly after?: string;
   readonly what: string;
 }
 
@@ -3980,10 +4054,18 @@ function stationDuplicate(
   // new station's own, which a reload from the draft does not.
   const all = allFrames(before);
   const frame = all.find((s) => s.id === payload.stationId);
+  const anchor =
+    payload.after === undefined
+      ? frame
+      : all.find((s) => s.id === payload.after);
   const frames = before.stations.some((s) => s.id === payload.stationId)
     ? before.stations
     : framesToList(before);
-  if (frame === undefined || !freeStationId(before, payload.newStationId)) {
+  if (
+    frame === undefined ||
+    anchor === undefined ||
+    !freeStationId(before, payload.newStationId)
+  ) {
     return before;
   }
   const items = documentObjects(before)
@@ -4001,7 +4083,7 @@ function stationDuplicate(
     return before;
   }
   const renamed = (id: string): string => payload.newItemIds[id] ?? id;
-  const geo = payload.geo ?? duplicateStationGeo(frame);
+  const geo = payload.geo ?? duplicateStationGeo(anchor);
   if (!isGlobePoint(geo)) return before;
   // A card image of a free image asset (`freeImageAssets`) stays valid on
   // the copy; one of the station's own photo names a photo it does not hold.
@@ -4042,9 +4124,9 @@ function stationDuplicate(
     });
   }
   const listed = new Set(frames.map((f) => f.id));
-  const at = listed.has(frame.id)
-    ? frames.indexOf(frame) + 1
-    : all.slice(0, all.indexOf(frame)).filter((f) => listed.has(f.id)).length;
+  const at = listed.has(anchor.id)
+    ? frames.findIndex((f) => f.id === anchor.id) + 1
+    : all.slice(0, all.indexOf(anchor)).filter((f) => listed.has(f.id)).length;
   return edited(
     before,
     {
@@ -4053,6 +4135,24 @@ function stationDuplicate(
       framesRecorded: true,
     },
     payload.what,
+  );
+}
+
+/** Copied stations pasted (`stationsPasted`), each by `stationDuplicate`
+ *  after its `after`: ONE step; none when any copy cannot be made. */
+function stationsPaste(
+  before: TourDocumentState,
+  payload: {
+    readonly copies: readonly Omit<StationDuplicatePayload, "what">[];
+    readonly what: string;
+  },
+): TourDocumentState {
+  const { what } = payload;
+  return foldedSteps(
+    before,
+    payload.copies,
+    (state, copy) => stationDuplicate(state, { ...copy, what }),
+    what,
   );
 }
 
@@ -4903,6 +5003,7 @@ function folderIdsIn(folder: TourFolder): string[] {
 function folderDuplicate(
   before: TourDocumentState,
   payload: FolderDuplicatePayload,
+  shiftM = 0,
 ): TourDocumentState {
   const source = folderCopySource(before, payload);
   if (source === null) return before;
@@ -4917,7 +5018,7 @@ function folderDuplicate(
     ...was,
     position: decomposeTourFolderPath(
       holders,
-      localPoseOf(duplicateItemGeo(origin), frame.geo),
+      localPoseOf(eastOf(duplicateItemGeo(origin), shiftM), frame.geo),
     ).position,
   });
   if (pose === null) return before;
@@ -5053,14 +5154,16 @@ function withFolderCopy(
  *  (beside itself, in its folder); into another one, a copy standing
  *  there as the original stands in its own station (its pose in the
  *  station's frame kept, a rigid move, so it fits the format's bound
- *  there as it fits it here), out of any folder. The same state for an
- *  unknown item or station, an entry of a story, and a taken new id. */
+ *  there as it fits it here), out of any folder; either moved `shiftM`
+ *  further east. The same state for an unknown item or station, an entry
+ *  of a story, a taken new id, and a copy past its station's bound. */
 function objectPasteInto(
   before: TourDocumentState,
   payload: {
     readonly id: string;
     readonly newId: string;
     readonly toStationId: string;
+    readonly shiftM: number;
     readonly createdAtIso: string;
     readonly what: string;
   },
@@ -5076,7 +5179,12 @@ function objectPasteInto(
   ) {
     return before;
   }
-  if (from === payload.toStationId) return objectDuplicate(before, payload);
+  if (from === payload.toStationId) {
+    return objectDuplicate(before, {
+      ...payload,
+      geo: eastOf(duplicateItemGeo(found.object.geo), payload.shiftM),
+    });
+  }
   const source = frameOf(before, from);
   const target = frameOf(before, payload.toStationId);
   if (source === undefined || target === undefined) return before;
@@ -5092,7 +5200,10 @@ function objectPasteInto(
       {
         id: payload.newId,
         createdAtIso: payload.createdAtIso,
-        geo: rigidlyMoved(found.object.geo, source.geo, target.geo),
+        geo: eastOf(
+          rigidlyMoved(found.object.geo, source.geo, target.geo),
+          payload.shiftM,
+        ),
         station: target.id,
       },
       before.addedAssets,
@@ -5108,23 +5219,35 @@ function objectPasteInto(
  *  Duplicate makes (`folderDuplicate`); into another one, a copy after
  *  that station's own children, standing there as the original stands in
  *  its station (its pose in the station's frame kept, nested or not),
- *  everything it holds copied as `withFolderCopy` copies it. The same
- *  state where `folderCopySource` refuses, for an unknown target, and for
- *  a pose the format would refuse. */
+ *  everything it holds copied as `withFolderCopy` copies it; either
+ *  moved `shiftM` further east. The same state where `folderCopySource`
+ *  refuses, for an unknown target, and for a pose the format would
+ *  refuse. */
 function folderPasteInto(
   before: TourDocumentState,
-  payload: FolderDuplicatePayload & { readonly toStationId: string },
+  payload: FolderDuplicatePayload & {
+    readonly toStationId: string;
+    readonly shiftM: number;
+  },
 ): TourDocumentState {
   if (payload.toStationId === payload.stationId) {
-    return folderDuplicate(before, payload);
+    return folderDuplicate(before, payload, payload.shiftM);
   }
   const source = folderCopySource(before, payload);
   const target = frameOf(before, payload.toStationId);
   if (source === null || target === undefined) return before;
   const { chain, old, renamed } = source;
-  const pose = readPose(
-    composeTourFolderPath(chain.slice(0, -1), old.pose ?? NO_FOLDER_POSE),
+  const kept = composeTourFolderPath(
+    chain.slice(0, -1),
+    old.pose ?? NO_FOLDER_POSE,
   );
+  const pose = readPose({
+    ...kept,
+    position: localPoseOf(
+      eastOf(itemGeoPose(kept, target.geo), payload.shiftM),
+      target.geo,
+    ).position,
+  });
   // Out of the folders around it, it takes their scale as its own, so
   // what it holds keeps its place and size.
   const scale = pastedFolderScale(chain);
@@ -5167,9 +5290,12 @@ function pastedFolderScale(chain: readonly TourFolder[]): number | null {
 /** What `clipboardPasted` carries: the station pasted into, and the
  *  clipboard's items and plain folders with the new ids minted outside
  *  the reducer, by the page (it copies their photos' pictures under them
- *  first). */
+ *  first); `shiftM`, how much further east than a first paste the copies
+ *  stand (m, none: 0), which the page raises for each repeated paste of
+ *  the same clipboard into the same station. */
 export interface ClipboardPastePayload {
   readonly toStationId: string;
+  readonly shiftM?: number;
   readonly objects: readonly { readonly id: string; readonly newId: string }[];
   readonly folders: readonly (FolderAt & {
     readonly newIds: Readonly<Record<string, string>>;
@@ -5182,15 +5308,18 @@ export interface ClipboardPastePayload {
  * The clipboard's items and plain folders pasted into one station
  * (`clipboardPasted`), as ONE undo step however many there are: each
  * copied as `objectPasteInto` and `folderPasteInto` copy it, the items
- * first, each in the order given. All or nothing: the same state when
- * there is nothing to paste, when an item or a folder is named twice,
- * and when any one copy is refused.
+ * first, each in the order given, each moved `shiftM` east. All or
+ * nothing: the same state when there is nothing to paste, when an item
+ * or a folder is named twice, for a shift that is not a finite distance
+ * of 0 or more, and when any one copy is refused.
  */
 function clipboardPaste(
   before: TourDocumentState,
   payload: ClipboardPastePayload,
 ): TourDocumentState {
   const { toStationId, createdAtIso, what } = payload;
+  const shiftM = payload.shiftM ?? 0;
+  if (!Number.isFinite(shiftM) || shiftM < 0) return before;
   const named = [
     ...payload.objects.map((o) => o.id),
     ...payload.folders.map((f) => f.folderId),
@@ -5203,6 +5332,7 @@ function clipboardPaste(
     const next = objectPasteInto(after, {
       ...object,
       toStationId,
+      shiftM,
       createdAtIso,
       what,
     });
@@ -5213,6 +5343,7 @@ function clipboardPaste(
     const next = folderPasteInto(after, {
       ...folder,
       toStationId,
+      shiftM,
       createdAtIso,
       what,
     });
@@ -5589,6 +5720,18 @@ const tourDocumentSlice = createSlice({
     storyDuplicated(state, action: PayloadAction<StoryDuplicatePayload>) {
       return storyDuplicate(plain(state), action.payload);
     },
+    /** Copied stories pasted, each into its station after the story it
+     *  names (else after that station's last story): ONE step; a copy
+     *  that cannot be made makes none. */
+    storiesPasted(
+      state,
+      action: PayloadAction<{
+        copies: readonly Omit<StoryDuplicatePayload, "what">[];
+        what: string;
+      }>,
+    ) {
+      return storiesPaste(plain(state), action.payload);
+    },
     /** A story deleted with its children: one step. */
     storyDeleted(
       state,
@@ -5640,6 +5783,17 @@ const tourDocumentSlice = createSlice({
     ) {
       return childMove(plain(state), action.payload);
     },
+    /** Station items moved (`childrenMove`, a Paste of a cut): ONE step
+     *  for the lot; a refused move refuses the lot. */
+    childrenMoved(
+      state,
+      action: PayloadAction<{
+        moves: readonly { id: string; to: ChildMoveTo }[];
+        what: string;
+      }>,
+    ) {
+      return childrenMove(plain(state), action.payload);
+    },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
      *  itself as added by hand (`handMade`). Its id is minted outside the
@@ -5676,6 +5830,18 @@ const tourDocumentSlice = createSlice({
       action: PayloadAction<{ order: readonly string[]; what: string }>,
     ) {
       return stationsReorder(plain(state), action.payload);
+    },
+    /** Copied stations pasted, each after the station it names and
+     *  beside it, under the new ids the page gives: ONE step; a copy that
+     *  cannot be made makes none. */
+    stationsPasted(
+      state,
+      action: PayloadAction<{
+        copies: readonly Omit<StationDuplicatePayload, "what">[];
+        what: string;
+      }>,
+    ) {
+      return stationsPaste(plain(state), action.payload);
     },
     /** A station copied beside itself (`duplicateStationGeo`) right after
      *  it, titled "... copy" (shortened to fit), a card image of its own
@@ -6456,13 +6622,16 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.storyRenamed,
   tourDocumentActions.storyDeleted,
   tourDocumentActions.storyDuplicated,
+  tourDocumentActions.storiesPasted,
   tourDocumentActions.storyChildAdded,
   tourDocumentActions.storyChildDeleted,
   tourDocumentActions.childMoved,
+  tourDocumentActions.childrenMoved,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,
   tourDocumentActions.stationDuplicated,
+  tourDocumentActions.stationsPasted,
   tourDocumentActions.objectDuplicated,
   tourDocumentActions.itemsGrounded,
   tourDocumentActions.blockNumberSet,
