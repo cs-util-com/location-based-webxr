@@ -26,6 +26,7 @@ import {
   type LatLong,
 } from "gps-plus-slam-app-framework/core";
 import type { PrecisionGpsPoint } from "gps-plus-slam-app-framework/state/position-precision";
+import { finitePositive } from "gps-plus-slam-app-framework/utils/finite-positive";
 import { Quaternion, Vector3 } from "three";
 
 import { odomNueFromWebXr, throughAlignment } from "./visit-anchoring.js";
@@ -123,7 +124,7 @@ function latestFix(
     return {
       nue: [nue[0], nue[1], nue[2]],
       atMs: Number.isFinite(p.timestamp) ? p.timestamp : null,
-      accuracyM: usableAccuracy(p.latLongAccuracy),
+      accuracyM: finitePositive(p.latLongAccuracy),
     };
   }
   return null;
@@ -176,13 +177,4 @@ function cameraForwardNue(
     new Quaternion(...world.rotation),
   );
   return [f.x, f.y, f.z];
-}
-
-/** A reported accuracy a fix can be judged by: finite and positive. */
-function usableAccuracy(accuracy: unknown): number | null {
-  return typeof accuracy === "number" &&
-    Number.isFinite(accuracy) &&
-    accuracy > 0
-    ? accuracy
-    : null;
 }
