@@ -25,6 +25,7 @@ const NONE: EscapeState = {
   startShown: false,
   tourOpen: false,
   busy: false,
+  cutPending: false,
 };
 
 describe("escapeAction: what Escape closes first", () => {
@@ -34,6 +35,14 @@ describe("escapeAction: what Escape closes first", () => {
     ["Tour details", { detailsOpen: true }, "details"],
     ["Share and publish", { doneOpen: true }, "done"],
     ["an armed Pick in 3D", { pointPick: true }, "pointPick"],
+    // A pending cut is cleared before the selection goes: the first
+    // Escape cancels the cut and keeps what is selected.
+    ["a pending cut", { cutPending: true }, "clearCut"],
+    [
+      "a pending cut behind the open dialog",
+      { cutPending: true, startShown: true, tourOpen: true },
+      "closeStart",
+    ],
     [
       "the open dialog over an open tour",
       { startShown: true, tourOpen: true },
@@ -65,6 +74,7 @@ describe("escapeAction: what Escape closes first", () => {
           startShown: fc.boolean(),
           tourOpen: fc.boolean(),
           busy: fc.boolean(),
+          cutPending: fc.boolean(),
         }),
         (state) => {
           const expected = state.charactersOpen
@@ -77,7 +87,9 @@ describe("escapeAction: what Escape closes first", () => {
                   ? "pointPick"
                   : state.startShown && state.tourOpen && !state.busy
                     ? "closeStart"
-                    : "deselect";
+                    : state.cutPending
+                      ? "clearCut"
+                      : "deselect";
           expect(escapeAction(state)).toBe(expected);
         },
       ),

@@ -41,8 +41,32 @@ objects, folders }`: the clipboard's notes and plain folders (by
   now, or null. The session asks it for a paste the document refused
   after the picture read, so a folder resized during the read is said as
   the resize rather than as a distance.
-- `CopyOutcome`, `PasteOutcome` (its folders by `{ stationId, folderId }`), and the seven reason
-  strings above.
+- `cutOf(doc, view): CutOutcome` - `{ kind: "cut", ids }`: the picked
+  rows, or the one selected, when each is a station or each is in one (a
+  note, a plain folder, a story by `story:<id>`, a story's entry);
+  refused `NOTHING_TO_CUT` (nothing selected, a code, an unknown id) and
+  `CUT_ONE_KIND` (stations among their items). The page stores it as
+  `copied({ ids, mode: "cut" })`.
+- `cutGone(doc, view): boolean` - the clipboard is a cut naming an id the
+  tour no longer holds (an edit or an undo removed it): the page empties
+  it on its refresh, so a stale cut never moves anything.
+- A Paste of a cut (`pasteOf` with `clipboard.mode === "cut"`):
+  - its items moved onto the station the selection names (`selectedStationOf`:
+    a station, or any row in one): `{ kind: "move", toStationId, moves }`,
+    each move `{ id, to: { place: "station", station } }` for the
+    session's `moveChildren` (the tree drag's move path, one step);
+    items already in the target are left out;
+  - its stations put after the selected station: `{ kind: "reorder",
+    afterStationId, order }` for `reorderStations`;
+  - refused `SELECT_A_TARGET` (no station), `COPIED_GONE` (a source gone),
+    `FOLDER_STAYS` (a plain folder, or an item in one, to another station:
+    the folder actions keep those in their station), `CUT_SAME_STATION`
+    (everything is in the target already), `CUT_STATION_TARGET` (a cut
+    station selected) and `CUT_STATIONS_IN_PLACE` (nothing would move).
+    A choice or quiz entry, a story whose items are not saved, and the
+    other move refusals come from `childMoveChange` itself, in its words.
+- `CopyOutcome`, `CutOutcome`, `PasteOutcome` (its folders by
+  `{ stationId, folderId }`), and the reason strings above.
 
 ## Invariants & assumptions
 
@@ -56,6 +80,13 @@ objects, folders }`: the clipboard's notes and plain folders (by
   a deleted one refuses the paste rather than resurrecting it.
 - A story's entry is never copied here (it belongs to its story);
   stations and stories are not copied yet either.
+- A cut keeps ids: its paste moves the items, so links to them (an
+  answer's jump, a code) keep pointing at them.
+- Open question: a copy pasted into another station stands where its
+  original stands in its own, so repeated pastes stack exactly on the
+  previous copy. That is kept for now; an offset would go into the
+  session's `paste` (the poses it copies), not into this file, which
+  only plans which items go where.
 
 ## Examples
 
@@ -77,5 +108,9 @@ no target: a story, a story's entry and a code's level id among them;
 something gone), rows inside a copied folder dropped, and the scale
 refusals into another station (a note in a resized folder, folders that
 cancel out, a nested folder past 10 or below 0.1, exactly at 10).
+Cut: each refusal of `cutOf`, the cut of stations and of items, the
+gone cut, and a cut's Paste (onto another station, a story whole, into
+its own station, a folder or an item in one to another station, the
+stations reordered, a cut station as the target, a stale id).
 The wiring is covered by `editor-shell/editor-shell.test.ts` (the Edit
 menu's states) and `playwright-tests/editor3d-clipboard.spec.js`.

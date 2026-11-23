@@ -43,6 +43,7 @@ import { EDIT_STILL_RUNNING } from "../held-edit-flow.js";
 import {
   NOTHING_COPIED,
   NOTHING_SELECTED,
+  NOTHING_TO_CUT,
   ONLY_NOTES_AND_FOLDERS,
 } from "../clipboard.js";
 import {
@@ -194,7 +195,7 @@ function setUp() {
       duplicate: vi.fn(),
       remove: vi.fn(),
     },
-    clipboard: { copy: vi.fn(), paste: vi.fn() },
+    clipboard: { copy: vi.fn(), cut: vi.fn(), paste: vi.fn() },
     edits,
     // The real folder commands on the real store: the tree's Group and
     // Ungroup are tested through to the tour.
@@ -3126,6 +3127,40 @@ describe("the Edit menu's Copy, Paste, Duplicate and Delete", () => {
     expect(item("edit-paste").title).toBe("Paste into Station b (Ctrl+V)");
     item("edit-paste").click();
     expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    shell.hide();
+  });
+
+  // Why: Cut is the menu's as Ctrl+X is the page's: offered for what
+  // the selection allows, and what it cut stays visible, dimmed in the
+  // tree, until a Paste moves it - whose title says it moves, not copies.
+  it("offers Cut, dims what is cut, and titles a Paste of it as a move", () => {
+    const { shell, store, select, deps } = setUp();
+    expect(disabled("edit-cut")).toBe(true);
+    expect(item("edit-cut").title).toBe(NOTHING_TO_CUT);
+    select("pa");
+    expect(disabled("edit-cut")).toBe(false);
+    expect(item("edit-cut").title).toBe("Cut (Ctrl+X)");
+    item("edit-cut").click();
+    expect(deps.clipboard.cut).toHaveBeenCalledOnce();
+
+    store.dispatch(editorViewActions.stationFolded({ id: "a", open: true }));
+    store.dispatch(editorViewActions.copied({ ids: ["pa"], mode: "cut" }));
+    const row = (id: string) =>
+      document.querySelector<HTMLElement>(`#tree-body [data-select="${id}"]`);
+    expect(row("pa")?.dataset["cut"]).toBe("true");
+    expect(row("station:a")?.dataset["cut"]).toBeUndefined();
+    select("station:b");
+    expect(disabled("edit-paste")).toBe(false);
+    expect(item("edit-paste").title).toBe("Move to Station b (Ctrl+V)");
+
+    store.dispatch(
+      editorViewActions.copied({ ids: ["station:a"], mode: "cut" }),
+    );
+    expect(row("station:a")?.dataset["cut"]).toBe("true");
+    expect(row("pa")?.dataset["cut"]).toBeUndefined();
+    expect(item("edit-paste").title).toBe("Move after Station b (Ctrl+V)");
+    store.dispatch(editorViewActions.clipboardCleared());
+    expect(row("station:a")?.dataset["cut"]).toBeUndefined();
     shell.hide();
   });
 

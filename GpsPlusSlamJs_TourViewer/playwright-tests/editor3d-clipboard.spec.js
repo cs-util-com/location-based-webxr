@@ -213,3 +213,76 @@ test("Ctrl+V stays the browser's in a field, with a menu open and in a dialog, a
   await page.keyboard.press("Meta+v");
   await expect.poll(() => childCount(page, to.id)).toBe(was + 1);
 });
+
+/**
+ * Whether station `stationId` holds the child `id` at its top.
+ * @param {import("@playwright/test").Page} page
+ * @param {string} stationId
+ * @param {string} id
+ */
+async function holds(page, stationId, id) {
+  const stations = /** @type {any[]} */ ((await tour(page)).stations);
+  return (
+    stations
+      .find((s) => s.id === stationId)
+      ?.children.some((/** @type {any} */ c) => c.id === id) ?? false
+  );
+}
+
+test("Ctrl+X and Ctrl+V move a note to another station as one step that keeps its id, and Escape cancels a cut", async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await answerHosts(page);
+  await openSampleIn3d(page);
+  const stations = /** @type {any[]} */ ((await tour(page)).stations);
+  const [from, to] = stations;
+  const note = /** @type {any} */ (from.children).find(
+    (/** @type {any} */ c) => c.kind === "shortText" || c.kind === "longText",
+  );
+  if (from === undefined || to === undefined || note === undefined) {
+    throw new Error("the sample has no text note in its first station");
+  }
+  const row = page.locator(`#tree-body [data-select="${note.id}"]`);
+  await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
+  await row.click();
+
+  // Cut shows on what it cut, which stays in place until the paste;
+  // Escape cancels it and keeps the selection.
+  await page.keyboard.press("Control+x");
+  await expect(row).toHaveAttribute("data-cut", "true");
+  expect(await holds(page, from.id, note.id)).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(row).not.toHaveAttribute("data-cut", "true");
+  await expect(
+    page.locator(".toast", { hasText: "Cut cancelled" }),
+  ).toHaveCount(1);
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.selected(),
+    ),
+  ).toBe(note.id);
+
+  // Cut again, pasted onto the other station: the same note moves, said
+  // with where it now stands, and it stays selected.
+  await page.keyboard.press("Control+x");
+  await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
+  await page.keyboard.press("Control+v");
+  await expect.poll(() => holds(page, to.id, note.id)).toBe(true);
+  expect(await holds(page, from.id, note.id)).toBe(false);
+  await expect(
+    page.locator(".toast", { hasText: "station's centre" }),
+  ).not.toHaveCount(0);
+  expect(
+    await page.evaluate(() =>
+      /** @type {any} */ (window).__tourEditor.selected(),
+    ),
+  ).toBe(note.id);
+  await expect(row).not.toHaveAttribute("data-cut", "true");
+
+  // One undo puts it back where it was.
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => holds(page, from.id, note.id)).toBe(true);
+  expect(await holds(page, to.id, note.id)).toBe(false);
+});

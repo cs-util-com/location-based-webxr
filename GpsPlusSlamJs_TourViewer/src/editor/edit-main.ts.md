@@ -866,7 +866,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     only once it lands, and not at all when it is dropped (the draft gate
     says that). A folder's Duplicate (`duplicateFolderSelection`) runs
     the same way;
-  - `clipboardKeys` takes Ctrl/Cmd+C and Ctrl/Cmd+V (without Shift)
+  - `cutSelection` (Ctrl+X, the Edit menu's Cut) puts the selection on
+    the clipboard as a cut (`cutOf`, then `copied({ mode: "cut" })`) and
+    says where to go next; nothing moves yet, the tree dims what is cut;
+    Escape cancels it (`escapeAction`'s `clearCut`, "Cut cancelled"), and
+    `refresh` empties a cut whose source an edit or an undo removed
+    (`cutGone`);
+  - a Paste of a cut (`pasteCut`) moves the items onto the target
+    station (the session's `moveChildren`) or reorders the stations, ONE
+    undo step that keeps ids, with no station-move question first (the
+    Cut was the decision); the clipboard emptied, the first cut row
+    selected, and the toast says the items stand at the station's centre,
+    answers that now go on and a view floored to the kind's usual one;
+  - `clipboardKeys` takes Ctrl/Cmd+C, Ctrl/Cmd+X and Ctrl/Cmd+V (without Shift)
     only where `editKeysFree` holds and the page has no text selected,
     so a field, a dialog, a menu and selected text keep the browser's
     own copy and paste; a held key's repeats do nothing (one press, one
@@ -881,9 +893,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     A gesture under way counts as an edit being made (`editing()`, the
     `gesture` field of the view slice), and an undo or a redo cancels it
     first (`runStep`).
-- **The clipboard**, given to the shell as `clipboard`: `copy` and
-  `paste`, which the Edit menu's Copy and Paste call (`copySelection`,
-  `pasteSelection`).
+- **The clipboard**, given to the shell as `clipboard`: `copy`, `cut`
+  and `paste`, which the Edit menu's Copy, Cut and Paste call
+  (`copySelection`, `cutSelection`, `pasteSelection`).
 - **The tree's station commands** (G2 M3b), given to the shell as
   `stations` with a `say` (a toast), each one undo step that ends a
   delete's Undo offer, refreshes the views and tells autosave:

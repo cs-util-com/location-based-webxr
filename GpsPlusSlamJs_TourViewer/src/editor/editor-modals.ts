@@ -24,23 +24,33 @@ export interface EscapeState {
   readonly tourOpen: boolean;
   /** The page is busy (a tour being opened). */
   readonly busy: boolean;
+  /** A Cut waits for its Paste (`clipboard.ts`). */
+  readonly cutPending: boolean;
 }
 
 /** What Escape does: `native` leaves it to the native dialog;
  *  `closeStart` closes the open dialog back to the tour; `deselect`
+ *  `clearCut` cancels a pending cut and keeps the selection; `deselect`
  *  clears the selection. */
 export type EscapeAction =
-  "native" | "details" | "done" | "pointPick" | "closeStart" | "deselect";
+  | "native"
+  | "details"
+  | "done"
+  | "pointPick"
+  | "closeStart"
+  | "clearCut"
+  | "deselect";
 
 /** Escape's target, first match wins: the characters' native dialog, Tour
  *  details, Share and publish, an armed "Pick in 3D", the open dialog
- *  over an open tour while not busy, else the selection. */
+ *  over an open tour while not busy, a pending cut, else the selection. */
 export function escapeAction(state: EscapeState): EscapeAction {
   if (state.charactersOpen) return "native";
   if (state.detailsOpen) return "details";
   if (state.doneOpen) return "done";
   if (state.pointPick) return "pointPick";
   if (state.startShown && state.tourOpen && !state.busy) return "closeStart";
+  if (state.cutPending) return "clearCut";
   return "deselect";
 }
 

@@ -4,7 +4,7 @@
 
 The 3D view's studio shell: the top bar's studio controls
 (Undo, Redo, Help), the Edit menu (Undo and Redo, where
-those fold at a phone's width; Copy, Paste, Duplicate and Delete, drawn
+those fold at a phone's width; Copy, Cut, Paste, Duplicate and Delete, drawn
 for the selection by `drawEditItems`, Paste and Duplicate disabled
 with `EDIT_STILL_RUNNING` (`../held-edit-flow.ts`), "A paste or a duplicate is still running",
 while one of them reads its pictures: the store's `duplicating`), the View menu's Top view and Frame, the tree
@@ -586,7 +586,9 @@ else shell.hide();
 - "the Edit menu's Copy, Paste, Duplicate and Delete" in
   `editor-shell.test.ts`: each item disabled with the refusal as its
   title until the selection allows it, Paste's title naming the target
-  station, and a click calling the clipboard, the station commands or
+  station, and a click calling the clipboard, Cut's states, the tree's
+  `data-cut` dimming of a pending cut and Paste titled "Move to" or
+  "Move after" for it, the station commands or
   the delete; Duplicate offered for a plain folder and a story, as
   Ctrl+D copies them; Paste and Duplicate disabled with
   `EDIT_STILL_RUNNING` while the store's `duplicating` is set; the fold steps at every band in

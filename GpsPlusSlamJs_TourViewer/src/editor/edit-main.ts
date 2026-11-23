@@ -107,7 +107,13 @@ import { storyRows } from "./editor-shell/tree-model.js";
 import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
-import { copyOf, pasteOf } from "./clipboard.js";
+import {
+  copyOf,
+  cutGone,
+  cutOf,
+  type PasteOutcome,
+  pasteOf,
+} from "./clipboard.js";
 import { EDIT_STILL_RUNNING, runHeldEdit } from "./held-edit-flow.js";
 import {
   openedNoticeLines,
@@ -1209,6 +1215,10 @@ function refresh(): void {
   if (selected !== null && !stillInTour(selected)) {
     store.dispatch(editorViewActions.selected({ id: null }));
   }
+  // A cut whose item an edit or an undo removed has nothing left to move.
+  if (cutGone(store.getState().tourDocument, ui())) {
+    store.dispatch(editorViewActions.clipboardCleared());
+  }
   renderSaveState();
 }
 
@@ -1503,6 +1513,98 @@ function copySelection(): void {
 }
 
 /**
+ * Cut (the Edit menu's, Ctrl+X): the picked rows, or the one selected, on
+ * the editor's clipboard as a cut when each is a station or each is in
+ * one (`cutOf`), shown dimmed in the tree until a Paste moves them or
+ * Escape cancels it. Cut changes nothing in the tour: the Paste moves.
+ */
+function cutSelection(): void {
+  if (editor === null) return;
+  const outcome = cutOf(store.getState().tourDocument, ui());
+  if (outcome.kind === "refused") {
+    toast(outcome.reason);
+    return;
+  }
+  store.dispatch(editorViewActions.copied({ ids: outcome.ids, mode: "cut" }));
+  const [only] = outcome.ids;
+  const what =
+    outcome.ids.length > 1 || only === undefined
+      ? `${String(outcome.ids.length)} items`
+      : only.startsWith(FOLDER_PREFIX)
+        ? "the folder"
+        : only.startsWith(STORY_PREFIX)
+          ? "the story"
+          : itemCalled(only);
+  toast(`Cut ${what}: select where it goes and paste. Escape cancels.`);
+}
+
+/** A Paste of a cut: its items moved onto the target station, or its
+ *  stations put after it, ONE step that keeps their ids; the clipboard
+ *  emptied and the first moved row selected. No question first (the cut
+ *  was the question); the toast says that a moved item stands at the
+ *  station's centre and what else changed. */
+function pasteCut(
+  plan: Extract<PasteOutcome, { kind: "move" | "reorder" }>,
+): void {
+  if (editor === null) return;
+  const first = ui().clipboard?.ids[0] ?? null;
+  endUndo();
+  if (plan.kind === "reorder") {
+    if (cutLanded(editor.reorderStations(plan.order), first)) {
+      toast(`Moved after "${stationTitleOf(plan.afterStationId)}"`);
+    }
+    return;
+  }
+  const outcome = editor.moveChildren(plan.moves);
+  if (outcome.kind === "moved") showRowsOf(plan.toStationId);
+  if (!cutLanded(outcome, first) || outcome.kind !== "moved") return;
+  const n = plan.moves.length;
+  const where = stationTitleOf(plan.toStationId);
+  const notes = [
+    n === 1
+      ? `Moved it to "${where}": it stands at the station's centre; place it again there.`
+      : `Moved ${String(n)} items to "${where}": they stand at the station's centre; place them again there.`,
+  ];
+  if (outcome.answers > 0) {
+    notes.push(
+      outcome.answers === 1
+        ? "1 answer that led to it now goes on to the next entry."
+        : `${String(outcome.answers)} answers that led to it now go on to the next entry.`,
+    );
+  }
+  if (outcome.floored) {
+    notes.push(
+      n === 1
+        ? "It now stands in the world in its kind's usual view."
+        : "Some now stand in the world in their kind's usual view.",
+    );
+  }
+  toast(notes.join(" "));
+}
+
+/** After a Paste of a cut was written or refused: the page redrawn and a
+ *  refusal said; a move made empties the clipboard, selects `first` (the
+ *  cut kept its ids) and counts as a change. Whether it moved. */
+function cutLanded(
+  outcome:
+    | { readonly kind: "moved" | "reordered" | "unchanged" }
+    | { readonly kind: "refused"; readonly reason: string },
+  first: string | null,
+): boolean {
+  if (outcome.kind === "refused") {
+    refresh();
+    toast(outcome.reason);
+    return false;
+  }
+  if (outcome.kind === "unchanged") return false;
+  store.dispatch(editorViewActions.clipboardCleared());
+  refresh();
+  select(first);
+  tourChanged();
+  return true;
+}
+
+/**
  * Paste (the Edit menu's, Ctrl+V): copies of the clipboard's notes and
  * folders into the selected station, or the station of the selected row
  * (`clipboard.ts`), ONE step; the first copy selected in its station's
@@ -1519,6 +1621,10 @@ async function pasteSelection(): Promise<void> {
   const plan = pasteOf(store.getState().tourDocument, ui());
   if (plan.kind === "refused") {
     toast(plan.reason);
+    return;
+  }
+  if (plan.kind !== "paste") {
+    pasteCut(plan);
     return;
   }
   endUndo();
@@ -2758,14 +2864,16 @@ function editKeysFree(event: KeyboardEvent): boolean {
   );
 }
 
-/** Ctrl+C and Ctrl+V on the page: Copy and Paste of notes and folders
- *  (`copySelection`, `pasteSelection`); whether the key was the page's.
+/** Ctrl+C, Ctrl+X and Ctrl+V on the page: Copy, Cut and Paste
+ *  (`copySelection`, `cutSelection`, `pasteSelection`); whether the key
+ *  was the page's.
  *  Wherever the editor's keys are not free, and while text is selected
  *  on the page, they stay the browser's, so text still copies as text. */
 function clipboardKeys(event: KeyboardEvent): boolean {
   const c = commandKey(event, "c");
+  const x = commandKey(event, "x");
   const v = commandKey(event, "v");
-  if ((!c && !v) || event.shiftKey || editor === null) return false;
+  if ((!c && !x && !v) || event.shiftKey || editor === null) return false;
   if (!editKeysFree(event) || window.getSelection()?.isCollapsed === false) {
     return false;
   }
@@ -2774,6 +2882,7 @@ function clipboardKeys(event: KeyboardEvent): boolean {
   // would flood the page with toasts).
   if (event.repeat) return true;
   if (c) copySelection();
+  else if (x) cutSelection();
   else void pasteSelection();
   return true;
 }
@@ -2833,6 +2942,7 @@ document.addEventListener("keydown", (event) => {
       startShown: !modal.hidden,
       tourOpen: session !== null,
       busy: ui().busy,
+      cutPending: ui().clipboard?.mode === "cut",
     })
   ) {
     // The dialog's own Escape closes it (a native modal dialog).
@@ -2850,6 +2960,11 @@ document.addEventListener("keydown", (event) => {
       return;
     case "closeStart":
       showModal(false);
+      return;
+    // A pending Cut: Escape cancels it, the tour as it was.
+    case "clearCut":
+      store.dispatch(editorViewActions.clipboardCleared());
+      toast("Cut cancelled");
       return;
     case "deselect":
       select(null);
@@ -5448,6 +5563,7 @@ const shell = createEditorShell({
   },
   clipboard: {
     copy: copySelection,
+    cut: cutSelection,
     paste: () => {
       void pasteSelection();
     },

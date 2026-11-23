@@ -609,6 +609,19 @@ describe("the editor's clipboard", () => {
     }
   });
 
+  // Why: Cut puts ids on the same clipboard, marked as a cut, so Paste
+  // moves rather than copies; Escape and a finished move empty it.
+  it("holds what Cut cut as a cut, emptied when cleared", () => {
+    const cut = reduce(
+      initialEditorViewState,
+      act.copied({ ids: ["a", "a", "story:s"], mode: "cut" }),
+    );
+    expect(cut.clipboard).toEqual({ mode: "cut", ids: ["a", "story:s"] });
+    expect(reduce(cut, act.clipboardCleared()).clipboard).toBeNull();
+    const copy = reduce(cut, act.copied({ ids: ["a"] }));
+    expect(copy.clipboard).toEqual({ mode: "copy", ids: ["a"] });
+  });
+
   it("ignores a Copy that carries no list", () => {
     const full = reduce(initialEditorViewState, act.copied({ ids: ["a"] }));
     const bad = act.copied({ ids: "a" as unknown as string[] });

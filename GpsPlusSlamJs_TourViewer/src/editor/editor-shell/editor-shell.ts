@@ -64,7 +64,7 @@ import {
   type ShellLayer,
   type TreeSection,
 } from "../editor-view.js";
-import { copyOf, pasteOf } from "../clipboard.js";
+import { copyOf, cutOf, pasteOf } from "../clipboard.js";
 import {
   FOLDER_PREFIX,
   STATION_PREFIX,
@@ -348,10 +348,11 @@ export interface EditorShellDeps {
    *  the focus going back to `opener` on close. None: no preview. */
   readonly previewStory?: (storyId: string, opener: HTMLElement) => void;
   readonly stations: ShellStationCommands;
-  /** The Edit menu's Copy and Paste (`clipboard.ts`): the page's, as its
-   *  Ctrl+C and Ctrl+V; each says its outcome. */
+  /** The Edit menu's Copy, Cut and Paste (`clipboard.ts`): the page's,
+   *  as its Ctrl+C, Ctrl+X and Ctrl+V; each says its outcome. */
   readonly clipboard: {
     copy(): void;
+    cut(): void;
     paste(): void;
   };
   readonly edits: ShellEditCommands;
@@ -701,6 +702,7 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     editUndo: byId<HTMLButtonElement>("edit-undo"),
     editRedo: byId<HTMLButtonElement>("edit-redo"),
     editCopy: byId<HTMLButtonElement>("edit-copy"),
+    editCut: byId<HTMLButtonElement>("edit-cut"),
     editPaste: byId<HTMLButtonElement>("edit-paste"),
     editDuplicate: byId<HTMLButtonElement>("edit-duplicate"),
     editDelete: byId<HTMLButtonElement>("edit-delete"),
@@ -1123,9 +1125,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     });
   };
 
-  /** The Edit menu's Copy, Paste, Duplicate and Delete for the selection:
-   *  each disabled the menu pattern's way where its command could not act
-   *  (`clipboard.ts` for Copy and Paste, the bar's Duplicate, everything
+  /** The Edit menu's Copy, Cut, Paste, Duplicate and Delete for the
+   *  selection: each disabled the menu pattern's way where its command
+   *  could not act (`clipboard.ts` for Copy, Cut and Paste, the bar's Duplicate, everything
    *  but a code for Delete; Paste and Duplicate while one of them still
    *  runs), its title saying what it would do or why not. */
   const drawEditItems = (
@@ -1137,17 +1139,21 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
     setItemDisabled(top.editCopy, copy.kind === "refused");
     top.editCopy.title =
       copy.kind === "refused" ? copy.reason : "Copy (Ctrl+C)";
+    const cut = cutOf(doc, ui);
+    setItemDisabled(top.editCut, cut.kind === "refused");
+    top.editCut.title = cut.kind === "refused" ? cut.reason : "Cut (Ctrl+X)";
     const paste = pasteOf(doc, ui);
     const running = ui.duplicating;
     setItemDisabled(top.editPaste, running || paste.kind === "refused");
-    const into = manifest()?.stations.find(
-      (s) => paste.kind === "paste" && s.id === paste.toStationId,
-    );
+    const called = (id: string) =>
+      manifest()?.stations.find((s) => s.id === id)?.title ?? "the station";
     top.editPaste.title = running
       ? EDIT_STILL_RUNNING
       : paste.kind === "refused"
         ? paste.reason
-        : `Paste into ${into?.title ?? "the station"} (Ctrl+V)`;
+        : paste.kind === "reorder"
+          ? `Move after ${called(paste.afterStationId)} (Ctrl+V)`
+          : `${paste.kind === "move" ? "Move to" : "Paste into"} ${called(paste.toStationId)} (Ctrl+V)`;
     const duplicable = barActions(model).some((a) => a.action === "duplicate");
     setItemDisabled(top.editDuplicate, running || !duplicable);
     top.editDuplicate.title = running
@@ -1225,6 +1231,14 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
       selectMode: ui.selectMode,
       groupHint: ui.selected === null && !ui.selectMode,
     });
+    // What a pending Cut will move shows dimmed until its Paste.
+    const cut = ui.clipboard?.mode === "cut" ? ui.clipboard.ids : [];
+    for (const row of tree.body.querySelectorAll<HTMLElement>(
+      "[data-select]",
+    )) {
+      if (cut.includes(row.dataset["select"] ?? ""))
+        row.dataset["cut"] = "true";
+    }
     const rows = groupRows(doc, ui);
     drawSelectionBar(
       tree.selbar,
@@ -2588,6 +2602,9 @@ export function createEditorShell(deps: EditorShellDeps): EditorShell {
   }
   top.editCopy.addEventListener("click", () => {
     deps.clipboard.copy();
+  });
+  top.editCut.addEventListener("click", () => {
+    deps.clipboard.cut();
   });
   top.editPaste.addEventListener("click", () => {
     deps.clipboard.paste();

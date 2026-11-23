@@ -3743,6 +3743,33 @@ export function childMoveChange(
   };
 }
 
+/** Station items moved, each by `childMove` over the state the one
+ *  before left (`childrenMoved`, a Paste of a cut), folded into ONE step;
+ *  `before` for an empty list and when any move is refused. */
+function childrenMove(
+  before: TourDocumentState,
+  payload: {
+    readonly moves: readonly {
+      readonly id: string;
+      readonly to: ChildMoveTo;
+    }[];
+    readonly what: string;
+  },
+): TourDocumentState {
+  // Checked as unknown: on a readonly array the guard would widen it to any.
+  const moves = payload.moves;
+  if (!Array.isArray(moves as unknown) || moves.length === 0) return before;
+  let after = before;
+  for (const { id, to } of moves) {
+    const next = childMove(after, { id, to, what: payload.what });
+    if (next === after) return before;
+    after = next;
+  }
+  return moves.length === 1
+    ? after
+    : edited(before, after, payload.what);
+}
+
 /** A station item moved (`childMoved`), as one step: the station's frame
  *  takes its stories as the move leaves them; a free item leaving is
  *  deleted as an object (a tombstone for one the file holds), and one
@@ -5640,6 +5667,17 @@ const tourDocumentSlice = createSlice({
     ) {
       return childMove(plain(state), action.payload);
     },
+    /** Station items moved (`childrenMove`, a Paste of a cut): ONE step
+     *  for the lot; a refused move refuses the lot. */
+    childrenMoved(
+      state,
+      action: PayloadAction<{
+        moves: readonly { id: string; to: ChildMoveTo }[];
+        what: string;
+      }>,
+    ) {
+      return childrenMove(plain(state), action.payload);
+    },
     /** A station added at `at`, untitled (the tree names it by its
      *  number), with the automatic radii and nothing in it: it keeps
      *  itself as added by hand (`handMade`). Its id is minted outside the
@@ -6459,6 +6497,7 @@ export const isDocumentEdit = isAnyOf(
   tourDocumentActions.storyChildAdded,
   tourDocumentActions.storyChildDeleted,
   tourDocumentActions.childMoved,
+  tourDocumentActions.childrenMoved,
   tourDocumentActions.stationAdded,
   tourDocumentActions.stationDeleted,
   tourDocumentActions.stationsReordered,

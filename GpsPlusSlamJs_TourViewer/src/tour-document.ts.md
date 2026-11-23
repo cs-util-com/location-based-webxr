@@ -313,6 +313,10 @@ largeTour?, cannotSave? })`.
     (`{ block, pose }`) sets a story entry's pose in the station's frame
     in place (`withStoryPose`, its order kept); refused `storyPose` when
     no story holds that block or the pose is beyond the format's reach.
+  - `childrenMoved({ moves: [{ id, to }], what })` - several `childMoved`
+    moves applied in order as ONE undo step (a Paste of a cut); ids are
+    kept; any move refused, or an empty list, refuses the lot (state
+    unchanged).
   - `childMoved({ id, to, what })` - an item of a station moved inside it
     (a free item into a story and out, an entry between stories or within
     one, a story among the stories) or onto another station (`{ place:

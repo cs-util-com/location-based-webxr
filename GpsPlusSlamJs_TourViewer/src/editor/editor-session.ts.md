@@ -284,6 +284,11 @@ never state). Design:
       `duplicated` result once the copy is in the tour, or null when the
       edit was dropped or the tour refused it by then (its held pictures
       dropped too, `heldUntilLanded`).
+    - `moveChildren(moves)` - a Paste of a cut: each move checked with
+      `childMoveChange` as `moveChild` checks one (its refusals in the
+      same words), then `childrenMoved`, one step named
+      `the move of "<name>"` or `the move of <n> items`; `{ kind:
+      "moved", answers, floored }` summed over the moves.
     - `paste(plan)` (async) - the clipboard's notes and plain folders
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the

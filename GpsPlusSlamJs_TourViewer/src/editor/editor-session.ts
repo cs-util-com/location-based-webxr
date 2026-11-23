@@ -1083,6 +1083,16 @@ export interface EditorSession {
     | { kind: "moved"; answers: number; floored: boolean }
     | { kind: "unchanged" }
     | EditorRefusal;
+  /** Station items moved onto other places at once (a Paste of a cut):
+   *  ONE step for the lot, `answers` summed and `floored` for any, as
+   *  `moveChild` says them; one move refused refuses the lot, in its
+   *  words. */
+  moveChildren(
+    moves: readonly { readonly id: string; readonly to: ChildMoveTo }[],
+  ):
+    | { kind: "moved"; answers: number; floored: boolean }
+    | { kind: "unchanged" }
+    | EditorRefusal;
   /** Put the stations in `order` (every station once): one step. */
   reorderStations(
     order: readonly string[],
@@ -3206,6 +3216,42 @@ export function createEditorSession(input: {
         ),
       )
         ? { kind: "moved", answers: change.answers, floored: change.floored }
+        : notApplied;
+    },
+    moveChildren(moves) {
+      const state = mine();
+      const manifest = state === null ? null : manifestNow(state);
+      if (state === null || manifest === null) return notInTour;
+      const [only] = moves;
+      if (only === undefined) return { kind: "unchanged" };
+      const items = manifestToWrite(state) ?? manifest;
+      let answers = 0;
+      let floored = false;
+      // Each move as the tour is now: the moves of a cut name different
+      // items, and the reducer checks each again over the one before.
+      for (const { id, to } of moves) {
+        const change = childMoveChange(state, id, to);
+        if (change.kind === "unchanged") return change;
+        if (change.kind === "refused") {
+          return {
+            kind: "refused",
+            reason:
+              change.reason === "unsaved"
+                ? unsavedRefusal(items, id)
+                : MOVE_REFUSALS[change.reason],
+          };
+        }
+        answers += change.answers;
+        floored ||= change.floored;
+      }
+      const what =
+        moves.length === 1
+          ? `the move of "${childCalled(items, only.id)}"`
+          : `the move of ${String(moves.length)} items`;
+      return took(() =>
+        store.dispatch(tourDocumentActions.childrenMoved({ moves, what })),
+      )
+        ? { kind: "moved", answers, floored }
         : notApplied;
     },
     reorderStations(order) {

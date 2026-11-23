@@ -90,9 +90,11 @@ const isIndex = (v: unknown): v is number =>
 /** The two halves of opening a tour with a scan, in their forced order. */
 export type EditorEntryStep = "opening" | "adding-scan";
 
-/** What Copy put on the editor's clipboard (`EditorViewState.clipboard`). */
+/** What Copy or Cut put on the editor's clipboard
+ *  (`EditorViewState.clipboard`): a cut is moved by its Paste, a copy
+ *  copied. */
 interface EditorClipboard {
-  readonly mode: "copy";
+  readonly mode: "copy" | "cut";
   readonly ids: readonly string[];
 }
 
@@ -327,17 +329,30 @@ const editorViewSlice = createSlice({
         state.entryStep = step;
       }
     },
-    /** What Copy copied, in order, repeats and blanks left out; none
-     *  empties the clipboard. Anything but a list changes nothing. */
-    copied(state, action: PayloadAction<{ ids: readonly string[] }>) {
+    /** What Copy copied (or Cut cut, `mode: "cut"`), in order, repeats
+     *  and blanks left out; none empties the clipboard. Anything but a
+     *  list changes nothing. */
+    copied(
+      state,
+      action: PayloadAction<{
+        ids: readonly string[];
+        mode?: "copy" | "cut";
+      }>,
+    ) {
       const { ids } = action.payload;
       if (!Array.isArray(ids)) return;
+      const mode = action.payload.mode === "cut" ? "cut" : "copy";
       const kept = [
         ...new Set(
           ids.filter((id): id is string => typeof id === "string" && id !== ""),
         ),
       ];
-      state.clipboard = kept.length === 0 ? null : { mode: "copy", ids: kept };
+      state.clipboard = kept.length === 0 ? null : { mode, ids: kept };
+    },
+    /** The clipboard emptied: a cut cancelled (Escape) or moved by its
+     *  Paste, or one whose source is gone. */
+    clipboardCleared(state) {
+      state.clipboard = null;
     },
     duplicatingChanged(state, action: PayloadAction<{ duplicating: boolean }>) {
       state.duplicating = action.payload.duplicating;
