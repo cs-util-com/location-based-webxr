@@ -1086,3 +1086,34 @@ describe(
     });
   },
 );
+
+// Why: the phone field test walks in with "Continue with GPS only" and
+// then holds the code in view, expecting the anchors' code-lock snap. The
+// escape only passes the gate; the code pipeline keeps running, so a later
+// lock still votes and lines the tour up, while the gate stays "skipped".
+// (The code-lock release of the deferred anchors rides the same lock: the
+// controller casts the votes, then releases, whatever the gate says.)
+describe("a code read after Continue with GPS only", () => {
+  it("still votes and lines the tour up; the gate stays skipped", () => {
+    const v = viewer();
+    v.fix(T0);
+    captured.stablePose = null;
+    v.scheduled[0]!.run(); // the escape clock elapsed
+    v.clickEscape();
+    expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
+    const before = v.positions().length;
+    captured.stablePose = CODE_POSE;
+    for (let i = 0; i < 4; i += 1) v.lock(T0 + 20_000 + i * 125);
+    const votes = pairsFrom(v, before).filter(
+      (p) => gpsPointSourceOf(p.point) === GPS_POINT_SOURCE_SYNTHETIC_QR,
+    );
+    expect(votes.length).toBeGreaterThan(0);
+    expect(
+      codeLinedUp({
+        lockedText: v.ctx.viewerLockedText,
+        votedLocks: v.ctx.viewerVotedLocks,
+      }),
+    ).toBe(true);
+    expect(v.ctx.scanGate).toEqual({ kind: "passed", via: "skipped" });
+  });
+});
