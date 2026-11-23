@@ -353,7 +353,9 @@ describe("Download all", () => {
     run([shot("light-s1/L1", "p1"), shot("light-s1/L2", "p2")]);
 
   // Why: the zip packs every ready pair; it needs one, and it holds the
-  // page busy so no photo or run changes the plan while it is packed.
+  // page busy so no photo or run changes the plan while it is packed. It
+  // also notes how many pairs are not measured yet (here the one ready
+  // pair), so the end view can say what a zip saved early lacks.
   it("starts only with a ready pair and while idle", () => {
     const one = run([shot("light-s1/L1")]);
     expect(featureMatchReducer(one, A.runZipStarted())).toBe(one);
@@ -362,6 +364,7 @@ describe("Download all", () => {
     expect(going.runZip).toEqual({
       phase: "preparing",
       text: "Packing the photos. Keep this page open.",
+      missing: 1,
     });
     expect(featureMatchReducer(going, A.runZipStarted())).toBe(going);
     expect(featureMatchReducer(going, A.planReset())).toBe(going);
@@ -391,7 +394,7 @@ describe("Download all", () => {
     for (const phase of ["saved", "idle", "failed"] as const) {
       const done = run([A.runZipEnded({ phase, text: `t-${phase}` })], going);
       expect(done.busy).toBe("idle");
-      expect(done.runZip).toEqual({ phase, text: `t-${phase}` });
+      expect(done.runZip).toEqual({ phase, text: `t-${phase}`, missing: 1 });
     }
   });
 
@@ -405,6 +408,7 @@ describe("Download all", () => {
     expect(run([shot("light-s1/L3")], saved).runZip).toEqual({
       phase: "idle",
       text: "",
+      missing: 0,
     });
     expect(run([A.planMoved(3)], saved).runZip.phase).toBe("saved");
   });

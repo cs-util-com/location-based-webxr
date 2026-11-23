@@ -303,8 +303,7 @@ interface ButtonView {
 }
 
 /** What the secondary button does. */
-type SecondaryAct =
-  "skip-photo" | "skip-scene" | "back" | "keep" | "none";
+type SecondaryAct = "skip-photo" | "skip-scene" | "back" | "keep" | "none";
 
 export interface RunView {
   readonly mode: RunMode;
@@ -590,8 +589,11 @@ export interface EndView {
     readonly disabled: boolean;
     /** The waiting button doubles as the progress bar (0 to 100). */
     readonly waiting: number | null;
-    /** "err" paints the button red after a failed zip. */
-    readonly tone: "" | "ok" | "err";
+    /**
+     * "err" paints the button red after a failed zip; "warn" marks a zip
+     * that leaves out pairs still measuring.
+     */
+    readonly tone: "" | "ok" | "err" | "warn";
   };
   readonly state: { readonly text: string; readonly tone: "" | "ok" | "err" };
   readonly trust: { readonly text: string; readonly warn: boolean };
@@ -670,6 +672,25 @@ function downloadOf(
       tone: "err",
     };
   }
+  const still = pend > 0 && !p.stopped;
+  const lacks = `the saved zip lacks ${plural(z.missing, "result")}`;
+  if (z.phase === "saved" && z.missing > 0) {
+    return still
+      ? {
+          label: "Download again",
+          sub: `T${lacks.slice(1)}: ${plural(pend, "pair")} still measuring`,
+          disabled: blocked,
+          waiting: null,
+          tone: "warn",
+        }
+      : {
+          label: "Download the full zip",
+          sub: `Everything is measured now; ${lacks}`,
+          disabled: blocked,
+          waiting: null,
+          tone: "",
+        };
+  }
   if (z.phase === "saved") {
     return {
       label: "Download again",
@@ -679,12 +700,35 @@ function downloadOf(
       tone: "ok",
     };
   }
+  if (still && ready) {
+    return {
+      label: "Make the zip now",
+      sub: `${plural(pend, "pair")} still measuring: ${String(p.done)} of ${String(p.total)} results go in`,
+      disabled: blocked,
+      waiting: null,
+      tone: "warn",
+    };
+  }
   return {
     label: pend > 0 ? "Make the zip now" : "Download the zip",
     sub,
     disabled: blocked,
     waiting: null,
     tone: "",
+  };
+}
+
+/** The line under the zip button; a zip saved early says what it lacks. */
+function stateOf(z: FeatureMatchState["runZip"]): EndView["state"] {
+  if (z.phase === "saved" && z.missing > 0) {
+    return {
+      text: `${z.text.replace(/\.$/, "")}. It lacks ${plural(z.missing, "result")} the phone was still measuring.`,
+      tone: "",
+    };
+  }
+  return {
+    text: z.text,
+    tone: z.phase === "failed" ? "err" : z.phase === "saved" ? "ok" : "",
   };
 }
 
@@ -747,10 +791,7 @@ export function endView(s: FeatureMatchState): EndView {
       text: `${plural(retryN, "pair")} failed on this phone (a crash or a model that did not load).`,
     },
     download: downloadOf(s, p, pend, left),
-    state: {
-      text: z.text,
-      tone: z.phase === "failed" ? "err" : z.phase === "saved" ? "ok" : "",
-    },
+    state: stateOf(z),
     trust: s.photoStoreFailing
       ? {
           text: "Some photos could not be stored on this phone, so a reload would lose them: download now.",

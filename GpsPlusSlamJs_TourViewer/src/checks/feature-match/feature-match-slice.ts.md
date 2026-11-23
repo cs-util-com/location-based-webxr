@@ -48,10 +48,10 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### Guided run zip actions
 
-`state.runZip` `{ phase, text }` is Download all, shared by both views (workflow status, so it lives here).
+`state.runZip` `{ phase, text, missing }` is Download all, shared by both views (workflow status, so it lives here). `missing` counts the pairs not yet measured when the zip started: their results are not in it.
 
-- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing` and ends a countdown.
-- `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation.
+- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing`, `missing` from `measureProgress` (pairs neither done nor failed) and ends a countdown.
+- `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation and keeps its `missing`.
 - An accepted photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
 
 ### Camera start and photo store

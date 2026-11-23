@@ -8,6 +8,7 @@ import {
   featureMatchReducer,
   flatPhase,
   initialFeatureMatchState,
+  measureProgress,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
@@ -68,6 +69,15 @@ describe("one run or save at a time, properties", () => {
           expect(s.busy === "running").toBe(s.running !== null);
           // "saving" is exactly the run zip in preparation.
           expect(s.busy === "saving").toBe(s.runZip.phase === "preparing");
+          // The end view's "lacks N results" counts pairs of this plan.
+          const m = s.runZip.missing;
+          expect(Number.isInteger(m) && m >= 0).toBe(true);
+          if (s.runZip.phase === "preparing") {
+            expect(m).toBeLessThanOrEqual(measureProgress(s).total);
+          }
+          if (s.runZip.phase === "idle" && s.runZip.text === "") {
+            expect(m).toBe(0);
+          }
         }
       }),
     );

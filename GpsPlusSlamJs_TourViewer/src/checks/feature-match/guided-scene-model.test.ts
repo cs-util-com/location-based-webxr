@@ -335,14 +335,67 @@ describe("the end view", () => {
       [A.runZipEnded({ phase: "saved", text: "Saved" })],
       packing,
     );
+    // Nothing was measured yet, so the saved zip lacks results: it warns
+    // instead of looking done (the next test walks that case).
     expect(endView(saved).download).toMatchObject({
       label: "Download again",
-      tone: "ok",
+      tone: "warn",
     });
     expect(endView(run([])).download).toMatchObject({
       disabled: true,
       sub: "Needs two photos of one scene first",
     });
+  });
+
+  // Why: a zip made while pairs still measure carries only the finished
+  // results. Field runs downloaded mid-measure without noticing, so the
+  // button says how many pairs are still measuring, a zip saved early
+  // says what it lacks, and once everything is measured the button
+  // offers the full zip instead of a quiet "Download again".
+  it("says pairs are still measuring and offers the full zip after", () => {
+    const k = (b: string, x: string) => `light-s1/L1-${b}@p1+${x}`;
+    const ok = (key: string) =>
+      A.resultStored({ key, text: "ok", measureMs: 1000 });
+    const s = run([
+      restore,
+      ...LIGHT.map((id, i) => take(id, `p${String(i + 1)}`)),
+      ok(k("L2", "p2")),
+    ]);
+    expect(endView(s).download).toMatchObject({
+      label: "Make the zip now",
+      sub: "2 pairs still measuring: 1 of 3 results go in",
+      tone: "warn",
+      disabled: false,
+    });
+    const early = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "saved", text: "Saved" })],
+      s,
+    );
+    expect(endView(early).download).toMatchObject({
+      label: "Download again",
+      sub: "The saved zip lacks 2 results: 2 pairs still measuring",
+      tone: "warn",
+    });
+    expect(endView(early).state).toEqual({
+      text: "Saved. It lacks 2 results the phone was still measuring.",
+      tone: "",
+    });
+    const done = run([ok(k("L3", "p3")), ok(k("L4", "p4"))], early);
+    expect(endView(done).download).toMatchObject({
+      label: "Download the full zip",
+      sub: "Everything is measured now; the saved zip lacks 2 results",
+      tone: "",
+      disabled: false,
+    });
+    const full = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "saved", text: "Saved" })],
+      done,
+    );
+    expect(endView(full).download).toMatchObject({
+      label: "Download again",
+      tone: "ok",
+    });
+    expect(endView(full).state).toEqual({ text: "Saved", tone: "ok" });
   });
 
   // Why: after two crashes the queue stops; the view says so, drops the

@@ -207,6 +207,11 @@ interface RunZip {
   readonly phase: "idle" | "preparing" | "saved" | "failed";
   /** The line under the button; empty shows the estimate. */
   readonly text: string;
+  /**
+   * The pairs still measuring when the zip was started: their results are
+   * not in it, so the end view offers the full zip once they are done.
+   */
+  readonly missing: number;
 }
 
 /**
@@ -333,7 +338,7 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
       choice: "now",
     },
     handsOff: HANDS_OFF_IDLE,
-    runZip: { phase: "idle", text: "" },
+    runZip: { phase: "idle", text: "", missing: 0 },
     cameraStart: "idle",
     photoStoreFailing: false,
     restored: false,
@@ -638,7 +643,7 @@ const planCase =
       s.runZip.phase !== "preparing" &&
       (s.runZip.phase !== "idle" || s.runZip.text !== "")
     ) {
-      s.runZip = { phase: "idle", text: "" };
+      s.runZip = { phase: "idle", text: "", missing: 0 };
     }
   };
 
@@ -938,9 +943,11 @@ const slice = createSlice({
       }
       s.busy = "saving";
       s.guided = { ...s.guided, count: null };
+      const p = measureProgress(s);
       s.runZip = {
         phase: "preparing",
         text: "Packing the photos. Keep this page open.",
+        missing: p.total - p.done - p.failed,
       };
     },
     /** The zip was saved, failed, or not saved ("idle": the dialog was closed). */
@@ -952,7 +959,11 @@ const slice = createSlice({
         return;
       }
       s.busy = "idle";
-      s.runZip = { phase: a.payload.phase, text: a.payload.text };
+      s.runZip = {
+        phase: a.payload.phase,
+        text: a.payload.text,
+        missing: s.runZip.missing,
+      };
     },
     cameraStartSet(s: Draft, a: PayloadAction<CameraStart>) {
       if (CAMERA_STARTS.includes(a.payload)) {

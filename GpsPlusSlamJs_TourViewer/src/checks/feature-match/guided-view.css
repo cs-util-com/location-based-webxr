@@ -1326,6 +1326,11 @@
 :where(html[data-ui="guided"]) #guided:not([hidden]) {
   display: contents;
 }
+/* The zip button while it leaves out pairs still measuring: amber. */
+:where(html[data-ui="guided"]) .dl.warn {
+  background: var(--warn);
+  color: #000;
+}
 /* The zip button after a failed zip: red until the next try. */
 :where(html[data-ui="guided"]) .dl.err {
   background: var(--danger);
