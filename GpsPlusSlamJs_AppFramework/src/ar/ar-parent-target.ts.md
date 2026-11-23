@@ -16,7 +16,9 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 
 ## Public API
 
-- `createArParentTarget(store, { devJump? }): ArParentTarget`
+- `createArParentTarget(store, { devJump?, deferAnchors? }): ArParentTarget`
+  - `defersAnchors`: false only for `deferAnchors: false`; the anchors
+    under this target then follow every change of T at once.
   - `target()`: T as a `Matrix4` (identity before the first alignment; do
     not mutate). A null or non-finite store alignment is ignored and the
     last T kept.
@@ -46,6 +48,12 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
     lands in one frame, as every change of T does
     (`ar-world-group-alignment.ts.md`).
   - `DEV_WORLD_JUMP_PERIOD_S = 10`.
+- Development-only anchor deferral switch
+  - `parseAnchorDeferral(search)`: false only for `anchors=0` (trimmed);
+    any other value, or none, keeps the deferral on.
+  - `anchorDeferralFromPage()`: reads `location.search` only under
+    `import.meta.env.DEV`, else true; a production build folds the reader
+    away. For a frame-time comparison with the deferral on and off.
 - Binding registry
   - `ArParentBinding { group, target, step, attachPass, onDispose }`.
   - `registerArParentBinding(binding)`: one per group, a newer one
@@ -62,7 +70,9 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 
 - `ar-parent-target.test.ts`: T follows the store, bad matrices ignored, the
   epoch read, maturity from device fixes only and sticky, the session clock,
-  the dev jump composition and its refusals, the page reader, the registry.
+  the dev jump composition and its refusals, the page readers (dev jump
+  and deferral switch), `defersAnchors`, the registry.
 - `ar-parent-target.build.test.ts`: bundles the alignment module the way an
-  app's production build sees it and asserts the dev jump reader is gone
+  app's production build sees it and asserts the dev jump reader and the
+  `anchors` switch are gone
   (with the development build as the control).

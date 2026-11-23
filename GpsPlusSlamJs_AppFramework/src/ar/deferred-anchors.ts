@@ -22,7 +22,14 @@
  *   the session's length;
  * - a code lock (`requestAnchorRelease('code-lock')`, called by the QR
  *   tracking controller) re-places every anchor once, at once, ends the
- *   follow phase for the session and closes the window.
+ *   follow phase for the session and closes the window;
+ * - with the deferral off (`defersAnchors` false, `?anchors=0` in a
+ *   development build) the set follows for the whole session, as content
+ *   did before deferral existed.
+ *
+ * A debug readout may observe every production pass
+ * ({@link observeDeferredAnchorPasses}): its time, its counts and the
+ * frame's dt. Without an observer the pass is not timed.
  *
  * Position members (`joinAnchorSet`, used by `createGpsAnchor`) share the
  * set's gate, budget, log, release and window: the member computes its
@@ -129,7 +136,8 @@ type CommitKind =
   | 'window-entry'
   | 'follow-start'
   | 'window'
-  | 'every-tick';
+  | 'every-tick'
+  | 'deferral-off';
 
 /**
  * @internal A position-only member of a parent's anchor set
@@ -197,12 +205,18 @@ function isMember(c: Deferred): c is MemberEntry {
 /** What the set reads from its parent's target. */
 type TargetReads = Pick<
   ArParentTarget,
-  'target' | 'version' | 'frameEpoch' | 'isMature' | 'sessionElapsedS'
+  | 'target'
+  | 'version'
+  | 'frameEpoch'
+  | 'isMature'
+  | 'sessionElapsedS'
+  | 'defersAnchors'
 >;
 
 const FIXED_IDENTITY = new THREE.Matrix4();
 /** The target of a set without a binding: T stays identity, no epochs. */
 const FIXED_TARGET: TargetReads = {
+  defersAnchors: true,
   target: () => FIXED_IDENTITY,
   version: () => 0,
   frameEpoch: () => 0,
@@ -218,6 +232,40 @@ export interface DeferredAnchorPassCounts {
   readonly windowOpen: boolean;
   /** Keys whose follow step rewrote their matrix (0 while the parent stands still). */
   readonly followUpdates: number;
+}
+
+/** One production pass, as an observer sees it. */
+export interface DeferredAnchorPassSample {
+  /** The pass's own time (ms, `performance.now()` around it). */
+  readonly passMs: number;
+  /** The frame's dt (s), as the frame loop handed it to the pass. */
+  readonly dt: number;
+  readonly counts: DeferredAnchorPassCounts;
+  /** False while the deferral is off (`?anchors=0`). */
+  readonly deferring: boolean;
+}
+
+let passObserver: ((sample: DeferredAnchorPassSample) => void) | null = null;
+
+/**
+ * Observe every production pass of every anchor set (a debug readout; one
+ * observer at a time, a newer one replaces). Returns the stop function,
+ * which is a no-op once another observer took over. Passes are timed only
+ * while an observer is set; a throwing observer is logged and the frame
+ * goes on.
+ */
+export function observeDeferredAnchorPasses(
+  observer: (sample: DeferredAnchorPassSample) => void
+): () => void {
+  if (typeof observer !== 'function') {
+    throw new TypeError(
+      'observeDeferredAnchorPasses: observer must be a function'
+    );
+  }
+  passObserver = observer;
+  return () => {
+    if (passObserver === observer) passObserver = null;
+  };
 }
 
 interface AnchorSet {
@@ -412,6 +460,9 @@ function createAnchorSet(
   binding: ArParentBinding | null
 ): AnchorSet {
   const target: TargetReads = binding?.target ?? FIXED_TARGET;
+  /** Read once: the switch is a page flag, fixed for the session. */
+  const deferring = target.defersAnchors;
+  if (!deferring) log.info('deferral off: every correction lands at once');
   const keys = new Map<string, KeyEntry>();
   const handles = new Map<string, DeferredAnchor>();
   const keyOfRoot = new Map<THREE.Object3D, KeyEntry>();
@@ -514,7 +565,7 @@ function createAnchorSet(
   }
 
   function isFollowWanted(): boolean {
-    return windowOpen || (!immatureEnded && !target.isMature());
+    return !deferring || windowOpen || (!immatureEnded && !target.isMature());
   }
 
   function inView(
@@ -579,6 +630,14 @@ function createAnchorSet(
     }
   }
 
+  /** How a member's due change lands now (ungated, window, deferral off), or null: it waits. */
+  function landsNowAs(m: MemberEntry): CommitKind | null {
+    const ungated = m.member.ungated();
+    if (ungated !== null) return ungated;
+    if (windowOpen) return 'window';
+    return deferring ? null : 'deferral-off';
+  }
+
   /** Members: a release, an ungated or a window commit lands now; else pending. */
   function stepMembers(dt: number, elapsedS: number, releasing: boolean): void {
     for (const m of members) {
@@ -589,15 +648,13 @@ function createAnchorSet(
         continue;
       }
       const delta = m.root.position.distanceTo(m.target);
-      const ungated = m.member.ungated();
+      const landing = landsNowAs(m);
       if (releasing && delta > DEFERRED_ANCHOR_EPSILON_M) {
         commitMember(m, 'release:code-lock');
       } else if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
         m.pendingSinceMs = null;
-      } else if (ungated !== null) {
-        commitMember(m, ungated);
-      } else if (windowOpen) {
-        commitMember(m, 'window');
+      } else if (landing !== null) {
+        commitMember(m, landing);
       } else {
         m.pending = true;
         m.pendingSinceMs ??= nowMs;
@@ -1114,7 +1171,19 @@ function createAnchorSet(
   }
 
   const productionPass = (dt: number, elapsedS: number): void => {
-    pass(null, dt, elapsedS);
+    const observer = passObserver;
+    if (observer === null) {
+      pass(null, dt, elapsedS);
+      return;
+    }
+    const startMs = performance.now();
+    const counts = pass(null, dt, elapsedS);
+    const passMs = performance.now() - startMs;
+    try {
+      observer({ passMs, dt, counts, deferring });
+    } catch (error) {
+      log.error('pass observer threw', error);
+    }
   };
   let detachPass: (() => void) | null =
     binding?.attachPass(productionPass) ?? null;

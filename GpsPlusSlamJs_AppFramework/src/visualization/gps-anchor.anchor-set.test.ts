@@ -607,3 +607,28 @@ describe('the anchor set: position members', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+// Why: with the deferral switched off (`?anchors=0`, the field test's
+// frame-time comparison) a GPS anchor must land on a correction at once,
+// in view too, as before deferral; the gated case above is the control.
+describe('createGpsAnchor in the anchor set: the deferral switch', () => {
+  it('lands at once in view with ?anchors=0', () => {
+    const g = globalThis as { location?: unknown };
+    const before = g.location;
+    g.location = { search: '?anchors=0' };
+    try {
+      const r = rig();
+      r.store.setT(tOf(0, 0, -12));
+      r.run(2);
+      const { object } = r.anchor(ZERO);
+      r.run(2);
+      expect(object.position.z).toBeCloseTo(12, 6);
+
+      r.store.setT(new THREE.Matrix4()); // the target in view
+      r.run(1);
+      expect(object.position.z).toBeCloseTo(0, 6);
+    } finally {
+      g.location = before;
+    }
+  });
+});

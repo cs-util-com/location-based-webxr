@@ -773,18 +773,26 @@ export function wireTravelLogButtons(deps: {
    *  when the visitor dismissed the dialog; rejects when it cannot. */
   readonly save: (text: string) => Promise<boolean>;
   readonly now: () => number;
+  /** A section appended to the copied and downloaded text (the anchor
+   *  log), cleared with the log after a copy or download that succeeded. */
+  readonly appendix?: { text(): string; clear(): void };
 }): void {
+  const text = (): string =>
+    deps.appendix === undefined
+      ? deps.log.text()
+      : [deps.log.text(), deps.appendix.text()].join("\n");
   const markLabel = () => {
     deps.mark.textContent = `Mark (${String(deps.log.size().marks)})`;
   };
   deps.copy.addEventListener("click", () => {
     if (deps.copy.disabled) return;
-    void copyWithFeedback(deps.copy, deps.log.text(), deps.write, {
+    void copyWithFeedback(deps.copy, text(), deps.write, {
       busy: "Copying...",
       done: "Log copied",
       failed: "Copy failed",
       onDone: () => {
         deps.log.clear("copy");
+        deps.appendix?.clear();
         markLabel();
       },
     });
@@ -796,8 +804,9 @@ export function wireTravelLogButtons(deps: {
     deps.download.textContent = "Saving...";
     void (async () => {
       try {
-        if (await deps.save(deps.log.text())) {
+        if (await deps.save(text())) {
           deps.log.clear("download");
+          deps.appendix?.clear();
           deps.download.textContent = "Log downloaded";
           markLabel();
         } else {

@@ -35,6 +35,8 @@ import {
   WINDOW_MIN_S,
   __runPassForTests,
   deferredAnchor,
+  observeDeferredAnchorPasses,
+  type DeferredAnchorPassSample,
 } from './deferred-anchors';
 import { clearFrameUpdates, runFrameUpdates } from './frame-loop';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
@@ -1204,5 +1206,101 @@ describe('deferredAnchor: an explicit view', () => {
     s.setNow(s.now() + DT);
     pass();
     expect(root.matrix.equals(IDENTITY)).toBe(false);
+  });
+});
+
+/** Run `body` with the page address `search` (the dev readers' input). */
+function withSearch(search: string, body: () => void): void {
+  const g = globalThis as { location?: unknown };
+  const before = g.location;
+  g.location = { search };
+  try {
+    body();
+  } finally {
+    g.location = before;
+  }
+}
+
+// Why: the field test compares frame time with the deferral on and off.
+// With it off every correction must land at once, in view too and after a
+// code lock, as content did before deferral existed; otherwise the "off"
+// run measures some other behaviour. The control (on, in view, held) is
+// the first test of this file.
+describe('deferredAnchor: the deferral switch (?anchors=0)', () => {
+  it('lands every correction at once while in view, before and after a release', () => {
+    withSearch('?anchors=0', () => {
+      const s = session();
+      s.look('in');
+      const root = contentRoot();
+      deferredAnchor(s.group, 'a').add(root);
+      s.run(2);
+      const corrections = [tOf(2, 5), tOf(-3, 12, 1), tOf(0.5, -4)];
+      corrections.forEach((t, i) => {
+        if (i === 2) requestAnchorRelease('code-lock');
+        s.store.setT(t);
+        s.run();
+        root.updateMatrixWorld(true);
+        expectMatrixClose(root.matrixWorld, IDENTITY, 1e-9);
+      });
+    });
+  });
+});
+
+// Why: the field test's anchor pass time (p50/p95/max) and traversals per
+// pass come from this observer; it must see the production pass (the one
+// the frame loop runs, not the test seam), carry the frame's dt for the
+// frame-time numbers, and stop cleanly so a closed readout costs nothing.
+describe('deferredAnchor: the pass observer', () => {
+  it('sees each production pass with its time, counts and dt, until stopped', () => {
+    const s = session();
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    const samples: DeferredAnchorPassSample[] = [];
+    const stop = observeDeferredAnchorPasses((sample) => {
+      samples.push(sample);
+    });
+    try {
+      runFrameUpdates(DT, 1);
+      runFrameUpdates(DT, 1 + DT);
+      expect(samples).toHaveLength(2);
+      expect(samples[0]).toMatchObject({
+        dt: DT,
+        deferring: true,
+        counts: { windowOpen: false },
+      });
+      expect(samples[0]!.passMs).toBeGreaterThanOrEqual(0);
+      expect(Number.isFinite(samples[0]!.counts.traversals)).toBe(true);
+    } finally {
+      stop();
+    }
+    runFrameUpdates(DT, 1 + 2 * DT);
+    expect(samples).toHaveLength(2);
+  });
+
+  it('says the deferral is off, and a throwing observer does not stop the frame', () => {
+    withSearch('?anchors=0', () => {
+      const s = session();
+      const root = contentRoot();
+      deferredAnchor(s.group, 'a').add(root);
+      const seen: boolean[] = [];
+      const stop = observeDeferredAnchorPasses((sample) => {
+        seen.push(sample.deferring);
+        throw new Error('observer bug');
+      });
+      try {
+        s.store.setT(tOf(3, 0));
+        expect(() => {
+          runFrameUpdates(DT, 1);
+        }).not.toThrow();
+        expect(seen).toEqual([false]);
+        root.updateMatrixWorld(true);
+        expectMatrixClose(root.matrixWorld, IDENTITY, 1e-9);
+      } finally {
+        stop();
+      }
+    });
+  });
+
+  it('refuses an observer that is not a function', () => {
+    expect(() => observeDeferredAnchorPasses(null as never)).toThrow(TypeError);
   });
 });

@@ -27,6 +27,7 @@ import { registerFrameUpdate } from '../ar/frame-loop.js';
 import { registerSessionDisposer } from '../ar/session-disposers.js';
 import type { SubscribableStore } from '../state/subscribe-to-selector.js';
 import {
+  anchorDeferralFromPage,
   createArParentTarget,
   devWorldJumpFromPage,
   registerArParentBinding,
@@ -76,6 +77,7 @@ export function enableArWorldGroupAlignment(
   // twice.
   const target = createArParentTarget(options.store, {
     devJump: devWorldJumpFromPage(),
+    deferAnchors: anchorDeferralFromPage(),
   });
   const group = options.arWorldGroup;
   // Version 0 is "no alignment yet": the group keeps its matrix until the

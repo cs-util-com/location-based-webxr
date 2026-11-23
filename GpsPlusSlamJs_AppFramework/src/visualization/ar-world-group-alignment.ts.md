@@ -25,7 +25,8 @@
 
 - **The parent binding (deferred anchors):** T is composed once, in
   `ar/ar-parent-target.ts` (the store alignment plus, in development builds
-  only, the `?devWorldJumpM` / `?devWorldJumpDeg` synthetic jump), and the
+  only, the `?devWorldJumpM` / `?devWorldJumpDeg` synthetic jump and the
+  `?anchors=0` deferral switch, passed as `deferAnchors`), and the
   helper registers a binding for the group (`registerArParentBinding`). The
   binding and the deferred anchors under the group (`ar/deferred-anchors.ts`)
   both read that one T, so content never carries the alignment twice. The

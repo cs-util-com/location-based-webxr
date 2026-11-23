@@ -15,7 +15,10 @@
  * In development builds only, `?devWorldJumpM=<m>` and/or
  * `?devWorldJumpDeg=<deg>` add a synthetic world jump to T every 10 s
  * (north by m metres, a yaw by deg degrees), so a tester can watch content
- * hold through a jump. Production builds drop the reader entirely
+ * hold through a jump. Also in development builds only, `?anchors=0`
+ * turns the anchor deferral off (`defersAnchors` false): every correction
+ * lands on the anchors at once, for a frame-time comparison with it on.
+ * Production builds drop both readers entirely
  * (`ar-parent-target.build.test.ts`).
  *
  * Internal: no package entry, reached through `enableArWorldGroupAlignment`
@@ -54,6 +57,8 @@ export interface ArParentTarget {
   frameEpoch(): number;
   /** Whether the session's alignment is mature; sticky once true. */
   isMature(): boolean;
+  /** False when the anchors under this target follow every change at once (`?anchors=0`, development builds only). */
+  readonly defersAnchors: boolean;
   /** Seconds since the first {@link tick} (the session's first frame), or since this was first asked. */
   sessionElapsedS(elapsedS: number): number;
   /** Start the session clock on the first call; advance the dev jump clock. */
@@ -65,6 +70,8 @@ export interface ArParentTarget {
 export interface ArParentTargetOptions {
   /** A synthetic jump; tests pass it, apps get it from {@link devWorldJumpFromPage}. */
   readonly devJump?: DevWorldJump | null;
+  /** False turns the anchor deferral off; apps get it from {@link anchorDeferralFromPage}. Default true. */
+  readonly deferAnchors?: boolean;
 }
 
 interface StateWithEpoch {
@@ -117,6 +124,7 @@ export function createArParentTarget(
       : () => undefined;
 
   return {
+    defersAnchors: options.deferAnchors !== false,
     target() {
       refresh();
       return composed;
@@ -231,6 +239,32 @@ export function devWorldJumpFromPage(): DevWorldJump | null {
     return parseDevWorldJump(typeof search === 'string' ? search : '');
   }
   return null;
+}
+
+/**
+ * Whether a page URL keeps the anchor deferral on: false only for
+ * `anchors=0`. Pure; {@link anchorDeferralFromPage} calls it only in
+ * development builds.
+ */
+export function parseAnchorDeferral(search: string): boolean {
+  return new URLSearchParams(search).get('anchors')?.trim() !== '0';
+}
+
+/**
+ * The page's anchor deferral switch in a development build, else true
+ * (deferral on). Written like {@link devWorldJumpFromPage}, so a
+ * production build folds it to true and drops the reader.
+ */
+export function anchorDeferralFromPage(): boolean {
+  if (
+    (import.meta as ImportMetaWithEnv).env &&
+    (import.meta as ImportMetaWithEnv).env!.DEV === true
+  ) {
+    const search = (globalThis as { location?: { search?: string } }).location
+      ?.search;
+    return parseAnchorDeferral(typeof search === 'string' ? search : '');
+  }
+  return true;
 }
 
 /**

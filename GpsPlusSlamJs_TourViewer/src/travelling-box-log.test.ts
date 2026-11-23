@@ -321,6 +321,50 @@ describe("the log's buttons", () => {
     ]);
   });
 
+  // Why: the anchor field test reads its numbers from the same Copy log:
+  // the anchor section rides after the travel log, in the copy and in the
+  // download, and is emptied with it once the text went out.
+  it("appends the appendix to the copied and downloaded text, and clears it", async () => {
+    const log = createTravelLog({ knobs: KNOBS });
+    frames(log, 1, 60);
+    const b = buttons();
+    const written: string[] = [];
+    const saved: string[] = [];
+    let cleared = 0;
+    wireTravelLogButtons({
+      copy: b.copy,
+      download: b.download,
+      mark: b.mark,
+      save: (text) => {
+        saved.push(text);
+        return Promise.resolve(true);
+      },
+      log,
+      write: (text) => {
+        written.push(text);
+        return Promise.resolve();
+      },
+      now: () => 0,
+      appendix: {
+        text: () => ["--- anchors ---", "pass ms -"].join("\n"),
+        clear: () => {
+          cleared += 1;
+        },
+      },
+    });
+    const travelText = log.text();
+    b.clicks.get(b.copy)?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(written).toEqual([
+      [travelText, "--- anchors ---", "pass ms -"].join("\n"),
+    ]);
+    expect(cleared).toBe(1);
+    b.clicks.get(b.download)?.();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(saved[0]?.endsWith("--- anchors ---\npass ms -")).toBe(true);
+    expect(cleared).toBe(2);
+  });
+
   it("says a copy that failed, and stays usable", async () => {
     const log = createTravelLog({ knobs: KNOBS });
     const b = buttons();

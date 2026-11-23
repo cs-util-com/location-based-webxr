@@ -125,6 +125,7 @@ import {
   showAllStationsFromSearch,
 } from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
+import { startAnchorDebugLog } from "./anchor-debug-log.js";
 import { renderTourContact } from "./tour-contact.js";
 import {
   NOT_FINISHED,
@@ -1275,6 +1276,10 @@ const saveTravelLog = (text: string): Promise<boolean> =>
   );
 /** The newest travel, for the readout's cost line. */
 let lastTravel: TravellingBox | null = null;
+// The anchor section of the same Copy log (`anchor-debug-log.ts`): the
+// deferred anchors' log lines and pass, traversal and frame-time numbers,
+// measured only on this debug path.
+const anchorLog = travelLog === null ? null : startAnchorDebugLog().log;
 if (travelLog !== null) {
   element("travel-log-tools").hidden = false;
   wireTravelLogButtons({
@@ -1285,6 +1290,7 @@ if (travelLog !== null) {
     write: (text) => seams.copyText(text),
     save: saveTravelLog,
     now: () => performance.now(),
+    ...(anchorLog === null ? {} : { appendix: anchorLog }),
   });
 }
 const captionsFollow =
@@ -1493,6 +1499,7 @@ const arEntry = wireArEntry({
     debugLines: () => [
       ...stations.debugLines(),
       ...(travelLog?.readout(lastTravel?.cost() ?? null) ?? []),
+      ...(anchorLog?.readout(performance.now()) ?? []),
     ],
   },
   ...(recordingPanel === null ? {} : { recording: recordingPanel }),

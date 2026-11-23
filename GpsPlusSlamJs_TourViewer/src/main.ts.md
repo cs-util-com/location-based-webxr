@@ -97,7 +97,10 @@ listed in `index.html.md`. The concerns and their modules:
   `#travel-log-tools` row under the readout shows Copy log (through
   `seams.copyText`), Download log (the framework's `downloadBlob`, a
   `.txt` file, for a log the clipboard cannot take) and Mark. The log is a diagnostic buffer beside the
-  store, never app state.
+  store, never app state. On the same path the anchor log
+  (`anchor-debug-log.ts`) is started: its section is appended to the
+  copied and downloaded text, and its one line (pass p95 and max, traversals
+  per pass, frame p95) joins the readout.
   `hooks.stopStations` stops the follower (and its travel) and pauses
   every voice; `hooks.releaseTourMedia` (a
   tour's close) lets every voice go (`narration.reset()`).
