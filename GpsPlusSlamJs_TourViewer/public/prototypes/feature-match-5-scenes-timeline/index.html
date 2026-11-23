@@ -1,0 +1,70 @@
+<!doctype html>
+<!-- Throwaway prototype: the feature-match photo test as one growing session timeline (three scenes, shared first shot, background processing). Not wired to the app. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <title>Photo match test - session timeline</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-title">Photo match test</div>
+        <div class="brand-sub" id="status-line">
+          <svg class="ico ico-saved" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12.5l4.2 4.2L19 7" />
+          </svg>
+          <span id="status-text">Nothing captured yet</span>
+        </div>
+      </div>
+      <button
+        class="icon-btn"
+        id="menu-btn"
+        aria-haspopup="menu"
+        aria-expanded="false"
+        aria-controls="menu"
+        aria-label="Menu"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.6" />
+          <circle cx="12" cy="12" r="1.6" />
+          <circle cx="12" cy="19" r="1.6" />
+        </svg>
+      </button>
+      <div class="menu" id="menu" role="menu" hidden>
+        <button role="menuitem" data-act="cockpit">
+          Switch to cockpit view
+          <small>Camera first, one fixed dock</small>
+        </button>
+        <button role="menuitem" data-act="copylog">
+          Copy log
+          <small>For debugging. The log is also in the zip.</small>
+        </button>
+        <button role="menuitem" data-act="reload">
+          Simulate reload
+          <small>Reloads the page; the session resumes</small>
+        </button>
+        <hr />
+        <button role="menuitem" data-act="reset" class="menu-danger">
+          Start over
+          <small>Deletes the photos on this phone</small>
+        </button>
+      </div>
+    </header>
+
+    <main id="timeline" class="timeline" aria-live="off"></main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+    <div class="restoring" id="restoring" hidden>
+      <div class="restoring-box">Restoring your session...</div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
