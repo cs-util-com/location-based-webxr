@@ -9,7 +9,7 @@ The store of the feature matching check page (`configureStore` over `feature-mat
 - `createFeatureMatchStore({ storage, session, revokeUrl, photoDb?, photoDbFailed?, previewOf?, lock? })` returns:
   - `store`: the Redux store.
   - `sides`: the side tables, keyed by the ids the state holds: `photos` (a plan photo's PNG, a `Promise<Blob>`, held only until its write succeeded), `previews` (a plan photo's small `Frame` for the views, `PREVIEW_EDGE` on the long side), `results` (a measured pair's matches JSON by result key, held until written), `urls` (the Blob URL of the prepared flat zip), `flatFrames` (the reference being marked and its preview), `flatPhotos` (each surface's photos, by surface id).
-  - `restore()`: the start below. Never rejects.
+  - `restore()`: the start below. Never rejects. Runs once per store: a later call returns the first call's promise, so the run zip awaits it before it reads the state.
   - `readPhoto(id)`: a photo's PNG from the database, else from memory (a write refused or pending); rejects `the photo <id> is not stored` when neither holds it.
   - `readMatches(key)`: a measured pair's matches JSON from the database, else from memory, else undefined.
   - `flushLog()`: writes the log now (the page calls it on `pagehide` and when hidden).
@@ -71,5 +71,5 @@ fm.put(
 
 ## Tests
 
-- `feature-match-store.test.ts`: the stored start and the writes (only on change), the flat progress write, blocked storage, `accepted` and `put`, reconcile, the prepared zip's URL, freeing, `dispose`; the run's database: PNG writes that drop the held copy, `readPhoto` from storage then memory, the restore of photos, results and log, the sweep rule (no plan, an old plan, a current plan), no database or a failing one, ids unique across loads, a failed write retried sparingly with the not-stored flag, the overlap of new writes and the one retry, the cleanup delete, a photo taken during the sweep kept, results written or not by `persisted` and stale ones deleted, the log's delay, flush and nothing written before the restore, and the tab lock.
+- `feature-match-store.test.ts`: the stored start and the writes (only on change), the flat progress write, blocked storage, `accepted` and `put`, reconcile, the prepared zip's URL, freeing, `dispose`; the run's database: PNG writes that drop the held copy, `readPhoto` from storage then memory, the restore of photos, results and log, the sweep rule (no plan, an old plan, a current plan), no database or a failing one, ids unique across loads, a failed write retried sparingly with the not-stored flag, the overlap of new writes and the one retry, the cleanup delete, a photo taken during the sweep kept, results written or not by `persisted` and stale ones deleted, the log's delay, flush and nothing written before the restore, one restore shared between calls, and the tab lock.
 - `feature-match-store.property.test.ts`: random photos, retakes and resets against a database that refuses some writes: the database's photo keys equal `storedIds`, stored plus held is exactly the named photos, and a reload restores exactly the stored ones with their previews.

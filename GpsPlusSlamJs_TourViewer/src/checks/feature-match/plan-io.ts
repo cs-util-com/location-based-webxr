@@ -326,6 +326,8 @@ export function createPlanIo(d: PlanIoDeps): PlanIo {
     }
     const name = runZipName(state().session);
     try {
+      // Right after a load the stored log and results may not be back yet.
+      await fm.restore();
       const zip = await packRun(state());
       const saved = await downloadBlob(zip, name, ZIP_FILE_TYPE);
       if (saved) {

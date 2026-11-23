@@ -698,6 +698,41 @@ describe("the run plan's storage", () => {
     expect([...data.keys()]).toEqual([photoKey("p1")]);
     expect(fm.sides.previews.has("p1")).toBe(true);
   });
+
+  // Why: Download all waits for the restore by calling it again; a second
+  // call must share the first one (no second sweep or read) and settle only
+  // once the stored log is merged, or a zip built just after a reload
+  // misses the earlier load's log.
+  it("shares one restore between calls, settled once the log is back", async () => {
+    const { data, db } = mapDb({ [LOG_KEY]: "[1.0s] before\n" });
+    let listKeys: () => void = () => undefined;
+    let lists = 0;
+    const slow: KeyValueStore = {
+      ...db,
+      keys: () =>
+        new Promise<string[]>((r) => {
+          lists += 1;
+          listKeys = () => {
+            r([...data.keys()]);
+          };
+        }),
+    };
+    const plan = memory({ [PLAN_KEY]: planText(EMPTY_PLAN) });
+    const fm = makeWith(plan.storage, slow);
+    const first = fm.restore();
+    await settle();
+    let waited = false;
+    const again = fm.restore().then(() => {
+      waited = true;
+    });
+    await settle();
+    expect(waited).toBe(false);
+    listKeys();
+    await Promise.all([first, again]);
+    expect(lists).toBe(1);
+    expect(fm.store.getState().restored).toBe(true);
+    expect(fm.store.getState().log[0]).toBe("[1.0s] before");
+  });
 });
 
 describe("results in storage", () => {

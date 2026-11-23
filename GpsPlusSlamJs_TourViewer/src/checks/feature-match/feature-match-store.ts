@@ -584,8 +584,16 @@ export function createFeatureMatchStore(deps: FeatureMatchStoreDeps) {
    * back the plan's photos as previews, the ready pairs' kept results and
    * the log. A photo storage does not hold (or holds damaged) is marked
    * lost. Without a database every stored photo is lost. Never rejects.
+   * Runs once: a later call returns the first call's promise, so work
+   * that needs the restored state (the run zip) awaits it again.
    */
-  async function restore(): Promise<void> {
+  let restoring: Promise<void> | null = null;
+  function restore(): Promise<void> {
+    restoring ??= restoreOnce();
+    return restoring;
+  }
+
+  async function restoreOnce(): Promise<void> {
     if (!(await (deps.lock ?? (() => Promise.resolve(true)))())) {
       store.dispatch(A.otherTabFound());
       return;
