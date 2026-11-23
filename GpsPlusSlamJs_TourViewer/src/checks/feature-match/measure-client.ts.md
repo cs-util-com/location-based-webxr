@@ -6,7 +6,7 @@ The page's side of the feature-match measuring worker. `measure(job)` sends one 
 
 ## Public API
 
-- `createMeasureClient(spawn)` -> `MeasureClient { measure(job, onLine?), close() }`. `spawn` makes the worker; the page passes `new Worker(new URL("./feature-match-measure.worker.ts", import.meta.url), { type: "module" })`.
+- `createMeasureClient(spawn)` -> `MeasureClient { measure(job, onLine?), close() }`. `spawn` makes the worker; the page passes `new Worker(new URL("./feature-match-measure.worker.ts", import.meta.url), { type: "module" })`; the worker spike (`worker-spike.ts`) passes the same worker, and `xfeat-probe.worker.ts` for its XFeat probe.
 - `MeasureWorker`: the part of a `Worker` the client uses (`postMessage`, `terminate`, `onmessage`, `onerror`), so a test can fake it.
 - `WorkerCrashed`: the worker stopped (`onerror`: out of memory, a crash) while it held the request.
 - `MeasureFailed`: the worker answered `failed` (a PNG it could not decode, a malformed request).

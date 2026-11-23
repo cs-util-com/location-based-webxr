@@ -59,6 +59,7 @@ import {
   isSaving,
   makerActions as A,
 } from "./maker-slice.js";
+import { sleep } from "../sleep.js";
 import { busy, offerUndo } from "./maker-ui.js";
 import { LibraryUnavailable, opfsLibraryStore } from "./opfs-library-store.js";
 import type { RgbaImage } from "./rgba-image.js";
@@ -94,8 +95,6 @@ const $$ = <T extends HTMLElement = HTMLElement>(
 const EMBEDDED = new URLSearchParams(location.search).get("in") === "editor";
 const DRAFT_KEY = "characters:maker-draft";
 const ERROR_LINGER_MS = 9000;
-const sleep = (ms: number): Promise<void> =>
-  new Promise((r) => setTimeout(r, ms));
 
 const toastLine = createToast($("#toasts"));
 function toast(message: string, error = false): void {

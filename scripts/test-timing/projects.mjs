@@ -625,6 +625,7 @@ export const PROJECTS = [
         "./src/editor/model-convert/model-import.worker.ts",
         "./src/characters/character-cut.worker.ts",
         "./src/checks/feature-match/feature-match-measure.worker.ts",
+        "./src/checks/feature-match/xfeat-probe.worker.ts",
       ]).map((stage) =>
         stage.name === "lint:css"
           ? {
