@@ -83,13 +83,11 @@ function poseProblem(pose: unknown, name: string): string | null {
   return null;
 }
 
-/** Why `p` is not a valid observation after `previousT`, or `null`. */
-function observationProblem(
-  p: unknown,
+/** Why the times of `o` are not valid after `previousT`, or `null`. */
+function timeProblem(
+  o: Record<string, unknown>,
   previousT: number | undefined
 ): string | null {
-  if (typeof p !== 'object' || p === null) return 'payload missing';
-  const o = p as Record<string, unknown>;
   if (!isFiniteNumber(o.t) || !isFiniteNumber(o.tLast)) {
     return 't and tLast must be finite numbers';
   }
@@ -97,19 +95,26 @@ function observationProblem(
   if (previousT !== undefined && o.t < previousT) {
     return 't is earlier than the previous observation';
   }
-  const hasPrevTime = o.tPrev !== null;
-  const hasPrevPose = o.prevPose !== null;
-  if (hasPrevTime !== hasPrevPose) {
+  if ((o.tPrev !== null) !== (o.prevPose !== null)) {
     return 'tPrev and prevPose must both be present or both null';
   }
-  if (hasPrevTime) {
-    if (!isFiniteNumber(o.tPrev)) return 'tPrev must be a finite number';
-    if (!(o.tPrev < o.tLast)) return 'tPrev must be before tLast';
-  }
+  if (o.tPrev === null) return null;
+  if (!isFiniteNumber(o.tPrev)) return 'tPrev must be a finite number';
+  return o.tPrev < o.tLast ? null : 'tPrev must be before tLast';
+}
+
+/** Why `p` is not a valid observation after `previousT`, or `null`. */
+function observationProblem(
+  p: unknown,
+  previousT: number | undefined
+): string | null {
+  if (typeof p !== 'object' || p === null) return 'payload missing';
+  const o = p as Record<string, unknown>;
   return (
+    timeProblem(o, previousT) ??
     poseProblem(o.lastPose, 'lastPose') ??
     poseProblem(o.newPose, 'newPose') ??
-    (hasPrevPose ? poseProblem(o.prevPose, 'prevPose') : null)
+    (o.prevPose !== null ? poseProblem(o.prevPose, 'prevPose') : null)
   );
 }
 
