@@ -213,6 +213,7 @@ export function enableArSpaceCorrection(options: {
     },
     untrack(object) {
       hints.delete(object);
+      pending.delete(object);
       registry.untrack(object);
     },
     container(group) {
@@ -240,7 +241,13 @@ export function enableArSpaceCorrection(options: {
         (child) => child.parent !== null && watched.has(child.parent)
       );
       pending.clear();
-      placeAll(waiting);
+      try {
+        placeAll(waiting);
+      } catch (error) {
+        // The add that placed it returned long ago: logged, and the caller
+        // keeps its detach function.
+        log.error(`content added while detached not tracked: ${String(error)}`);
+      }
       return detach;
     },
     dispose() {

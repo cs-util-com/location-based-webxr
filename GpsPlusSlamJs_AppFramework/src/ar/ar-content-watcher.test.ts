@@ -487,6 +487,65 @@ describe('ar-content-watcher', () => {
     arCorrection.dispose();
   });
 
+  it('attach keeps its detach function when content added while detached cannot be tracked', () => {
+    // Why this test matters: the add that placed the content returned long
+    // ago, so a failure at attach has no caller to reach. Thrown out of
+    // attach, it would leave the store subscribed with its detach function
+    // lost; it is logged instead, and the other content is still tracked.
+    const first = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store: first,
+      arWorldGroup,
+    });
+    arCorrection.attach(first)();
+    const owned = new THREE.Object3D();
+    const free = new THREE.Object3D();
+    arContent.add(owned, free);
+    claimPose(owned, 'deferred anchor'); // claimed while waiting
+    const second = newStore();
+    let detach: (() => void) | undefined;
+    expect(() => {
+      detach = arCorrection.attach(second);
+    }).not.toThrow();
+    expect(poseCommitterOf(owned)).toBe('deferred anchor');
+    expect(poseCommitterOf(free)).toBe('AR-space correction');
+    // The detach function works: a jump after it moves nothing.
+    const freeAt = localOf(free);
+    detach!();
+    second.dispatch(
+      relocalizationObserved(stillJump(1000, rawRigid(0.3, 2, 0, 0)))
+    );
+    expect(maxDiff(localOf(free), freeAt)).toBe(0);
+    releasePose(owned, 'deferred anchor');
+    arCorrection.dispose();
+  });
+
+  it('untrack of content added while detached keeps it out at the next attach', () => {
+    // Why this test matters: untrack is the app's way to take an object
+    // back; it must hold for content still waiting for a store too, or the
+    // next attach claims and corrects an object the app manages itself.
+    const first = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store: first,
+      arWorldGroup,
+    });
+    arCorrection.attach(first)();
+    const mine = new THREE.Object3D();
+    arContent.add(mine);
+    arCorrection.untrack(mine);
+    const second = newStore();
+    arCorrection.attach(second);
+    expect(poseCommitterOf(mine)).toBeNull();
+    const at = localOf(mine);
+    second.dispatch(
+      relocalizationObserved(stillJump(1000, rawRigid(0.3, 2, 0, 0)))
+    );
+    expect(maxDiff(localOf(mine), at)).toBe(0);
+    arCorrection.dispose();
+  });
+
   it('a store swap keeps every pose and the next jump is applied exactly once', () => {
     // Why this test matters: a second recording in the same AR session
     // brings a new store whose epoch starts again at zero.
