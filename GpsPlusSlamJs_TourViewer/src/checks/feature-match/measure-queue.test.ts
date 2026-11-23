@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { WorkerCrashed } from "./measure-client";
+import type * as SliceModule from "./feature-match-slice";
 import {
   featureMatchActions as A,
   nextMeasureKey,
@@ -9,7 +10,7 @@ import {
 // The queue's choice of the next pair, counted: it rebuilds the plan's
 // pairs, so it must not run on a notification that changed nothing.
 vi.mock("./feature-match-slice", async (original) => {
-  const m = await original<typeof import("./feature-match-slice")>();
+  const m = await original<typeof SliceModule>();
   return { ...m, nextMeasureKey: vi.fn(m.nextMeasureKey) };
 });
 import {
