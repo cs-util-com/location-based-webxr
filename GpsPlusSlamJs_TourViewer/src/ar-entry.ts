@@ -19,8 +19,10 @@ import {
   clearAllQrMarkers,
   computeOnboardingGuidance,
   recordDepthSample,
+  selectAlignmentMatrix,
   selectGpsPositions,
   selectTrackingQuality,
+  selectZeroReference,
   updateDeviceOrientation,
 } from "gps-plus-slam-app-framework/state";
 
@@ -37,6 +39,7 @@ import {
   COPY_LINK_LABELS,
   visitorStep,
   buildArEnableConfig,
+  CAMERA_FRAME_INTERVAL_MS,
   type ArEnableHooks,
   endTourArRuntime,
   startTourArRuntime,
@@ -52,6 +55,7 @@ import {
 } from "./mesh-surface.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import type { QrPerfReport } from "./qr-perf-report.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
@@ -60,6 +64,12 @@ import {
   type ArStatusInput,
   type LocationRefusal,
 } from "./tour-flow.js";
+import {
+  createTrackerCaptureWiring,
+  type TrackerCaptureWiring,
+} from "./tracker-capture-wiring.js";
+import { selectTrackerCaptureForceOn } from "./visitor-prefs-slice.js";
+import { stationAlignmentSignals } from "./visitor-stations.js";
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,
@@ -174,6 +184,9 @@ export function wireArEntry(deps: {
    *  start blames the location only when its own request was refused.
    *  Absent: never. */
   locationRefusals?: () => number;
+  /** The `?qrperf=1` instrument: each capture's timing and every XR
+   *  frame's interval go to it. Absent: the capture is unchanged. */
+  qrPerf?: Pick<QrPerfReport, "onCaptureTiming" | "onXrFrame">;
 }): ArEntry {
   const {
     ctx,
@@ -203,6 +216,9 @@ export function wireArEntry(deps: {
   let depthRecorded = false;
   /** The creator's mesh of the surroundings (M5; off with `?mesh=0`). */
   let meshSurface: MeshSurface | null = null;
+  /** THIS session's tracker capture gate (a visitor's with a QR
+   *  controller), or null: then every frame is captured and offered. */
+  let captureWiring: TrackerCaptureWiring | null = null;
   /** The device fixes' extent, for the ?debug=1 GPS line (polish round C4). */
   const gpsExtent = createGpsExtentTracker();
   /** That line's inputs, recomputed only when the GPS list changed: the
@@ -692,6 +708,7 @@ export function wireArEntry(deps: {
     }
     meshSurface?.dispose();
     meshSurface = null;
+    captureWiring = null;
     arStore.dispatch(clearAllQrMarkers());
     endTourArRuntime(arStore, {
       stopCameraFrameCapture: () => {
@@ -789,6 +806,69 @@ export function wireArEntry(deps: {
     return hooks.creatorCanStartOnCodes() ? "code-can-start" : "no-code";
   }
 
+  /**
+   * The per-frame UI (the status line, the stations and what they drive)
+   * runs on the render loop at the capture cadence, never on captured
+   * frames: a capture the tracker gate vetoes must not slow it. Registered
+   * per session, after the runtime started: every session end clears the
+   * frame loop's registrations, so nothing is unregistered by hand. Unlike
+   * the captures it also runs during a tracking loss and without camera
+   * access. Under a null pose an aligned visitor has no position and is
+   * judged to arrive nowhere; an unaligned one is judged by a fresh lone
+   * fix as before.
+   */
+  function startFrameTicks(): void {
+    const qrPerf = deps.qrPerf;
+    if (qrPerf !== undefined) {
+      seams.registerFrameUpdate((dt) => qrPerf.onXrFrame(dt));
+    }
+    let dueMs = Number.NEGATIVE_INFINITY;
+    seams.registerFrameUpdate((_dt, elapsedS) => {
+      const nowMs = elapsedS * 1000;
+      if (!Number.isFinite(nowMs) || nowMs < dueMs) return;
+      // On the cadence's grid, unless a stall left it a whole step behind.
+      dueMs =
+        nowMs - dueMs >= CAMERA_FRAME_INTERVAL_MS
+          ? nowMs + CAMERA_FRAME_INTERVAL_MS
+          : dueMs + CAMERA_FRAME_INTERVAL_MS;
+      renderArStatus();
+      hooks.tickStations();
+    });
+  }
+
+  /**
+   * The visitor's tracker capture gate for this session: QR's frames at
+   * full cadence near the tour's codes and after a read, at 1 Hz
+   * elsewhere. Null for a creator (who registers nothing, so a gate would
+   * veto every frame) and without a QR controller (plain AR).
+   */
+  function visitorCaptureWiring(): TrackerCaptureWiring | null {
+    if (authorMode || ctx.qrController === null) return null;
+    const signals = stationAlignmentSignals(ctx, arStore);
+    return createTrackerCaptureWiring({
+      // The QR controller's clock: detections are stamped in epoch ms.
+      now: () => Date.now(),
+      captureIntervalMs: CAMERA_FRAME_INTERVAL_MS,
+      gpsEvents: () => arStore.getState().gpsData?.gpsEvents ?? null,
+      alignment: () => selectAlignmentMatrix(arStore.getState()),
+      alignmentReady: signals.alignmentReady,
+      zero: () => selectZeroReference(arStore.getState()),
+      gpsPoints: () => selectGpsPositions(arStore.getState()),
+      arPose: () => seams.getArPose(),
+      codeLinedUp: signals.codeLinedUp,
+      levels: () => ctx.currentLevels,
+      levelIdByText: () => ctx.levelIdByText,
+      stations: () => ctx.tourDocument.manifest()?.stations ?? [],
+      detections: () => arStore.getState().qrDetected,
+      lastDecodeAtMs: () => ctx.qrDecodeAtMs,
+      // Gone or busy: the frame would be dropped anyway.
+      qrBusy: () => ctx.qrController?.isBusy() ?? true,
+      forcePref: () => selectTrackerCaptureForceOn(arStore.getState()),
+      codesOnly: () => ctx.codesOnly,
+      scanning: () => ctx.scanGate.kind === "scanning",
+    });
+  }
+
   /** A start is under way: a second tap meanwhile starts nothing (it
    *  would build a second pipeline over the first). */
   let entering = false;
@@ -857,9 +937,12 @@ export function wireArEntry(deps: {
           // `flippedPixelCopy`), so keeping the reference is safe. The frame
           // carries its own capture pose, which the photo is placed with.
           ctx.latestFrame = frame;
-          ctx.qrController?.offerFrame(frame);
-          renderArStatus();
-          hooks.tickStations();
+          // Only a frame the gate routed to QR; every frame without a
+          // gate, or before it decided (a source that does not ask).
+          const routes = captureWiring?.lastRoutes() ?? null;
+          if (routes === null || routes.some((r) => r.kind === "qr")) {
+            ctx.qrController?.offerFrame(frame);
+          }
         },
         onSessionEnd,
         onGpsPosition: (position) => {
@@ -896,20 +979,31 @@ export function wireArEntry(deps: {
       }
       return;
     }
+    const wiring = visitorCaptureWiring();
+    captureWiring = wiring;
     const runtime = startTourArRuntime(arStore, {
       getArWorldGroup: () => seams.getArWorldGroup(),
       enableArWorldGroupAlignment: (options) =>
         seams.enableArWorldGroupAlignment(options),
       startCameraFrameCapture: (config) => {
-        seams.startCameraFrameCapture(config);
+        const qrPerf = deps.qrPerf;
+        seams.startCameraFrameCapture({
+          ...config,
+          ...(wiring === null ? {} : { wantsFrame: () => wiring.wantsFrame() }),
+          ...(qrPerf === undefined
+            ? {}
+            : { onCaptureTiming: (t) => qrPerf.onCaptureTiming(t) }),
+        });
       },
       now: Date.now,
     });
     if (!runtime.ok) {
+      captureWiring = null;
       dom.errorBox.textContent = runtime.error;
       await arController.disable();
       return;
     }
+    startFrameTicks();
     startEntryDepth(depth);
     // The world group exists only AFTER initAR built the scene graph —
     // creating the glue check earlier made it dead code in production

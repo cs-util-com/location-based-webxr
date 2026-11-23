@@ -504,7 +504,8 @@ store.subscribe(() => guide.tick());
 - `station-guide.test.ts` - among the rest, a storyless station with only
   a card picture the tour holds waits for its story's end, and one whose
   picture the tour does not hold is done at once (the guide passes
-  `StationTour.assets` to `walkRoute`).
+  `StationTour.assets` to `walkRoute`); ticks under a null AR pose: an aligned
+  visitor arrives nowhere, an unaligned one is judged by a fresh lone fix.
 - `station-guide.rules.test.ts` - the no-distance rule and the no-guess rule per no-distance state
   (too weak, `'none'`, the hold), fixed order unchanged; the three tap
   paths, an armed row surviving a degradation, a story's end clearing the

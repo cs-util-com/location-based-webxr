@@ -15,6 +15,10 @@ the device at the page's start, and every choice made since. The renderer
   choice the merged value `storeVisitorChoice` returns.
 - `selectVisitorPrefs(state)` - the stored value (read it through
   `preferredView` / `shownView`).
+- `selectTrackerCaptureForceOn(state)` - the stored
+  `trackerCaptureForceOn` setting: QR searches at full cadence everywhere
+  (`tracker-capture-wiring.ts`). True only for a stored `true`; no UI
+  sets it yet (a device's stored value, for field tests).
 
 ## Invariants & assumptions
 
@@ -43,4 +47,5 @@ store.dispatch(visitorPrefsLoaded(value));
 - `visitor-prefs-slice.test.ts` - load, choose and clear keep other keys;
   another tour keeps the choice. A choice is made the page's way:
   `storeVisitorChoice` against a storage in memory, then
-  `visitorPrefsLoaded`.
+  `visitorPrefsLoaded`. The force-on setting reads true only for a stored
+  `true`.

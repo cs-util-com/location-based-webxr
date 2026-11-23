@@ -26,7 +26,10 @@
  * the viewing log records why.
  */
 
-import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import {
+  createQrTrackingController,
+  type QrSolvePoseInput,
+} from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import {
   createQrVoteBudget,
@@ -98,6 +101,7 @@ import {
   type CodeVoteDeps,
   type CodeVoteOptions,
 } from "./qr-viewer-mode.js";
+import type { QrPerfReport } from "./qr-perf-report.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
@@ -117,6 +121,7 @@ import {
   type StationContent,
 } from "./station-content.js";
 import { reducedMotionReader } from "./reduced-motion.js";
+import { stampDecodes } from "./tracker-capture-wiring.js";
 import {
   selectPresentStationId,
   selectShowAllContent,
@@ -219,6 +224,9 @@ export function createViewerPlacement(deps: {
   /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
    *  while no recording runs. Absent: nothing is logged. */
   viewingLog?: ViewingLog;
+  /** The `?qrperf=1` instrument: the QR controller runs on its timed
+   *  front end and solve. Absent: on the seams' own. */
+  qrPerf?: Pick<QrPerfReport, "wrapFrontEnd" | "wrapSolve">;
   /** How a free item's part in the world sounds (`world-sound.ts`).
    *  Absent: silent. */
   worldSound?: WorldSound;
@@ -540,12 +548,17 @@ export function createViewerPlacement(deps: {
         hooks.renderArStatus();
       }
     };
+    const solve = (input: QrSolvePoseInput) => seams.solveQrPose(input);
+    // Every decode, lock or not, opens the capture gate's burst.
+    const decoding = stampDecodes(frontEnd, () => {
+      if (live()) ctx.qrDecodeAtMs = now();
+    });
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         ...votes,
-        frontEnd,
+        frontEnd: deps.qrPerf?.wrapFrontEnd(decoding) ?? decoding,
         now,
-        solvePose: (input) => seams.solveQrPose(input),
+        solvePose: deps.qrPerf?.wrapSolve(solve) ?? solve,
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
         recordDetection: (event) => {

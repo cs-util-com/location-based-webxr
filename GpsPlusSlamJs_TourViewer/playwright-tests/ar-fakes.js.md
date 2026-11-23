@@ -31,13 +31,19 @@ camera, so `installTourViewerArFakes(page)` installs
   `summary.spec.js` (authoring plan 2026-09-28-0953 M3b) needed the same
   steps.
 - Control surface `window.__tourViewerTest`: `initARCalls` (records
-  `hasCameraFrame` + the isolation flags), `captureCalls`,
+  `hasCameraFrame` + the isolation flags), `captureCalls` (a plain copy of
+  each capture config, a function recorded as `"function"`),
+  `frameUpdates` + `frameElapsedS` (the fake `registerFrameUpdate` seam's
+  registrations, cleared at each initAR as the framework clears them at
+  each session end),
   `alignmentCalls`, `alignmentStore` (the real app store the alignment
   binding received — specs assert `recording.isRecording` through it),
   `stopCaptureCalls`, `endARSessionCalls`, `cameraFrameCallback`,
   `emitFrames(n)` (delivers fake frames - RGBA plus an identity capture pose
   and `capturedAtMs`, the framework's `CapturedCameraFrame` shape - through
-  the initAR camera callback; there is no `getCameraPose` seam to fake), `sessionEndCallback` + `endXrSession()` (simulate a system
+  the initAR camera callback, each followed by one render frame a second
+  later, so every emitted frame also runs the per-frame UI once; there is
+  no `getCameraPose` seam to fake), `sessionEndCallback` + `endXrSession()` (simulate a system
   session end), `emitGps({ lat, lon, accuracy?, timestamp, arPosition })`
   (delivers one device fix through the GPS watch the session started -
   `gpsCallback`, kept by the fake `startGpsWatch` - paired with `arPose`,

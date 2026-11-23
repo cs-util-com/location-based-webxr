@@ -100,7 +100,9 @@ listed in `index.html.md`. The concerns and their modules:
   store, never app state. On the same path the anchor log
   (`anchor-debug-log.ts`) is started: its section is appended to the
   copied and downloaded text, and its one line (pass p95 and max, traversals
-  per pass, frame p95) joins the readout.
+  per pass, frame p95) joins the readout. With `?qrperf=1` as well, the QR
+  instrument (`qr-perf-report.ts`) is created and handed to the viewer
+  pipeline and the AR entry; its report is the Copy log's next section.
   `hooks.stopStations` stops the follower (and its travel) and pauses
   every voice; `hooks.releaseTourMedia` (a
   tour's close) lets every voice go (`narration.reset()`).

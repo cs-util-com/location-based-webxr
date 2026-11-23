@@ -15,6 +15,8 @@
 
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 
+import { prefsRoot } from "./visitor-prefs.js";
+
 export interface VisitorPrefsState {
   /** The stored value as JSON parsed it (any shape: it is read
    *  defensively, `preferredView`), or null for none. */
@@ -38,6 +40,15 @@ const visitorPrefsSlice = createSlice({
 
 export const visitorPrefsReducer = visitorPrefsSlice.reducer;
 export const { visitorPrefsLoaded } = visitorPrefsSlice.actions;
+
+/** The visitor's setting that QR searches at full cadence everywhere,
+ *  not only near the tour's codes (`tracker-capture-wiring.ts`): on only
+ *  when stored as `true`; absent or any other value is off. */
+export function selectTrackerCaptureForceOn(state: {
+  readonly visitorPrefs: VisitorPrefsState;
+}): boolean {
+  return prefsRoot(state.visitorPrefs.stored)["trackerCaptureForceOn"] === true;
+}
 
 /** The stored value (any shape; read it through `preferredView`). */
 export function selectVisitorPrefs(state: {

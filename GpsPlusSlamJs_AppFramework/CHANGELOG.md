@@ -4,6 +4,29 @@
 
 ### Added
 
+- **Nearby targets**: which trackable targets (QR codes now; 2D images,
+  3D objects later) are near enough to search for, so a frame-costly
+  tracker can skip far-away ones.
+  - **`ar/targets/nearby-targets`** (deep import): `nearbyTargets` (a pure
+    kernel with a GPS gate with hysteresis, a dead-reckoning state and an
+    AR gate for recent sightings), `timeSlot`, `firstIndexAtOrAfter`,
+    `checkNearbyParams`, `DEFAULT_NEARBY_PARAMS`.
+  - **`ar/targets/nearby-position`** (deep import):
+    `createNearbyPositionSource` (the store's GPS event series as the
+    kernel's input, memoised per series and trimmed to the look-back by
+    binary search) and `odomNueOfWebXr`.
+  - **`ar/targets/tracker-capture-gate`** (deep import):
+    `createTrackerCaptureGate`, the generic tracker capture gate. Each
+    tracker (QR now; images and objects later) registers its targets, its
+    cadence per situation (in gate, outside, unknown, burst after a hit),
+    `isBusy`, `lastHitAtMs` and `forceOn`; `wantsFrame(nowMs)` tells the
+    camera whether any tracker wants the frame (pass it as the capture's
+    `wantsFrame`), `kindsFor(nowMs)` which trackers get it and for which
+    targets (capped at k, default 3). Stateless per call; with every
+    tracker busy it returns before reading the position.
+  - **`state/position-precision`**: `deviceAccuracySeriesM`, the rolling
+    device accuracy median per reading.
+
 - **AR-space content correction** for ARCore relocalizations: the raw
   observations go into a new built-in `arSpaceCorrection` slice (recorded,
   segmenting); the jump of each, compensated for the camera's own motion,

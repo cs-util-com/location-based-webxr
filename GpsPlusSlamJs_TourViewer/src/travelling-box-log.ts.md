@@ -59,10 +59,12 @@ moves, minutes, perMinute, movesPerMinute, afterRelease }`, by the app's
 firstMismatch }`, or null when the head has no knobs: the log replayed
   under the knobs in its own head, set against the place changes the app
   logged, pair by pair in order.
-- `wireTravelLogButtons({ copy, download, mark, log, write, save, now, appendix? })`
-  wires the three debug buttons. With `appendix` (the page passes the
-  anchor log, `anchor-debug-log.ts`) the copied and downloaded text is the
-  log's text, a newline, then `appendix.text()`, and both are cleared
+- `wireTravelLogButtons({ copy, download, mark, log, write, save, now, appendices? })`
+  wires the three debug buttons. With `appendices` (the page passes the
+  anchor log, `anchor-debug-log.ts`, and with `?qrperf=1` the QR
+  instrument, `qr-perf-report.ts`) the copied and downloaded text is the
+  log's text, then each section's `text()` on its own line, and all are
+  cleared
   after a copy or download that succeeded. The replay reader skips the
   appended plain-text lines as unreadable (it counts them, never throws),
   so a normal paste now reports skipped lines: one per non-empty line of

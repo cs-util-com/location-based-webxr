@@ -103,7 +103,10 @@ lives here.
     `releaseTourMedia` (the tour closed: the narration's audio and blob
     URLs go);
   - the viewer QR line and the placement (`viewer-placement.ts`): the six
-    `viewer*` line inputs, `latestReprojectionPx`, `viewerKeepAlive` (the
+    `viewer*` line inputs, `latestReprojectionPx`, `qrDecodeAtMs` (the
+    newest decode of any code, lock or not, stamped by the pipeline's front
+    end; the tracker capture gate's burst opens on it; nulled by
+    `endQrPipeline`), `viewerKeepAlive` (the
     code keep-alive, created per AR entry by `startViewerPipeline`, stopped
     by `endQrPipeline` and by a tour close in `archive-open.ts`; the status
     line reads its phase), `viewerVoteBudget` (the per-code vote budget,

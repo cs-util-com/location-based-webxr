@@ -14,6 +14,7 @@ import { MESH_DEPTH } from "./mesh-surface.js";
 import type { EnableGpsArConfig } from "gps-plus-slam-app-framework/ar";
 import { createWalkToast } from "./walk-toast.js";
 import { wireArEntry, type ArEntryDom } from "./ar-entry.js";
+import { createQrPerfReport, type QrPerfReport } from "./qr-perf-report.js";
 import { linkQrSvg } from "./link-qr.js";
 import {
   createTourViewerSession,
@@ -34,6 +35,18 @@ import { RECORDING_DEPTH } from "./authoring-recording.js";
 import { tourDocumentActions } from "./tour-document.js";
 import type { TourObject } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import { tourOf } from "./test-support/tour-of.js";
+import { createTrackerCaptureWiring } from "./tracker-capture-wiring.js";
+import type * as TrackerCaptureWiringModule from "./tracker-capture-wiring.js";
+
+// The wiring stays the real one; the spy counts the gates built and keeps
+// the deps each was given.
+vi.mock("./tracker-capture-wiring.js", async (importOriginal) => {
+  const real = await importOriginal<typeof TrackerCaptureWiringModule>();
+  return {
+    ...real,
+    createTrackerCaptureWiring: vi.fn(real.createTrackerCaptureWiring),
+  };
+});
 import {
   endSession,
   recordGpsEvent,
@@ -106,6 +119,8 @@ function harness(
     /** A failed start's location request was refused (the page's
      *  requester counts it): the permission reads denied from then on. */
     refusesLocation?: boolean;
+    /** The `?qrperf=1` instrument. */
+    qrPerf?: QrPerfReport;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -153,9 +168,11 @@ function harness(
   const hooks = createUnwiredHooks();
   // The viewer pipeline (stood in here) owns the controller and its source.
   hooks.startViewerPipeline = () => {
-    ctx.qrController = { dispose } as unknown as NonNullable<
-      typeof ctx.qrController
-    >;
+    ctx.qrController = {
+      dispose,
+      offerFrame: vi.fn(),
+      isBusy: () => false,
+    } as unknown as NonNullable<typeof ctx.qrController>;
     ctx.fusedPose = {} as NonNullable<typeof ctx.fusedPose>;
     return true;
   };
@@ -194,12 +211,39 @@ function harness(
     clear: toastResets,
   });
   const arStore = createTourViewerStore();
+  /** The render loop's registrations (the framework's `registerFrameUpdate`)
+   *  and its page clock in seconds; `frames.end()` drops them all, as the
+   *  framework does at every session end. */
+  const frameUpdates = new Set<(dt: number, elapsedS: number) => void>();
+  const frameClock = { elapsedS: 10 };
+  const frames = {
+    run(n: number, dtMs = 1000 / 60): void {
+      for (let i = 0; i < n; i += 1) {
+        frameClock.elapsedS += dtMs / 1000;
+        for (const fn of [...frameUpdates])
+          fn(dtMs / 1000, frameClock.elapsedS);
+      }
+    },
+    end(): void {
+      frameUpdates.clear();
+    },
+  };
   const seams = {
+    registerFrameUpdate: (fn: (dt: number, elapsedS: number) => void) => {
+      frameUpdates.add(fn);
+      return () => {
+        frameUpdates.delete(fn);
+      };
+    },
     stopCameraFrameCapture: () => undefined,
     // Enough of a scene for the runtime start to go through.
     getArWorldGroup: () => ({}),
     enableArWorldGroupAlignment: () => undefined,
-    startCameraFrameCapture: () => undefined,
+    getArPose: () => null,
+    startCameraFrameCapture: vi.fn(
+      (_config?: Parameters<TourViewerSeams["startCameraFrameCapture"]>[0]) =>
+        undefined,
+    ),
     createQrDebugView: () => ({
       update: () => undefined,
       dispose: () => undefined,
@@ -251,6 +295,7 @@ function harness(
     ...(options.meshCursor === undefined
       ? {}
       : { meshCursor: options.meshCursor }),
+    ...(options.qrPerf === undefined ? {} : { qrPerf: options.qrPerf }),
     walk: {
       toast: walkToast,
       progressKept: () => options.progressKept === true,
@@ -276,6 +321,10 @@ function harness(
     toasts,
     toastResets,
     enabledConfig: () => enabled,
+    frames,
+    frameUpdates,
+    /** The newest capture's config (`startCameraFrameCapture`). */
+    captureConfig: () => seams.startCameraFrameCapture.mock.calls.at(-1)?.[0],
     permission,
     refusals,
     meshSurface,
@@ -1820,3 +1869,211 @@ describe("the walk's surfaces in AR", () => {
 type TourViewerSessionGate = ReturnType<
   typeof createTourViewerSession
 >["scanGate"];
+
+describe("the per-frame UI runs on the render loop, not on captured frames", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A visitor in a running session, counting the station ticks the
+   *  render loop makes from here on. */
+  async function ticking(options: Parameters<typeof harness>[0] = {}) {
+    const h = harness({ enableOk: true, ...options });
+    await h.enter();
+    const ticks = { count: 0 };
+    h.hooks.tickStations = () => {
+      ticks.count += 1;
+    };
+    return { h, ticks };
+  }
+
+  // Why this test matters: the tracker capture gate vetoes captures far
+  // from every code. The stations, the HUD and the status line must keep
+  // their pace then: one second of render frames with no capture at all
+  // still ticks the stations at about 8 Hz (the capture cadence).
+  it("ticks the stations at about 8 Hz while no frame is captured", async () => {
+    const { h, ticks } = await ticking();
+    h.frames.run(60);
+    expect(ticks.count).toBeGreaterThanOrEqual(7);
+    expect(ticks.count).toBeLessThanOrEqual(9);
+  });
+
+  // Why this test matters: a captured frame no longer ticks anything, so
+  // the rate is the render loop's alone and cannot double.
+  it("a captured frame counts and is offered to the code tracker, but ticks nothing", async () => {
+    const { h, ticks } = await ticking();
+    const frame = {
+      image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+      cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+      capturedAtMs: 1,
+    };
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(ticks.count).toBe(0);
+    expect(h.ctx.cameraFrameCount).toBe(1);
+    expect(h.ctx.latestFrame).toBe(frame);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: every session end clears the frame loop's
+  // registrations, so the ticks are registered per session. A tick
+  // registered once at load would be gone after the first exit; one
+  // registered per tap without that clear would tick twice as fast.
+  it("ticks at about 8 Hz again in a second session after the first ended", async () => {
+    const { h, ticks } = await ticking();
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    h.frames.end();
+    await h.enter();
+    expect(h.frameUpdates.size).toBe(1);
+    ticks.count = 0;
+    h.frames.run(60);
+    expect(ticks.count).toBeGreaterThanOrEqual(7);
+    expect(ticks.count).toBeLessThanOrEqual(9);
+  });
+
+  // Why this test matters: a start that failed has no session whose end
+  // would clear a registration; it must leave none behind.
+  it("a failed start registers no tick", async () => {
+    const h = harness({ enableOk: false });
+    await h.enter();
+    expect(h.frameUpdates.size).toBe(0);
+  });
+
+  // Why this test matters: the clock comes from the render loop; a
+  // non-finite time must neither throw nor tick.
+  it("a frame with a non-finite time ticks nothing", async () => {
+    const { h, ticks } = await ticking();
+    for (const fn of h.frameUpdates) fn(0.016, Number.NaN);
+    expect(ticks.count).toBe(0);
+  });
+});
+
+describe("the ?qrperf=1 instrument", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why this test matters: the report's capture costs and long frames are
+  // only real if the capture's own timing hook and every XR frame of the
+  // session reach it; without the flag the capture config is unchanged.
+  it("gets the capture's timings and every XR frame of the session", async () => {
+    const qrPerf = createQrPerfReport({ now: () => 0 });
+    const h = harness({ enableOk: true, qrPerf });
+    await h.enter();
+    h.captureConfig()?.onCaptureTiming?.({
+      blitReadbackMs: 10,
+      flipCopyMs: 6,
+      width: 640,
+      height: 480,
+    });
+    for (const fn of h.frameUpdates) fn(0.016, 1);
+    for (const fn of h.frameUpdates) fn(0.016, 1.016);
+    const text = qrPerf.text();
+    expect(text).toContain("captures 1");
+    expect(text).toMatch(/^xr-frame .*\(n 2\)$/m);
+    const plain = harness({ enableOk: true, mode: "creator" });
+    await plain.enter();
+    expect(plain.captureConfig()).toEqual({ intervalMs: 125 });
+  });
+});
+
+describe("the tracker capture gate is the visitor's", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A whole second: the 1 Hz slot is open. */
+  const SLOT_OPEN = 1_800_000_000_000;
+
+  const frame = {
+    image: { data: new Uint8ClampedArray(16), width: 2, height: 2 },
+    cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
+    capturedAtMs: 1,
+  };
+
+  // Why this test matters: the visitor's capture asks the gate before each
+  // frame; a creator registers no tracker, so a gate there would veto
+  // every frame: the creator's capture carries none and gets every frame
+  // at today's cadence.
+  it("a visitor's capture carries wantsFrame; a creator's does not", async () => {
+    const visitor = harness({ enableOk: true });
+    await visitor.enter();
+    expect(visitor.captureConfig()?.intervalMs).toBe(125);
+    expect(typeof visitor.captureConfig()?.wantsFrame).toBe("function");
+    const creator = harness({ enableOk: true, mode: "creator" });
+    await creator.enter();
+    expect(creator.captureConfig()).toEqual({ intervalMs: 125 });
+  });
+
+  // Why this test matters: without a QR controller (no detector) there is
+  // nothing to gate for; the session captures as before.
+  it("a visitor without a QR controller captures without a gate", async () => {
+    const h = harness({ enableOk: true });
+    h.hooks.startViewerPipeline = () => false;
+    await h.enter();
+    expect(h.captureConfig()).toEqual({ intervalMs: 125 });
+  });
+
+  // Why this test matters: the gate's routes decide whether a captured
+  // frame goes to QR; a frame it wanted reaches the controller, and a
+  // busy controller is asked for no frame at all.
+  it("a wanted frame goes to QR; a busy controller wants none", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(SLOT_OPEN);
+    const wantsFrame = h.captureConfig()!.wantsFrame!;
+    expect(wantsFrame()).toBe(true);
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+    // Half a second on: outside the 1 Hz slot, no code near, no read.
+    vi.setSystemTime(SLOT_OPEN + 500);
+    expect(wantsFrame()).toBe(false);
+    vi.setSystemTime(SLOT_OPEN + 1000);
+    (h.ctx.qrController as unknown as { isBusy: () => boolean }).isBusy = () =>
+      true;
+    expect(wantsFrame()).toBe(false);
+  });
+
+  // Why this test matters: a frame source that never asks the gate (the
+  // e2e's fake camera) still feeds QR: before the gate decided anything,
+  // a frame is offered as it was without a gate.
+  it("a frame before any gate decision is offered", async () => {
+    const h = harness({ enableOk: true });
+    await h.enter();
+    h.enabledConfig()!.callbacks!.cameraFrame!.onFrame(frame as never);
+    expect(h.ctx.qrController?.offerFrame).toHaveBeenCalledTimes(1);
+  });
+
+  // Why this test matters: the session's gate goes with the session; the
+  // next entry builds its own, so an old gate's routes never decide.
+  it("a second session gets a gate of its own", async () => {
+    vi.mocked(createTrackerCaptureWiring).mockClear();
+    const h = harness({ enableOk: true });
+    await h.enter();
+    expect(createTrackerCaptureWiring).toHaveBeenCalledTimes(1);
+    h.enabledConfig()!.callbacks?.onSessionEnd?.({ requestedByApp: false });
+    h.frames.end();
+    await h.enter();
+    expect(createTrackerCaptureWiring).toHaveBeenCalledTimes(2);
+  });
+
+  // Why this test matters: the gate reads the session through its deps; a
+  // dep wired to the wrong field would leave the burst on locks only, QR
+  // at 1 Hz while the scan card asks for a code, or the identity alignment
+  // of the first fix read as a solved one.
+  it("the gate's deps read the decode stamp, the scan gate and the readiness", async () => {
+    vi.mocked(createTrackerCaptureWiring).mockClear();
+    const h = harness({ enableOk: true });
+    await h.enter();
+    const deps = vi.mocked(createTrackerCaptureWiring).mock.calls[0]![0];
+    h.ctx.qrDecodeAtMs = 1_234;
+    expect(deps.lastDecodeAtMs()).toBe(1_234);
+    h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
+    expect(deps.scanning()).toBe(true);
+    h.ctx.scanGate = { kind: "idle" };
+    expect(deps.scanning()).toBe(false);
+    // No tracking report and no code: not ready.
+    expect(deps.alignmentReady()).toBe(false);
+  });
+});

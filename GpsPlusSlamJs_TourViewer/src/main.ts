@@ -102,6 +102,8 @@ import {
 } from "./tour-viewer-session.js";
 import { createViewerPlacement } from "./viewer-placement.js";
 import { createViewingLog } from "./viewing-log.js";
+import { CAMERA_FRAME_INTERVAL_MS } from "./ar-mode.js";
+import { createQrPerfReport, qrPerfEnabled } from "./qr-perf-report.js";
 import { routeVisitorTap, wireVisitorStations } from "./visitor-stations.js";
 import { createVoiceFocus } from "./voice-focus.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
@@ -990,7 +992,15 @@ const worldSound = createWorldSound({
     walkToast.announce(message);
   },
 });
+// The `?qrperf=1` instrument (`qr-perf-report.ts`): what a visitor's QR
+// capture costs, reported as a section of the `?debug=1` Copy log, so it
+// runs only where that log does.
+const qrPerf =
+  mode === "visitor" && debug && qrPerfEnabled(location.search)
+    ? createQrPerfReport({ intervalMs: CAMERA_FRAME_INTERVAL_MS })
+    : null;
 const viewer = createViewerPlacement({
+  ...(qrPerf === null ? {} : { qrPerf }),
   worldSound,
   // What a part says on a tap (a ground arrow's description).
   worldSay: (text) => {
@@ -1290,7 +1300,7 @@ if (travelLog !== null) {
     write: (text) => seams.copyText(text),
     save: saveTravelLog,
     now: () => performance.now(),
-    ...(anchorLog === null ? {} : { appendix: anchorLog }),
+    appendices: [anchorLog, qrPerf].filter((x) => x !== null),
   });
 }
 const captionsFollow =
@@ -1459,6 +1469,7 @@ const gpsHandler = createGpsPositionHandler({
 });
 
 const arEntry = wireArEntry({
+  ...(qrPerf === null ? {} : { qrPerf }),
   ctx,
   mode,
   arStore,
