@@ -28,6 +28,7 @@ import {
   jumpTransform,
   type RelocalizationJump,
 } from '../ar/ar-space-correction';
+import type { Pose } from '../ar/qr/qr-pose';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('ArSpaceCorrection');
@@ -114,6 +115,12 @@ function observationProblem(
   );
 }
 
+/** Only `position` and `rotation` of a pose (left as is when not an object). */
+function poseFields(p: Pose): Pose {
+  if (typeof p !== 'object' || p === null) return p;
+  return { position: p.position, rotation: p.rotation };
+}
+
 /**
  * The six observation fields of `o`, nothing else. Anything that is not an
  * object is passed on as it is, for the reducer to refuse with its reason.
@@ -123,7 +130,14 @@ function observationFields(
 ): RelocalizationObservation {
   if (typeof o !== 'object' || o === null) return o;
   const { t, tLast, lastPose, tPrev, prevPose, newPose } = o;
-  return { t, tLast, lastPose, tPrev, prevPose, newPose };
+  return {
+    t,
+    tLast,
+    lastPose: poseFields(lastPose),
+    tPrev,
+    prevPose: prevPose === null ? null : poseFields(prevPose),
+    newPose: poseFields(newPose),
+  };
 }
 
 const arSpaceCorrectionSlice = createSlice({

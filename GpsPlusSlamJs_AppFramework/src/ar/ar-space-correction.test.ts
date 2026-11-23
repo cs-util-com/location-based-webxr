@@ -224,15 +224,16 @@ describe('ar-space-correction', () => {
     // measures, per ratio (t - tLast) / (tLast - tPrev), the error of the
     // compensated and the plain D under seeded jitter, for a still user and
     // two walking ones, so a cap on the ratio is decided on numbers.
-    // Parameters: measured interval 33 ms; ratios 1, 2, 4, 6, 10, 15 (15 is
-    // the 500 ms gap rule at 33 ms); jitter per pose (position sigma,
+    // Parameters: measured interval 33 ms; ratios 1, 2, 4, 6, 10, 15, 30
+    // and 45 (a gap of 500 ms is ratio 15 at 30 Hz, 30 at 60 Hz and 45 at
+    // 90 Hz); jitter per pose (position sigma,
     // rotation sigma per axis) 0.5 mm / 0.01 deg, 1 mm / 0.05 deg and
     // 3 mm / 0.2 deg; 300 seeds per cell; residual at 10 m from the camera.
     // Verdict (no cap): beyond ratio 4 the compensation beats the plain D
     // for both walking users at every jitter level, and loses only for a
     // still user, who loses at ratios 1 to 4 as well. So the ratio does not
     // separate the cases a cap would serve; the camera's motion does.
-    const RATIOS = [1, 2, 4, 6, 10, 15];
+    const RATIOS = [1, 2, 4, 6, 10, 15, 30, 45];
     const JITTERS = [
       { posM: 0.0005, rotDeg: 0.01 },
       { posM: 0.001, rotDeg: 0.05 },
@@ -339,7 +340,7 @@ describe('ar-space-correction', () => {
   });
 
   it('an object between two jumps receives only the later D; one before both receives their product in order', () => {
-    // Why this test matters: the two concrete cases the plan names, with
+    // Why this test matters: the two concrete cases, with
     // non-commuting jumps so a reversed order cannot pass.
     const d0: Pose = {
       position: [1, 0, 0],

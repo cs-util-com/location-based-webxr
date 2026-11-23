@@ -189,10 +189,13 @@ describe('arSpaceCorrection slice', () => {
     // Why this test matters: the payload is recorded as it is dispatched. A
     // feed that passes its own richer record would otherwise write extra,
     // possibly derived, fields into every recording.
+    const base = observation(1000);
     const richer = {
-      ...observation(1000),
+      ...base,
       corrected: { position: [9, 9, 9] },
       debugLabel: 'x',
+      // A pose with its own extra field (a covariance) is cut down too.
+      newPose: { ...base.newPose, covariance: [1, 2, 3] },
     } as RelocalizationObservation;
     const action = relocalizationObserved(richer);
     expect(Object.keys(action.payload).sort()).toEqual(
