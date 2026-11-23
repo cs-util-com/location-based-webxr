@@ -1,0 +1,366 @@
+import { describe, expect, it } from 'vitest';
+import fc from 'fast-check';
+import * as THREE from 'three';
+import { configureStore } from '@reduxjs/toolkit';
+import {
+  arSpaceCorrectionReducer,
+  relocalizationObserved,
+  selectCorrectionTrack,
+  type RelocalizationObservation,
+} from '../state/ar-space-correction-slice';
+import { shownLocalMatrix } from './ar-space-correction';
+import type { Pose } from './qr/qr-pose';
+import { createArSpaceCorrectionRegistry } from './ar-space-correction-registry';
+import { claimPose, poseCommitterOf, releasePose } from './pose-committer';
+
+const newStore = () =>
+  configureStore({
+    reducer: { arSpaceCorrection: arSpaceCorrectionReducer },
+  });
+
+const num = (min: number, max: number) =>
+  fc.double({ min, max, noNaN: true, noDefaultInfinity: true });
+const unitQuaternion = fc
+  .tuple(num(-1, 1), num(-1, 1), num(-1, 1), num(-1, 1))
+  .filter((q) => Math.hypot(...q) > 0.1)
+  .map((q): [number, number, number, number] => {
+    const n = Math.hypot(...q);
+    return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
+  });
+const pose = fc.record({
+  position: fc.tuple(num(-20, 20), num(-3, 3), num(-20, 20)),
+  rotation: unitQuaternion,
+});
+
+const STILL_CAMERA: Pose = { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] };
+
+/** An observation whose frame switch is `jump` (a still camera). */
+function jumpObservation(t: number, jump: Pose): RelocalizationObservation {
+  const m = new THREE.Matrix4()
+    .compose(
+      new THREE.Vector3(...jump.position),
+      new THREE.Quaternion(...jump.rotation),
+      new THREE.Vector3(1, 1, 1)
+    )
+    .multiply(new THREE.Matrix4().makeTranslation(...STILL_CAMERA.position));
+  const p = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  m.decompose(p, q, new THREE.Vector3());
+  return {
+    t,
+    tLast: t - 33,
+    lastPose: STILL_CAMERA,
+    tPrev: null,
+    prevPose: null,
+    newPose: { position: [p.x, p.y, p.z], rotation: [q.x, q.y, q.z, q.w] },
+  };
+}
+
+const localOf = (o: THREE.Object3D): number[] =>
+  new THREE.Matrix4().compose(o.position, o.quaternion, o.scale).toArray();
+
+const maxDiff = (a: readonly number[], b: readonly number[]): number =>
+  Math.max(...a.map((v, i) => Math.abs(v - b[i]!)));
+
+function setLocal(o: THREE.Object3D, p: Pose, scale = 1): void {
+  o.position.set(...p.position);
+  o.quaternion.set(...p.rotation);
+  o.scale.setScalar(scale);
+}
+
+describe('ar-space-correction-registry', () => {
+  it('U2: an object not written after tracking holds P^-1 * Delta(e) * P * X_tracked after any jumps, and re-syncing changes nothing', () => {
+    // Why this test matters: the bake is incremental (one M per jump), but
+    // its result must equal the from-scratch formula over the whole track,
+    // for any parent chain, epoch and jump sequence; and a notification
+    // that brings no new observation must not move anything (idempotence).
+    fc.assert(
+      fc.property(
+        fc.array(pose, { minLength: 0, maxLength: 5 }),
+        fc.nat(),
+        pose,
+        pose,
+        num(0.2, 3),
+        (jumps, rawCut, parentPose, xPose, scale) => {
+          const cut = rawCut % (jumps.length + 1);
+          const store = newStore();
+          const group = new THREE.Group();
+          const parent = new THREE.Group();
+          setLocal(parent, parentPose);
+          group.add(parent);
+          const object = new THREE.Object3D();
+          setLocal(object, xPose, scale);
+          parent.add(object);
+          const xTracked = localOf(object);
+          const pMatrix = new THREE.Matrix4()
+            .compose(parent.position, parent.quaternion, parent.scale)
+            .toArray();
+          const registry = createArSpaceCorrectionRegistry({ group });
+          registry.attach(store);
+          // The object's pose was computed before the first `cut` jumps
+          // were observed: it belongs to epoch 0 of the full sequence.
+          jumps
+            .slice(0, cut)
+            .forEach((j, i) =>
+              store.dispatch(
+                relocalizationObserved(jumpObservation(1000 * (i + 1), j))
+              )
+            );
+          registry.track(object, { epoch: 0 });
+          jumps
+            .slice(cut)
+            .forEach((j, i) =>
+              store.dispatch(
+                relocalizationObserved(jumpObservation(1000 * (cut + i + 1), j))
+              )
+            );
+          const delta0 = selectCorrectionTrack(store.getState())[0]!;
+          const expected = shownLocalMatrix(delta0, pMatrix, xTracked as never);
+          expect(maxDiff(localOf(object), expected)).toBeLessThan(1e-9);
+          expect(object.scale.x).toBeCloseTo(scale, 12);
+          const before = localOf(object);
+          store.dispatch({ type: 'unrelated/action' });
+          store.dispatch(
+            relocalizationObserved({
+              ...jumpObservation(1, jumps[0] ?? STILL_CAMERA),
+              t: Number.NaN,
+            })
+          );
+          expect(localOf(object)).toEqual(before);
+          expect(registry.entryOf(object)!.applied).toBe(jumps.length);
+          registry.dispose();
+        }
+      )
+    );
+  });
+
+  it('U5: an object tracked with an older epoch gets its Delta at tracking', () => {
+    // Why this test matters: a pose computed before a jump and handed over
+    // after it (an async tile) must be corrected at once, not at the next
+    // jump.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    const tile = new THREE.Object3D();
+    tile.position.set(1, 0, 0);
+    group.add(tile);
+    registry.track(tile, { capturedAt: 999 });
+    // D in O: a 3 m step along raw +X is the NUE image of that vector.
+    const d = selectCorrectionTrack(store.getState())[0]!;
+    expect(tile.position.toArray()).toEqual(
+      new THREE.Vector3(1, 0, 0).add(new THREE.Vector3(...d.position)).toArray()
+    );
+    expect(registry.entryOf(tile)).toMatchObject({
+      applied: 1,
+      stampedAt: 999,
+    });
+
+    const fresh = new THREE.Object3D();
+    fresh.position.set(1, 0, 0);
+    group.add(fresh);
+    registry.track(fresh, { capturedAt: 1000 });
+    expect(fresh.position.toArray()).toEqual([1, 0, 0]);
+    registry.track(fresh);
+    expect(fresh.position.toArray()).toEqual([1, 0, 0]);
+  });
+
+  it('bakes into position and quaternion, keeps the scale, and updates a manual matrix too', () => {
+    // Why this test matters: the app reads its own position after a jump
+    // (the bake is visible by design), and an object with
+    // matrixAutoUpdate = false is drawn from its matrix, not its position.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const manual = new THREE.Object3D();
+    manual.position.set(0, 0, -2);
+    manual.scale.set(2, 2, 2);
+    manual.updateMatrix();
+    manual.matrixAutoUpdate = false;
+    group.add(manual);
+    registry.track(manual);
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, {
+          position: [1, 0, 0],
+          rotation: [0, Math.sin(0.3), 0, Math.cos(0.3)],
+        })
+      )
+    );
+    expect(manual.scale.toArray()).toEqual([2, 2, 2]);
+    expect(
+      maxDiff(
+        manual.matrix.toArray(),
+        new THREE.Matrix4()
+          .compose(manual.position, manual.quaternion, manual.scale)
+          .toArray()
+      )
+    ).toBeLessThan(1e-12);
+    expect(
+      manual.position.distanceTo(new THREE.Vector3(0, 0, -2))
+    ).toBeGreaterThan(0.5);
+  });
+
+  it('a relative write after a jump starts from the corrected pose', () => {
+    // Why this test matters: this is why the bake was chosen; a bobbing
+    // coin keeps its correction instead of jumping back by |D|.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const coin = new THREE.Object3D();
+    group.add(coin);
+    registry.track(coin);
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    const corrected = coin.position.clone();
+    coin.position.y += 0.01;
+    store.dispatch({ type: 'unrelated/action' });
+    expect(coin.position.distanceTo(corrected)).toBeCloseTo(0.01, 12);
+  });
+
+  it('a store swap keeps every pose and applies the next jump exactly once', () => {
+    // Why this test matters: a new recording in the same AR session brings a
+    // new store whose epoch starts again; the objects are already in the
+    // current frame, so nothing may move at the swap, and a jump in the new
+    // store must not be applied together with the old store's jumps.
+    const first = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    const detachFirst = registry.attach(first);
+    const coin = new THREE.Object3D();
+    group.add(coin);
+    registry.track(coin);
+    first.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    const afterFirst = coin.position.clone();
+    const second = newStore();
+    registry.attach(second);
+    expect(coin.position.toArray()).toEqual(afterFirst.toArray());
+    first.dispatch(
+      relocalizationObserved(
+        jumpObservation(2000, { position: [5, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    expect(coin.position.toArray()).toEqual(afterFirst.toArray());
+    second.dispatch(
+      relocalizationObserved(
+        jumpObservation(500, { position: [0, 0, 1], rotation: [0, 0, 0, 1] })
+      )
+    );
+    const step = selectCorrectionTrack(second.getState())[0]!.position;
+    expect(
+      coin.position.distanceTo(
+        afterFirst.clone().add(new THREE.Vector3(...step))
+      )
+    ).toBeLessThan(1e-12);
+    detachFirst(); // a stale detach must not detach the second store
+    second.dispatch(
+      relocalizationObserved(
+        jumpObservation(600, { position: [0, 0, 1], rotation: [0, 0, 0, 1] })
+      )
+    );
+    expect(registry.entryOf(coin)!.applied).toBe(2);
+  });
+
+  it('untrack stops the correction and frees the object for another committer', () => {
+    // Why this test matters: an untracked object must keep its last pose
+    // and become available to an anchor.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const coin = new THREE.Object3D();
+    group.add(coin);
+    registry.track(coin);
+    expect(poseCommitterOf(coin)).toBe('AR-space correction');
+    registry.untrack(coin);
+    expect(poseCommitterOf(coin)).toBeNull();
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    expect(coin.position.toArray()).toEqual([0, 0, 0]);
+    claimPose(coin, 'GPS anchor');
+    releasePose(coin, 'GPS anchor');
+    registry.track(coin);
+    registry.dispose();
+    expect(poseCommitterOf(coin)).toBeNull();
+  });
+
+  it('U7: refuses an object an anchor commits, and an anchor refuses a tracked object', () => {
+    // Why this test matters: one committer per object. An anchored object
+    // moved by the correction as well would receive the jump twice (the
+    // anchor re-fits it against the new frame anyway).
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const anchored = new THREE.Object3D();
+    group.add(anchored);
+    claimPose(anchored, 'deferred anchor');
+    expect(() => registry.track(anchored)).toThrow(/deferred anchor/);
+    const child = new THREE.Object3D();
+    anchored.add(child);
+    expect(() => registry.track(child)).toThrow(/nested/);
+    releasePose(anchored, 'deferred anchor');
+
+    const coin = new THREE.Object3D();
+    group.add(coin);
+    registry.track(coin);
+    expect(() => claimPose(coin, 'GPS anchor')).toThrow(/AR-space correction/);
+    registry.track(coin); // re-tracking keeps its own claim
+
+    // The sanctioned path: the correction is computed by the pure helpers
+    // (no claim) and an anchor commits it, as the only committer.
+    const visitor = new THREE.Object3D();
+    group.add(visitor);
+    claimPose(visitor, 'deferred anchor');
+    const target = shownLocalMatrix(
+      selectCorrectionTrack(store.getState())[0]!,
+      new THREE.Matrix4().toArray(),
+      visitor.matrix.toArray()
+    );
+    expect(target).toHaveLength(16);
+    expect(poseCommitterOf(visitor)).toBe('deferred anchor');
+    releasePose(visitor, 'deferred anchor');
+  });
+
+  it('refuses bad input: no store, an object outside the group, bad epochs', () => {
+    // Why this test matters: each of these would place content in a
+    // made-up frame; they are programming errors and throw at the call.
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    const coin = new THREE.Object3D();
+    group.add(coin);
+    expect(() => registry.track(coin)).toThrow(/no store/);
+    registry.attach(newStore());
+    expect(() => registry.track(new THREE.Object3D())).toThrow(RangeError);
+    expect(() => registry.track(coin, { epoch: 1 })).toThrow(RangeError);
+    expect(() => registry.track(coin, { epoch: 0.5 })).toThrow(RangeError);
+    expect(() => registry.track(coin, { epoch: 0, capturedAt: 1 })).toThrow(
+      TypeError
+    );
+    expect(() => registry.track(coin, { capturedAt: Number.NaN })).toThrow(
+      TypeError
+    );
+    expect(() => registry.track({} as THREE.Object3D)).toThrow(TypeError);
+    expect(poseCommitterOf(coin)).toBeNull();
+    expect(() =>
+      createArSpaceCorrectionRegistry({ group: {} as THREE.Object3D })
+    ).toThrow(TypeError);
+  });
+});

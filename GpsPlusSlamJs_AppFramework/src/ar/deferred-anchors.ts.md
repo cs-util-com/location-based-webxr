@@ -33,9 +33,12 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
     is a pose-free wrapper: its own pose is replaced, poses go on its
     children. Throws for a root that already belongs to another key, a root that
     holds the parent, a root nested in (or holding) another anchor's root,
-    and after the set was torn down.
-  - `remove(root)`: detaches it and restores `matrixAutoUpdate`; the key is
-    dropped with its last root. No-op after teardown.
+    and after the set was torn down. The root is claimed as `'deferred anchor'`
+    through `pose-committer.ts`, so a GPS anchor or the AR-space correction
+    cannot also write it, or an object inside or holding it.
+  - `remove(root)`: detaches it, restores `matrixAutoUpdate` and releases the
+    claim; the key is dropped with its last root. No-op after teardown. The
+    set's dispose releases every root it still holds.
   - `boundsChanged()`: call after a structural change of a root's subtree
     (parts added, removed, swapped); the next test rebuilds the bounds.
   - `onCommit(root)` runs after each placement (first, out of view, release,

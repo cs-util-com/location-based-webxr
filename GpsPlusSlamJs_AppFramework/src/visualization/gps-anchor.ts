@@ -24,6 +24,7 @@ import {
   joinAnchorSet,
   type AnchorSetMembership,
 } from '../ar/deferred-anchors.js';
+import { claimPose, releasePose } from '../ar/pose-committer';
 import type { ArParentTarget } from '../ar/ar-parent-target.js';
 import { nueToArLocal, worldNueToGps } from './frame-conversions.js';
 import { interpolatingMedian } from '../utils/median.js';
@@ -165,31 +166,6 @@ export interface GpsAnchor {
 }
 
 /**
- * Module-level registry of objects currently owned by a `GpsAnchor`.
- * Used to detect nested anchors (parent + child both anchored) which
- * we explicitly forbid; mirrors the C# invariant.
- */
-const anchoredObjects = new WeakSet<THREE.Object3D>();
-
-function isObjectInAnchoredChain(object: THREE.Object3D): boolean {
-  let cursor: THREE.Object3D | null = object;
-  while (cursor) {
-    if (anchoredObjects.has(cursor)) return true;
-    cursor = cursor.parent;
-  }
-  return false;
-}
-
-/** The other direction: `object` holds an anchored descendant. */
-function holdsAnchoredObject(object: THREE.Object3D): boolean {
-  let found = false;
-  object.traverse((o) => {
-    if (o !== object && anchoredObjects.has(o)) found = true;
-  });
-  return found;
-}
-
-/**
  * Returns true iff `object` is `arWorldGroup` itself or a descendant of it.
  * The anchor's `object3D` MUST satisfy this: only then does it ride the
  * alignment applied to `arWorldGroup.matrix` (the node the camera also lives
@@ -295,23 +271,7 @@ function medianPoint(
 }
 
 /** Throws for an object inside, or holding, an anchored object. */
-function assertNotNested(object: THREE.Object3D): void {
-  if (isObjectInAnchoredChain(object)) {
-    throw new Error(
-      'createGpsAnchor: nested GpsAnchors are not supported — ' +
-        'the supplied object3D is already inside an anchored parent chain.'
-    );
-  }
-  if (holdsAnchoredObject(object)) {
-    throw new Error(
-      'createGpsAnchor: nested GpsAnchors are not supported: ' +
-        'the supplied object3D holds an anchored descendant.'
-    );
-  }
-}
-
 export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
-  assertNotNested(options.object3D);
   if (!isDescendantOf(options.object3D, options.arWorldGroup)) {
     throw new Error(
       'createGpsAnchor: object3D must be a descendant of arWorldGroup ' +
@@ -320,7 +280,8 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     );
   }
   const { startup, matureFloorM } = startupOf(options);
-  anchoredObjects.add(options.object3D);
+  // One committer per object; nested GPS anchors are refused here too.
+  claimPose(options.object3D, 'GPS anchor');
 
   const sampleCount = options.secondsToAccumulateGpsPose ?? 7;
   if (sampleCount < 1) {
@@ -329,7 +290,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     // `0` in particular implies "median of zero samples". Fail fast and
     // point the caller at the supported bypass instead of silently
     // degrading the accumulation phase.
-    anchoredObjects.delete(options.object3D);
+    releasePose(options.object3D, 'GPS anchor');
     throw new Error(
       'createGpsAnchor: secondsToAccumulateGpsPose must be >= 1 — ' +
         'use skipBootstrap:true to bypass the accumulation phase.'
@@ -605,7 +566,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
       },
     });
   } catch (error) {
-    anchoredObjects.delete(options.object3D);
+    releasePose(options.object3D, 'GPS anchor');
     throw error;
   }
 
@@ -638,7 +599,7 @@ export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
     },
     dispose(): void {
       membership.leave();
-      anchoredObjects.delete(options.object3D);
+      releasePose(options.object3D, 'GPS anchor');
     },
     __tickForTests(dt: number, elapsed: number): void {
       membership.runPassForTests(options.camera, dt, elapsed);

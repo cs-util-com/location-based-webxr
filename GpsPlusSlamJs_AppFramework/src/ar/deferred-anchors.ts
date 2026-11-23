@@ -46,6 +46,7 @@ import * as THREE from 'three';
 import { createLogger } from '../utils/logger';
 import { registerFrameUpdate } from './frame-loop';
 import { registerSessionDisposer } from './session-disposers';
+import { claimPose, releasePose } from './pose-committer';
 import {
   hasCodeVoted,
   registerReleaseReceiver,
@@ -682,6 +683,7 @@ function createAnchorSet(
   function detachRoot(key: KeyEntry, r: RootEntry, unparent: boolean): void {
     key.roots.delete(r.root);
     keyOfRoot.delete(r.root);
+    releasePose(r.root, 'deferred anchor');
     r.root.matrixAutoUpdate = r.autoUpdateBefore;
     if (unparent && r.root.parent === parent) parent.remove(r.root);
     if (key.roots.size === 0) keys.delete(key.key);
@@ -1116,6 +1118,7 @@ function createAnchorSet(
       key,
       add(root, options = {}) {
         if (isMemberOf(root, key)) return;
+        claimPose(root, 'deferred anchor');
         const autoUpdateBefore = root.matrixAutoUpdate;
         parent.add(root);
         root.matrixAutoUpdate = false;
@@ -1202,6 +1205,7 @@ function createAnchorSet(
   function dispose(): void {
     if (disposed) return;
     disposed = true;
+    for (const root of keyOfRoot.keys()) releasePose(root, 'deferred anchor');
     detachPass?.();
     detachPass = null;
     selfTick?.();

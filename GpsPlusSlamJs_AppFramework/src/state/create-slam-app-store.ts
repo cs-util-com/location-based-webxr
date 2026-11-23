@@ -63,6 +63,11 @@ import {
   type CompassOptIn,
 } from './slam-app-store-listener';
 import { recordDiagnostic } from './diagnostics-action';
+import {
+  arSpaceCorrectionReducer,
+  relocalizationObserved,
+  type ArSpaceCorrectionState,
+} from './ar-space-correction-slice';
 
 /**
  * Slice prefixes the framework always persists, derived from the actual
@@ -79,6 +84,9 @@ const BUILTIN_PERSISTED_PREFIXES: readonly string[] = [
   // one pays nothing for the prefix being listed. See `diagnostics-action.ts`
   // for why the action has no reducer.
   slicePrefixOf(recordDiagnostic.type),
+  // Raw relocalization observations: a replay re-derives the AR-space
+  // correction from them (`ar-space-correction-slice.ts`).
+  slicePrefixOf(relocalizationObserved.type),
 ];
 
 type LibraryGpsDataState = NonNullable<LibraryRootState['gpsData']>;
@@ -122,6 +130,7 @@ export interface SlamAppRootState extends LibraryRootState {
   recording: RecordingState;
   tracking: TrackingSliceState;
   trackingQuality: TrackingQualitySliceState;
+  arSpaceCorrection: ArSpaceCorrectionState;
 }
 
 /** A bare-minimum middleware signature compatible with RTK's middleware list. */
@@ -444,6 +453,7 @@ export function createSlamAppStore<
     recording: recordingReducer,
     tracking: trackingReducer,
     trackingQuality: trackingQualityReducer,
+    arSpaceCorrection: arSpaceCorrectionReducer,
   };
   // Reserved WITHOUT a reducer: `diagnostics` deliberately has none (see
   // `diagnostics-action.ts`), so it cannot sit in `builtins` — but its prefix

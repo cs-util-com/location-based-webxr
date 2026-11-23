@@ -5,7 +5,7 @@ import {
 } from './segmenting-actions.js';
 
 describe('segmenting actions', () => {
-  it('names exactly the two actions that move the odometry frame', () => {
+  it('names exactly the three actions that move the odometry frame', () => {
     // Why this test matters: two consumers act on this list in OPPOSITE ways
     // - the geo join declines such a recording, the QR fold segments it - so
     // an entry appearing in one copy and not the other would let one silently
@@ -14,6 +14,7 @@ describe('segmenting actions', () => {
     expect([...SEGMENTING_ACTION_TYPES]).toEqual([
       'gpsData/odometryTrackingRestarted',
       'gpsData/arLoopClosureDetected',
+      'arSpaceCorrection/relocalizationObserved',
     ]);
   });
 

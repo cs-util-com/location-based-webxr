@@ -48,6 +48,7 @@ function makeState(
     recording: {} as CombinedRootState['recording'],
     tracking: {} as CombinedRootState['tracking'],
     trackingQuality: {} as CombinedRootState['trackingQuality'],
+    arSpaceCorrection: { observations: [] },
   };
 }
 

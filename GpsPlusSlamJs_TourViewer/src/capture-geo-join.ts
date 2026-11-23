@@ -145,7 +145,7 @@ export function preflightCaptureJoin(
       return {
         ok: false,
         reason:
-          "the recording's coordinate frame changed mid-walk (tracking restart or loop closure)",
+          "the recording's coordinate frame changed mid-walk (tracking restart, relocalization or loop closure)",
       };
     }
   }

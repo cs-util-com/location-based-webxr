@@ -4,6 +4,21 @@
 
 ### Added
 
+- **AR-space content correction** for ARCore relocalizations: the raw
+  observations go into a new built-in `arSpaceCorrection` slice (recorded,
+  segmenting); the jump of each, compensated for the camera's own motion,
+  and the correction of every older epoch are derived by selectors; a
+  registry bakes each jump once into the transforms of the objects it
+  tracks, so they keep their place in the current raw frame.
+  - **`ar/ar-space-correction`** (deep import): `jumpTransform`,
+    `correctionTrack`, `epochAt`, `shownLocalMatrix`, rigid helpers.
+  - **`state/ar-space-correction-slice`** (deep import):
+    `relocalizationObserved`, `selectCorrectionTrack`,
+    `selectArSpaceEpochAt`, `selectArSpaceToWorld`, `arSpaceWorldPose`.
+  - **`ar/ar-space-correction-registry`** (deep import):
+    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`).
+  - **`ar/pose-committer`** (deep import): one committer per object, now
+    shared by GPS anchors, deferred anchors and the registry.
 - **Content anchors that re-place only while none of it is in view**, at
   its current and its new pose, after two frames out of view. Until the
   alignment is mature and while no code has voted, it follows the alignment
