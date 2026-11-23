@@ -391,17 +391,25 @@ export function createArSpaceCorrectionRegistry(options: {
     if (observations === seenObservations) return;
     seenObservations = observations;
     const cache: CorrectionCache = new Map();
+    const startMs = performance.now();
+    let corrected = 0;
     for (const [object, entry] of [...entries]) {
       // An arcorrected listener of an earlier object may have untracked,
       // removed or re-tracked this one.
       if (entries.get(object) !== entry) continue;
+      const before = entry.applied;
       try {
         bake(object, entry, state, cache);
+        if (entry.applied !== before) corrected++;
       } catch (error) {
         // One broken object must not stop the others from being corrected.
         log.error(`correction of one object failed; skipped: ${String(error)}`);
       }
     }
+    log.info(
+      `AR content corrected: ${corrected} of ${entries.size} tracked objects ` +
+        `in ${(performance.now() - startMs).toFixed(1)} ms`
+    );
   }
 
   function untrack(object: THREE.Object3D, only?: Entry): void {

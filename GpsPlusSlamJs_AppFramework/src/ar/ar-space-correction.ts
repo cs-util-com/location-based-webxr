@@ -225,18 +225,33 @@ export function compensationVerdict(
   const plain = (
     reason: CompensationVerdict['reason']
   ): CompensationVerdict => ({ compensated: false, reason, stepM, turnDeg });
-  if (!(jump.tLast > jump.tPrev)) return plain('no-rate');
-  if (jump.t - jump.tLast > MAX_COMPENSATION_GAP_MS) return plain('gap');
-  if (mode === 'off') return plain('off');
-  const moving =
-    stepM > COMPENSATION_MIN_STEP_M || turnDeg > COMPENSATION_MIN_TURN_DEG;
-  if (mode === 'guarded' && !moving) return plain('still');
+  const blocked = compensationBlocker(jump, jump.tPrev, mode, stepM, turnDeg);
+  if (blocked !== null) return plain(blocked);
+  const moving = isMoving(stepM, turnDeg);
   return {
     compensated: true,
     reason: moving ? 'moving' : 'always',
     stepM,
     turnDeg,
   };
+}
+
+const isMoving = (stepM: number, turnDeg: number): boolean =>
+  stepM > COMPENSATION_MIN_STEP_M || turnDeg > COMPENSATION_MIN_TURN_DEG;
+
+/** The first reason, in order, not to compensate a jump with an earlier frame. */
+function compensationBlocker(
+  jump: RelocalizationJump,
+  tPrev: number,
+  mode: CompensationMode,
+  stepM: number,
+  turnDeg: number
+): 'no-rate' | 'gap' | 'off' | 'still' | null {
+  if (!(jump.tLast > tPrev)) return 'no-rate';
+  if (jump.t - jump.tLast > MAX_COMPENSATION_GAP_MS) return 'gap';
+  if (mode === 'off') return 'off';
+  if (mode === 'guarded' && !isMoving(stepM, turnDeg)) return 'still';
+  return null;
 }
 
 /**
