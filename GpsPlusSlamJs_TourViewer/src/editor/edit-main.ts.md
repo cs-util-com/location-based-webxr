@@ -834,7 +834,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     "<name>" and its <n> items" with the Undo);
   - `duplicate` (`duplicateSelection`, Ctrl+D) copies a story right after
     itself (`duplicateStorySelection`: the copy selected, its folder open,
-    "Duplicated "<title> copy""), a plain folder beside itself with
+    "Duplicated "<title> copy"", for one held by the draft question
+    once it lands, through `sayLanded`), a plain folder beside itself with
     everything in it (`duplicateFolderSelection`: the copy selected in
     its station's rows, "Duplicated the folder as "<name> copy""), or an
     item or a station beside itself,

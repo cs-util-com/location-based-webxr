@@ -89,9 +89,12 @@ afterStationId, order }` for `reorderStations`;
 
 ## Invariants & assumptions
 
-- Pure: reads the document and the view state, writes nothing. Each
-  call builds its lookups once (the objects by id, each station's folder
-  chains), not once per clipboard id.
+- Pure: reads the document and the view state, writes nothing. Its
+  lookup (the objects by id, each station's folder chains) is built once
+  per document state and kept in a `WeakMap` (`lookups`), like
+  `manifestToWrite`: a state never changes, and one shell draw asks
+  Copy, Cut and Paste about the same state several times, on every hover
+  of a drag in the tree.
 - A composed scale counts as 1, or as on a limit, within 1e-9 (the
   product rounds), as in the document.
 - The clipboard holds selection ids, never copies: every paste re-reads
@@ -148,5 +151,10 @@ Cut: each refusal of `cutOf`, the cut of stations and of items, the
 gone cut, and a cut's Paste (onto another station, a story whole, into
 its own station, a folder or an item in one to another station, the
 stations reordered, a cut station as the target, a stale id).
+`pasteScaleRefusal`: the first part of a planned paste that would not
+keep its size in another station, null for what stays in its station, is
+gone or keeps its size.
+`clipboard.lookup-memo.test.ts`: the lookup built once per document
+state over a shell draw's questions, and anew for an edited state.
 The wiring is covered by `editor-shell/editor-shell.test.ts` (the Edit
 menu's states) and `playwright-tests/editor3d-clipboard.spec.js`.

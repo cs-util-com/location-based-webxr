@@ -1863,23 +1863,28 @@ async function duplicateFolderSelection(
 }
 
 /** The story `storyId` copied right after itself: the copy selected
- *  with its folder open, said once it was made; one step. */
+ *  with its folder open, said once it was made (for one that waits for
+ *  the draft question, once it lands); one step. */
 function duplicateStorySelection(storyId: string): void {
-  if (editor === null) return;
+  const mine = editor;
+  if (mine === null) return;
   endUndo();
-  const outcome = editor.duplicateStory(storyId);
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
-    return;
-  }
-  const copy = manifestToWrite(store.getState().tourDocument)
-    ?.stations.flatMap((s) => tourStories(s))
-    .find((s) => s.id === outcome.id);
-  store.dispatch(editorViewActions.storyFolded({ id: outcome.id, open: true }));
-  select(`${STORY_PREFIX}${outcome.id}`);
-  toast(`Duplicated ${copy === undefined ? "the story" : `"${copy.title}"`}`);
-  tourChanged();
+  void sayLanded(mine, mine.duplicateStory(storyId), (outcome) => {
+    refresh();
+    if (outcome.kind === "refused") {
+      toast(outcome.reason);
+      return;
+    }
+    const copy = manifestToWrite(store.getState().tourDocument)
+      ?.stations.flatMap((s) => tourStories(s))
+      .find((s) => s.id === outcome.id);
+    store.dispatch(
+      editorViewActions.storyFolded({ id: outcome.id, open: true }),
+    );
+    select(`${STORY_PREFIX}${outcome.id}`);
+    toast(`Duplicated ${copy === undefined ? "the story" : `"${copy.title}"`}`);
+    tourChanged();
+  });
 }
 
 /** A placement edit of the 3D view or the inspector written

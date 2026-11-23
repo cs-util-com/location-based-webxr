@@ -217,7 +217,9 @@ never state). Design:
     - `addStory(stationId)` (named "New story", or "New story n" with the
       least n from 2 while that name is taken, so a delete never makes a
       name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
-      new id for the story and each child; a picture block shares its
+      new id for the story and each child; `{ kind: "held", landed }`
+      while the draft question waits, `landed` giving the `duplicated`
+      result once the copy is in the tour, null otherwise; a picture block shares its
       image file with the original on purpose, as a station's copy does:
       the bytes are the same, and a save keeps every file any block still
       names, so deleting either one never takes the other's picture;

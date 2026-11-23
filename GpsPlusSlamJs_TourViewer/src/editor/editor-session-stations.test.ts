@@ -9,7 +9,10 @@
  * real session, the real draft and the real save, and read the saved zip.
  */
 
-import { tourStationStoryBlocks } from "gps-plus-slam-app-framework/ar/tour-story";
+import {
+  tourStationStoryBlocks,
+  tourStories,
+} from "gps-plus-slam-app-framework/ar/tour-story";
 import type { TourBlock } from "gps-plus-slam-app-framework/ar/tour-blocks";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
@@ -1666,6 +1669,53 @@ describe("the editor session's paste", () => {
     if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
     store.draftGate.release();
     expect(await kept.landed).toMatchObject({ kind: "pasted" });
+    await session.close();
+  });
+
+  // Why: a story's Duplicate writes through the same draft gate. Reported
+  // as made while it waits, the page would say "Duplicated" and select a
+  // copy the tour may never hold; it is held, and what lands says.
+  it("reports a story's duplicate that waits for the draft question as held, null when it is dropped", async () => {
+    const { session, manifest } = await opened((m) => ({
+      ...m,
+      stations: m.stations.map((s) =>
+        s.id === stationIdOf("a")
+          ? {
+              ...s,
+              ...stationContent([storyOf("tale", []), ...stationBlocks(s)]),
+            }
+          : s,
+      ),
+    }));
+    const store = editorStore();
+    const editor = createEditorSession({
+      session,
+      manifest,
+      levels: new Map(),
+      store,
+    });
+    const steps = () => store.getState().tourDocument.past.length;
+    store.draftGate.hold(() => undefined);
+    const dropped = editor.duplicateStory("tale");
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    expect(steps()).toBe(0);
+    store.draftGate.hold(() => undefined);
+    const kept = editor.duplicateStory("tale");
+    if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
+    store.draftGate.release();
+    const landed = await kept.landed;
+    if (landed === null) throw new Error("not landed");
+    expect(landed.kind).toBe("duplicated");
+    expect(landed.id).not.toBe("tale");
+    expect(steps()).toBe(1);
+    const tour = manifestToWrite(store.getState().tourDocument);
+    expect(
+      tour?.stations
+        .flatMap((s) => tourStories(s))
+        .some((story) => story.id === landed.id),
+    ).toBe(true);
     await session.close();
   });
 

@@ -43,6 +43,7 @@ import {
   NOT_COPYABLE,
   NOTHING_SELECTED,
   pasteOf,
+  pasteScaleRefusal,
   SELECT_A_TARGET,
 } from "./clipboard.js";
 import { PASTE_REPEAT_STEP_M } from "../station-geometry.js";
@@ -378,6 +379,37 @@ describe("what Paste pastes", () => {
         view("station:b", { clipboard: copied(["folder:g"]) }),
       ),
     ).toMatchObject({ kind: "paste" });
+  });
+
+  // Why: the session asks pasteScaleRefusal about a paste the document
+  // refused after its picture read, so a folder resized meanwhile is said
+  // as the resize, not as a distance. It must name the first note or
+  // folder that would not keep its size in another station, skip what
+  // stays in its own station or is gone, and give null when nothing does
+  // (the session then says the plain refusal).
+  it("says, for a planned paste, the first part that would not keep its size", () => {
+    const plan = (
+      toStationId: string,
+      objects: string[],
+      folders: string[] = [],
+    ) => ({
+      toStationId,
+      objects,
+      folders: folders.map((folderId) => ({ stationId: "a", folderId })),
+    });
+    const resized = opened({ f: 2 });
+    expect(pasteScaleRefusal(resized, plan("b", ["n", "m"]))).toBe(
+      NOTE_IN_RESIZED_FOLDER,
+    );
+    expect(pasteScaleRefusal(resized, plan("a", ["m", "k"]))).toBeNull();
+    expect(pasteScaleRefusal(resized, plan("b", ["n"], ["g"]))).toBeNull();
+    expect(pasteScaleRefusal(resized, plan("b", ["gone"]))).toBeNull();
+    expect(
+      pasteScaleRefusal(opened({ f: 10, g: 2 }), plan("b", ["n"], ["g"])),
+    ).toBe(FOLDER_SCALE_TOO_FAR);
+    expect(pasteScaleRefusal(opened(), plan("b", ["m", "k"], ["g"]))).toBe(
+      null,
+    );
   });
 
   it("refuses what the tour no longer holds", () => {
