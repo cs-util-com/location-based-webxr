@@ -497,12 +497,22 @@ export function wireCreatorDraft(deps: {
 
   /** Say once that the walk is not being backed up. A creator mid-session
    *  cannot act on it more often than that, and repeating it would push
-   *  the measuring readout off the line. */
+   *  the measuring readout off the line. A refused write often surfaces
+   *  after the tap that caused it already said its outcome (a Restore's
+   *  "make it again" for an edit it dropped): that line stays, the
+   *  warning after it, so the creator learns both. Only the "being read"
+   *  status gives way, as it did before. */
   function noteNoPersistence(): void {
     if (warnedAboutPersistence) return;
     warnedAboutPersistence = true;
-    ctx.placementNote =
-      "This device is not saving a backup copy - finish and download before closing the page.";
+    const standing =
+      ctx.placementNote === DRAFT_BEING_READ ? null : ctx.placementNote;
+    ctx.placementNote = [
+      standing,
+      "This device is not saving a backup copy - finish and download before closing the page.",
+    ]
+      .filter((line) => line !== null && line !== "")
+      .join(" ");
     deps.render();
   }
 
