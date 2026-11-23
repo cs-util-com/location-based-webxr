@@ -72,12 +72,11 @@ describe("one run or save at a time, properties", () => {
           // The end view's "lacks N results" counts pairs of this plan.
           const m = s.runZip.missing;
           expect(Number.isInteger(m) && m >= 0).toBe(true);
-          if (s.runZip.phase === "preparing") {
-            expect(m).toBeLessThanOrEqual(measureProgress(s).total);
-          }
-          if (s.runZip.phase === "idle" && s.runZip.text === "") {
-            expect(m).toBe(0);
-          }
+          const z = s.runZip;
+          expect(z.phase !== "preparing" || m <= measureProgress(s).total).toBe(
+            true,
+          );
+          expect(z.phase !== "idle" || z.text !== "" || m === 0).toBe(true);
         }
       }),
     );
