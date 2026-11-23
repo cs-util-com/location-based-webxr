@@ -882,13 +882,19 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     `runHeldEdit`) shows and selects the first copy (`showNewStation`);
     one of copied stories (`pasteStories`) unfolds the target station and
     selects the first copy; either says "Pasted a copy" or "Pasted <n>
-    copies", one undo step;
+    copies", one undo step; any Paste, of whatever the clipboard holds,
+    does nothing but say `EDIT_STILL_RUNNING` while a paste or a
+    Duplicate still runs;
   - a Paste of a cut (`pasteCut`) moves the items onto the target
     station (the session's `moveChildren`) or reorders the stations, ONE
     undo step that keeps ids, with no station-move question first (the
     Cut was the decision); the clipboard emptied, the first cut row
     selected, and the toast says the items stand at the station's centre,
-    answers that now go on and a view floored to the kind's usual one;
+    answers that now go on and a view floored to the kind's usual one.
+    A move (or a stories' paste) held by the draft question does all
+    that only once it lands, and nothing when it is dropped
+    (`sayLanded`, `held-edit-flow.ts`'s `isHeld`): the clipboard keeps
+    a cut whose move never happened;
   - `clipboardKeys` takes Ctrl/Cmd+C, Ctrl/Cmd+X and Ctrl/Cmd+V (without Shift)
     only where `editKeysFree` holds and the page has no text selected,
     so a field, a dialog, a menu and selected text keep the browser's

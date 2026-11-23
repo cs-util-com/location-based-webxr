@@ -46,7 +46,8 @@ export interface HeldEditFlow<T> {
   readonly made: (result: T) => void;
 }
 
-function isHeld<T>(value: unknown): value is EditorHeld<T> {
+/** Whether an edit's outcome is held for the draft question. */
+export function isHeld<T>(value: unknown): value is EditorHeld<T> {
   return (
     typeof value === "object" &&
     value !== null &&

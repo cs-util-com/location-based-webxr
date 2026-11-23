@@ -221,9 +221,8 @@ test("Ctrl+V stays the browser's in a field, with a menu open and in a dialog, a
 
   await page.locator("#edit-menu-btn").click();
   await page.locator("#edit-copy").click();
-  await expect(page.locator(".toast", { hasText: "Copied" })).not.toHaveCount(
-    0,
-  );
+  // The menu's Copy says so in a toast of its own, beside the key's.
+  await expect(page.locator(".toast", { hasText: "Copied" })).toHaveCount(2);
   await page.locator(`#tree-body [data-select="station:${to.id}"]`).click();
   const was = await childCount(page, to.id);
   const oneFrame = () =>

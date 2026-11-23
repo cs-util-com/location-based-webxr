@@ -176,8 +176,9 @@ export interface EditorViewState {
   /** The plain folders the tree lists folded (to their row), by id: a
    *  folder is listed open until folded. */
   readonly foldedFolders: readonly string[];
-  /** The editor's own clipboard (Copy, Ctrl+C): the selection ids it
-   *  holds (an item's id, `folder:<id>`), in the order copied, or none.
+  /** The editor's own clipboard (Copy, Ctrl+C; Cut, Ctrl+X, marked as a
+   *  cut): the selection ids it holds (an item's id, `folder:<id>`,
+   *  `station:<id>`, `story:<id>`), in the order copied, or none.
    *  Ids, not content: a paste re-checks them against the tour as it is
    *  then (`clipboard.ts`). Not the system clipboard, so it never leaves
    *  this tab; the open tour's, emptied with another tour or none. */

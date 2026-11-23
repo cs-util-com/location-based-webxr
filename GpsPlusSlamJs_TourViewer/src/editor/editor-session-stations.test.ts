@@ -35,7 +35,7 @@ import {
 import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
 import { NOTE_IN_RESIZED_FOLDER } from "./clipboard.js";
-import { createEditorSession } from "./editor-session.js";
+import { createEditorSession, NOT_IN_TOUR } from "./editor-session.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
   editedBlocks,
@@ -1525,6 +1525,68 @@ describe("the editor session's paste", () => {
     await session.close();
   });
 
+  // Why: a Paste of a cut moves items or stations with no picture to
+  // read, yet the draft question holds its edit all the same. Reported as
+  // made, the page would empty the clipboard and say "Moved" for a move
+  // the tour may never hold; held, it says so only once the move lands.
+  it("reports a cut's move and a stations' reorder that wait for the draft question as held, null when dropped", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    const order = (
+      manifestToWrite(store.getState().tourDocument)?.stations ?? []
+    )
+      .map((s) => s.id)
+      .reverse();
+    store.draftGate.hold(() => undefined);
+    const unordered = editor.reorderStations(order);
+    if (unordered.kind !== "held") throw new Error(JSON.stringify(unordered));
+    store.draftGate.drop();
+    expect(await unordered.landed).toBeNull();
+    store.draftGate.hold(() => undefined);
+    const reordered = editor.reorderStations(order);
+    if (reordered.kind !== "held") throw new Error(JSON.stringify(reordered));
+    store.draftGate.release();
+    expect(await reordered.landed).toEqual({ kind: "reordered" });
+    expect(steps()).toBe(was + 1);
+    const move = () =>
+      editor.moveChildren([
+        { id: "b", to: { place: "station", station: stationIdOf("a") } },
+      ]);
+    store.draftGate.hold(() => undefined);
+    const dropped = move();
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    expect(steps()).toBe(was + 1);
+    store.draftGate.hold(() => undefined);
+    const moved = move();
+    if (moved.kind !== "held") throw new Error(JSON.stringify(moved));
+    store.draftGate.release();
+    expect(await moved.landed).toMatchObject({ kind: "moved" });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
+  // Why: a stations' paste and a note's Duplicate copy what they read
+  // before the picture read; a note deleted meanwhile must not come back
+  // as a copy, nor a copy be made of a note no longer in the tour.
+  it("refuses a stations' paste and a note's duplicate whose tour changed during the picture read", async () => {
+    const { session, editor, steps } = await withFolder();
+    const was = steps();
+    const pasting = editor.pasteStations({
+      afterStationId: stationIdOf("a"),
+      stations: [stationIdOf("f"), stationIdOf("b")],
+    });
+    expect(editor.remove("b")).toEqual({ kind: "deleted" });
+    expect(await pasting).toMatchObject({ kind: "refused" });
+    expect(steps()).toBe(was + 1);
+    const duplicating = editor.duplicateObject("f");
+    expect(editor.remove("f")).toEqual({ kind: "deleted" });
+    expect(await duplicating).toEqual({ kind: "refused", reason: NOT_IN_TOUR });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
   // Why: a Paste of copied stories copies everything in them under new
   // ids into the target station, after the story named (else at the end
   // of its stories), as ONE step; a story deleted since is refused.
@@ -1587,6 +1649,23 @@ describe("the editor session's paste", () => {
         caption: "Welcome",
       },
     );
+    // Held by the draft question, a stories' paste is said only once it
+    // lands, and not at all when it is dropped.
+    const plan = {
+      toStationId: stationIdOf("f"),
+      afterStory: null,
+      stories: ["welcome"],
+    };
+    store.draftGate.hold(() => undefined);
+    const dropped = editor.pasteStories(plan);
+    if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+    store.draftGate.drop();
+    expect(await dropped.landed).toBeNull();
+    store.draftGate.hold(() => undefined);
+    const kept = editor.pasteStories(plan);
+    if (kept.kind !== "held") throw new Error(JSON.stringify(kept));
+    store.draftGate.release();
+    expect(await kept.landed).toMatchObject({ kind: "pasted" });
     await session.close();
   });
 

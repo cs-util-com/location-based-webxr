@@ -72,8 +72,18 @@ afterStationId, order }` for `reorderStations`;
     the folder actions keep those in their station), `CUT_SAME_STATION`
     (everything is in the target already), `CUT_STATION_TARGET` (a cut
     station selected) and `CUT_STATIONS_IN_PLACE` (nothing would move).
-    A choice or quiz entry, a story whose items are not saved, and the
-    other move refusals come from `childMoveChange` itself, in its words.
+  - refused, too, for a move the document would refuse: each leaving
+    item is checked with `childMoveChange` onto the target, and its
+    reason said in `MOVE_REFUSALS` words (a choice or quiz entry stays
+    in its story, a model without a size cannot stand free). The menu,
+    the bar and the key then offer no Paste, rather than one that empties
+    the clipboard and moves nothing. Only "unsaved" (a story whose items
+    the file does not hold yet) is left to the session, which says it
+    with the item's name.
+- `MOVE_REFUSALS` - the words for `childMoveChange`'s refusals
+  (`missing`, `ownStory`, `noNesting`, `cannotStandFree`), and
+  `NO_SUCH_STORY` ("That is no longer in this tour."); the session's
+  `moveChild` and `moveChildren` say the same words (it imports them).
 - `CopyOutcome`, `CutOutcome`, `PasteOutcome` (its folders by
   `{ stationId, folderId }`), and the reason strings above.
 

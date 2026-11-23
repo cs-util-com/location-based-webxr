@@ -27,6 +27,7 @@ import {
 } from "gps-plus-slam-app-framework/ar/tour-story";
 
 import {
+  childMoveChange,
   documentFrames,
   documentObjects,
   folderChainOf,
@@ -105,6 +106,23 @@ export type PasteOutcome =
       readonly order: readonly string[];
     }
   | { readonly kind: "refused"; readonly reason: string };
+
+/** Said for something the tour no longer holds. */
+export const NO_SUCH_STORY = "That is no longer in this tour.";
+
+/** Said for a move of a station's item the format refuses, by why (an
+ *  unsaved file is said by the session, naming the item's kind): by a
+ *  Paste of a cut here, before it is offered, and by the session's moves. */
+export const MOVE_REFUSALS: Readonly<
+  Record<"missing" | "ownStory" | "noNesting" | "cannotStandFree", string>
+> = {
+  missing: NO_SUCH_STORY,
+  ownStory:
+    "A choice or a quiz stays in its story: its answers lead to that story's entries.",
+  noNesting: "It cannot go there: a story holds no story.",
+  cannotStandFree:
+    "A model without a size cannot stand in the world: give it a size first.",
+};
 
 /** Said when there is nothing to copy. */
 export const NOTHING_SELECTED =
@@ -370,7 +388,7 @@ export function pasteOf(
   };
 }
 
-/** A Paste of copied stations (D3): after the station the selection
+/** A Paste of copied stations: after the station the selection
  *  names, whatever in it is selected; refused for no station and for a
  *  copied station gone since. */
 function stationsPasteOf(
@@ -392,7 +410,7 @@ function stationsPasteOf(
   };
 }
 
-/** A Paste of copied stories (D3): after the selected story, or the story
+/** A Paste of copied stories: after the selected story, or the story
  *  of the selected entry; else at the end of the stories of the station
  *  the selection names. Refused for no station and for a copied story
  *  gone since. */
@@ -521,8 +539,9 @@ export function cutGone(
  *  moved onto the station the selection names (`selectedStationOf`), or
  *  its stations put after it; refused for no target, a source gone, a
  *  folder or what is in one going to another station, a cut into its own
- *  station, and stations pasted after one of themselves or already in
- *  that order. */
+ *  station, an item the move rule keeps where it is (`childMoveChange`:
+ *  a choice or a quiz, a model with no size), and stations pasted after
+ *  one of themselves or already in that order. */
 function cutPasteOf(
   lookup: Lookup,
   ids: readonly string[],
@@ -560,6 +579,16 @@ function cutPasteOf(
   }
   if (leaving.length === 0) {
     return { kind: "refused", reason: CUT_SAME_STATION };
+  }
+  // Offered only when it would land: the session's move refuses these.
+  for (const s of leaving) {
+    const change = childMoveChange(lookup.doc, s.id, {
+      place: "station",
+      station: target,
+    });
+    if (change.kind === "refused" && change.reason !== "unsaved") {
+      return { kind: "refused", reason: MOVE_REFUSALS[change.reason] };
+    }
   }
   return {
     kind: "move",

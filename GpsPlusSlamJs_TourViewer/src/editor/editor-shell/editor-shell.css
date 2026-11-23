@@ -3425,6 +3425,16 @@ body[data-view="3d"] #view3d .view3d-canvas {
   min-width: 0;
 }
 
+/* Four actions (a note's three and Paste) need about 1110 px of bar for
+ * their words beside the credits and the toggles; in a narrower window
+ * they keep their icons and their names (titles and labels), as at a
+ * tablet's width, rather than run under the toggles. */
+@media (width <= 1200px) {
+  #shell-acts:has(> .sact:nth-child(4)) .lbl {
+    display: none;
+  }
+}
+
 /* --- narrow windows ------------------------------------------------------- */
 /* A tablet in portrait: the docks take at most about half the width each
  * (one is open at a time, `dock-rule.ts`). */

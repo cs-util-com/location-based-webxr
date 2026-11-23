@@ -96,7 +96,10 @@ inspector's Delete and "Move to a new station"; the bottom bar's power
 actions (`bar-actions.ts`: Duplicate, Align to station, Copy position)
 and its Paste (`data-bar="paste"`, shown only while `clipboard.ts`'s
 `pasteOf` would paste onto the selection and no paste runs, titled as the
-Edit menu's Paste: a phone has no Ctrl+V).
+Edit menu's Paste: a phone has no Ctrl+V). Four actions (a note's three
+and Paste) fold their words to their icons below 1200 px
+(`editor-shell.css`), where with words they would run under the panel's
+toggles; fewer fold only at a tablet's width.
 Each is a page command (`deps.stations`), one undo step; the shell writes
 nothing to the tour itself.
 

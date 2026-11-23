@@ -2814,6 +2814,14 @@ describe("the tree's plain folders", () => {
     expect(paste()?.title).toBe("Paste into Station w (Ctrl+V)");
     paste()?.click();
     expect(deps.clipboard.paste).toHaveBeenCalledOnce();
+    // While a paste or a duplicate still runs, another would make
+    // nothing: the bar offers none.
+    store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
+    expect(paste()).toBeNull();
+    store.dispatch(
+      editorViewActions.duplicatingChanged({ duplicating: false }),
+    );
+    expect(paste()).not.toBeNull();
     store.dispatch(editorViewActions.selected({ id: null }));
     expect(paste()).toBeNull();
     shell.hide();

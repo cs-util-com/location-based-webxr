@@ -157,7 +157,7 @@ function stationCopy(state: TourDocumentState, id: string, after: string) {
   };
 }
 
-// Why: a Paste of copied stations (D3) puts each copy after the station
+// Why: a Paste of copied stations puts each copy after the station
 // selected, in the order copied, beside it, every item under a new id;
 // the lot is ONE step one undo takes back exactly, and a copy that
 // cannot be made (a taken id) makes none of them.
@@ -197,7 +197,7 @@ describe("a Paste of copied stations", () => {
   });
 });
 
-// Why: a Paste of a copied story (D3) puts the copy after the selected
+// Why: a Paste of a copied story puts the copy after the selected
 // story, or at the end of the target station's stories, in any station;
 // its entries get new ids, the lot is one step, undone exactly.
 describe("a Paste of copied stories", () => {

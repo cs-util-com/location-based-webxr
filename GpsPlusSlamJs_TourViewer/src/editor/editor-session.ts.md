@@ -200,12 +200,14 @@ never state). Design:
       last station is refused (`LAST_STATION`).
       Its photos' pictures are kept for the undo, as `remove` keeps one.
     - `reorderStations(order)` - every station once (`NOT_AN_ORDER`
-      otherwise): `reordered` or `unchanged`.
+      otherwise): `reordered` or `unchanged`, `held` while the draft
+      question waits.
     - `duplicateStation(stationId)` / `duplicateObject(id)` (async) - a
       copy beside the original (a station twice its found radius plus 5 m
       east, an item 1.5 m east); a photo's picture is read first (the
       page's copy, `loadPhoto`, then the newest zip; `PICTURE_UNREAD` when
-      none reads) and held under the copy's id, so the save writes the
+      none reads) and held under the copy's id (a note gone, or the tour
+      closed, during that read is `NOT_IN_TOUR`), so the save writes the
       copy's own `content/<id>.<ext>` and the draft keeps it. A station's
       copy mints a new id for every block of it, its story's too (block
       ids are unique across the tour). Held by the draft gate either
@@ -290,17 +292,25 @@ never state). Design:
       `the paste of <name>` or `the paste of <n> stations`; pictures read
       first as for `duplicateStation`, which runs through the same
       `copyStations`; `{ kind: "pasted", stations }`, `held` while the
-      draft question waits, refused for a station the tour lacks.
+      draft question waits, refused for a station the tour lacks. The
+      stations' items are read again after the picture read: a tour
+      closed meanwhile is `NOT_IN_TOUR`, a station gone or its items
+      changed (by id or order) is refused, so a note deleted meanwhile
+      never comes back as a copy.
     - `pasteStories({ toStationId, afterStory, stories })` - copies of the
       stories into the station, in order after `afterStory` (null: after
       its last story), every child under a new id, `storiesPasted` as one
       step; `{ kind: "pasted", stories }` or refused for a story the tour
-      lacks (`NO_SUCH_STORY`).
+      lacks (`NO_SUCH_STORY`); `held` while the draft question waits,
+      landing as `pasted` once every copy is in the tour, else null.
     - `moveChildren(moves)` - a Paste of a cut: each move checked with
       `childMoveChange` as `moveChild` checks one (its refusals in the
       same words), then `childrenMoved`, one step named
       `the move of "<name>"` or `the move of <n> items`; `{ kind:
-"moved", answers, floored }` summed over the moves.
+"moved", answers, floored }` summed over the moves; `held` while the
+      draft question waits, landing as `moved` once every item stands in
+      its target station, else null. `reorderStations` is held the same
+      way, landing as `reordered` once the stations stand in that order.
     - `paste(plan)` (async) - the clipboard's notes and plain folders
       copied into the station `plan.toStationId` (`clipboardPasted`), one
       step for the lot: `{ kind: "pasted", objects, folders }` (the

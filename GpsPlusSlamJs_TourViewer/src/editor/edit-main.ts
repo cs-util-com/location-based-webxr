@@ -114,7 +114,7 @@ import {
   type PasteOutcome,
   pasteOf,
 } from "./clipboard.js";
-import { EDIT_STILL_RUNNING, runHeldEdit } from "./held-edit-flow.js";
+import { EDIT_STILL_RUNNING, isHeld, runHeldEdit } from "./held-edit-flow.js";
 import {
   openedNoticeLines,
   openTourForEditing,
@@ -195,6 +195,7 @@ import {
   createEditorSession,
   EDITOR_SESSION_SLICES,
   datedFileName,
+  type EditorHeld,
   type EditorSave,
   type EditorSession,
   type NarrationChange,
@@ -1552,26 +1553,60 @@ function cutSelection(): void {
   toast(`Cut ${what}: select where it goes and paste. Escape cancels.`);
 }
 
+/** `outcome` said by `say` now, or, for an edit held by the draft gate,
+ *  once it lands while the editor `mine` is still the page's; nothing
+ *  when it never lands (the gate says that itself). */
+async function sayLanded<T>(
+  mine: EditorSession,
+  outcome: T | EditorHeld<T>,
+  say: (outcome: T) => void,
+): Promise<void> {
+  if (!isHeld<T>(outcome)) {
+    say(outcome);
+    return;
+  }
+  refresh();
+  const landed = await outcome.landed;
+  if (landed === null || editor !== mine) return;
+  say(landed);
+}
+
 /** A Paste of a cut: its items moved onto the target station, or its
  *  stations put after it, ONE step that keeps their ids; the clipboard
- *  emptied and the first moved row selected. No question first (the cut
- *  was the question); the toast says that a moved item stands at the
- *  station's centre and what else changed. */
+ *  emptied and the first moved row selected, once the move is in the
+ *  tour (one held by the draft question, when it lands). No question
+ *  first (the cut was the question); the toast says that a moved item
+ *  stands at the station's centre and what else changed. */
 function pasteCut(
   plan: Extract<PasteOutcome, { kind: "move" | "reorder" }>,
 ): void {
-  if (editor === null) return;
+  const mine = editor;
+  if (mine === null) return;
   const first = ui().clipboard?.ids[0] ?? null;
   endUndo();
   if (plan.kind === "reorder") {
-    if (cutLanded(editor.reorderStations(plan.order), first)) {
-      toast(`Moved after "${stationTitleOf(plan.afterStationId)}"`);
-    }
+    void sayLanded(mine, mine.reorderStations(plan.order), (outcome) => {
+      if (cutLanded(outcome, first)) {
+        toast(`Moved after "${stationTitleOf(plan.afterStationId)}"`);
+      }
+    });
     return;
   }
-  const outcome = editor.moveChildren(plan.moves);
-  if (outcome.kind === "moved") showRowsOf(plan.toStationId);
-  if (!cutLanded(outcome, first) || outcome.kind !== "moved") return;
+  void sayLanded(mine, mine.moveChildren(plan.moves), (outcome) => {
+    if (outcome.kind === "moved") showRowsOf(plan.toStationId);
+    if (cutLanded(outcome, first) && outcome.kind === "moved") {
+      sayMoved(plan, outcome);
+    }
+  });
+}
+
+/** What a Paste of a cut moved, said: where the items stand now, the
+ *  answers that lost their jump and the items that took their kind's
+ *  usual view. */
+function sayMoved(
+  plan: Extract<PasteOutcome, { kind: "move" }>,
+  outcome: { readonly answers: number; readonly floored: boolean },
+): void {
   const n = plan.moves.length;
   const where = stationTitleOf(plan.toStationId);
   const notes = [
@@ -1619,20 +1654,26 @@ function cutLanded(
 }
 
 /**
- * Paste (the Edit menu's, Ctrl+V): copies of the clipboard's notes and
- * folders into the selected station, or the station of the selected row
- * (`clipboard.ts`), ONE step; the first copy selected in its station's
- * rows and a toast saying how many. A photo's picture is read first,
- * said by a held "Pasting..." toast; another Paste or Duplicate meanwhile
- * makes nothing and says so (the `duplicating` flag), and a tour switched meanwhile
- * drops the result. A refusal pastes nothing and is said. A paste that
- * waits for the draft question is said only once it lands
- * (`held-edit-flow.ts`).
+ * Paste (the Edit menu's, Ctrl+V): what the clipboard holds, by
+ * `clipboard.ts`'s `pasteOf` - copies of its notes and folders into the
+ * selected station, or the station of the selected row; copies of its
+ * stations after the selected one; copies of its stories into the
+ * station; or a cut moved there - ONE step; the copies selected and a
+ * toast saying how many. A photo's picture is read first, said by a held
+ * "Pasting..." toast; while a Paste or a Duplicate still runs, any Paste
+ * makes nothing and says so (the `duplicating` flag), and a tour
+ * switched meanwhile drops the result. A refusal pastes nothing and is
+ * said. A paste that waits for the draft question is said only once it
+ * lands (`held-edit-flow.ts`).
  */
 async function pasteSelection(): Promise<void> {
   const mine = editor;
   if (mine === null) return;
   const plan = pasteOf(store.getState().tourDocument, ui());
+  if (ui().duplicating) {
+    toast(EDIT_STILL_RUNNING);
+    return;
+  }
   if (plan.kind === "refused") {
     toast(plan.reason);
     return;
@@ -1703,21 +1744,22 @@ function pasteStories(
   plan: Extract<PasteOutcome, { kind: "pasteStories" }>,
 ): void {
   endUndo();
-  const outcome = mine.pasteStories(plan);
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
-    return;
-  }
-  const [first] = outcome.stories;
-  showRowsOf(plan.toStationId);
-  if (first !== undefined) {
-    store.dispatch(editorViewActions.storyFolded({ id: first, open: true }));
-    select(`${STORY_PREFIX}${first}`);
-  }
-  const n = outcome.stories.length;
-  toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
-  tourChanged();
+  void sayLanded(mine, mine.pasteStories(plan), (outcome) => {
+    refresh();
+    if (outcome.kind === "refused") {
+      toast(outcome.reason);
+      return;
+    }
+    const [first] = outcome.stories;
+    showRowsOf(plan.toStationId);
+    if (first !== undefined) {
+      store.dispatch(editorViewActions.storyFolded({ id: first, open: true }));
+      select(`${STORY_PREFIX}${first}`);
+    }
+    const n = outcome.stories.length;
+    toast(n === 1 ? "Pasted a copy" : `Pasted ${String(n)} copies`);
+    tourChanged();
+  });
 }
 
 /** What `runHeldEdit` takes from the page for an edit by `mine`: the

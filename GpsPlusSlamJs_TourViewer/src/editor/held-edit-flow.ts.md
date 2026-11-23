@@ -29,6 +29,10 @@ tour holds it.
     the change was not applied. `runHeldEdit` resolves after that.
 - `HeldEditFlow<T>` - what the page passes: `working`, `run`, `current`,
   `running`, `busy`, `toast`, `refresh`, `made`.
+- `isHeld(value)` - whether an edit's outcome is `EditorHeld` (waiting
+  for the draft question); the page's Paste of a cut and of stories,
+  which read no pictures and so need no `runHeldEdit`, use it to say
+  their edit only once it lands.
 - `EDIT_STILL_RUNNING` - "A paste or a duplicate is still running", the
   words of that toast and of the Edit menu's Paste and Duplicate titles
   meanwhile (`editor-shell.ts` imports it).

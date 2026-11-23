@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   playableStory,
   stationContent,
+  storyOf,
 } from "../test-support/station-content.js";
 import { tourOf } from "../test-support/tour-of.js";
 import {
@@ -34,6 +35,7 @@ import {
   cutGone,
   cutOf,
   FOLDER_STAYS,
+  MOVE_REFUSALS,
   NOTHING_TO_CUT,
   FOLDER_SCALE_TOO_FAR,
   NOTE_IN_RESIZED_FOLDER,
@@ -58,8 +60,27 @@ function pin(id: string) {
 }
 
 /** Station a: note n, folder f (note m in it, folder g in it with note k),
- *  story t; station b: note e. `scales` resize f and g. */
-function opened(scales: { readonly f?: number; readonly g?: number } = {}) {
+ *  story t; station b: note e. `scales` resize f and g; `choice` adds a
+ *  choice, `t-way`, to story t. */
+function opened(
+  scales: { readonly f?: number; readonly g?: number } = {},
+  choice = false,
+) {
+  const story = playableStory("t");
+  const t = choice
+    ? storyOf("t", [
+        ...story.children,
+        {
+          id: "t-way",
+          kind: "choice",
+          prompt: "Which?",
+          options: [
+            { id: "t-left", label: "Left" },
+            { id: "t-right", label: "Right" },
+          ],
+        },
+      ])
+    : story;
   const wire = tourOf([], {
     stations: ["a", "b"].map((id, i) => ({
       id,
@@ -95,7 +116,7 @@ function opened(scales: { readonly f?: number; readonly g?: number } = {}) {
                   },
                 ],
               },
-              playableStory("t"),
+              t,
             ]
           : [pin("e")],
       ),
@@ -194,7 +215,7 @@ describe("what a Paste of copied stations and stories does", () => {
   const doc = opened();
   const copied = (ids: string[]) => ({ mode: "copy" as const, ids });
 
-  // D3: a station copy goes after the selected station in the tour's
+  // A station copy goes after the selected station in the tour's
   // order (and is placed beside it), whatever in that station is
   // selected.
   it("pastes stations after the station the selection names", () => {
@@ -214,7 +235,7 @@ describe("what a Paste of copied stations and stories does", () => {
     }
   });
 
-  // D3: a story copy goes after the selected story (or the story of the
+  // A story copy goes after the selected story (or the story of the
   // selected entry), else at the end of the selected station's stories.
   it("pastes stories after the selected story, else at the end of the station's stories", () => {
     for (const selected of ["story:t", "t-card"]) {
@@ -466,6 +487,29 @@ describe("what a Paste of a cut does", () => {
         reason: FOLDER_STAYS,
       });
     }
+  });
+
+  // Why: a choice's answers lead to its story's entries, so the document
+  // never moves one out of its story. Offered anyway, the Paste would
+  // empty the clipboard and say nothing landed; refused here, the menu,
+  // the bar and the key say why before anything is tried.
+  it("refuses a cut the document would refuse, with the document's reason", () => {
+    const withChoice = opened({}, true);
+    for (const ids of [["t-way"], ["n", "t-way"]]) {
+      expect(
+        pasteOf(
+          withChoice,
+          view("station:b", { clipboard: { mode: "cut", ids } }),
+        ),
+      ).toEqual({ kind: "refused", reason: MOVE_REFUSALS.ownStory });
+    }
+    // The story itself, holding the choice, still moves.
+    expect(
+      pasteOf(
+        withChoice,
+        view("station:b", { clipboard: { mode: "cut", ids: ["story:t"] } }),
+      ),
+    ).toMatchObject({ kind: "move", toStationId: "b" });
   });
 
   it("refuses a cut whose source is gone, and one with no target", () => {

@@ -29,7 +29,7 @@ export interface EscapeState {
 }
 
 /** What Escape does: `native` leaves it to the native dialog;
- *  `closeStart` closes the open dialog back to the tour; `deselect`
+ *  `closeStart` closes the open dialog back to the tour;
  *  `clearCut` cancels a pending cut and keeps the selection; `deselect`
  *  clears the selection. */
 export type EscapeAction =
