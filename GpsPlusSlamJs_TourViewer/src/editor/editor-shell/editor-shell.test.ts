@@ -35,11 +35,11 @@ import type { DockHost, mountDockHost } from "./dock-host.js";
 import type { DockPanelId } from "./dock-layout.js";
 import {
   createEditorShell,
-  EDIT_STILL_RUNNING,
   type EditorShellDeps,
   type TypedEditOutcome,
 } from "./editor-shell.js";
 import { createFolderCommands, NOTHING_TO_GROUP } from "../folder-commands.js";
+import { EDIT_STILL_RUNNING } from "../held-edit-flow.js";
 import {
   NOTHING_COPIED,
   NOTHING_SELECTED,

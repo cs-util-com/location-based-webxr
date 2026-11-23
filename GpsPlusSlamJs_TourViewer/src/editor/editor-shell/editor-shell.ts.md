@@ -6,7 +6,7 @@ The 3D view's studio shell: the top bar's studio controls
 (Undo, Redo, Help), the Edit menu (Undo and Redo, where
 those fold at a phone's width; Copy, Paste, Duplicate and Delete, drawn
 for the selection by `drawEditItems`, Paste and Duplicate disabled
-with `EDIT_STILL_RUNNING`, "A paste or a duplicate is still running",
+with `EDIT_STILL_RUNNING` (`../held-edit-flow.ts`), "A paste or a duplicate is still running",
 while one of them reads its pictures: the store's `duplicating`), the View menu's Top view and Frame, the tree
 dock at the left, the inspector dock at the right, the compass and the
 zoom buttons at the bottom right, the bottom bar's toggles and the

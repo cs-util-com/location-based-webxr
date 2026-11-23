@@ -116,6 +116,7 @@ import { fileUseOf } from "../file-uses.js";
 import type { ChildMoveTo } from "../station-children-moves.js";
 import { newObjectId } from "../content-placement.js";
 import { folderName } from "./folder-commands.js";
+import { pasteScaleRefusal } from "./clipboard.js";
 import type { TourCharacter } from "gps-plus-slam-app-framework/ar/tour-characters";
 import {
   characterChanges,
@@ -1087,14 +1088,24 @@ export interface EditorSession {
     order: readonly string[],
   ): { kind: "reordered" | "unchanged" } | EditorRefusal;
   /** Copy a station beside itself with its items (a photo's picture read
-   *  first, and held under the copy's id): one step. */
+   *  first, and held under the copy's id): one step. Held when it waits
+   *  for the draft question, as for `duplicateFolder`. */
   duplicateStation(
     stationId: string,
-  ): Promise<{ kind: "duplicated"; stationId: string } | EditorRefusal>;
-  /** Copy an item 1.5 m beside itself in its station: one step. */
+  ): Promise<
+    | { kind: "duplicated"; stationId: string }
+    | EditorHeld<{ kind: "duplicated"; stationId: string }>
+    | EditorRefusal
+  >;
+  /** Copy an item 1.5 m beside itself in its station: one step. Held
+   *  when it waits for the draft question, as for `duplicateFolder`. */
   duplicateObject(
     id: string,
-  ): Promise<{ kind: "duplicated"; id: string } | EditorRefusal>;
+  ): Promise<
+    | { kind: "duplicated"; id: string }
+    | EditorHeld<{ kind: "duplicated"; id: string }>
+    | EditorRefusal
+  >;
   /** Set items' altitudes (the ground the page measured under them): ONE
    *  step for all; refused whole for an unknown id or a height that cannot
    *  be set. */
@@ -3243,25 +3254,33 @@ export function createEditorSession(input: {
       const newStationId = newObjectId();
       // The pictures under the copies' ids before the copies exist: the
       // draft's write of each copy carries its picture.
+      const pictured: string[] = [];
       for (const [id, blob] of read) {
         const copyId = newItemIds[id];
-        if (copyId !== undefined) files.set(copyId, blob);
+        if (copyId === undefined) continue;
+        files.set(copyId, blob);
+        pictured.push(copyId);
       }
-      if (
-        took(() =>
-          store.dispatch(
-            tourDocumentActions.stationDuplicated({
-              stationId,
-              newStationId,
-              newItemIds,
-              what: `the copy of ${stationName(frame)}`,
-            }),
-          ),
-        )
-      ) {
-        return { kind: "duplicated", stationId: newStationId };
+      const was = doc().revision;
+      const out = store.dispatch(
+        tourDocumentActions.stationDuplicated({
+          stationId,
+          newStationId,
+          newItemIds,
+          what: `the copy of ${stationName(frame)}`,
+        }),
+      );
+      const made = { kind: "duplicated" as const, stationId: newStationId };
+      if (isHeldEdit(out)) {
+        return heldUntilLanded(out, pictured, () =>
+          manifestNow(own())?.stations.some((s) => s.id === newStationId) ===
+          true
+            ? made
+            : null,
+        );
       }
-      for (const copyId of Object.values(newItemIds)) files.delete(copyId);
+      if (doc().revision !== was) return made;
+      for (const copyId of pictured) files.delete(copyId);
       return mine() === null ? notInTour : notApplied;
     },
     async duplicateObject(id) {
@@ -3272,19 +3291,21 @@ export function createEditorSession(input: {
       const newId = newObjectId();
       const blob = read.get(id);
       if (blob !== undefined) files.set(newId, blob);
-      if (
-        took(() =>
-          store.dispatch(
-            tourDocumentActions.objectDuplicated({
-              id,
-              newId,
-              what: `the copy of ${objectName(found.object)}`,
-            }),
-          ),
-        )
-      ) {
-        return { kind: "duplicated", id: newId };
+      const was = doc().revision;
+      const out = store.dispatch(
+        tourDocumentActions.objectDuplicated({
+          id,
+          newId,
+          what: `the copy of ${objectName(found.object)}`,
+        }),
+      );
+      const made = { kind: "duplicated" as const, id: newId };
+      if (isHeldEdit(out)) {
+        return heldUntilLanded(out, blob === undefined ? [] : [newId], () =>
+          find(newId) === undefined ? null : made,
+        );
       }
+      if (doc().revision !== was) return made;
       files.delete(newId);
       return find(id) === undefined
         ? notInTour
@@ -3746,10 +3767,15 @@ export function createEditorSession(input: {
       }
       if (doc().revision !== was) return made;
       for (const id of pictured) files.delete(id);
-      if (mine() === null) return notInTour;
+      const asNow = mine();
+      if (asNow === null) return notInTour;
+      // A folder resized during the read is refused for its size, not for
+      // a distance: said as what it is.
       return {
         kind: "refused",
-        reason: folders.length > 0 ? FOLDER_TOO_FAR : TOO_FAR_FROM_STATION,
+        reason:
+          pasteScaleRefusal(asNow, plan) ??
+          (folders.length > 0 ? FOLDER_TOO_FAR : TOO_FAR_FROM_STATION),
       };
     },
     scaleFolder(folderId, value) {

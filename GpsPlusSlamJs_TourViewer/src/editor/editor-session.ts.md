@@ -208,7 +208,10 @@ never state). Design:
       none reads) and held under the copy's id, so the save writes the
       copy's own `content/<id>.<ext>` and the draft keeps it. A station's
       copy mints a new id for every block of it, its story's too (block
-      ids are unique across the tour).
+      ids are unique across the tour). Held by the draft gate either
+      returns `{ kind: "held", landed }` as `duplicateFolder` does,
+      `landed` giving the `duplicated` result once the copy is in the
+      tour, null (its held pictures dropped) otherwise.
     - `addStory(stationId)` (named "New story", or "New story n" with the
       least n from 2 while that name is taken, so a delete never makes a
       name repeat), `renameStory(id, title)`, `duplicateStory(id)` (mints a
@@ -293,7 +296,9 @@ never state). Design:
       for an id or a target station the tour lacks, a picture that cannot
       be read, and a copy the document refuses (`FOLDER_TOO_FAR` when
       folders are pasted, else `TOO_FAR_FROM_STATION`: past the reach;
-      the scale rules `clipboard.ts` says first); the held pictures are
+      the scale rules `clipboard.ts` says first, and a refusal caused by
+      a folder resized during the read is said by `clipboard.ts`'s
+      `pasteScaleRefusal`, as the resize it is); the held pictures are
       dropped then. Held by the draft gate it returns
       `{ kind: "held", landed }` as `duplicateFolder` does, `landed`
       giving the `pasted` result once every copy is in the tour. Its

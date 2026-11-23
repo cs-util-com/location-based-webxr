@@ -35,6 +35,12 @@ objects, folders }`: the clipboard's notes and plain folders (by
   and `FOLDER_SCALE_TOO_FAR` (a folder whose own and outer scales
   multiply past the format's 0.1 to 10: pasted alone it takes that
   product as its scale). The document refuses both the same way.
+- `pasteScaleRefusal(doc, plan): string | null` - the first of
+  `NOTE_IN_RESIZED_FOLDER` / `FOLDER_SCALE_TOO_FAR` that the paste
+  `plan` (`toStationId`, `objects`, `folders`) meets in `doc` as it is
+  now, or null. The session asks it for a paste the document refused
+  after the picture read, so a folder resized during the read is said as
+  the resize rather than as a distance.
 - `CopyOutcome`, `PasteOutcome` (its folders by `{ stationId, folderId }`), and the seven reason
   strings above.
 

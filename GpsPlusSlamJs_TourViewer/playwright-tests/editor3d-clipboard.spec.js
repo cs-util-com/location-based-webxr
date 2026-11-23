@@ -48,11 +48,13 @@ test("Ctrl+C and Ctrl+V copy a note into another station as one step each, the E
   await openSampleIn3d(page);
   const stations = /** @type {any[]} */ ((await tour(page)).stations);
   const [from, to] = stations;
+  // A text note: its paste reads no picture, so it lands in the task of
+  // its key (the checks that a key did nothing rest on that).
   const note = /** @type {any} */ (from.children).find(
-    (/** @type {any} */ c) => c.kind !== "folder",
+    (/** @type {any} */ c) => c.kind === "shortText" || c.kind === "longText",
   );
   if (from === undefined || to === undefined || note === undefined) {
-    throw new Error("the sample has no note in its first station");
+    throw new Error("the sample has no text note in its first station");
   }
 
   // Nothing selected, nothing copied: Copy and Paste are disabled.
@@ -141,14 +143,29 @@ test("Ctrl+V stays the browser's in a field, with a menu open and in a dialog, a
   await openSampleIn3d(page);
   const stations = /** @type {any[]} */ ((await tour(page)).stations);
   const [from, to] = stations;
+  // A text note: its paste reads no picture, so it lands in the task of
+  // its key (the checks that a key did nothing rest on that).
   const note = /** @type {any} */ (from.children).find(
-    (/** @type {any} */ c) => c.kind !== "folder",
+    (/** @type {any} */ c) => c.kind === "shortText" || c.kind === "longText",
   );
   if (from === undefined || to === undefined || note === undefined) {
-    throw new Error("the sample has no note in its first station");
+    throw new Error("the sample has no text note in its first station");
   }
   await page.locator(`#tree-body [data-select="station:${from.id}"]`).click();
   await page.locator(`#tree-body [data-select="${note.id}"]`).click();
+
+  // A held Ctrl+C repeats its key: it copies once, said by one toast, not
+  // a toast per repeat.
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 4; i++) await page.keyboard.down("c");
+  await page.keyboard.up("c");
+  await page.keyboard.up("Control");
+  await expect(page.locator(".toast", { hasText: "Copied" })).toHaveCount(1);
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => done(null))),
+  );
+  await expect(page.locator(".toast", { hasText: "Copied" })).toHaveCount(1);
+
   await page.locator("#edit-menu-btn").click();
   await page.locator("#edit-copy").click();
   await expect(page.locator(".toast", { hasText: "Copied" })).not.toHaveCount(

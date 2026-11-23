@@ -11,6 +11,11 @@
  */
 import type { EditorHeld } from "./editor-session.js";
 
+/** Said for a Paste or a Duplicate asked for while another still reads
+ *  its pictures (the Edit menu's title, the keys' toast): another one
+ *  would make nothing. */
+export const EDIT_STILL_RUNNING = "A paste or a duplicate is still running";
+
 /** The working toast as the flow needs it: marked busy, then removed. */
 interface WorkingToast {
   setAttribute(name: string, value: string): void;
@@ -28,6 +33,9 @@ export interface HeldEditFlow<T> {
   /** Whether the editor that started it is still the page's: a tour
    *  switched meanwhile drops the outcome unsaid. */
   readonly current: () => boolean;
+  /** Whether a Paste or a Duplicate still runs: this one then runs not
+   *  at all and says so (`EDIT_STILL_RUNNING`). */
+  readonly running: () => boolean;
   /** Sets the page's "an edit is running" flag. */
   readonly busy: (on: boolean) => void;
   /** Shows a toast; `held` keeps it until removed. */
@@ -60,6 +68,10 @@ function isRefused(value: unknown): value is { reason: string } {
  *  toast go before that wait: a held edit runs no more). The flag and
  *  the toast go however `run` ends, a throw included. */
 export async function runHeldEdit<T>(flow: HeldEditFlow<T>): Promise<void> {
+  if (flow.running()) {
+    flow.toast(EDIT_STILL_RUNNING, false);
+    return;
+  }
   const held = await ranUntilHeld(flow);
   if (held === null) return;
   const landed = await held.landed;

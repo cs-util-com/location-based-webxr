@@ -263,3 +263,30 @@ export function pasteOf(
       .map((s) => ({ stationId: s.stationId, folderId: s.id })),
   };
 }
+
+/** Why the paste `plan` would not keep a size in `doc` as it is now
+ *  (`crossStationRefusal` of each note and folder going into another
+ *  station), or null. The session asks it for a paste the document
+ *  refused after the picture read: a folder resized meanwhile is said as
+ *  the resize, not as a distance. */
+export function pasteScaleRefusal(
+  doc: TourDocumentState,
+  plan: {
+    readonly toStationId: string;
+    readonly objects: readonly string[];
+    readonly folders: readonly PastedFolder[];
+  },
+): string | null {
+  const lookup = lookupOf(doc);
+  const ids = [
+    ...plan.objects,
+    ...plan.folders.map((f) => `${FOLDER_PREFIX}${f.folderId}`),
+  ];
+  for (const id of ids) {
+    const source = sourceOf(lookup, id);
+    if (source === null || source.stationId === plan.toStationId) continue;
+    const reason = crossStationRefusal(source);
+    if (reason !== null) return reason;
+  }
+  return null;
+}

@@ -10,7 +10,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { EditorHeld } from "./editor-session.js";
-import { type HeldEditFlow, runHeldEdit } from "./held-edit-flow.js";
+import {
+  EDIT_STILL_RUNNING,
+  type HeldEditFlow,
+  runHeldEdit,
+} from "./held-edit-flow.js";
 
 interface Made {
   readonly kind: "made";
@@ -30,6 +34,7 @@ function harness(outcome: () => Promise<Outcome>) {
     working: "Pasting...",
     run: outcome,
     current: () => current,
+    running: () => false,
     busy: (on) => log.push(`busy ${String(on)}`),
     toast: (text, held) => {
       log.push(`toast ${text}${held ? " (held)" : ""}`);
@@ -98,6 +103,19 @@ describe("an edit that reads first", () => {
     read.resolve({ kind: "made", id: "c1" });
     await running;
     expect(log.slice(3)).toEqual(["removed Pasting...", "busy false"]);
+  });
+});
+
+// Why: a second Paste or Duplicate while one still reads its pictures
+// would make nothing; the Edit menu says so, and the key must say the
+// same instead of nothing at all.
+describe("an edit asked for while another runs", () => {
+  it("says that one still runs and runs nothing", async () => {
+    const { flow, log } = harness(() => {
+      throw new Error("must not run");
+    });
+    await runHeldEdit({ ...flow, running: () => true });
+    expect(log).toEqual([`toast ${EDIT_STILL_RUNNING}`]);
   });
 });
 

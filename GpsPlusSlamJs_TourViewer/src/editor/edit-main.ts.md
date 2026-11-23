@@ -841,7 +841,9 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     no better), selects the copy and says "Duplicated ..."; while a
     folder, an item or a station reads its pictures a held "Duplicating..."
     toast shows (`aria-busy`) and the store's `duplicating` makes another
-    Duplicate do nothing, so a second Ctrl+D makes no second copy; a
+    Duplicate do nothing but say so (`EDIT_STILL_RUNNING`), so a second
+    Ctrl+D makes no second copy; each runs through `runHeldEdit`, so one
+    that waits for the draft question is said only once it lands; a
     story's entry has no Duplicate (the bar offers none), so its Ctrl+D
     does nothing;
   - `copySelection` (Ctrl+C, the Edit menu's Copy) puts the selected note
@@ -856,8 +858,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
     stands in its own, so repeated pastes stack on the previous copy),
     "Pasted a copy" or "Pasted <n> copies"; while the pictures are read a
     held "Pasting..." toast shows (`aria-busy`) and the store's
-    `duplicating` makes another paste or Duplicate do nothing (the Edit
-    menu shows both disabled meanwhile); the toast goes either way, and a
+    `duplicating` makes another paste or Duplicate do nothing but say so
+    (`EDIT_STILL_RUNNING`; the Edit menu shows both disabled meanwhile); the toast goes either way, and a
     refusal is said with the tour unchanged. The run is
     `held-edit-flow.ts`'s `runHeldEdit` (with `heldEditOnPage`): a paste
     that waits for the draft question is said, and its copy selected,
@@ -867,8 +869,8 @@ browser, offered back by the next open (E2c, `editor-draft.ts`).
   - `clipboardKeys` takes Ctrl/Cmd+C and Ctrl/Cmd+V (without Shift)
     only where `editKeysFree` holds and the page has no text selected,
     so a field, a dialog, a menu and selected text keep the browser's
-    own copy and paste; a held Ctrl+V's repeats paste nothing (one press,
-    one paste); the 3D view's `sceneKey` leaves both alone;
+    own copy and paste; a held key's repeats do nothing (one press, one
+    copy or paste, one toast); the 3D view's `sceneKey` leaves both alone;
   - `groundMenu` hands a right click's (a long press's) ground menu to the
     shell (`shell.groundMenu`);
   - `keysFree` (`editKeysFree`, shared with `clipboardKeys`) is false in a field, in a menu, for the pattern's keys on a menu's button,

@@ -179,6 +179,7 @@ import {
 } from "./tree-model.js";
 import { createKindPanels } from "../kind-panels/kind-panels.js";
 import type { NarrationChange, NarrationFacts } from "../editor-session.js";
+import { EDIT_STILL_RUNNING } from "../held-edit-flow.js";
 
 /** A stamp per read-along texts object of the tour document: the reducer
  *  makes a new one on each change of them. */
@@ -422,10 +423,6 @@ const BAR_ICON: Readonly<Record<BarAction, ShellIcon>> = {
   align: "align",
   copyPosition: "crosshair",
 };
-
-/** Said on the Edit menu's Paste and Duplicate while a paste or a
- *  duplicate still reads its pictures: another one would make nothing. */
-export const EDIT_STILL_RUNNING = "A paste or a duplicate is still running";
 
 /** An inspector field to type in: a line (an input) or prose (a text
  *  area). */

@@ -108,7 +108,7 @@ import { applyPlaceEdit, type PlaceEdit } from "../placement/place-edits.js";
 import { askMove, moveNote } from "../move-question.js";
 import { confirmPausingFrames } from "./browser-question.js";
 import { copyOf, pasteOf } from "./clipboard.js";
-import { runHeldEdit } from "./held-edit-flow.js";
+import { EDIT_STILL_RUNNING, runHeldEdit } from "./held-edit-flow.js";
 import {
   openedNoticeLines,
   openTourForEditing,
@@ -1508,14 +1508,14 @@ function copySelection(): void {
  * (`clipboard.ts`), ONE step; the first copy selected in its station's
  * rows and a toast saying how many. A photo's picture is read first,
  * said by a held "Pasting..." toast; another Paste or Duplicate meanwhile
- * makes nothing (the `duplicating` flag), and a tour switched meanwhile
+ * makes nothing and says so (the `duplicating` flag), and a tour switched meanwhile
  * drops the result. A refusal pastes nothing and is said. A paste that
  * waits for the draft question is said only once it lands
  * (`held-edit-flow.ts`).
  */
 async function pasteSelection(): Promise<void> {
   const mine = editor;
-  if (mine === null || ui().duplicating) return;
+  if (mine === null) return;
   const plan = pasteOf(store.getState().tourDocument, ui());
   if (plan.kind === "refused") {
     toast(plan.reason);
@@ -1545,6 +1545,7 @@ function heldEditOnPage(mine: EditorSession, working: string) {
   return {
     working,
     current: () => editor === mine,
+    running: () => ui().duplicating,
     busy: (on: boolean) =>
       store.dispatch(editorViewActions.duplicatingChanged({ duplicating: on })),
     toast: (text: string, held: boolean) =>
@@ -1558,15 +1559,16 @@ function heldEditOnPage(mine: EditorSession, working: string) {
  * everything in it (`folder:<id>`), or a station with its notes, beside
  * itself (the bar's Duplicate, the 3D view's Ctrl+D): one step; the copy
  * is selected and a toast names it. A photo's picture is read first,
- * said by a held toast: another Duplicate meanwhile makes nothing; a tour
- * switched meanwhile drops the result. A story's entry has no Duplicate
+ * said by a held toast: another Duplicate meanwhile makes nothing and
+ * says so; a tour switched meanwhile drops the result. A story's entry has no Duplicate
  * (the bar offers none), so its Ctrl+D does nothing.
  */
 async function duplicateSelection(id: string): Promise<void> {
   const mine = editor;
-  if (mine === null || ui().duplicating) return;
+  if (mine === null) return;
   if (id.startsWith(STORY_PREFIX)) {
-    duplicateStorySelection(id.slice(STORY_PREFIX.length));
+    if (ui().duplicating) toast(EDIT_STILL_RUNNING);
+    else duplicateStorySelection(id.slice(STORY_PREFIX.length));
     return;
   }
   if (id.startsWith(FOLDER_PREFIX)) {
@@ -1575,47 +1577,41 @@ async function duplicateSelection(id: string): Promise<void> {
   }
   const tour = manifestToWrite(store.getState().tourDocument);
   if (tour !== null && tourChildPlace(tour, id)?.story !== undefined) return;
-  store.dispatch(editorViewActions.duplicatingChanged({ duplicating: true }));
-  const working = toast("Duplicating...", undefined, null, false);
-  working.setAttribute("aria-busy", "true");
-  try {
-    await duplicateItemSelection(mine, id);
-  } finally {
-    working.remove();
-    store.dispatch(
-      editorViewActions.duplicatingChanged({ duplicating: false }),
-    );
-  }
+  await duplicateItemSelection(mine, id);
 }
 
-/** A note or a station (`station:<id>`) copied beside itself. */
+/** A note or a station (`station:<id>`) copied beside itself: the copy
+ *  selected and named, said once it was made (for one that waits for the
+ *  draft question, once it lands); one step. */
 async function duplicateItemSelection(
   mine: EditorSession,
   id: string,
 ): Promise<void> {
-  const called = itemCalled(id);
+  const said = `Duplicated ${itemCalled(id)}`;
   endUndo();
-  const outcome = id.startsWith(STATION_PREFIX)
-    ? await mine.duplicateStation(id.slice(STATION_PREFIX.length))
-    : await mine.duplicateObject(id);
-  if (editor !== mine) return;
-  refresh();
-  if (outcome.kind === "refused") {
-    toast(outcome.reason);
+  if (id.startsWith(STATION_PREFIX)) {
+    await runHeldEdit({
+      ...heldEditOnPage(mine, "Duplicating..."),
+      run: () => mine.duplicateStation(id.slice(STATION_PREFIX.length)),
+      made: (outcome) => showNewStation(outcome.stationId, () => said),
+    });
     return;
   }
-  const said = `Duplicated ${called}`;
-  if ("stationId" in outcome) {
-    showNewStation(outcome.stationId, () => said);
-    return;
-  }
-  const home = manifestToWrite(store.getState().tourDocument)?.stations.find(
-    (s) => tourFreeBlocks(s).some((i) => i.id === outcome.id),
-  );
-  if (home !== undefined) showRowsOf(home.id);
-  select(outcome.id);
-  toast(said);
-  tourChanged();
+  await runHeldEdit({
+    ...heldEditOnPage(mine, "Duplicating..."),
+    run: () => mine.duplicateObject(id),
+    made: (outcome) => {
+      const home = manifestToWrite(
+        store.getState().tourDocument,
+      )?.stations.find((s) =>
+        tourFreeBlocks(s).some((i) => i.id === outcome.id),
+      );
+      if (home !== undefined) showRowsOf(home.id);
+      select(outcome.id);
+      toast(said);
+      tourChanged();
+    },
+  });
 }
 
 /** The plain folder `folderId` copied beside itself with everything in
@@ -2774,9 +2770,11 @@ function clipboardKeys(event: KeyboardEvent): boolean {
     return false;
   }
   event.preventDefault();
+  // A held key repeats; one press copies or pastes once (a held Ctrl+C
+  // would flood the page with toasts).
+  if (event.repeat) return true;
   if (c) copySelection();
-  // A held Ctrl+V repeats; one press pastes once.
-  else if (!event.repeat) void pasteSelection();
+  else void pasteSelection();
   return true;
 }
 

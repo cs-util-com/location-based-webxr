@@ -34,6 +34,7 @@ import {
 } from "../test-support/memory-draft-stores.js";
 import { photoKey } from "../draft-persistence.js";
 import { createEditorDraft } from "./editor-draft.js";
+import { NOTE_IN_RESIZED_FOLDER } from "./clipboard.js";
 import { createEditorSession } from "./editor-session.js";
 import { stationIdOf, tourOf } from "../test-support/tour-of.js";
 import {
@@ -1437,6 +1438,63 @@ describe("the editor session's paste", () => {
     store.draftGate.release();
     expect(await kept.landed).toMatchObject({ kind: "duplicated" });
     expect(steps()).toBe(was + 1);
+    await session.close();
+  });
+
+  // Why: a note's and a station's Duplicate read pictures and write the
+  // same way, so they wait for the draft question the same way; reported
+  // as made, the page would select a copy the tour may never hold.
+  it("reports a note's and a station's duplicate that waits for the draft question as held, null when it is dropped", async () => {
+    const { session, store, editor, steps } = await withFolder();
+    const was = steps();
+    for (const duplicate of [
+      () => editor.duplicateObject("b"),
+      () => editor.duplicateStation(stationIdOf("f")),
+    ]) {
+      store.draftGate.hold(() => undefined);
+      const dropped = await duplicate();
+      if (dropped.kind !== "held") throw new Error(JSON.stringify(dropped));
+      store.draftGate.drop();
+      expect(await dropped.landed).toBeNull();
+      expect(steps()).toBe(was);
+    }
+    store.draftGate.hold(() => undefined);
+    const note = await editor.duplicateObject("b");
+    if (note.kind !== "held") throw new Error(JSON.stringify(note));
+    store.draftGate.release();
+    expect(await note.landed).toMatchObject({ kind: "duplicated" });
+    store.draftGate.hold(() => undefined);
+    const station = await editor.duplicateStation(stationIdOf("f"));
+    if (station.kind !== "held") throw new Error(JSON.stringify(station));
+    store.draftGate.release();
+    expect(await station.landed).toMatchObject({ kind: "duplicated" });
+    expect(steps()).toBe(was + 2);
+    await session.close();
+  });
+
+  // Why: a folder resized during the picture read makes a note in it
+  // change size in another station, so the document refuses the paste.
+  // Said as "too far", the creator would look for a distance that is not
+  // the cause; it is said as the resize it is.
+  it("says a paste refused by a folder resized during the picture read as the resize", async () => {
+    const { session, store, editor } = await withFolder();
+    const pasting = editor.paste({
+      toStationId: stationIdOf("a"),
+      objects: ["f"],
+      folders: [],
+    });
+    store.dispatch(
+      tourDocumentActions.folderScaled({
+        stationId: stationIdOf("f"),
+        folderId: "grp",
+        scale: 2,
+        what: "resize",
+      }),
+    );
+    expect(await pasting).toEqual({
+      kind: "refused",
+      reason: NOTE_IN_RESIZED_FOLDER,
+    });
     await session.close();
   });
 
