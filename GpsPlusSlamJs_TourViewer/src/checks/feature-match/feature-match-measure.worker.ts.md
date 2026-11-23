@@ -10,7 +10,7 @@ None: a module worker entry, spawned with `new Worker(new URL("./feature-match-m
 
 ## Invariants
 
-- The models are fetched once per worker (`memoFetch`), not once per pair.
+- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods (ALIKED's and LightGlue's ONNX sessions, sift.js) are kept for the worker's life in `env.kept`. The page starts a new worker after a crash, so a crash also starts with fresh sessions.
 - Messages are handled one after another on a promise chain; the client sends one at a time anyway. Each step is chained for both outcomes (`then(step, step)`), so a rejected step never blocks the messages after it.
 - Its own dpdm cycle root in `scripts/test-timing/projects.mjs`: dpdm cannot follow a `new URL(...)` spawn.
 

@@ -59,6 +59,7 @@ function env(over: Partial<MeasureEnv> = {}) {
       return [fakeMethod(seen)];
     },
     now: () => (t += 10),
+    kept: new Map(),
     ...over,
   };
   return { e, seen, built };
@@ -208,5 +209,100 @@ describe("measureMsOf", () => {
       },
     ];
     expect(measureMsOf(results)).toBe(23);
+  });
+});
+
+/** A method that counts its loads and disposals; `fail` breaks extracts. */
+function countingMethod(fail: { extract: boolean; init: boolean }) {
+  const count = { init: 0, dispose: 0 };
+  const method: BenchMethod = {
+    id: "counted",
+    label: "Counted",
+    init: () => {
+      count.init += 1;
+      if (fail.init) {
+        return Promise.reject(new Error("no session"));
+      }
+      return Promise.resolve({
+        backend: "wasm (execution provider)",
+        downloads: [],
+        initMs: 1000,
+        notes: ["init = both sessions created"],
+        extract: () =>
+          fail.extract
+            ? Promise.reject(new Error("device lost"))
+            : Promise.resolve({
+                count: 1,
+                descriptorBytes: 1,
+                x: Float32Array.of(0),
+                y: Float32Array.of(0),
+                payload: null,
+              }),
+        match: () => Promise.resolve(Int32Array.of(0, 0)),
+        dispose: () => {
+          count.dispose += 1;
+        },
+      });
+    },
+  };
+  return { method, count };
+}
+
+const resultsOf = (
+  posted: readonly MeasureAnswer[],
+): readonly MethodResult[] => {
+  const last = posted.at(-1);
+  if (last?.type !== "done") {
+    throw new Error("not done");
+  }
+  return last.results;
+};
+
+// Why these tests matter: phone logs showed ALIKED + LightGlue spending
+// about a second on "ready" for every pair, because each pair built its
+// ONNX sessions again. The worker keeps a method's loaded runner for the
+// next pair; a worker started again (after a crash) starts empty, and a
+// runner that failed is dropped so a broken session is not kept forever.
+describe("handleMeasure keeps loaded methods across pairs", () => {
+  it("loads a method once for two pairs, and again in a new worker", async () => {
+    const fail = { extract: false, init: false };
+    const { method, count } = countingMethod(fail);
+    const { e } = env({ build: () => [method] });
+    const first = resultsOf(await run(request({ job: 1 }), e));
+    const second = resultsOf(await run(request({ job: 2 }), e));
+    expect(count).toEqual({ init: 1, dispose: 0 });
+    expect(first[0]!.initMs).toBe(1000);
+    // The second pair paid no load: its init time says so, and a note
+    // tells the reader of the zip why.
+    expect(second[0]!.initMs).toBe(0);
+    expect(second[0]!.notes).toContain("loaded for an earlier pair");
+    // A worker started again has its own, empty store of methods.
+    const { e: restarted } = env({ build: () => [method] });
+    await run(request({ job: 3 }), restarted);
+    expect(count.init).toBe(2);
+  });
+
+  it("drops a runner whose pair failed, so the next pair loads it again", async () => {
+    const fail = { extract: true, init: false };
+    const { method, count } = countingMethod(fail);
+    const { e } = env({ build: () => [method] });
+    const broken = resultsOf(await run(request({ job: 1 }), e));
+    expect(broken[0]!.sizes[0]!.error).not.toBeNull();
+    expect(count).toEqual({ init: 1, dispose: 1 });
+    fail.extract = false;
+    const next = resultsOf(await run(request({ job: 2 }), e));
+    expect(count.init).toBe(2);
+    expect(next[0]!.initMs).toBe(1000);
+  });
+
+  it("forgets a load that failed, so the next pair tries again", async () => {
+    const fail = { extract: false, init: true };
+    const { method, count } = countingMethod(fail);
+    const { e } = env({ build: () => [method] });
+    const broken = resultsOf(await run(request({ job: 1 }), e));
+    expect(broken[0]!.error).toBe("init: Error: no session");
+    fail.init = false;
+    resultsOf(await run(request({ job: 2 }), e));
+    expect(count).toEqual({ init: 2, dispose: 0 });
   });
 });

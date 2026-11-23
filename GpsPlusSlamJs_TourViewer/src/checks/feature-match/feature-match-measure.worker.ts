@@ -41,6 +41,9 @@ const env: MeasureEnv = {
   ),
   build: (selection) => buildMethods(selection, deps, "worker"),
   now: () => performance.now(),
+  // The loaded methods (ALIKED's and LightGlue's ONNX sessions) live as
+  // long as this worker; the page starts a new worker after a crash.
+  kept: new Map(),
 };
 
 // One pair after another: the client sends the next only when the last
