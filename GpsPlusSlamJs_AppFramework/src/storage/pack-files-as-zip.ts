@@ -45,6 +45,19 @@ export class ZipPackagingError extends Error {
   }
 }
 
+/** How the packer writes; every field is optional. */
+export interface PackZipOptions {
+  /**
+   * Stamp every entry with the zip format's earliest date (1980-01-01) and
+   * leave out the extended time field, so the archive carries no clock time
+   * and the same entries pack to the same bytes. Default: the current time.
+   */
+  readonly timeless?: boolean;
+}
+
+/** The DOS date's first day: the stamp of a timeless archive's entries. */
+const TIMELESS_DATE = new Date(1980, 0, 1);
+
 /** Store mode: no DEFLATE, so entries stay byte-range readable. */
 const STORE_LEVEL = 0;
 
@@ -120,10 +133,11 @@ export function assertWritableZipData(
  *   the writer fails mid-way (the half-built archive is abandoned).
  */
 export async function packFilesAsZip(
-  entries: readonly ZipEntryInput[]
+  entries: readonly ZipEntryInput[],
+  options: PackZipOptions = {}
 ): Promise<Blob> {
   assertWritableZipEntries(entries, 'packFilesAsZip');
-  return writeStoreZip(entries, 'packFilesAsZip');
+  return writeStoreZip(entries, 'packFilesAsZip', options);
 }
 
 /**
@@ -137,10 +151,14 @@ export async function packFilesAsZip(
  */
 export async function writeStoreZip(
   entries: readonly ZipEntryInput[],
-  caller: string
+  caller: string,
+  options: PackZipOptions = {}
 ): Promise<Blob> {
   const writer = new ZipWriter(new BlobWriter('application/zip'), {
     level: STORE_LEVEL,
+    ...(options.timeless
+      ? { lastModDate: TIMELESS_DATE, extendedTimestamp: false }
+      : {}),
   });
   try {
     for (const entry of entries) {

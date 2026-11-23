@@ -106,6 +106,7 @@ export { assertSafeZipEntryPaths } from './zip-entry-path.js';
 
 // --- pack-files-as-zip (store-mode writer from in-memory entries) ---
 export {
+  type PackZipOptions,
   type ZipEntryInput,
   ZipPackagingError,
   assertWritableZipEntries,
