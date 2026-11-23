@@ -113,7 +113,7 @@ export interface JumpEvent {
   readonly settledFrames: number;
 }
 
-export interface TrackingLossEvent {
+interface TrackingLossEvent {
   readonly kind: 'tracking-loss';
   readonly tLost: number;
   readonly tRecovered: number;
@@ -124,7 +124,7 @@ export interface TrackingLossEvent {
   readonly anchorStep: PoseStep | null;
 }
 
-export interface FrameGapEvent {
+interface FrameGapEvent {
   readonly kind: 'frame-gap';
   readonly t: number;
   readonly dtMs: number;
@@ -134,7 +134,7 @@ export interface FrameGapEvent {
   readonly anchorStep: PoseStep | null;
 }
 
-export interface PlacedEvent {
+interface PlacedEvent {
   readonly kind: 'placed';
   readonly t: number;
   readonly pose: Pose;
