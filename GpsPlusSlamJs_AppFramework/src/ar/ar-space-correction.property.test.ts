@@ -68,7 +68,7 @@ const toO = (x: THREE.Vector3): THREE.Vector3 =>
   x.clone().applyMatrix4(WEBXR_TO_NUE);
 
 describe('ar-space-correction (properties)', () => {
-  it('U1: a camera that does not move while its frame jumps yields D mapping every old-frame point onto its new-frame coordinates', () => {
+  it('a camera that does not move while its frame jumps yields D mapping every old-frame point onto its new-frame coordinates', () => {
     // Why this test matters: D is the whole correction. If its order
     // (P_a * P_b^-1, not P_b^-1 * P_a) or its basis conjugation were wrong,
     // every corrected object would land somewhere plausible but wrong, and
@@ -95,12 +95,13 @@ describe('ar-space-correction (properties)', () => {
     );
   });
 
-  it('U1 moving: a camera moving and turning at constant rates through the jump gives a compensated D that recovers the frame switch', () => {
+  it('a camera moving and turning at constant rates through the jump gives a compensated D that recovers the frame switch', () => {
     // Why this test matters: between the frame before the jump and the jump
     // frame the camera itself moves (33 ms at 30 fps, longer after a stall).
     // Uncompensated, that motion is read as part of the jump and every old
     // object is moved by it. Under the constant-rate model the compensation
-    // must remove it exactly.
+    // must remove it exactly. The gap to the jump frame is drawn apart from
+    // the measured interval (ratio 0.5 to 4), so an inverted ratio fails.
     fc.assert(
       fc.property(
         pose,
@@ -109,8 +110,9 @@ describe('ar-space-correction (properties)', () => {
         fc.tuple(num(-1, 1), num(-1, 1), num(-1, 1)),
         num(-1, 1),
         num(0.01, 0.5),
+        num(0.5, 4),
         point,
-        (start, jump, velocity, axisRaw, rateRadS, dtS, x) => {
+        (start, jump, velocity, axisRaw, rateRadS, dtS, ratio, x) => {
           fc.pre(Math.hypot(...axisRaw) > 0.1);
           const axis = new THREE.Vector3(...axisRaw).normalize();
           const at = (tS: number): THREE.Matrix4 => {
@@ -127,13 +129,14 @@ describe('ar-space-correction (properties)', () => {
             );
           };
           const J = toThree(jump);
+          const tJumpS = dtS + ratio * dtS;
           const obs: RelocalizationJump = {
-            t: 2 * dtS * 1000,
+            t: tJumpS * 1000,
             tLast: dtS * 1000,
             lastPose: fromThree(at(dtS)),
             tPrev: 0,
             prevPose: fromThree(at(0)),
-            newPose: fromThree(J.clone().multiply(at(2 * dtS))),
+            newPose: fromThree(J.clone().multiply(at(tJumpS))),
           };
           const d = jumpTransform(obs);
           const oldInO = toO(new THREE.Vector3(...x));
@@ -183,7 +186,7 @@ describe('ar-space-correction (properties)', () => {
     );
   });
 
-  it('U2/U4 composition: Delta(e) equals applying every later jump in observation order', () => {
+  it('composition: Delta(e) equals applying every later jump in observation order', () => {
     // Why this test matters: an object of epoch e must receive every jump
     // after it, oldest first. A reversed product is only wrong when the
     // jumps do not commute, which random rotations guarantee here.
@@ -207,7 +210,7 @@ describe('ar-space-correction (properties)', () => {
     );
   });
 
-  it('U10: epochAt counts the observations at or before the capture time', () => {
+  it('epochAt counts the observations at or before the capture time', () => {
     // Why this test matters: a tile captured before a jump but dispatched
     // after it must still be corrected, so its epoch comes from its capture
     // time. An item at exactly the jump time belongs to the new segment.

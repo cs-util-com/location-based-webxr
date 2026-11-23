@@ -19,4 +19,4 @@ One committer per object: a claim that keeps two systems (a GPS anchor, a deferr
 
 ## Tests
 
-`pose-committer.test.ts`; the cross-committer cases in `ar-space-correction-registry.test.ts` (U7); `gps-anchor.test.ts` (nested anchors).
+`pose-committer.test.ts`; the cross-committer cases in `ar-space-correction-registry.test.ts` and `ar-space-correction-committers.test.ts` (the real deferred-anchor and GPS-anchor APIs); `gps-anchor.test.ts` (nested anchors).

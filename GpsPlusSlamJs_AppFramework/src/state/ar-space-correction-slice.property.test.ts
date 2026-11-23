@@ -1,89 +1,64 @@
 /**
- * Property tests for the composed AR-space selectors. three.js is the
- * oracle, never the module's own helpers.
+ * Property tests for the `arSpaceCorrection` slice: what a random stream of
+ * valid and invalid observations leaves in the state.
  */
 import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
-import * as THREE from 'three';
-import type { Matrix4 } from 'gps-plus-slam-js';
-import { poseToMatrix4 } from '../ar/ar-space-correction';
 import {
-  arSpaceWorldPose,
-  selectCorrectionTrack,
+  arSpaceCorrectionReducer,
+  relocalizationObserved,
+  type ArSpaceCorrectionState,
   type RelocalizationObservation,
 } from './ar-space-correction-slice';
 
-const num = (min: number, max: number) =>
-  fc.double({ min, max, noNaN: true, noDefaultInfinity: true });
-const unitQuaternion = fc
-  .tuple(num(-1, 1), num(-1, 1), num(-1, 1), num(-1, 1))
-  .filter((q) => Math.hypot(...q) > 0.1)
-  .map((q): [number, number, number, number] => {
-    const n = Math.hypot(...q);
-    return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
-  });
-const pose = fc.record({
-  position: fc.tuple(num(-20, 20), num(-3, 3), num(-20, 20)),
-  rotation: unitQuaternion,
-});
-const rigid = pose.map((p) =>
-  new THREE.Matrix4().compose(
-    new THREE.Vector3(...p.position),
-    new THREE.Quaternion(...p.rotation),
-    new THREE.Vector3(1, 1, 1)
-  )
-);
+const STILL: RelocalizationObservation['lastPose'] = {
+  position: [0, 1.6, 0],
+  rotation: [0, 0, 0, 1],
+};
 
-const maxDiff = (a: readonly number[], b: readonly number[]): number =>
-  Math.max(...a.map((v, i) => Math.abs(v - b[i]!)));
+/** One candidate: a time, and whether it carries a broken pose. */
+const candidate = fc.record({
+  t: fc.integer({ min: 100, max: 10_000 }),
+  broken: fc.boolean(),
+  extra: fc.boolean(),
+});
 
 describe('ar-space-correction-slice (properties)', () => {
-  it('U3: arSpaceWorldPose is A * Delta(e) * P * X_raw for every epoch', () => {
-    // Why this test matters: with random, non-commuting A, jumps and P only
-    // the stated order matches; the deterministic test shows the other
-    // orders fail, this one that the stated order holds everywhere.
+  it('keeps exactly the valid observations, in order, with non-decreasing times and only the six fields', () => {
+    // Why this test matters: epochs count observations by time (binary
+    // search), so the stored list must stay sorted whatever arrives, a
+    // refused observation must leave no trace, and a recorded payload must
+    // hold nothing beyond the raw observation.
     fc.assert(
-      fc.property(
-        rigid,
-        fc.array(pose, { minLength: 1, maxLength: 3 }),
-        rigid,
-        rigid,
-        fc.nat(),
-        (A, newPoses, P, X, rawEpoch) => {
-          const observations: RelocalizationObservation[] = newPoses.map(
-            (newPose, i) => ({
-              t: 1000 * (i + 1),
-              tLast: 1000 * (i + 1) - 33,
-              lastPose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
-              tPrev: null,
-              prevPose: null,
-              newPose,
-            })
-          );
-          const state = {
-            gpsData: {
-              gpsEvents: { alignmentMatrix: A.toArray() as unknown as Matrix4 },
-            },
-            arSpaceCorrection: { observations },
-          } as unknown as Parameters<typeof arSpaceWorldPose>[0];
-          const epoch = rawEpoch % (observations.length + 1);
-          const delta = new THREE.Matrix4().fromArray([
-            ...poseToMatrix4(selectCorrectionTrack(state)[epoch]!),
-          ]);
-          const expected = A.clone()
-            .multiply(delta)
-            .multiply(P)
-            .multiply(X)
-            .toArray();
-          const got = arSpaceWorldPose(
-            state,
-            X.toArray() as unknown as Matrix4,
-            epoch,
-            P.toArray() as unknown as Matrix4
-          )!;
-          expect(maxDiff(got, expected)).toBeLessThan(1e-9);
+      fc.property(fc.array(candidate, { maxLength: 30 }), (candidates) => {
+        let state: ArSpaceCorrectionState | undefined;
+        const expected: number[] = [];
+        for (const c of candidates) {
+          const o = {
+            t: c.t,
+            tLast: c.t - 33,
+            lastPose: STILL,
+            tPrev: c.t - 66,
+            prevPose: STILL,
+            newPose: c.broken
+              ? { position: [Number.NaN, 0, 0], rotation: [0, 0, 0, 1] }
+              : { position: [3, 1.6, 0], rotation: [0, 0, 0, 1] },
+            ...(c.extra ? { note: 'derived' } : {}),
+          } as RelocalizationObservation;
+          state = arSpaceCorrectionReducer(state, relocalizationObserved(o));
+          const last = expected[expected.length - 1];
+          if (!c.broken && (last === undefined || c.t >= last)) {
+            expected.push(c.t);
+          }
         }
-      )
+        const stored = state?.observations ?? [];
+        expect(stored.map((o) => o.t)).toEqual(expected);
+        for (const o of stored) {
+          expect(Object.keys(o).sort()).toEqual(
+            ['lastPose', 'newPose', 'prevPose', 't', 'tLast', 'tPrev'].sort()
+          );
+        }
+      })
     );
   });
 });

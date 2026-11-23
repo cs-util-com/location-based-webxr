@@ -22,17 +22,13 @@ import {
   createSlice,
   type PayloadAction,
 } from '@reduxjs/toolkit';
-import type { Matrix4 } from 'gps-plus-slam-js';
 import {
   correctionTrack,
   epochAt,
   jumpTransform,
-  multiplyMatrix4,
-  poseToMatrix4,
   type RelocalizationJump,
 } from '../ar/ar-space-correction';
 import { createLogger } from '../utils/logger';
-import { selectAlignmentMatrix } from './app-selectors';
 
 const log = createLogger('ArSpaceCorrection');
 
@@ -118,6 +114,18 @@ function observationProblem(
   );
 }
 
+/**
+ * The six observation fields of `o`, nothing else. Anything that is not an
+ * object is passed on as it is, for the reducer to refuse with its reason.
+ */
+function observationFields(
+  o: RelocalizationObservation
+): RelocalizationObservation {
+  if (typeof o !== 'object' || o === null) return o;
+  const { t, tLast, lastPose, tPrev, prevPose, newPose } = o;
+  return { t, tLast, lastPose, tPrev, prevPose, newPose };
+}
+
 const arSpaceCorrectionSlice = createSlice({
   name: 'arSpaceCorrection',
   initialState,
@@ -125,18 +133,22 @@ const arSpaceCorrectionSlice = createSlice({
     /**
      * One relocalization the feed observed: the camera frame switched
      * between `tLast` and `t`. Segmenting (see `segmenting-actions.ts`).
+     * The action creator keeps only the six observation fields, so an
+     * object that carries more (a feed's own record) never records more.
      */
-    relocalizationObserved(
-      state,
-      action: PayloadAction<RelocalizationObservation>
-    ) {
-      const last = state.observations[state.observations.length - 1];
-      const problem = observationProblem(action.payload, last?.t);
-      if (problem !== null) {
-        log.warn(`relocalization observation refused: ${problem}`);
-        return state;
-      }
-      return { observations: [...state.observations, action.payload] };
+    relocalizationObserved: {
+      reducer(state, action: PayloadAction<RelocalizationObservation>) {
+        const last = state.observations[state.observations.length - 1];
+        const problem = observationProblem(action.payload, last?.t);
+        if (problem !== null) {
+          log.warn(`relocalization observation refused: ${problem}`);
+          return state;
+        }
+        return { observations: [...state.observations, action.payload] };
+      },
+      prepare(observation: RelocalizationObservation) {
+        return { payload: observationFields(observation) };
+      },
     },
   },
 });
@@ -179,51 +191,3 @@ export const selectCorrectionTrack = createSelector(
   [selectArSpaceObservations],
   (observations) => correctionTrack(observations.map((o) => jumpTransform(o)))
 );
-
-type RootWithAlignment = Parameters<typeof selectAlignmentMatrix>[0];
-type RootWithBoth = RootWithArSpaceCorrection & RootWithAlignment;
-
-const selectArSpaceToWorldList = createSelector(
-  [selectCorrectionTrack, selectAlignmentMatrix],
-  (track, alignment): readonly Matrix4[] | null =>
-    alignment === null
-      ? null
-      : track.map((delta) => multiplyMatrix4(alignment, poseToMatrix4(delta)))
-);
-
-/**
- * `A * Delta(e)`: the map from epoch-`e` odometry coordinates to the
- * alignment's world frame, column-major. `null` before an alignment exists.
- * Throws a `RangeError` for an epoch that is not an integer in `0..n`.
- */
-export function selectArSpaceToWorld(
-  state: RootWithBoth,
-  epoch: number
-): Matrix4 | null {
-  const n = selectArSpaceCorrectionEpoch(state);
-  if (!Number.isInteger(epoch) || epoch < 0 || epoch > n) {
-    throw new RangeError(`epoch ${epoch} is outside 0..${n}`);
-  }
-  return selectArSpaceToWorldList(state)?.[epoch] ?? null;
-}
-
-const IDENTITY_MATRIX4 = poseToMatrix4({
-  position: [0, 0, 0],
-  rotation: [0, 0, 0, 1],
-});
-
-/**
- * World pose of a raw local matrix `xRaw` of epoch `epoch` whose parent maps
- * into O by `parentToGroup` (identity by default): `A * Delta(e) * P * X_raw`.
- * `null` before an alignment exists; `RangeError` as `selectArSpaceToWorld`.
- */
-export function arSpaceWorldPose(
-  state: RootWithBoth,
-  xRaw: Matrix4,
-  epoch: number,
-  parentToGroup: Matrix4 = IDENTITY_MATRIX4
-): Matrix4 | null {
-  const toWorld = selectArSpaceToWorld(state, epoch);
-  if (toWorld === null) return null;
-  return multiplyMatrix4(multiplyMatrix4(toWorld, parentToGroup), xRaw);
-}

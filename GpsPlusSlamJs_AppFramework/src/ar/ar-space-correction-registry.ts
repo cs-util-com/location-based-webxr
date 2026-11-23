@@ -94,6 +94,8 @@ interface Entry {
   correction: Pose;
   stampedAt: number | null;
   readonly parentToGroup: Matrix4;
+  /** The parent at tracking time; `P` holds only for it. */
+  readonly parent: THREE.Object3D;
 }
 
 const IDENTITY_MATRIX = new THREE.Matrix4().toArray() as unknown as Matrix4;
@@ -127,7 +129,58 @@ function parentToGroupOf(
     }
     m.multiply(local);
   }
+  assertConjugable(m);
   return m.toArray() as unknown as Matrix4;
+}
+
+/**
+ * Relative tolerance of the similarity check on `P`. A chain of float32
+ * rotations composes to about 1e-7 off orthogonal; a real shear or an axis
+ * scale differs by far more than 1e-5.
+ */
+const SIMILARITY_TOLERANCE = 1e-5;
+
+/**
+ * Throws unless `P` is a similarity (rotation, uniform scale, translation)
+ * with a finite, non-zero scale. Only then is `P^-1 * D * P` rigid for every
+ * rigid `D`, which the bake relies on (it moves position and quaternion
+ * and leaves the scale alone).
+ */
+function assertConjugable(p: THREE.Matrix4): void {
+  const e = p.elements;
+  const col = (c: number) => [e[4 * c]!, e[4 * c + 1]!, e[4 * c + 2]!];
+  const cols = [col(0), col(1), col(2)];
+  const dot = (a: number[], b: number[]) =>
+    a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
+  const s2 = dot(cols[0]!, cols[0]!);
+  const tol = SIMILARITY_TOLERANCE * s2;
+  const ok =
+    e.every(Number.isFinite) &&
+    s2 > 1e-12 &&
+    Math.abs(dot(cols[1]!, cols[1]!) - s2) <= tol &&
+    Math.abs(dot(cols[2]!, cols[2]!) - s2) <= tol &&
+    Math.abs(dot(cols[0]!, cols[1]!)) <= tol &&
+    Math.abs(dot(cols[0]!, cols[2]!)) <= tol &&
+    Math.abs(dot(cols[1]!, cols[2]!)) <= tol;
+  if (!ok) {
+    throw new RangeError(
+      'ArSpaceCorrectionRegistry.track: the parent chain has a non-uniform ' +
+        'scale, a shear or a zero scale; a rigid correction cannot be moved ' +
+        'through it'
+    );
+  }
+}
+
+/** Whether `object` still sits under `parent`, and `parent` under `group`. */
+function stillUnder(
+  object: THREE.Object3D,
+  parent: THREE.Object3D,
+  group: THREE.Object3D
+): boolean {
+  if (object.parent !== parent) return false;
+  let p: THREE.Object3D | null = parent;
+  while (p !== null && p !== group) p = p.parent;
+  return p === group;
 }
 
 const scratchM = new THREE.Matrix4();
@@ -167,6 +220,13 @@ export function createArSpaceCorrectionRegistry(options: {
   ): void {
     const n = selectArSpaceCorrectionEpoch(state);
     if (entry.applied === n) return;
+    if (!stillUnder(object, entry.parent, group)) {
+      // An explicitly tracked object the app removed or re-parented: its
+      // P no longer holds. Watched content is untracked at the removal.
+      log.warn('a tracked object left its parent or the group; untracked');
+      untrack(object);
+      return;
+    }
     if (entry.applied > n) {
       // Not reachable within one store: observations only grow.
       log.warn(`entry ahead of the store (${entry.applied} > ${n}); restarted`);
@@ -189,7 +249,19 @@ export function createArSpaceCorrectionRegistry(options: {
     const observations = selectArSpaceObservations(state);
     if (observations === seenObservations) return;
     seenObservations = observations;
-    for (const [object, entry] of entries) bake(object, entry, state);
+    for (const [object, entry] of [...entries]) {
+      try {
+        bake(object, entry, state);
+      } catch (error) {
+        // One broken object must not stop the others from being corrected.
+        log.error(`correction of one object failed; skipped: ${String(error)}`);
+      }
+    }
+  }
+
+  function untrack(object: THREE.Object3D): void {
+    if (!entries.delete(object)) return;
+    releasePose(object, 'AR-space correction');
   }
 
   function epochFor(
@@ -229,14 +301,12 @@ export function createArSpaceCorrectionRegistry(options: {
         correction: IDENTITY_POSE,
         stampedAt: opts.capturedAt ?? null,
         parentToGroup,
+        parent: object.parent!,
       };
       entries.set(object, entry);
       bake(object, entry, state);
     },
-    untrack(object) {
-      if (!entries.delete(object)) return;
-      releasePose(object, 'AR-space correction');
-    },
+    untrack,
     attach(next) {
       unsubscribe?.();
       store = next;

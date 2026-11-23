@@ -197,6 +197,7 @@ const entryFiles = [
   'src/state/ar-session-teardown.ts',
   'src/state/app-selectors.ts',
   'src/state/ar-space-correction-slice.ts',
+  'src/state/ar-space-world.ts',
   'src/state/combined-root-state.ts',
   'src/state/create-slam-app-store.ts',
   'src/state/persistence-middleware.ts',

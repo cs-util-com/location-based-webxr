@@ -12,6 +12,7 @@ import { shownLocalMatrix } from './ar-space-correction';
 import type { Pose } from './qr/qr-pose';
 import { createArSpaceCorrectionRegistry } from './ar-space-correction-registry';
 import { claimPose, poseCommitterOf, releasePose } from './pose-committer';
+import { LogLevel, subscribeToLogs } from '../utils/logger';
 
 const newStore = () =>
   configureStore({
@@ -69,32 +70,52 @@ function setLocal(o: THREE.Object3D, p: Pose, scale = 1): void {
 }
 
 describe('ar-space-correction-registry', () => {
-  it('U2: an object not written after tracking holds P^-1 * Delta(e) * P * X_tracked after any jumps, and re-syncing changes nothing', () => {
+  it('an object not written after tracking holds P^-1 * Delta(e) * P * X_tracked after any jumps, and re-syncing changes nothing', () => {
     // Why this test matters: the bake is incremental (one M per jump), but
     // its result must equal the from-scratch formula over the whole track,
-    // for any parent chain, epoch and jump sequence; and a notification
-    // that brings no new observation must not move anything (idempotence).
+    // for any parent chain (one to three groups with uniform scales, at
+    // least one drawn from a manual matrix), epoch and jump sequence; and a
+    // notification that brings no new observation must not move anything
+    // (idempotence). three.js is the oracle.
+    const chainLink = fc.record({
+      pose,
+      scale: num(0.5, 2),
+      manual: fc.boolean(),
+    });
     fc.assert(
       fc.property(
         fc.array(pose, { minLength: 0, maxLength: 5 }),
         fc.nat(),
-        pose,
+        fc.array(chainLink, { minLength: 1, maxLength: 3 }),
+        fc.nat(),
         pose,
         num(0.2, 3),
-        (jumps, rawCut, parentPose, xPose, scale) => {
+        (jumps, rawCut, links, rawManual, xPose, scale) => {
           const cut = rawCut % (jumps.length + 1);
+          const forcedManual = rawManual % links.length;
           const store = newStore();
           const group = new THREE.Group();
-          const parent = new THREE.Group();
-          setLocal(parent, parentPose);
-          group.add(parent);
+          const pOracle = new THREE.Matrix4();
+          let parent: THREE.Object3D = group;
+          links.forEach((link, i) => {
+            const node = new THREE.Group();
+            setLocal(node, link.pose, link.scale);
+            const local = localOf(node);
+            if (link.manual || i === forcedManual) {
+              node.updateMatrix();
+              node.matrixAutoUpdate = false;
+              // A manual node is drawn from its matrix; its position is
+              // stale on purpose, so a reader of position would be wrong.
+              node.position.set(99, 99, 99);
+            }
+            pOracle.multiply(new THREE.Matrix4().fromArray(local));
+            parent.add(node);
+            parent = node;
+          });
           const object = new THREE.Object3D();
           setLocal(object, xPose, scale);
           parent.add(object);
           const xTracked = localOf(object);
-          const pMatrix = new THREE.Matrix4()
-            .compose(parent.position, parent.quaternion, parent.scale)
-            .toArray();
           const registry = createArSpaceCorrectionRegistry({ group });
           registry.attach(store);
           // The object's pose was computed before the first `cut` jumps
@@ -115,8 +136,19 @@ describe('ar-space-correction-registry', () => {
               )
             );
           const delta0 = selectCorrectionTrack(store.getState())[0]!;
-          const expected = shownLocalMatrix(delta0, pMatrix, xTracked as never);
-          expect(maxDiff(localOf(object), expected)).toBeLessThan(1e-9);
+          const d = new THREE.Matrix4().compose(
+            new THREE.Vector3(...delta0.position),
+            new THREE.Quaternion(...delta0.rotation),
+            new THREE.Vector3(1, 1, 1)
+          );
+          const expected = pOracle
+            .clone()
+            .invert()
+            .multiply(d)
+            .multiply(pOracle)
+            .multiply(new THREE.Matrix4().fromArray(xTracked))
+            .toArray();
+          expect(maxDiff(localOf(object), expected)).toBeLessThan(1e-8);
           expect(object.scale.x).toBeCloseTo(scale, 12);
           const before = localOf(object);
           store.dispatch({ type: 'unrelated/action' });
@@ -134,7 +166,7 @@ describe('ar-space-correction-registry', () => {
     );
   });
 
-  it('U5: an object tracked with an older epoch gets its Delta at tracking', () => {
+  it('an object tracked with an older epoch gets its Delta at tracking', () => {
     // Why this test matters: a pose computed before a jump and handed over
     // after it (an async tile) must be corrected at once, not at the next
     // jump.
@@ -301,7 +333,7 @@ describe('ar-space-correction-registry', () => {
     expect(poseCommitterOf(coin)).toBeNull();
   });
 
-  it('U7: refuses an object an anchor commits, and an anchor refuses a tracked object', () => {
+  it('refuses an object an anchor commits, and an anchor refuses a tracked object', () => {
     // Why this test matters: one committer per object. An anchored object
     // moved by the correction as well would receive the jump twice (the
     // anchor re-fits it against the new frame anyway).
@@ -362,5 +394,126 @@ describe('ar-space-correction-registry', () => {
     expect(() =>
       createArSpaceCorrectionRegistry({ group: {} as THREE.Object3D })
     ).toThrow(TypeError);
+  });
+
+  it('refuses a parent chain the rigid correction cannot pass through, before claiming', () => {
+    // Why this test matters: P^-1 * D * P is rigid only for a similarity P.
+    // A non-uniform scale or a shear would turn the bake into a distortion
+    // that position and quaternion cannot hold, so the object would drift;
+    // and a refused object must stay free for another committer.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const cases: Array<[string, (n: THREE.Object3D) => void]> = [
+      ['a non-uniform scale', (n) => n.scale.set(1, 2, 1)],
+      ['a zero scale', (n) => n.scale.setScalar(0)],
+      [
+        'a shear',
+        (n) => {
+          n.matrix.set(1, 0.5, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+          n.matrixAutoUpdate = false;
+        },
+      ],
+      ['a NaN position', (n) => n.position.set(Number.NaN, 0, 0)],
+    ];
+    for (const [, spoil] of cases) {
+      const parent = new THREE.Group();
+      spoil(parent);
+      group.add(parent);
+      const object = new THREE.Object3D();
+      parent.add(object);
+      expect(() => registry.track(object)).toThrow(RangeError);
+      expect(poseCommitterOf(object)).toBeNull();
+    }
+    // Control: a uniform scale and a rotation are accepted.
+    const scaled = new THREE.Group();
+    scaled.scale.setScalar(2.5);
+    scaled.rotation.set(0.3, 1.1, -0.4);
+    group.add(scaled);
+    const ok = new THREE.Object3D();
+    scaled.add(ok);
+    registry.track(ok);
+    expect(poseCommitterOf(ok)).toBe('AR-space correction');
+    registry.dispose();
+  });
+
+  it('one object whose bake throws is logged and skipped; the others are still corrected', () => {
+    // Why this test matters: the bake runs inside a store notification; an
+    // exception there would stop every later object (and every later
+    // subscriber) from seeing the jump.
+    const errors: string[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.tag === 'ArSpaceCorrection' && entry.level === LogLevel.ERROR) {
+        errors.push(entry.message);
+      }
+    });
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const broken = new THREE.Object3D();
+    const healthy = new THREE.Object3D();
+    group.add(broken, healthy);
+    registry.track(broken);
+    registry.track(healthy);
+    broken.quaternion.premultiply = () => {
+      throw new Error('broken object');
+    };
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    expect(healthy.position.length()).toBeCloseTo(3, 9);
+    expect(registry.entryOf(healthy)!.applied).toBe(1);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatch(/broken object/);
+    unsubscribe();
+    registry.dispose();
+  });
+
+  it('an explicitly tracked object that left its parent or the group is untracked at the next jump, not moved', () => {
+    // Why this test matters: P was read at tracking time; under a new
+    // parent, or outside the group, the bake would apply a correction in
+    // the wrong frame. The registry cannot know the new placement, so it
+    // lets go and says so.
+    const warnings: string[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.tag === 'ArSpaceCorrection' && entry.level === LogLevel.WARN) {
+        warnings.push(entry.message);
+      }
+    });
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const otherParent = new THREE.Group();
+    otherParent.position.set(5, 0, 0);
+    const holder = new THREE.Group();
+    group.add(otherParent, holder);
+    const removed = new THREE.Object3D();
+    const reparented = new THREE.Object3D();
+    const viaHolder = new THREE.Object3D();
+    group.add(removed, reparented);
+    holder.add(viaHolder);
+    registry.track(removed);
+    registry.track(reparented);
+    registry.track(viaHolder);
+    group.remove(removed);
+    otherParent.add(reparented);
+    group.remove(holder); // the object keeps its parent, the parent left
+    store.dispatch(
+      relocalizationObserved(
+        jumpObservation(1000, { position: [3, 0, 0], rotation: [0, 0, 0, 1] })
+      )
+    );
+    for (const o of [removed, reparented, viaHolder]) {
+      expect(o.position.toArray()).toEqual([0, 0, 0]);
+      expect(registry.entryOf(o)).toBeUndefined();
+      expect(poseCommitterOf(o)).toBeNull();
+    }
+    expect(warnings).toHaveLength(3);
+    unsubscribe();
   });
 });

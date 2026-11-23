@@ -1,3 +1,4 @@
+import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import type { Pose } from './qr/qr-pose';
@@ -5,7 +6,6 @@ import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   COMPENSATE_CAMERA_MOTION,
   IDENTITY_POSE,
-  MAX_EXTRAPOLATION_RATIO,
   correctionTrack,
   epochAt,
   jumpTransform,
@@ -42,12 +42,16 @@ const NECK_TO_CAMERA_M = 0.1;
  * about a neck pivot at `rateDegS`. Not exactly the compensation's model:
  * the camera's position runs on an arc, not a line.
  */
-function walkingCamera(tS: number, rateDegS: number): THREE.Matrix4 {
+function walkingCamera(
+  tS: number,
+  rateDegS: number,
+  walkMS = WALK_M_S
+): THREE.Matrix4 {
   const q = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 1, 0),
     THREE.MathUtils.degToRad(rateDegS * tS)
   );
-  const neck = new THREE.Vector3(WALK_M_S * tS, 1.6, 0);
+  const neck = new THREE.Vector3(walkMS * tS, 1.6, 0);
   const position = neck.add(
     new THREE.Vector3(0, 0, -NECK_TO_CAMERA_M).applyQuaternion(q)
   );
@@ -76,20 +80,90 @@ function residualAt(d: Pose, camera: THREE.Vector3, radius: number): number {
   return worst;
 }
 
-function walkingJump(dtMs: number, rateDegS: number): RelocalizationJump {
+interface Jitter {
+  readonly rng: () => number;
+  readonly posM: number;
+  readonly rotDeg: number;
+}
+
+/**
+ * A jump seen by a walking camera: the measured interval `tLast - tPrev` is
+ * `dtMs`, the gap to the jump frame `t - tLast` is `ratio` times that.
+ * `jitter` adds seeded noise to each of the three poses on its own.
+ */
+function walkingJump(
+  dtMs: number,
+  rateDegS: number,
+  ratio = 1,
+  jitter?: Jitter,
+  walkMS = WALK_M_S
+): RelocalizationJump {
   const t0 = 10;
   const dtS = dtMs / 1000;
+  const tJump = t0 + dtS + ratio * dtS;
+  const cam = (tS: number) => walkingCamera(tS, rateDegS, walkMS);
+  const noisy = (m: THREE.Matrix4): Pose =>
+    fromThree(jitter === undefined ? m : jittered(m, jitter));
   return {
-    t: (t0 + 2 * dtS) * 1000,
+    t: tJump * 1000,
     tLast: (t0 + dtS) * 1000,
-    lastPose: fromThree(walkingCamera(t0 + dtS, rateDegS)),
+    lastPose: noisy(cam(t0 + dtS)),
     tPrev: t0 * 1000,
-    prevPose: fromThree(walkingCamera(t0, rateDegS)),
-    newPose: fromThree(
-      JUMP.clone().multiply(walkingCamera(t0 + 2 * dtS, rateDegS))
-    ),
+    prevPose: noisy(cam(t0)),
+    newPose: noisy(JUMP.clone().multiply(cam(tJump))),
   };
 }
+
+/** Seeded uniform [0, 1) generator (mulberry32), so a sweep is repeatable. */
+function seededRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Standard normal sample (Box-Muller). */
+function gaussian(rng: () => number): number {
+  const u = Math.max(rng(), 1e-12);
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * rng());
+}
+
+/** `m` with Gaussian position noise and a Gaussian small-angle rotation. */
+function jittered(m: THREE.Matrix4, j: Jitter): THREE.Matrix4 {
+  const p = new THREE.Vector3();
+  const q = new THREE.Quaternion();
+  m.decompose(p, q, new THREE.Vector3());
+  const g = () => gaussian(j.rng);
+  p.add(new THREE.Vector3(g(), g(), g()).multiplyScalar(j.posM));
+  const r = THREE.MathUtils.degToRad(j.rotDeg);
+  const axisAngle = new THREE.Vector3(g() * r, g() * r, g() * r);
+  const angle = axisAngle.length();
+  if (angle > 0) {
+    q.premultiply(
+      new THREE.Quaternion().setFromAxisAngle(axisAngle.normalize(), angle)
+    );
+  }
+  return new THREE.Matrix4().compose(p, q, new THREE.Vector3(1, 1, 1));
+}
+
+/**
+ * Print a sweep table. The unit config runs silent, so the table is also
+ * appended to the file named by AR_SPACE_SWEEP_OUT when that is set.
+ */
+function report(table: string): void {
+  console.info(table);
+  const out = process.env.AR_SPACE_SWEEP_OUT;
+  if (out) appendFileSync(out, `${table}\n`);
+}
+
+const percentile = (values: readonly number[], p: number): number => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))]!;
+};
 
 describe('ar-space-correction', () => {
   it('compensates by default', () => {
@@ -138,30 +212,129 @@ describe('ar-space-correction', () => {
       }
     }
     it('reports the table', () => {
-      console.info(`compensation sweep:\n${rows.join('\n')}`);
+      report(`compensation sweep:\n${rows.join('\n')}`);
       expect(rows).toHaveLength(8);
     });
   });
 
-  it(`falls back to the uncompensated D beyond ${MAX_EXTRAPOLATION_RATIO} measured intervals`, () => {
-    // Why this test matters: a velocity from one short interval stretched
-    // over a long gap amplifies its noise; past the cap the plain D is the
-    // safer answer, and the cap must actually switch.
-    const base = walkingJump(33, 30);
-    const far: RelocalizationJump = {
-      ...base,
-      t:
-        base.tLast + (base.tLast - base.tPrev!) * (MAX_EXTRAPOLATION_RATIO + 1),
-    };
-    const near: RelocalizationJump = {
-      ...base,
-      t: base.tLast + (base.tLast - base.tPrev!) * MAX_EXTRAPOLATION_RATIO,
-    };
-    expect(jumpTransform(far, true)).toEqual(jumpTransform(far, false));
-    expect(jumpTransform(near, true)).not.toEqual(jumpTransform(near, false));
+  describe('extrapolation ratio sweep with seeded pose jitter', () => {
+    // Why this test matters: the compensation stretches the velocity of one
+    // measured interval over the gap to the jump frame. A long gap (a
+    // stalled frame) amplifies the pose noise of that interval. This sweep
+    // measures, per ratio (t - tLast) / (tLast - tPrev), the error of the
+    // compensated and the plain D under seeded jitter, for a still user and
+    // two walking ones, so a cap on the ratio is decided on numbers.
+    // Parameters: measured interval 33 ms; ratios 1, 2, 4, 6, 10, 15 (15 is
+    // the 500 ms gap rule at 33 ms); jitter per pose (position sigma,
+    // rotation sigma per axis) 0.5 mm / 0.01 deg, 1 mm / 0.05 deg and
+    // 3 mm / 0.2 deg; 300 seeds per cell; residual at 10 m from the camera.
+    // Verdict (no cap): beyond ratio 4 the compensation beats the plain D
+    // for both walking users at every jitter level, and loses only for a
+    // still user, who loses at ratios 1 to 4 as well. So the ratio does not
+    // separate the cases a cap would serve; the camera's motion does.
+    const RATIOS = [1, 2, 4, 6, 10, 15];
+    const JITTERS = [
+      { posM: 0.0005, rotDeg: 0.01 },
+      { posM: 0.001, rotDeg: 0.05 },
+      { posM: 0.003, rotDeg: 0.2 },
+    ];
+    const MOTIONS = [
+      { name: 'still', walkMS: 0, rateDegS: 0 },
+      { name: 'walk+10deg/s', walkMS: WALK_M_S, rateDegS: 10 },
+      { name: 'walk+30deg/s', walkMS: WALK_M_S, rateDegS: 30 },
+    ];
+    const SEEDS = 300;
+    it('reports compensated and plain error per ratio, jitter and motion', () => {
+      const rows: string[] = [];
+      for (const motion of MOTIONS) {
+        for (const jitter of JITTERS) {
+          for (const ratio of RATIOS) {
+            const comp: number[] = [];
+            const plain: number[] = [];
+            const rng = seededRandom(1 + ratio * 1000 + jitter.rotDeg * 1e5);
+            for (let s = 0; s < SEEDS; s++) {
+              const jump = walkingJump(
+                33,
+                motion.rateDegS,
+                ratio,
+                { rng, ...jitter },
+                motion.walkMS
+              );
+              const cam = new THREE.Vector3().setFromMatrixPosition(
+                walkingCamera(jump.t / 1000, motion.rateDegS, motion.walkMS)
+              );
+              const c = jumpTransform(jump, true);
+              const p = jumpTransform(jump, false);
+              comp.push(residualAt(c, cam, 10));
+              plain.push(residualAt(p, cam, 10));
+            }
+            const compP50 = percentile(comp, 0.5);
+            const plainP50 = percentile(plain, 0.5);
+            if (motion.walkMS > 0 && ratio > 4) {
+              expect(compP50).toBeLessThan(plainP50);
+            }
+            if (motion.walkMS === 0) expect(compP50).toBeGreaterThan(plainP50);
+            rows.push(
+              `${motion.name} jitter=${jitter.posM * 1000}mm/${jitter.rotDeg}deg ` +
+                `ratio=${ratio}: comp p50=${percentile(comp, 0.5).toFixed(3)} ` +
+                `p95=${percentile(comp, 0.95).toFixed(3)} ` +
+                `plain p50=${percentile(plain, 0.5).toFixed(3)} ` +
+                `p95=${percentile(plain, 0.95).toFixed(3)}`
+            );
+          }
+        }
+      }
+      report(`extrapolation ratio sweep (m at 10 m):\n${rows.join('\n')}`);
+      expect(rows).toHaveLength(
+        MOTIONS.length * JITTERS.length * RATIOS.length
+      );
+    });
   });
 
-  it('U4: an object between two jumps receives only the later D; one before both receives their product in order', () => {
+  it('extrapolates by (t - tLast) / (tLast - tPrev), not its inverse', () => {
+    // Why this test matters: with equal intervals the ratio and its inverse
+    // are both 1, so only unequal intervals tell them apart. Measured
+    // interval 20 ms, gap 50 ms (ratio 2.5, inverse 0.4), a camera moving
+    // and turning at constant rates: the compensation is exact only with
+    // the right ratio; the inverse leaves centimetres.
+    const at = (tMs: number): THREE.Matrix4 =>
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(1, 1.5, 0.5).multiplyScalar(tMs / 1000),
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad((60 * tMs) / 1000)
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+    const jump: RelocalizationJump = {
+      t: 70,
+      tLast: 20,
+      lastPose: fromThree(at(20)),
+      tPrev: 0,
+      prevPose: fromThree(at(0)),
+      newPose: fromThree(JUMP.clone().multiply(at(70))),
+    };
+    const cam = new THREE.Vector3().setFromMatrixPosition(at(70));
+    expect(residualAt(jumpTransform(jump), cam, 10)).toBeLessThan(1e-9);
+    // The inverse ratio is what the camera pose at tLast + 0.4 * 20 ms gives.
+    const inverse: RelocalizationJump = { ...jump, t: 28 };
+    expect(residualAt(jumpTransform(inverse), cam, 10)).toBeGreaterThan(0.03);
+  });
+
+  it('uses the uncompensated D when tPrev is not before tLast', () => {
+    // Why this test matters: equal times give no rate (a division by zero
+    // would turn every corrected object into NaN); the pure function guards
+    // it even though the slice refuses such an observation.
+    const base = walkingJump(33, 30);
+    const flat: RelocalizationJump = { ...base, tPrev: base.tLast };
+    expect(jumpTransform(flat, true)).toEqual(jumpTransform(flat, false));
+    const reversed: RelocalizationJump = { ...base, tPrev: base.tLast + 5 };
+    expect(jumpTransform(reversed, true)).toEqual(
+      jumpTransform(reversed, false)
+    );
+  });
+
+  it('an object between two jumps receives only the later D; one before both receives their product in order', () => {
     // Why this test matters: the two concrete cases the plan names, with
     // non-commuting jumps so a reversed order cannot pass.
     const d0: Pose = {

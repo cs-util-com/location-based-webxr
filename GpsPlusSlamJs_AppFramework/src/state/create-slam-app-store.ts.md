@@ -101,7 +101,7 @@ now lives at
   action creators: `slicePrefixOf(setZeroPos.type)` (`gpsData`),
   `slicePrefixOf(recordWriteFailure.type)` (`recording`) and
   `slicePrefixOf(recordDiagnostic.type)` (`diagnostics`, the reducer-less
-  log-only notes — see [diagnostics-action.ts.md](diagnostics-action.ts.md))
+  log-only notes, see [diagnostics-action.ts.md](diagnostics-action.ts.md))
   and `slicePrefixOf(relocalizationObserved.type)` (`arSpaceCorrection`, the
   raw relocalization observations a replay re-derives the AR-space correction
   from, see [ar-space-correction-slice.ts.md](ar-space-correction-slice.ts.md)),

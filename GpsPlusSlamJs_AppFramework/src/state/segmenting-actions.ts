@@ -2,8 +2,9 @@
  * The actions whose presence in a recording means the ODOMETRY FRAME moved.
  *
  * A tracking restart wipes the frame; a loop closure deforms the stored
- * trajectory; a relocalization switches the camera frame in one step. Either way, anything recorded in raw WebXR/odometry space —
- * captured photos, QR poses — keeps its old coordinates while the frame it
+ * trajectory; a relocalization switches the camera frame in one step.
+ * Either way, anything recorded in raw WebXR/odometry space (captured
+ * photos, QR poses) keeps its old coordinates while the frame it
  * was measured in has changed underneath it. Comparing or averaging across
  * such a boundary produces a plausible-looking answer that is simply wrong,
  * which is why every consumer either declines or segments there.

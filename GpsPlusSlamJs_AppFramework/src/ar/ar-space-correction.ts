@@ -35,19 +35,11 @@ import type { Pose } from './qr/qr-pose';
  * compensation that motion is read as part of the jump: at 30 deg/s and a
  * 33 ms frame, 1 deg, which is 0.17 m at 10 m from the camera (sweep in
  * `ar-space-correction.test.ts`). A static camera gives the same D either
- * way (property test).
+ * way (property test). No cap on the extrapolation ratio: the feed's 500 ms
+ * gap rule bounds the gap, and a ratio cap measured worse for a walking user
+ * (the sidecar's ratio sweep).
  */
 export const COMPENSATE_CAMERA_MOTION = true;
-
-/**
- * Longest extrapolation, in multiples of the measured interval
- * (`tLast - tPrev`), the compensation trusts. Beyond it the velocity of one
- * short interval is stretched over a much longer one, which amplifies its
- * noise more than it removes motion, so the uncompensated D is used. 4
- * covers a stalled frame or two at 30 fps; the feed's 500 ms gap rule bounds
- * the absolute gap separately.
- */
-export const MAX_EXTRAPOLATION_RATIO = 4;
 
 /**
  * The raw input of one jump: the jump frame (`t`, `newPose`), the frame
@@ -157,33 +149,23 @@ function extrapolatePose(
   };
 }
 
-/** Whether `jumpTransform` would compensate this jump. */
-function compensatesCameraMotion(
-  jump: RelocalizationJump,
-  compensate: boolean = COMPENSATE_CAMERA_MOTION
-): boolean {
-  if (!compensate || jump.prevPose === null || jump.tPrev === null) {
-    return false;
-  }
-  const interval = jump.tLast - jump.tPrev;
-  if (!(interval > 0)) return false;
-  return (jump.t - jump.tLast) / interval <= MAX_EXTRAPOLATION_RATIO;
-}
-
 /**
  * The jump `D` in O: a point at `x` in the old frame is at `D * x` in the
  * new one. Uncompensated `D = B * P_a * P_b^-1 * B^-1` (the camera is taken
  * not to move between the two frames); compensated, `P_b` is replaced by the
- * camera pose extrapolated to the jump frame's time.
+ * camera pose extrapolated to the jump frame's time. Without an earlier
+ * frame, or with `tPrev` not before `tLast` (no measurable rate), the
+ * uncompensated form is used.
  */
 export function jumpTransform(
   jump: RelocalizationJump,
   compensate: boolean = COMPENSATE_CAMERA_MOTION
 ): Pose {
   const before =
-    compensatesCameraMotion(jump, compensate) &&
+    compensate &&
     jump.prevPose !== null &&
-    jump.tPrev !== null
+    jump.tPrev !== null &&
+    jump.tLast > jump.tPrev
       ? extrapolatePose(
           jump.prevPose,
           jump.tPrev,

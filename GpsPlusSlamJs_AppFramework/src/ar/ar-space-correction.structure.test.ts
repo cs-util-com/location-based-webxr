@@ -7,16 +7,41 @@
  * the alignment (through their parent binding) and never the correction.
  * Neither dispatches: every corrected value stays out of the recording.
  */
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const src = resolve(here, '..');
 const source = (file: string): string =>
   readFileSync(resolve(here, file), 'utf8');
 const importsOf = (code: string): string[] =>
-  [...code.matchAll(/^\s*import[^'"]*['"]([^'"]+)['"]/gm)].map((m) => m[1]!);
+  [...code.matchAll(/^\s*(?:import|export)[^'"]*['"]([^'"]+)['"]/gm)].map(
+    (m) => m[1]!
+  );
+
+/**
+ * Every source file reachable from `entry` through relative imports and
+ * re-exports, as `src`-relative paths with forward slashes.
+ */
+function importClosure(entry: string): Set<string> {
+  const seen = new Set<string>();
+  const visit = (absolute: string): void => {
+    if (seen.has(absolute)) return;
+    seen.add(absolute);
+    for (const spec of importsOf(readFileSync(absolute, 'utf8'))) {
+      if (!spec.startsWith('.')) continue;
+      const base = resolve(dirname(absolute), spec.replace(/\.js$/, ''));
+      const file = [`${base}.ts`, resolve(base, 'index.ts')].find(existsSync);
+      if (file !== undefined) visit(file);
+    }
+  };
+  visit(resolve(here, entry));
+  return new Set([...seen].map((p) => relative(src, p).replace(/\\/g, '/')));
+}
+
+const ALIGNMENT_MODULES = /^state\/(app-selectors|ar-space-world)\.ts$/;
 
 describe('AR-space correction: module structure', () => {
   const registry = source('ar-space-correction-registry.ts');
@@ -27,6 +52,28 @@ describe('AR-space correction: module structure', () => {
       /selectAlignmentMatrix|selectArSpaceToWorld|arSpaceWorldPose|gpsData|app-selectors/
     );
     expect(registry).not.toMatch(/\bdispatch\s*\(/);
+  });
+
+  for (const entry of [
+    'ar-space-correction-registry.ts',
+    '../state/ar-space-correction-slice.ts',
+  ]) {
+    it(`${entry} reaches neither the GPS alignment nor the composed selectors through any import`, () => {
+      // A direct-import check misses a helper that imports the alignment in
+      // turn; the whole relative-import closure must stay free of it.
+      const closure = [...importClosure(entry)];
+      expect(closure.length).toBeGreaterThan(1);
+      expect(closure.filter((p) => ALIGNMENT_MODULES.test(p))).toEqual([]);
+    });
+  }
+
+  // Control: the closure walker finds the alignment where it is used.
+  it('the composed selectors module does reach the alignment', () => {
+    expect(
+      [...importClosure('../state/ar-space-world.ts')].filter((p) =>
+        ALIGNMENT_MODULES.test(p)
+      )
+    ).toEqual(['state/ar-space-world.ts', 'state/app-selectors.ts']);
   });
 
   it('the pure math imports neither three.js nor the store', () => {

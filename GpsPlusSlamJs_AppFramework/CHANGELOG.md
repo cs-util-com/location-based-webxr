@@ -13,8 +13,13 @@
   - **`ar/ar-space-correction`** (deep import): `jumpTransform`,
     `correctionTrack`, `epochAt`, `shownLocalMatrix`, rigid helpers.
   - **`state/ar-space-correction-slice`** (deep import):
-    `relocalizationObserved`, `selectCorrectionTrack`,
-    `selectArSpaceEpochAt`, `selectArSpaceToWorld`, `arSpaceWorldPose`.
+    `relocalizationObserved` (keeps only the six observation fields),
+    `selectCorrectionTrack`, `selectArSpaceEpochAt`.
+  - **`state/ar-space-world`** (deep import): `selectArSpaceToWorld`
+    (`A * Delta(e)`) and `arSpaceWorldPose`. NOT for world or map
+    consumers yet: until the GPS alignment is fitted on the corrected
+    odometry, they misplace content by about the jump size after a
+    relocalization. Inspection and tests only.
   - **`ar/ar-space-correction-registry`** (deep import):
     `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`).
   - **`ar/pose-committer`** (deep import): one committer per object, now
@@ -222,6 +227,20 @@
   `TOUR_PICTURE_VIEWPOINT_VIEWS`, a video in `TOUR_VIDEO_VIEWPOINT_VIEWS`).
 
 ### Changed
+
+- **AR-space correction, consequences for existing code:**
+  - `SlamAppRootState` gains the required `arSpaceCorrection` slice; a
+    hand-built root state (a test fixture) must add
+    `arSpaceCorrection: { observations: [] }`.
+  - `arSpaceCorrection` is a reserved `extraReducers` key.
+  - `SEGMENTING_ACTION_TYPES` gains
+    `arSpaceCorrection/relocalizationObserved`, so the Tour Viewer's capture
+    geo join and the splat recording reader decline a recording that holds
+    a relocalization, and the QR sighting fold segments at it.
+  - GPS anchors and deferred anchors claim their objects through
+    `ar/pose-committer`: putting an anchored object under another anchor, or
+    tracking it for the correction, now throws (`... is already committed
+by ...` or `nested pose committers are not supported ...`).
 
 - **A GPS anchor waits like a deferred anchor** (`visualization`,
   `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in
