@@ -4,6 +4,35 @@
 
 ### Added
 
+- **AR-space content correction** for ARCore relocalizations: the raw
+  observations go into a new built-in `arSpaceCorrection` slice (recorded,
+  segmenting); the jump of each, compensated for the camera's own motion,
+  and the correction of every older epoch are derived by selectors; a
+  registry bakes each jump once into the transforms of the objects it
+  tracks, so they keep their place in the current raw frame.
+  - **`ar/ar-space-correction`** (deep import): `jumpTransform`,
+    `correctionTrack`, `epochAt`, `shownLocalMatrix`, rigid helpers.
+  - **`state/ar-space-correction-slice`** (deep import):
+    `relocalizationObserved` (keeps only the six observation fields),
+    `selectCorrectionTrack`, `selectArSpaceEpochAt`.
+  - **`state/ar-space-world`** (deep import): `selectArSpaceToWorld`
+    (`A * Delta(e)`) and `arSpaceWorldPose`. NOT for world or map
+    consumers yet: until the GPS alignment is fitted on the corrected
+    odometry, they misplace content by about the jump size after a
+    relocalization. Inspection and tests only.
+  - **`ar/ar-space-correction-registry`** (deep import):
+    `createArSpaceCorrectionRegistry` (`track`, `untrack`, `attach`,
+    `isAttached`); every corrected object receives an `arcorrected` event
+    per jump carrying the applied local correction `M`. A removed object is
+    untracked at once; a hint given after tracking re-dates the placement.
+  - **`ar/ar-content-watcher`** (deep import): `enableArSpaceCorrection`
+    creates the `arContent` group under `arWorldGroup`; whatever is added
+    to it (or to a group marked with `arCorrection.container`) is corrected
+    with no further call, also after a container is moved.
+    `arCorrection.track` takes a `capturedAt` hint before or after the add,
+    `exclude` keeps an object out, `attach` follows a new store.
+  - **`ar/pose-committer`** (deep import): one committer per object, now
+    shared by GPS anchors, deferred anchors and the registry.
 - **Content anchors that re-place only while none of it is in view**, at
   its current and its new pose, after two frames out of view. Until the
   alignment is mature and while no code has voted, it follows the alignment
@@ -207,6 +236,20 @@
   `TOUR_PICTURE_VIEWPOINT_VIEWS`, a video in `TOUR_VIDEO_VIEWPOINT_VIEWS`).
 
 ### Changed
+
+- **AR-space correction, consequences for existing code:**
+  - `SlamAppRootState` gains the required `arSpaceCorrection` slice; a
+    hand-built root state (a test fixture) must add
+    `arSpaceCorrection: { observations: [] }`.
+  - `arSpaceCorrection` is a reserved `extraReducers` key.
+  - `SEGMENTING_ACTION_TYPES` gains
+    `arSpaceCorrection/relocalizationObserved`, so the Tour Viewer's capture
+    geo join and the splat recording reader decline a recording that holds
+    a relocalization, and the QR sighting fold segments at it.
+  - GPS anchors and deferred anchors claim their objects through
+    `ar/pose-committer`: putting an anchored object under another anchor, or
+    tracking it for the correction, now throws (`is already committed by`
+    or `nested pose committers are not supported`).
 
 - **A GPS anchor waits like a deferred anchor** (`visualization`,
   `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in

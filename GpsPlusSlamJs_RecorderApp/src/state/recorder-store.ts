@@ -47,6 +47,7 @@ import {
 import type { RecordingState } from 'gps-plus-slam-app-framework/state/recording-slice';
 import type { TrackingSliceState } from 'gps-plus-slam-app-framework/state/tracking-slice';
 import type { TrackingQualitySliceState } from 'gps-plus-slam-app-framework';
+import type { ArSpaceCorrectionState } from 'gps-plus-slam-app-framework/state/ar-space-correction-slice';
 import type { StorageBackend } from 'gps-plus-slam-app-framework/storage/storage-backend';
 import { ScenarioWrappingStorageBackend } from '../storage/scenario-storage';
 import type { SessionMetadata as OpfsSessionMetadata } from 'gps-plus-slam-app-framework/storage/opfs-storage';
@@ -63,6 +64,7 @@ export interface CombinedRootState extends LibraryRootState {
   recording: RecordingState;
   tracking: TrackingSliceState;
   trackingQuality: TrackingQualitySliceState;
+  arSpaceCorrection: ArSpaceCorrectionState;
   refPoints: RefPointsState;
   routing: RoutingState;
   scenario: ScenarioState;

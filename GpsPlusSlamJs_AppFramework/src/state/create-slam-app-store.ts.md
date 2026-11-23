@@ -87,7 +87,7 @@ now lives at
   keys; there is no bypass.
 - `extraReducers` keys must not collide with the framework-reserved slice keys
   (`gpsData`, `gpsElements`, `arElements`, `recording`, `tracking`,
-  `trackingQuality`), **nor with `diagnostics`**, which is reserved without a
+  `trackingQuality`, `arSpaceCorrection`), **nor with `diagnostics`**, which is reserved without a
   reducer: its prefix is on the built-in persistence whitelist, so a consumer
   slice with that name would have every one of its actions silently written
   into recordings — a silent WRITE, invisible to the reducer-collision check
@@ -101,7 +101,10 @@ now lives at
   action creators: `slicePrefixOf(setZeroPos.type)` (`gpsData`),
   `slicePrefixOf(recordWriteFailure.type)` (`recording`) and
   `slicePrefixOf(recordDiagnostic.type)` (`diagnostics`, the reducer-less
-  log-only notes — see [diagnostics-action.ts.md](diagnostics-action.ts.md)),
+  log-only notes, see [diagnostics-action.ts.md](diagnostics-action.ts.md))
+  and `slicePrefixOf(relocalizationObserved.type)` (`arSpaceCorrection`, the
+  raw relocalization observations a replay re-derives the AR-space correction
+  from, see [ar-space-correction-slice.ts.md](ar-space-correction-slice.ts.md)),
   plus any `persistedExtraPrefixes` the caller supplies. The recorder passes
   `slicePrefixOf(addRefPointEntry.type)` (`refPoints`). Callers MUST derive
   these from the slice (never hand-type a literal) so a slice rename cannot

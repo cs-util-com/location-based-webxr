@@ -70,6 +70,7 @@
         "src/ar/tour-markdown.ts",
         "src/ar/tour-media.ts",
         "src/ar/tour-short-text.ts",
+        "src/ar/ar-content-watcher.ts",
         "config/eslint.config.mjs"
       ],
       "project": ["src/**/*.ts"],

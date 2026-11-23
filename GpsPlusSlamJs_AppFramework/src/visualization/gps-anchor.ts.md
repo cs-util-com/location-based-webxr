@@ -95,11 +95,12 @@ object as an `@internal` testing seam in lieu of pumping the global
 - **No nested anchors**: a `THREE.Object3D` whose parent chain already
   contains a `GpsAnchor`-managed object, or that holds one below it, cannot
   be anchored: the constructor throws. Mirrors the C# invariant.
-  Implementation: a module-level `WeakSet<Object3D>` tracks managed objects.
-  Nesting with a deferred anchor of the same set is refused in both
-  directions too: `createGpsAnchor` throws for an object inside, or holding,
-  a deferred root, and `deferredAnchor(...).add` throws for a root inside,
-  or holding, a GPS-anchored object. Not checked: nesting across a bound and
+  Implementation: the anchor claims its object as `'GPS anchor'` through
+  `ar/pose-committer.ts` (one committer per object), released on dispose.
+  The same claim refuses nesting with every other committer in both
+  directions: `createGpsAnchor` throws for an object inside, or holding,
+  a deferred root or an AR-space-corrected object, and those throw for an
+  object inside, or holding, a GPS-anchored one. Not checked: nesting across a bound and
   an unbound set of the same group (see below).
 - **Joins its group's anchor set**: at construction the anchor joins the
   anchor set of `arWorldGroup` (`joinAnchorSet`) and leaves it in
@@ -133,7 +134,7 @@ object as an `@internal` testing seam in lieu of pumping the global
   median after the first received sample, silently degrading the
   accumulation phase into a misconfiguration. To intentionally skip
   accumulation, pass `skipBootstrap: true` (the supported bypass).
-  The throw cleans up the `WeakSet` registration so a later valid
+  The throw releases the pose claim so a later valid
   anchor on the same object3D is still allowed.
 - **`getCurrentGpsPoint` returning null is a non-error**: the tick is
   silently skipped (no sample pushed, `lastSampleAtElapsed` not

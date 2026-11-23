@@ -389,13 +389,13 @@ describe("readSplatInputs refuses, in words", () => {
   it.each([...SEGMENTING_ACTION_TYPES])(
     "refuses a recording whose coordinate frame moved mid-walk (%s)",
     async (type) => {
-      // Why: poses on the two sides of a tracking restart or loop closure
+      // Why: poses on the two sides of a tracking restart, relocalization or loop closure
       // live in different frames; one splat across them doubles the scene.
       const read = await readSplatInputs(
         (await buildSyntheticRecording({ midWalkActionType: type })).file,
       );
       expect(reasonOf(read)).toBe(
-        "The recording's coordinate frame changed mid-walk (tracking restart or loop closure).",
+        "The recording's coordinate frame changed mid-walk (tracking restart, relocalization or loop closure).",
       );
     },
   );

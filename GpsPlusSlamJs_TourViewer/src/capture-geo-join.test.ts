@@ -100,10 +100,16 @@ describe("assessReplayForJoin", () => {
   it.each([
     ["gpsData/odometryTrackingRestarted"],
     ["gpsData/arLoopClosureDetected"],
+    ["arSpaceCorrection/relocalizationObserved"],
   ])(
     "declines when the recording contains %s — the final alignment is only valid for the last segment",
     (type) => {
-      expect(preflightCaptureJoin(CURRENT_ERA, [type]).ok).toBe(false);
+      // Why this test matters: the join reads the shared segmenting list,
+      // so a relocalized recording is declined like a tracking restart,
+      // and its plain-words reason names the relocalization.
+      const verdict = preflightCaptureJoin(CURRENT_ERA, [type]);
+      expect(verdict.ok).toBe(false);
+      expect(verdict.ok ? "" : verdict.reason).toMatch(/relocalization/);
     },
   );
 

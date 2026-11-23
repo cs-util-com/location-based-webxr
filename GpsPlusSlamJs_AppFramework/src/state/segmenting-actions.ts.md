@@ -6,8 +6,10 @@ One-line: name the actions whose presence in a recording means the **odometry
 frame moved**.
 
 A tracking restart wipes the frame; a loop closure deforms the stored
-trajectory. Either way, anything recorded in raw WebXR/odometry space — a
-captured photo's pose, a QR code's solved pose — keeps its old coordinates
+trajectory; a relocalization (`arSpaceCorrection/relocalizationObserved`,
+see `ar-space-correction-slice.ts`) switches the camera frame in one step.
+Either way, anything recorded in raw WebXR/odometry space (a captured
+photo's pose, a QR code's solved pose) keeps its old coordinates
 while the frame it was measured in has changed underneath it. Comparing or
 averaging across that boundary yields a plausible-looking answer that is
 simply wrong.

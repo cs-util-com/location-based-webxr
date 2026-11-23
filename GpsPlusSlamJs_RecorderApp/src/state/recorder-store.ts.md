@@ -35,7 +35,7 @@ exposes a _different_, nullable variant from `sensors/gps.ts`. See
 - `RecorderStore` — `{ getState, dispatch, subscribe, writeFrame, writeSessionMetadata }`.
 - `RecorderStoreOptions` — `{ onWriteFailure?, storageBackend?, enableDevChecks?, licenseKey?, enableCompassColdStartOverride?, enableCompassRotationPrior?, enableCompassWebXRConsistency? }`.
 - `CombinedRootState` — `LibraryRootState` + `recording`, `tracking`,
-  `trackingQuality`, `refPoints`, `routing`, `scenario`, `qrDetected`.
+  `trackingQuality`, `arSpaceCorrection`, `refPoints`, `routing`, `scenario`, `qrDetected`.
 - `RECORDER_QR_MAX_HISTORY` — live QR history cap the recorder opts into.
 - `RootState`, `AppDispatch` — convenience type aliases.
 
