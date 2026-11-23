@@ -314,11 +314,11 @@ export interface XFeatOutcome {
   readonly text: string;
 }
 
-/** The probe gave no answer in `seconds`: not a failure to start. */
-export function xfeatTimedOut(seconds: number): XFeatOutcome {
+/** The probe gave no answer in `limitS` seconds: not a failure to start. */
+export function xfeatTimedOut(limitS: number): XFeatOutcome {
   return {
     started: null,
-    text: `Not known: no answer in ${String(seconds)} s.`,
+    text: `Not known: no answer in ${String(limitS)} s.`,
   };
 }
 
