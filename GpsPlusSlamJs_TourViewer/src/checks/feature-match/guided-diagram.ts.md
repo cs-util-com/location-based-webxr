@@ -2,11 +2,11 @@
 
 ## Purpose
 
-The guided view's picture of one photo pair: panel A, an arrow with the change ("dim", "turn", "step back", "step aside", "stay", "nothing"), panel B. One SVG string built from constants only, so no input text ever reaches the markup the view inserts.
+The picture of one shot against the scene's shot before it: panel A, an arrow with the change ("dim", "turn", "step back", "step aside", "stay", "nothing"), panel B. One SVG string built from constants only, so no input text ever reaches the markup the view inserts.
 
 ## Public API
 
-- `DIAGRAM_KINDS` / `DiagramKind`: the fifteen kinds (light, rotation, distance, side step flat and deep, and `other`).
+- `DIAGRAM_KINDS` / `DiagramKind`: the eleven kinds `light-same`, `light-dim`, `light-dark`, `rot-0`, `rot-35`, `dist-2x`, `dist-3x`, `side-flat`, `side-same-deep`, `side-deep`, `other`. The synthetic quarter and half turns are never shot, so they have no picture.
 - `diagramSvg(kind)`: an `<svg>` with `viewBox="0 0 300 100"`, `role="img"` and an `aria-label` that says the change in words.
 
 ## Invariants

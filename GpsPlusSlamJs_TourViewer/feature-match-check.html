@@ -463,7 +463,7 @@
         </div>
         <aside id="c-drawer" class="c-drawer" aria-label="Details" hidden>
           <nav class="c-tabs" role="tablist">
-            <button type="button" role="tab" data-tab="pairs">Pairs</button>
+            <button type="button" role="tab" data-tab="pairs">Shots</button>
             <button type="button" role="tab" data-tab="guide">Guide</button>
             <button type="button" role="tab" data-tab="results">Results</button>
             <button type="button" role="tab" data-tab="settings">
@@ -495,16 +495,15 @@
             </div>
             <div class="c-row">
               <button id="c-add-other" type="button" class="c-btn c-ghostbtn">
-                Add an other pair
+                Add an own scene
               </button>
               <button id="c-start-over" type="button" class="c-btn c-ghostbtn">
                 Start over
               </button>
             </div>
             <p class="c-hint">
-              Tap a pair to take it (again). Every file is named by its running
-              number and pair, for example
-              <code>feature-match-03-1b-s2-light-dimmed.zip</code>.
+              Tap a shot to take it (again). Download all saves every pair whose
+              two shots are taken, one folder per pair.
             </p>
           </div>
           <div class="c-panel" data-panel="guide" role="tabpanel" hidden>
@@ -520,35 +519,6 @@
           </div>
           <div class="c-panel" data-panel="results" role="tabpanel" hidden>
             <p id="c-light-warn" class="c-warn" role="alert" hidden></p>
-            <div class="c-row">
-              <button id="c-measure-run" type="button" class="c-btn">
-                Run on this pair
-              </button>
-              <span
-                id="c-measure-state"
-                class="c-hint"
-                aria-live="polite"
-              ></span>
-            </div>
-            <div class="c-row">
-              <button id="c-file-a" type="button" class="c-btn c-ghostbtn">
-                Photo A
-              </button>
-              <button id="c-file-b" type="button" class="c-btn c-ghostbtn">
-                Photo B
-              </button>
-              <button id="c-file-info" type="button" class="c-btn c-ghostbtn">
-                Frames JSON
-              </button>
-              <button
-                id="c-file-matches"
-                type="button"
-                class="c-btn c-ghostbtn"
-              >
-                Matches JSON
-              </button>
-              <span id="c-files-state" class="c-hint" aria-live="polite"></span>
-            </div>
             <div class="c-row">
               <button
                 id="c-copy-summary"
@@ -572,22 +542,7 @@
           </div>
           <div class="c-panel" data-panel="settings" role="tabpanel" hidden>
             <fieldset>
-              <legend>Saving</legend>
-              <label
-                ><input type="radio" name="c-save" value="each" /> Each pair as
-                one zip, by itself</label
-              >
-              <label
-                ><input type="radio" name="c-save" value="end" /> Keep them
-                here, download all at the end</label
-              >
-              <p class="c-hint">
-                A pair whose download was blocked stays on this page: Download
-                all saves every kept pair in one zip.
-              </p>
-            </fieldset>
-            <fieldset>
-              <legend>Taking photo B</legend>
+              <legend>Taking a shot</legend>
               <label
                 ><input type="radio" name="c-capture" value="auto" /> By itself
                 when the phone is still</label
@@ -597,9 +552,9 @@
                 tap</label
               >
               <p class="c-hint">
-                Pairs that change the light, the steps and your own pair are
-                always taken at a tap. While B waits, a tap on the big button
-                takes it after the countdown.
+                The light shots, the steps and your own scenes are always taken
+                at a tap. While a shot waits, a tap on the big button takes it
+                after the countdown.
               </p>
             </fieldset>
             <fieldset>
@@ -811,19 +766,19 @@
             ?
           </button>
           <div class="progress" aria-live="polite">
-            <span id="g-head-pos" class="head-pos">Pair 1 of 14</span>
+            <span id="g-head-pos" class="head-pos">Shot 1 of 13</span>
             <span class="bar" aria-hidden="true"
               ><span id="g-head-bar"></span
             ></span>
           </div>
           <button id="g-open-pairs" type="button" class="pairs-btn">
-            Pairs <span id="g-head-done">0/14</span>
+            Shots <span id="g-head-done">0/13</span>
           </button>
         </header>
 
         <article class="card" aria-live="polite">
           <div class="card-top">
-            <span id="g-card-key" class="key-chip">1a</span>
+            <span id="g-card-key" class="key-chip">L1</span>
             <h2>
               <span id="g-card-title"></span>
               <small id="g-card-place" class="place"></small>
@@ -1049,35 +1004,11 @@
             </button>
           </div>
           <p class="hint">
-            Optional. Runs the matchers here on the current pair's photos and
-            times them. Downloads up to 66 MB of models once. A run on a pair
-            uses 1 run, no warm-up, WebGPU (WASM where the phone has none) and
-            one XFeat file; the methods and sizes ticked under Options apply to
-            it too, and every option to a synthetic run.
+            Optional. Runs the matchers here on a synthetic pair, and times them
+            on the flat scene's F1 and F2 once both are taken. Downloads up to
+            66 MB of models once. The pairs themselves are measured on the PC.
           </p>
-          <div class="row">
-            <button id="g-measure-run" type="button" class="primary">
-              <span id="g-measure-run-label">Run on this pair</span>
-            </button>
-            <span id="g-measure-state" class="state" aria-live="polite"></span>
-          </div>
           <div id="g-measure-synthetic" class="row"></div>
-          <div class="row">
-            <span class="state">This pair's files:</span>
-            <button id="g-file-a" type="button" class="secondary">
-              Photo A
-            </button>
-            <button id="g-file-b" type="button" class="secondary">
-              Photo B
-            </button>
-            <button id="g-file-info" type="button" class="secondary">
-              Sizes and device
-            </button>
-            <button id="g-file-matches" type="button" class="secondary">
-              Matches
-            </button>
-            <span id="g-files-state" class="state" aria-live="polite"></span>
-          </div>
           <div class="row">
             <button id="g-open-flat" type="button" class="secondary">
               Flat targets (own steps)

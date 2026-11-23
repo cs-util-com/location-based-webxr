@@ -1,161 +1,189 @@
 /**
- * The guided view's words per photo pair: a short title, the three steps
- * (photo A, the change, photo B) and the diagram that shows the change,
- * plus the review note after a light check. Purpose and avoid line come
- * from `PAIR_GUIDE`, shared with the other view. Plain text, set as text.
+ * The words per shot of the photo test, shared by both views: a short
+ * title, the scene's setup, the change before the shot, how to take it,
+ * the diagram, what it measures and what spoils it; plus the note after a
+ * shot's light check. Plain text, set as text.
  *
  * @see guided-texts.ts.md
  */
-import type { LightCheck, PAIRS } from "./bench-export";
-import { PAIR_GUIDE } from "./bench-guide";
 import type { DiagramKind } from "./guided-diagram";
+import type { SceneKind, Shot, ShotKey, ShotLight } from "./scenes";
 
-/** A key of the protocol (every pair but the manual run). */
-export type ProtocolKey = (typeof PAIRS)[number]["key"];
-
-export interface GuidedSteps {
+export interface ShotWords {
   readonly title: string;
-  /** Before photo A. */
-  readonly a: string;
-  /** Between photo A and photo B. */
+  /** What changes after the scene's previous shot; empty on a first shot. */
   readonly change: string;
-  /** Photo B. */
-  readonly b: string;
+  /** How to take the shot. */
+  readonly capture: string;
   readonly diagram: DiagramKind;
-}
-
-const STAY = "Stay where you are.";
-const AGAIN = "Capture again.";
-
-export const GUIDED_STEPS: Readonly<Record<ProtocolKey, GuidedSteps>> = {
-  "1a": {
-    title: "Same light twice",
-    a: "Stand the phone on a table or shelf, aimed at a detailed part of the room.",
-    change: "Change nothing.",
-    b: AGAIN,
-    diagram: "light-same",
-  },
-  "1b": {
-    title: "Weaker light",
-    a: "Light ON as normal.",
-    change: "Dim the light: main light off, one small lamp on. Wait 2 seconds.",
-    b: "Capture without moving the phone.",
-    diagram: "light-dim",
-  },
-  "1c": {
-    title: "Very little light",
-    a: "Light ON as normal.",
-    change: "Dim as far as you can while the shapes still show on the screen.",
-    b: "Capture without moving the phone.",
-    diagram: "light-dark",
-  },
-  "2a": {
-    title: "Upright twice",
-    a: "About 1.5 m from a flat surface with detail (poster, patterned door). Phone upright.",
-    change: "Nothing. Same place, upright again. Holding by hand is fine.",
-    b: AGAIN,
-    diagram: "rot-0",
-  },
-  "2b": {
-    title: "Quarter turn",
-    a: "Same flat surface, same place. Phone upright.",
-    change: "Turn the phone sideways (either way), aim at the same centre.",
-    b: "Capture sideways.",
-    diagram: "rot-90",
-  },
-  "2c": {
-    title: "Half turn",
-    a: "Same flat surface, same place. Phone upright.",
-    change: "Hold the phone upside down, aim at the same centre.",
-    b: "Capture upside down.",
-    diagram: "rot-180",
-  },
-  "2d": {
-    title: "Slight tilt",
-    a: "Same flat surface, same place. Phone upright.",
-    change: "Tilt the phone 30-45 deg, like a clock hand at one o'clock.",
-    b: "Capture tilted.",
-    diagram: "rot-35",
-  },
-  "3a": {
-    title: "Same distance twice",
-    a: "1.5 m from the flat surface.",
-    change: STAY,
-    b: AGAIN,
-    diagram: "dist-same",
-  },
-  "3b": {
-    title: "Half the size",
-    a: "1.5 m from the flat surface.",
-    change: "Step straight back to about 3 m, keep it centred.",
-    b: "Capture from 3 m.",
-    diagram: "dist-2x",
-  },
-  "3c": {
-    title: "A third of the size",
-    a: "1 m from the flat surface.",
-    change: "Step straight back to about 3 m, keep it centred.",
-    b: "Capture from 3 m.",
-    diagram: "dist-3x",
-  },
-  "4a": {
-    title: "Flat surface, same spot",
-    a: "Aim at the flat surface from one place.",
-    change: STAY,
-    b: AGAIN,
-    diagram: "side-same-flat",
-  },
-  "4b": {
-    title: "Flat surface, step aside",
-    a: "Aim at the flat surface.",
-    change:
-      "Step about 1 m to the side, parallel to it. Aim at the same centre.",
-    b: "Capture from the new place.",
-    diagram: "side-flat",
-  },
-  "4c": {
-    title: "Deep scene, same spot",
-    a: "Aim into a hallway or a deep room, things near and far.",
-    change: STAY,
-    b: AGAIN,
-    diagram: "side-same-deep",
-  },
-  "4d": {
-    title: "Deep scene, step aside",
-    a: "Aim into the deep scene.",
-    change: "Step about 1 m to the side. Aim at the same centre.",
-    b: "Capture from the new place.",
-    diagram: "side-deep",
-  },
-  x: {
-    title: "Your own pair",
-    a: "Anything you want to test.",
-    change: "Change one thing.",
-    b: "Capture.",
-    diagram: "other",
-  },
-};
-
-/** What the guided card shows for one pair. */
-export interface GuidedCard extends GuidedSteps {
+  /** One sentence: what the shot's pair measures. */
   readonly purpose: string;
+  /** One short line of what spoils the shot. */
   readonly avoid: string;
 }
 
-export const guidedCard = (key: ProtocolKey): GuidedCard => ({
-  ...GUIDED_STEPS[key],
-  purpose: PAIR_GUIDE[key].purpose,
-  avoid: PAIR_GUIDE[key].avoid,
+/** Where a scene's first shot is taken from; shown on every shot of it. */
+export const SCENE_SETUP: Readonly<Record<SceneKind, string>> = {
+  light:
+    "Stand the phone on a table or shelf, aimed at a detailed part of the room.",
+  flat: "About 1.5 m from a flat surface with detail (a poster, a patterned door). Phone upright.",
+  deep: "Aim into a hallway or a deep room, things near and far.",
+  own: "Anything you want to test.",
+};
+
+const STILL = "Change nothing.";
+const AGAIN = "Capture again.";
+const NO_MOVE = "Capture without moving the phone.";
+const STEPPING = "Stepping closer or away.";
+const MOVING_SCENE = "Anything moving in the scene (people, pets, a TV).";
+
+export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
+  L1: {
+    title: "Normal light",
+    change: "",
+    capture: "Light ON as normal. Capture.",
+    diagram: "light-same",
+    purpose: "The reference the other light shots are matched against.",
+    avoid: "Moving the phone between the light shots.",
+  },
+  L2: {
+    title: "Same light again",
+    change: STILL,
+    capture: AGAIN,
+    diagram: "light-same",
+    purpose: "How many matches survive when nothing changes.",
+    avoid: "Moving the phone, changing the light.",
+  },
+  L3: {
+    title: "Weaker light",
+    change: "Dim the light: main light off, one small lamp on. Wait 2 seconds.",
+    capture: NO_MOVE,
+    diagram: "light-dim",
+    purpose: "Does a method still match when the light gets weaker?",
+    avoid: "Moving the phone. The camera brightens a dim picture a little.",
+  },
+  L4: {
+    title: "Very little light",
+    change: "Dim as far as you can while the shapes still show on the screen.",
+    capture: NO_MOVE,
+    diagram: "light-dark",
+    purpose: "Does a method still match with very little light?",
+    avoid: "Fully black (nothing to match), moving the phone.",
+  },
+  F1: {
+    title: "Upright",
+    change: "",
+    capture: "Capture upright. Holding by hand is fine.",
+    diagram: "rot-0",
+    purpose:
+      "The reference of the flat scene; its turned squares test rotation.",
+    avoid: "A deep scene: a flat surface keeps near and far lined up.",
+  },
+  F2: {
+    title: "Upright again",
+    change: "Nothing. Same place, upright again.",
+    capture: AGAIN,
+    diagram: "rot-0",
+    purpose: "The baseline for the flat scene's tests.",
+    avoid: "Moving between the two shots.",
+  },
+  F3: {
+    title: "Slight tilt",
+    change: "Tilt the phone 30-45 deg, like a clock hand at one o'clock.",
+    capture: "Capture tilted.",
+    diagram: "rot-35",
+    purpose: "Does a method cope with a slight tilt?",
+    avoid: STEPPING,
+  },
+  F4: {
+    title: "From 3 m",
+    change: "Step straight back to about 3 m, keep it centred.",
+    capture: "Capture from 3 m.",
+    diagram: "dist-2x",
+    purpose: "Does a method match the same thing at half the size?",
+    avoid: "Zooming instead of stepping back.",
+  },
+  F5: {
+    title: "From 1 m",
+    change: "Step forward to about 1 m, keep it centred.",
+    capture: "Capture from 1 m.",
+    diagram: "dist-3x",
+    purpose: "Matched against the 3 m shot: a third of the size.",
+    avoid: "Zooming instead of stepping.",
+  },
+  F6: {
+    title: "Step aside",
+    change:
+      "Back to 1.5 m, then about 1 m to the side, parallel to the surface. Aim at the same centre.",
+    capture: "Capture from the new place.",
+    diagram: "side-flat",
+    purpose: "Does a method match after a change of viewpoint?",
+    avoid: STEPPING,
+  },
+  D1: {
+    title: "Deep scene",
+    change: "",
+    capture: "Capture.",
+    diagram: "side-same-deep",
+    purpose: "The reference of a scene with depth.",
+    avoid: MOVING_SCENE,
+  },
+  D2: {
+    title: "Deep scene again",
+    change: STILL,
+    capture: AGAIN,
+    diagram: "side-same-deep",
+    purpose: "The baseline for a scene with depth.",
+    avoid: MOVING_SCENE,
+  },
+  D3: {
+    title: "Deep scene, step aside",
+    change: "Step about 1 m to the side. Aim at the same centre.",
+    capture: "Capture from the new place.",
+    diagram: "side-deep",
+    purpose: "Does a method match a deep scene after a change of viewpoint?",
+    avoid: MOVING_SCENE,
+  },
+  X1: {
+    title: "Your own first photo",
+    change: "",
+    capture: "Capture.",
+    diagram: "other",
+    purpose: 'Anything not in the list; the file name says "other".',
+    avoid: "Anything personal in the picture.",
+  },
+  X2: {
+    title: "Your own second photo",
+    change: "Change one thing.",
+    capture: "Capture.",
+    diagram: "other",
+    purpose: 'Anything not in the list; the file name says "other".',
+    avoid: "Anything personal in the picture.",
+  },
+};
+
+/** What a view shows for one shot. */
+export interface ShotCard extends ShotWords {
+  readonly setup: string;
+}
+
+export const shotCard = (shot: Shot): ShotCard => ({
+  ...SHOT_WORDS[shot.key],
+  setup: SCENE_SETUP[shot.kind],
 });
 
-/** The review note after both photos, per light check. */
-export const LIGHT_NOTE: Readonly<Record<LightCheck, string>> = {
+/** The note after a shot's light check (against L1, and L4 against L3). */
+export const LIGHT_NOTE: Readonly<Record<ShotLight, string>> = {
   ok: "Light check: ok.",
-  "not-darker":
-    "Photo B is not darker than A. Turn the light on, retake A, dim, then retake B.",
-  "too-dark-a": "Photo A is almost black. Turn the light on and retake A.",
-  "too-dark-b":
-    "Photo B is black: nothing to match. Dim a little less and retake B.",
-  changed:
-    "The light changed during the control pair. Retake B with the same light.",
+  "not-darker": "Not darker than L1. Dim further, then retake this shot.",
+  "too-dark-a":
+    "L1 is almost black. Go back to L1, turn the light on and retake it.",
+  "too-dark-b": "Black: nothing to match. Dim a little less and retake.",
+  changed: "The light changed since L1. Retake with the same light.",
+  "not-darker-than-dimmed":
+    "Not darker than the dimmed shot L3. Dim further and retake.",
 };
+
+/** "Retaking F1 redoes 7 measurements": what a retake of `key` costs. */
+export const retakeText = (key: ShotKey, pairs: number): string =>
+  `Retaking ${key} redoes ${String(pairs)} measurement${pairs === 1 ? "" : "s"}.`;

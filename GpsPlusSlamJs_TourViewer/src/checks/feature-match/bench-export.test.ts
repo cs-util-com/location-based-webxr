@@ -16,9 +16,7 @@ import {
   matchesInfo,
   pairFileNames,
   pairTag,
-  parseProgress,
   pngChunkTypes,
-  progressText,
   sessionToken,
 } from "./bench-export";
 import { makeFrame, toFramePoint } from "./bench-image";
@@ -569,10 +567,8 @@ describe("pairs", () => {
       "2b",
       "2c",
       "2d",
-      "3a",
       "3b",
       "3c",
-      "4a",
       "4b",
       "4c",
       "4d",
@@ -647,43 +643,40 @@ describe("pairs", () => {
   });
 });
 
-// Why these tests matter: a reload or a discarded tab restarted the running
-// number, so two downloads of one evening shared a name; the progress is
-// kept across reloads, and anything unreadable starts over rather than
-// throwing on the page.
-describe("progress across reloads", () => {
-  it("reads back what it wrote", () => {
-    const p = { sequence: 7 };
-    expect(parseProgress(progressText(p))).toEqual(p);
+// Why these tests matter: the run zip's frames JSON carries the shots, the
+// takes and the rotation pair's crop and turn after the fixed fields; the
+// PC side reads the fixed fields first, so the extra ones must never move
+// or replace them, and the device stays last.
+describe("framesInfo extra fields", () => {
+  const frame = makeFrame(4, 2, new Uint8ClampedArray(32).fill(50));
+  const device = { model: null } as unknown as DeviceInfo;
+  const args = [
+    [
+      { name: "A" as const, frame, source: { width: 8, height: 4 } },
+      { name: "B" as const, frame, source: { width: 8, height: 4 } },
+    ],
+    device,
+    1280,
+    pairTag("2b", 1, 3),
+    { light: null, session: "000fa0ff" },
+    FRAME_FILES,
+  ] as const;
+
+  it("writes them after the fixed fields and before the device", () => {
+    const keys = Object.keys(
+      JSON.parse(framesInfo(...args, { shots: { A: "x" }, turn: 90 })),
+    );
+    expect(keys.slice(-3)).toEqual(["shots", "turn", "device"]);
+    expect(keys.indexOf("frames")).toBeLessThan(keys.indexOf("shots"));
   });
 
-  it("starts over on nothing, garbage or a value out of range", () => {
-    const start = { sequence: 0 };
-    for (const bad of [
-      null,
-      "",
-      "{",
-      "[]",
-      '{"sequence":-1,"pair":"1a","spot":1}',
-      '{"sequence":1.5,"pair":"1a","spot":1}',
-      '{"sequence":"2"}',
-    ]) {
-      expect(parseProgress(bad), String(bad)).toEqual(start);
-    }
-  });
-
-  // Why this test matters: a page of an earlier version stored the pair
-  // it showed too; that is read past, and the running number kept.
-  it("ignores the fields an earlier page stored beside the number", () => {
-    expect(parseProgress('{"sequence":3,"pair":"flat","spot":2}')).toEqual({
-      sequence: 3,
-    });
+  it("writes the same JSON as before without them", () => {
+    expect(framesInfo(...args, {})).toBe(framesInfo(...args));
   });
 });
 
-// Why this test matters: with storage blocked the running number starts at
-// 1 on every load; the session token keeps two such runs apart. It is
-// random bytes only, no time and no place.
+// Why this test matters: the session token tells two runs apart and names
+// the run zip. It is random bytes only, no time and no place.
 describe("sessionToken", () => {
   it("is the bytes as hex", () => {
     expect(sessionToken(new Uint8Array([0, 15, 160, 255]))).toBe("000fa0ff");

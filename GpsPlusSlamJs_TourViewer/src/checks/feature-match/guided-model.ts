@@ -1,41 +1,99 @@
 /**
  * The guided view's screens as plain data, read from the page state: the
- * run screen (which pair, which photo is due, which step is lit, what the
- * big button does), the pairs sheet's rows and the end screen. Pure, so the
- * view only copies fields into the DOM and every rule is unit-tested.
+ * run screen (which shot, which step is lit, what the big button does),
+ * the shots sheet's rows and the end screen; plus the current shot's
+ * context both views read, and the motion and device helpers. Pure, so
+ * the view only copies fields into the DOM and every rule is unit-tested.
  *
  * @see guided-model.ts.md
  */
-import {
-  pairFileNames,
-  pairTag,
-  type LightCheck,
-  type PairFileNames,
-  type PairTag,
-  type SavedFrame,
-} from "./bench-export";
 import type { DeviceInfo } from "./bench-report";
 import type { FeatureMatchState } from "./feature-match-slice";
-import { guidedCard, LIGHT_NOTE, GUIDED_STEPS } from "./guided-texts";
 import type { DiagramKind } from "./guided-diagram";
 import {
-  doneCount,
-  nextStep,
-  shotDue,
-  slotStatus,
-  type Slot,
-  type SlotStatus,
-} from "./plan-slots";
-import { planSlots } from "./run-plan";
+  LIGHT_NOTE,
+  retakeText,
+  shotCard,
+  type ShotCard,
+} from "./guided-texts";
+import { planPhotos, planShots, type PhotoMeta } from "./run-plan";
+import {
+  derivedPairs,
+  lightOf,
+  nextOpen,
+  pairsUsing,
+  previousInScene,
+  readyPairs,
+  type Shot,
+  type ShotLight,
+} from "./scenes";
 
-/** A step of the card's A / change / B list. */
+/** The current shot and what the views read around it. */
+export interface ShotContext {
+  readonly list: readonly Shot[];
+  readonly index: number;
+  readonly shot: Shot;
+  readonly card: ShotCard;
+  readonly photo: PhotoMeta | undefined;
+  /** The scene's shot before this one; none for a first shot. */
+  readonly prev: Shot | undefined;
+  readonly prevPhoto: PhotoMeta | undefined;
+  readonly light: ShotLight | null;
+  /** The pairs a retake of this shot measures again. */
+  readonly redoes: number;
+}
+
+/** The current shot of the plan, clamped into the list. */
+export function shotContext(s: FeatureMatchState): ShotContext {
+  const list = planShots(s.plan);
+  const index = Math.min(Math.max(0, s.plan.current), list.length - 1);
+  const shot = list[index]!;
+  const prev = previousInScene(list, index);
+  return {
+    list,
+    index,
+    shot,
+    card: shotCard(shot),
+    photo: s.plan.shots[shot.id]?.photo,
+    prev,
+    prevPhoto: prev ? s.plan.shots[prev.id]?.photo : undefined,
+    light: lightOf(shot.id, planPhotos(s.plan)),
+    redoes: pairsUsing(derivedPairs(s.plan.spots, s.plan.extra), shot.id)
+      .length,
+  };
+}
+
+/** The shot's light check failed: it wants a retake. */
+export const warned = (light: ShotLight | null): light is ShotLight =>
+  light !== null && light !== "ok";
+
+/** "L1 place 2" on the light shots, else the key. */
+const shotLabel = (shot: Shot): string =>
+  shot.kind === "light" ? `${shot.key} place ${String(shot.spot)}` : shot.key;
+
+/** Shots with a photo, and every shot. */
+export function shotCounts(s: FeatureMatchState): {
+  readonly done: number;
+  readonly total: number;
+} {
+  const list = planShots(s.plan);
+  return {
+    done: list.filter((sh) => s.plan.shots[sh.id]).length,
+    total: list.length,
+  };
+}
+
+/** The pairs whose two shots have a photo: what Download all saves. */
+export const readyCount = (s: FeatureMatchState): number =>
+  readyPairs(derivedPairs(s.plan.spots, s.plan.extra), planPhotos(s.plan))
+    .length;
+
+/** A step of the card's setup / change / shot list. */
 type StepMark = "now" | "past" | "todo";
 
 interface ThumbView {
   readonly filled: boolean;
-  readonly retaking: boolean;
   readonly disabled: boolean;
-  /** "empty", "retake" or "retaking". */
   readonly sub: string;
 }
 
@@ -46,20 +104,18 @@ interface PrimaryView {
   readonly label: string;
   readonly sub: string;
   readonly disabled: boolean;
-  /** The slot "next" and "missing" move to; -1 otherwise. */
+  /** The shot "next" and "missing" move to; -1 otherwise. */
   readonly index: number;
-  /** The photo "capture" takes; null otherwise. */
-  readonly shot: "a" | "b" | null;
 }
 
 export interface RunView {
   readonly pos: string;
   readonly done: number;
   readonly total: number;
-  readonly slot: string;
+  readonly shot: string;
   readonly key: string;
   readonly title: string;
-  /** "place N" on the light pairs, else empty. */
+  /** "place N" on the light shots, else empty. */
   readonly place: string;
   readonly purpose: string;
   readonly avoid: string;
@@ -69,173 +125,152 @@ export interface RunView {
     readonly change: string;
     readonly b: string;
   };
+  /** "a" on a scene's first shot, "b" on a later one, "done" once taken. */
   readonly chip: { readonly shot: "a" | "b" | "done"; readonly text: string };
   readonly seq: {
     readonly a: StepMark;
     readonly change: StepMark;
     readonly b: StepMark;
   };
-  /** Both photos taken and none due: the finder shows the pair. */
+  /** The shot has its photo and no count runs: the finder shows it. */
   readonly reviewing: boolean;
   readonly note: { readonly warn: boolean; readonly text: string };
-  /** The ghost of photo A can be laid over the finder. */
+  /** The scene's previous photo can be laid over the finder. */
   readonly ghost: boolean;
+  /** Thumb "a": the scene's previous shot; "b": this one. */
   readonly slots: { readonly a: ThumbView; readonly b: ThumbView };
+  /** Photo ids of the two thumbs. */
+  readonly photos: { readonly a: string | null; readonly b: string | null };
   readonly primary: PrimaryView;
 }
 
-const up = (w: "a" | "b"): string => w.toUpperCase();
-const isLight = (key: string): boolean => key.startsWith("1");
-
-const COMPLETE_NOTE =
-  "Pair complete. Check both photos are sharp; tap A or B below to retake one.";
-
-function primaryView(s: FeatureMatchState, due: "a" | "b" | null): PrimaryView {
-  const busy = s.busy !== "idle";
-  const g = s.guided;
-  const base = { disabled: busy, index: -1, shot: null };
-  if (g.count) {
+function primaryView(s: FeatureMatchState, c: ShotContext): PrimaryView {
+  const base = { disabled: s.busy !== "idle", index: -1 };
+  const count = s.guided.count;
+  if (count) {
     return {
       ...base,
       mode: "cancel",
       label: "Cancel",
-      sub: `shooting ${up(g.count.shot)} in ${String(g.count.left)} s`,
+      sub: `shooting ${c.shot.key} in ${String(count.left)} s`,
     };
   }
-  if (due) {
-    const secs = s.plan.settings.countdown;
+  const secs = s.plan.settings.countdown;
+  const timing = secs ? `then ${String(secs)} s hands off` : "shoots at once";
+  if (!c.photo || warned(c.light)) {
     return {
       ...base,
-      shot: due,
       mode: "capture",
-      label: `${g.retake ? "Retake" : "Capture"} ${up(due)}`,
-      sub: secs ? `then ${String(secs)} s hands off` : "shoots at once",
+      label: `${c.photo ? "Retake" : "Capture"} ${c.shot.key}`,
+      sub: timing,
     };
   }
-  const list = planSlots(s.plan);
-  const step = nextStep(list, s.plan.slots, s.plan.current);
-  if (step.kind === "next") {
-    const next = list[step.index]!;
-    const rec = s.plan.slots[list[s.plan.current]!.id];
-    const warn = rec?.light != null && rec.light !== "ok";
-    return {
-      ...base,
-      mode: "next",
-      index: step.index,
-      label: "Next pair",
-      sub: warn
-        ? "or tap A or B to retake first"
-        : `${next.key}: ${GUIDED_STEPS[next.key].title}`,
-    };
+  const next = nextOpen(c.list, planPhotos(s.plan), c.index);
+  if (next === null) {
+    return { ...base, mode: "finish", label: "Finish", sub: "all shots done" };
   }
-  if (step.kind === "missing") {
-    return {
-      ...base,
-      mode: "missing",
-      index: step.index,
-      label: "Next missing pair",
-      sub: "some pairs are not done yet",
-    };
-  }
-  return {
-    ...base,
-    mode: "finish",
-    label: "Finish",
-    sub: "all pairs done: download",
-  };
+  const to = c.list[next]!;
+  return next > c.index
+    ? {
+        ...base,
+        mode: "next",
+        index: next,
+        label: "Next shot",
+        sub: `${to.key}: ${shotCard(to).title}`,
+      }
+    : {
+        ...base,
+        mode: "missing",
+        index: next,
+        label: "Next missing shot",
+        sub: "some shots are not taken yet",
+      };
 }
 
-/** The run screen for the current plan slot. */
+/** The run screen for the current shot. */
 export function runView(s: FeatureMatchState): RunView {
-  const list = planSlots(s.plan);
-  const i = Math.min(Math.max(0, s.plan.current), list.length - 1);
-  const slot = list[i]!;
-  const key = slot.key;
-  const card = guidedCard(key);
-  const rec = s.plan.slots[slot.id];
-  const g = s.guided;
-  const due = shotDue(rec, g.retake);
+  const c = shotContext(s);
+  const { shot, card, photo } = c;
   const busy = s.busy !== "idle";
-
-  const nowPart =
-    due === "a"
-      ? "a"
-      : due === "b"
-        ? rec?.a && !g.retake
-          ? "change"
-          : "b"
-        : null;
+  const counting = s.guided.count !== null;
+  const first = shot.step === 0;
+  const reviewing = Boolean(photo) && !counting;
   const mark = (part: "a" | "change" | "b"): StepMark => {
-    if (part === nowPart || (nowPart === "change" && part === "b"))
-      return "now";
-    const had = part === "a" ? rec?.a : rec?.b;
-    return had && !g.retake ? "past" : "todo";
+    if (reviewing) return "past";
+    if (first) return part === "a" ? "now" : "todo";
+    return part === "a" ? "past" : "now";
   };
-  const thumb = (w: "a" | "b"): ThumbView => {
-    const has = Boolean(rec?.[w]);
-    const retaking = g.retake === w;
-    return {
-      filled: has,
-      retaking,
-      disabled: !has || g.count !== null || busy,
-      sub: retaking ? "retaking" : has ? "retake" : "empty",
-    };
-  };
-  const reviewing = due === null && g.count === null;
-  const light = rec?.light ?? null;
-
+  const { done, total } = shotCounts(s);
+  const retake = retakeText(shot.key, c.redoes);
   return {
-    pos: `Pair ${String(i + 1)} of ${String(list.length)}`,
-    done: doneCount(list, s.plan.slots),
-    total: list.length,
-    slot: slot.id,
-    key: slot.key,
+    pos: `Shot ${String(c.index + 1)} of ${String(total)}`,
+    done,
+    total,
+    shot: shot.id,
+    key: shot.key,
     title: card.title,
-    place: isLight(slot.key) ? `place ${String(slot.spot)}` : "",
+    place: shot.kind === "light" ? `place ${String(shot.spot)}` : "",
     purpose: card.purpose,
     avoid: card.avoid,
     diagram: card.diagram,
-    steps: { a: card.a, change: card.change, b: card.b },
-    chip: due
-      ? { shot: due, text: `${g.retake ? "Retake" : "Shot"} ${up(due)}` }
-      : { shot: "done", text: "Check" },
+    steps: {
+      a: card.setup,
+      change: first ? "This is the scene's first shot." : card.change,
+      b: card.capture,
+    },
+    chip: reviewing
+      ? { shot: "done", text: "Check" }
+      : { shot: first ? "a" : "b", text: `Shot ${shot.key}` },
     seq: { a: mark("a"), change: mark("change"), b: mark("b") },
     reviewing,
-    note: light
-      ? { warn: light !== "ok", text: LIGHT_NOTE[light] }
-      : { warn: false, text: COMPLETE_NOTE },
-    ghost: due === "b" && Boolean(rec?.a),
-    slots: { a: thumb("a"), b: thumb("b") },
-    primary: primaryView(s, due),
+    note: c.light
+      ? { warn: warned(c.light), text: `${LIGHT_NOTE[c.light]} ${retake}` }
+      : { warn: false, text: `Photo taken. Check it is sharp. ${retake}` },
+    ghost: !photo && Boolean(c.prevPhoto),
+    slots: {
+      a: {
+        filled: Boolean(c.prevPhoto),
+        disabled: !c.prev || counting || busy,
+        sub: c.prev ? c.prev.key : "-",
+      },
+      b: {
+        filled: Boolean(photo),
+        disabled: !photo || counting || busy,
+        sub: photo ? "retake" : "empty",
+      },
+    },
+    photos: { a: c.prevPhoto?.id ?? null, b: photo?.id ?? null },
+    primary: primaryView(s, c),
   };
 }
 
-export interface PairRow {
+export interface ShotRow {
   readonly index: number;
   readonly label: string;
   readonly sub: string;
-  readonly status: SlotStatus;
+  readonly status: "done" | "retake" | "missing";
   readonly current: boolean;
 }
 
-const STATUS_WORDS: Readonly<Record<SlotStatus, string>> = {
+const STATUS_WORDS: Readonly<Record<ShotRow["status"], string>> = {
   done: "done",
-  half: "A only",
   retake: "retake suggested",
   missing: "missing",
 };
 
-/** The pairs sheet: every slot, its state in words, the current one marked. */
-export function pairRows(s: FeatureMatchState): PairRow[] {
-  return planSlots(s.plan).map((slot, index) => {
-    const status = slotStatus(s.plan.slots[slot.id]);
-    const title = GUIDED_STEPS[slot.key].title;
+/** The shots sheet: every shot, its state in words, the current one marked. */
+export function shotRows(s: FeatureMatchState): ShotRow[] {
+  const photos = planPhotos(s.plan);
+  return planShots(s.plan).map((shot, index) => {
+    const status = !photos[shot.id]
+      ? "missing"
+      : warned(lightOf(shot.id, photos))
+        ? "retake"
+        : "done";
     return {
       index,
-      label: isLight(slot.key)
-        ? `${slot.key} place ${String(slot.spot)}`
-        : slot.key,
-      sub: `${title} - ${STATUS_WORDS[status]}`,
+      label: shotLabel(shot),
+      sub: `${shotCard(shot).title} - ${STATUS_WORDS[status]}`,
       status,
       current: index === s.plan.current,
     };
@@ -258,9 +293,11 @@ export interface EndView {
   };
 }
 
-function downloadView(s: FeatureMatchState, done: number): EndView["download"] {
+function downloadView(
+  s: FeatureMatchState,
+  ready: number,
+): EndView["download"] {
   const z = s.runZip;
-  const again = s.plan.downloads > 0 ? "Download again" : "Download all";
   switch (z.phase) {
     case "preparing":
       return { label: "Preparing the zip...", text: z.text, tone: "" };
@@ -270,10 +307,10 @@ function downloadView(s: FeatureMatchState, done: number): EndView["download"] {
       return { label: "Download all", text: z.text, tone: "err" };
     case "idle":
       return {
-        label: again,
+        label: "Download all",
         text:
           z.text ||
-          `One zip with ${String(done)} pair${done === 1 ? "" : "s"}, saved to this phone only.`,
+          `One zip with ${String(ready)} pair${ready === 1 ? "" : "s"}, saved to this phone only.`,
         tone: "",
       };
   }
@@ -281,141 +318,23 @@ function downloadView(s: FeatureMatchState, done: number): EndView["download"] {
 
 /** The end screen: what is captured and whether the zip can be made. */
 export function endView(s: FeatureMatchState): EndView {
-  const list = planSlots(s.plan);
-  const done = doneCount(list, s.plan.slots);
-  const all = done === list.length;
+  const { done, total } = shotCounts(s);
+  const ready = readyCount(s);
+  const all = done === total;
   return {
     all,
     done,
-    total: list.length,
+    total,
     kicker: all
-      ? "All pairs captured"
-      : `${String(done)} of ${String(list.length)} pairs captured`,
+      ? "All shots taken"
+      : `${String(done)} of ${String(total)} shots taken`,
     title: all ? "Thank you. One last step." : "You can send what you have.",
     lede: all
       ? "Download the zip, then send it together with the summary below."
-      : "Only complete pairs go into the zip. Go back to the pairs any time to add the rest.",
-    canDownload: done > 0 && s.busy === "idle",
-    download: downloadView(s, done),
+      : "Only pairs with both shots go into the zip. Go back to the shots any time to add the rest.",
+    canDownload: ready > 0 && s.busy === "idle",
+    download: downloadView(s, ready),
   };
-}
-
-/** The current plan pair's two frames, for a run or an export. */
-export interface PlanPair {
-  readonly slot: Slot;
-  /** The take's running number; it names the files. */
-  readonly seq: number;
-  readonly a: SavedFrame;
-  readonly b: SavedFrame;
-}
-
-/**
- * The current slot's frames, or null for a half pair or a frame the side
- * table does not hold (a restore that failed).
- */
-export function planPairOf(
-  s: FeatureMatchState,
-  frames: ReadonlyMap<string, SavedFrame>,
-): PlanPair | null {
-  const slot = planSlots(s.plan)[s.plan.current];
-  return slot ? pairAt(s, frames, slot.id) : null;
-}
-
-/** The pair of `slotId`, or null for a half pair or a frame not loaded. */
-export function pairAt(
-  s: FeatureMatchState,
-  frames: ReadonlyMap<string, SavedFrame>,
-  slotId: string,
-): PlanPair | null {
-  const slot = planSlots(s.plan).find((sl) => sl.id === slotId);
-  const rec = s.plan.slots[slotId];
-  const a = rec?.a ? frames.get(rec.a.id) : undefined;
-  const b = rec?.b ? frames.get(rec.b.id) : undefined;
-  return slot && rec && a && b ? { slot, seq: rec.seq, a, b } : null;
-}
-
-/**
- * The speed test's photo pair: the current one, else the take the last
- * photo-pair run measured (after the automatic move the current pair is
- * empty), else null for the synthetic pair.
- */
-export function speedPairOf(
-  s: FeatureMatchState,
-  frames: ReadonlyMap<string, SavedFrame>,
-): PlanPair | null {
-  const now = planPairOf(s, frames);
-  if (now || !s.planRun) {
-    return now;
-  }
-  const last = pairAt(s, frames, s.planRun.slot);
-  return last && last.seq === s.planRun.seq ? last : null;
-}
-
-/**
- * The measure sheet's status line: a plan run's status only on the pair it
- * measured (a finished run stays in the state after a move), else whether
- * the current pair has its two photos.
- */
-export function measureText(
-  s: FeatureMatchState,
-  pair: PlanPair | null,
-): string {
-  const slot = planSlots(s.plan)[s.plan.current];
-  if (slot && s.planRun?.slot === slot.id) {
-    return s.status.run;
-  }
-  return pair
-    ? `pair ${pair.slot.id}: photos A and B ready`
-    : "the current pair has no two photos yet";
-}
-
-/** One complete pair of the run zip, with the names its files get. */
-export interface RunPair {
-  readonly slot: Slot;
-  readonly tag: PairTag;
-  readonly names: PairFileNames;
-  readonly light: LightCheck | null;
-  readonly a: SavedFrame;
-  readonly b: SavedFrame;
-}
-
-/**
- * Every complete pair in run order, for Download all. The other pairs
- * share key "x", so their running numbers keep the names apart.
- *
- * @throws Error naming the photo when a complete pair's frame is not in
- *   the side table (a restore that failed): a zip without it would be
- *   silently short.
- */
-export function runPairs(
-  s: FeatureMatchState,
-  frames: ReadonlyMap<string, SavedFrame>,
-): RunPair[] {
-  return planSlots(s.plan).flatMap((slot) => {
-    const rec = s.plan.slots[slot.id];
-    const st = slotStatus(rec);
-    if (!rec || (st !== "done" && st !== "retake")) {
-      return [];
-    }
-    const frame = (w: "a" | "b"): SavedFrame => {
-      const f = frames.get(rec[w]!.id);
-      if (!f) {
-        throw new Error(`photo ${up(w)} of ${slot.id} is not loaded`);
-      }
-      return f;
-    };
-    const tag = pairTag(slot.key, slot.spot, rec.seq);
-    return [
-      {
-        slot,
-        tag,
-        names: pairFileNames(tag),
-        light: rec.light,
-        a: frame("a"),
-        b: frame("b"),
-      },
-    ];
-  });
 }
 
 /** The summary's phone line: model, OS version and cores, nothing else. */
@@ -474,7 +393,7 @@ export function introCountdownText(s: {
   readonly sound: boolean;
 }): string {
   if (s.countdown <= 0) {
-    return "A tap shakes the phone, and the countdown is off: each photo is taken at your tap. Rest the phone on something steady, or set a countdown under Pairs.";
+    return "A tap shakes the phone, and the countdown is off: each photo is taken at your tap. Rest the phone on something steady, or set a countdown under Shots.";
   }
   return `A tap shakes the phone, so each photo is taken ${String(s.countdown)} seconds after your tap${s.sound ? ", with a beep per second" : ""}. Hands off until the click.`;
 }

@@ -1,7 +1,7 @@
 /**
  * The guided view of the feature matching page (the default; `?ui=cockpit`
- * shows the cockpit, `cockpit-view.ts`): an intro, then one pair at a time with a step
- * card, a viewfinder and a countdown before each photo, a pairs sheet,
+ * shows the cockpit, `cockpit-view.ts`): an intro, then one shot at a time with a step
+ * card, a viewfinder and a countdown before each photo, a shots sheet,
  * the end screen with Download all and the summary, and an optional
  * measure sheet that holds the measuring block (`bench-engine.ts`).
  *
@@ -30,15 +30,14 @@ import {
   introCountdownText,
   hasRate,
   isMoving,
-  measureText,
   motionStep,
-  pairRows,
-  planPairOf,
   runView,
+  shotContext,
+  shotRows,
 } from "./guided-model";
 import { createPlanIo } from "./plan-io";
-import { MAX_EXTRA } from "./plan-slots";
-import { planSlots } from "./run-plan";
+import { planShots } from "./run-plan";
+import { MAX_EXTRA } from "./scenes";
 
 type Screen = "intro" | "run" | "end";
 type Sheet = "pairs" | "measure" | null;
@@ -129,14 +128,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     sound: el<HTMLInputElement>("sound"),
     addOther: el<HTMLButtonElement>("add-other"),
     startOver: el<HTMLButtonElement>("start-over"),
-    measureRun: el<HTMLButtonElement>("measure-run"),
-    measureRunLabel: el("measure-run-label"),
-    measureState: el("measure-state"),
-    fileA: el<HTMLButtonElement>("file-a"),
-    fileB: el<HTMLButtonElement>("file-b"),
-    fileInfo: el<HTMLButtonElement>("file-info"),
-    fileMatches: el<HTMLButtonElement>("file-matches"),
-    filesState: el("files-state"),
     openFlat: el<HTMLButtonElement>("open-flat"),
   };
 
@@ -157,9 +148,17 @@ export function startGuidedView(deps: GuidedDeps): () => void {
 
   // --- transient view state -------------------------------------------------
 
-  let screen: Screen = state().plan.shots === 0 ? "intro" : "run";
+  /** Whether any shot has a photo: the run has started. */
+  const started = (s: FeatureMatchState): boolean =>
+    Object.keys(s.plan.shots).length > 0;
+
+  let screen: Screen = started(state()) ? "run" : "intro";
   let sheet: Sheet = null;
-  let ghostOn = false;
+  /**
+   * The shot the ghost was switched on for: it shows only while that shot
+   * is current, so any move (a tap or the store's own after a photo) ends it.
+   */
+  let ghostFor: string | null = null;
   let motion = { level: 0, seen: false, moving: false };
   /** The pair grid's rows as last drawn, so a render keeps the buttons. */
   let gridKey = "";
@@ -227,18 +226,12 @@ export function startGuidedView(deps: GuidedDeps): () => void {
           void startCamera();
           return;
         }
-        if (p.shot) {
-          if (p.shot === "a") {
-            ghostOn = false;
-          }
-          io.beginCount(p.shot);
-        }
+        io.beginCount();
         return;
       case "next":
       case "missing":
         if (accepted(A.planMoved(p.index))) {
-          ghostOn = false;
-          log(`next pair: ${runView(state()).slot}`);
+          log(`next shot: ${runView(state()).shot}`);
         }
         return;
       case "finish":
@@ -266,7 +259,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
 
   const renderRun = (s: FeatureMatchState): boolean => {
     const v = runView(s);
-    const rec = s.plan.slots[v.slot];
     ui.headPos.textContent = v.pos;
     ui.headBar.style.width = `${String((100 * v.done) / v.total)}%`;
     ui.headDone.textContent = `${String(v.done)}/${String(v.total)}`;
@@ -290,8 +282,8 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     if (v.reviewing) {
       ui.reviewNote.className = `review-note ${v.note.warn ? "warn" : "ok"}`;
       ui.reviewNote.textContent = v.note.text;
-      drawFrame(ui.reviewA, rec?.a?.id ?? null);
-      drawFrame(ui.reviewB, rec?.b?.id ?? null);
+      drawFrame(ui.reviewA, v.photos.a);
+      drawFrame(ui.reviewB, v.photos.b);
     }
     ui.camChip.hidden = v.reviewing || s.camera;
     ui.camChip.textContent =
@@ -302,9 +294,13 @@ export function startGuidedView(deps: GuidedDeps): () => void {
           : "camera off: tap Capture";
     ui.storeChip.hidden = !s.photoStoreFailing;
     ui.ghostToggle.hidden = !v.ghost;
+    if (ghostFor !== v.shot) {
+      ghostFor = null;
+    }
+    const ghostOn = ghostFor !== null;
     ui.ghostToggle.setAttribute("aria-pressed", String(ghostOn));
     if (ghostOn && v.ghost) {
-      drawFrame(ui.ghost, rec?.a?.id ?? null);
+      drawFrame(ui.ghost, v.photos.a);
     } else {
       ui.ghost.hidden = true;
     }
@@ -319,10 +315,9 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ] as const) {
       const t = v.slots[w];
       btn.dataset.filled = String(t.filled);
-      btn.dataset.retaking = String(t.retaking);
       btn.disabled = t.disabled;
       $(btn, ".slot-sub").textContent = t.sub;
-      drawFrame($<HTMLCanvasElement>(btn, "canvas"), rec?.[w]?.id ?? null);
+      drawFrame($<HTMLCanvasElement>(btn, "canvas"), v.photos[w]);
     }
     const p = v.primary;
     ui.primary.classList.toggle("counting", p.mode === "cancel");
@@ -337,7 +332,7 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   };
 
   const renderPairs = (s: FeatureMatchState): void => {
-    const rows = pairRows(s);
+    const rows = shotRows(s);
     const done = rows.filter(
       (r) => r.status === "done" || r.status === "retake",
     ).length;
@@ -386,20 +381,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ui.storeState.hidden = !s.photoStoreFailing;
   };
 
-  const renderMeasure = (s: FeatureMatchState): void => {
-    const pair = planPairOf(s, sides.frames);
-    const idle = s.busy === "idle";
-    ui.measureRun.disabled = !idle || !pair;
-    ui.measureRunLabel.textContent = `Run on pair ${runView(s).slot}`;
-    ui.measureState.textContent = measureText(s, pair);
-    const off = !idle || !pair;
-    ui.fileA.disabled = off;
-    ui.fileB.disabled = off;
-    ui.fileInfo.disabled = off;
-    ui.fileMatches.disabled = off || !io.matchesOf(s, pair);
-    ui.filesState.textContent = s.fileSave.text;
-  };
-
   const render = (): void => {
     const s = state();
     io.syncTimer();
@@ -408,17 +389,17 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ui.end.hidden = screen !== "end";
     ui.pairsSheet.hidden = sheet !== "pairs";
     ui.measureSheet.hidden = sheet !== "measure";
-    const started = Object.keys(s.plan.slots).length > 0;
     for (const b of all<HTMLButtonElement>("#g-intro [data-spots]")) {
       b.setAttribute(
         "aria-checked",
         String(Number(b.dataset.spots) === s.plan.spots),
       );
-      b.disabled = started || s.busy !== "idle";
+      b.disabled = started(s) || s.busy !== "idle";
     }
     ui.introStill.textContent = introCountdownText(s.plan.settings);
-    ui.introStart.textContent =
-      s.plan.shots > 0 ? "Continue where you left off" : "Start";
+    ui.introStart.textContent = started(s)
+      ? "Continue where you left off"
+      : "Start";
     for (const b of all<HTMLButtonElement>("#g-sheet-pairs [data-countdown]")) {
       b.setAttribute(
         "aria-checked",
@@ -433,9 +414,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     }
     if (screen === "end") {
       renderEnd(s);
-    }
-    if (sheet === "measure") {
-      renderMeasure(s);
     }
   };
 
@@ -463,9 +441,9 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   });
   ui.introStart.addEventListener("click", () => {
     const s = state();
-    if (s.plan.shots === 0) {
+    if (!started(s)) {
       log(
-        `run: light tests at ${String(s.plan.spots)} place(s), ${String(planSlots(s.plan).length)} pairs`,
+        `run: light tests at ${String(s.plan.spots)} place(s), ${String(planShots(s.plan).length)} shots`,
       );
     }
     show("run");
@@ -485,11 +463,25 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     ["b", ui.slotB],
   ] as const) {
     btn.addEventListener("click", () => {
-      store.dispatch(A.guidedRetakeToggled(w));
+      if (w === "a") {
+        // Back to the scene's previous shot.
+        const c = shotContext(state());
+        if (c.prev) {
+          store.dispatch(A.planMoved(c.index - 1));
+        }
+        return;
+      }
+      // This shot again: a retake is one more capture of the current shot.
+      if (camera.on()) {
+        io.beginCount();
+      } else {
+        void startCamera();
+      }
     });
   }
   ui.ghostToggle.addEventListener("click", () => {
-    ghostOn = !ghostOn;
+    const shot = runView(state()).shot;
+    ghostFor = ghostFor === shot ? null : shot;
     render();
   });
   ui.pairGrid.addEventListener("click", (ev) => {
@@ -500,7 +492,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       return;
     }
     store.dispatch(A.planMoved(Number(b.dataset.index)));
-    ghostOn = false;
     sheet = null;
     show("run");
   });
@@ -509,8 +500,9 @@ export function startGuidedView(deps: GuidedDeps): () => void {
     if (!accepted(A.planSized({ spots: p.spots, extra: p.extra + 1 }))) {
       return;
     }
-    store.dispatch(A.planMoved(planSlots(state().plan).length - 1));
-    log(`run: extra pair ${runView(state()).slot} added`);
+    // The new own scene's first shot (X1), before its X2.
+    store.dispatch(A.planMoved(planShots(state().plan).length - 2));
+    log(`run: extra scene ${runView(state()).shot} added`);
     sheet = null;
     show("run");
   });
@@ -530,7 +522,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
       return;
     }
     log("run: started over");
-    ghostOn = false;
     sheet = null;
     show("intro");
   });
@@ -552,14 +543,6 @@ export function startGuidedView(deps: GuidedDeps): () => void {
   el("close-measure").addEventListener("click", () => {
     openSheet(null);
   });
-  ui.measureRun.addEventListener("click", () => {
-    engine.startRun("plan");
-  });
-  ui.fileA.addEventListener("click", () => void io.saveFile("A"));
-  ui.fileB.addEventListener("click", () => void io.saveFile("B"));
-  ui.fileInfo.addEventListener("click", () => void io.saveFile("info"));
-  ui.fileMatches.addEventListener("click", () => void io.saveFile("matches"));
-
   const flat = startFlatCapture(root, {
     store: fm,
     log,

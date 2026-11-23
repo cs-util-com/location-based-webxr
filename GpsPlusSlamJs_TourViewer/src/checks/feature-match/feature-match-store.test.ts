@@ -6,7 +6,6 @@ import {
   FLAT_PROGRESS_KEY,
   flatHasUnsaved,
   PLAN_KEY,
-  PROGRESS_KEY,
   type KeyValueStorage,
 } from "./feature-match-store";
 import { SURFACE_CLASSES } from "./flat-target";
@@ -51,26 +50,13 @@ const frame = { width: 4, height: 3, rgba: new Uint8ClampedArray(48) };
 const CLS = SURFACE_CLASSES[0].id;
 
 describe("stored progress", () => {
-  // Why: a reload or a discarded tab must continue the numbering.
-  it("starts from the stored progress, and writes it when it changes", () => {
-    const { data, storage } = memory({
-      [PROGRESS_KEY]: JSON.stringify({ sequence: 4 }),
-    });
-    const setItem = vi.spyOn(storage, "setItem");
-    const { store } = make(storage);
-    expect(store.getState().progress).toEqual({ sequence: 4 });
-    // An action that changes no progress writes nothing.
-    store.dispatch(A.logged("x"));
-    expect(setItem).not.toHaveBeenCalled();
-    store.dispatch(
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
-    );
-    expect(JSON.parse(data.get(PROGRESS_KEY)!)).toEqual({ sequence: 5 });
-    // The plan is stored too; the progress is written once.
-    const progressWrites = setItem.mock.calls.filter(
-      ([k]) => k === PROGRESS_KEY,
-    );
-    expect(progressWrites).toHaveLength(1);
+  // Why: a plan of the pair-slot version cannot be read as shots; it is
+  // dropped (no migration) and the page says so in its log.
+  it("discards a stored plan of the old version and says so", () => {
+    const old = make(memory({ [PLAN_KEY]: JSON.stringify({ v: 1 }) }).storage);
+    expect(old.oldPlanDiscarded).toBe(true);
+    expect(old.store.getState().plan.shots).toEqual({});
+    expect(make(memory().storage).oldPlanDiscarded).toBe(false);
   });
 
   // Why: the flat progress outlives the page so a reload keeps the surfaces.
@@ -84,71 +70,43 @@ describe("stored progress", () => {
   // Why: private mode blocks storage; the page must still work, starting over.
   it("starts over and keeps working when storage is blocked", () => {
     const { store } = make(blocked);
-    expect(store.getState().progress.sequence).toBe(0);
+    expect(store.getState().plan.shotsTaken).toBe(0);
     expect(() => {
       store.dispatch(
-        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+        A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
       );
       store.dispatch(A.flatSurfaceAdded({ cls: CLS, original: false }));
     }).not.toThrow();
-    expect(store.getState().progress.sequence).toBe(1);
+    expect(store.getState().plan.shotsTaken).toBe(1);
   });
 });
 
 describe("side tables", () => {
-  // Why: frames and results the state no longer names are memory leaks.
-  it("drops frames and results the state no longer names", () => {
+  // Why: frames the state no longer names are memory leaks.
+  it("drops frames the state no longer names", () => {
     const { store, sides } = make(memory().storage);
     const keep = (id: string) =>
-      sides.frames.set(id, {
-        name: "A",
-        frame,
-        source: { width: 8, height: 6 },
-      });
+      sides.frames.set(id, { frame, source: { width: 8, height: 6 } });
     keep("p1");
     store.dispatch(
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     expect(sides.frames.has("p1")).toBe(true);
     keep("p2");
     store.dispatch(
-      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+      A.planShotTaken({ shot: "light-s1/L2", photo: photo("p2") }),
     );
-    store.dispatch(A.runStarted("plan"));
-    sides.results.set("r1", []);
-    store.dispatch(A.runFinished({ text: "ok", resultsId: "r1" }));
-    expect(sides.results.has("r1")).toBe(true);
     // A frame nobody names goes at the next action.
     keep("stray");
     store.dispatch(A.logged("x"));
     expect(sides.frames.has("stray")).toBe(false);
 
+    // A retake of L1 replaces its photo; the old frame goes.
     keep("p3");
     store.dispatch(
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p3") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p3") }),
     );
     expect([...sides.frames.keys()].sort()).toEqual(["p2", "p3"]);
-    expect(sides.results.size).toBe(0);
-  });
-
-  // Why: the guided view's run keeps its results under the plan run, not
-  // the camera pair's id; they must live exactly as long as that take.
-  it("keeps a plan run's results until a new photo of its pair", () => {
-    const { store, sides } = make(memory().storage);
-    for (const which of ["a", "b"] as const) {
-      store.dispatch(
-        A.planPhotoTaken({ slot: "1a-s1", which, photo: photo(`q${which}`) }),
-      );
-    }
-    store.dispatch(A.runStarted("plan"));
-    sides.results.set("r2", []);
-    store.dispatch(A.runFinished({ text: "ok", resultsId: "r2" }));
-    store.dispatch(A.planMoved(2));
-    expect(sides.results.has("r2")).toBe(true);
-    store.dispatch(
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("q3") }),
-    );
-    expect(sides.results.size).toBe(0);
   });
 
   // Why: a stale prepared zip's URL must go with it.
@@ -184,11 +142,7 @@ describe("side tables", () => {
 });
 
 describe("accepted and put", () => {
-  const saved = {
-    name: "A" as const,
-    frame,
-    source: { width: 8, height: 6 },
-  };
+  const saved = { frame, source: { width: 8, height: 6 } };
 
   // Why: a second tap while a run goes must not start a second run, and
   // the view learns that only from `accepted`.
@@ -206,7 +160,7 @@ describe("accepted and put", () => {
       put(
         sides.frames,
         [["p1", saved]],
-        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+        A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
       ),
     ).toBe(true);
     expect(sides.frames.has("p1")).toBe(true);
@@ -214,9 +168,8 @@ describe("accepted and put", () => {
       put(
         sides.frames,
         [["p2", saved]],
-        A.planPhotoTaken({
-          slot: "1a-s1",
-          which: "b",
+        A.planShotTaken({
+          shot: "light-s1/L2",
           photo: { ...photo("p2"), width: 0 },
         }),
       ),
@@ -295,9 +248,12 @@ describe("reconcile of the flat side tables", () => {
 });
 
 describe("the run plan's storage", () => {
+  /** A stored frame; its pixels tell A from B. */
   const saved = (name: "A" | "B") => ({
-    name,
-    frame,
+    frame: {
+      ...frame,
+      rgba: new Uint8ClampedArray(48).fill(name === "A" ? 1 : 2),
+    },
     source: { width: 8, height: 6 },
   });
 
@@ -350,16 +306,17 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     const text = data.get(PLAN_KEY);
-    expect(text).toContain('"1a-s1"');
+    expect(text).toContain('"light-s1/L1"');
     const again = makeWith(storage, null);
-    expect(again.store.getState().plan.slots["1a-s1"]?.a?.id).toBe("p1");
-    expect(again.store.getState().progress.sequence).toBe(1);
+    const plan = again.store.getState().plan;
+    expect(plan.shots["light-s1/L1"]?.photo.id).toBe("p1");
+    expect(plan.shotsTaken).toBe(1);
   });
 
-  // Why: the photos of the plan's slots live in the browser's database so
+  // Why: the photos of the plan's shots live in the browser's database so
   // a reload keeps them; one retaken or reset must go from there too.
   it("mirrors the plan's photos into the database and prunes them", async () => {
     const { data, db } = mapDb();
@@ -367,14 +324,15 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     await settle();
     expect([...data.keys()]).toEqual(["p1"]);
+    store.dispatch(A.planMoved(0));
     put(
       sides.frames,
       [["p2", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p2") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p2") }),
     );
     await settle();
     expect([...data.keys()]).toEqual(["p2"]);
@@ -396,33 +354,35 @@ describe("the run plan's storage", () => {
       first.put(
         first.sides.frames,
         [[id, saved(which === "a" ? "A" : "B")]],
-        A.planPhotoTaken({ slot: "1a-s1", which, photo: photo(id) }),
+        A.planShotTaken({
+          shot: which === "a" ? "light-s1/L1" : "light-s1/L2",
+          photo: photo(id),
+        }),
       );
     }
     const { data, db } = mapDb({ p1: saved("A"), orphan: saved("B") });
     const next = makeWith(storage, db);
     await next.restorePhotos();
     expect(next.sides.frames.get("p1")).toEqual(saved("A"));
-    expect(next.store.getState().plan.slots["1a-s1"]).toMatchObject({
-      a: { id: "p1" },
-      b: null,
-    });
+    const shots = next.store.getState().plan.shots;
+    expect(shots["light-s1/L1"]?.photo.id).toBe("p1");
+    expect(shots["light-s1/L2"]).toBeUndefined();
     expect([...data.keys()]).toEqual(["p1"]);
   });
 
   // Why: with no database (blocked, private window) a reload cannot bring
-  // photos back; the slots say so instead of showing photos that are gone.
+  // photos back; the shots say so instead of showing photos that are gone.
   it("marks every photo lost without a database, and survives a failing one", async () => {
     const { storage } = memory();
     const first = makeWith(storage, null);
     first.put(
       first.sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     const none = makeWith(storage, null);
     await none.restorePhotos();
-    expect(none.store.getState().plan.slots["1a-s1"]?.a).toBeNull();
+    expect(none.store.getState().plan.shots["light-s1/L1"]).toBeUndefined();
 
     const broken = {
       get: () => Promise.reject(new Error("gone")),
@@ -436,51 +396,15 @@ describe("the run plan's storage", () => {
     failing.put(
       failing.sides.frames,
       [["p9", saved("A")]],
-      A.planPhotoTaken({ slot: "2a-s1", which: "a", photo: photo("p9") }),
+      A.planShotTaken({ shot: "flat-s1/F1", photo: photo("p9") }),
     );
     await settle();
     expect(failing.sides.frames.has("p9")).toBe(true);
   });
 
-  // Why: a kept pair zip lives beside the state until it is downloaded
-  // and dropped; its Blob must go with it, and none survives a reset.
-  it("keeps a kept file's Blob while the plan names it", () => {
-    const { put, sides, store } = makeWith(memory().storage, null);
-    put(
-      sides.frames,
-      [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
-    );
-    put(
-      sides.frames,
-      [["p2", saved("B")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
-    );
-    const blob = new Blob(["zip"]);
-    expect(
-      put(
-        sides.blobs,
-        [["k1", blob]],
-        A.planFileKept({ id: "k1", name: "a.zip", slot: "1a-s1" }),
-      ),
-    ).toBe(true);
-    expect(sides.blobs.get("k1")).toBe(blob);
-    expect(
-      put(
-        sides.blobs,
-        [["k2", blob]],
-        A.planFileKept({ id: "k2", name: "", slot: "1a-s1" }),
-      ),
-    ).toBe(false);
-    expect(sides.blobs.has("k2")).toBe(false);
-    store.dispatch(A.planFilesDownloaded(["k1"]));
-    store.dispatch(A.planKeptDropped());
-    expect(sides.blobs.size).toBe(0);
-  });
-
   // Why: the plan and its photos outlive a reload, but the side table key
   // counter did not: a new photo after a reload got a stored photo's id,
-  // overwrote that slot's frame and was never written to the database.
+  // overwrote that shot's frame and was never written to the database.
   it("never gives a new photo the id of a photo the stored plan names", () => {
     const { storage } = memory();
     const first = createFeatureMatchStore({
@@ -492,7 +416,7 @@ describe("the run plan's storage", () => {
     first.put(
       first.sides.frames,
       [[id, saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo(id) }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo(id) }),
     );
     const again = createFeatureMatchStore({
       storage,
@@ -521,7 +445,7 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     await settle();
     expect(failed).toHaveBeenCalledTimes(1);
@@ -536,7 +460,7 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p2", saved("B")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "b", photo: photo("p2") }),
+      A.planShotTaken({ shot: "light-s1/L2", photo: photo("p2") }),
     );
     await settle();
     expect([...data.keys()].sort()).toEqual(["p1", "p2"]);
@@ -562,17 +486,17 @@ describe("the run plan's storage", () => {
       },
     };
     const { put, sides, store, failed } = makeWith(memory().storage, quota);
-    const take = async (id: string, slot: string) => {
+    const take = async (id: string, shot: string) => {
       put(
         sides.frames,
         [[id, saved("A")]],
-        A.planPhotoTaken({ slot, which: "a", photo: photo(id) }),
+        A.planShotTaken({ shot, photo: photo(id) }),
       );
       await settle();
     };
-    await take("p1", "1a-s1");
-    await take("p2", "1b-s1");
-    await take("p3", "1c-s1");
+    await take("p1", "light-s1/L1");
+    await take("p2", "light-s1/L2");
+    await take("p3", "light-s1/L3");
     expect(tried).toEqual(["p1", "p2", "p1", "p3", "p1"]);
     // Plan changes that name no new photo write nothing.
     store.dispatch(A.planMoved(2));
@@ -583,7 +507,7 @@ describe("the run plan's storage", () => {
     expect(store.getState().photoStoreFailing).toBe(true);
 
     refuse = false;
-    await take("p4", "2a-s1");
+    await take("p4", "flat-s1/F1");
     for (let i = 0; i < 8; i++) {
       await settle();
     }
@@ -594,7 +518,7 @@ describe("the run plan's storage", () => {
 
   // Why: a photo retaken while it was written is deleted again after the
   // write; when only that delete failed, the photo was still counted as
-  // not stored, though no slot names it, and the page said "not stored".
+  // not stored, though no shot names it, and the page said "not stored".
   it("does not count a photo as unstored when only its cleanup delete failed", async () => {
     const { data, db } = mapDb();
     const pending: (() => void)[] = [];
@@ -614,7 +538,7 @@ describe("the run plan's storage", () => {
       put(
         sides.frames,
         [[id, saved("A")]],
-        A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo(id) }),
+        A.planShotTaken({ shot: "light-s1/L1", photo: photo(id) }),
       );
     }
     for (const release of pending.splice(0)) {
@@ -636,7 +560,7 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     expect(store.getState().photoStoreFailing).toBe(true);
     store.dispatch(A.planReset());
@@ -662,7 +586,7 @@ describe("the run plan's storage", () => {
     put(
       sides.frames,
       [["p1", saved("A")]],
-      A.planPhotoTaken({ slot: "1a-s1", which: "a", photo: photo("p1") }),
+      A.planShotTaken({ shot: "light-s1/L1", photo: photo("p1") }),
     );
     await settle();
     expect(data.has("p1")).toBe(true);

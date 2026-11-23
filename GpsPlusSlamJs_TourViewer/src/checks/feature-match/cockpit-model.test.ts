@@ -2,14 +2,11 @@ import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 
 import {
-  downloadCount,
+  downloadLabel,
   handsOffResult,
   instrView,
   meterFill,
-  nextAfterPair,
   nightOn,
-  NOT_MEASURED,
-  pairMeasured,
   progressText,
   readoutView,
   retakeView,
@@ -19,16 +16,17 @@ import {
   shutterView,
   statusView,
   tileView,
-  warnShot,
 } from "./cockpit-model";
 import {
   featureMatchActions as A,
   featureMatchReducer,
+  HANDS_OFF_TEXT,
   initialFeatureMatchState,
   type FeatureMatchAction,
   type FeatureMatchState,
 } from "./feature-match-slice";
-import type { PhotoMeta } from "./run-plan";
+import { LIGHT_NOTE, SCENE_SETUP, SHOT_WORDS } from "./guided-texts";
+import { planShots, type PhotoMeta } from "./run-plan";
 
 const run = (
   actions: readonly FeatureMatchAction[],
@@ -42,13 +40,29 @@ const photo = (id: string, greyMean = 120): PhotoMeta => ({
   source: { width: 1280, height: 720 },
   greyMean,
 });
-const shot = (slot: string, which: "a" | "b", mean = 120): FeatureMatchAction =>
-  A.planPhotoTaken({ slot, which, photo: photo(`${slot}-${which}`, mean) });
+/** A photo of shot `id`, named after it. */
+const shot = (id: string, mean = 120): FeatureMatchAction =>
+  A.planShotTaken({ shot: id, photo: photo(`p-${id}`, mean) });
 const camOn = A.cameraChanged(true);
+const L1 = "light-s1/L1";
+const L2 = "light-s1/L2";
+const L3 = "light-s1/L3";
+
+/** Every shot of the default plan taken, the light checks passing. */
+const allTaken = (): FeatureMatchAction[] => {
+  const list = planShots(run([]).plan);
+  const mean = (id: string): number =>
+    id === "light-s1/L4" ? 30 : id === L3 ? 40 : 120;
+  return list.flatMap((x, i) => [A.planMoved(i), shot(x.id, mean(x.id))]);
+};
+
+/** L1, L2 taken and L3 as bright as L1: its light check fails. */
+const warnedL3 = (): FeatureMatchState =>
+  run([camOn, shot(L1, 120), shot(L2, 120), shot(L3, 120)]);
 
 // Why these tests matter: the cockpit view only copies what this model
 // says into its fixed dock, so every rule of the big button, the side
-// buttons, the A and B tiles and the status line is pinned without a DOM.
+// buttons, the two tiles and the status line is pinned without a DOM.
 describe("shutterView", () => {
   it("starts the camera first, with its starting and failed states", () => {
     expect(shutterView(run([]))).toMatchObject({
@@ -68,71 +82,56 @@ describe("shutterView", () => {
     });
   });
 
-  it("names the photo due and the countdown, then offers to stop the count", () => {
+  it("names the shot due and the countdown, then offers to stop the count", () => {
     expect(shutterView(run([camOn]))).toMatchObject({
       mode: "capture",
-      text: "A in 3 s",
-      shot: "a",
+      text: "L1 in 3 s",
       tone: "",
     });
     expect(
       shutterView(run([camOn, A.planSettingsChanged({ countdown: 0 })])),
-    ).toMatchObject({ mode: "capture", text: "Take A" });
-    expect(shutterView(run([camOn, shot("1a-s1", "a")]))).toMatchObject({
-      text: "B in 3 s",
-      shot: "b",
-    });
+    ).toMatchObject({ mode: "capture", text: "Take L1" });
+    // The run moves on to L2 by itself; tap mode, so no hands-off wait.
     expect(
-      shutterView(run([camOn, A.guidedCountSet({ shot: "a", left: 2 })])),
+      shutterView(
+        run([camOn, A.planSettingsChanged({ capture: "tap" }), shot(L1)]),
+      ),
+    ).toMatchObject({ text: "L2 in 3 s" });
+    expect(
+      shutterView(run([camOn, A.guidedCountSet({ shot: L1, left: 2 })])),
     ).toMatchObject({ mode: "cancel", text: "Tap to stop", tone: "armed" });
   });
 
-  it("is busy while a run measures or a pair is saved", () => {
+  it("is busy while a run measures or the zip is packed", () => {
     expect(shutterView(run([camOn, A.runStarted("synthetic")]))).toMatchObject({
       mode: "busy",
       text: "Measuring",
       tone: "busy",
       disabled: true,
     });
-    const done = run([camOn, shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(shutterView(run([A.planFileSaveStarted()], done))).toMatchObject({
+    const pair = run([camOn, shot(L1), shot(L2)]);
+    expect(shutterView(run([A.runZipStarted()], pair))).toMatchObject({
       mode: "busy",
       text: "Saving",
       disabled: true,
     });
   });
 
-  it("offers the retake a failed light check asks for, else the next pair", () => {
-    // 1b with B as bright as A: not darker, so B is taken again, dimmer.
-    const warned = run([
-      camOn,
-      A.planMoved(1),
-      shot("1b-s1", "a", 120),
-      shot("1b-s1", "b", 120),
-    ]);
-    expect(shutterView(warned)).toMatchObject({
+  it("offers the retake a failed light check asks for, else the next shot", () => {
+    expect(shutterView(warnedL3())).toMatchObject({
       mode: "retake",
-      text: "Retake B",
-      shot: "b",
+      text: "Retake L3",
     });
-    const ok = run([camOn, shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(shutterView(ok)).toMatchObject({
+    const back = run([camOn, shot(L1), shot(L2), A.planMoved(0)]);
+    expect(shutterView(back)).toMatchObject({
       mode: "next",
-      text: "Next pair",
-      index: 1,
+      text: "Next shot",
+      index: 2,
     });
   });
 
-  it("saves all at the end, once every pair is complete", () => {
-    const list = ["1a", "1b", "1c", "2a", "2b", "2c", "2d"]
-      .concat(["3a", "3b", "3c", "4a", "4b", "4c", "4d"])
-      .map((k) => `${k}-s1`);
-    const actions: FeatureMatchAction[] = [camOn];
-    list.forEach((id, i) => {
-      const dim = id.startsWith("1b") || id.startsWith("1c") ? 40 : 120;
-      actions.push(A.planMoved(i), shot(id, "a"), shot(id, "b", dim));
-    });
-    expect(shutterView(run(actions))).toMatchObject({
+  it("says all done at the end, once every shot is taken", () => {
+    expect(shutterView(run([camOn, ...allTaken()]))).toMatchObject({
       mode: "save",
       text: "All done",
       tone: "save",
@@ -140,163 +139,119 @@ describe("shutterView", () => {
   });
 });
 
-describe("warnShot", () => {
-  it("retakes A only for an almost black A, so a retake never loops", () => {
-    expect(warnShot("not-darker")).toBe("b");
-    expect(warnShot("too-dark-a")).toBe("a");
-    expect(warnShot("too-dark-b")).toBe("b");
-    expect(warnShot("changed")).toBe("b");
-  });
-});
-
 describe("retakeView", () => {
-  it("retakes A while B is due, and cancels a retake", () => {
-    const s = run([camOn, shot("1a-s1", "a")]);
-    expect(retakeView(s, null)).toEqual({
-      label: "Retake A",
-      disabled: false,
-      action: { kind: "toggle", which: "a" },
-    });
-    const r = run([A.guidedRetakeToggled("a")], s);
-    expect(retakeView(r, null)).toEqual({
-      label: "Cancel retake",
-      disabled: false,
-      action: { kind: "toggle", which: "a" },
-    });
-  });
-
-  it("goes back to the last pair's B after the automatic move", () => {
-    const s = run([
-      camOn,
-      shot("1a-s1", "a"),
-      shot("1a-s1", "b"),
-      A.planMoved(1),
-    ]);
-    expect(retakeView(s, { index: 0, seq: 1 })).toEqual({
-      label: "Retake B of 01",
+  // Why: on an empty shot the side button goes back to the scene's
+  // previous shot; on a taken one it takes it again.
+  it("goes back to the previous shot, or retakes a taken one", () => {
+    const s = run([camOn, A.planSettingsChanged({ capture: "tap" }), shot(L1)]);
+    expect(retakeView(s)).toEqual({
+      label: "Back to L1",
       disabled: false,
       action: { kind: "back", index: 0 },
     });
-    // Once photo A of the new pair exists, the side button is A's again.
-    expect(
-      retakeView(run([shot("1b-s1", "a")], s), { index: 0, seq: 1 }),
-    ).toMatchObject({ label: "Retake A" });
+    expect(retakeView(run([A.planMoved(0)], s))).toEqual({
+      label: "Retake L1",
+      disabled: false,
+      action: { kind: "shoot" },
+    });
   });
 
-  it("retakes B on a reviewed pair and is off while busy or counting", () => {
-    const s = run([camOn, shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(retakeView(s, null).action).toEqual({ kind: "toggle", which: "b" });
+  it("is off on a first shot, while busy and while counting", () => {
+    const off = { label: "Retake", disabled: true, action: null };
+    expect(retakeView(run([camOn]))).toEqual(off);
+    const s = run([camOn, shot(L1), shot(L2), A.planMoved(0)]);
+    expect(retakeView(run([A.runStarted("speed")], s))).toEqual(off);
     expect(
-      retakeView(
-        run([A.guidedCountSet({ shot: "a", left: 3 })], run([camOn])),
-        {
-          index: 0,
-          seq: 1,
-        },
-      ).disabled,
-    ).toBe(true);
-    expect(retakeView(run([camOn]), null)).toEqual({
-      label: "Retake",
-      disabled: true,
-      action: null,
-    });
+      retakeView(run([A.guidedCountSet({ shot: L1, left: 3 })], s)),
+    ).toEqual(off);
   });
 });
 
 describe("tileView", () => {
-  it("marks the photo due, the taken one and a retake", () => {
-    const s = run([camOn, shot("1a-s1", "a")]);
+  it("shows the previous shot and arms the current one", () => {
+    const s = run([camOn, A.planSettingsChanged({ capture: "tap" }), shot(L1)]);
     expect(tileView(s)).toEqual({
-      a: { state: "taken", text: "taken", disabled: false },
+      a: { state: "taken", text: "L1", disabled: false },
       b: { state: "armed", text: "now", disabled: true },
     });
-    const c = run([A.guidedCountSet({ shot: "b", left: 2 })], s);
+    const c = run([A.guidedCountSet({ shot: L2, left: 2 })], s);
     expect(tileView(c).b.text).toBe("2 s");
     expect(tileView(c).a.disabled).toBe(true);
-    const r = run([A.guidedRetakeToggled("a")], s);
-    expect(tileView(r).a).toEqual({
-      state: "retake",
-      text: "retake",
-      disabled: false,
+    expect(tileView(run([shot(L2), A.planMoved(1)], s)).b).toEqual({
+      state: "taken",
+      text: "taken",
+      disabled: true,
     });
   });
 
   // Why this test matters: before Start the tile must not read "now", as
   // in the prototype: nothing can be taken until the camera is on.
-  it("arms no tile while the camera is off", () => {
-    expect(tileView(run([])).a).toEqual({
-      state: "",
-      text: "-",
-      disabled: true,
-    });
+  it("arms no tile while the camera is off, and has no previous on L1", () => {
+    const t = tileView(run([]));
+    expect(t.a).toEqual({ state: "", text: "-", disabled: true });
+    expect(t.b).toEqual({ state: "", text: "-", disabled: true });
   });
 });
 
 describe("instrView", () => {
-  it("asks for the camera, then A, then the change and B", () => {
+  it("asks for the camera, then the setup, then the change", () => {
     expect(instrView(run([])).label).toBeNull();
     expect(instrView(run([])).text).toContain("tap Start");
-    expect(instrView(run([camOn])).label).toBe("A");
-    const b = instrView(run([camOn, A.planMoved(1), shot("1b-s1", "a")]));
-    expect(b.label).toBe("B");
-    expect(b.text.length).toBeGreaterThan(0);
+    const first = instrView(run([camOn]));
+    expect(first.label).toBe("L1");
+    // A scene's first shot says where the scene is set up.
+    expect(first.text).toBe(`${SCENE_SETUP.light} ${SHOT_WORDS.L1.capture}`);
+    const second = instrView(run([camOn, shot(L1)]));
+    expect(second.label).toBe("L2");
+    expect(second.text).toBe(
+      `${SHOT_WORDS.L2.change} ${SHOT_WORDS.L2.capture}`,
+    );
   });
 
   it("says what a failed light check asks for, and when everything is done", () => {
-    const warned = run([
-      camOn,
-      A.planMoved(1),
-      shot("1b-s1", "a", 120),
-      shot("1b-s1", "b", 120),
-    ]);
-    expect(instrView(warned).text).toContain("not darker");
+    expect(instrView(warnedL3()).text).toBe(LIGHT_NOTE["not-darker"]);
     expect(instrView(run([camOn, A.runStarted("synthetic")])).text).toContain(
       "Measuring",
     );
+    expect(instrView(run([camOn, ...allTaken()])).text).toMatch(/Download all/);
   });
-});
 
-describe("nextAfterPair", () => {
-  it("moves on after a good pair, never after a failed light check", () => {
-    const ok = run([camOn, shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(nextAfterPair(ok)).toBe(1);
-    const warned = run([
-      camOn,
-      A.planMoved(1),
-      shot("1b-s1", "a", 120),
-      shot("1b-s1", "b", 120),
-    ]);
-    expect(nextAfterPair(warned)).toBeNull();
-    expect(nextAfterPair(run([camOn]))).toBeNull();
+  // Why: as in the prototype, the instruction marks the word to tap.
+  it("marks Start bold while the camera is off", () => {
+    const v = instrView(run([]));
+    expect(v.bold).toBe("Start");
+    expect(v.text).toContain("tap Start");
+    expect(instrView(run([camOn])).bold).toBeUndefined();
   });
 });
 
 describe("dock lines", () => {
-  it("counts done pairs, kept segments and the takes Download all saves", () => {
-    const s = run([camOn, shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(progressText(s)).toBe("1 / 14");
-    expect(downloadCount(s)).toBe(1);
-    expect(segClasses(s).slice(0, 2)).toEqual(["cur", ""]);
-    const moved = run([A.planMoved(1)], s);
-    expect(segClasses(moved).slice(0, 2)).toEqual(["kept", "cur"]);
-    const saved = run([A.planRunDownloaded()], moved);
-    expect(segClasses(saved)[0]).toBe("saved");
-    expect(downloadCount(saved)).toBe(0);
+  it("counts good shots, segments and the pairs Download all saves", () => {
+    const s = run([camOn, shot(L1), shot(L2)]);
+    expect(progressText(s)).toBe("2 / 13");
+    expect(downloadLabel(s)).toBe("Download all (1)");
+    expect(downloadLabel(run([]))).toBe("Download all");
+    expect(segClasses(s).slice(0, 3)).toEqual(["kept", "kept", "cur"]);
+    const w = run([shot(L3, 120), A.planMoved(0)], s);
+    expect(segClasses(w).slice(0, 3)).toEqual(["cur", "kept", "warn"]);
+    // A shot whose light check failed is not counted as done.
+    expect(progressText(w)).toBe("2 / 13");
   });
 
-  it("dims the dock only between photo A and B of the dimmed pairs", () => {
-    expect(nightOn(run([camOn, A.planMoved(1)]))).toBe(false);
-    expect(nightOn(run([camOn, A.planMoved(1), shot("1b-s1", "a")]))).toBe(
-      true,
-    );
-    expect(nightOn(run([camOn, shot("1a-s1", "a")]))).toBe(false);
+  it("dims the dock only before a dimmed shot is taken", () => {
+    expect(nightOn(run([camOn]))).toBe(false);
+    expect(nightOn(run([camOn, A.planMoved(2)]))).toBe(true);
+    expect(nightOn(run([camOn, A.planMoved(3)]))).toBe(true);
+    expect(
+      nightOn(run([camOn, A.planMoved(2), shot(L3), A.planMoved(2)])),
+    ).toBe(false);
   });
 
   it("reads stillness, light and the capture mode", () => {
-    const s = run([camOn, shot("1a-s1", "a", 99.6)]);
+    const s = run([camOn, shot(L1, 99.6), A.planMoved(0)]);
     expect(readoutView(s, { seen: false, moving: false })).toEqual({
       still: { text: "still: -", tone: "" },
-      light: { text: "light A 100", tone: "" },
+      light: { text: "light L1 100", tone: "" },
       mode: { text: "tap, 3 s", tone: "" },
     });
     expect(readoutView(s, { seen: true, moving: true }).still).toEqual({
@@ -306,6 +261,9 @@ describe("dock lines", () => {
     expect(readoutView(s, { seen: true, moving: false }).still.tone).toBe(
       "good",
     );
+    expect(
+      readoutView(warnedL3(), { seen: true, moving: false }).light,
+    ).toEqual({ text: "light not-darker", tone: "wait" });
   });
 
   it("puts the newest workflow line in the status, with its tone", () => {
@@ -314,118 +272,52 @@ describe("dock lines", () => {
       tone: "bad",
     });
     expect(
-      statusView(run([camOn, A.guidedCountSet({ shot: "a", left: 2 })])).text,
-    ).toBe("Countdown: photo A in 2 s.");
+      statusView(run([camOn, A.guidedCountSet({ shot: L1, left: 2 })])).text,
+    ).toBe("Countdown: L1 in 2 s.");
     expect(statusView(run([camOn])).text).toBe("");
   });
 });
 
 describe("cockpit model: status order and the run's own line", () => {
-  // Why: the dock's line follows the run that is going, so a speed test or
-  // the synthetic pair never shows the last photo pair's status.
+  // Why: the dock's line follows the run that is going, so the speed test
+  // never shows the synthetic pair's status.
   it("reads the running kind's own status", () => {
-    const plan = run([
-      camOn,
-      shot("1a-s1", "a"),
-      shot("1a-s1", "b"),
-      A.runStarted("plan"),
-      A.runProgressed("plan 1"),
-    ]);
-    expect(runStatusText(plan)).toBe("running: plan 1");
-    const done = run(
-      [A.runFinished({ text: "done: 1", resultsId: "r" })],
-      plan,
-    );
+    const syn = run([camOn, A.runStarted("synthetic"), A.runProgressed("s1")]);
+    expect(runStatusText(syn)).toBe("running: s1");
+    const done = run([A.runFinished({ text: "done: 1" })], syn);
+    expect(runStatusText(done)).toBe("");
     const speed = run(
       [A.runStarted("speed"), A.runProgressed("speed 1")],
       done,
     );
-    expect(runStatusText(speed)).toBe("running: speed 1");
     expect(statusView(speed).text).toBe("running: speed 1");
-    const syn = run([A.runStarted("synthetic")], done);
-    expect(statusView(syn).text).toBe(runStatusText(syn));
-    expect(statusView(syn).text).not.toBe("done: 1");
   });
 
   // Why: the newest line wins in a fixed order, each with its tone; a
-  // camera that failed outranks a stale save line, and a pair packed
-  // without a measurement says so in red.
+  // camera that failed outranks a zip line, a failing photo store all.
   it("orders the status lines and their tones", () => {
-    const saved = run([
-      camOn,
-      A.planFileSaveStarted(),
-      A.planFileSaveEnded("Kept x.zip here."),
-    ]);
-    expect(statusView(saved)).toEqual({ text: "Kept x.zip here.", tone: "" });
-    expect(statusView(run([A.cameraStartSet("failed")], saved)).text).toBe(
-      "Camera unavailable: tap Retry camera.",
+    const pair = run([camOn, shot(L1), shot(L2)]);
+    const saved = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "saved", text: "Saved z" })],
+      pair,
     );
-    expect(statusView(run([A.cameraStartSet("starting")], saved)).text).toBe(
-      "Starting the camera...",
+    expect(statusView(saved)).toEqual({ text: "Saved z", tone: "ok" });
+    const failed = run(
+      [A.runZipStarted(), A.runZipEnded({ phase: "failed", text: "no" })],
+      pair,
     );
-    const bad = run([
-      A.planFileSaveStarted(),
-      A.planFileSaveEnded(`Kept x.zip here. ${NOT_MEASURED}`),
-    ]);
-    expect(statusView(bad).tone).toBe("bad");
+    expect(statusView(failed)).toEqual({ text: "no", tone: "bad" });
     expect(statusView(run([A.photoStoreChanged(true)], saved)).tone).toBe(
       "bad",
     );
     expect(
-      statusView(run([A.guidedCountSet({ shot: "a", left: 2 })], saved)).text,
-    ).toBe("Countdown: photo A in 2 s.");
-  });
-
-  // Why: "Not measured" must catch a run that failed, was refused, or
-  // measured nothing (every method in error, as with sift.js missing).
-  it("knows whether a packed pair was measured", () => {
-    const ok = { error: null, sizes: [{ error: null }] };
-    const err = { error: "no sift", sizes: [] };
-    const s = (resultsId: string | null) =>
-      run([
-        camOn,
-        shot("1a-s1", "a"),
-        shot("1a-s1", "b"),
-        A.runStarted("plan"),
-        A.runFinished({ text: "done", resultsId }),
-      ]);
-    expect(pairMeasured(s("r1"), [ok], "1a-s1", 1)).toBe(true);
-    expect(pairMeasured(s("r1"), [err], "1a-s1", 1)).toBe(false);
-    expect(pairMeasured(s("r1"), [ok], "1a-s1", 2)).toBe(false);
-    expect(pairMeasured(s("r1"), [ok], "2a-s1", 1)).toBe(false);
-    expect(pairMeasured(s(null), undefined, "1a-s1", 1)).toBe(false);
-  });
-
-  // Why: with "each pair by itself" every pair already went out, so the
-  // last line must not send the tester to Download all for them.
-  it("does not send to Download all when every pair is downloaded", () => {
-    const list = ["1a", "1b", "1c", "2a", "2b", "2c", "2d"]
-      .concat(["3a", "3b", "3c", "4a", "4b", "4c", "4d"])
-      .map((k) => `${k}-s1`);
-    const actions: FeatureMatchAction[] = [
-      camOn,
-      A.planSettingsChanged({ save: "each" }),
-    ];
-    list.forEach((id, i) => {
-      const dim = id.startsWith("1b") || id.startsWith("1c") ? 40 : 120;
-      actions.push(A.planMoved(i), shot(id, "a"), shot(id, "b", dim));
-      actions.push(
-        A.planFileKept({ id: `k${id}`, name: `${id}.zip`, slot: id }),
-      );
-    });
-    const left = run(actions);
-    expect(instrView(left).text).toMatch(/Download all/);
-    const all = run([A.planFilesDownloaded(list.map((id) => `k${id}`))], left);
-    expect(downloadCount(all)).toBe(0);
-    expect(instrView(all).text).toBe("All pairs done and downloaded.");
-  });
-
-  // Why: as in the prototype, the instruction marks the word to tap.
-  it("marks Start bold while the camera is off", () => {
-    const v = instrView(run([]));
-    expect(v.bold).toBe("Start");
-    expect(v.text).toContain("tap Start");
-    expect(instrView(run([camOn])).bold).toBeUndefined();
+      statusView(
+        run([A.guidedCountSet({ shot: "light-s1/L3", left: 2 })], saved),
+      ).text,
+    ).toBe("Countdown: L3 in 2 s.");
+    expect(statusView(run([A.cameraStartSet("failed")], pair)).text).toBe(
+      "Camera unavailable: tap Retry camera.",
+    );
   });
 
   // Why: the hands-off photo's outcome is what the status line reports;
@@ -446,7 +338,7 @@ describe("cockpit model: status order and the run's own line", () => {
   });
 });
 
-describe("cockpit model: hands-off photo B", () => {
+describe("cockpit model: the hands-off shot", () => {
   const rest = { alpha: 0.2, beta: -0.1, gamma: 0.3 };
   const samples = (t0: number, ms: number): FeatureMatchAction[] => {
     const out: FeatureMatchAction[] = [];
@@ -455,52 +347,50 @@ describe("cockpit model: hands-off photo B", () => {
     }
     return out;
   };
+  // L1 taken: the run is on L2, a shot that takes itself once still.
   const armed = run([
     A.planSettingsChanged({ countdown: 0 }),
     camOn,
-    shot("1a-s1", "a"),
+    shot(L1),
     A.handsOffArmed(0),
   ]);
   const waiting = run(samples(0, 500), armed);
   const taking = run(samples(520, 1200), waiting);
 
   // Why: every hands-off state shows itself on the big button, and while
-  // it waits the button still takes B at a tap: the way out of a wait.
-  it("shows the wait on the big button, which still takes B at a tap", () => {
+  // it waits the button still takes the shot at a tap: the way out.
+  it("shows the wait on the big button, which still takes the shot at a tap", () => {
     expect(shutterView(armed)).toMatchObject({
       mode: "capture",
-      shot: "b",
       text: "Waiting",
       tone: "armed",
       disabled: false,
     });
     expect(shutterView(waiting)).toMatchObject({
       mode: "capture",
-      shot: "b",
       text: "Hold still",
     });
     expect(shutterView(taking)).toMatchObject({
       mode: "busy",
-      text: "Taking B",
+      text: "Taking L2",
       disabled: true,
     });
     for (const r of ["refused", "failed"] as const) {
       expect(shutterView(run([A.handsOffShot(r)], taking))).toMatchObject({
         mode: "capture",
-        shot: "b",
-        text: "Take B",
+        text: "Take L2",
         disabled: false,
       });
     }
   });
 
   // Why: the status line says what the wait is doing and, after a refusal
-  // or a lost sensor, that a tap takes B instead.
+  // or a lost sensor, that a tap takes the shot instead.
   it("says on the status line what the wait does", () => {
-    expect(statusView(armed).text).toMatch(/takes itself/);
-    expect(statusView(waiting).text).toMatch(/Hold still/);
+    expect(statusView(armed).text).toBe(HANDS_OFF_TEXT.still);
+    expect(statusView(waiting).text).toBe(HANDS_OFF_TEXT.waiting);
     expect(statusView(run([A.handsOffShot("refused")], taking))).toEqual({
-      text: expect.stringMatching(/Tap to take it/),
+      text: HANDS_OFF_TEXT.refused,
       tone: "bad",
     });
     expect(statusView(run([A.handsOffShot("taken")], taking)).tone).toBe("ok");
@@ -508,7 +398,7 @@ describe("cockpit model: hands-off photo B", () => {
       [A.handsOffSample({ t: 5000, rate: null })],
       run(samples(0, 100), armed),
     );
-    expect(statusView(lost).text).toMatch(/No motion readings/);
+    expect(statusView(lost).text).toBe(HANDS_OFF_TEXT.lost);
   });
 
   // Why: the meter ring fills with the dwell while the phone rests, and
@@ -518,7 +408,7 @@ describe("cockpit model: hands-off photo B", () => {
     const half = meterFill(waiting);
     expect(half).toBeGreaterThan(0.2);
     expect(half).toBeLessThan(0.5);
-    const count = run([camOn, A.guidedCountSet({ shot: "a", left: 3 })]);
+    const count = run([camOn, A.guidedCountSet({ shot: L1, left: 3 })]);
     expect(meterFill(count)).toBeCloseTo(1 / 4);
     expect(meterFill(run([camOn]))).toBe(0);
   });
@@ -544,9 +434,10 @@ describe("cockpit model: hands-off photo B", () => {
     );
   });
 
-  // Why: the mode readout says "auto" only while B is really waiting to
-  // take itself, so a tester never waits for a photo that will not come.
-  it("reads auto while photo B waits to take itself", () => {
+  // Why: the mode readout says "auto" only while the shot is really
+  // waiting to take itself, so a tester never waits for a photo that will
+  // not come.
+  it("reads auto while the shot waits to take itself", () => {
     const motion = { seen: true, moving: false };
     expect(readoutView(armed, motion).mode.text).toBe("auto");
     expect(
@@ -558,23 +449,23 @@ describe("cockpit model: hands-off photo B", () => {
 // Why this property matters: the dock never resizes, so whatever the state,
 // every box gets a text it can show and the big button keeps one mode.
 describe("cockpit model property", () => {
+  const SHOTS = [L1, L2, L3, "flat-s1/F1", "flat-s1/F2"];
   const actionArb: fc.Arbitrary<FeatureMatchAction> = fc.oneof(
     fc.constant(camOn),
     fc.constant(A.cameraChanged(false)),
     fc.integer({ min: 0, max: 15 }).map((i) => A.planMoved(i)),
     fc
-      .tuple(
-        fc.constantFrom("1a-s1", "1b-s1", "1c-s1", "2a-s1"),
-        fc.constantFrom<"a" | "b">("a", "b"),
-        fc.integer({ min: 0, max: 255 }),
-      )
-      .map(([slot, w, m]) => shot(slot, w, m)),
-    fc.constantFrom<"a" | "b">("a", "b").map((w) => A.guidedRetakeToggled(w)),
-    fc.constant(A.guidedCountSet({ shot: "a", left: 2 })),
+      .tuple(fc.constantFrom(...SHOTS), fc.integer({ min: 0, max: 255 }))
+      .map(([id, m]) => shot(id, m)),
+    fc.constantFrom(...SHOTS).map((id) => A.planShotLost(id)),
+    fc
+      .constantFrom(...SHOTS)
+      .map((id) => A.guidedCountSet({ shot: id, left: 2 })),
     fc.constant(A.guidedCountSet(null)),
     fc.constant(A.runStarted("synthetic")),
-    fc.constant(A.runFinished({ text: "done", resultsId: null })),
-    fc.constant(A.planRunDownloaded()),
+    fc.constant(A.runFinished({ text: "done" })),
+    fc.constant(A.runZipStarted()),
+    fc.constant(A.runZipEnded({ phase: "saved", text: "ok" })),
     fc.integer({ min: 0, max: 5000 }).map((t) => A.handsOffArmed(t)),
     fc
       .tuple(fc.integer({ min: 0, max: 8000 }), fc.integer({ min: 0, max: 90 }))
@@ -590,18 +481,17 @@ describe("cockpit model property", () => {
       .map((r) => A.handsOffShot(r)),
     fc.constant(A.handsOffPaused()),
   );
-  it("always yields a shutter text and finite counts", () => {
+  it("always yields a shutter text, one segment per shot and a meter in 0..1", () => {
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 30 }), (actions) => {
         const s = run(actions);
-        const sh = shutterView(s);
-        expect(sh.text.length).toBeGreaterThan(0);
-        expect(segClasses(s)).toHaveLength(14);
-        expect(Number.isFinite(downloadCount(s))).toBe(true);
-        const rv = retakeView(s, { index: 0, seq: 1 });
+        expect(shutterView(s).text.length).toBeGreaterThan(0);
+        expect(segClasses(s)).toHaveLength(planShots(s.plan).length);
+        expect(segClasses(s).filter((c) => c === "cur")).toHaveLength(1);
+        const rv = retakeView(s);
         expect(rv.label.length).toBeGreaterThan(0);
         expect(rv.disabled).toBe(rv.action === null);
-        expect(downloadCount(s)).toBeGreaterThanOrEqual(0);
+        expect(downloadLabel(s)).toMatch(/^Download all( \(\d+\))?$/);
         const fill = meterFill(s);
         expect(fill).toBeGreaterThanOrEqual(0);
         expect(fill).toBeLessThanOrEqual(1);

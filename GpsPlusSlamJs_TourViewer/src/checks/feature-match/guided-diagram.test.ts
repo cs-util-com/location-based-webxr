@@ -38,7 +38,7 @@ describe("diagramSvg", () => {
   it("says what changes between the panels", () => {
     expect(diagramSvg("light-same")).toContain(">nothing<");
     expect(diagramSvg("light-dim")).toContain(">dim<");
-    expect(diagramSvg("rot-90")).toContain(">turn<");
+    expect(diagramSvg("rot-35")).toContain(">tilt<");
     expect(diagramSvg("dist-2x")).toContain(">step back<");
     expect(diagramSvg("side-flat")).toContain(">step aside<");
   });

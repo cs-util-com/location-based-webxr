@@ -22,7 +22,11 @@ export const FRAME_FILES = {
   all: "feature-match-all.zip",
 } as const;
 
-/** The photo pairs of the test protocol, in the order they are taken. */
+/**
+ * The protocol's pair keys and labels: the vocabulary the frames JSON and
+ * the PC side share. The pairs themselves are derived from shots
+ * (`scenes.ts`); the old duplicate controls 3a and 4a no longer occur.
+ */
 export const PAIRS = [
   { key: "1a", label: "light: control (same light)" },
   { key: "1b", label: "light: dimmed" },
@@ -31,10 +35,8 @@ export const PAIRS = [
   { key: "2b", label: "rotation: 90 deg" },
   { key: "2c", label: "rotation: 180 deg" },
   { key: "2d", label: "rotation: tilted 30-45 deg" },
-  { key: "3a", label: "distance: control (both 1.5 m)" },
   { key: "3b", label: "distance: 1.5 m to 3 m" },
   { key: "3c", label: "distance: 1 m to 3 m" },
-  { key: "4a", label: "side step, flat: control" },
   { key: "4b", label: "side step, flat: 1 m" },
   { key: "4c", label: "side step, deep: control" },
   { key: "4d", label: "side step, deep: 1 m" },
@@ -112,7 +114,7 @@ export interface PairTag {
   readonly pairLabel: string;
   /** 1 to SPOTS for a light pair, 1 for every other pair. */
   readonly spot: number;
-  /** Running number of the pair, from 1; kept across reloads. */
+  /** The pair's number in the run, from 1; it names the pair's folder. */
   readonly sequence: number;
 }
 
@@ -139,49 +141,9 @@ export function pairTag(key: string, spot: number, sequence: number): PairTag {
   };
 }
 
-/** What the page keeps across a reload: the running number. */
-export interface Progress {
-  readonly sequence: number;
-}
-
-const START: Progress = { sequence: 0 };
-
-/** The stored form of `p`. */
-export function progressText(p: Progress): string {
-  return JSON.stringify({ sequence: p.sequence });
-}
-
-/**
- * The stored progress, or the start (no pair yet) for nothing stored,
- * unreadable text or a value out of range. Other fields are ignored.
- */
-export function parseProgress(text: string | null): Progress {
-  const sequence = jsonObject(text)?.sequence;
-  return isIntIn(sequence, 0, Number.MAX_SAFE_INTEGER) ? { sequence } : START;
-}
-
-/** The JSON object in `text`, or null for nothing, bad JSON or a non-object. */
-function jsonObject(text: string | null): Record<string, unknown> | null {
-  if (text === null || text === "") {
-    return null;
-  }
-  try {
-    const v: unknown = JSON.parse(text);
-    return typeof v === "object" && v !== null && !Array.isArray(v)
-      ? (v as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-const isIntIn = (v: unknown, min: number, max: number): v is number =>
-  typeof v === "number" && Number.isInteger(v) && v >= min && v <= max;
-
 /**
  * A page load's token for the frames JSON: random bytes as hex, no time
- * and no place. It tells two runs apart when storage is blocked and the
- * running number starts at 1 on every load.
+ * and no place. It tells two runs apart, and names the run's zip.
  *
  * @throws RangeError for fewer than 4 bytes.
  */
@@ -376,9 +338,12 @@ export function framesInfo(
   device: DeviceInfo,
   captureMaxLongEdge: number,
   tag: PairTag,
-  checks: { readonly light: LightCheck | null; readonly session: string },
+  /** The light check: an old one, or a newer outcome such as L4 against L3. */
+  checks: { readonly light: string | null; readonly session: string },
   /** The names the frames are saved under; the fixed FRAME_FILES ones by default. */
   files: Readonly<Record<"A" | "B", string>> = FRAME_FILES,
+  /** More fields, written after the fixed ones and before the device. */
+  more: Readonly<Record<string, unknown>> = {},
 ): string {
   return `${JSON.stringify(
     {
@@ -403,6 +368,7 @@ export function framesInfo(
           greySd: round2(g.sd),
         };
       }),
+      ...more,
       device,
     },
     null,

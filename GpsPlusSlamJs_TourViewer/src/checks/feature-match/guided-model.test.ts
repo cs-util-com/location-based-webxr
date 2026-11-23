@@ -10,22 +10,21 @@ import {
 } from "./feature-match-slice";
 import {
   deviceSummary,
+  endView,
   hasRate,
   introCountdownText,
-  endView,
   isMoving,
-  measureText,
   motionStep,
-  pairRows,
-  planPairOf,
-  runPairs,
-  speedPairOf,
+  readyCount,
   runView,
+  shotContext,
+  shotCounts,
+  shotRows,
   STEADY_THRESHOLD,
 } from "./guided-model";
+import { LIGHT_NOTE, SHOT_WORDS } from "./guided-texts";
 import type { DeviceInfo } from "./bench-report";
-import type { SavedFrame } from "./bench-export";
-import type { PhotoMeta } from "./run-plan";
+import { planShots, type PhotoMeta } from "./run-plan";
 
 const run = (
   actions: readonly FeatureMatchAction[],
@@ -39,48 +38,52 @@ const photo = (id: string, greyMean = 120): PhotoMeta => ({
   source: { width: 1280, height: 720 },
   greyMean,
 });
-const shot = (slot: string, which: "a" | "b", mean = 120): FeatureMatchAction =>
-  A.planPhotoTaken({ slot, which, photo: photo(`${slot}-${which}`, mean) });
+/** A photo of shot `id`, named after it. */
+const shot = (id: string, mean = 120): FeatureMatchAction =>
+  A.planShotTaken({ shot: id, photo: photo(`p-${id}`, mean) });
+
+const at = (s: FeatureMatchState, id: string): number =>
+  planShots(s.plan).findIndex((x) => x.id === id);
 
 // Why this test matters: the guided view renders only what this model says,
-// so every rule of the run screen (which photo is due, what the big button
+// so every rule of the run screen (which shot is due, what the big button
 // does, which step is lit) is pinned here without a DOM.
 describe("runView", () => {
-  it("starts at photo A of the first pair, with the countdown on the button", () => {
+  it("starts at L1 of the first place, with the countdown on the button", () => {
     const v = runView(run([]));
-    expect(v.pos).toBe("Pair 1 of 14");
+    expect(v.pos).toBe("Shot 1 of 13");
     expect(v.done).toBe(0);
-    expect(v.total).toBe(14);
-    expect(v.key).toBe("1a");
+    expect(v.total).toBe(13);
+    expect(v.key).toBe("L1");
+    expect(v.title).toBe(SHOT_WORDS.L1.title);
     expect(v.place).toBe("place 1");
-    expect(v.chip).toEqual({ shot: "a", text: "Shot A" });
+    expect(v.chip).toEqual({ shot: "a", text: "Shot L1" });
     expect(v.seq).toEqual({ a: "now", change: "todo", b: "todo" });
+    expect(v.steps.change).toBe("This is the scene's first shot.");
     expect(v.primary).toMatchObject({
       mode: "capture",
-      label: "Capture A",
+      label: "Capture L1",
       sub: "then 3 s hands off",
       disabled: false,
     });
-    expect(v.slots.a).toEqual({
-      filled: false,
-      retaking: false,
-      disabled: true,
-      sub: "empty",
-    });
+    // The first shot has no shot before it.
+    expect(v.slots.a).toEqual({ filled: false, disabled: true, sub: "-" });
+    expect(v.slots.b).toEqual({ filled: false, disabled: true, sub: "empty" });
     expect(v.reviewing).toBe(false);
     expect(v.ghost).toBe(false);
   });
 
-  it("lights the change and photo B after photo A, and offers the ghost", () => {
-    const v = runView(run([shot("1a-s1", "a")]));
-    expect(v.chip).toEqual({ shot: "b", text: "Shot B" });
+  // Why: after L1 the run moves to L2 by itself; L1 is the thumb on the
+  // left and its photo can be laid over the finder.
+  it("moves on to L2 after L1, lights the change and offers the ghost", () => {
+    const v = runView(run([shot("light-s1/L1")]));
+    expect(v.key).toBe("L2");
+    expect(v.chip).toEqual({ shot: "b", text: "Shot L2" });
     expect(v.seq).toEqual({ a: "past", change: "now", b: "now" });
-    expect(v.primary.label).toBe("Capture B");
-    expect(v.slots.a).toMatchObject({
-      filled: true,
-      disabled: false,
-      sub: "retake",
-    });
+    expect(v.steps.change).toBe(SHOT_WORDS.L2.change);
+    expect(v.primary.label).toBe("Capture L2");
+    expect(v.slots.a).toEqual({ filled: true, disabled: false, sub: "L1" });
+    expect(v.photos).toEqual({ a: "p-light-s1/L1", b: null });
     expect(v.ghost).toBe(true);
   });
 
@@ -89,133 +92,153 @@ describe("runView", () => {
     expect(runView(s).primary.sub).toBe("shoots at once");
     const counting = run([
       A.planSettingsChanged({ countdown: 5 }),
-      A.guidedCountSet({ shot: "a", left: 4 }),
+      A.guidedCountSet({ shot: "light-s1/L1", left: 4 }),
     ]);
     const v = runView(counting);
     expect(v.primary).toMatchObject({
       mode: "cancel",
       label: "Cancel",
-      sub: "shooting A in 4 s",
+      sub: "shooting L1 in 4 s",
     });
     expect(v.slots.a.disabled).toBe(true);
   });
 
-  it("reviews a complete pair and moves on to the next open pair", () => {
-    const v = runView(run([shot("1a-s1", "a"), shot("1a-s1", "b")]));
+  // Why: back on a taken shot the finder shows its photo, the note says
+  // what a retake costs, and the button moves on to the next open shot.
+  it("reviews a taken shot and names what a retake redoes", () => {
+    const s = run([shot("light-s1/L1"), shot("light-s1/L2"), A.planMoved(0)]);
+    const v = runView(s);
     expect(v.reviewing).toBe(true);
     expect(v.chip).toEqual({ shot: "done", text: "Check" });
-    expect(v.note).toEqual({ warn: false, text: "Light check: ok." });
     expect(v.seq).toEqual({ a: "past", change: "past", b: "past" });
+    expect(v.slots.b).toEqual({ filled: true, disabled: false, sub: "retake" });
+    const redoes = shotContext(s).redoes;
+    expect(redoes).toBeGreaterThan(0);
+    expect(v.note).toEqual({
+      warn: false,
+      text: `Photo taken. Check it is sharp. Retaking L1 redoes ${String(redoes)} measurements.`,
+    });
     expect(v.primary).toMatchObject({
       mode: "next",
-      label: "Next pair",
-      sub: "1b: Weaker light",
-      index: 1,
+      label: "Next shot",
+      sub: `L3: ${SHOT_WORDS.L3.title}`,
+      index: 2,
     });
-    expect(v.done).toBe(1);
   });
 
-  // Why: a failed light check is the one case where the next pair waits:
-  // the button still moves on, but its line says to retake first.
-  it("warns after a failed light check and points at the retake", () => {
-    const s = run([
-      A.planMoved(1),
-      shot("1b-s1", "a", 120),
-      shot("1b-s1", "b", 119),
-    ]);
-    const v = runView(s);
-    expect(v.note.warn).toBe(true);
-    expect(v.note.text).toMatch(/not darker/);
-    expect(v.primary.sub).toBe("or tap A or B to retake first");
-  });
-
-  it("retakes the chosen photo with its own labels", () => {
+  // Why: a retake of F1 redoes every flat pair: the tester must see the
+  // cost before tapping.
+  it("says a retake of F1 redoes 7 measurements", () => {
+    const s0 = run([]);
+    const f1 = at(s0, "flat-s1/F1");
     const v = runView(
-      run([shot("1a-s1", "a"), shot("1a-s1", "b"), A.guidedRetakeToggled("a")]),
+      run([A.planMoved(f1), shot("flat-s1/F1"), A.planMoved(f1)]),
     );
-    expect(v.chip).toEqual({ shot: "a", text: "Retake A" });
-    expect(v.primary.label).toBe("Retake A");
-    expect(v.slots.a).toMatchObject({ retaking: true, sub: "retaking" });
-    expect(v.seq).toEqual({ a: "now", change: "todo", b: "todo" });
-    expect(v.reviewing).toBe(false);
+    expect(v.key).toBe("F1");
+    expect(v.note.text).toContain("Retaking F1 redoes 7 measurements.");
   });
 
-  it("goes to the end after the last pair, or back to a missing one", () => {
-    const last = run([A.planMoved(13), shot("4d-s1", "a"), shot("4d-s1", "b")]);
+  // Why: a failed light check is the one case where the run does not move
+  // on: the shot stays current, the note says why, the button retakes.
+  it("stays on a shot whose light check failed and asks for a retake", () => {
+    const s = run([shot("light-s1/L1", 120), shot("light-s1/L2", 120)]);
+    const v = runView(run([shot("light-s1/L3", 119)], s));
+    expect(v.key).toBe("L3");
+    expect(v.note.warn).toBe(true);
+    expect(v.note.text).toContain(LIGHT_NOTE["not-darker"]);
+    expect(v.primary).toMatchObject({ mode: "capture", label: "Retake L3" });
+    // A passing light shot says so.
+    expect(runView(run([A.planMoved(1)], s)).note).toEqual({
+      warn: false,
+      text: `${LIGHT_NOTE.ok} Retaking L2 redoes 1 measurement.`,
+    });
+  });
+
+  it("goes back to a missing shot after the last, and finishes once all are taken", () => {
+    const s0 = run([]);
+    const list = planShots(s0.plan);
+    // The run moves to the first open shot by itself; back on the last one
+    // the button points there.
+    const n = list.length - 1;
+    const last = run([A.planMoved(n), shot(list.at(-1)!.id), A.planMoved(n)]);
     expect(runView(last).primary).toMatchObject({
       mode: "missing",
-      label: "Next missing pair",
+      label: "Next missing shot",
       index: 0,
     });
-    const keys = [
-      "1a",
-      "1b",
-      "1c",
-      "2a",
-      "2b",
-      "2c",
-      "2d",
-      "3a",
-      "3b",
-      "3c",
-      "4a",
-      "4b",
-      "4c",
-      "4d",
-    ];
+    const dim = new Set(["light-s1/L3", "light-s1/L4"]);
     const all = run(
-      keys.flatMap((k, i) => [
+      list.flatMap((x, i) => [
         A.planMoved(i),
-        shot(`${k}-s1`, "a", 120),
-        shot(`${k}-s1`, "b", k === "1b" || k === "1c" ? 40 : 120),
+        shot(x.id, x.id === "light-s1/L4" ? 30 : dim.has(x.id) ? 40 : 120),
       ]),
     );
     expect(runView(all).primary).toMatchObject({
       mode: "finish",
       label: "Finish",
-      sub: "all pairs done: download",
+      sub: "all shots done",
     });
   });
 
   it("disables the button while a run or save goes", () => {
-    const s = run([shot("1a-s1", "a"), A.runStarted("speed")]);
+    const s = run([shot("light-s1/L1"), A.runStarted("speed")]);
     expect(runView(s).primary.disabled).toBe(true);
     expect(runView(s).slots.a.disabled).toBe(true);
   });
 
-  it("names the place only for the light pairs", () => {
+  it("names the place only for the light shots", () => {
     const s = run([A.planSized({ spots: 2, extra: 0 }), A.planMoved(4)]);
-    expect(runView(s).key).toBe("1b");
+    expect(runView(s).key).toBe("L1");
     expect(runView(s).place).toBe("place 2");
     expect(runView(run([A.planMoved(5)])).place).toBe("");
   });
 });
 
-describe("pairRows", () => {
-  // Why: the pairs sheet is the way to jump to, repeat or skip a pair; each
-  // row says the pair, its title and its state in words.
-  it("lists every slot with its state and marks the current one", () => {
-    const rows = pairRows(run([shot("1a-s1", "a"), A.planMoved(2)]));
-    expect(rows).toHaveLength(14);
+describe("shotRows", () => {
+  // Why: the shots sheet is the way to jump to or repeat a shot; each row
+  // says the shot, its title and its state in words.
+  it("lists every shot with its state and marks the current one", () => {
+    const s = run([
+      shot("light-s1/L1", 120),
+      shot("light-s1/L2", 120),
+      shot("light-s1/L3", 119),
+    ]);
+    const rows = shotRows(s);
+    expect(rows).toHaveLength(13);
     expect(rows[0]).toEqual({
       index: 0,
-      label: "1a place 1",
-      sub: "Same light twice - A only",
-      status: "half",
+      label: "L1 place 1",
+      sub: `${SHOT_WORDS.L1.title} - done`,
+      status: "done",
       current: false,
     });
-    expect(rows[2]!.current).toBe(true);
-    expect(rows[3]!.label).toBe("2a");
-    expect(rows[3]!.sub).toBe("Upright twice - missing");
+    expect(rows[2]).toMatchObject({ status: "retake", current: true });
+    expect(rows[2]!.sub).toBe(`${SHOT_WORDS.L3.title} - retake suggested`);
+    expect(rows[4]!.label).toBe("F1");
+    expect(rows[4]!.status).toBe("missing");
+  });
+});
+
+describe("shotCounts and readyCount", () => {
+  // Why: the header's "Shots n/13" and the zip's pair count read these.
+  it("counts shots with a photo and pairs with both", () => {
+    const s = run([
+      shot("light-s1/L1"),
+      shot("light-s1/L2"),
+      shot("flat-s1/F1"),
+    ]);
+    expect(shotCounts(s)).toEqual({ done: 3, total: 13 });
+    expect(readyCount(s)).toBe(1);
+    expect(readyCount(run([]))).toBe(0);
   });
 });
 
 describe("endView", () => {
-  it("asks for the rest while pairs are missing, and thanks once all are done", () => {
-    const some = endView(run([shot("1a-s1", "a"), shot("1a-s1", "b")]));
+  it("asks for the rest while shots are missing", () => {
+    const some = endView(run([shot("light-s1/L1"), shot("light-s1/L2")]));
     expect(some).toMatchObject({
       all: false,
-      kicker: "1 of 14 pairs captured",
+      kicker: "2 of 13 shots taken",
       title: "You can send what you have.",
       canDownload: true,
     });
@@ -225,7 +248,7 @@ describe("endView", () => {
   // Why: the download button and its line say what the zip did, so a
   // tester knows whether the file reached the phone.
   it("labels the download by the zip's phase", () => {
-    const pair = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
+    const pair = run([shot("light-s1/L1"), shot("light-s1/L2")]);
     expect(endView(pair).download).toEqual({
       label: "Download all",
       text: "One zip with 1 pair, saved to this phone only.",
@@ -239,10 +262,7 @@ describe("endView", () => {
     });
     expect(endView(going).canDownload).toBe(false);
     const saved = run(
-      [
-        A.runZipEnded({ phase: "saved", text: "Saved z" }),
-        A.planRunDownloaded(),
-      ],
+      [A.runZipEnded({ phase: "saved", text: "Saved z" })],
       going,
     );
     expect(endView(saved).download).toEqual({
@@ -261,112 +281,6 @@ describe("endView", () => {
       going,
     );
     expect(endView(closed).download.text).toBe("closed");
-  });
-});
-
-const saved = (name: "A" | "B"): SavedFrame => ({
-  name,
-  frame: { width: 2, height: 1, rgba: new Uint8ClampedArray(8) },
-  source: { width: 2, height: 1 },
-});
-
-// Why this test matters: a plan run measures the current pair's two frames
-// from the side table; it must refuse a half pair or a frame the side table
-// lost (a failed restore), never measure stale pixels.
-describe("planPairOf", () => {
-  it("returns the current pair's frames once both are in the side table", () => {
-    const s = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    const frames = new Map([
-      ["1a-s1-a", saved("A")],
-      ["1a-s1-b", saved("B")],
-    ]);
-    const p = planPairOf(s, frames);
-    expect(p?.slot.key).toBe("1a");
-    expect(p?.a.name).toBe("A");
-    expect(p?.b.name).toBe("B");
-    expect(p?.seq).toBe(s.plan.slots["1a-s1"]!.seq);
-  });
-
-  it("is null for a half pair or a frame missing from the side table", () => {
-    const half = run([shot("1a-s1", "a")]);
-    expect(planPairOf(half, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
-    const full = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(planPairOf(full, new Map([["1a-s1-a", saved("A")]]))).toBeNull();
-  });
-});
-
-// Why this test matters: the speed test times a photo pair when there is
-// one; after the automatic move the current pair is empty, so it falls back
-// to the pair measured last, and only then to the synthetic pair.
-describe("speedPairOf", () => {
-  it("takes the current pair, else the last measured one, else none", () => {
-    const frames = new Map([
-      ["1a-s1-a", saved("A")],
-      ["1a-s1-b", saved("B")],
-    ]);
-    const s = run([shot("1a-s1", "a"), shot("1a-s1", "b")]);
-    expect(speedPairOf(s, frames)?.slot.id).toBe("1a-s1");
-    const measured = run(
-      [A.runStarted("plan"), A.runFinished({ text: "done", resultsId: "r" })],
-      s,
-    );
-    const moved = run([A.planMoved(1)], measured);
-    expect(planPairOf(moved, frames)).toBeNull();
-    expect(speedPairOf(moved, frames)?.slot.id).toBe("1a-s1");
-    const retaken = run(
-      [A.planMoved(0), A.guidedRetakeToggled("b"), shot("1a-s1", "b")],
-      measured,
-    );
-    expect(speedPairOf(run([A.planMoved(1)], retaken), frames)).toBeNull();
-    expect(speedPairOf(run([A.planMoved(1)], s), frames)).toBeNull();
-  });
-});
-
-// Why this test matters: Download all packs every complete pair under its
-// own file names; a pair whose frame is gone must stop the zip rather than
-// send a pair with one photo or none.
-describe("runPairs", () => {
-  const framesOf = (ids: readonly string[]): Map<string, SavedFrame> =>
-    new Map(ids.map((id) => [id, saved(id.endsWith("a") ? "A" : "B")]));
-
-  it("lists every complete pair in run order with its file names", () => {
-    const s = run([
-      shot("2a-s1", "a"),
-      shot("2a-s1", "b"),
-      shot("1a-s1", "a"),
-      shot("1a-s1", "b"),
-      shot("1b-s1", "a"),
-    ]);
-    const frames = framesOf([
-      "2a-s1-a",
-      "2a-s1-b",
-      "1a-s1-a",
-      "1a-s1-b",
-      "1b-s1-a",
-    ]);
-    const pairs = runPairs(s, frames);
-    expect(pairs.map((p) => p.slot.id)).toEqual(["1a-s1", "2a-s1"]);
-    const first = pairs[0]!;
-    expect(first.tag).toMatchObject({ pair: "1a", spot: 1, sequence: 2 });
-    expect(first.names.A).toBe(
-      "feature-match-02-1a-s1-light-control-same-light-frame-a.png",
-    );
-    expect(first.light).toBe(s.plan.slots["1a-s1"]!.light);
-  });
-
-  it("names the other pairs apart and throws on a missing frame", () => {
-    const s = run([
-      A.planSized({ spots: 1, extra: 2 }),
-      shot("x1-s1", "a"),
-      shot("x1-s1", "b"),
-      shot("x2-s1", "a"),
-      shot("x2-s1", "b"),
-    ]);
-    const all = framesOf(["x1-s1-a", "x1-s1-b", "x2-s1-a", "x2-s1-b"]);
-    const names = runPairs(s, all).flatMap((p) => Object.values(p.names));
-    expect(new Set(names).size).toBe(names.length);
-    all.delete("x2-s1-b");
-    expect(() => runPairs(s, all)).toThrow("photo B of x2-s1 is not loaded");
   });
 });
 
@@ -494,30 +408,6 @@ describe("the steady hint", () => {
     expect(settledAfter(6)).toBeLessThan(30);
     expect(settledAfter(4)).toBeGreaterThan(settledAfter(6));
     expect(settledAfter(12)).toBeLessThan(settledAfter(6));
-  });
-});
-
-// Why this test matters: a finished plan run stays in the state after a
-// move, so the measure sheet of another pair must not show its "done" line.
-describe("measureText", () => {
-  it("shows a run's status only on the pair it measured", () => {
-    const done = run([
-      shot("1a-s1", "a"),
-      shot("1a-s1", "b"),
-      A.runStarted("plan"),
-      A.runFinished({ text: "done: 1 methods", resultsId: "r1" }),
-    ]);
-    expect(measureText(done, null)).toBe("done: 1 methods");
-    const moved = run([A.planMoved(1)], done);
-    expect(measureText(moved, null)).toBe(
-      "the current pair has no two photos yet",
-    );
-    expect(measureText(run([A.planMoved(0)], moved), null)).toBe(
-      "done: 1 methods",
-    );
-    expect(measureText(run([]), null)).toBe(
-      "the current pair has no two photos yet",
-    );
   });
 });
 
