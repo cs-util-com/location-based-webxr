@@ -257,23 +257,34 @@ describe("still-detector", () => {
         }
       }
     }
-    // Below the range the verdict turns: a shaky hand never rests at 4,
-    // and a short dwell fires in a pause while carried.
-    const low = { ...STILL_CONFIG, threshold: 4 };
-    expect(firstStill(trace(0, 5000, SHAKY(1)), false, low)).toBeNull();
-    const short = { ...STILL_CONFIG, dwellMs: 800 };
-    expect(firstStill(carried(1, 1200), false, short)).not.toBeNull();
-    const second = { ...STILL_CONFIG, dwellMs: 1000 };
-    expect(firstStill(carried(1, 1200), false, second)).toBeNull();
-    // At 2 and 3 deg/s a phone on its stand still rests, a hand does not.
-    for (const threshold of [2, 3]) {
-      const cfg = { ...STILL_CONFIG, threshold };
-      expect(
-        firstStill(trace(0, 5000, STAND(1)), false, cfg),
-        `stand at ${threshold}`,
-      ).not.toBeNull();
-      expect(firstStill(trace(0, 5000, SHAKY(1)), false, cfg)).toBeNull();
-    }
+    // Below the range the verdict turns, counted over all five seeds so
+    // the sidecar's "5 of 5" and "mostly" are what is asserted here.
+    const SEEDS = [1, 2, 3, 4, 5];
+    const rests = (axis: (s: number) => () => number, threshold: number) =>
+      SEEDS.filter(
+        (s) =>
+          firstStill(trace(0, 5000, axis(s)), false, {
+            ...STILL_CONFIG,
+            threshold,
+          }) !== null,
+      ).length;
+    const pauseFires = (dwellMs: number) =>
+      SEEDS.filter(
+        (s) =>
+          firstStill(carried(s, 1200), false, { ...STILL_CONFIG, dwellMs }) !==
+          null,
+      ).length;
+    // A stand rests at 2 and 3 deg/s; a hand fails at 2; a shaky hand
+    // fails at 3 and mostly (at least 3 of 5 seeds) at 4.
+    expect(rests(STAND, 2)).toBe(5);
+    expect(rests(STAND, 3)).toBe(5);
+    expect(rests(HAND, 2)).toBe(0);
+    expect(rests(SHAKY, 3)).toBe(0);
+    expect(rests(SHAKY, 4)).toBeLessThanOrEqual(2);
+    // A 1.2 s pause while carried takes B at a 0.8 s dwell (5 of 5),
+    // never at 1 s (from 1.5 s up is asserted in the loop above).
+    expect(pauseFires(800)).toBe(5);
+    expect(pauseFires(1000)).toBe(0);
     // A slow carry (8 to 20 deg/s per axis, never a pause) never fires.
     const r = rng(9);
     const slow = trace(0, 8000, () => 8 + r() * 12);

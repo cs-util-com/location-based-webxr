@@ -877,7 +877,8 @@ export function startCockpitView(deps: CockpitDeps): () => void {
     if (handsOffWaits()) {
       store.dispatch(
         A.handsOffSample({
-          t: ev.timeStamp,
+          // The watchdog's clock: one clock for every sample.
+          t: performance.now(),
           rate: r && { alpha: r.alpha, beta: r.beta, gamma: r.gamma },
         }),
       );
