@@ -14,6 +14,7 @@ import { MESH_DEPTH } from "./mesh-surface.js";
 import type { EnableGpsArConfig } from "gps-plus-slam-app-framework/ar";
 import { createWalkToast } from "./walk-toast.js";
 import { wireArEntry, type ArEntryDom } from "./ar-entry.js";
+import { createQrPerfReport, type QrPerfReport } from "./qr-perf-report.js";
 import { linkQrSvg } from "./link-qr.js";
 import {
   createTourViewerSession,
@@ -106,6 +107,8 @@ function harness(
     /** A failed start's location request was refused (the page's
      *  requester counts it): the permission reads denied from then on. */
     refusesLocation?: boolean;
+    /** The `?qrperf=1` instrument. */
+    qrPerf?: QrPerfReport;
   } = {},
 ) {
   // The entry flags a running session on `document.body.dataset`; the
@@ -226,7 +229,7 @@ function harness(
     enableArWorldGroupAlignment: () => undefined,
     getArPose: () => null,
     startCameraFrameCapture: vi.fn(
-      (_config?: { intervalMs?: number; wantsFrame?: () => boolean }) =>
+      (_config?: Parameters<TourViewerSeams["startCameraFrameCapture"]>[0]) =>
         undefined,
     ),
     createQrDebugView: () => ({
@@ -280,6 +283,7 @@ function harness(
     ...(options.meshCursor === undefined
       ? {}
       : { meshCursor: options.meshCursor }),
+    ...(options.qrPerf === undefined ? {} : { qrPerf: options.qrPerf }),
     walk: {
       toast: walkToast,
       progressKept: () => options.progressKept === true,
@@ -1928,6 +1932,35 @@ describe("the per-frame UI runs on the render loop, not on captured frames", () 
     const { h, ticks } = await ticking();
     for (const fn of h.frameUpdates) fn(0.016, Number.NaN);
     expect(ticks.count).toBe(0);
+  });
+});
+
+describe("the ?qrperf=1 instrument", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // Why this test matters: the report's capture costs and long frames are
+  // only real if the capture's own timing hook and every XR frame of the
+  // session reach it; without the flag the capture config is unchanged.
+  it("gets the capture's timings and every XR frame of the session", async () => {
+    const qrPerf = createQrPerfReport({ now: () => 0 });
+    const h = harness({ enableOk: true, qrPerf });
+    await h.enter();
+    h.captureConfig()?.onCaptureTiming?.({
+      blitReadbackMs: 10,
+      flipCopyMs: 6,
+      width: 640,
+      height: 480,
+    });
+    for (const fn of h.frameUpdates) fn(0.016, 1);
+    for (const fn of h.frameUpdates) fn(0.016, 1.016);
+    const text = qrPerf.text();
+    expect(text).toContain("captures 1");
+    expect(text).toMatch(/^xr-frame .*\(n 2\)$/m);
+    const plain = harness({ enableOk: true, mode: "creator" });
+    await plain.enter();
+    expect(plain.captureConfig()).toEqual({ intervalMs: 125 });
   });
 });
 

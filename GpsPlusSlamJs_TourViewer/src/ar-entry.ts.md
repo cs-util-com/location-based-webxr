@@ -62,6 +62,11 @@ since the flows plan M6.
     `CapturedCameraFrame`: pixels plus the pose and time of its capture) is
     kept as `ctx.latestFrame` for the photo capture (M4) and offered to the
     QR controller. A captured frame renders and ticks nothing.
+  - **The `?qrperf=1` instrument** (`deps.qrPerf`,
+    [qr-perf-report.ts.md](qr-perf-report.ts.md)): each capture's
+    `onCaptureTiming` and every XR frame's interval (one
+    `seams.registerFrameUpdate` per session) go to it; absent, the capture
+    config is unchanged.
   - **The tracker capture gate is the visitor's:** a visitor's session with
     a QR controller builds one `createTrackerCaptureWiring`
     ([tracker-capture-wiring.ts.md](tracker-capture-wiring.ts.md)) and

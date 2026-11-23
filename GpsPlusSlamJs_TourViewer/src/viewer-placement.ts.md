@@ -13,7 +13,11 @@ them.
 
 ## Public API
 
-- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks, viewingLog?, now? }): ViewerPlacement` - places only in visitor mode
+- `createViewerPlacement({ ctx, mode, arStore, arController, seams, errorBox, escapeButton, hooks, viewingLog?, qrPerf?, now? }): ViewerPlacement` - places only in visitor mode
+  - `qrPerf` (`qr-perf-report.ts`, `?qrperf=1`): the QR controller runs
+    on the instrument's timed front end (`wrapFrontEnd`) and solve
+    (`wrapSolve`); absent, on the seams' own
+    (`viewer-placement-qr-perf.test.ts`).
   - `now` (M2b review #4): the page clock - the QR controller's detection
     times and the moment a GPS fix arrives, the one clock the keep-alive's
     hold runs on; `Date.now` when absent (the controller's own default, and

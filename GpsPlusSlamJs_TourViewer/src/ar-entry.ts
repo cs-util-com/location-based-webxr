@@ -55,6 +55,7 @@ import {
 } from "./mesh-surface.js";
 import type { ViewerMode } from "./mode.js";
 import { describeOpenError } from "./open-errors.js";
+import type { QrPerfReport } from "./qr-perf-report.js";
 import { debugReadoutLines, visitorFusedHint } from "./qr-debug-readout.js";
 import type { TourViewerSeams } from "./seams.js";
 import { contentStatus } from "./station-content.js";
@@ -183,6 +184,9 @@ export function wireArEntry(deps: {
    *  start blames the location only when its own request was refused.
    *  Absent: never. */
   locationRefusals?: () => number;
+  /** The `?qrperf=1` instrument: each capture's timing and every XR
+   *  frame's interval go to it. Absent: the capture is unchanged. */
+  qrPerf?: Pick<QrPerfReport, "onCaptureTiming" | "onXrFrame">;
 }): ArEntry {
   const {
     ctx,
@@ -812,6 +816,10 @@ export function wireArEntry(deps: {
    * access; the stations then judge no arrival (no position).
    */
   function startFrameTicks(): void {
+    const qrPerf = deps.qrPerf;
+    if (qrPerf !== undefined) {
+      seams.registerFrameUpdate((dt) => qrPerf.onXrFrame(dt));
+    }
     let dueMs = Number.NEGATIVE_INFINITY;
     seams.registerFrameUpdate((_dt, elapsedS) => {
       const nowMs = elapsedS * 1000;
@@ -976,11 +984,14 @@ export function wireArEntry(deps: {
       enableArWorldGroupAlignment: (options) =>
         seams.enableArWorldGroupAlignment(options),
       startCameraFrameCapture: (config) => {
-        seams.startCameraFrameCapture(
-          wiring === null
-            ? config
-            : { ...config, wantsFrame: () => wiring.wantsFrame() },
-        );
+        const qrPerf = deps.qrPerf;
+        seams.startCameraFrameCapture({
+          ...config,
+          ...(wiring === null ? {} : { wantsFrame: () => wiring.wantsFrame() }),
+          ...(qrPerf === undefined
+            ? {}
+            : { onCaptureTiming: (t) => qrPerf.onCaptureTiming(t) }),
+        });
       },
       now: Date.now,
     });

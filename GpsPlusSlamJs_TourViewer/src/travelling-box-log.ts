@@ -773,14 +773,17 @@ export function wireTravelLogButtons(deps: {
    *  when the visitor dismissed the dialog; rejects when it cannot. */
   readonly save: (text: string) => Promise<boolean>;
   readonly now: () => number;
-  /** A section appended to the copied and downloaded text (the anchor
-   *  log), cleared with the log after a copy or download that succeeded. */
-  readonly appendix?: { text(): string; clear(): void };
+  /** Sections appended in turn to the copied and downloaded text (the
+   *  anchor log, the QR instrument), cleared with the log after a copy or
+   *  download that succeeded. */
+  readonly appendices?: readonly { text(): string; clear(): void }[];
 }): void {
+  const sections = deps.appendices ?? [];
   const text = (): string =>
-    deps.appendix === undefined
-      ? deps.log.text()
-      : [deps.log.text(), deps.appendix.text()].join("\n");
+    [deps.log.text(), ...sections.map((s) => s.text())].join("\n");
+  const clearSections = (): void => {
+    for (const s of sections) s.clear();
+  };
   const markLabel = () => {
     deps.mark.textContent = `Mark (${String(deps.log.size().marks)})`;
   };
@@ -792,7 +795,7 @@ export function wireTravelLogButtons(deps: {
       failed: "Copy failed",
       onDone: () => {
         deps.log.clear("copy");
-        deps.appendix?.clear();
+        clearSections();
         markLabel();
       },
     });
@@ -806,7 +809,7 @@ export function wireTravelLogButtons(deps: {
       try {
         if (await deps.save(text())) {
           deps.log.clear("download");
-          deps.appendix?.clear();
+          clearSections();
           deps.download.textContent = "Log downloaded";
           markLabel();
         } else {

@@ -368,10 +368,11 @@ describe("the log's buttons", () => {
     ]);
   });
 
-  // Why: the anchor field test reads its numbers from the same Copy log:
-  // the anchor section rides after the travel log, in the copy and in the
-  // download, and is emptied with it once the text went out.
-  it("appends the appendix to the copied and downloaded text, and clears it", async () => {
+  // Why: the anchor field test and the QR instrument read their numbers
+  // from the same Copy log: each section rides after the travel log in
+  // turn, in the copy and in the download, and is emptied with it once
+  // the text went out.
+  it("appends the sections to the copied and downloaded text, and clears them", async () => {
     const log = createTravelLog({ knobs: KNOBS });
     frames(log, 1, 60);
     const b = buttons();
@@ -392,24 +393,32 @@ describe("the log's buttons", () => {
         return Promise.resolve();
       },
       now: () => 0,
-      appendix: {
-        text: () => ["--- anchors ---", "pass ms -"].join("\n"),
-        clear: () => {
-          cleared += 1;
+      appendices: [
+        {
+          text: () => ["--- anchors ---", "pass ms -"].join("\n"),
+          clear: () => {
+            cleared += 1;
+          },
         },
-      },
+        {
+          text: () => "QRPERF",
+          clear: () => {
+            cleared += 10;
+          },
+        },
+      ],
     });
     const travelText = log.text();
     b.clicks.get(b.copy)?.();
     await new Promise((r) => setTimeout(r, 0));
     expect(written).toEqual([
-      [travelText, "--- anchors ---", "pass ms -"].join("\n"),
+      [travelText, "--- anchors ---", "pass ms -", "QRPERF"].join("\n"),
     ]);
-    expect(cleared).toBe(1);
+    expect(cleared).toBe(11);
     b.clicks.get(b.download)?.();
     await new Promise((r) => setTimeout(r, 0));
-    expect(saved[0]?.endsWith("--- anchors ---\npass ms -")).toBe(true);
-    expect(cleared).toBe(2);
+    expect(saved[0]?.endsWith("--- anchors ---\npass ms -\nQRPERF")).toBe(true);
+    expect(cleared).toBe(22);
   });
 
   it("says a copy that failed, and stays usable", async () => {

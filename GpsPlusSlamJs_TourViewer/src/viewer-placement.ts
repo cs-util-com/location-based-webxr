@@ -26,7 +26,10 @@
  * the viewing log records why.
  */
 
-import { createQrTrackingController } from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
+import {
+  createQrTrackingController,
+  type QrSolvePoseInput,
+} from "gps-plus-slam-app-framework/ar/qr/qr-tracking-controller";
 import { createFusedQrPoseSource } from "gps-plus-slam-app-framework/ar/qr/qr-fused-pose-source";
 import {
   createQrVoteBudget,
@@ -98,6 +101,7 @@ import {
   type CodeVoteDeps,
   type CodeVoteOptions,
 } from "./qr-viewer-mode.js";
+import type { QrPerfReport } from "./qr-perf-report.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { TourViewerSeams } from "./seams.js";
 import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
@@ -219,6 +223,9 @@ export function createViewerPlacement(deps: {
   /** The `?debug=1` viewer recording's `tourViewing/*` log (M1b); silent
    *  while no recording runs. Absent: nothing is logged. */
   viewingLog?: ViewingLog;
+  /** The `?qrperf=1` instrument: the QR controller runs on its timed
+   *  front end and solve. Absent: on the seams' own. */
+  qrPerf?: Pick<QrPerfReport, "wrapFrontEnd" | "wrapSolve">;
   /** How a free item's part in the world sounds (`world-sound.ts`).
    *  Absent: silent. */
   worldSound?: WorldSound;
@@ -540,12 +547,13 @@ export function createViewerPlacement(deps: {
         hooks.renderArStatus();
       }
     };
+    const solve = (input: QrSolvePoseInput) => seams.solveQrPose(input);
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({
         ...votes,
-        frontEnd,
+        frontEnd: deps.qrPerf?.wrapFrontEnd(frontEnd) ?? frontEnd,
         now,
-        solvePose: (input) => seams.solveQrPose(input),
+        solvePose: deps.qrPerf?.wrapSolve(solve) ?? solve,
         getIntrinsics: (image) => seams.getIntrinsics(image),
         getLevels: () => ctx.currentLevels,
         recordDetection: (event) => {
