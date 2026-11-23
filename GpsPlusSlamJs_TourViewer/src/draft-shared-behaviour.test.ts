@@ -2160,6 +2160,31 @@ describe.each(PAGES)("the %s page's draft, a property", (_name, open) => {
     expect(holds(next, "b")).toBe(true);
   }, 60_000);
 
+  // Why: a sequence the property found (fast-check seed 1517864987). A
+  // placement made after "Not now" waits, and its question is answered
+  // with Restore while the settings write is refused. The refusal is
+  // reported after the Restore said it dropped the placement; on the
+  // phone that warning used to replace the line, so the creator never
+  // learned the placement was not made. Both must be said. The station
+  // move after it is the rest of the found sequence.
+  it("a placement dropped by Restore whose settings write is refused: the drop is still said", async () => {
+    expect.hasAssertions();
+    await runSteps(open, [
+      [{ kind: "place", at: 0 }, { kind: "none" }, "restore"],
+      [{ kind: "reopen", answer: "decline" }, { kind: "none" }, "restore"],
+      [
+        { kind: "place", at: 0 },
+        { kind: "refuse", keys: new RegExp(`^${SETTINGS_KEY}$`) },
+        "restore",
+      ],
+      [
+        { kind: "moveStation", id: "st-a" },
+        { kind: "refuse", keys: OBJECT_KEYS },
+        "restore",
+      ],
+    ]);
+  }, 60_000);
+
   it("for random steps with faults and crashes, every reopen brings back what the draft must hold", async () => {
     // Why this test matters: the rows pin each behaviour alone; the
     // composed sequences (an edit after a refused write of the same

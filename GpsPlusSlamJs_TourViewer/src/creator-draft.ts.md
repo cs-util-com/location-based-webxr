@@ -155,7 +155,13 @@ M2 (`GpsPlusSlamJs_Docs/docs/2026-10-06-1601-tour-viewer-code-book-refactor-plan
     back after its record: without them a reopen would call this device's
     own saved work "replaced by a newer one". Cleared by `reset`.
   - `warnNoBackup()` / `persists()` - the once-only "not saving a backup
-    copy" note; `persists()` is true only once the open tour's draft took
+    copy" note. It is added after the note already standing, never in
+    its place (only the "being read" status gives way): a refused write
+    often surfaces after the tap that caused it said its outcome, and a
+    Restore's "make it again" for an edit it dropped must stay readable
+    (`draft-shared-behaviour.test.ts` "a placement dropped by Restore
+    whose settings write is refused: the drop is still said").
+    `persists()` is true only once the open tour's draft took
     the page's earlier work (`present` queued it into that open's store,
     or ran to its end) and no such note was said, so it is false while
     unstored work waits in memory - no tour open, its manifest not
