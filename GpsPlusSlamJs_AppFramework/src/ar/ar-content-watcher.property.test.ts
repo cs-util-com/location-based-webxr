@@ -62,6 +62,8 @@ const op = fc.oneof(
   fc.record({ k: fc.constant('noop' as const) })
 );
 
+type Op = typeof op extends fc.Arbitrary<infer T> ? T : never;
+
 const localOf = (o: THREE.Object3D): THREE.Matrix4 =>
   new THREE.Matrix4().compose(o.position, o.quaternion, o.scale);
 const maxDiff = (a: THREE.Matrix4, b: THREE.Matrix4): number =>
@@ -119,33 +121,28 @@ describe('ar-content-watcher (properties)', () => {
         let t = 1000;
 
         const jumpOps = ops.filter((o) => o.k === 'jump').slice(0, 5);
-        for (const o of ops) {
-          t += 100;
-          if (o.k === 'jump') {
-            if (!jumpOps.includes(o)) continue;
+        const cameraPose = (m: THREE.Matrix4) => {
+          const p = new THREE.Vector3();
+          const q = new THREE.Quaternion();
+          m.decompose(p, q, new THREE.Vector3());
+          return {
+            position: [p.x, p.y, p.z] as [number, number, number],
+            rotation: [q.x, q.y, q.z, q.w] as [number, number, number, number],
+          };
+        };
+        type Of<K extends Op['k']> = Extract<Op, { k: K }>;
+        const run: { [K in Op['k']]: (o: Of<K>) => void } = {
+          jump(o) {
+            if (!jumpOps.includes(o)) return;
             const camera = new THREE.Matrix4().makeTranslation(0, 1.5, 0);
-            const pose = (m: THREE.Matrix4) => {
-              const p = new THREE.Vector3();
-              const q = new THREE.Quaternion();
-              m.decompose(p, q, new THREE.Vector3());
-              return {
-                position: [p.x, p.y, p.z] as [number, number, number],
-                rotation: [q.x, q.y, q.z, q.w] as [
-                  number,
-                  number,
-                  number,
-                  number,
-                ],
-              };
-            };
             store.dispatch(
               relocalizationObserved({
                 t,
                 tLast: t - 33,
-                lastPose: pose(camera),
+                lastPose: cameraPose(camera),
                 tPrev: null,
                 prevPose: null,
-                newPose: pose(o.jump.clone().multiply(camera)),
+                newPose: cameraPose(o.jump.clone().multiply(camera)),
               })
             );
             const d = WEBXR_TO_NUE.clone()
@@ -162,15 +159,17 @@ describe('ar-content-watcher (properties)', () => {
                 .multiply(p)
                 .multiply(model[i]!.L);
             });
-          } else if (o.k === 'place') {
+          },
+          place(o) {
             const obj = objects[o.i]!;
             obj.removeFromParent();
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             parents[o.where].add(obj);
             model[o.i] = { L: o.pose.clone(), tracked: o.where !== 'outside' };
-          } else if (o.k === 'attach') {
+          },
+          attach(o) {
             const obj = objects[o.i]!;
-            if (obj.parent === null) continue;
+            if (obj.parent === null) return;
             const from = pOf(obj.parent);
             parents[o.where].attach(obj);
             model[o.i] = {
@@ -180,37 +179,46 @@ describe('ar-content-watcher (properties)', () => {
                 .multiply(model[o.i]!.L),
               tracked: o.where !== 'outside',
             };
-          } else if (o.k === 'remove') {
+          },
+          remove(o) {
             objects[o.i]!.removeFromParent();
             model[o.i]!.tracked = false;
-          } else if (o.k === 'absolute') {
+          },
+          absolute(o) {
             const obj = objects[o.i]!;
-            if (obj.parent === null) continue;
+            if (obj.parent === null) return;
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             model[o.i]!.L = o.pose.clone();
-          } else if (o.k === 'relative') {
+          },
+          relative(o) {
             const obj = objects[o.i]!;
-            if (obj.parent === null) continue;
+            if (obj.parent === null) return;
             obj.position.add(new THREE.Vector3(...o.dv));
             model[o.i]!.L = new THREE.Matrix4()
               .makeTranslation(...o.dv)
               .multiply(model[o.i]!.L);
-          } else if (o.k === 'hint') {
+          },
+          hint(o) {
             const obj = objects[o.i]!;
             obj.removeFromParent();
             const capturedAt = t - o.back;
             arCorrection.track(obj, { capturedAt });
             o.pose.decompose(obj.position, obj.quaternion, obj.scale);
             arContent.add(obj);
-            const missed = jumps.filter((j) => j.t > capturedAt);
             const L = o.pose.clone();
-            for (const j of missed) L.premultiply(j.d);
+            for (const j of jumps) if (j.t > capturedAt) L.premultiply(j.d);
             model[o.i] = { L, tracked: true };
-          } else if (o.k === 'excluded') {
+          },
+          excluded(o) {
             parents[o.where].add(excludedObj);
-          } else {
+          },
+          noop() {
             store.dispatch({ type: 'unrelated/action' });
-          }
+          },
+        };
+        for (const o of ops) {
+          t += 100;
+          (run[o.k] as (op: Op) => void)(o);
           const check = () => {
             objects.forEach((obj, i) => {
               expect(poseCommitterOf(obj)).toBe(

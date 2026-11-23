@@ -11,18 +11,18 @@
  * Parameters: object count (100 / 1,000 / 10,000) and layout (all direct
  * children of `arContent`, or spread over 10 containers with their own
  * transforms, which needs one prepared correction per container). Timing
- * is best-of-N jumps (min damps scheduler noise). The ceiling asserted
- * here is generous because CI machines vary; the measured table is printed
- * and appended to AR_SPACE_SWEEP_OUT when that is set, and the 2 ms budget
- * is judged from a local run, never tuned to pass.
+ * is best-of-N jumps (min damps scheduler noise). Nothing here asserts a
+ * duration (machine speed must not decide a gate): the measured table is
+ * printed and appended to AR_SPACE_SWEEP_OUT when that is set, and the 2 ms
+ * budget is judged from a local run, never tuned to pass.
  *
  * Local runs (Windows, node 22, three runs, best of 9 each): direct
  * children 0.6-0.8 ms at 100, 1.1-1.5 ms at 1,000, 5.2-6.0 ms at 10,000;
  * in 10 containers 0.5-0.9, 0.8-1.1 and 4.9-5.6 ms. About 0.5 ms of each is
  * the store dispatch itself (development-mode checks included). Before the
  * correction was shared per parent, 1,000 direct children took 15-24 ms;
- * the sibling test in ar-content-watcher.test.ts pins the sharing exactly,
- * this ceiling only catches a gross regression.
+ * the sibling test in ar-content-watcher.test.ts pins that sharing exactly,
+ * without a clock.
  */
 import { appendFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
@@ -37,8 +37,6 @@ import { enableArSpaceCorrection } from './ar-content-watcher';
 const COUNTS = [100, 1_000, 10_000] as const;
 const LAYOUTS = ['direct', '10 containers'] as const;
 const TIMING_RUNS = 9;
-/** Generous per-bake ceiling for 1,000 objects on any CI machine, ms. */
-const CEILING_1000_MS = 10;
 
 function report(table: string): void {
   console.info(table);
@@ -99,22 +97,20 @@ function bakeMs(count: number, layout: (typeof LAYOUTS)[number]): number {
 
 describe('ar-content-watcher perf', () => {
   it(
-    'one bake of 1,000 objects stays far below a frame',
+    'reports one bake at 100, 1,000 and 10,000 objects',
     { timeout: 120_000 },
     () => {
       const rows: string[] = [];
-      let direct1000 = Number.POSITIVE_INFINITY;
       for (const layout of LAYOUTS) {
         for (const count of COUNTS) {
           const ms = bakeMs(count, layout);
-          if (layout === 'direct' && count === 1_000) direct1000 = ms;
           rows.push(
             `bake ${layout} n=${count}: best of ${TIMING_RUNS} ${ms.toFixed(3)} ms`
           );
         }
       }
       report(rows.join('\n'));
-      expect(direct1000).toBeLessThan(CEILING_1000_MS);
+      expect(rows).toHaveLength(COUNTS.length * LAYOUTS.length);
     }
   );
 });
