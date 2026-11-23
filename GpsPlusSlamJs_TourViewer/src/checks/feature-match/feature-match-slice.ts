@@ -11,6 +11,7 @@
  *
  * @see feature-match-slice.ts.md
  */
+import { lowerMedian } from "gps-plus-slam-app-framework/utils/median";
 import {
   createSlice,
   current,
@@ -200,7 +201,27 @@ export interface ResultEntry {
   /** The short line a view shows. */
   readonly text: string;
   readonly persisted: boolean;
+  /** Measuring time in ms, model downloads and loads left out. */
+  readonly measureMs?: number;
+  /** What ran beside the measuring: the camera, or nothing. */
+  readonly context?: RunContext;
+  /** The page was hidden at some moment of the measuring. */
+  readonly hidden?: boolean;
 }
+
+/** What else ran while a pair was measured; its timings say so. */
+export type RunContext = "beside-camera" | "idle";
+
+/** The measuring queue: the pair measured now and the crashes in a row. */
+interface QueueState {
+  /** The result key being measured, or null. */
+  readonly running: string | null;
+  /** Worker crashes in a row; the queue stops at `MAX_CRASHES`. */
+  readonly crashes: number;
+}
+
+/** The queue stops after this many worker crashes in a row. */
+export const MAX_CRASHES = 2;
 
 /** The line the log gets between the restored log and this load's lines. */
 export const RELOAD_LINE = "page reloaded";
@@ -234,12 +255,18 @@ export interface FeatureMatchState {
   readonly photoStoreFailing: boolean;
   /** The photos, results and log of the last load were read back. */
   readonly restored: boolean;
+  /**
+   * The run was reset before the restore finished: the stored log belongs
+   * to the dropped run and is not read back.
+   */
+  readonly resetBeforeRestore: boolean;
   /** Plan photo ids whose storage write succeeded or that were read back. */
   readonly storedIds: readonly string[];
   /** The ready pairs' measured outcomes, by result key (`scenes.ts`). */
   readonly results: Readonly<Record<string, ResultEntry>>;
   /** Another tab of this page holds the run: this one changes nothing of it. */
   readonly otherTab: boolean;
+  readonly queue: QueueState;
 }
 
 /** The options as the page's controls start. */
@@ -279,9 +306,11 @@ export function initialFeatureMatchState(i: InitialInput): FeatureMatchState {
     cameraStart: "idle",
     photoStoreFailing: false,
     restored: false,
+    resetBeforeRestore: false,
     storedIds: [],
     results: {},
     otherTab: false,
+    queue: { running: null, crashes: 0 },
     camera: false,
     busy: "idle",
     running: null,
@@ -377,6 +406,88 @@ export const planResultKeys = (p: RunPlan): Map<string, DerivedPair> =>
 export const anyPairReady = (p: RunPlan): boolean =>
   readyPairs(derivedPairs(p.spots, p.extra), planPhotos(p)).length > 0;
 
+/**
+ * Whether the options tick a method the measuring worker runs (SIFT,
+ * ALIKED + LightGlue, SIFT + LightGlue; XFeat's runtime does not start in
+ * a module worker) and at least one size.
+ */
+const queueHasWork = (o: BenchOptions): boolean =>
+  (o.methods.sift || o.methods.aliked || o.methods.siftLightGlue) &&
+  o.sizes.some((v) => Number(v) > 0);
+
+/**
+ * The result key the queue measures next: the first ready pair in run
+ * order without a result, once the restore finished, in the tab that holds
+ * the run, while no pair and no run is going, before `MAX_CRASHES` crashes
+ * in a row, and with something ticked to run. Null when none.
+ */
+export function nextMeasureKey(s: FeatureMatchState): string | null {
+  if (
+    !s.restored ||
+    s.otherTab ||
+    s.queue.running !== null ||
+    s.running !== null ||
+    s.queue.crashes >= MAX_CRASHES ||
+    !queueHasWork(s.options)
+  ) {
+    return null;
+  }
+  for (const key of planResultKeys(s.plan).keys()) {
+    if (s.results[key] === undefined) {
+      return key;
+    }
+  }
+  return null;
+}
+
+/** How far the phone got with measuring the ready pairs. */
+export interface MeasureProgress {
+  readonly total: number;
+  readonly done: number;
+  readonly failed: number;
+  /** Ready pairs without a result, the running one left out. */
+  readonly waiting: number;
+  /** The pair id being measured, or null. */
+  readonly running: string | null;
+  /** The queue stopped after `MAX_CRASHES` crashes in a row. */
+  readonly stopped: boolean;
+  /**
+   * The median measuring time per pair so far times the pairs left (the
+   * running one counted whole); null before a pair is done.
+   */
+  readonly estimateMs: number | null;
+}
+
+export function measureProgress(s: FeatureMatchState): MeasureProgress {
+  const keys = planResultKeys(s.plan);
+  const entries = [...keys.keys()].map((k) => s.results[k]);
+  const running = s.queue.running ? keys.get(s.queue.running) : undefined;
+  const times = entries.flatMap((e) =>
+    e?.status === "done" && e.measureMs !== undefined ? [e.measureMs] : [],
+  );
+  const waiting =
+    entries.filter((e) => e === undefined).length - (running ? 1 : 0);
+  const left = waiting + (running ? 1 : 0);
+  return {
+    total: keys.size,
+    done: entries.filter((e) => e?.status === "done").length,
+    failed: entries.filter((e) => e?.status === "failed").length,
+    waiting,
+    running: running?.id ?? null,
+    stopped: s.queue.crashes >= MAX_CRASHES,
+    estimateMs: times.length > 0 ? lowerMedian(times) * left : null,
+  };
+}
+
+/** Ends the queue's running pair when `key` names it. */
+function endRunning(s: Draft, key: string): boolean {
+  if (s.queue.running !== key) {
+    return false;
+  }
+  s.queue = { running: null, crashes: 0 };
+  return true;
+}
+
 /** The first pose not yet complete, else the first. */
 const firstOpenPose = (s: SurfaceProgress): PoseId =>
   (POSES.find((p) => !poseSummary(s, p.id).complete) ?? POSES[0]!).id;
@@ -457,6 +568,9 @@ const planCase =
     // A new run's log: its zip must not carry every earlier run's lines.
     if (action.type === "reset") {
       s.log = [];
+      if (!s.restored) {
+        s.resetBeforeRestore = true;
+      }
     }
     if (action.type === "photo") {
       endHandsOff(s);
@@ -524,9 +638,12 @@ const slice = createSlice({
         s.handsOff = HANDS_OFF_IDLE;
       }
     },
-    /** A run or the speed test starts; refused unless idle. */
+    /**
+     * A run or the speed test starts; refused unless idle and while the
+     * queue measures a pair (the two would time each other).
+     */
     runStarted(s: Draft, a: PayloadAction<RunKind>) {
-      if (s.busy !== "idle") {
+      if (s.busy !== "idle" || s.queue.running !== null) {
         return;
       }
       const kind = a.payload;
@@ -753,24 +870,76 @@ const slice = createSlice({
         s.storedIds = [...s.storedIds, a.payload];
       }
     },
-    /** A ready pair was measured; refused for a key no ready pair has. */
-    resultStored(s: Draft, a: PayloadAction<{ key: string; text: string }>) {
-      if (planResultKeys(plain(s.plan)).has(a.payload.key)) {
+    /** The queue starts measuring `key`; refused unless it is `nextMeasureKey`. */
+    queueStarted(s: Draft, a: PayloadAction<string>) {
+      if (a.payload === nextMeasureKey(s)) {
+        s.queue = { ...s.queue, running: a.payload };
+      }
+    },
+    /**
+     * A ready pair was measured: it frees the queue when it is the running
+     * one, and is kept unless its key went stale (a retake meanwhile).
+     * `persisted` (default true) is false when a method's model could not
+     * be loaded: a reload measures the pair again.
+     */
+    resultStored(
+      s: Draft,
+      a: PayloadAction<{
+        key: string;
+        text: string;
+        persisted?: boolean;
+        measureMs?: number;
+        context?: RunContext;
+        hidden?: boolean;
+      }>,
+    ) {
+      const p = a.payload;
+      endRunning(s, p.key);
+      if (planResultKeys(plain(s.plan)).has(p.key)) {
+        const ms = p.measureMs;
         s.results = {
           ...s.results,
-          [a.payload.key]: {
+          [p.key]: {
             status: "done",
-            text: a.payload.text,
-            persisted: true,
+            text: p.text,
+            persisted: p.persisted ?? true,
+            ...(ms !== undefined && Number.isFinite(ms) && ms >= 0
+              ? { measureMs: ms }
+              : {}),
+            ...(p.context === "beside-camera" || p.context === "idle"
+              ? { context: p.context }
+              : {}),
+            ...(p.hidden === true ? { hidden: true } : {}),
           },
         };
       }
     },
-    /** A ready pair's measuring failed; `persisted` when the method reported it. */
+    /**
+     * The worker running `key` crashed: the pair fails for this page load
+     * only, and the queue counts the crash; ignored for a pair not running.
+     */
+    workerCrashed(s: Draft, a: PayloadAction<{ key: string; text: string }>) {
+      const { key, text } = a.payload;
+      if (s.queue.running !== key) {
+        return;
+      }
+      s.queue = { running: null, crashes: s.queue.crashes + 1 };
+      if (planResultKeys(plain(s.plan)).has(key)) {
+        s.results = {
+          ...s.results,
+          [key]: { status: "failed", text, persisted: false },
+        };
+      }
+    },
+    /**
+     * A ready pair's measuring failed; `persisted` when the method reported
+     * it. Frees the queue like `resultStored`.
+     */
     resultFailed(
       s: Draft,
       a: PayloadAction<{ key: string; text: string; persisted: boolean }>,
     ) {
+      endRunning(s, a.payload.key);
       if (planResultKeys(plain(s.plan)).has(a.payload.key)) {
         s.results = {
           ...s.results,
@@ -785,7 +954,8 @@ const slice = createSlice({
     /**
      * The restore after a load finished: the photos read back count as
      * stored, the results of the ready pairs come back, and the stored log
-     * goes before this load's lines with a reload line between. Once only.
+     * goes before this load's lines with a reload line between, unless
+     * the run was reset meanwhile (that log is the dropped run's). Once only.
      */
     restoreFinished(
       s: Draft,
@@ -813,7 +983,7 @@ const slice = createSlice({
         ),
         ...s.results,
       };
-      if (a.payload.log.length > 0) {
+      if (a.payload.log.length > 0 && !s.resetBeforeRestore) {
         s.log = [...a.payload.log, RELOAD_LINE, ...s.log];
       }
     },

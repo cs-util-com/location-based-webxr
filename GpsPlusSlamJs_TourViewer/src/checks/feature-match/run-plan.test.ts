@@ -132,6 +132,16 @@ describe("the run plan by shots", () => {
         photo: { ...photo("p"), greyMean: 300 },
       },
       { type: "photo", shot: "flat-s1/F1", photo: { ...photo("p"), width: 0 } },
+      {
+        type: "photo",
+        shot: "flat-s1/F1",
+        photo: { ...photo("p"), greySd: Number.NaN },
+      },
+      {
+        type: "photo",
+        shot: "flat-s1/F1",
+        photo: { ...photo("p"), greySd: -1 },
+      },
     ] as PlanAction[]) {
       expect(planReducer(EMPTY_PLAN, a)).toBe(EMPTY_PLAN);
     }
@@ -245,5 +255,29 @@ describe("the run plan across reloads", () => {
     expect(Object.keys(back?.shots ?? {})).toEqual(["light-s1/L1"]);
     expect(back?.current).toBe(0);
     expect(back?.settings).toEqual({ ...DEFAULT_SETTINGS, sound: false });
+  });
+});
+
+// Why this test matters: the grey spread (sd) goes into the frames JSON for
+// the PC's contrast reading; a plan stored before it existed must still be
+// read, or its photos would be dropped and then swept from storage.
+describe("greySd", () => {
+  it("keeps a photo's grey spread, and reads a stored photo without one", () => {
+    const withSd = planReducer(EMPTY_PLAN, {
+      type: "photo",
+      shot: "flat-s1/F1",
+      photo: { ...photo("p1"), greySd: 33.5 },
+    });
+    expect(parsePlan(planText(withSd))?.shots["flat-s1/F1"]?.photo.greySd).toBe(
+      33.5,
+    );
+    const without = planReducer(EMPTY_PLAN, {
+      type: "photo",
+      shot: "flat-s1/F1",
+      photo: photo("p2"),
+    });
+    const back = parsePlan(planText(without));
+    expect(back?.shots["flat-s1/F1"]?.photo.id).toBe("p2");
+    expect(back?.shots["flat-s1/F1"]?.photo.greySd).toBeUndefined();
   });
 });

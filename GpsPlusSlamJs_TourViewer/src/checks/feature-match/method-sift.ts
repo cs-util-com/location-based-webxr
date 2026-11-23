@@ -78,8 +78,11 @@ export function siftFeatures(r: SiftResult, max = Infinity): Features {
   };
 }
 
-/** The SIFT method; runs on the main thread. */
-export function siftMethod(deps: LoadDeps): BenchMethod {
+/** The SIFT method; its backend names the thread it runs in. */
+export function siftMethod(
+  deps: LoadDeps,
+  place: "main thread" | "worker" = "main thread",
+): BenchMethod {
   return {
     id: "sift",
     label: "SIFT (plain JS)",
@@ -93,7 +96,7 @@ export function siftMethod(deps: LoadDeps): BenchMethod {
         "sift.js",
       );
       return {
-        backend: "js (main thread)",
+        backend: `js (${place})`,
         downloads: download === null ? [] : [download],
         initMs,
         notes: [

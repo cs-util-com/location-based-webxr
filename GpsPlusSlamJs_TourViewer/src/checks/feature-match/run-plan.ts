@@ -25,6 +25,11 @@ export interface PhotoMeta {
   readonly source: Size;
   /** Grey mean 0 to 255, for the light check. */
   readonly greyMean: number;
+  /**
+   * Grey standard deviation 0 to 255 (the contrast), for the PC. Absent
+   * in a plan stored before it was recorded.
+   */
+  readonly greySd?: number;
 }
 
 /** "auto": photos take themselves when the phone is still; "tap": countdown. */
@@ -112,7 +117,12 @@ function isPhoto(v: unknown): v is PhotoMeta {
     typeof v.greyMean === "number" &&
     Number.isFinite(v.greyMean) &&
     v.greyMean >= 0 &&
-    v.greyMean <= 255
+    v.greyMean <= 255 &&
+    (v.greySd === undefined ||
+      (typeof v.greySd === "number" &&
+        Number.isFinite(v.greySd) &&
+        v.greySd >= 0 &&
+        v.greySd <= 255))
   );
 }
 

@@ -432,6 +432,40 @@ describe("the run plan's storage", () => {
     await expect(next.readMatches(key)).resolves.toBe("{}\n");
   });
 
+  // Why: a measured pair's time, context and hidden flag come back after
+  // a reload (the estimate and the zip read them); a record with an
+  // unknown context is not read as a result, so the pair is measured again.
+  it("restores a result's measuring fields and refuses bad ones", async () => {
+    const { storage } = memory();
+    const first = makeWith(storage, null);
+    take(first, L1, "p1");
+    take(first, L2, "p2");
+    take(first, L3, "p3");
+    const k12 = `${L1L2}@p1+p2`;
+    const k13 = "light-s1/L1-L3@p1+p3";
+    const entry = {
+      status: "done",
+      text: "ok",
+      persisted: true,
+      measureMs: 1200,
+      context: "beside-camera",
+      hidden: true,
+    } as const;
+    const { db } = mapDb({
+      [photoKey("p1")]: png("p1"),
+      [photoKey("p2")]: png("p2"),
+      [photoKey("p3")]: png("p3"),
+      [resultDbKey(k12)]: { entry, matches: "{}\n" },
+      [resultDbKey(k13)]: {
+        entry: { ...entry, context: "on the moon" },
+        matches: "{}\n",
+      },
+    });
+    const next = makeWith(storage, db);
+    await next.restore();
+    expect(next.store.getState().results).toEqual({ [k12]: entry });
+  });
+
   // Why: the sweep deletes what the plan does not name (orphans, an old
   // version's photos under bare ids, stale results), but only when a plan
   // was read or an old one discarded: a blocked or cleared localStorage

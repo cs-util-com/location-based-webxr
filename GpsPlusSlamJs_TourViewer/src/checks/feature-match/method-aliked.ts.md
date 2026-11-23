@@ -29,7 +29,7 @@ The ALIKED + LightGlue method of the benchmark: the split ONNX exports of the AL
 - Inputs and outputs are read by name with a fallback to their position.
 - The runtime loads once per page; its Wasm path and thread count are set then (`ortWasmThreads(isolated, cores)`: up to four threads under cross-origin isolation, else one; the speed report prints the same number).
 - Init is the creation of both sessions; if the second fails, the first is released.
-- 64 MB of models: off by default on the page.
+- 64 MB of models, yet ticked by default on the page and in `DEFAULT_OPTIONS`: it is the main method the check compares with SIFT.
 
 ## Tests
 

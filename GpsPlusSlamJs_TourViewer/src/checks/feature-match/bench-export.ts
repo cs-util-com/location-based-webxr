@@ -216,6 +216,20 @@ function inFrame(p: Points, size: Size, frame: Size): [number, number][] {
 }
 
 /**
+ * How a run zip's pair was measured: the shot files its frames are, what
+ * ran beside the measuring, whether the page was hidden, the run settings
+ * line, and the methods and sizes ticked.
+ */
+export interface MatchesAbout {
+  readonly files: { readonly a: string; readonly b: string };
+  readonly context: "beside-camera" | "idle";
+  readonly hidden: boolean;
+  readonly settings: string;
+  readonly methods: Readonly<Record<string, boolean>>;
+  readonly sizes: readonly number[];
+}
+
+/**
  * The JSON of every method's keypoints and matches on the camera pair,
  * for checking offline against the saved frames. Positions are in the
  * pixels of the saved PNGs (mapped from the size each was computed at,
@@ -226,6 +240,7 @@ function inFrame(p: Points, size: Size, frame: Size): [number, number][] {
 export function matchesInfo(
   results: readonly MethodResult[],
   frames: { readonly a: Size; readonly b: Size },
+  about?: MatchesAbout,
 ): string {
   return `${JSON.stringify({
     format: "feature-match-matches/1",
@@ -233,16 +248,27 @@ export function matchesInfo(
       "pixels of the saved frames, pixel centres at integers, x right, y down",
     frames: {
       A: {
-        file: FRAME_FILES.A,
+        file: about?.files.a ?? FRAME_FILES.A,
         width: frames.a.width,
         height: frames.a.height,
       },
       B: {
-        file: FRAME_FILES.B,
+        file: about?.files.b ?? FRAME_FILES.B,
         width: frames.b.width,
         height: frames.b.height,
       },
     },
+    ...(about === undefined
+      ? {}
+      : {
+          measured: {
+            context: about.context,
+            hidden: about.hidden,
+            settings: about.settings,
+            methods: about.methods,
+            sizes: about.sizes,
+          },
+        }),
     methods: results.map((r) => ({
       id: r.id,
       label: r.label,

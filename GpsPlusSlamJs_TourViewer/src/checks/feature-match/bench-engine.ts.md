@@ -15,8 +15,8 @@ The measuring block of the feature matching page, shared by its views: the Optio
 
 ## Invariants and assumptions
 
-- The synthetic run measures the synthetic pair (seed 1, known warp). Nothing is measured on the run's photos on the phone in this version: the photos go to the PC in the run zip.
-- The speed test times the flat scene's F1 and F2 (`SPEED_SHOTS`, the flat control pair `2a`) when both are taken, read from storage (`fm.readPhoto`, decoded by `blobFrame`), else the synthetic pair. Both views share the plan, and it and its photos are restored at every load, so either view times the photos the other one took.
+- The synthetic run measures the synthetic pair (seed 1, known warp). The run's photos are measured by the queue in a worker (`measure-queue.ts`); the synthetic run and the speed test stay on the main thread (both include XFeat, whose runtime does not start in a module worker), and both are disabled while the queue measures a pair, as they would time each other. WebGPU is probed once with `webGpuProbe`.
+- The speed test times the flat scene's F1 and F2 (`SPEED_SHOTS`, the flat control pair `2a`) when both can be read, from storage or memory (`fm.readPhoto`, decoded by `pngFrame`, through `speedFrames`), else the synthetic pair; when it falls back the log says why, so a photo that cannot be read never ends the test with an error. Both views share the plan, and it and its photos are restored at every load, so either view times the photos the other one took.
 - `stopCamera` is called before anything is timed; the speed test holds `guardRun` (wake lock, hidden-page report line).
 - WebGPU counts only when `requestAdapter()` gives an adapter, asked once per page.
 

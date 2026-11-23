@@ -10,7 +10,7 @@
 import { FRAME_FILES, PAIRS } from "./bench-export";
 import type { DeviceInfo } from "./bench-report";
 import type { ResultEntry } from "./feature-match-slice";
-import { centreCrop } from "./rotation-square";
+import { centreCrop, turnOf } from "./rotation-square";
 import { planPhotos, planShots, type RunPlan } from "./run-plan";
 import {
   derivedPairs,
@@ -25,13 +25,6 @@ export const RUN_FRAMES_FORMAT = "feature-match-frames/2";
 export const SUMMARY_FILE = "feature-match-summary.txt";
 /** The log file inside the run zip. */
 export const LOG_FILE = FRAME_FILES.log;
-
-/** The clockwise turn of B in each synthetic rotation pair, in degrees. */
-const TURNS: Readonly<Partial<Record<DerivedPair["kind"], 0 | 90 | 180>>> = {
-  turn0: 0,
-  turn90: 90,
-  turn180: 180,
-};
 
 /** A shot's photo in the zip: `shots/<scene id>/<shot key>-t<take>.png`. */
 export const shotFile = (shot: string, take: number): string =>
@@ -69,7 +62,7 @@ const round2 = (v: number): number => Math.round(v * 100) / 100;
  * rotation pair, whose turn is given once). No time and no place.
  */
 function framesJson(p: DerivedPair, i: RunZipInput): string {
-  const turn = TURNS[p.kind];
+  const turn = turnOf(p.kind);
   const frame = (name: "A" | "B", shot: string) => {
     const r = i.plan.shots[shot]!;
     const ph = r.photo;
@@ -83,7 +76,8 @@ function framesJson(p: DerivedPair, i: RunZipInput): string {
       sourceWidth: ph.source.width,
       sourceHeight: ph.source.height,
       greyMean: round2(ph.greyMean),
-      ...(turn === undefined ? {} : { crop: centreCrop(ph.width, ph.height) }),
+      ...(ph.greySd === undefined ? {} : { greySd: round2(ph.greySd) }),
+      ...(turn === null ? {} : { crop: centreCrop(ph.width, ph.height) }),
     };
   };
   return `${JSON.stringify(
@@ -101,9 +95,7 @@ function framesJson(p: DerivedPair, i: RunZipInput): string {
       lightCheck: lightOf(p.b, planPhotos(i.plan)),
       captureMaxLongEdge: i.captureMaxLongEdge,
       frames: [frame("A", p.a), frame("B", p.b)],
-      ...(turn === undefined
-        ? {}
-        : { turn: { degrees: turn, direction: "cw" } }),
+      ...(turn === null ? {} : { turn: { degrees: turn, direction: "cw" } }),
       device: i.device,
     },
     null,

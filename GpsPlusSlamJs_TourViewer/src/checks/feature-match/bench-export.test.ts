@@ -246,6 +246,33 @@ describe("matchesInfo", () => {
     });
   });
 
+  // Why: in the run zip the frames are the shot files, not fixed names,
+  // and the PC must know what ran beside the measuring and what was
+  // ticked, or it compares timings that do not compare.
+  it("names the shot files and says how the pair was measured", () => {
+    const info = JSON.parse(
+      matchesInfo([method([size({})])], frames, {
+        files: { a: "shots/flat-s1/F1-t1.png", b: "shots/flat-s1/F2-t2.png" },
+        context: "beside-camera",
+        hidden: false,
+        settings: "runs: 1, no warm-up, backends wasm",
+        methods: { sift: true, aliked: false, siftLightGlue: true },
+        sizes: [640, 1024],
+      }),
+    ) as SavedMatches;
+    expect(info.frames).toEqual({
+      A: { file: "shots/flat-s1/F1-t1.png", width: 8, height: 4 },
+      B: { file: "shots/flat-s1/F2-t2.png", width: 8, height: 4 },
+    });
+    expect(info.measured).toEqual({
+      context: "beside-camera",
+      hidden: false,
+      settings: "runs: 1, no warm-up, backends wasm",
+      methods: { sift: true, aliked: false, siftLightGlue: true },
+      sizes: [640, 1024],
+    });
+  });
+
   it("maps keypoints from the size computed to the saved frame's pixels", () => {
     const m = read([method([size({})])]).methods[0]!;
     expect([m.id, m.label, m.backend, m.error]).toEqual([

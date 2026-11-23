@@ -9,7 +9,7 @@
  * @see bench-engine.ts.md
  */
 import { drawMatches, sideBySide } from "./bench-draw";
-import { blobFrame, frameCanvas } from "./bench-dom";
+import { frameCanvas } from "./bench-dom";
 import { describeGrey, greyStats, type Frame } from "./bench-image";
 import {
   backendsFrom,
@@ -20,6 +20,8 @@ import {
   selectionGaps,
 } from "./bench-methods";
 import { errorText, type LoadDeps } from "./bench-net";
+import { pngFrame } from "./png-frame";
+import { webGpuProbe } from "./webgpu-probe";
 import {
   formatReport,
   hasJspi,
@@ -51,6 +53,7 @@ import { guardRun, HIDDEN_DURING_RUNS } from "./run-guard";
 import {
   SPEED_LONG_EDGES,
   SPEED_SIFT_CAPS,
+  speedFrames,
   speedTestArms,
   speedTestSettings,
   type SpeedTestChoice,
@@ -218,25 +221,10 @@ const readSpeedOptions = (root: ParentNode): SpeedOptions => ({
 const chosenSizes = (o: BenchOptions): number[] =>
   o.sizes.map(Number).filter((v) => Number.isFinite(v) && v > 0);
 
-let webGpuProbe: Promise<boolean> | null = null;
-
-/**
- * Whether WebGPU can run here: navigator.gpu alone is not enough, as a
- * browser may offer it with no adapter. Asked once per page; null or a
- * throw is no WebGPU.
- */
-const hasWebGpu = (): Promise<boolean> =>
-  (webGpuProbe ??= (async () => {
-    const gpu = (navigator as Navigator & { gpu?: GpuLike }).gpu;
-    if (!gpu) {
-      return false;
-    }
-    try {
-      return (await gpu.requestAdapter()) !== null;
-    } catch {
-      return false;
-    }
-  })());
+/** Whether WebGPU can run on this page; asked once per page. */
+const hasWebGpu = webGpuProbe(
+  () => (navigator as Navigator & { gpu?: GpuLike }).gpu,
+);
 
 /** The pair a run measures, with its text for the report. */
 interface RunPair {
@@ -323,7 +311,8 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     const s = state();
     const was = drawn;
     drawn = s;
-    const idle = s.busy === "idle";
+    // A pair in the measuring worker would time against the run.
+    const idle = s.busy === "idle" && s.queue.running === null;
     ui.runSynthetic.disabled = !idle;
     ui.runSpeed.disabled = !idle;
     ui.runSynthetic.textContent =
@@ -560,22 +549,29 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     fallback: T,
   ): T => allowed.find((v) => String(v) === text) ?? fallback;
 
-  /** The speed test's pair: the flat scene's F1 and F2 when taken, else synthetic. */
+  /**
+   * The speed test's pair: the flat scene's F1 and F2 when both can be
+   * read, else synthetic (the log says why when a taken photo could not).
+   */
   const speedPair = async (): Promise<RunPair> => {
     const shots = state().plan.shots;
-    const frame = async (shot: string): Promise<Frame | undefined> => {
-      const id = shots[shot]?.photo.id;
-      return id === undefined ? undefined : blobFrame(await fm.readPhoto(id));
+    const got = await speedFrames(
+      {
+        a: shots[SPEED_SHOTS.a]?.photo.id,
+        b: shots[SPEED_SHOTS.b]?.photo.id,
+      },
+      async (id) => pngFrame(await fm.readPhoto(id)),
+    );
+    if ("fallback" in got) {
+      log(`speed test: synthetic pair (${got.fallback})`);
+      return syntheticInput();
+    }
+    const { a, b } = got;
+    return {
+      input: { a, b, warp: null },
+      text: `pair ${SPEED_SHOTS.a} + ${SPEED_SHOTS.b} ${frameText("A", a)}; ${frameText("B", b)}`,
+      pair: "2a",
     };
-    const a = await frame(SPEED_SHOTS.a);
-    const b = await frame(SPEED_SHOTS.b);
-    return a && b
-      ? {
-          input: { a, b, warp: null },
-          text: `pair ${SPEED_SHOTS.a} + ${SPEED_SHOTS.b} ${frameText("A", a)}; ${frameText("B", b)}`,
-          pair: "2a",
-        }
-      : syntheticInput();
   };
 
   /**
