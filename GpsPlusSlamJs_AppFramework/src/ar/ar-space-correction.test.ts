@@ -4,8 +4,12 @@ import * as THREE from 'three';
 import type { Pose } from './qr/qr-pose';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
-  COMPENSATE_CAMERA_MOTION,
+  CAMERA_MOTION_COMPENSATION,
+  COMPENSATION_MIN_STEP_M,
+  COMPENSATION_MIN_TURN_DEG,
   IDENTITY_POSE,
+  MAX_COMPENSATION_GAP_MS,
+  compensationVerdict,
   correctionTrack,
   epochAt,
   jumpTransform,
@@ -184,11 +188,11 @@ const percentile = (values: readonly number[], p: number): number => {
 };
 
 describe('ar-space-correction', () => {
-  it('compensates by default', () => {
+  it('compensates a moving camera by default (guarded)', () => {
     // Why this test matters: the default is a decision (the frame before
     // the jump is up to one frame stale); flipping it silently would move
     // every corrected object by the camera's own motion.
-    expect(COMPENSATE_CAMERA_MOTION).toBe(true);
+    expect(CAMERA_MOTION_COMPENSATION).toBe('guarded');
   });
 
   describe('camera-motion compensation sweep (frame dt x head rate)', () => {
@@ -206,8 +210,8 @@ describe('ar-space-correction', () => {
           const cam = new THREE.Vector3().setFromMatrixPosition(
             walkingCamera(10 + (2 * dtMs) / 1000, rateDegS)
           );
-          const comp = jumpTransform(jump, true);
-          const plain = jumpTransform(jump, false);
+          const comp = jumpTransform(jump, 'always');
+          const plain = jumpTransform(jump, 'off');
           const r = [10, 50].map((radius) => ({
             radius,
             comp: residualAt(comp, cam, radius),
@@ -291,8 +295,8 @@ describe('ar-space-correction', () => {
               const cam = new THREE.Vector3().setFromMatrixPosition(
                 walkingCamera(jump.t / 1000, motion.rateDegS, motion.walkMS)
               );
-              const c = jumpTransform(jump, true);
-              const p = jumpTransform(jump, false);
+              const c = jumpTransform(jump, 'always');
+              const p = jumpTransform(jump, 'off');
               comp.push(residualAt(c, cam, 10));
               plain.push(residualAt(p, cam, 10));
             }
@@ -344,10 +348,14 @@ describe('ar-space-correction', () => {
       newPose: fromThree(JUMP.clone().multiply(at(70))),
     };
     const cam = new THREE.Vector3().setFromMatrixPosition(at(70));
-    expect(residualAt(jumpTransform(jump), cam, 10)).toBeLessThan(1e-9);
+    expect(residualAt(jumpTransform(jump, 'always'), cam, 10)).toBeLessThan(
+      1e-9
+    );
     // The inverse ratio is what the camera pose at tLast + 0.4 * 20 ms gives.
     const inverse: RelocalizationJump = { ...jump, t: 28 };
-    expect(residualAt(jumpTransform(inverse), cam, 10)).toBeGreaterThan(0.03);
+    expect(
+      residualAt(jumpTransform(inverse, 'always'), cam, 10)
+    ).toBeGreaterThan(0.03);
   });
 
   it('uses the uncompensated D when tPrev is not before tLast', () => {
@@ -356,10 +364,10 @@ describe('ar-space-correction', () => {
     // it even though the slice refuses such an observation.
     const base = walkingJump(33, 30);
     const flat: RelocalizationJump = { ...base, tPrev: base.tLast };
-    expect(jumpTransform(flat, true)).toEqual(jumpTransform(flat, false));
+    expect(jumpTransform(flat, 'always')).toEqual(jumpTransform(flat, 'off'));
     const reversed: RelocalizationJump = { ...base, tPrev: base.tLast + 5 };
-    expect(jumpTransform(reversed, true)).toEqual(
-      jumpTransform(reversed, false)
+    expect(jumpTransform(reversed, 'always')).toEqual(
+      jumpTransform(reversed, 'off')
     );
   });
 
@@ -469,11 +477,13 @@ describe('ar-space-correction quaternion handling', () => {
         rotation: scaled(jump.prevPose!.rotation, -1),
       },
     };
-    expect(maxDiff(jumpTransform(flipped), jumpTransform(jump))).toBeLessThan(
-      1e-12
-    );
+    expect(
+      maxDiff(jumpTransform(flipped, 'always'), jumpTransform(jump, 'always'))
+    ).toBeLessThan(1e-12);
     const cam = new THREE.Vector3().setFromMatrixPosition(turning(90)(30));
-    expect(residualAt(jumpTransform(flipped), cam, 10)).toBeLessThan(1e-9);
+    expect(residualAt(jumpTransform(flipped, 'always'), cam, 10)).toBeLessThan(
+      1e-9
+    );
   });
 
   it('rotations that are not unit length are normalised before use', () => {
@@ -493,10 +503,10 @@ describe('ar-space-correction quaternion handling', () => {
       },
       newPose: { ...jump.newPose, rotation: scaled(jump.newPose.rotation, 2) },
     };
-    expect(maxDiff(jumpTransform(off), jumpTransform(jump))).toBeLessThan(
-      1e-12
-    );
-    const d = jumpTransform(jump);
+    expect(
+      maxDiff(jumpTransform(off, 'always'), jumpTransform(jump, 'always'))
+    ).toBeLessThan(1e-12);
+    const d = jumpTransform(jump, 'always');
     expect(maxDiff({ ...d, rotation: scaled(d.rotation, 4) }, d)).toBeLessThan(
       1e-12
     );
@@ -512,8 +522,152 @@ describe('ar-space-correction quaternion handling', () => {
       ...jumpAt(at, 40),
       newPose: fromThree(at(40)),
     };
-    const d = jumpTransform(still);
+    const d = jumpTransform(still, 'always');
     const angle = 2 * Math.hypot(d.rotation[0], d.rotation[1], d.rotation[2]);
     expect(angle).toBeLessThan(1e-14);
+  });
+});
+
+describe('ar-space-correction compensation guard', () => {
+  /** A jump seen by a camera that moved `stepM` along X and turned `turnDeg` about Y in 33 ms. */
+  function steppedJump(
+    stepM: number,
+    turnDeg: number,
+    gapMs = 33
+  ): RelocalizationJump {
+    const cam = (k: number): THREE.Matrix4 =>
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(stepM * k, 1.5, 0),
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad(turnDeg * k)
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+    const kJump = 1 + gapMs / 33;
+    return {
+      t: 1033 + gapMs,
+      tLast: 1033,
+      lastPose: fromThree(cam(1)),
+      tPrev: 1000,
+      prevPose: fromThree(cam(0)),
+      newPose: fromThree(JUMP.clone().multiply(cam(kJump))),
+    };
+  }
+
+  it('compensates only when the measured camera motion exceeds the noise threshold, on either axis', () => {
+    // Why this test matters: the guard is the decision that a still camera
+    // gets the plain D (the compensation only adds the extrapolated pose
+    // noise there) and a moving one the compensated D. Cells just below and
+    // just above each threshold pin the boundary on both axes.
+    const below = COMPENSATION_MIN_STEP_M * 0.9;
+    const above = COMPENSATION_MIN_STEP_M * 1.1;
+    const turnBelow = COMPENSATION_MIN_TURN_DEG * 0.9;
+    const turnAbove = COMPENSATION_MIN_TURN_DEG * 1.1;
+    for (const [step, turn, expected] of [
+      [0, 0, 'still'],
+      [below, turnBelow, 'still'],
+      [above, 0, 'moving'],
+      [0, turnAbove, 'moving'],
+      [above, turnAbove, 'moving'],
+    ] as const) {
+      const jump = steppedJump(step, turn);
+      expect(compensationVerdict(jump).reason).toBe(expected);
+      expect(jumpTransform(jump)).toEqual(
+        jumpTransform(jump, expected === 'moving' ? 'always' : 'off')
+      );
+    }
+  });
+
+  it('never compensates across a gap longer than MAX_COMPENSATION_GAP_MS, whatever the mode', () => {
+    // Why this test matters: past 500 ms the compensation is unmeasured and
+    // one frame's velocity is stretched over a long stall; a replayed
+    // observation that breaks the feed's gap rule falls back to the plain D
+    // instead of being refused (refusing would lose the jump).
+    const ok = steppedJump(0.05, 1, MAX_COMPENSATION_GAP_MS);
+    expect(compensationVerdict(ok, 'always').compensated).toBe(true);
+    const late = steppedJump(0.05, 1, MAX_COMPENSATION_GAP_MS + 1);
+    const verdict = compensationVerdict(late, 'always');
+    expect(verdict.compensated).toBe(false);
+    expect(verdict.reason).toBe('gap');
+    expect(verdict.stepM).toBeCloseTo(0.05, 9);
+    expect(verdict.turnDeg).toBeCloseTo(1, 9);
+    expect(jumpTransform(late, 'always')).toEqual(jumpTransform(late, 'off'));
+    expect(jumpTransform(late)).toEqual(jumpTransform(late, 'off'));
+  });
+
+  it('names why it did not compensate: off, no earlier frame, no measurable rate', () => {
+    // Why this test matters: the reason goes into the observation's log
+    // line, which is how a field recording tells which D was used.
+    const jump = steppedJump(0.05, 1);
+    expect(compensationVerdict(jump, 'off').reason).toBe('off');
+    const first = compensationVerdict({ ...jump, tPrev: null, prevPose: null });
+    expect(first.reason).toBe('no-earlier-frame');
+    expect(first.stepM).toBeNull();
+    expect(compensationVerdict({ ...jump, tPrev: jump.tLast }).reason).toBe(
+      'no-rate'
+    );
+  });
+
+  it('guarded sweep: never worse than the better of plain and compensated by more than the noise, still or moving', () => {
+    // Why this test matters: the guard must keep the still user's plain D
+    // and the walker's compensated D. Parameters: noise 0.5 mm / 0.01 deg
+    // and 1 mm / 0.05 deg per pose (the range where the M1 sweep says
+    // motion, not the ratio, decides); ratio 1 and 10 at 33 ms; a still
+    // user, a slow walker (0.3 m/s, 3 deg/s) and a walker (1.4 m/s,
+    // 10 deg/s); 300 seeds per cell; p50 residual at 10 m. At 3 mm /
+    // 0.2 deg a still phone's noise alone passes the thresholds and the
+    // guard compensates: reported, not pinned (the phone's real noise
+    // floor decides the thresholds; they are provisional until measured).
+    const rows: string[] = [];
+    const misses: string[] = [];
+    const motions = [
+      { name: 'still', walkMS: 0, rateDegS: 0 },
+      { name: 'slow', walkMS: 0.3, rateDegS: 3 },
+      { name: 'walk', walkMS: WALK_M_S, rateDegS: 10 },
+    ];
+    const jitters = [
+      { posM: 0.0005, rotDeg: 0.01, pinned: true },
+      { posM: 0.001, rotDeg: 0.05, pinned: true },
+      { posM: 0.003, rotDeg: 0.2, pinned: false },
+    ];
+    for (const motion of motions) {
+      for (const jitter of jitters) {
+        for (const ratio of [1, 10]) {
+          const rng = seededRandom(7 + ratio * 31 + jitter.rotDeg * 1e4);
+          const comp: number[] = [];
+          const plain: number[] = [];
+          const guarded: number[] = [];
+          for (let s = 0; s < 300; s++) {
+            const jump = walkingJump(
+              33,
+              motion.rateDegS,
+              ratio,
+              { rng, posM: jitter.posM, rotDeg: jitter.rotDeg },
+              motion.walkMS
+            );
+            const cam = new THREE.Vector3().setFromMatrixPosition(
+              walkingCamera(jump.t / 1000, motion.rateDegS, motion.walkMS)
+            );
+            comp.push(residualAt(jumpTransform(jump, 'always'), cam, 10));
+            plain.push(residualAt(jumpTransform(jump, 'off'), cam, 10));
+            guarded.push(residualAt(jumpTransform(jump), cam, 10));
+          }
+          const [c, p, g] = [comp, plain, guarded].map((v) =>
+            percentile(v, 0.5)
+          ) as [number, number, number];
+          const row =
+            `${motion.name} jitter=${jitter.posM * 1000}mm/${jitter.rotDeg}deg ratio=${ratio}: ` +
+            `guarded=${g.toFixed(3)} comp=${c.toFixed(3)} plain=${p.toFixed(3)}`;
+          rows.push(row);
+          if (jitter.pinned && g > Math.min(c, p) * 1.25 + 0.01) {
+            misses.push(row);
+          }
+        }
+      }
+    }
+    report(`guarded compensation sweep (m at 10 m):\n${rows.join('\n')}`);
+    expect(rows).toHaveLength(18);
+    expect(misses).toEqual([]);
   });
 });

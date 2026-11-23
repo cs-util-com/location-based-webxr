@@ -27,8 +27,9 @@ export function poseCommitterOf(object: Object3D): PoseCommitter | null {
   return claims.get(object) ?? null;
 }
 
-function claimedAncestor(object: Object3D): PoseCommitter | null {
-  for (let p = object.parent; p; p = p.parent) {
+/** The first claim on `from` or above it. */
+function claimedAncestor(from: Object3D | null): PoseCommitter | null {
+  for (let p = from; p; p = p.parent) {
     const c = claims.get(p);
     if (c) return c;
   }
@@ -46,14 +47,20 @@ function claimedDescendant(object: Object3D): PoseCommitter | null {
 /**
  * Claim `object` for `committer`. Throws when `object` is already claimed,
  * or sits inside or holds a claimed object (nested claims are not
- * supported, whoever holds them).
+ * supported, whoever holds them). A committer that re-parents the object as
+ * part of its claim passes the new parent as `into`: the ancestors are then
+ * read from there, the chain the object is about to live in.
  */
-export function claimPose(object: Object3D, committer: PoseCommitter): void {
+export function claimPose(
+  object: Object3D,
+  committer: PoseCommitter,
+  into: Object3D | null = object.parent
+): void {
   const own = claims.get(object);
   if (own) {
     throw new Error(`${committer}: the object is already committed by ${own}`);
   }
-  const other = claimedAncestor(object) ?? claimedDescendant(object);
+  const other = claimedAncestor(into) ?? claimedDescendant(object);
   if (other) {
     throw new Error(
       `${committer}: nested pose committers are not supported; the object ` +

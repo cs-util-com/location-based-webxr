@@ -35,7 +35,7 @@ function session() {
   enableArWorldGroupAlignment({ store, arWorldGroup });
   const registry = createArSpaceCorrectionRegistry({ group: arWorldGroup });
   registry.attach(store);
-  return { arWorldGroup, registry };
+  return { arWorldGroup, registry, store };
 }
 
 const gpsAnchorOn = (arWorldGroup: THREE.Group, object3D: THREE.Object3D) =>
@@ -106,6 +106,39 @@ describe('AR-space correction and the anchors: one committer per object', () => 
     deferredAnchor(arWorldGroup, 'first').remove(root);
     expect(poseCommitterOf(root)).toBeNull();
     deferredAnchor(arWorldGroup, 'second').add(root);
+    expect(poseCommitterOf(root)).toBe('deferred anchor');
+  });
+});
+
+describe('deferred anchors check where the root is going', () => {
+  it('a root added under an object the correction tracks is refused, and stays where it was', () => {
+    // Why this test matters: the anchor writes the root's matrix while the
+    // correction moves its tracked ancestor; both together apply every jump
+    // twice. The claim must look at the parent the root is about to get.
+    const { arWorldGroup, registry, store } = session();
+    const chest = new THREE.Group();
+    arWorldGroup.add(chest);
+    registry.track(chest);
+    enableArWorldGroupAlignment({ store, arWorldGroup: chest });
+    const root = new THREE.Object3D();
+    expect(() => deferredAnchor(chest, 'x').add(root)).toThrow(
+      /AR-space correction/
+    );
+    expect(root.parent).toBeNull();
+    expect(poseCommitterOf(root)).toBeNull();
+  });
+
+  it('a root leaving a tracked object for an anchor is accepted: its old parent no longer matters', () => {
+    // Why this test matters: the claim must judge the chain the root will
+    // live in; its old chain would refuse a move that ends the overlap.
+    const { arWorldGroup, registry } = session();
+    const chest = new THREE.Group();
+    arWorldGroup.add(chest);
+    registry.track(chest);
+    const root = new THREE.Object3D();
+    chest.add(root);
+    deferredAnchor(arWorldGroup, 'poster').add(root);
+    expect(root.parent).toBe(arWorldGroup);
     expect(poseCommitterOf(root)).toBe('deferred anchor');
   });
 });

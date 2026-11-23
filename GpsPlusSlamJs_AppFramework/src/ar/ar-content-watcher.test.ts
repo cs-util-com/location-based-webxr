@@ -730,3 +730,77 @@ describe('ar-content-watcher', () => {
     });
   });
 });
+
+describe('ar-content-watcher: arContent, re-adds and detached hints', () => {
+  it('arContent is the root container: track and exclude throw a TypeError, container is a no-op', () => {
+    // Why this test matters: tracking arContent itself would claim it, and
+    // every later arContent.add would then throw a nested-committer error.
+    const store = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store,
+      arWorldGroup,
+    });
+    expect(() => arCorrection.track(arContent)).toThrow(TypeError);
+    expect(() => arCorrection.exclude(arContent)).toThrow(TypeError);
+    expect(arCorrection.container(arContent)).toBe(arContent);
+    expect(poseCommitterOf(arContent)).toBeNull();
+    const coin = new THREE.Object3D();
+    expect(() => arContent.add(coin)).not.toThrow();
+    expect(poseCommitterOf(coin)).toBe('AR-space correction');
+    arCorrection.dispose();
+  });
+
+  it('a child put back by its own removed listener stays corrected', () => {
+    // Why this test matters: childremoved fires after the child's removed
+    // listeners; when one of them re-added the child, the watcher must not
+    // untrack the new placement.
+    const store = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store,
+      arWorldGroup,
+    });
+    const coin = new THREE.Object3D();
+    let putBack = true;
+    coin.addEventListener('removed', () => {
+      if (!putBack) return;
+      putBack = false;
+      arContent.add(coin);
+    });
+    arContent.add(coin);
+    coin.removeFromParent();
+    expect(coin.parent).toBe(arContent);
+    expect(poseCommitterOf(coin)).toBe('AR-space correction');
+    store.dispatch(
+      relocalizationObserved(stillJump(1000, rawRigid(0.3, 2, 0, 1)))
+    );
+    expect(coin.position.length()).toBeGreaterThan(1);
+    arCorrection.dispose();
+  });
+
+  it('a hint of a child removed while detached is dropped, so its re-add with a new pose gets no old jump', () => {
+    // Why this test matters: a re-added object is a new placement; a stale
+    // capture-time hint would apply a jump the new pose never missed.
+    const store = newStore();
+    const arWorldGroup = new THREE.Group();
+    const { arContent, arCorrection } = enableArSpaceCorrection({
+      store,
+      arWorldGroup,
+    });
+    store.dispatch(
+      relocalizationObserved(stillJump(1000, rawRigid(0.3, 2, 0, 1)))
+    );
+    const detach = arCorrection.attach(store);
+    detach();
+    const tile = new THREE.Object3D();
+    arCorrection.track(tile, { capturedAt: 500 });
+    arContent.add(tile);
+    arContent.remove(tile);
+    tile.position.set(1, 2, 3);
+    arContent.add(tile);
+    arCorrection.attach(store);
+    expect(tile.position.toArray()).toEqual([1, 2, 3]);
+    arCorrection.dispose();
+  });
+});

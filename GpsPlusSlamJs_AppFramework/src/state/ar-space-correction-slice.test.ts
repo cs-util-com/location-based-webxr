@@ -236,3 +236,25 @@ describe('arSpaceCorrection slice', () => {
     spy.mockRestore();
   });
 });
+
+describe('arSpaceCorrection slice: the stored observation owns its numbers', () => {
+  it('copies the caller arrays, so a feed reusing scratch arrays cannot change recorded state', () => {
+    // Why this test matters: the track is memoised on the observations; a
+    // feed that rewrites its scratch arrays after dispatching would silently
+    // change a recorded raw value behind a stale track.
+    const store = newStore();
+    const position: [number, number, number] = [3, 1.6, 0];
+    const rotation: [number, number, number, number] = [0, 0, 0, 1];
+    store.dispatch(
+      relocalizationObserved({
+        ...observation(1000),
+        newPose: { position, rotation },
+      })
+    );
+    position[0] = 99;
+    rotation[3] = -1;
+    const stored = store.getState().arSpaceCorrection.observations[0]!;
+    expect(stored.newPose.position).toEqual([3, 1.6, 0]);
+    expect(stored.newPose.rotation).toEqual([0, 0, 0, 1]);
+  });
+});

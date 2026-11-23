@@ -1120,7 +1120,7 @@ function createAnchorSet(
       key,
       add(root, options = {}) {
         if (isMemberOf(root, key)) return;
-        claimPose(root, 'deferred anchor');
+        claimPose(root, 'deferred anchor', parent);
         const autoUpdateBefore = root.matrixAutoUpdate;
         parent.add(root);
         root.matrixAutoUpdate = false;

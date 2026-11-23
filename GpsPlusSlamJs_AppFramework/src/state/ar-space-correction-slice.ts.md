@@ -6,7 +6,7 @@ The `arSpaceCorrection` slice: the raw relocalization observations of an AR sess
 
 ## Public API
 
-- `relocalizationObserved(payload: RelocalizationObservation)`: action `arSpaceCorrection/relocalizationObserved`. The payload is `RelocalizationJump` of `ar/ar-space-correction.ts`: `{ t, tLast, lastPose, tPrev, prevPose, newPose }`, all raw. The action creator keeps only these six fields (a `prepare` callback), so an object that carries more, such as a feed's own record, never records more; a non-object passes through for the reducer to refuse.
+- `relocalizationObserved(payload: RelocalizationObservation)`: action `arSpaceCorrection/relocalizationObserved`. The payload is `RelocalizationJump` of `ar/ar-space-correction.ts`: `{ t, tLast, lastPose, tPrev, prevPose, newPose }`, all raw. The action creator keeps only these six fields (a `prepare` callback), so an object that carries more, such as a feed's own record, never records more; a non-object passes through for the reducer to refuse. Position and rotation arrays are copied: the store freezes what it keeps, so a caller that reuses its arrays neither changes recorded state nor finds them frozen.
 - `arSpaceCorrectionReducer`, a built-in of `createSlamAppStore` under the key `arSpaceCorrection`.
 - `ArSpaceCorrectionState`: `{ observations }`; `RootWithArSpaceCorrection`: the structural root the selectors take.
 - `UNIT_QUATERNION_TOLERANCE = 1e-3`.
@@ -38,5 +38,5 @@ const track = selectCorrectionTrack(store.getState()); // Delta(0..n)
 
 ## Tests
 
-- `ar-space-correction-slice.test.ts`: storage, the explicit absence of an earlier frame, boundary validation (one logged warning per refusal), the time order, `epochAt` through the store, the layers kept apart (GPS fixes leave the track reference-equal; an observation leaves `gpsData` deeply equal), the six-field action creator, segmenting, persistence.
+- `ar-space-correction-slice.test.ts`: storage, the explicit absence of an earlier frame, boundary validation (one logged warning per refusal), the time order, `epochAt` through the store, the layers kept apart (GPS fixes leave the track reference-equal; an observation leaves `gpsData` deeply equal), the six-field action creator, the caller's arrays copied, segmenting, persistence.
 - `ar-space-correction-slice.property.test.ts`: random streams of valid and broken observations leave exactly the valid ones, in time order, with only the six fields.
