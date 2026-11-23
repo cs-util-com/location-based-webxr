@@ -79,17 +79,28 @@ const GAPS = {
     hero: 16,
     h1: 8,
     lede: 10,
-    make: 12,
+    promise: 12,
+    code: 10,
     needs: 7,
     cta: 14,
     film: 18,
   },
-  "844x390": { hero: 16, h1: 8, lede: 6, make: 6, needs: 4, cta: 10, film: 18 },
+  "844x390": {
+    hero: 16,
+    h1: 8,
+    lede: 6,
+    promise: 6,
+    code: 6,
+    needs: 4,
+    cta: 10,
+    film: 18,
+  },
   "1440x900": {
     hero: 34,
     h1: 8,
     lede: 10,
-    make: 20,
+    promise: 20,
+    code: 10,
     needs: 7,
     cta: 14,
     film: 28,
@@ -121,7 +132,8 @@ for (const viewport of VIEWPORTS) {
         const kicker = await at(".landing-hero .landing-kicker");
         const h1 = await at(".landing h1");
         const lede = await at(".landing-lede");
-        const make = await at(".landing-make-line");
+        const promise = await at(".landing-promise");
+        const codeLine = await at(".landing-code-line");
         const needs = await at(".landing-needs");
         const cta = await at(".landing-hero .landing-cta");
         const film = await at("#landing-film");
@@ -132,8 +144,9 @@ for (const viewport of VIEWPORTS) {
         near(gap(way, kicker), expected.hero);
         near(gap(kicker, h1), expected.h1);
         near(gap(h1, lede), expected.lede);
-        near(gap(lede, make), expected.make);
-        near(gap(make, needs), expected.needs);
+        near(gap(lede, promise), expected.promise);
+        near(gap(promise, codeLine), expected.code);
+        near(gap(codeLine, needs), expected.needs);
         near(gap(needs, cta), expected.cta);
         // From 1000 px wide the film stands beside the text instead
         // (pinned by "the landing on a wide screen").
