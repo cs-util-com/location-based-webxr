@@ -33,8 +33,8 @@ its URL. `src/anchors-check/anchors-check-isolation.test.ts` asserts that.
    and not counted.
 5. If no jump is listed after a few laps, make a tracking loss: stand still
    for 2 s, cover the camera for a few seconds while keeping still, uncover
-   it and stay still for 2 s more. A loss taken while moving (over 0.02 m or
-   1 deg per frame just before it) is listed as "moving" and not counted.
+   it and stay still for 2 s more. A loss taken while moving (over 0.3 m/s or
+   20 deg/s just before it) is listed as "moving" and not counted.
 6. Each jump and loss is judged over 2 s (anchor read at 0, 100, 300, 1000
    and 2000 ms); walk on calmly. A second one inside those 2 s cuts the first
    short ("truncated", not counted). Keep going until the counts line shows

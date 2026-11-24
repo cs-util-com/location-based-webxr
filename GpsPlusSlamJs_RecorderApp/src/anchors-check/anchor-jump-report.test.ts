@@ -136,6 +136,10 @@ describe('onScreenLine', () => {
   // is the walk, not the anchor; the line must say it is not counted, and
   // give the raw step, since nothing was compensated.
   it('labels a moving loss as not counted, with its raw step', () => {
+    // The log gives the step per frame and its rate.
+    expect(buildLogFor(walkingLoss())).toContain(
+      'pre-step per frame 0.040 m / 0.00 deg in 33 ms, 1.21 m/s / 0.0 deg/s (moving)'
+    );
     expect(onScreenLine(walkingLoss())).toMatch(
       /^Tracking loss 1 \(0\.7 s\): moving, not counted \(drift correction\) \(.*\); raw step 0\.84 m \/ 0\.0 deg, 0\.3-1 m$/
     );
@@ -278,8 +282,8 @@ describe('buildLog', () => {
       'frame dt ms: p50 33.0',
       'unexplained step per frame m:',
       'jumps judged 1 (frame switch 1, drift correction 0, unclear 0); not counted: moving 0, long frame 0, no anchor 0, truncated 0; settling 0',
-      'counted: a loss, a gap or a jump with no rate only when the camera step per frame before it is at most 0.02 m and 1 deg; a jump only when its frame is at most 3 times the one before',
-      'pre-step per frame 0.000 m / 0.00 deg (still); extrapolation ratio 1.00',
+      'counted: a loss, a gap or a jump with no rate only when the camera moved at most 0.3 m/s and 20 deg/s just before it; a jump only when its frame is at most 3 times the one before',
+      'pre-step per frame 0.000 m / 0.00 deg in 33 ms, 0.00 m/s / 0.0 deg/s (still); extrapolation ratio 1.00',
       'anchor now (tracked yes): p=(1.000',
       'anchor to marker now: 0.600 m',
       'jump 1: dt 33 ms',

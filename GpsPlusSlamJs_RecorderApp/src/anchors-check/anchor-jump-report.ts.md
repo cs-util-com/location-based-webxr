@@ -54,7 +54,8 @@ no anchor n, truncated n.` over both. This is the walk's stop rule.
   - its kind, index, dt, the raw camera step, the unexplained step (or
     `raw step, D uncompensated`), the band and its state, including
     `not counted: <reason>`;
-  - the camera step per frame before it (`still` or `moving`, or
+  - the camera step per frame before it, its dt and its rate in m/s and
+    deg/s (`still` or `moving`, or
     `none (motion unknown)`) and, for a compensated jump, the
     extrapolation ratio;
   - the camera prev (the rate frame, or the frame before an uncompensated

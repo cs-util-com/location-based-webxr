@@ -10,8 +10,8 @@ import {
   JUMP_TRANSLATION_M,
   FRAME_GAP_MS,
   MAX_EXTRAPOLATION_RATIO,
-  STILL_ROTATION_DEG,
-  STILL_TRANSLATION_M,
+  STILL_SPEED_M_PER_S,
+  STILL_TURN_DEG_PER_S,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
   VERDICT_TOLERANCES,
@@ -107,8 +107,8 @@ describe('thresholds', () => {
     expect(JUMP_ROTATION_DEG).toBe(5);
     expect(FRAME_GAP_MS).toBe(500);
     expect(SETTLE_DELAYS_MS).toEqual([100, 300, 1000, 2000]);
-    expect(STILL_TRANSLATION_M).toBe(0.02);
-    expect(STILL_ROTATION_DEG).toBe(1);
+    expect(STILL_SPEED_M_PER_S).toBe(0.3);
+    expect(STILL_TURN_DEG_PER_S).toBe(20);
     expect(MAX_EXTRAPOLATION_RATIO).toBe(3);
     expect(VERDICT_TOLERANCES.tight.positionM).toBeLessThan(
       VERDICT_TOLERANCES.main.positionM
@@ -517,16 +517,37 @@ describe('tracking losses and frame gaps', () => {
     expect(gap?.readings.at(-1)?.comparison).not.toBeNull();
   });
 
-  // Why this matters: the limit is per frame; a step just over it is
-  // moving, one just under is still.
-  it('reads stillness from the last step before the episode', () => {
-    const at = (speed: number) => {
-      const s = walk(5, { speed });
+  // Why this matters: stillness is a speed, not a step per frame. A slow
+  // 1 m/s walk at 60 Hz moves under 0.02 m per frame; judged per frame it
+  // would pass as still and its loss would count as a false verdict.
+  it('reads stillness as a speed, the same at 30 and 60 Hz', () => {
+    /** A loss after 5 frames at `frameMs`, moving at `mPerS` along -z. */
+    const lossAfter = (frameMs: number, mPerS: number, degPerS = 0) => {
+      const s: FrameSample[] = Array.from({ length: 5 }, (_, i) =>
+        bare(
+          i * frameMs,
+          pose(
+            0,
+            1.5,
+            (-mPerS * i * frameMs) / 1000,
+            (degPerS * i * frameMs) / 1000
+          )
+        )
+      );
       s.push(bare(200, null), ...walk(SETTLE_SPAN, { t0: 800, speed: 0 }));
       return episodes(feed(s))[0]?.notCounted;
     };
-    expect(at(STILL_TRANSLATION_M * 0.9)).toBeNull();
-    expect(at(STILL_TRANSLATION_M * 1.1)).toBe('moving');
+    expect(lossAfter(1000 / 60, 1)).toBe('moving');
+    expect(lossAfter(1000 / 30, 1)).toBe('moving');
+    expect(lossAfter(1000 / 60, 0)).toBeNull();
+    expect(lossAfter(1000 / 30, 0)).toBeNull();
+    // The edges, at both rates.
+    for (const frameMs of [1000 / 30, 1000 / 60]) {
+      expect(lossAfter(frameMs, STILL_SPEED_M_PER_S * 0.9)).toBeNull();
+      expect(lossAfter(frameMs, STILL_SPEED_M_PER_S * 1.1)).toBe('moving');
+      expect(lossAfter(frameMs, 0, STILL_TURN_DEG_PER_S * 0.9)).toBeNull();
+      expect(lossAfter(frameMs, 0, STILL_TURN_DEG_PER_S * 1.1)).toBe('moving');
+    }
   });
 
   // Why this matters: the page hands over whatever WebXR gave it; a NaN pose

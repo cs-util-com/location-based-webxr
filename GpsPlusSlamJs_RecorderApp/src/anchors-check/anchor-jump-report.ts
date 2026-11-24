@@ -15,11 +15,12 @@ import {
   MAX_EXTRAPOLATION_RATIO,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
-  STILL_ROTATION_DEG,
-  STILL_TRANSLATION_M,
+  STILL_SPEED_M_PER_S,
+  STILL_TURN_DEG_PER_S,
   VERDICT_TOLERANCES,
   isStill,
   poseStep,
+  stepRate,
   type AnchorReading,
   type EpisodeEvent,
   type EpisodeKind,
@@ -240,13 +241,15 @@ function readingLines(r: AnchorReading): string[] {
   ];
 }
 
-/** The camera step per frame before the episode, and the extrapolation ratio. */
+/**
+ * The camera step per frame before the episode with its rate, and the
+ * extrapolation ratio.
+ */
 function preStepLine(e: EpisodeEvent): string {
-  const prev = e.cameraPrev;
-  if (prev === null) return '  pre-step per frame none (motion unknown)';
-  const pre = poseStep(prev.pose, e.cameraBefore.pose);
-  const ratio = e.dtMs / (e.cameraBefore.t - prev.t);
-  return `  pre-step per frame ${formatStepFine(pre)} (${isStill(pre) ? 'still' : 'moving'})${e.compensated ? `; extrapolation ratio ${ratio.toFixed(2)}` : ''}`;
+  const pre = stepRate(e.cameraPrev, e.cameraBefore);
+  if (pre === null) return '  pre-step per frame none (motion unknown)';
+  const ratio = e.dtMs / pre.dtMs;
+  return `  pre-step per frame ${formatStepFine(pre.step)} in ${Math.round(pre.dtMs)} ms, ${pre.speedMPerS.toFixed(2)} m/s / ${pre.turnDegPerS.toFixed(1)} deg/s (${isStill(pre) ? 'still' : 'moving'})${e.compensated ? `; extrapolation ratio ${ratio.toFixed(2)}` : ''}`;
 }
 
 function episodeLines(e: EpisodeEvent): string[] {
@@ -329,7 +332,7 @@ export function buildLog(input: LogInput): string {
     ...Object.entries(input.environment).map(([k, v]) => `${k}: ${v}`),
     `limits: jump logged when the step left after the motion compensation is above ${JUMP_TRANSLATION_M} m or ${JUMP_ROTATION_DEG} deg; frame gap above ${FRAME_GAP_MS} ms; bands ${BAND_LOWER_M}-${RELOCALIZATION_RULE_M} m below the ${RELOCALIZATION_RULE_M} m rule`,
     `settling: anchor read at ${[0, ...SETTLE_DELAYS_MS].join(', ')} ms after each jump, loss and gap; the ${SETTLE_DELAYS_MS.at(-1)} ms reading is the counted verdict; an episode cut short by the next one is truncated and not counted`,
-    `counted: a loss, a gap or a jump with no rate only when the camera step per frame before it is at most ${STILL_TRANSLATION_M} m and ${STILL_ROTATION_DEG} deg; a jump only when its frame is at most ${MAX_EXTRAPOLATION_RATIO} times the one before; an episode with no anchor tracked at its last reading is not counted`,
+    `counted: a loss, a gap or a jump with no rate only when the camera moved at most ${STILL_SPEED_M_PER_S} m/s and ${STILL_TURN_DEG_PER_S} deg/s just before it; a jump only when its frame is at most ${MAX_EXTRAPOLATION_RATIO} times the one before; an episode with no anchor tracked at its last reading is not counted`,
     `verdict tolerances: tight ${t(tol.tight)}, main ${t(tol.main)}, loose ${t(tol.loose)}`,
     'poses: raw WebXR local space; D is motion-compensated for a jump on a frame with a rate (camera prev is the rate frame), else it is the raw step (camera prev then only shows whether the camera was still); an anchor that trackedAnchors does not hold is logged but not judged',
     `frames: ${stats.frames}, judged pairs ${stats.dtMs.length}, lost-tracking frames ${stats.lostFrames}`,

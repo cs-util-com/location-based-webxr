@@ -14,8 +14,10 @@ no WebXR objects, no three.js.
   - `JUMP_TRANSLATION_M = 0.25` and `JUMP_ROTATION_DEG = 5`: the limits on
     the unexplained step.
   - `FRAME_GAP_MS = 500`: above it the frame is a gap, never a jump.
-  - `STILL_TRANSLATION_M = 0.02` and `STILL_ROTATION_DEG = 1`: the
-    stillness limits per frame for counting an uncompensated episode.
+  - `STILL_SPEED_M_PER_S = 0.3` and `STILL_TURN_DEG_PER_S = 20`: the
+    stillness limits for counting an uncompensated episode. Rates, not
+    steps per frame, so the rule is the same at 30 and 60 Hz (a 1 m/s walk
+    at 60 Hz is under 0.02 m per frame).
   - `MAX_EXTRAPOLATION_RATIO = 3`: the longest frame, in frame intervals,
     over which a compensated jump is counted.
   - `SETTLE_DELAYS_MS = [100, 300, 1000, 2000]`.
@@ -25,7 +27,11 @@ no WebXR objects, no three.js.
   - `VERDICT_TOLERANCES`: `tight` 0.05 m / 1.5 deg, `main` 0.1 m / 3 deg,
     `loose` 0.25 m / 6 deg.
 - `poseStep(a, b)`: translation (m) and geodesic rotation (deg).
-- `isStill(step)`: a step per frame within the stillness limits.
+- `stepRate(a, b)`: the step between two timed poses, its dt, and its
+  speed (m/s) and turn rate (deg/s); `null` when `a` is `null` or the dt
+  is not a positive finite time.
+- `isStill(rate)`: the rate within the stillness limits; `null` is not
+  still.
 - `classifyStep(step)`: `'rotation only'` (translation at most 0.25 m),
   `'under 0.3 m'`, `'0.3-1 m'` or `'at least 1 m'`. Applied to the
   unexplained step.
@@ -76,10 +82,10 @@ no WebXR objects, no three.js.
   raw step (`compensated: false`): it is the walker's motion plus the
   jump.
 - **Which verdicts count** (`notCounted`):
-  - an uncompensated episode counts only when the camera step per frame
-    just before it (`cameraPrev` to `cameraBefore`, kept at the loss start)
-    is within the stillness limits; otherwise, or when no such step is
-    known, it is `'moving'`. A jump on a frame with no rate therefore never
+  - an uncompensated episode counts only when the camera's speed and turn
+    rate just before it (the step from `cameraPrev` to `cameraBefore`, kept
+    at the loss start, over their dt) are within the stillness limits;
+    otherwise, or when no such step or dt is known, it is `'moving'`. A jump on a frame with no rate therefore never
     counts;
   - a compensated jump whose frame is more than `MAX_EXTRAPOLATION_RATIO`
     times the one before is `'long frame'`: a 200 ms stall at 30 Hz during
@@ -138,7 +144,9 @@ renderer.setAnimationLoop((t, frame) => {
     lagging anchor;
   - an anchor that is not tracked, and truncation by a second jump;
   - a still tracking loss with a verdict, a walking loss not counted, a
-    walking and a still frame gap, and the stillness limit's edge;
+    walking and a still frame gap, and stillness as a speed: a 1 m/s walk
+    at 60 Hz is moving, a still phone is still, and the speed and turn
+    edges hold, at 30 and 60 Hz;
   - the pending flag, a placement mid-window, the session reset, the notes
     and bad input.
 - `anchor-jump-tracker.property.test.ts` covers:

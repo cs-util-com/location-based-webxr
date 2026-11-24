@@ -35,12 +35,13 @@ export const JUMP_ROTATION_DEG = 5;
 export const FRAME_GAP_MS = 500;
 /**
  * An uncompensated episode (a loss, a gap, a jump on a frame with no rate)
- * is counted only when the camera step per frame just before it is at most
- * this: otherwise its `D` is mostly the walker's own motion.
+ * is counted only when the camera moved at most this fast just before it:
+ * otherwise its `D` is mostly the walker's own motion. A speed, not a step
+ * per frame, so the rule is the same at 30 and 60 Hz.
  */
-export const STILL_TRANSLATION_M = 0.02;
+export const STILL_SPEED_M_PER_S = 0.3;
 /** The same for the rotation. */
-export const STILL_ROTATION_DEG = 1;
+export const STILL_TURN_DEG_PER_S = 20;
 /**
  * A compensated jump is counted only when its frame interval is at most
  * this many times the one before: over a longer frame the extrapolation
@@ -285,17 +286,34 @@ function isJump(step: PoseStep): boolean {
   );
 }
 
-/** Is a camera step per frame within the stillness limits? */
-export function isStill(step: PoseStep): boolean {
-  return (
-    step.translationM <= STILL_TRANSLATION_M &&
-    step.rotationDeg <= STILL_ROTATION_DEG
-  );
+export interface StepRate {
+  readonly step: PoseStep;
+  readonly dtMs: number;
+  readonly speedMPerS: number;
+  readonly turnDegPerS: number;
 }
 
-/** Was the camera still over the step from `rate` to `before`? Unknown: no. */
-function wasStill(rate: TimedPose | null, before: TimedPose): boolean {
-  return rate !== null && isStill(poseStep(rate.pose, before.pose));
+/** The camera's step from `a` to `b` and its rate; `null` when dt is not a positive finite time. */
+export function stepRate(a: TimedPose | null, b: TimedPose): StepRate | null {
+  if (a === null) return null;
+  const dtMs = b.t - a.t;
+  if (!Number.isFinite(dtMs) || !(dtMs > 0)) return null;
+  const step = poseStep(a.pose, b.pose);
+  return {
+    step,
+    dtMs,
+    speedMPerS: step.translationM / (dtMs / 1000),
+    turnDegPerS: step.rotationDeg / (dtMs / 1000),
+  };
+}
+
+/** Did the camera move within the stillness limits? Unknown: no. */
+export function isStill(rate: StepRate | null): boolean {
+  return (
+    rate !== null &&
+    rate.speedMPerS <= STILL_SPEED_M_PER_S &&
+    rate.turnDegPerS <= STILL_TURN_DEG_PER_S
+  );
 }
 
 /** The size band of a logged camera step. */
@@ -560,7 +578,7 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
         camera,
         d,
         compensated: false,
-        notCounted: wasStill(rate, before) ? null : 'moving',
+        notCounted: isStill(stepRate(rate, before)) ? null : 'moving',
         anchorBefore: from.seen,
         now: seen,
         marker: at.marker,
