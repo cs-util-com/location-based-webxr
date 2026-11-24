@@ -1467,6 +1467,56 @@ describe('deferredAnchor: frames waited', () => {
     ]);
   });
 
+  // Why: the round robin must stay fair while the ring changes. It kept an
+  // index into the ring of pending keys; a key removed before that index
+  // shifted every later key down by one, so the index pointed one past
+  // the key that was next (it skipped it, or wrapped back onto the key just
+  // served), and a key out of view could wait past its queue.
+  it('keeps its place in the ring when a key before it is removed', () => {
+    const s = session();
+    s.look('in');
+    const left = (deg: number) => {
+      const a = THREE.MathUtils.degToRad(deg);
+      return new THREE.Vector3(-8 * Math.sin(a), 0, 8 - 8 * Math.cos(a));
+    };
+    const turn = (deg: number) =>
+      s.camera.quaternion.setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        THREE.MathUtils.degToRad(-deg)
+      );
+    const rootA = contentRoot(left(-20));
+    const anchorA = deferredAnchor(s.group, 'a');
+    anchorA.add(rootA);
+    deferredAnchor(s.group, 'x').add(contentRoot(left(20)));
+    deferredAnchor(s.group, 'k').add(contentRoot(left(20)));
+    s.run(3);
+    s.store.setT(tOf(0.1));
+    // Held in view while each key's bounds are built (one traversal a pass).
+    s.run(8);
+    const lines = commitLines(() => {
+      // x and k leave the view together; a stays in it.
+      turn(45);
+      s.run();
+      s.run();
+      anchorA.remove(rootA);
+      // x is pending again at once (a new correction), still out of view.
+      s.store.setT(tOf(0.2));
+      s.run();
+      s.run();
+      s.run();
+    });
+    // k is next after x, the removal in between or not; then x again.
+    expect(
+      lines.map((l) =>
+        l.replace(/^commit out-of-view: (\w+),.*, (out of view .*)$/, '$1 $2')
+      )
+    ).toEqual([
+      'x out of view 1 frame (2 queued)',
+      'k out of view 2 frames (2 queued)',
+      'x out of view 2 frames (2 queued)',
+    ]);
+  });
+
   it('gives a release commit its pending frames and no out-of-view part', () => {
     const s = session();
     s.look('in');

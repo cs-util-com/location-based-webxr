@@ -18,6 +18,8 @@ Pure function that extracts an absolute epoch-ms timestamp from a Redux action.
 | `gpsData/markReferencePoint`  | `payload.timestamp`, fallback to `rawGpsPoint.timestamp` or `gpsPoint.timestamp`       | epoch ms |
 | `recorder/recordDepthSample`  | _(ignored — uses performance.now)_                                                     | `null`   |
 | `diagnostics/note`            | `payload.atMs` (epoch ms by contract, see `diagnostics-action.ts`)                     | epoch ms |
+| `phaseMarkers/phaseMarked`    | `payload.timestamp` when finite (epoch ms at the tap)                                  | epoch ms |
+| `refPoints/addRefPointEntry`  | `payload.timestamp` when finite and positive (the migration writes 0 for "unknown")    | epoch ms |
 | `recorder/endSession`         | _(no timestamp)_                                                                       | `null`   |
 | All other types               | _(no known timestamp location)_                                                        | `null`   |
 

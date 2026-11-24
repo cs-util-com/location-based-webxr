@@ -558,8 +558,9 @@ export function createViewerPlacement(deps: {
     };
     const solve = (input: QrSolvePoseInput) => seams.solveQrPose(input);
     // A decode, lock or not, opens the capture gate's burst, unless the
-    // session knows the code is none it can use (another tour's, no print
-    // size, ignored): a poster in view would hold the full cadence.
+    // session knows the code is none it can use (another tour's, its level
+    // cannot lock (`isLockableLevel`: print size and geo), ignored): a
+    // poster in view would hold the full cadence.
     const decoding = stampDecodes(frontEnd, (decoded) => {
       if (live() && codeOpensBurst(ctx, decoded.text)) {
         ctx.qrDecodeAtMs = now();

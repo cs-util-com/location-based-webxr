@@ -42,11 +42,16 @@ lives here.
 - `codeOpensBurst(ctx, text)` - whether a decode or detection of this
   text opens the tracker capture gate's burst: false once the session
   knows the code is none it can use (`levelByText` holds null for it: no
-  level in this tour; its level has no print size; `isCodeIgnored`),
+  level in this tour; its level cannot lock by the scan gate's
+  `isLockableLevel`, size AND geo, so a printed code never minted opens
+  none; `isCodeIgnored`). An accepted trade: a level with a size but no
+  geo can still lock and reveal its station through `onLocked`, but it
+  decodes at the base cadence, since it can never pass the scan gate and
+  so has no gate burst to serve,
   true for a text not resolved yet (it may be the tour's) and for a usable
   code. Read by the decode stamp (`viewer-placement.ts`) and the gate's
-  detections (`ar-entry.ts`); tests in `viewer-placement-qr-perf.test.ts`
-  and `ar-entry.test.ts`.
+  detections (`ar-entry.ts`); tests in `tour-viewer-session.test.ts`,
+  `viewer-placement-qr-perf.test.ts` and `ar-entry.test.ts`.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable

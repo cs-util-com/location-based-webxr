@@ -93,7 +93,13 @@ offline with other rules.
   limits is logged exactly once; one under the limits not at all.
 - **`D` comes from the framework's `jumpTransform`**, converted from NUE
   back to the raw WebXR frame, so `D * anchorBefore` is in the anchor's
-  frame. For a loss, a gap or a jump on a frame with no rate, `D` is the
+  frame. It is called with mode `'always'`: the rate frame is the frame
+  just before, one frame interval back, and this module's own counting
+  rules (steady rate, extrapolation ratio) judge it. The framework's
+  default guard compensates only over a baseline of at least
+  `COMPENSATION_BASELINE_MS`, so it would leave every per-frame rate raw
+  and log a walk's own motion as jumps; `compensated` means exactly "a
+  rate frame was given". For a loss, a gap or a jump on a frame with no rate, `D` is the
   raw step (`compensated: false`): it is the walker's motion plus the
   jump.
 - **Which verdicts count** (`notCounted`, checked in this order):

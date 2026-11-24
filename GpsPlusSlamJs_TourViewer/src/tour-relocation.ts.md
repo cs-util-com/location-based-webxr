@@ -2,12 +2,10 @@
 
 ## Purpose
 
-The test switch `?relocate=here` (owner decision S-D9, 2026-10-05, scan-pass
-plan `GpsPlusSlamJs_Docs/docs/2026-10-05-1240-tour-scan-pass-desktop-editor-and-partial-download-plan.md`
-§7): the sample tour sits at Marienplatz in Munich, a well-known public
-place, so that no private location reaches the public repository; the switch
-moves its stations to wherever the phone is, so the owner can try stations
-anywhere. Nothing about the phone's position is stored or sent.
+The test switch `?relocate=here`: the sample tour sits at Marienplatz in
+Munich, a well-known public place, so that no private location reaches the
+public repository; the switch moves its stations to wherever the phone is,
+so a tester can try stations anywhere. Nothing about the phone's position is stored or sent.
 
 ## Public API
 
@@ -31,9 +29,8 @@ anywhere. Nothing about the phone's position is stored or sent.
 - `firstDeviceFix(points): RelocationTarget | null` - the first point of a
   GPS history whose source is a device fix (`gpsPointSourceOf`), as a
   target; null while none is stored. A code's synthetic votes are skipped:
-  since QR-first M1 a code scanned before any fix stores its votes first,
-  on a 30 m ring around the code, and the relocation once latched one of
-  them (M1 review #3).
+  a code scanned before any fix stores its votes first, on a 30 m ring
+  around the code, and the relocation once latched one of them.
 - `createTourRelocation(enabled, firstFix, onRelocated?)` - the page's one
   relocation, handed to the guide and the placement as their
   `stationsOf`: undefined when off; on, `(stations) => moved | null`

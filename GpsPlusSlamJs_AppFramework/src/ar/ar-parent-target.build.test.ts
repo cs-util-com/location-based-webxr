@@ -1,11 +1,15 @@
 /**
  * Why this test matters: the synthetic world jump (`?devWorldJumpM`,
  * `?devWorldJumpDeg`) moves every anchored object on purpose, and the
- * deferral switch (`?anchors=0`) lets every correction jump in view. Neither
- * may reach a visitor, so their URL readers have to vanish from a production build.
- * This bundles the binding's module the way an app's production build sees
- * it (`import.meta.env.DEV` false, minified) and asserts the reader is gone;
- * the same build with `DEV` true is the control that it would be found.
+ * deferral switch (`?anchors=0`) lets every correction jump in view. The
+ * framework reads them from the page URL itself only in development builds:
+ * an app that wants them in production passes them in (the Tour Viewer
+ * does, behind its own runtime gate: visitor mode plus `debug=1`), and that
+ * gate is the app's to test. What this test guarantees is narrower: the
+ * framework's OWN page readers fold away. It bundles the binding's module
+ * the way an app's production build sees it (`import.meta.env.DEV` false,
+ * minified) and asserts the readers are gone; the same build with `DEV`
+ * true is the control that they would be found.
  */
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';

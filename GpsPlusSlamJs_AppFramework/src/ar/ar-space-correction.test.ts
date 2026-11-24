@@ -5,8 +5,9 @@ import type { Pose } from './qr/qr-pose';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   CAMERA_MOTION_COMPENSATION,
-  COMPENSATION_MIN_STEP_M,
-  COMPENSATION_MIN_TURN_DEG,
+  COMPENSATION_BASELINE_MS,
+  COMPENSATION_MIN_SPEED_M_PER_S,
+  COMPENSATION_MIN_TURN_RATE_DEG_PER_S,
   IDENTITY_POSE,
   MAX_COMPENSATION_GAP_MS,
   compensationVerdict,
@@ -17,6 +18,7 @@ import {
   shownLocalMatrix,
   type RelocalizationJump,
 } from './ar-space-correction';
+import { createRelocalizationFeed } from './relocalization-feed';
 
 const fromThree = (m: THREE.Matrix4): Pose => {
   const p = new THREE.Vector3();
@@ -529,11 +531,15 @@ describe('ar-space-correction quaternion handling', () => {
 });
 
 describe('ar-space-correction compensation guard', () => {
-  /** A jump seen by a camera that moved `stepM` along X and turned `turnDeg` about Y in 33 ms. */
+  /**
+   * A jump seen by a camera that moved `stepM` along X and turned `turnDeg`
+   * about Y over a baseline of `intervalMs` (100 ms unless given).
+   */
   function steppedJump(
     stepM: number,
     turnDeg: number,
-    gapMs = 33
+    gapMs = 33,
+    intervalMs = 100
   ): RelocalizationJump {
     const cam = (k: number): THREE.Matrix4 =>
       new THREE.Matrix4().compose(
@@ -544,10 +550,10 @@ describe('ar-space-correction compensation guard', () => {
         ),
         new THREE.Vector3(1, 1, 1)
       );
-    const kJump = 1 + gapMs / 33;
+    const kJump = 1 + gapMs / intervalMs;
     return {
-      t: 1033 + gapMs,
-      tLast: 1033,
+      t: 1000 + intervalMs + gapMs,
+      tLast: 1000 + intervalMs,
       lastPose: fromThree(cam(1)),
       tPrev: 1000,
       prevPose: fromThree(cam(0)),
@@ -559,11 +565,15 @@ describe('ar-space-correction compensation guard', () => {
     // Why this test matters: the guard is the decision that a still camera
     // gets the plain D (the compensation only adds the extrapolated pose
     // noise there) and a moving one the compensated D. Cells just below and
-    // just above each threshold pin the boundary on both axes.
-    const below = COMPENSATION_MIN_STEP_M * 0.9;
-    const above = COMPENSATION_MIN_STEP_M * 1.1;
-    const turnBelow = COMPENSATION_MIN_TURN_DEG * 0.9;
-    const turnAbove = COMPENSATION_MIN_TURN_DEG * 1.1;
+    // just above each threshold pin the boundary on both axes. The
+    // thresholds are rates, so a 100 ms baseline's step is the rate times
+    // 0.1 s.
+    const step = COMPENSATION_MIN_SPEED_M_PER_S * 0.1;
+    const turn = COMPENSATION_MIN_TURN_RATE_DEG_PER_S * 0.1;
+    const below = step * 0.9;
+    const above = step * 1.1;
+    const turnBelow = turn * 0.9;
+    const turnAbove = turn * 1.1;
     for (const [step, turn, expected] of [
       [0, 0, 'still'],
       [below, turnBelow, 'still'],
@@ -577,6 +587,100 @@ describe('ar-space-correction compensation guard', () => {
         jumpTransform(jump, expected === 'moving' ? 'always' : 'off')
       );
     }
+  });
+
+  it('gates on the camera speed over its baseline, whatever the baseline length', () => {
+    // Why this test matters: the thresholds are rates, so the same speed and
+    // turn rate must get the same verdict over a 100 ms baseline and over a
+    // longer one (the feed's baseline is the newest frame at least 100 ms
+    // back, so its length depends on the frame rate and on dropped frames).
+    // Parameters: 0.15 m/s and 7.5 deg/s, probed at 0.9x and 1.1x, over
+    // baselines of 100, 133 and 250 ms.
+    expect(COMPENSATION_MIN_SPEED_M_PER_S).toBe(0.15);
+    expect(COMPENSATION_MIN_TURN_RATE_DEG_PER_S).toBe(7.5);
+    for (const baselineMs of [100, 133, 250]) {
+      const dtS = baselineMs / 1000;
+      for (const [speed, rate, expected] of [
+        [0.15 * 0.9, 7.5 * 0.9, 'still'],
+        [0.15 * 1.1, 0, 'moving'],
+        [0, 7.5 * 1.1, 'moving'],
+      ] as const) {
+        const jump = steppedJump(speed * dtS, rate * dtS, 33, baselineMs);
+        const verdict = compensationVerdict(jump);
+        expect({ baselineMs, speed, rate, reason: verdict.reason }).toEqual({
+          baselineMs,
+          speed,
+          rate,
+          reason: expected,
+        });
+        // The logged step stays the raw motion over the baseline.
+        expect(verdict.stepM).toBeCloseTo(speed * dtS, 9);
+      }
+    }
+  });
+
+  it('keeps the plain D when the baseline is shorter than COMPENSATION_BASELINE_MS, however fast the camera', () => {
+    // Why this test matters: over one frame the pose noise, divided by a
+    // short interval, reads as a fast rate (1 mm of noise over 11 ms is
+    // 0.09 m/s), so a short baseline cannot tell still from moving. The
+    // guard then keeps the plain D, the still phone's better choice; only
+    // `'always'` still compensates.
+    expect(COMPENSATION_BASELINE_MS).toBe(100);
+    const fast = steppedJump(0.05, 2, 33, COMPENSATION_BASELINE_MS - 1);
+    const verdict = compensationVerdict(fast);
+    expect(verdict.compensated).toBe(false);
+    expect(verdict.reason).toBe('short-baseline');
+    expect(jumpTransform(fast)).toEqual(jumpTransform(fast, 'off'));
+    expect(compensationVerdict(fast, 'always').compensated).toBe(true);
+    const enough = steppedJump(0.05, 2, 33, COMPENSATION_BASELINE_MS);
+    expect(compensationVerdict(enough).reason).toBe('moving');
+  });
+
+  it('pins the velocity-lag residual of a turn ramping from 0 to 30 deg/s over the 100 ms before the jump', () => {
+    // Why this test matters: the rate is the mean over the baseline, so a
+    // turn that starts during it is under-read. Here the camera turns in
+    // place, its rate ramping linearly from 0 to 30 deg/s over the 100 ms
+    // before the jump (baseline 100 ms, gap 33 ms). It has turned 0.67 deg
+    // by the last frame: 6.7 deg/s over the baseline, under the 7.5 deg/s
+    // threshold, so the guard keeps the plain D and the last 0.83 deg of
+    // the turn is read into it (0.144 m at 10 m). Compensating anyway would
+    // leave 0.61 deg (0.106 m): the lag the mean rate cannot remove. A
+    // threshold of 6.5 deg/s or lower would reverse the verdict.
+    const rampMs = 100;
+    const peakDegS = 30;
+    const tJump = 1133;
+    const turnedDeg = (tMs: number): number => {
+      const s = Math.max(0, tMs - (tJump - rampMs)) / 1000;
+      return ((peakDegS / (rampMs / 1000)) * (s * s)) / 2;
+    };
+    const cam = (tMs: number): THREE.Matrix4 =>
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(0, 1.5, 0),
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad(turnedDeg(tMs))
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+    const jump: RelocalizationJump = {
+      t: tJump,
+      tLast: 1100,
+      lastPose: fromThree(cam(1100)),
+      tPrev: 1000,
+      prevPose: fromThree(cam(1000)),
+      newPose: fromThree(JUMP.clone().multiply(cam(tJump))),
+    };
+    const verdict = compensationVerdict(jump);
+    expect(verdict.reason).toBe('still');
+    expect(verdict.turnDeg).toBeCloseTo(0.6735, 3);
+    const camera = new THREE.Vector3(0, 1.5, 0);
+    const guarded = residualAt(jumpTransform(jump), camera, 10);
+    const always = residualAt(jumpTransform(jump, 'always'), camera, 10);
+    report(
+      `ramped turn 0-30 deg/s over 100 ms: guarded ${guarded.toFixed(3)} m, always ${always.toFixed(3)} m at 10 m`
+    );
+    expect(guarded).toBeCloseTo(0.144, 2);
+    expect(always).toBeCloseTo(0.106, 2);
   });
 
   it('never compensates across a gap longer than MAX_COMPENSATION_GAP_MS, whatever the mode', () => {
@@ -613,7 +717,8 @@ describe('ar-space-correction compensation guard', () => {
     // Why this test matters: the guard must keep the still user's plain D
     // and the walker's compensated D. Parameters: noise 0.5 mm / 0.01 deg
     // and 1 mm / 0.05 deg per pose (the range where the earlier sweep says
-    // motion, not the ratio, decides); ratio 1 and 10 at 33 ms; a still
+    // motion, not the ratio, decides); a 100 ms baseline (the guard's
+    // shortest) and gaps of 33 ms and 330 ms (ratio 0.33 and 3.3); a still
     // user, a slow walker (0.3 m/s, 3 deg/s) and a walker (1.4 m/s,
     // 10 deg/s); 300 seeds per cell; p50 residual at 10 m. At 3 mm /
     // 0.2 deg a still phone's noise alone passes the thresholds and the
@@ -633,14 +738,14 @@ describe('ar-space-correction compensation guard', () => {
     ];
     for (const motion of motions) {
       for (const jitter of jitters) {
-        for (const ratio of [1, 10]) {
+        for (const ratio of [0.33, 3.3]) {
           const rng = seededRandom(7 + ratio * 31 + jitter.rotDeg * 1e4);
           const comp: number[] = [];
           const plain: number[] = [];
           const guarded: number[] = [];
           for (let s = 0; s < 300; s++) {
             const jump = walkingJump(
-              33,
+              100,
               motion.rateDegS,
               ratio,
               { rng, posM: jitter.posM, rotDeg: jitter.rotDeg },
@@ -668,6 +773,141 @@ describe('ar-space-correction compensation guard', () => {
     }
     report(`guarded compensation sweep (m at 10 m):\n${rows.join('\n')}`);
     expect(rows).toHaveLength(18);
+    expect(misses).toEqual([]);
+  });
+});
+
+describe('ar-space-correction guard under per-frame tracking noise', () => {
+  // Why this test matters: the guard reads the camera's speed from two
+  // poses, and tracking noise sits on every frame. Over ONE frame the noise
+  // divided by the frame interval grows with the frame rate (1 mm and
+  // 0.05 deg per axis read as about 7.5 deg/s at 90 Hz), so a still phone
+  // was compensated by its own noise. The feed hands over a baseline of at
+  // least COMPENSATION_BASELINE_MS, which this runs end to end: seeded
+  // noise on every frame of a feed, a 3 m frame switch, the verdict of the
+  // observation it dispatches. Parameters swept: 30, 60, 90 and 120 Hz;
+  // noise 0.33x, 1x and 3x of 1 mm / 0.05 deg per axis; a still phone and
+  // a 0.3 m/s walker; 200 seeds per cell; and the thresholds (0.1 to
+  // 0.3 m/s, 5 to 10 deg/s) on the same observations. Pinned: at 0.33x
+  // and 1x no still frame reads as moving and every walker frame does, at
+  // every frame rate. 3x is reported.
+  const SEEDS = 200;
+  const NOISE = { posM: 0.001, rotDeg: 0.05 };
+
+  /** The observation of a jump after half a second of noisy frames. */
+  function noisyObservation(
+    hz: number,
+    walkMS: number,
+    scale: number,
+    rng: () => number
+  ): RelocalizationJump {
+    let observed: RelocalizationJump | null = null;
+    const feed = createRelocalizationFeed({
+      getStore: () => ({ dispatch: () => undefined }),
+      onObserved: (o) => {
+        observed = o;
+      },
+    });
+    const jitter = {
+      rng,
+      posM: NOISE.posM * scale,
+      rotDeg: NOISE.rotDeg * scale,
+    };
+    const cam = (tMs: number) => walkingCamera(tMs / 1000, 0, walkMS);
+    const dtMs = 1000 / hz;
+    const frames = Math.ceil(hz / 2);
+    for (let k = 0; k <= frames; k++) {
+      const t = 10_000 + k * dtMs;
+      feed.frame(t, fromThree(jittered(cam(t), jitter)));
+    }
+    const tJump = 10_000 + (frames + 1) * dtMs;
+    feed.frame(
+      tJump,
+      fromThree(jittered(JUMP.clone().multiply(cam(tJump)), jitter))
+    );
+    if (observed === null) throw new Error('no observation');
+    return observed;
+  }
+
+  /** The measured rates of an observation over its baseline. */
+  function ratesOf(jump: RelocalizationJump): { speed: number; turn: number } {
+    const v = compensationVerdict(jump);
+    const dtS = (jump.tLast - jump.tPrev!) / 1000;
+    return { speed: v.stepM! / dtS, turn: v.turnDeg! / dtS };
+  }
+
+  interface Cell {
+    readonly still: RelocalizationJump[];
+    readonly walk: RelocalizationJump[];
+  }
+
+  /** The still and walker observations of one noise level and frame rate. */
+  function cellOf(scale: number, hz: number): Cell {
+    const rng = seededRandom(hz * 7 + scale * 1000);
+    const cell: Cell = { still: [], walk: [] };
+    for (let s = 0; s < SEEDS; s++) {
+      cell.still.push(noisyObservation(hz, 0, scale, rng));
+      cell.walk.push(noisyObservation(hz, 0.3, scale, rng));
+    }
+    return cell;
+  }
+
+  /** How many of a cell's jumps read as the wrong state under a rule. */
+  function wrongIn(
+    cell: Cell,
+    moving: (o: RelocalizationJump) => boolean
+  ): { still: number; walk: number } {
+    return {
+      still: cell.still.filter(moving).length,
+      walk: cell.walk.filter((o) => !moving(o)).length,
+    };
+  }
+
+  it('reads a still phone as still and a 0.3 m/s walker as moving at 30 to 120 Hz', () => {
+    const rows: string[] = [];
+    const misses: string[] = [];
+    const thresholdRows = new Map<string, { still: number; walk: number }>();
+    const guardSaysMoving = (o: RelocalizationJump) =>
+      compensationVerdict(o).reason === 'moving';
+    for (const scale of [0.33, 1, 3]) {
+      for (const hz of [30, 60, 90, 120]) {
+        const cell = cellOf(scale, hz);
+        const baselines = cell.still.map((o) => o.tLast - o.tPrev!);
+        expect(Math.min(...baselines)).toBeGreaterThanOrEqual(
+          COMPENSATION_BASELINE_MS
+        );
+        const wrong = wrongIn(cell, guardSaysMoving);
+        const row = `noise ${scale}x ${hz} Hz: still read as moving ${wrong.still}/${SEEDS}, walker read as still ${wrong.walk}/${SEEDS}`;
+        rows.push(row);
+        if (scale <= 1 && wrong.still + wrong.walk > 0) misses.push(row);
+        for (const speedT of [0.1, 0.15, 0.2, 0.3]) {
+          for (const turnT of [5, 7.5, 10]) {
+            const key = `noise ${scale}x, ${speedT} m/s, ${turnT} deg/s`;
+            const acc = thresholdRows.get(key) ?? { still: 0, walk: 0 };
+            const w = wrongIn(cell, (o) => {
+              const r = ratesOf(o);
+              return r.speed > speedT || r.turn > turnT;
+            });
+            thresholdRows.set(key, {
+              still: Math.max(acc.still, w.still),
+              walk: Math.max(acc.walk, w.walk),
+            });
+          }
+        }
+      }
+    }
+    report(
+      [
+        `guard under per-frame noise (${SEEDS} seeds per cell):`,
+        ...rows,
+        'threshold sweep (worst over 30 to 120 Hz):',
+        ...[...thresholdRows].map(
+          ([k, v]) =>
+            `${k}: still read as moving ${v.still}/${SEEDS}, walker read as still ${v.walk}/${SEEDS}`
+        ),
+      ].join('\n')
+    );
+    expect(rows).toHaveLength(12);
     expect(misses).toEqual([]);
   });
 });

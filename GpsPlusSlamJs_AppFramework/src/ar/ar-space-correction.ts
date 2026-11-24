@@ -32,7 +32,8 @@ import type { Pose } from './qr/qr-pose';
  * How `jumpTransform` treats the camera's own motion between the frame
  * before the jump and the jump frame: `'always'` extrapolates it away when
  * an earlier frame gives a rate, `'off'` never does, `'guarded'` does only
- * when the camera measurably moved between the two frames before the jump.
+ * when the camera measurably moved over a baseline of at least
+ * {@link COMPENSATION_BASELINE_MS} before the jump.
  */
 export type CompensationMode = 'guarded' | 'always' | 'off';
 
@@ -59,17 +60,37 @@ export const CAMERA_MOTION_COMPENSATION: CompensationMode = 'guarded';
 export const MAX_COMPENSATION_GAP_MS = 500;
 
 /**
- * Motion thresholds of the guard, per measured interval `tLast - tPrev`: the
- * camera moved more than this many metres OR turned more than this many
- * degrees. PROVISIONAL: about three times the per-pose noise the ratio sweep
- * assumed for a phone (1 mm and 0.05 deg per axis, so the step between two
- * still poses is about 2.3 mm and 0.11 deg at its median), until the
- * still-phone noise floor is measured on the phone (the feed logs the step
- * of every jump). A walk at 0.3 m/s moves 10 mm per 33 ms frame and a
- * 10 deg/s head turn 0.33 deg, both above.
+ * The shortest baseline `tLast - tPrev` the guard reads a rate over, ms.
+ * Tracking noise sits on every pose and does not shrink with the interval,
+ * so one frame's step divided by one frame's interval reads the noise as a
+ * rate that grows with the frame rate (1 mm and 0.05 deg per axis read as
+ * about 10 deg/s at 90 Hz: the median turn between two such poses is
+ * 0.11 deg over 11 ms, and a still phone was compensated by its own
+ * noise). Over 100 ms the same noise is about 1 deg/s and 0.02 m/s at any
+ * frame rate. The feed hands over the newest frame at least this far back;
+ * a shorter baseline (a short history, or an older recording) cannot tell
+ * still from moving, and `'guarded'` keeps the plain D (the still phone's
+ * better choice; reason `short-baseline`).
  */
-export const COMPENSATION_MIN_STEP_M = 0.005;
-export const COMPENSATION_MIN_TURN_DEG = 0.25;
+export const COMPENSATION_BASELINE_MS = 100;
+
+/**
+ * Motion thresholds of the guard, as rates: the camera moved faster than
+ * this many metres per second OR turned faster than this many degrees per
+ * second, each measured as the step between `prevPose` and `lastPose`
+ * divided by its baseline `tLast - tPrev` (at least
+ * {@link COMPENSATION_BASELINE_MS}).
+ *
+ * PROVISIONAL: over a 100 ms baseline they are 15 mm and 0.75 deg, many
+ * times the step between two still poses under the noise the ratio sweep
+ * assumed for a phone (1 mm and 0.05 deg per axis, so about 2.3 mm and
+ * 0.11 deg at its median), until the still-phone noise floor is measured on
+ * the phone (the feed logs the step of every jump). The noise sweep in
+ * `ar-space-correction.test.ts` pins a still phone as still and a 0.3 m/s
+ * walker as moving at 30 to 120 Hz.
+ */
+export const COMPENSATION_MIN_SPEED_M_PER_S = 0.15;
+export const COMPENSATION_MIN_TURN_RATE_DEG_PER_S = 7.5;
 
 /** Whether `jumpTransform` compensated a jump, and why. */
 export interface CompensationVerdict {
@@ -81,7 +102,8 @@ export interface CompensationVerdict {
     | 'off'
     | 'no-earlier-frame'
     | 'no-rate'
-    | 'gap';
+    | 'gap'
+    | 'short-baseline';
   /** Camera translation between `prevPose` and `lastPose`, m; null without one. */
   readonly stepM: number | null;
   /** Camera rotation between `prevPose` and `lastPose`, deg; null without one. */
@@ -90,9 +112,12 @@ export interface CompensationVerdict {
 
 /**
  * The raw input of one jump: the jump frame (`t`, `newPose`), the frame
- * before it (`tLast`, `lastPose`), and when known the frame before that
- * (`tPrev`, `prevPose`; both `null` when no earlier frame exists). Poses are
- * raw WebXR camera poses; times are epoch milliseconds of the XR clock.
+ * before it (`tLast`, `lastPose`), and when known an earlier frame, the
+ * baseline the camera's rates are measured over (`tPrev`, `prevPose`; the
+ * feed's newest frame at least {@link COMPENSATION_BASELINE_MS} before
+ * `tLast`, else its oldest; both `null` when no earlier frame exists).
+ * Poses are raw WebXR camera poses; times are epoch milliseconds of the XR
+ * clock.
  */
 export interface RelocalizationJump {
   readonly t: number;
@@ -200,7 +225,8 @@ function extrapolatePose(
  * Whether `jumpTransform(jump, mode)` compensates the camera's motion, and
  * why. The reasons in order: no earlier frame, no measurable rate (`tPrev`
  * not before `tLast`), a gap past `MAX_COMPENSATION_GAP_MS`, the mode
- * `'off'`, then (guarded only) the motion thresholds.
+ * `'off'`, then (guarded only) a baseline shorter than
+ * `COMPENSATION_BASELINE_MS` and the motion thresholds.
  */
 export function compensationVerdict(
   jump: RelocalizationJump,
@@ -228,7 +254,7 @@ export function compensationVerdict(
   ): CompensationVerdict => ({ compensated: false, reason, stepM, turnDeg });
   const blocked = compensationBlocker(jump, jump.tPrev, mode, stepM, turnDeg);
   if (blocked !== null) return plain(blocked);
-  const moving = isMoving(stepM, turnDeg);
+  const moving = isMoving(stepM, turnDeg, jump.tLast - jump.tPrev);
   return {
     compensated: true,
     reason: moving ? 'moving' : 'always',
@@ -237,8 +263,14 @@ export function compensationVerdict(
   };
 }
 
-const isMoving = (stepM: number, turnDeg: number): boolean =>
-  stepM > COMPENSATION_MIN_STEP_M || turnDeg > COMPENSATION_MIN_TURN_DEG;
+/** The step over its baseline `dtMs` (> 0) against the rate thresholds. */
+const isMoving = (stepM: number, turnDeg: number, dtMs: number): boolean => {
+  const dtS = dtMs / 1000;
+  return (
+    stepM / dtS > COMPENSATION_MIN_SPEED_M_PER_S ||
+    turnDeg / dtS > COMPENSATION_MIN_TURN_RATE_DEG_PER_S
+  );
+};
 
 /** The first reason, in order, not to compensate a jump with an earlier frame. */
 function compensationBlocker(
@@ -247,12 +279,14 @@ function compensationBlocker(
   mode: CompensationMode,
   stepM: number,
   turnDeg: number
-): 'no-rate' | 'gap' | 'off' | 'still' | null {
+): 'no-rate' | 'gap' | 'off' | 'still' | 'short-baseline' | null {
   if (!(jump.tLast > tPrev)) return 'no-rate';
   if (jump.t - jump.tLast > MAX_COMPENSATION_GAP_MS) return 'gap';
   if (mode === 'off') return 'off';
-  if (mode === 'guarded' && !isMoving(stepM, turnDeg)) return 'still';
-  return null;
+  if (mode !== 'guarded') return null;
+  const baselineMs = jump.tLast - tPrev;
+  if (baselineMs < COMPENSATION_BASELINE_MS) return 'short-baseline';
+  return isMoving(stepM, turnDeg, baselineMs) ? null : 'still';
 }
 
 /**

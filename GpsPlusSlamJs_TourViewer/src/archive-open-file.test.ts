@@ -675,6 +675,35 @@ describe("step 2's link check (polish round M2, A13/A16)", () => {
 // is known only once the levels settle - often after `tour.json`. Both
 // outcomes must reach the visitor screen (`presentTourLevels`), and a read
 // that failed must say so for good, or the tour stays "unknown" forever.
+// Why: a code decoded before the levels parsed resolves to no level, and
+// the session caches that null in `levelByText`. Left there once the levels
+// arrive, it reads "not this tour's code" and suppresses the capture
+// burst for a real tour code until the next AR entry. The settle drops the
+// nulls (a resolved level stays: it was resolved against real levels).
+describe("the levels' settle forgets the codes resolved before it", () => {
+  it("clears the null entries of levelByText and keeps resolved ones", async () => {
+    let settle: (levels: Map<string, unknown>) => void = () => undefined;
+    mocks.openTourFile.mockResolvedValueOnce({
+      ...fakeSession("local-file:abc"),
+      loadQrLevels: () =>
+        new Promise<Map<string, unknown>>((resolve) => {
+          settle = resolve;
+        }),
+    });
+    const { dom, hooks, ctx } = wire();
+    const presentTourLevels = vi.spyOn(hooks, "presentTourLevels");
+    pick(dom, new File(["zip"], "tour.zip"));
+    await vi.waitFor(() => expect(ctx.session).not.toBeNull());
+    const level = { version: 1, qr: { physicalSizeM: 0.2 } } as const;
+    ctx.levelByText.set("early", null);
+    ctx.levelByText.set("known", level);
+    settle(new Map());
+    await vi.waitFor(() => expect(presentTourLevels).toHaveBeenCalledOnce());
+    expect(ctx.levelByText.has("early")).toBe(false);
+    expect(ctx.levelByText.get("known")).toBe(level);
+  });
+});
+
 describe("the levels' settle reaches the visitor screen", () => {
   it("calls presentTourLevels once the levels are read", async () => {
     mocks.openTourFile.mockResolvedValueOnce(fakeSession("local-file:abc"));

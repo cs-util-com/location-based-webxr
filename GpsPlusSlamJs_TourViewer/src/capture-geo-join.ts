@@ -557,6 +557,16 @@ function captureImageFile(payload: unknown): string | undefined {
   return typeof file === "string" ? file : undefined;
 }
 
+/** Two alignment matrices (or their absence) hold the same values. */
+function sameMatrix(
+  a: readonly number[] | null,
+  b: readonly number[] | null,
+): boolean {
+  if (a === b) return true;
+  if (a === null || b === null || a.length !== b.length) return false;
+  return a.every((v, i) => v === b[i]);
+}
+
 /**
  * Picks each camera capture's alignment as the replay runs (scan-pass plan
  * S-D11): the first alignment at or after the photo whose session GPS
@@ -591,16 +601,17 @@ export function createCapturePickTracker(options?: {
   let latestUsable: { moment: CaptureMoment; seq: number } | null = null;
   let seq = 0;
   /** The matrix of the last state observed, and the observation count
-   *  when it last changed: a relocalization leaves the matrix
-   *  reference-identical, so an alignment fit before a jump keeps the
-   *  epoch it was fit in. `undefined`: nothing observed yet. */
+   *  when its values last changed: a relocalization leaves the matrix
+   *  values untouched, so an alignment fit before a jump keeps the epoch it
+   *  was fit in. Compared by value, so a new array with the same 16 numbers
+   *  is not a refit. `undefined`: nothing observed yet. */
   let lastMatrix: readonly number[] | null | undefined;
   let fitEpoch = 0;
 
   function momentOf(state: PickTrackerState): CaptureMoment {
     const gps = state.gpsData;
     const alignmentMatrix = gps?.gpsEvents.alignmentMatrix ?? null;
-    if (alignmentMatrix !== lastMatrix) {
+    if (lastMatrix === undefined || !sameMatrix(alignmentMatrix, lastMatrix)) {
       lastMatrix = alignmentMatrix;
       fitEpoch = selectArSpaceObservations(state).length;
     }
@@ -656,7 +667,7 @@ export function createCapturePickTracker(options?: {
       };
     },
     fitEpochOf(matrix) {
-      return lastMatrix !== undefined && matrix === lastMatrix
+      return lastMatrix !== undefined && sameMatrix(matrix, lastMatrix)
         ? fitEpoch
         : undefined;
     },

@@ -7,9 +7,10 @@
  * below: a step over 1 m between two frames at most 500 ms apart is a jump;
  * a longer gap cannot be judged and forgets the earlier poses, as do a
  * missing or emulated pose and the host's tracking hooks (`forget`). The
- * observation carries the jump frame's own pose and time and the two frames
- * before it (raw, epoch-ms XR clock), so the correction is derived from raw
- * data only and a replay re-derives it.
+ * observation carries the jump frame's own pose and time, the frame before
+ * it and a baseline frame (the newest at least `COMPENSATION_BASELINE_MS`
+ * before that one, else the oldest kept; raw, epoch-ms XR clock), so the
+ * correction is derived from raw data only and a replay re-derives it.
  *
  * Never in the way of a recording: every fault inside a frame is caught,
  * logged once and switches the feed off for the rest of the session.
@@ -17,6 +18,7 @@
  * Sidecar: `relocalization-feed.ts.md`.
  */
 import {
+  COMPENSATION_BASELINE_MS,
   compensationVerdict,
   jumpTransform,
   MAX_COMPENSATION_GAP_MS,
@@ -162,7 +164,7 @@ function describeObservation(o: RelocalizationObservation): string {
   const motion =
     v.stepM === null || v.turnDeg === null
       ? 'no earlier frame'
-      : `camera step ${(v.stepM * 1000).toFixed(1)} mm, turn ${v.turnDeg.toFixed(2)} deg`;
+      : `camera step ${(v.stepM * 1000).toFixed(1)} mm, turn ${v.turnDeg.toFixed(2)} deg over ${(o.tLast - (o.tPrev ?? o.tLast)).toFixed(0)} ms`;
   return (
     `relocalization observed: |D| ${meters.toFixed(3)} m, ${deg.toFixed(2)} deg; ` +
     `compensation ${v.compensated ? 'on' : 'off'} (${v.reason}; ${motion}); ` +
@@ -191,8 +193,14 @@ function createFeed(options: RelocalizationFeedOptions): {
       'createRelocalizationFeed: getStore must be a function'
     );
   }
-  let prev: Stamped | null = null;
-  let last: Stamped | null = null;
+  /**
+   * The frames since the last start-over, oldest first; the newest is the
+   * last frame. Trimmed on each frame to the newest one at least
+   * COMPENSATION_BASELINE_MS before it and the ones after, so `history[0]`
+   * is the baseline of a jump at the next frame (or the oldest kept frame
+   * when the history is shorter).
+   */
+  let history: Stamped[] = [];
   let stopped = false;
   const failedHooks = new Set<string>();
 
@@ -218,17 +226,24 @@ function createFeed(options: RelocalizationFeedOptions): {
   }
 
   function forget(): void {
-    prev = null;
-    last = null;
+    history = [];
+  }
+
+  /** Append the newest frame; drop the ones the next baseline no longer needs. */
+  function keep(current: Stamped): void {
+    history.push(current);
+    const horizon = current.t - COMPENSATION_BASELINE_MS;
+    while (history.length > 2 && history[1]!.t <= horizon) history.shift();
   }
 
   function observe(current: Stamped, before: Stamped): void {
+    const baseline = history.length > 1 ? history[0]! : null;
     const observation: RelocalizationObservation = {
       t: current.t,
       tLast: before.t,
       lastPose: before.pose,
-      tPrev: prev?.t ?? null,
-      prevPose: prev?.pose ?? null,
+      tPrev: baseline?.t ?? null,
+      prevPose: baseline?.pose ?? null,
       newPose: current.pose,
     };
     const store = options.getStore();
@@ -258,11 +273,10 @@ function createFeed(options: RelocalizationFeedOptions): {
       return;
     }
     const current: Stamped = { t, pose: owned ? pose : copyPose(pose) };
-    const before = last;
-    if (before === null || !(t > before.t)) {
+    const before = history.at(-1);
+    if (before === undefined || !(t > before.t)) {
       // The first pose, or a clock that did not advance: start over here.
-      prev = null;
-      last = current;
+      history = [current];
       return;
     }
     const verdict = relocalizationJumpVerdict(
@@ -270,17 +284,15 @@ function createFeed(options: RelocalizationFeedOptions): {
       current.pose.position,
       t - before.t
     );
-    if (verdict === 'jump') {
-      observe(current, before);
-      // The earlier frames are in the old frame; the next jump's
-      // compensation must not mix the two.
-      prev = null;
-    } else if (verdict === 'cannot-judge') {
-      prev = null;
+    if (verdict === 'jump' || verdict === 'cannot-judge') {
+      if (verdict === 'jump') observe(current, before);
+      // After a jump the earlier frames are in the old frame (the next
+      // jump's compensation must not mix the two); after a gap they are
+      // too old to judge. Start over at this frame either way.
+      history = [current];
     } else {
-      prev = before;
+      keep(current);
     }
-    last = current;
   }
 
   function frame(t: number, pose: Pose | null, owned: boolean): void {

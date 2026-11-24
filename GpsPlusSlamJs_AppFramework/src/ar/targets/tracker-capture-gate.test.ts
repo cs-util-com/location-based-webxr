@@ -205,8 +205,9 @@ describe('createTrackerCaptureGate: one QR registration', () => {
   // Why this test matters: in the slow rate's slot during a burst both
   // rates want the frame, and the round robin must follow the faster one
   // (the rate the tracker is really capturing at). Taking the first in-slot
-  // rate (the 1 Hz base) would hand out the same target for a whole second
-  // of 8 Hz captures, so a tracker routing per target would stall.
+  // rate (the 1 Hz base) handed the 8 Hz capture that falls in the base
+  // rate's slot the base rate's target: one capture in eight went to the
+  // wrong target, so the burst's round robin skipped a beat every second.
   it('a burst outside every gate turns its targets on the burst period', () => {
     const keys = ['a', 'b', 'c', 'd', 'e'];
     const g = gate(() => gpsAt(200, 200));

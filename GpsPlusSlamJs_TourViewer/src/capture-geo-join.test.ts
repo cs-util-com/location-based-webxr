@@ -813,4 +813,41 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
       undefined,
     );
   });
+
+  it("the pick tracker keeps the fit epoch for a new matrix array with the same 16 values, and bumps it on a changed value", () => {
+    // Why: the fit epoch marks when the alignment last CHANGED. A reducer
+    // or a replay that rebuilds the matrix array with equal values has not
+    // refit anything; keyed on the array reference, that copy after a jump
+    // relabelled an epoch-0 fit as epoch 1 and moved its photos by the
+    // whole jump. A changed value is a real refit and must bump it.
+    const t = createCapturePickTracker({ extentOf: () => 0 });
+    const before = baseState();
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: "images/a.jpg" } },
+      before,
+    );
+    const sameValues = {
+      ...baseState({ matrix: [...before.gpsData!.gpsEvents.alignmentMatrix] }),
+      arSpaceCorrection: { observations: [jump] },
+    };
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: "images/b.jpg" } },
+      sameValues,
+    );
+    expect(t.alignmentFor("images/b.jpg")?.epoch).toBe(0);
+    expect(t.fitEpochOf(sameValues.gpsData!.gpsEvents.alignmentMatrix)).toBe(0);
+
+    const changed = [...before.gpsData!.gpsEvents.alignmentMatrix];
+    changed[12] = changed[12]! + 1e-9;
+    const refit = {
+      ...baseState({ matrix: changed }),
+      arSpaceCorrection: { observations: [jump] },
+    };
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: "images/c.jpg" } },
+      refit,
+    );
+    expect(t.alignmentFor("images/c.jpg")?.epoch).toBe(1);
+    expect(t.fitEpochOf(changed)).toBe(1);
+  });
 });

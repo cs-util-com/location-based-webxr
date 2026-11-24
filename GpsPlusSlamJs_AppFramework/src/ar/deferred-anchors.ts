@@ -77,6 +77,12 @@ import {
   type XrCameraSource,
 } from './anchor-visibility';
 import { getCamera, getRenderer } from './webxr-session';
+import {
+  advanceOutOfViewRuns,
+  endOutOfViewRun,
+  freshOutOfViewRun,
+  type OutOfViewRunState,
+} from './out-of-view-queue';
 
 const log = createLogger('DeferredAnchors');
 
@@ -128,7 +134,7 @@ interface RootEntry {
   readonly autoUpdateBefore: boolean;
 }
 
-interface KeyEntry {
+interface KeyEntry extends OutOfViewRunState {
   readonly key: string;
   readonly roots: Map<THREE.Object3D, RootEntry>;
   readonly local: THREE.Matrix4;
@@ -136,15 +142,6 @@ interface KeyEntry {
   pendingSinceMs: number | null;
   /** Passes this key has been pending since its last commit. */
   pendingFrames: number;
-  /** Consecutive passes its cached tests said out of view, while pending. */
-  outFrames: number;
-  /**
-   * The keys out of view when this run out of view began, itself
-   * included; and the set's count of entries out of view just after it
-   * (`outEntries`), so its queue also counts every key that went out after it.
-   */
-  queuedAtEntry: number;
-  enteredAt: number;
 }
 
 /** How a commit came about (its log line's kind). */
@@ -202,7 +199,7 @@ export interface AnchorSetMembership {
   ): DeferredAnchorPassCounts;
 }
 
-interface MemberEntry {
+interface MemberEntry extends OutOfViewRunState {
   readonly member: AnchorSetMember;
   /** The member's object, under the name the view tests use. */
   readonly root: THREE.Object3D;
@@ -212,9 +209,6 @@ interface MemberEntry {
   pending: boolean;
   pendingSinceMs: number | null;
   pendingFrames: number;
-  outFrames: number;
-  queuedAtEntry: number;
-  enteredAt: number;
   /** The membership's calls, re-pointed when the entry moves to a bound set. */
   leave: () => void;
   runPass: AnchorSetMembership['runPassForTests'];
@@ -274,9 +268,10 @@ interface DeferredAnchorCommit {
   /** For an out-of-view commit: the passes it was out of view (at least 1); else 0. */
   readonly outFrames: number;
   /**
-   * For an out-of-view commit, its queue (at least 1; else 0): the keys out
-   * of view when it went out, itself included, plus every key that went out
-   * after it. One traversal per pass, round robin, so `outFrames <= queued`.
+   * For an out-of-view commit, its queue (at least 1; else 0): the distinct
+   * keys out of view during its run, itself included (a key that goes out
+   * again in the same run counts once). One traversal per pass, round
+   * robin, so `outFrames <= queued` (`out-of-view-queue.ts`).
    */
   readonly queued: number;
 }
@@ -540,11 +535,16 @@ function createAnchorSet(
   let lastCam: THREE.Vector3 | null = null;
   const lastTargetInv = target.target().clone().invert();
   let lastTargetVersion = target.version();
-  let roundRobin = 0;
-  // Entries out of view (a pending key's out-of-view run starting), over
-  // the set's life: a key's queue is the keys out with it when it went out
-  // plus the entries since, each of which the round robin may pick first.
-  let outEntries = 0;
+  // The round robin's place: a ring and the index of the last served place
+  // in it. The next pass starts at the first entry after it that is still
+  // in the ring, so an entry removed or added in between never shifts it
+  // (an index into the new ring skipped the next entry, or wrapped back onto
+  // the one just served). Every pass rebases it onto its own ring, so a
+  // removed entry is held for one pass at most.
+  let lastRing: readonly Deferred[] = [];
+  let lastPickAt = -1;
+  // The classify passes so far: the clock of the out-of-view queue.
+  let outPass = 0;
 
   // Per-pass scratch.
   const targetInv = new THREE.Matrix4();
@@ -613,14 +613,11 @@ function createAnchorSet(
       c.pendingSinceMs === null ? 0 : Math.max(0, nowMs - c.pendingSinceMs);
     const out = kind === 'out-of-view';
     const outFrames = out ? Math.max(1, c.outFrames) : 0;
-    const queued = out
-      ? Math.max(1, c.queuedAtEntry + outEntries - c.enteredAt)
-      : 0;
+    const queued = out ? Math.max(1, c.queued) : 0;
     const pendingFrames = c.pendingFrames;
     c.pendingSinceMs = null;
     c.pendingFrames = 0;
-    c.outFrames = 0;
-    c.queuedAtEntry = 0;
+    endOutOfViewRun(c);
     const outText = out
       ? `, out of view ${String(outFrames)} frame${outFrames === 1 ? '' : 's'} (${String(queued)} queued)`
       : '';
@@ -978,6 +975,26 @@ function createAnchorSet(
     return isMember(c) ? memberInView(c, fresh) : keyInView(c, fresh);
   }
 
+  /**
+   * Where this pass's round robin starts in `ordered`: after the last pick.
+   * Rebases the cursor onto `ordered` (just before the start), so the next
+   * pass starts there too unless this pass picks.
+   */
+  function ringStart(ordered: readonly Deferred[]): number {
+    let start = 0;
+    for (let j = 1; lastPickAt >= 0 && j <= lastRing.length; j += 1) {
+      const at = ordered.indexOf(lastRing[(lastPickAt + j) % lastRing.length]!);
+      if (at >= 0) {
+        start = at;
+        break;
+      }
+    }
+    lastRing = ordered;
+    lastPickAt =
+      ordered.length > 0 ? (start + ordered.length - 1) % ordered.length : -1;
+    return start;
+  }
+
   /** Pending keys and members by what their cached tests say, in round-robin order. */
   function classifyDeferred(ordered: Deferred[]): {
     out: Deferred[];
@@ -987,8 +1004,9 @@ function createAnchorSet(
     const out: Deferred[] = [];
     const build: Deferred[] = [];
     const stale: Deferred[] = [];
+    const start = ringStart(ordered);
     for (let i = 0; i < ordered.length; i += 1) {
-      const c = ordered[(i + roundRobin) % ordered.length]!;
+      const c = ordered[(i + start) % ordered.length]!;
       if (!isDeferredPending(c)) {
         heldInView(c);
         continue;
@@ -1002,13 +1020,8 @@ function createAnchorSet(
         if (anyStale(c)) stale.push(c);
       }
     }
-    const entering = out.filter((c) => c.outFrames === 0);
-    outEntries += entering.length;
-    for (const c of entering) {
-      c.queuedAtEntry = out.length;
-      c.enteredAt = outEntries;
-    }
-    for (const c of out) c.outFrames += 1;
+    advanceOutOfViewRuns(outPass, out, ordered);
+    outPass += 1;
     return { out, build, stale };
   }
 
@@ -1018,7 +1031,7 @@ function createAnchorSet(
     const { out, build, stale } = classifyDeferred(ordered);
     const pick = out[0] ?? build[0] ?? stale[0];
     if (!pick) return;
-    roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
+    lastPickAt = ordered.indexOf(pick);
     if (isMember(pick)) {
       if (!memberInView(pick, true)) commitMember(pick, 'out-of-view');
       else heldInView(pick);
@@ -1035,8 +1048,7 @@ function createAnchorSet(
 
   /** In view, or not pending: its out-of-view run starts over. */
   function heldInView(c: Deferred): void {
-    c.outFrames = 0;
-    c.queuedAtEntry = 0;
+    endOutOfViewRun(c);
   }
 
   /** This view is the next pass's previous view. */
@@ -1154,9 +1166,7 @@ function createAnchorSet(
       pending: false,
       pendingSinceMs: null,
       pendingFrames: 0,
-      outFrames: 0,
-      queuedAtEntry: 0,
-      enteredAt: 0,
+      ...freshOutOfViewRun(),
       leave: () => undefined,
       runPass: () => ({ ...counters, windowOpen, followUpdates }),
     };
@@ -1179,8 +1189,8 @@ function createAnchorSet(
     entry.pending = false;
     entry.pendingSinceMs = null;
     entry.pendingFrames = 0;
-    entry.outFrames = 0;
-    entry.queuedAtEntry = 0;
+    // The pass clock is per set: a member handed over starts afresh.
+    Object.assign(entry, freshOutOfViewRun());
     entry.leave = () => {
       members.delete(entry);
       if (!binding && members.size === 0) dispose();
@@ -1290,9 +1300,7 @@ function createAnchorSet(
       following: false,
       pendingSinceMs: null,
       pendingFrames: 0,
-      outFrames: 0,
-      queuedAtEntry: 0,
-      enteredAt: 0,
+      ...freshOutOfViewRun(),
     };
     keys.set(key, entry);
     return entry;

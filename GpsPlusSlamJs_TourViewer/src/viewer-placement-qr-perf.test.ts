@@ -153,7 +153,7 @@ describe("the viewer pipeline under ?qrperf=1", () => {
   });
 
   // Why this test matters: a code the session already knows it cannot use
-  // (no level in this tour, no print size, ignored by the moved-code check)
+  // (no level in this tour, a level that cannot lock, ignored by the moved-code check)
   // must not keep the capture gate's burst open while it stays in view; a
   // code not resolved yet may be the tour's and still stamps, and so does
   // a usable one.
@@ -166,7 +166,13 @@ describe("the viewer pipeline under ?qrperf=1", () => {
       await p.config.frontEnd.detect(IMAGE);
       return p.ctx.qrDecodeAtMs;
     };
-    const usable = { version: 1, qr: { physicalSizeM: 0.2 } } as const;
+    const usable = {
+      version: 1,
+      qr: {
+        physicalSizeM: 0.2,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+      },
+    } as const;
     expect(await stampFor(() => undefined)).toBe(1_234);
     expect(
       await stampFor((ctx) => ctx.levelByText.set(CODE.text, usable)),

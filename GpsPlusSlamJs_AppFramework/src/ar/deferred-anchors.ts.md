@@ -82,12 +82,16 @@ deferring, commits }`. `commits` lists the pass's commits as
 outFrames, queued }` (usually none; valid during the call only):
   `pendingFrames` the passes it waited pending; for an `out-of-view`
   commit `outFrames` the passes it was pending and out of view, never
-  below one, and `queued` its queue, never below one: the keys pending out
-  of view when it went out, itself included, plus every key that went out
-  after it, since the round robin may pick each of those first. One
-  traversal per pass, so a reader can check that it landed within its
-  queue: `outFrames <= queued`. The most keys out at once would be too
-  small a bound while other keys keep going out. `passMs` is the pass's `performance.now()` span, measured
+  below one, and `queued` its queue, never below one: the DISTINCT keys
+  pending out of view during its run, itself included (the ones out with
+  it when it went out plus each key that went out after it), since the
+  round robin may pick each of those first, but each at most once: a key
+  that goes out, comes back into view or commits, and goes out again in
+  the same run counts once (`out-of-view-queue.ts`). One traversal per
+  pass, so a reader can check that it landed within its queue:
+  `outFrames <= queued`. The most keys out at once would be too small a
+  bound while other keys keep going out; every entry counted (the old
+  count) let a churning ring grow the queue so a starved key still passed. `passMs` is the pass's `performance.now()` span, measured
   only while an observer is set, so a page without one pays nothing. A
   throwing observer is logged and the frame goes on. The returned stop
   clears it only while it is still the current one. `TypeError` for a
@@ -141,7 +145,10 @@ logs `deferral off` once when it is created.
    member's own rule that it never moves for less.
 6. Deferred keys and pending members: each pending key is sorted into "cache invalid", "cached
    test says out", or "in, but the cache is stale"; one key is picked (out
-   first, round robin), its bounds rebuilt if needed, and it commits
+   first, round robin from the entry after the last pick, found by
+   reference in the last pass's ring so a key removed or added in between
+   never shifts the place; each pass rebases the place onto its own ring,
+   so a removed entry is held one pass at most), its bounds rebuilt if needed, and it commits
    `out-of-view` only when a fresh test agrees. A commit needs the content
    out of view at its current pose in this and the previous view, and at
    its new pose in this view (three tests). A member is tested at its target
@@ -207,7 +214,11 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   the deferral switch (an in-view key lands on every correction), the A/B
   switch (on, then off after the period, logged), the frames waited (pending
   frames, out-of-view frames against the queue, a key's queue growing
-  as others go out after it, the count starting over after a follow start
+  as others go out after it (the counting itself, churn within its queue
+  and a starved key behind a churning ring over it, is
+  `out-of-view-queue.test.ts`), the round robin keeping its place when a
+  key before it is removed (k next after x, not x twice), the count
+  starting over after a follow start
   within epsilon, the observer's `commits`)
   and the pass observer (production passes, stop, a throwing observer).
 - `deferred-anchors.property.test.ts`: random T, look, epoch, camera jump,
