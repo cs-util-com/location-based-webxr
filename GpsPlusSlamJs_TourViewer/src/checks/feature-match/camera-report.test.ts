@@ -85,6 +85,9 @@ describe("cameraReportText and knownCameraReport", () => {
       { zoom: Number.POSITIVE_INFINITY },
       { zoom: "1" },
       { focusMode: 3 },
+      // An empty mode from a stored plan would render a bare "focusMode".
+      { focusMode: "" },
+      { focusModes: "" },
       [],
       null,
     ]) {

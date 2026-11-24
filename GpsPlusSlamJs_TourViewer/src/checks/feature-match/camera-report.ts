@@ -85,7 +85,7 @@ export function cameraReport(track: unknown): CameraReport {
 }
 
 /**
- * The known fields of a stored report (numbers finite, modes strings); a
+ * The known fields of a stored report (numbers finite, modes non-empty strings); a
  * field this build does not know is dropped, not the report. Undefined
  * when nothing known is left, so an empty report is stored as absent.
  */
@@ -96,7 +96,7 @@ export function knownCameraReport(v: unknown): CameraReport | undefined {
   const out = Object.fromEntries(
     Object.entries(v).filter(([k, x]) =>
       STRING_KEYS.includes(k)
-        ? typeof x === "string"
+        ? typeof x === "string" && x !== ""
         : NUMBER_KEYS.includes(k) && isNum(x),
     ),
   ) as Record<string, number | string>;

@@ -7,7 +7,7 @@ The pure rules and words of the worker spike page (`feature-match-check.html?spi
 ## Public API
 
 - `GAP_FACTOR` (1.25) and `GAP_CAP_MS` (250): the camera rule.
-- `gapStats(gaps)` -> `GapStats { count, p95, p99, max }`: nearest-rank percentiles (`nearestRankPercentile` from the framework utils) of the gaps between camera frames; non-finite and negative gaps are dropped.
+- `gapStats(gaps)` -> `GapStats { count, p95, p99, max }`: nearest-rank percentiles (`percentileOfSorted` from the framework utils) of the gaps between camera frames, and their largest; non-finite and negative gaps are dropped. All three come from one sorted copy (a long run holds hundreds of thousands of gaps); the max is its last value, never a spread (which overflows).
 - `cameraVerdict(run, base, factor?, cap?)` -> `"smooth" | "stutter" | "unknown"`: smooth when the run's p95 and p99 are at most `factor` x the baseline's and no gap is over `cap`; unknown when either side has no frame.
 - `verdictSweep(run, base)`: the verdict at factors 1.1, 1.25 and 1.5 against caps 150, 250 and 400 ms, as one log line (`factor 1.1: nnY, ...`), so a reader sees which parameter value would flip the verdict.
 - `SpikePlan { baselineMs, pairs, photoGapMs, sizes }`, `DEFAULT_PLAN` (10 s at rest, 6 pairs, 500 ms between photos, sizes 320/480/640), `spikePlanFrom(search)` (`?baseline=` 1-60 s and `?pairs=` 1-12, anything else falls back to the default), `planMinutes(plan)` (the intro's "about N minutes").
@@ -42,5 +42,5 @@ const result = spikeSummary({
 
 ## Tests
 
-- `worker-spike-model.test.ts`: the percentiles (the largest of a million gaps by a loop, since a spread overflows), each arm of the verdict, the sweep line, the plan from the URL, the progress texts per step and the time left, the short reason (including the module worker `importScripts` refusal kept whole), method times, the XFeat outcome, each plain error, and the summary's camera texts and notice priority (including the no-pair notice), and that the XFeat step never says "almost done" before its limit.
+- `worker-spike-model.test.ts`: the percentiles (the largest of a million gaps, and one sort for all three numbers), each arm of the verdict, the sweep line, the plan from the URL, the progress texts per step and the time left, the short reason (including the module worker `importScripts` refusal kept whole), method times, the XFeat outcome, each plain error, and the summary's camera texts and notice priority (including the no-pair notice), and that the XFeat step never says "almost done" before its limit.
 - `worker-spike-model.property.test.ts`: gap stats stay ordered (p95 <= p99 <= max) for any input, a smooth verdict stays smooth when every gap shrinks, the progress stays within 0-1 and the bar only moves forward, any URL gives a plan in range, and a short reason is one line within `REASON_MAX`.

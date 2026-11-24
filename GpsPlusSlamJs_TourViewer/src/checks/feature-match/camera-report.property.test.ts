@@ -54,4 +54,29 @@ describe("cameraReport, properties", () => {
       ),
     );
   });
+
+  // Why this test matters: a stored plan's camera report is read back from
+  // JSON that may be anything; what survives the check must hold only
+  // finite numbers and non-empty modes (an empty one renders a dangling
+  // label), and checking it again must change nothing.
+  it("keeps only finite numbers and non-empty modes from any stored JSON", () => {
+    const stored = fc.oneof(
+      fc.dictionary(fc.oneof(keys, fc.constant("focusModes")), field),
+      fc.anything(),
+    );
+    fc.assert(
+      fc.property(stored, (v) => {
+        const r = knownCameraReport(v);
+        if (r === undefined) {
+          return;
+        }
+        for (const x of Object.values(r)) {
+          expect(typeof x === "string" ? x !== "" : Number.isFinite(x)).toBe(
+            true,
+          );
+        }
+        expect(knownCameraReport(r)).toEqual(r);
+      }),
+    );
+  });
 });
