@@ -147,7 +147,7 @@ describe("benchmark status fetching", () => {
       },
     });
     expect(seen["User-Agent"]).toBe(BENCHMARK_USER_AGENT);
-    expect(BENCHMARK_USER_AGENT).toMatch(/gps-plus-slam/);
+    expect(BENCHMARK_USER_AGENT).toMatch(/osm-h3/);
   });
 
   it("bounds its own request so a hung status read cannot stall the run", async () => {
