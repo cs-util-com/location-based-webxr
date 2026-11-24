@@ -15,6 +15,7 @@
  *
  * @see travelling-box-log.ts.md
  */
+import { isJsonObject as isRecord } from "gps-plus-slam-app-framework/utils/json-guards";
 import { copyWithFeedback } from "gps-plus-slam-app-framework/utils/copy-with-feedback";
 
 import type {
@@ -414,9 +415,6 @@ export interface TravelLogRead {
   /** Lines that did not read (a damaged paste). */
   readonly skipped: number;
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 const allFinite = (row: readonly unknown[]): row is readonly number[] =>
   row.every((v) => typeof v === "number" && Number.isFinite(v));

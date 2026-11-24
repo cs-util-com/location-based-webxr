@@ -4,6 +4,8 @@
  * PNG. Pure validation, no storage.
  */
 
+import { isJsonObject as isObject } from "gps-plus-slam-app-framework/utils/json-guards";
+
 export const CHARACTER_FORMAT = 1;
 const NAME_MAX = 40;
 export const DEFAULT_TOOL = "character maker";
@@ -30,9 +32,6 @@ export type ImportedRecord =
     }
   | { readonly kind: "newer" }
   | { readonly kind: "unreadable" };
-
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const LIBRARY_ID = /^c[0-9a-z]+$/;

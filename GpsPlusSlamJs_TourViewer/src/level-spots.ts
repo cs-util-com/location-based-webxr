@@ -11,6 +11,7 @@
  * @see level-spots.ts.md
  */
 
+import { isJsonObject as isRecord } from "gps-plus-slam-app-framework/utils/json-guards";
 import {
   parseQrLevel,
   type QrMintQuality,
@@ -24,9 +25,6 @@ export interface StoredSpot {
   readonly geo: QrGeoPose;
   readonly mintQuality?: QrMintQuality;
 }
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 /** A stored spot validated by the level's own rules; its quality is dropped
  *  alone when only the quality is broken; null when the pose is. */

@@ -16,6 +16,9 @@
 
 ## Invariants
 
+- A stored record must be a JSON object that is no array: the guard is the
+  framework's shared `isJsonObject` (`utils/json-guards`, deep-imported),
+  not a local copy.
 - Nothing here throws on bad input; validation answers with `null` or a refusal kind.
 - `libraryId` is made only here and used only as a folder name, so its pattern is what keeps a record from naming another folder.
 

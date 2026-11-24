@@ -112,6 +112,9 @@ Download is there for a log that will not go.
 
 ## Invariants and assumptions
 
+- A stored record must be a JSON object that is no array: the guard is the
+  framework's shared `isJsonObject` (`utils/json-guards`, deep-imported),
+  not a local copy.
 - A sample is stored rounded: letter px to 0.001, line px to 0.1, NDC to
   0.001, metres to 0.01, degrees to 0.1, px per metre to 0.1, `dt` to
   0.1 ms. A non-finite value is stored as 0. `growth` is

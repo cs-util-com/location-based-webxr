@@ -82,7 +82,8 @@ would veto every frame. `ar-entry.ts` builds one per session.
   newest decode (`lastDecodeAtMs`, stamped before any lock) or detection,
   whichever is later, of a code that may be the tour's (`opensBurst`: not
   one the session knows has no level in this tour, whose level cannot
-  lock (`isLockableLevel`: print size and geo), or is ignored; a code not resolved yet counts), forced on by
+  lock (`isLockableLevel`: print size and geo), or is ignored; a code
+  not resolved yet counts), forced on by
   the stored `trackerCaptureForceOn` pref, a codes-only tour or the scan
   gate scanning (`scanning`).
 

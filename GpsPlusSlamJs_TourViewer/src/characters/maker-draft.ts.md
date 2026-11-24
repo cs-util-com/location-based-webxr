@@ -15,6 +15,9 @@
 
 ## Invariants
 
+- A stored record must be a JSON object that is no array: the guard is the
+  framework's shared `isJsonObject` (`utils/json-guards`, deep-imported),
+  not a local copy.
 - `draftOf` never throws; a step beyond what the stored work allows is pulled back.
 - The cut picture is never part of the draft (too big for storage); the page asks for it again after a reload.
 
