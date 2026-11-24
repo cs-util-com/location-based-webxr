@@ -90,8 +90,8 @@ function marksStartContainers(prefix: string, itemColumn: number): boolean {
  *  starting from `open`: a fence opens a box when none is open, and closes
  *  it when it has the same sign and is at least as long, as the reader
  *  decides. `marks` are the container marks before the part on its line;
- *  under a list mark with no quote mark, the part's later lines continue
- *  at that item's content column. */
+ *  under a list mark, the part's later lines continue at that item's
+ *  content column. */
 function fenceStateAfter(
   text: string,
   open: string | null,
@@ -109,9 +109,12 @@ function fenceStateAfter(
 }
 
 /** The content column of the list item a part sits in, from the marks
- *  before it: 0 with no list mark or with a quote mark. */
+ *  before it: the width of the marks before the first quote mark (0 with
+ *  no marks, or when they start with a quote mark). A list mark followed by
+ *  five or more spaces still counts all of them (see the approximations of
+ *  `expectPartsOfTheirShape`). */
 function itemContentColumn(marks: string): number {
-  if (!/\S/.test(marks) || marks.includes('>')) return 0;
+  if (!/\S/.test(marks)) return 0;
   return segmentColumns(marks)[0]?.width ?? 0;
 }
 
@@ -343,6 +346,14 @@ describe('diagnoseTourMarkdown properties', () => {
       '```\r\n    >```\n\na',
       // The same under a list item: past its content column, still text.
       '- ```\n      >```\n\n  a',
+      // A quote inside a list item, its later lines indented past the
+      // item's content column: the reader keeps both containers, so each
+      // fence under the quote mark is real (a later line's marks are counted
+      // from the item's column, a quote mark in the marks or not), and `b`
+      // is the third box's later part.
+      '- > ```\n    > ```\n    > ```\n    >\n    > b',
+      '- > a\n    > ```\n    >\n    > b',
+      '- > ```\n  > ```\n  > ```\n  >\n  > b',
     ]) {
       expect(expectPartsOfTheirShape(body), body).toBeGreaterThan(0);
     }
