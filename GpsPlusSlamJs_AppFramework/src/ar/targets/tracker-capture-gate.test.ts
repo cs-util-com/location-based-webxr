@@ -15,6 +15,7 @@ import {
 import {
   DEFAULT_NEARBY_PARAMS,
   nearbyTargets,
+  timeSlot,
   type Target,
 } from './nearby-targets.js';
 import type * as NearbyTargetsModule from './nearby-targets.js';
@@ -199,6 +200,47 @@ describe('createTrackerCaptureGate: one QR registration', () => {
     g.register(qr({ isBusy: () => true, forceOn: () => true }));
     expect(g.wantsFrame(NOW)).toBe(false);
     expect(g.kindsFor(NOW)).toEqual([]);
+  });
+
+  // Why this test matters: in the slow rate's slot during a burst both
+  // rates want the frame, and the round robin must follow the faster one
+  // (the rate the tracker is really capturing at). Taking the first in-slot
+  // rate (the 1 Hz base) would hand out the same target for a whole second
+  // of 8 Hz captures, so a tracker routing per target would stall.
+  it('a burst outside every gate turns its targets on the burst period', () => {
+    const keys = ['a', 'b', 'c', 'd', 'e'];
+    const g = gate(() => gpsAt(200, 200));
+    g.register(
+      qr({
+        targets: () => keys.map((key, i) => code(key, 500 + i, 0)),
+        lastHitAtMs: () => NOW,
+      })
+    );
+    let differs = 0;
+    for (let s = 0; s < 9; s += 1) {
+      // Inside the 1 Hz slot, so both the base rate and the burst are in.
+      const t = NOW + s * 1_000 + 60;
+      const burst = keys[timeSlot(t, INTERVAL, keys.length)]!;
+      if (burst !== keys[timeSlot(t, 1_000, keys.length)]) differs += 1;
+      expect(g.kindsFor(t)).toEqual([{ kind: 'qr', targetIds: [burst] }]);
+    }
+    // The case is discriminating: the two periods name different targets.
+    expect(differs).toBeGreaterThan(0);
+  });
+
+  // Why this test matters: an unregister kept by a caller and called again
+  // after the same tracker registered anew must not remove the new
+  // registration; the tracker would silently stop getting frames.
+  it('a stale unregister does not remove a new registration of the same tracker', () => {
+    const g = gate(() => gpsAt(0, 0));
+    const tracker = qr();
+    const stale = g.register(tracker);
+    stale();
+    const fresh = g.register(tracker);
+    stale();
+    expect(g.wantsFrame(NOW)).toBe(true);
+    fresh();
+    expect(g.wantsFrame(NOW)).toBe(false);
   });
 
   // Why this test matters: a session's end unregisters its trackers; one

@@ -661,6 +661,31 @@ export function isCodeIgnored(
   return id !== undefined && ctx.ignoredCodes.has(id);
 }
 
+/**
+ * Whether a decode or detection of this text opens the tracker capture
+ * gate's burst. Not for a code the session already knows it cannot use:
+ * one with no level in this tour (`levelByText` null), one whose level
+ * has no print size (unusable), or one the moved-code check ignores. A
+ * text not resolved yet may be the tour's, so it opens the burst: the
+ * decodes its lock needs then run at full cadence.
+ */
+export function codeOpensBurst(
+  ctx: Pick<
+    TourViewerSession,
+    "levelByText" | "levelIdByText" | "ignoredCodes"
+  >,
+  text: string,
+): boolean {
+  if (!ctx.levelByText.has(text)) return true;
+  const level = ctx.levelByText.get(text);
+  return (
+    level !== null &&
+    level !== undefined &&
+    level.qr.physicalSizeM !== undefined &&
+    !isCodeIgnored(ctx, text)
+  );
+}
+
 /** The page's session object; `store` holds its tour document (the
  *  page's store; a fresh one in tests that need no other). */
 export function createTourViewerSession(

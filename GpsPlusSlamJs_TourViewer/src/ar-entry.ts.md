@@ -74,7 +74,8 @@ since the flows plan M6.
     only when the gate routed it there (every frame before the gate
     decided). Force-on is the stored `trackerCaptureForceOn` pref, a
     codes-only tour or the scan gate scanning. The burst reads the
-    session's newest decode (`ctx.qrDecodeAtMs`) besides the detections;
+    session's newest decode (`ctx.qrDecodeAtMs`) besides the detections,
+    both only for codes that may be the tour's (`codeOpensBurst`);
     the alignment counts only while `stationAlignmentSignals`' readiness
     holds (the store's identity from the first fix is no solve). A
     creator's capture keeps `{ intervalMs }` alone. Each session builds a

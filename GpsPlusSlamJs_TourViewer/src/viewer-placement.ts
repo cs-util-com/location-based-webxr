@@ -107,6 +107,7 @@ import type { TourViewerSeams } from "./seams.js";
 import { codePlacedTour, isPlacementReady } from "./tour-flow.js";
 import type { TourSession } from "./tour-session.js";
 import {
+  codeOpensBurst,
   isCodeIgnored,
   type ArController,
   type TourViewerHooks,
@@ -549,9 +550,13 @@ export function createViewerPlacement(deps: {
       }
     };
     const solve = (input: QrSolvePoseInput) => seams.solveQrPose(input);
-    // Every decode, lock or not, opens the capture gate's burst.
-    const decoding = stampDecodes(frontEnd, () => {
-      if (live()) ctx.qrDecodeAtMs = now();
+    // A decode, lock or not, opens the capture gate's burst, unless the
+    // session knows the code is none it can use (another tour's, no print
+    // size, ignored): a poster in view would hold the full cadence.
+    const decoding = stampDecodes(frontEnd, (decoded) => {
+      if (live() && codeOpensBurst(ctx, decoded.text)) {
+        ctx.qrDecodeAtMs = now();
+      }
     });
     ctx.qrController = createQrTrackingController(
       buildViewerControllerConfig({

@@ -74,6 +74,8 @@ function rig(o: {
   readonly forcePref?: boolean;
   readonly codesOnly?: boolean;
   readonly scanning?: boolean;
+  /** Whether a code's text opens the burst; default every text. */
+  readonly opensBurst?: (text: string) => boolean;
 }) {
   const clock = { now: T0 };
   const samples = o.samples ?? [];
@@ -95,10 +97,10 @@ function rig(o: {
     detections: { markers: {}, frameEpoch: 0 } as QrDetectionsView,
     /** The newest decode (epoch ms), lock or not. */
     decodeAtMs: null as number | null,
+    stations: o.stations ?? [],
   };
   const levels = o.levels ?? null;
   const levelIdByText = o.levelIdByText ?? new Map<string, string>();
-  const stations = o.stations ?? [];
   const alignment = o.alignment ?? null;
   const wiring = createTrackerCaptureWiring({
     now: () => clock.now,
@@ -115,13 +117,14 @@ function rig(o: {
     codeLinedUp: () => o.codeLinedUp ?? false,
     levels: () => levels,
     levelIdByText: () => levelIdByText,
-    stations: () => stations,
+    stations: () => state.stations,
     detections: () => state.detections,
     lastDecodeAtMs: () => state.decodeAtMs,
     qrBusy: () => false,
     forcePref: () => o.forcePref ?? false,
     codesOnly: () => o.codesOnly ?? false,
     scanning: () => o.scanning ?? false,
+    opensBurst: (text) => o.opensBurst?.(text) ?? true,
   });
   return { clock, wiring, state };
 }
@@ -260,6 +263,52 @@ describe("tracker capture wiring: frames", () => {
     expect(before.open).toEqual([]);
     // Once ready, the same inputs read as aligned (the control).
     expect(run(true).open.map((o) => o.key)).toEqual(["code-a"]);
+  });
+
+  // Why this test matters: the live pose needs a ready alignment, so
+  // before it the AR gate and 'dr' are off even though both work in
+  // odom-NUE: a code just read stays at the slow rate once the burst ends,
+  // and a fix gap reads 'unknown'. Pinned so the sidecar's statement of it
+  // stays true, and the ready case shows both come back.
+  it("before the alignment is ready there is no live pose: no AR gate, no 'dr'", () => {
+    const levels = new Map([["c", level()]]);
+    const levelIdByText = new Map([["text-c", "c"]]);
+    const detections: QrDetectionsView = {
+      frameEpoch: 0,
+      markers: {
+        "text-c": {
+          detections: [
+            { timestamp: T0 - 20_000, cameraPose: { position: [0, 0, 0] } },
+          ],
+        },
+      },
+    };
+    const run = (alignmentReady: boolean) => {
+      const { wiring, clock } = rig({
+        levels,
+        levelIdByText,
+        // The newest fix is older than F: 'dr' at best.
+        samples: [{ t: T0 - 10_000, north: 0, east: 0, accM: 4 }],
+        alignment: IDENTITY,
+        alignmentReady,
+        arPose: { x: 0, y: 0, z: 0 },
+      });
+      return {
+        live: wiring.position(clock.now).live,
+        result: judge(wiring, clock.now, {
+          levels,
+          levelIdByText,
+          detections,
+        }),
+      };
+    };
+    const before = run(false);
+    expect(before.live).toBeNull();
+    expect(before.result.state).toBe("unknown");
+    expect(before.result.open).toEqual([]);
+    const ready = run(true);
+    expect(ready.result.state).toBe("dr");
+    expect(ready.result.open.map((o) => [o.key, o.by])).toEqual([["c", "ar"]]);
   });
 
   // Why this test matters: a code's sighting is raw WebXR too; only a
@@ -452,7 +501,7 @@ describe("tracker capture wiring: capture counts", () => {
     state.decodeAtMs = T0 + 2_000;
     const burst = captures(wiring, clock, T0 + 2_000, T0 + 2_000 + QR_BURST_MS);
     expect(burst).toBeGreaterThanOrEqual(75);
-    // An older lock does not hide the newer decode, nor the reverse.
+    // An older lock does not hide the newer decode.
     state.detections = {
       frameEpoch: 0,
       markers: { a: { detections: [{ timestamp: T0 - 60_000 }] } },
@@ -461,6 +510,44 @@ describe("tracker capture wiring: capture counts", () => {
     expect(
       captures(wiring, clock, T0 + 20_000, T0 + 21_000),
     ).toBeGreaterThanOrEqual(7);
+    // Nor the reverse: an older decode does not hide a newer detection.
+    state.decodeAtMs = T0 - 60_000;
+    state.detections = {
+      frameEpoch: 0,
+      markers: { a: { detections: [{ timestamp: T0 + 40_000 }] } },
+    };
+    expect(
+      captures(wiring, clock, T0 + 40_000, T0 + 41_000),
+    ).toBeGreaterThanOrEqual(7);
+    // The control: with both old, the slow rate.
+    expect(captures(wiring, clock, T0 + 60_000, T0 + 61_000)).toBe(1);
+  });
+
+  // Why this test matters: a visible poster with a code the session knows
+  // is not one it can use (another tour's, one without a print size, an
+  // ignored one) would otherwise keep QR at full cadence for as long as it
+  // is in view. Its detections open no burst; a usable code's still do.
+  it("a detection of a code that opens no burst leaves QR at 1 Hz", () => {
+    const { wiring, clock, state } = rig({
+      levels: oneCode(),
+      samples: fixesAt(500, 500, T0, T0 + 20_000),
+      opensBurst: (text) => text !== "foreign",
+    });
+    state.detections = {
+      frameEpoch: 0,
+      markers: { foreign: { detections: [{ timestamp: T0 }] } },
+    };
+    expect(captures(wiring, clock, T0, T0 + 5_000)).toBe(5);
+    state.detections = {
+      frameEpoch: 0,
+      markers: {
+        foreign: { detections: [{ timestamp: T0 + 5_000 }] },
+        ours: { detections: [{ timestamp: T0 + 5_000 }] },
+      },
+    };
+    expect(
+      captures(wiring, clock, T0 + 5_000, T0 + 10_000),
+    ).toBeGreaterThanOrEqual(35);
   });
 
   // Why this test matters: while the scan card asks the visitor to scan a
@@ -578,24 +665,34 @@ describe("tracker capture wiring: targets", () => {
     ]);
   });
 
-  // Why this test matters: the burst reads the newest hit of ANY code, a
-  // foreign one included, and nothing for an empty or malformed history.
-  it("the newest hit is the newest detection of any code", () => {
-    expect(newestHitAtMs({ markers: {} })).toBeNull();
+  // Why this test matters: the burst reads the newest hit of any code that
+  // opens a burst, and nothing for an empty or malformed history.
+  it("the newest hit is the newest detection of any code that opens a burst", () => {
+    const markers = {
+      a: { detections: [{ timestamp: 5 }, { timestamp: 7 }] },
+      b: { detections: [{ timestamp: 9 }] },
+    };
+    expect(newestHitAtMs({ markers }, (text) => text !== "b")).toBe(7);
+    expect(newestHitAtMs({ markers }, () => false)).toBeNull();
+    expect(newestHitAtMs({ markers: {} }, () => true)).toBeNull();
     expect(
-      newestHitAtMs({
-        markers: {
-          a: { detections: [{ timestamp: 5 }, { timestamp: 7 }] },
-          b: { detections: [{ timestamp: 9 }] },
-          c: { detections: [] },
-          d: { detections: [{ timestamp: Number.NaN }] },
+      newestHitAtMs(
+        {
+          markers: {
+            a: { detections: [{ timestamp: 5 }, { timestamp: 7 }] },
+            b: { detections: [{ timestamp: 9 }] },
+            c: { detections: [] },
+            d: { detections: [{ timestamp: Number.NaN }] },
+          },
         },
-      }),
+        () => true,
+      ),
     ).toBe(9);
   });
 
   // Why this test matters: the burst opens on a decode, so the stamp must
-  // fire for a frame with a code and stay silent for one without, pass the
+  // fire for a frame with a code (and name it, so the caller can skip a
+  // code that opens no burst) and stay silent for one without, pass the
   // result through untouched, and still free the detector.
   it("stampDecodes calls back on a decode only and keeps the front end whole", async () => {
     const image = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
@@ -609,7 +706,7 @@ describe("tracker capture wiring: targets", () => {
       ],
     } as const;
     let next: typeof code | null = null;
-    let decodes = 0;
+    const decodes: string[] = [];
     let disposed = 0;
     const stamped = stampDecodes(
       {
@@ -619,17 +716,82 @@ describe("tracker capture wiring: targets", () => {
           disposed += 1;
         },
       },
-      () => {
-        decodes += 1;
+      (decoded) => {
+        decodes.push(decoded.text);
       },
     );
     await expect(stamped.detect(image)).resolves.toBeNull();
-    expect(decodes).toBe(0);
+    expect(decodes).toEqual([]);
     next = code;
     await expect(stamped.detect(image)).resolves.toBe(code);
-    expect(decodes).toBe(1);
+    expect(decodes).toEqual(["t"]);
     stamped.dispose?.();
     expect(disposed).toBe(1);
+  });
+
+  // Why this test matters: a code's reach is the costly part of its target
+  // (geodesic distances over codes and stations), and the detections get a
+  // new identity on every decode. The spots are rebuilt only when the
+  // levels, the stations or the zero change; a new detection still updates
+  // the code's sighting at once, and a frame epoch bump still drops it.
+  it("a new detection updates the sighting without rebuilding the spots", () => {
+    let geoReads = 0;
+    const stationGeo = geoAt(5, 0);
+    const station = {
+      get geo() {
+        geoReads += 1;
+        return stationGeo;
+      },
+      foundRadiusM: 3,
+    };
+    const levels = new Map([
+      ["c", level()],
+      ["d", level(geoAt(300, 0))],
+    ]);
+    const levelIdByText = new Map([["text-c", "c"]]);
+    const { wiring, clock, state } = rig({
+      levels,
+      levelIdByText,
+      stations: [station],
+      // Far fixes; the odometry and the camera at the AR origin.
+      samples: fixesAt(500, 500, T0 - 2_000, T0 + 2_000).map((s) => ({
+        ...s,
+        odom: [0, 0, 0] as const,
+      })),
+      alignment: IDENTITY,
+      arPose: { x: 0, y: 0, z: 0 },
+    });
+    // Between the 1 Hz slots: only an open code wants the frame.
+    clock.now = T0 + 500;
+    expect(wiring.wantsFrame()).toBe(false);
+    const built = geoReads;
+    expect(built).toBeGreaterThan(0);
+    // A sighting older than the burst, where the camera stands.
+    const seen = (frameEpoch: number): QrDetectionsView => ({
+      frameEpoch,
+      markers: {
+        "text-c": {
+          detections: [
+            {
+              timestamp: T0 - 20_000,
+              frameEpoch: 0,
+              cameraPose: { position: [0, 0, 0] },
+            },
+          ],
+        },
+      },
+    });
+    state.detections = seen(0);
+    expect(wiring.wantsFrame()).toBe(true);
+    expect(wiring.lastRoutes()).toEqual([{ kind: "qr", targetIds: ["c"] }]);
+    // A frame epoch bump: the sighting is of an earlier frame.
+    state.detections = seen(1);
+    expect(wiring.wantsFrame()).toBe(false);
+    expect(geoReads).toBe(built);
+    // New stations: the spots are rebuilt.
+    state.stations = [station];
+    wiring.wantsFrame();
+    expect(geoReads).toBeGreaterThan(built);
   });
 
   // Why this test matters: before the tour's codes are read there is

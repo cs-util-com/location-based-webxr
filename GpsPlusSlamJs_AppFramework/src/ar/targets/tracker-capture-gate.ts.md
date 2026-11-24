@@ -29,7 +29,9 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/tracker-capture-gate`
     (3).
   - `RangeError` on a bad interval, `k` or params.
 - `TrackerCaptureGate`
-  - `register(tracker)`: returns its unregister (idempotent); `RangeError`
+  - `register(tracker)`: returns its unregister (idempotent: a stale
+    handle called again never removes a later registration of the same
+    tracker); `RangeError`
     on a cadence value that is not finite and >= 0.
   - `wantsFrame(nowMs)`: true exactly when `kindsFor(nowMs)` is non-empty.
     Pass it as `startCameraFrameCapture`'s `wantsFrame`.
@@ -52,6 +54,9 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/tracker-capture-gate`
   - `burstHz` while `0 <= nowMs - lastHitAtMs() < burstMs` (a hit in the
     future opens nothing);
   - `inGateHz` while `forceOn()`.
+  - When several want the frame, the fastest of them is the route's rate:
+    its period drives the turn below, so a burst inside the slow rate's
+    slot still turns per capture.
 - **The slot:** a rate of `hz` wants the frame when
   `nowMs mod (1000 / hz) < captureIntervalMs`. A period at most one interval
   long wants every frame; 0 Hz never. The camera's veto does not consume
@@ -62,7 +67,7 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/tracker-capture-gate`
   period.
 - **The route's targets:** the open targets by distance, capped at k: the
   nearest `ceil(k / 2)` always, the rest of the budget in turn over the
-  others (`timeSlot` over the winning rate's period). With none open, one
+  others (`timeSlot` over the route's rate's period). With none open, one
   target in turn by key order (none without targets). `timeSlot` mixes
   the period count before `mod n`, so captures of every second slot (a
   busy tracker, a slow camera) still reach every target; the turn is
@@ -120,7 +125,9 @@ startCameraFrameCapture({
   interval, about 1 Hz outside and when unknown, through a simulated
   camera source), the routes (open codes, one code per slot in turn, every
   code reached when only every second slot is captured),
-  the burst and a future hit, `forceOn()`, busy vetoes, unregister, 0 Hz
+  the burst and a future hit, a burst in the slow rate's slot turning on
+  the burst period, `forceOn()`, busy vetoes, unregister and a stale
+  unregister after a re-register, 0 Hz
   and fast rates, validation; a fake `image` tracker (2 Hz in gate, off
   outside) beside QR: its own cadence and capped targets, QR's routes
   unchanged; the clock-free cost tests (every tracker busy: neither the
