@@ -294,12 +294,14 @@ export function fitPlaneRobust(points: readonly Vector3[]): PlaneFit | null {
 
   // LMS: search candidate planes from point triples for the minimum median
   // squared residual. Deterministic LCG so the same input always samples the
-  // same triples.
+  // same triples. `Math.imul` keeps the product exact (a plain `*` passes
+  // 2^53 and zeroes the low bits), and the index comes from the HIGH bits,
+  // since an LCG's low bits cycle with a short period.
   let best: { normal: Vector3; p0: Vector3; medSq: number } | null = null;
   let rng = 0x2545f491;
   const nextIdx = (): number => {
-    rng = (rng * 1103515245 + 12345) & 0x7fffffff;
-    return rng % n;
+    rng = (Math.imul(rng, 1103515245) + 12345) >>> 0;
+    return Math.floor((rng / 0x100000000) * n);
   };
   const TRIALS = 200;
   for (let t = 0; t < TRIALS; t++) {
