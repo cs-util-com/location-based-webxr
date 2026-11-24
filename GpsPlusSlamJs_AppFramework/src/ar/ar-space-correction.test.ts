@@ -612,7 +612,7 @@ describe('ar-space-correction compensation guard', () => {
   it('guarded sweep: never worse than the better of plain and compensated by more than the noise, still or moving', () => {
     // Why this test matters: the guard must keep the still user's plain D
     // and the walker's compensated D. Parameters: noise 0.5 mm / 0.01 deg
-    // and 1 mm / 0.05 deg per pose (the range where the M1 sweep says
+    // and 1 mm / 0.05 deg per pose (the range where the earlier sweep says
     // motion, not the ratio, decides); ratio 1 and 10 at 33 ms; a still
     // user, a slow walker (0.3 m/s, 3 deg/s) and a walker (1.4 m/s,
     // 10 deg/s); 300 seeds per cell; p50 residual at 10 m. At 3 mm /

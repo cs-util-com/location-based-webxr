@@ -92,7 +92,7 @@ describe('relocalizationJumpVerdict (the library rule, local copy)', () => {
 describe('createRelocalizationFeed', () => {
   it('a 3 m frame switch dispatches one raw observation with the jump frame and the two frames before it', () => {
     // Why this test matters: the correction is derived from these raw
-    // fields alone (W6: the jump frame's own time and pose), and the QR fold
+    // fields alone (the jump frame's own time and pose), and the QR fold
     // must close its burst before the store sees the new frame.
     const { feed, store, calls, observed } = feedWith();
     feed.frame(1000, at(0));
@@ -120,7 +120,7 @@ describe('createRelocalizationFeed', () => {
     expect(observationsOf(store!)).toEqual([]);
   });
 
-  it('nothing is dispatched across a lost pose, a forget, or a gap over 500 ms, whatever the distance (W5)', () => {
+  it('nothing is dispatched across a lost pose, a forget, or a gap over 500 ms, whatever the distance', () => {
     // Why this test matters: a jump across a tracking loss, recovery or
     // origin reset is not a relocalization the correction may apply.
     const { feed, store } = feedWith();
@@ -177,7 +177,7 @@ describe('createRelocalizationFeed', () => {
     expect(feed.isStopped()).toBe(false);
   });
 
-  it('dispatches into the store current at the jump (W9) and drops the jump with a warning when there is none', () => {
+  it('dispatches into the store current at the jump and drops the jump with a warning when there is none', () => {
     // Why this test matters: the recorder swaps its store per recording; an
     // observation in a stale store would be missing from the recording.
     let current: ReturnType<typeof newStore> | null = newStore();
@@ -198,14 +198,13 @@ describe('createRelocalizationFeed', () => {
     expect(warnings.join('\n')).toMatch(/no store/);
   });
 
-  it('a fault switches the feed off once, logged, and never throws into the frame loop', () => {
-    // Why this test matters: the feature must never break a recording.
+  it('a fault in the jump rule itself switches the feed off once, logged, and never throws into the frame loop', () => {
+    // Why this test matters: the feature must never break a recording; a
+    // fault it cannot attribute to one hook stops it for the session.
     const feed = createRelocalizationFeed({
-      getStore: () => ({
-        dispatch: () => {
-          throw new Error('store broke');
-        },
-      }),
+      getStore: () => {
+        throw new Error('getStore broke');
+      },
     });
     const errors: string[] = [];
     const off = subscribeToLogs((e) => {
@@ -216,7 +215,46 @@ describe('createRelocalizationFeed', () => {
     expect(() => feed.frame(1066, at(6))).not.toThrow();
     off();
     expect(feed.isStopped()).toBe(true);
-    expect(errors.filter((m) => /store broke/.test(m))).toHaveLength(1);
+    expect(errors.filter((m) => /getStore broke/.test(m))).toHaveLength(1);
+  });
+
+  it('a throwing dispatch, beforeDispatch or onObserved is logged once each and the feed goes on', () => {
+    // Why this test matters: one faulty hook (a QR fold, a store
+    // subscriber) must not stop recording every later relocalization, and
+    // a failing beforeDispatch must not cost the jump itself.
+    const store = newStore();
+    let dispatchFails = true;
+    const feed = createRelocalizationFeed({
+      getStore: () => ({
+        dispatch: (action) => {
+          const result = store.dispatch(action);
+          // As a throwing store subscriber does: the state is updated first.
+          if (dispatchFails) throw new Error('subscriber broke');
+          return result;
+        },
+      }),
+      beforeDispatch: () => {
+        throw new Error('fold broke');
+      },
+      onObserved: () => {
+        throw new Error('observer broke');
+      },
+    });
+    const errors: string[] = [];
+    const off = subscribeToLogs((e) => {
+      if (e.level === LogLevel.ERROR) errors.push(e.message);
+    });
+    feed.frame(1000, at(0));
+    feed.frame(1033, at(3));
+    feed.frame(1066, at(6));
+    dispatchFails = false;
+    feed.frame(1099, at(9));
+    off();
+    expect(feed.isStopped()).toBe(false);
+    expect(observationsOf(store).map((o) => o.t)).toEqual([1033, 1066, 1099]);
+    for (const what of [/subscriber broke/, /fold broke/, /observer broke/]) {
+      expect(errors.filter((m) => what.test(m))).toHaveLength(1);
+    }
   });
 
   it('logs one readout line per observation with |D|, degrees and the compensation reason', () => {
@@ -271,7 +309,7 @@ describe('startRelocalizationFeed (XR frames)', () => {
 
   it('reads the viewer pose of each frame, stamped timeOrigin + XR time, and ignores emulated poses', () => {
     // Why this test matters: the observation time must be on the clock of
-    // the captures' capturedAt, or tiles land in the wrong epoch (W6, W8).
+    // the captures' capturedAt, or tiles land in the wrong epoch.
     const store = newStore();
     const feed = startRelocalizationFeed({
       getStore: () => store,
@@ -288,6 +326,40 @@ describe('startRelocalizationFeed (XR frames)', () => {
     feed.dispose();
     tick(10.132, viewer(20));
     expect(observationsOf(store)).toHaveLength(1);
+  });
+
+  it('a viewer pose that throws forgets the earlier pose and warns once per run of failures', () => {
+    // Why this test matters: a jump must never be judged across a frame
+    // whose pose is unknown, and a browser stuck failing every frame must
+    // not flood the 100-entry copy-log buffer.
+    const store = newStore();
+    startRelocalizationFeed({ getStore: () => store, timeOriginMs: 0 });
+    const broken = () =>
+      runXrFrameUpdates({
+        frame: {
+          getViewerPose: () => {
+            throw new Error('no pose');
+          },
+        } as unknown as XRFrame,
+        referenceSpace: {} as XRReferenceSpace,
+        session: {} as XRSession,
+        dt: 0.033,
+        elapsed: 1.033,
+      });
+    const warnings: string[] = [];
+    const off = subscribeToLogs((e) => {
+      if (e.level === LogLevel.WARN) warnings.push(e.message);
+    });
+    tick(1, viewer(0));
+    broken();
+    broken();
+    tick(1.1, viewer(3));
+    broken();
+    off();
+    expect(observationsOf(store)).toEqual([]);
+    expect(
+      warnings.filter((m) => /viewer pose unreadable/.test(m))
+    ).toHaveLength(2);
   });
 
   it('a viewer pose that throws is a skipped frame', () => {

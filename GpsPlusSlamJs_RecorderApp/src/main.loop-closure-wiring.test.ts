@@ -303,6 +303,12 @@ vi.mock('./storage/folder-manager', () => ({
 // Import after all mocks are set up
 import { handleEnterARForTesting, resetMainState } from './main';
 import { initAR } from 'gps-plus-slam-app-framework/ar/webxr-session';
+import { createRecordingSessionHandlers } from './recording/recording-session-handlers';
+
+// main.ts builds its recording handlers once, at import; their setStore is
+// how a new recording swaps the store. Read before any clearAllMocks.
+const recordingDeps = vi.mocked(createRecordingSessionHandlers).mock
+  .calls[0]![0] as unknown as { setStore: (store: unknown) => void };
 
 /** The tracking group main.ts passed to the mocked initAR (setter fold). */
 function getTrackingCallbacks() {
@@ -516,6 +522,16 @@ describe('relocalization feed wiring', () => {
     expect(optionsOf().getStore()).toBe(mockStore);
     // No QR fold this session: closing its burst is a no-op, never a throw.
     expect(() => optionsOf().beforeDispatch?.()).not.toThrow();
+  });
+
+  it('follows the store a new recording swaps in, without a restart', async () => {
+    // Why this test matters: each recording has its own store; a feed bound
+    // to the store of Enter AR would record the jumps into a dead store.
+    await handleEnterARForTesting();
+    const recordingStore = { dispatch: vi.fn() };
+    recordingDeps.setStore(recordingStore);
+    expect(optionsOf().getStore()).toBe(recordingStore);
+    expect(mockStartRelocalizationFeed).toHaveBeenCalledTimes(1);
   });
 
   it('is not started while the legacy loop-closure detector is on (one producer of frame jumps)', async () => {

@@ -165,6 +165,18 @@ function describeObservation(o: RelocalizationObservation): string {
 export function createRelocalizationFeed(
   options: RelocalizationFeedOptions
 ): RelocalizationFeed {
+  return createFeed(options).feed;
+}
+
+/**
+ * The feed plus `frameOwned`, a `frame` for a pose the caller hands over
+ * and never touches again (a fresh one from {@link rawCameraPose}), so it
+ * is kept without a copy.
+ */
+function createFeed(options: RelocalizationFeedOptions): {
+  feed: RelocalizationFeed;
+  frameOwned: (t: number, pose: Pose | null) => void;
+} {
   if (typeof options?.getStore !== 'function') {
     throw new TypeError(
       'createRelocalizationFeed: getStore must be a function'
@@ -173,6 +185,24 @@ export function createRelocalizationFeed(
   let prev: Stamped | null = null;
   let last: Stamped | null = null;
   let stopped = false;
+  const failedHooks = new Set<string>();
+
+  /**
+   * Run one hook of an observation; a throw is logged once per hook for the
+   * session and the observation goes on, so one faulty consumer never stops
+   * the recording of later relocalizations.
+   */
+  function hook(name: string, run: () => void): void {
+    try {
+      run();
+    } catch (error) {
+      if (failedHooks.has(name)) return;
+      failedHooks.add(name);
+      log.error(
+        `relocalization feed: ${name} failed; later failures of it are not logged: ${String(error)}`
+      );
+    }
+  }
 
   function forget(): void {
     prev = null;
@@ -193,18 +223,18 @@ export function createRelocalizationFeed(
       log.warn('relocalization observed with no store; not recorded');
       return;
     }
-    options.beforeDispatch?.();
-    store.dispatch(relocalizationObserved(observation));
-    log.info(describeObservation(observation));
-    options.onObserved?.(observation);
+    hook('beforeDispatch', () => options.beforeDispatch?.());
+    hook('dispatch', () => store.dispatch(relocalizationObserved(observation)));
+    hook('readout', () => log.info(describeObservation(observation)));
+    hook('onObserved', () => options.onObserved?.(observation));
   }
 
-  function step(t: number, pose: Pose | null): void {
+  function step(t: number, pose: Pose | null, owned: boolean): void {
     if (pose === null || !Number.isFinite(t) || !isFinitePose(pose)) {
       forget();
       return;
     }
-    const current: Stamped = { t, pose: copyPose(pose) };
+    const current: Stamped = { t, pose: owned ? pose : copyPose(pose) };
     const before = last;
     if (before === null || !(t > before.t)) {
       // The first pose, or a clock that did not advance: start over here.
@@ -230,25 +260,30 @@ export function createRelocalizationFeed(
     last = current;
   }
 
-  return {
-    frame(t, pose) {
-      if (stopped) return;
-      try {
-        step(t, pose);
-      } catch (error) {
-        stopped = true;
-        forget();
-        log.error(
-          `relocalization feed failed and is off for this session: ${String(error)}`
-        );
-      }
-    },
-    forget,
-    isStopped: () => stopped,
-    dispose() {
+  function frame(t: number, pose: Pose | null, owned: boolean): void {
+    if (stopped) return;
+    try {
+      step(t, pose, owned);
+    } catch (error) {
       stopped = true;
       forget();
+      log.error(
+        `relocalization feed failed and is off for this session: ${String(error)}`
+      );
+    }
+  }
+
+  return {
+    feed: {
+      frame: (t, pose) => frame(t, pose, false),
+      forget,
+      isStopped: () => stopped,
+      dispose() {
+        stopped = true;
+        forget();
+      },
     },
+    frameOwned: (t, pose) => frame(t, pose, true),
   };
 }
 
@@ -285,19 +320,27 @@ export function startRelocalizationFeed(
     readonly timeOriginMs?: number;
   }
 ): RelocalizationFeed {
-  const feed = createRelocalizationFeed(options);
+  const { feed, frameOwned } = createFeed(options);
   const timeOrigin = options.timeOriginMs ?? performance.timeOrigin;
+  // One warning per run of unreadable frames, not one per frame.
+  let unreadable = false;
   const unregister = registerXrFrameUpdate(
     ({ frame, referenceSpace, elapsed }) => {
       if (feed.isStopped()) return;
       let pose: Pose | null;
       try {
         pose = rawCameraPose(frame.getViewerPose(referenceSpace) ?? null);
+        unreadable = false;
       } catch (error) {
-        log.warn(`viewer pose unreadable; frame skipped: ${String(error)}`);
+        if (!unreadable) {
+          log.warn(
+            `viewer pose unreadable; frames skipped until it reads again: ${String(error)}`
+          );
+        }
+        unreadable = true;
         pose = null;
       }
-      feed.frame(timeOrigin + elapsed * 1000, pose);
+      frameOwned(timeOrigin + elapsed * 1000, pose);
     }
   );
   return {

@@ -190,5 +190,6 @@ geodesy tolerance); and the relocalization property: over 1 to 3 random
 jumps and captures in random epochs, each capture lands where its copy,
 moved by an independent three.js product of the later jumps, lands in a
 recording without jumps. The unit tests pin the oracle case, a capture
-after the jump, the dropped timeless capture, a pick at epoch 0 and 1 of
-two jumps (the product order), and an unknown pick epoch.
+after the jump, the dropped timeless capture, a pick at epoch 0 with one
+jump, a pick at epoch 1 with two jumps (the product order), and an unknown
+pick epoch.
