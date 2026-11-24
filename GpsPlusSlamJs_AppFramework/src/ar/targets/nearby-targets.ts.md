@@ -58,8 +58,9 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
 ## The rule
 
 - **State.**
-  - `'gps'`: the newest fix is at most F old and `acc_fix` is at most the
-    ceiling.
+  - `'gps'`: the newest fix is within F of `nowMs` (either side: a stamp
+    more than F ahead of the clock is not fresh) and `acc_fix` is at most
+    the ceiling.
   - `'dr'`: otherwise, when a live pose with a finite AR position is
     present and a device AR sample exists at or before `newestFixAtMs` and
     within H (the dead-reckoning anchor: the newest such sample, the last
@@ -69,7 +70,7 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
   - `'unknown'`: anything else, and whenever `acc_fix` is null or above the
     ceiling.
 - **acc_fix**: the live pose's `accM` when positive and finite, else the
-  newest fix's.
+  newest fix's within H (an older fix is outside the kernel's memory).
 - **The GPS gate** (states `'gps'` and `'dr'`): `s = hypot(acc, accTarget)`;
   the live sample adds `alpha x` the AR drift from the anchor to `live.ar`
   (none without an anchor or a finite `live.ar`).
@@ -79,7 +80,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
   closes, the band between continues; reaching the end closes. `distM` is
   the distance of the newest judged sample.
 - **The AR gate** (any state): a target with a sighting (the device's
-  position when it saw the target) opens while the live AR pose is within `reachM + arMarginM + alpha x path`, where the path runs
+  position when it saw the target) opens while the live AR pose is
+  within `reachM + arMarginM + alpha x path`, where the path runs
   sighting, first AR sample after it, the samples on, then `live.ar`. The
   path counts DEVICE samples within H only: a lock's vote ring and its
   keep-alive's rings (about three per device fix for minutes after a lock)
@@ -150,9 +152,13 @@ if (r.open.length > 0) captureFrame();
   - `acc_fix` per source, dead reckoning, the hysteresis band, H expiry,
     bad accuracies, ordering, the default target accuracy;
   - the AR gate: the path walked, vote rings that add nothing, a target
-    without a position, the radius around the device's sighting position
-    (not the target's pose), no live pose;
-  - the H cap when handed the whole series ('dr' and the AR path);
+    without a position, the radius around the sighting point it is given
+    (a contract example: the kernel cannot tell a camera position from a
+    target pose, so the tracker wiring tests pin which one is passed), no
+    live pose;
+  - the H cap when handed the whole series ('dr', the AR path and the
+    `acc_fix` fallback); a fix stamped more than F ahead of `nowMs` is
+    not fresh;
   - no drift without a finite live AR position;
   - `timeSlot` (constant per period, every slot reached at strides 2 and
     3), `firstIndexAtOrAfter`, parameter validation.

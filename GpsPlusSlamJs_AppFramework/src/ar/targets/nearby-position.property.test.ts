@@ -10,15 +10,37 @@ const NOW = 1_800_000_000_000;
 const H = 60_000;
 const ALIGN = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-const sample = fc.record({
-  age: fc.integer({ min: -5_000, max: 3 * H }),
-  vote: fc.boolean(),
-  acc: fc.oneof(
-    fc.double({ min: 0.5, max: 40, noNaN: true }),
-    fc.constant(Number.NaN)
-  ),
-  n: fc.double({ min: -100, max: 100, noNaN: true }),
-});
+const finiteAcc = fc.double({ min: 0.5, max: 40, noNaN: true });
+
+const sampleWith = (acc: fc.Arbitrary<number>) =>
+  fc.record({
+    age: fc.integer({ min: -5_000, max: 3 * H }),
+    vote: fc.boolean(),
+    acc,
+    n: fc.double({ min: -100, max: 100, noNaN: true }),
+  });
+
+const sample = sampleWith(fc.oneof(finiteAcc, fc.constant(Number.NaN)));
+
+type Row = typeof sample extends fc.Arbitrary<infer R> ? R : never;
+
+function positionOf(rows: readonly Row[]) {
+  const gpsPositions: NearbyGpsPoint[] = rows.map((r) => ({
+    latitude: 47,
+    longitude: 8,
+    latLongAccuracy: r.acc,
+    timestamp: NOW - r.age,
+    ...(r.vote ? { source: 'synthetic-qr' } : {}),
+  }));
+  const odometryPositions = rows.map((r) => [r.n, 0, 0]);
+  return createNearbyPositionSource({
+    gpsEvents: () => ({ gpsPositions, odometryPositions }),
+    alignment: () => ALIGN,
+    zero: () => ({ lat: 47, lon: 8 }),
+    live: () => null,
+    lookBackMs: H,
+  }).position(NOW);
+}
 
 describe('createNearbyPositionSource properties', () => {
   // Why this test matters: the kernel's scan and the binary search both
@@ -28,21 +50,7 @@ describe('createNearbyPositionSource properties', () => {
   it('hands over the windowed samples, sorted, for any arrival order', () => {
     fc.assert(
       fc.property(fc.array(sample, { maxLength: 40 }), (rows) => {
-        const gpsPositions: NearbyGpsPoint[] = rows.map((r) => ({
-          latitude: 47,
-          longitude: 8,
-          latLongAccuracy: r.acc,
-          timestamp: NOW - r.age,
-          ...(r.vote ? { source: 'synthetic-qr' } : {}),
-        }));
-        const odometryPositions = rows.map((r) => [r.n, 0, 0]);
-        const p = createNearbyPositionSource({
-          gpsEvents: () => ({ gpsPositions, odometryPositions }),
-          alignment: () => ALIGN,
-          zero: () => ({ lat: 47, lon: 8 }),
-          live: () => null,
-          lookBackMs: H,
-        }).position(NOW);
+        const p = positionOf(rows);
 
         const inWindow = rows.filter((r) => r.age <= H);
         expect(p.arPoses).toHaveLength(inWindow.length);
@@ -63,6 +71,24 @@ describe('createNearbyPositionSource properties', () => {
             : NOW - Math.min(...devices.map((r) => r.age))
         );
       })
+    );
+  });
+
+  // Why this test matters: the bound above (at most one fix per device
+  // sample) would also hold for a source that dropped fixes. With every
+  // accuracy finite each device sample has a median from the first one
+  // on, so every device sample in the window must come out as a fix.
+  it('hands over every windowed device fix when all accuracies are finite', () => {
+    fc.assert(
+      fc.property(
+        fc.array(sampleWith(finiteAcc), { maxLength: 40 }),
+        (rows) => {
+          const p = positionOf(rows);
+          expect(p.fixes).toHaveLength(
+            rows.filter((r) => !r.vote && r.age <= H).length
+          );
+        }
+      )
     );
   });
 });

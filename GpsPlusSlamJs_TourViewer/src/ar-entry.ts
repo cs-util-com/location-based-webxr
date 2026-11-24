@@ -71,7 +71,6 @@ import {
 } from "./tracker-capture-wiring.js";
 import { selectTrackerCaptureForceOn } from "./visitor-prefs-slice.js";
 import { stationAlignmentSignals } from "./visitor-stations.js";
-
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,

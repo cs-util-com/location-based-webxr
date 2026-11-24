@@ -243,10 +243,12 @@ describe('extractActionTimestamp', () => {
     ).toBe(ts);
   });
 
-  it('returns null for a phase marker whose timestamp is not finite', () => {
+  it('returns null for a phase marker whose timestamp is not a positive finite epoch', () => {
     // Why: a malformed marker read from a zip must degrade to "no delay",
-    // never pace on NaN or a string.
-    for (const timestamp of [null, 'x', Number.NaN, Infinity]) {
+    // never pace on NaN or a string. The phase markers slice accepts a
+    // timestamp of 0; pacing on 0 (or a negative value) would turn the
+    // delay after the marker into the max clamp, as for a ref point.
+    for (const timestamp of [0, -5, null, 'x', Number.NaN, Infinity]) {
       expect(
         extractActionTimestamp({
           type: 'phaseMarkers/phaseMarked',

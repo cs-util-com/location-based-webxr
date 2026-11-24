@@ -52,6 +52,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-position`
 - Memoised on the (gpsEvents, alignment, zero) references: the conversion
   runs once per new series, and each series is read once per build. A call
   costs a binary search plus the window slice, whatever the session length.
+  The memo key is set only after a build succeeds, so a build that throws
+  is retried on the next call instead of caching the previous result.
 - **The H trim** caps `'dr'` at H after the last fix and cuts the AR gate's
   path term for a sighting older than H to the straight step into the
   window (see [nearby-targets.ts.md](nearby-targets.ts.md)).
@@ -76,12 +78,14 @@ const position = source.position(Date.now());
 
 - `nearby-position.test.ts`: device-only fixes and `newestFixAtMs`, aligned
   and lone fixes with their accuracies, one rebuild per reference (a getter
-  spy; a new zero alone rebuilds the lone-fix path), only the window's samples on a 3 600-fix series, a fix gap longer
+  spy; a new zero alone rebuilds the lone-fix path; a build that threw is
+  retried), only the window's samples on a 3 600-fix series, a fix gap longer
   than H reading `'unknown'` (and `'dr'` just inside H), a sighting older
   than H with its path cut, non-finite and unsorted input, the live pose
   per call, `odomNueOfWebXr`.
 - `nearby-position.property.test.ts`: for any arrival order, the windowed
   samples are handed over sorted and `newestFixAtMs` is the newest device
-  time.
+  time; when every device sample has a finite accuracy, every device fix in
+  the window is handed over.
 - See also the gate that consumes it,
   [tracker-capture-gate.ts.md](tracker-capture-gate.ts.md).
