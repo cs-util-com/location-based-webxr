@@ -15,6 +15,7 @@ import {
   verdictSweep,
   xfeatOutcome,
   xfeatTimedOut,
+  XFEAT_LIMIT_MS,
   type GapStats,
 } from "./worker-spike-model";
 
@@ -198,7 +199,7 @@ describe("spikeProgress", () => {
       "Measuring pair 2 of 2 in the background - camera stuttering",
     );
     expect(at({ kind: "xfeat" }, 0).status).toBe(
-      "Trying XFeat in a background worker",
+      "Trying XFeat in a background worker: downloading the XFeat model, this can take a few minutes",
     );
   });
 
@@ -212,8 +213,22 @@ describe("spikeProgress", () => {
   });
 
   it("words the time left plainly", () => {
-    expect(at({ kind: "xfeat" }, 0).left).toBe("about 20 s left");
-    expect(at({ kind: "xfeat" }, 60_000).left).toBe("almost done");
+    expect(at({ kind: "baseline" }, 0, [], "unknown").left).toMatch(
+      /^about \d+ (s|min) left$/,
+    );
+  });
+
+  // Why: the XFeat try downloads about 65 MB first and may take up to
+  // its limit; a bar saying "almost done" for minutes reads as a hang.
+  // Its time left counts down to the probe's limit instead.
+  it("never says almost done while XFeat may still be downloading", () => {
+    expect(XFEAT_LIMIT_MS).toBe(300_000);
+    expect(at({ kind: "xfeat" }, 0).left).toBe("up to 5 min left");
+    expect(at({ kind: "xfeat" }, 60_000).left).toBe("up to 4 min left");
+    expect(at({ kind: "xfeat" }, 290_000).left).toBe("up to 10 s left");
+    for (const t of [20_000, 120_000, 299_000]) {
+      expect(at({ kind: "xfeat" }, t).left).not.toBe("almost done");
+    }
   });
 
   it("keeps the bar between 0 and 1", () => {
@@ -335,6 +350,17 @@ describe("xfeatOutcome", () => {
       started: null,
       text: "Not known: no answer in 300 s.",
     });
+  });
+});
+
+// Why: a long run has many frame gaps; spreading them into Math.max
+// throws a RangeError past the engine's argument limit, so the largest
+// gap is found with a loop.
+describe("gapStats on a long run", () => {
+  it("takes the largest of a million gaps", () => {
+    const gaps = Array.from({ length: 1_000_000 }, (_, i) => (i % 97) + 1);
+    gaps[123_456] = 999;
+    expect(gapStats(gaps).max).toBe(999);
   });
 });
 
@@ -479,6 +505,25 @@ describe("spikeSummary notices", () => {
         .notice,
     ).toEqual(plainError("worker", null));
     expect(spikeSummary({ run, base, xfeat, methods: ok }).notice).toBeNull();
+  });
+});
+
+// Why: a run where every pair answered failed has no method line at all;
+// the card must still say what happened and offer Try again (the notice
+// shows it), unless a crash or a hidden page explains it first.
+describe("spikeSummary with no pair measured", () => {
+  const base = stats(40, 50, 70);
+  const xfeat = { started: false, text: "Could not start: x" } as const;
+  const run = stats(41, 51, 120);
+  it("adds a notice when no pair answered", () => {
+    expect(spikeSummary({ run, base, xfeat, methods: [] }).notice).toEqual(
+      plainError("pairs", null),
+    );
+    expect(
+      spikeSummary({ run, base, xfeat, methods: [], workerCrashed: true })
+        .notice,
+    ).toEqual(plainError("worker", null));
+    expect(plainError("pairs", null).todo).toMatch(/Try again/);
   });
 });
 

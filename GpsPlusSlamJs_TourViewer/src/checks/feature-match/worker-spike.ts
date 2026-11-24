@@ -38,6 +38,7 @@ import {
   verdictSweep,
   xfeatOutcome,
   xfeatTimedOut,
+  XFEAT_LIMIT_MS,
   type GapStats,
   type SpikePlan,
   type SpikeStep,
@@ -55,8 +56,8 @@ const METHODS: MeasureJob["methods"] = {
   aliked: true,
   siftLightGlue: false,
 };
-/** How long the XFeat probe may take, its download included. */
-const XFEAT_TIMEOUT_MS = 300_000;
+/** The live verdict reads the last minute of gaps at 30 fps, not the run. */
+const LIVE_GAPS = 1800;
 
 const VIEW = `
 <section id="spike" class="screen run spike" data-phase="starting">
@@ -137,7 +138,7 @@ const gapLine = (g: GapStats): string =>
 
 /** The gaps between the frames the video shows, in ms, per window. */
 interface GapRecorder {
-  /** The gaps since the last `take`, kept. */
+  /** The last `LIVE_GAPS` gaps since the last `take`, kept. */
   peek(): number[];
   /** The gaps since the last `take`; starts a new window. */
   take(): number[];
@@ -162,7 +163,7 @@ function recordGaps(video: HTMLVideoElement): GapRecorder {
     video.requestVideoFrameCallback(tick);
   }
   return {
-    peek: () => [...gaps],
+    peek: () => gaps.slice(-LIVE_GAPS),
     take: () => {
       const out = gaps;
       gaps = [];
@@ -366,10 +367,14 @@ async function runSpike(d: RunDeps): Promise<boolean> {
       for (let i = 0; i < plan.pairs; i++) {
         const name = `pair ${String(i + 1)}`;
         const t = now();
+        // Only a measured pair feeds the time estimate: a fast failure
+        // would make every later pair look quick.
+        let ms: number | null = null;
         try {
           const done = await client.measure(jobOf(shots, i, plan), (line) =>
             log(`${name}: ${line}`),
           );
+          ms = now() - t;
           pairs.push([...done.results]);
           log(
             `${name}: done in ${msText(now() - t)}, measuring ${msText(done.measureMs)}`,
@@ -378,7 +383,7 @@ async function runSpike(d: RunDeps): Promise<boolean> {
           crashed ||= e instanceof WorkerCrashed;
           log(`ERROR ${name}: ${stackOf(e)}`);
         }
-        store.dispatch(A.pairMeasured({ ms: now() - t, now: now() }));
+        store.dispatch(A.pairMeasured({ ms, now: now() }));
       }
     } finally {
       clearInterval(live);
@@ -449,10 +454,10 @@ async function tryXFeat(
     timer = setTimeout(() => {
       reject(
         new ProbeTimeout(
-          `the worker did not answer in ${String(XFEAT_TIMEOUT_MS / 1000)} s`,
+          `the worker did not answer in ${String(XFEAT_LIMIT_MS / 1000)} s`,
         ),
       );
-    }, XFEAT_TIMEOUT_MS);
+    }, XFEAT_LIMIT_MS);
   });
   try {
     const done = await Promise.race([
@@ -466,7 +471,7 @@ async function tryXFeat(
   } catch (e) {
     log(`ERROR xfeat: ${stackOf(e)}`);
     return e instanceof ProbeTimeout
-      ? xfeatTimedOut(XFEAT_TIMEOUT_MS / 1000)
+      ? xfeatTimedOut(XFEAT_LIMIT_MS / 1000)
       : xfeatOutcome(null, errorText(e));
   } finally {
     clearTimeout(timer);

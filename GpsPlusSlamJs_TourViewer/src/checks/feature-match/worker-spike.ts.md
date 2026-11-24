@@ -27,6 +27,7 @@ The camera is smooth when the gaps' p95 and p99 during the pairs are at most 1.2
 - **Before:** a short explanation (what it measures, about how long, what to point at, hold still), the camera preview, one big Start button (enabled once the camera shows frames).
 - **While it runs:** step x of y with a bar and the time left, one plain status line, "keep this page open", the preview. The log stays out of sight. The screen is kept on (`guardRun`), and a hidden page is noted on the result.
 - **At the end:** a result card (camera smooth yes or no with the worst gap, XFeat started or not with a short reason, the time per method), a large Copy log button ("Copying...", "Copied", or "Copy failed" with the log opened and selected, through `copyWithFeedback`), and Try again when something went wrong. The full log sits under "Show the full log".
+- **Time estimate:** only a measured pair reports its time; a failed pair reports `null`. The live verdict reads the last 1800 gaps (about a minute at 30 fps), not the whole run, each second.
 - **Errors:** a plain sentence and what to do (`plainError`); the stack goes to the log only. Window errors and rejected promises are logged too.
 - Uses the guided view's tokens and components (`guided-view.css`, under `data-ui="guided"`) plus `worker-spike.css`.
 
@@ -37,7 +38,7 @@ The camera is smooth when the gaps' p95 and p99 during the pairs are at most 1.2
 - The run status lives in the store (`worker-spike-slice.ts`); the frame gaps, the camera, the workers and the photos stay in this module's run, never in module variables.
 - The view redraws on every store change and once a second while running, so the time left moves even while one pair takes long.
 - Every worker is closed when the run ends, in success or failure; the XFeat probe never holds the page longer than its limit.
-- A worker crash, models that never load or a hidden page end in a result card with a notice, not a frozen screen.
+- A worker crash, models that never load, no pair measured or a hidden page end in a result card with a notice and Try again, not a frozen screen.
 
 ## Tests
 

@@ -2869,6 +2869,16 @@ test("the background measuring test goes from Start to a result card and copies 
   await expect(page.locator(".finder")).toBeHidden();
   await expect(page.locator("#spike-log-box")).not.toHaveAttribute("open");
   expect(await pageOverflow(page)).toBe(0);
+  // The result card fits phone landscape and desktop too: no sideways
+  // scroll, and the Copy log button stays on screen.
+  for (const vp of [
+    { width: 844, height: 390 },
+    { width: 1280, height: 800 },
+  ]) {
+    await page.setViewportSize(vp);
+    expect(await pageOverflow(page)).toBe(0);
+    await expect(page.locator("#spike-copy")).toBeInViewport();
+  }
 
   const copy = page.locator("#spike-copy");
   await copy.click();
