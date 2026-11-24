@@ -140,18 +140,23 @@
             <li>
               Walk an indoor loop of at least 50 m, several laps. A jump is a
               camera step of more than 0.25 m or 5 deg that your own walking and
-              turning do not explain, so quick turns are fine.
+              turning do not explain: smooth turns, even quick ones, are fine.
+              One that comes with a stutter of the camera image is listed as
+              "long frame" and not counted.
             </li>
             <li>
-              If no jump is listed after a few laps, stand still, cover the
-              camera for a few seconds, then uncover it: that is a tracking
-              loss, judged like a jump.
+              If no jump is listed after a few laps, make a tracking loss: stand
+              still for 2 s, cover the camera for a few seconds while you keep
+              still, uncover it and stay still for 2 s more. A loss taken while
+              moving is listed as "moving" and not counted.
             </li>
             <li>
               Each jump and loss is judged over 2 s: walk on calmly. A second
               one inside those 2 s cuts the first short ("truncated"). Keep
-              going until 2 or more are judged, then return to the mark and note
-              whether the green box still sits on it.
+              going until the counts line shows 2 or more judged; it also lists
+              what was not counted (moving, long frame, no anchor, truncated).
+              Then return to the mark and note whether the green box still sits
+              on it.
             </li>
             <li>Press Copy log and paste the log.</li>
           </ol>

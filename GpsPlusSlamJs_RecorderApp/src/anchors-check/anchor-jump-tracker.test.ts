@@ -1,11 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
-import { composeRigid } from 'gps-plus-slam-app-framework/ar/ar-space-correction';
+import {
+  composeRigid,
+  invertRigid,
+} from 'gps-plus-slam-app-framework/ar/ar-space-correction';
 import { FRAME_JUMP_THRESHOLD_M } from 'gps-plus-slam-app-framework/ar/deferred-anchors';
 import {
   JUMP_ROTATION_DEG,
   JUMP_TRANSLATION_M,
   FRAME_GAP_MS,
+  MAX_EXTRAPOLATION_RATIO,
+  STILL_ROTATION_DEG,
+  STILL_TRANSLATION_M,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
   VERDICT_TOLERANCES,
@@ -101,6 +107,9 @@ describe('thresholds', () => {
     expect(JUMP_ROTATION_DEG).toBe(5);
     expect(FRAME_GAP_MS).toBe(500);
     expect(SETTLE_DELAYS_MS).toEqual([100, 300, 1000, 2000]);
+    expect(STILL_TRANSLATION_M).toBe(0.02);
+    expect(STILL_ROTATION_DEG).toBe(1);
+    expect(MAX_EXTRAPOLATION_RATIO).toBe(3);
     expect(VERDICT_TOLERANCES.tight.positionM).toBeLessThan(
       VERDICT_TOLERANCES.main.positionM
     );
@@ -245,6 +254,87 @@ describe('jump detection', () => {
     const events = episodes(feed(jumpWalk(d, pose(0, 0, -3), () => null)));
     expect(events).toHaveLength(1);
     expect(events[0]?.truncated).toBe(false);
+    expect(events[0]?.compensated).toBe(true);
+    expect(events[0]?.notCounted).toBeNull();
+  });
+
+  // Why this matters: D's own translation grows with the distance from the
+  // session origin; a 3 deg turn of a camera 20 m out moves the origin by
+  // about 1 m. Detection must read the step at the camera (0 m, 3 deg), or
+  // every small glitch far from the start reads as a big jump.
+  it('judges a turn far from the origin at the camera, not by D', () => {
+    const before = pose(20, 1.5, 0, 0);
+    const after = pose(20, 1.5, 0, 3);
+    const d = composeRigid(after, invertRigid(before));
+    expect(Math.hypot(...d.position)).toBeGreaterThan(JUMP_TRANSLATION_M);
+    const samples = [
+      ...Array.from({ length: 10 }, (_, i) => bare(i * FRAME_MS, before)),
+      ...Array.from({ length: 10 }, (_, i) => bare((10 + i) * FRAME_MS, after)),
+    ];
+    expect(episodes(feed(samples))).toEqual([]);
+  });
+
+  // Why this matters: the compensation extrapolates the last frame interval
+  // over the new one. Over a 200 ms stall at 30 Hz (6 times the interval)
+  // the onset of a turn, 300 deg/s^2, leaves about 7 deg unexplained: logged
+  // in full, but never counted as a verdict.
+  it('does not count a jump that a long frame alone can explain', () => {
+    const turn = (t: number) => 0.5 * 300 * (t / 1000) ** 2;
+    const times = [0, 33, 66, 99, 132, 165, 365];
+    const samples = times.map((t) => bare(t, pose(0, 1.5, 0, turn(t))));
+    for (let i = 1; i <= SETTLE_SPAN; i++)
+      samples.push(bare(365 + i * FRAME_MS, pose(0, 1.5, 0, turn(365))));
+    const events = episodes(feed(samples));
+    expect(events).toHaveLength(1);
+    const jump = events[0]!;
+    expect(jump.kind).toBe('jump');
+    expect(jump.unexplainedStep.rotationDeg).toBeGreaterThan(JUMP_ROTATION_DEG);
+    expect(jump.dtMs / (jump.cameraBefore.t - jump.cameraPrev!.t)).toBeCloseTo(
+      200 / 33,
+      9
+    );
+    expect(jump.notCounted).toBe('long frame');
+  });
+
+  // Why this matters: the first frame after a start, a loss or a gap has no
+  // rate. A real jump there must be logged as such (uncompensated), and that
+  // frame must not become the rate, or the next frame reads the jump as
+  // velocity and logs a false inverse jump.
+  it('logs a jump on the first frame after a start once, uncompensated', () => {
+    const shifted = pose(0.8, 1.5, 0);
+    const samples = [
+      bare(0, pose(0, 1.5, 0)),
+      ...Array.from({ length: SETTLE_SPAN }, (_, i) =>
+        bare((1 + i) * FRAME_MS, shifted)
+      ),
+    ];
+    const events = episodes(feed(samples));
+    expect(events.map((e) => [e.kind, e.t])).toEqual([['jump', FRAME_MS]]);
+    expect(events[0]!.compensated).toBe(false);
+    expect(events[0]!.cameraPrev).toBeNull();
+    // No step before it is known, so it is not shown to be still.
+    expect(events[0]!.notCounted).toBe('moving');
+  });
+
+  it('logs a jump on the first frame after a loss once, uncompensated', () => {
+    const still = pose(0, 1.5, 0);
+    const shifted = pose(0.8, 1.5, 0);
+    const samples = [
+      ...Array.from({ length: 5 }, (_, i) => bare(i * FRAME_MS, still)),
+      bare(200, null),
+      bare(900, null),
+      bare(933, still),
+      ...Array.from({ length: SETTLE_SPAN }, (_, i) =>
+        bare(966 + i * FRAME_MS, shifted)
+      ),
+    ];
+    const events = episodes(feed(samples));
+    expect(events.map((e) => [e.kind, e.t, e.truncated])).toEqual([
+      ['tracking-loss', 933, true],
+      ['jump', 966, false],
+    ]);
+    expect(events[1]!.compensated).toBe(false);
+    expect(events[1]!.cameraStep.translationM).toBeCloseTo(0.8, 9);
   });
 });
 
@@ -375,27 +465,68 @@ describe('tracking losses and frame gaps', () => {
     const loss = events[0]!;
     expect(loss.dtMs).toBe(933 - 132);
     expect(loss.cameraBefore.pose).toEqual(still);
-    expect(loss.cameraPrev).toBeNull();
+    // The frame before the loss start, for the stillness check.
+    expect(loss.cameraPrev?.t).toBe(99);
+    expect(loss.compensated).toBe(false);
+    expect(loss.notCounted).toBeNull();
     expect(loss.cameraStep.translationM).toBeCloseTo(2, 9);
     expect(loss.readings.at(-1)?.comparison?.verdicts.main).toBe(
       'frame switch'
     );
   });
 
-  // Why this matters: a long frame gap is "cannot compensate", never a jump,
-  // but the anchor across it is still judged.
-  it('logs a frame gap over the gap rule, with a verdict', () => {
+  // Why this matters: across a loss D is uncompensated, so while the walker
+  // moves D is just the walk, and an anchor that stays put reads as a
+  // "drift correction" that never happened. Such a loss is logged in full
+  // (with the frame before it) but not counted.
+  it('does not count a tracking loss taken while walking', () => {
     const anchor0 = pose(0, 0, -2);
-    const samples = walk(5, { anchor: anchor0 });
-    samples.push(
-      ...walk(SETTLE_SPAN, { t0: 132 + 600, z0: -1.5, anchor: anchor0 })
-    );
-    const events = episodes(feed(samples));
-    expect(events.map((e) => e.kind)).toEqual(['frame-gap']);
-    expect(events[0]!.dtMs).toBe(600);
-    expect(events[0]!.readings.at(-1)?.comparison?.verdicts.main).toBe(
+    const samples = [
+      ...walk(5, { anchor: anchor0 }),
+      bare(200, null),
+      ...walk(SETTLE_SPAN, { t0: 800, z0: -1, anchor: anchor0 }),
+    ];
+    const [loss] = episodes(feed(samples));
+    expect(loss?.kind).toBe('tracking-loss');
+    expect(loss?.cameraPrev?.t).toBe(99);
+    expect(loss?.readings.at(-1)?.comparison?.verdicts.main).toBe(
       'drift correction'
     );
+    expect(loss?.notCounted).toBe('moving');
+  });
+
+  // Why this matters: a long frame gap is "cannot compensate", never a jump.
+  // The same stillness rule as for a loss decides whether its verdict counts.
+  it('logs a frame gap over the gap rule, counted only when still', () => {
+    const anchor0 = pose(0, 0, -2);
+    const walking = walk(5, { anchor: anchor0 });
+    walking.push(
+      ...walk(SETTLE_SPAN, { t0: 132 + 600, z0: -1.5, anchor: anchor0 })
+    );
+    const [moving] = episodes(feed(walking));
+    expect([moving?.kind, moving?.dtMs, moving?.notCounted]).toEqual([
+      'frame-gap',
+      600,
+      'moving',
+    ]);
+    const still = walk(5, { anchor: anchor0, speed: 0 });
+    still.push(...walk(SETTLE_SPAN, { t0: 732, speed: 0, anchor: anchor0 }));
+    const [gap] = episodes(feed(still));
+    expect(gap?.kind).toBe('frame-gap');
+    expect(gap?.notCounted).toBeNull();
+    expect(gap?.readings.at(-1)?.comparison).not.toBeNull();
+  });
+
+  // Why this matters: the limit is per frame; a step just over it is
+  // moving, one just under is still.
+  it('reads stillness from the last step before the episode', () => {
+    const at = (speed: number) => {
+      const s = walk(5, { speed });
+      s.push(bare(200, null), ...walk(SETTLE_SPAN, { t0: 800, speed: 0 }));
+      return episodes(feed(s))[0]?.notCounted;
+    };
+    expect(at(STILL_TRANSLATION_M * 0.9)).toBeNull();
+    expect(at(STILL_TRANSLATION_M * 1.1)).toBe('moving');
   });
 
   // Why this matters: the page hands over whatever WebXR gave it; a NaN pose

@@ -12,14 +12,19 @@ import {
   FRAME_GAP_MS,
   JUMP_ROTATION_DEG,
   JUMP_TRANSLATION_M,
+  MAX_EXTRAPOLATION_RATIO,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
+  STILL_ROTATION_DEG,
+  STILL_TRANSLATION_M,
   VERDICT_TOLERANCES,
+  isStill,
   poseStep,
   type AnchorReading,
   type EpisodeEvent,
   type EpisodeKind,
   type FrameStats,
+  type NotCounted,
   type PoseStep,
   type TimedPose,
   type TrackerEvent,
@@ -87,13 +92,30 @@ function episodeTitle(e: EpisodeEvent): string {
   }
 }
 
+/**
+ * Why a closed, full episode is left out of the counts; `null`: counted.
+ * No anchor to judge at the last reading (none placed, or not tracked)
+ * says nothing about anchors.
+ */
+function exclusion(e: EpisodeEvent): NotCounted | 'no anchor' | null {
+  return e.notCounted ?? (latestVerdict(e) === null ? 'no anchor' : null);
+}
+
 function episodeLabel(e: EpisodeEvent): string {
-  const v = latestVerdict(e);
+  const v = latestVerdict(e) ?? 'no anchor';
   const lastDelay = e.readings.at(-1)?.delayMs ?? 0;
-  if (e.pending) return `settling, ${v ?? 'no anchor'} so far`;
-  if (e.truncated)
-    return `truncated, not counted (${v ?? 'no anchor'} at ${lastDelay} ms)`;
-  return v ?? 'unclear (no anchor tracked)';
+  if (e.pending) return `settling, ${v} so far`;
+  if (e.truncated) return `truncated, not counted (${v} at ${lastDelay} ms)`;
+  const why = exclusion(e);
+  if (why === 'no anchor') return 'no anchor, not counted';
+  return why === null ? v : `${why}, not counted (${v})`;
+}
+
+/** The step to show: what the compensation left, or the raw step. */
+function shownStep(e: EpisodeEvent): string {
+  return e.compensated
+    ? `unexplained ${formatStep(e.unexplainedStep)}`
+    : `raw step ${formatStep(e.cameraStep)}`;
 }
 
 export function onScreenLine(e: TrackerEvent): string {
@@ -101,7 +123,7 @@ export function onScreenLine(e: TrackerEvent): string {
     case 'jump':
     case 'tracking-loss':
     case 'frame-gap':
-      return `${episodeTitle(e)}: ${episodeLabel(e)} (${e.readings.map(shortReading).join(', ')}); unexplained ${formatStep(e.unexplainedStep)}, ${e.stepClass}`;
+      return `${episodeTitle(e)}: ${episodeLabel(e)} (${e.readings.map(shortReading).join(', ')}); ${shownStep(e)}, ${e.stepClass}`;
     case 'placed':
       return 'Anchor and marker placed';
     case 'anchor-failed':
@@ -116,17 +138,22 @@ export function onScreenLine(e: TrackerEvent): string {
 }
 
 export interface VerdictCounts {
-  /** Episodes that reached the last delay: these carry a verdict. */
+  /** Counted episodes: reached the last delay, nothing excluded them. */
   readonly judged: number;
   readonly 'frame switch': number;
   readonly 'drift correction': number;
-  /** Includes the judged episodes with no anchor tracked. */
   readonly unclear: number;
+  /** Not counted, by reason. */
+  readonly moving: number;
+  readonly 'long frame': number;
+  readonly 'no anchor': number;
   readonly truncated: number;
   readonly settling: number;
 }
 
-/** Episodes of `kind` by their final main-tolerance verdict. */
+const NOT_COUNTED = ['moving', 'long frame', 'no anchor', 'truncated'] as const;
+
+/** Episodes of `kind` by their final main-tolerance verdict or exclusion. */
 export function verdictCounts(
   events: readonly TrackerEvent[],
   kind: EpisodeKind
@@ -136,16 +163,23 @@ export function verdictCounts(
     'frame switch': 0,
     'drift correction': 0,
     unclear: 0,
+    moving: 0,
+    'long frame': 0,
+    'no anchor': 0,
     truncated: 0,
     settling: 0,
   };
   for (const e of events) {
     if (!isEpisode(e) || e.kind !== kind) continue;
-    if (e.pending) counts.settling++;
-    else if (e.truncated) counts.truncated++;
+    const why = e.pending
+      ? 'settling'
+      : e.truncated
+        ? 'truncated'
+        : exclusion(e);
+    if (why !== null) counts[why]++;
     else {
       counts.judged++;
-      counts[latestVerdict(e) ?? 'unclear']++;
+      counts[latestVerdict(e)!]++;
     }
   }
   return counts;
@@ -155,12 +189,21 @@ function countsPart(c: VerdictCounts, one: string, many: string): string {
   return `${c.judged} ${c.judged === 1 ? one : many} (frame switch ${c['frame switch']}, drift correction ${c['drift correction']}, unclear ${c.unclear})`;
 }
 
-/** The on-screen counts: the walk stops at two or more judged. */
+function notCountedPart(of: (k: (typeof NOT_COUNTED)[number]) => number) {
+  return NOT_COUNTED.map((k) => `${k} ${of(k)}`).join(', ');
+}
+
+/**
+ * The on-screen counts: the walk stops at two or more judged. The jumps
+ * and losses left out are named by reason.
+ */
 export function countsLine(events: readonly TrackerEvent[]): string {
   const jumps = verdictCounts(events, 'jump');
   const losses = verdictCounts(events, 'tracking-loss');
-  if (jumps.judged + losses.judged === 0) return 'Nothing judged yet.';
-  return `Judged: ${countsPart(jumps, 'jump', 'jumps')}; ${countsPart(losses, 'tracking loss', 'tracking losses')}`;
+  const both = (k: (typeof NOT_COUNTED)[number]) => jumps[k] + losses[k];
+  const left = NOT_COUNTED.reduce((n, k) => n + both(k), 0);
+  if (jumps.judged + losses.judged + left === 0) return 'Nothing judged yet.';
+  return `Judged: ${countsPart(jumps, 'jump', 'jumps')}; ${countsPart(losses, 'tracking loss', 'tracking losses')}. Not counted: ${notCountedPart(both)}.`;
 }
 
 function distribution(
@@ -197,14 +240,30 @@ function readingLines(r: AnchorReading): string[] {
   ];
 }
 
+/** The camera step per frame before the episode, and the extrapolation ratio. */
+function preStepLine(e: EpisodeEvent): string {
+  const prev = e.cameraPrev;
+  if (prev === null) return '  pre-step per frame none (motion unknown)';
+  const pre = poseStep(prev.pose, e.cameraBefore.pose);
+  const ratio = e.dtMs / (e.cameraBefore.t - prev.t);
+  return `  pre-step per frame ${formatStepFine(pre)} (${isStill(pre) ? 'still' : 'moving'})${e.compensated ? `; extrapolation ratio ${ratio.toFixed(2)}` : ''}`;
+}
+
 function episodeLines(e: EpisodeEvent): string[] {
+  const why = exclusion(e);
   const state = e.pending
     ? ', still settling'
     : e.truncated
       ? ', truncated'
-      : '';
+      : why === null
+        ? ''
+        : `, not counted: ${why}`;
+  const step = e.compensated
+    ? `unexplained ${formatStepFine(e.unexplainedStep)}`
+    : 'raw step, D uncompensated';
   return [
-    `${at(e.t)} ${e.kind} ${e.index}: dt ${Math.round(e.dtMs)} ms, camera step ${formatStepFine(e.cameraStep)}, unexplained ${formatStepFine(e.unexplainedStep)} (${e.stepClass})${state}`,
+    `${at(e.t)} ${e.kind} ${e.index}: dt ${Math.round(e.dtMs)} ms, camera step ${formatStepFine(e.cameraStep)}, ${step} (${e.stepClass})${state}`,
+    preStepLine(e),
     `  camera prev: ${timed(e.cameraPrev)}`,
     `  camera before: ${timed(e.cameraBefore)}`,
     `  camera after: ${formatPose(e.cameraAfter)}`,
@@ -236,7 +295,7 @@ function eventLines(e: TrackerEvent): string[] {
 }
 
 function countsLogLine(name: string, c: VerdictCounts): string {
-  return `${name} judged ${c.judged} (frame switch ${c['frame switch']}, drift correction ${c['drift correction']}, unclear ${c.unclear}), truncated ${c.truncated}, settling ${c.settling}`;
+  return `${name} judged ${c.judged} (frame switch ${c['frame switch']}, drift correction ${c['drift correction']}, unclear ${c.unclear}); not counted: ${notCountedPart((k) => c[k])}; settling ${c.settling}`;
 }
 
 export interface LogInput {
@@ -252,7 +311,8 @@ export interface LogInput {
 export function buildLog(input: LogInput): string {
   const { stats, events } = input;
   const jumps = events.filter(
-    (e): e is EpisodeEvent => e.kind === 'jump' && !e.pending && !e.truncated
+    (e): e is EpisodeEvent =>
+      e.kind === 'jump' && !e.pending && !e.truncated && exclusion(e) === null
   );
   const band = (c: EpisodeEvent['stepClass']) =>
     jumps.filter((j) => j.stepClass === c).length;
@@ -269,8 +329,9 @@ export function buildLog(input: LogInput): string {
     ...Object.entries(input.environment).map(([k, v]) => `${k}: ${v}`),
     `limits: jump logged when the step left after the motion compensation is above ${JUMP_TRANSLATION_M} m or ${JUMP_ROTATION_DEG} deg; frame gap above ${FRAME_GAP_MS} ms; bands ${BAND_LOWER_M}-${RELOCALIZATION_RULE_M} m below the ${RELOCALIZATION_RULE_M} m rule`,
     `settling: anchor read at ${[0, ...SETTLE_DELAYS_MS].join(', ')} ms after each jump, loss and gap; the ${SETTLE_DELAYS_MS.at(-1)} ms reading is the counted verdict; an episode cut short by the next one is truncated and not counted`,
+    `counted: a loss, a gap or a jump with no rate only when the camera step per frame before it is at most ${STILL_TRANSLATION_M} m and ${STILL_ROTATION_DEG} deg; a jump only when its frame is at most ${MAX_EXTRAPOLATION_RATIO} times the one before; an episode with no anchor tracked at its last reading is not counted`,
     `verdict tolerances: tight ${t(tol.tight)}, main ${t(tol.main)}, loose ${t(tol.loose)}`,
-    'poses: raw WebXR local space; D is motion-compensated when a rate frame is logged, else uncompensated; an anchor that trackedAnchors does not hold is logged but not judged',
+    'poses: raw WebXR local space; D is motion-compensated for a jump on a frame with a rate (camera prev is the rate frame), else it is the raw step (camera prev then only shows whether the camera was still); an anchor that trackedAnchors does not hold is logged but not judged',
     `frames: ${stats.frames}, judged pairs ${stats.dtMs.length}, lost-tracking frames ${stats.lostFrames}`,
     distribution('frame dt ms', stats.dtMs, 1),
     distribution('camera step per frame m', stats.translationM, 4),

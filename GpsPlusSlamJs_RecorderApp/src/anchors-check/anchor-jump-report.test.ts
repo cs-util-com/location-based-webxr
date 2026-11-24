@@ -55,6 +55,23 @@ function run(opts: {
 const firstEpisode = (events: readonly TrackerEvent[]) =>
   events.find((e): e is EpisodeEvent => e.kind === 'jump')!;
 
+/**
+ * A real tracker run: walking 0.04 m per frame in x, the camera covered for
+ * 600 ms, walking on; the anchor stays put. D is then just the walk.
+ */
+function walkingLoss() {
+  const a0 = pose(0.4, 0, 0);
+  const tracker = createAnchorJumpTracker();
+  for (let i = 0; i < 5; i++)
+    tracker.onFrame(sample(i * FRAME_MS, i * 0.04, a0));
+  tracker.onFrame({ ...sample(165, 0, a0), camera: null });
+  for (let i = 0; i < SPAN; i++)
+    tracker.onFrame(sample(800 + i * FRAME_MS, 1 + i * 0.04, a0));
+  return tracker
+    .events()
+    .find((e): e is EpisodeEvent => e.kind === 'tracking-loss')!;
+}
+
 describe('percentile', () => {
   // Why this matters: the noise floor for the jump guard is read off these
   // figures; nearest rank on a sorted copy, nothing for no data.
@@ -107,10 +124,28 @@ describe('onScreenLine', () => {
     );
   });
 
+  // Why this matters: a jump before any anchor exists says nothing about
+  // anchors and must not read as a judged "unclear".
   it('says plainly when no anchor was tracked', () => {
     const jump = firstEpisode(run({ anchor: false }).events());
-    expect(onScreenLine(jump)).toContain('unclear (no anchor tracked)');
+    expect(onScreenLine(jump)).toContain(': no anchor, not counted (');
     expect(onScreenLine(jump)).toContain('2000 ms none');
+  });
+
+  // Why this matters: a loss taken while walking is logged but its verdict
+  // is the walk, not the anchor; the line must say it is not counted, and
+  // give the raw step, since nothing was compensated.
+  it('labels a moving loss as not counted, with its raw step', () => {
+    expect(onScreenLine(walkingLoss())).toMatch(
+      /^Tracking loss 1 \(0\.7 s\): moving, not counted \(drift correction\) \(.*\); raw step 0\.84 m \/ 0\.0 deg, 0\.3-1 m$/
+    );
+  });
+
+  it('labels a jump over a long frame as not counted', () => {
+    const fs = firstEpisode(run({}).events());
+    expect(onScreenLine({ ...fs, notCounted: 'long frame' })).toMatch(
+      /^Jump 1: long frame, not counted \(frame switch\) /
+    );
   });
 
   it('describes losses, gaps, placements and notes', () => {
@@ -150,29 +185,65 @@ describe('verdictCounts and countsLine', () => {
     cut.noteSession('end', 500);
     const truncated = firstEpisode(cut.events());
     const pending = firstEpisode(run({ framesAfter: 5 }).snapshot());
+    const long: EpisodeEvent = { ...fs, notCounted: 'long frame' };
     const counts = verdictCounts(
-      [fs, fs, dc, none, truncated, pending],
+      [fs, fs, dc, none, truncated, pending, long],
       'jump'
     );
     expect(counts).toEqual({
-      judged: 4,
+      judged: 3,
       'frame switch': 2,
       'drift correction': 1,
-      unclear: 1,
+      unclear: 0,
+      moving: 0,
+      'long frame': 1,
+      'no anchor': 1,
       truncated: 1,
       settling: 1,
-    } satisfies Record<Verdict | 'judged' | 'truncated' | 'settling', number>);
+    } satisfies Record<
+      | Verdict
+      | 'judged'
+      | 'moving'
+      | 'long frame'
+      | 'no anchor'
+      | 'truncated'
+      | 'settling',
+      number
+    >);
     expect(verdictCounts([fs], 'tracking-loss').judged).toBe(0);
+    // Why this matters: the walking loss reads "drift correction"; counted,
+    // it would decide the spike's answer on an artefact.
+    const moving = verdictCounts([walkingLoss()], 'tracking-loss');
+    expect([moving.judged, moving['drift correction'], moving.moving]).toEqual([
+      0, 0, 1,
+    ]);
   });
 
-  it('says how many jumps and losses are judged', () => {
+  // Why this matters: the walker stops on this line, so it must say what
+  // was logged but left out, and why, not only what was judged.
+  it('says how many jumps and losses are judged and why others are not', () => {
     expect(countsLine([])).toBe('Nothing judged yet.');
     const fs = firstEpisode(run({}).events());
     expect(countsLine([fs, { ...fs, kind: 'tracking-loss' }])).toBe(
-      'Judged: 1 jump (frame switch 1, drift correction 0, unclear 0); 1 tracking loss (frame switch 1, drift correction 0, unclear 0)'
+      'Judged: 1 jump (frame switch 1, drift correction 0, unclear 0); 1 tracking loss (frame switch 1, drift correction 0, unclear 0). Not counted: moving 0, long frame 0, no anchor 0, truncated 0.'
+    );
+    const none = firstEpisode(run({ anchor: false }).events());
+    expect(countsLine([none, walkingLoss()])).toBe(
+      'Judged: 0 jumps (frame switch 0, drift correction 0, unclear 0); 0 tracking losses (frame switch 0, drift correction 0, unclear 0). Not counted: moving 1, long frame 0, no anchor 1, truncated 0.'
     );
   });
 });
+
+const buildLogFor = (e: TrackerEvent) =>
+  buildLog({
+    nowIso: '2026-01-01T00:00:00.000Z',
+    environment: {},
+    events: [e],
+    stats: createAnchorJumpTracker().stats(),
+    anchorNow: null,
+    anchorNowTracked: null,
+    markerNow: null,
+  });
 
 describe('buildLog', () => {
   // Why this matters: the pasted log is the whole result of the walk; it
@@ -181,6 +252,9 @@ describe('buildLog', () => {
   // before and after, D, D * anchorBefore and each reading with its
   // tracked flag and verdicts.
   it('holds the header, the distributions and every event in full', () => {
+    expect(buildLogFor(walkingLoss())).toContain(
+      'tracking-loss 1: dt 668 ms, camera step 0.840 m / 0.00 deg, raw step, D uncompensated (0.3-1 m), not counted: moving'
+    );
     const tracker = run({});
     tracker.noteAnchorFailed(3000, 'no plane');
     tracker.noteSession('end', 3100);
@@ -203,7 +277,9 @@ describe('buildLog', () => {
       'tight 0.05 m / 1.5 deg',
       'frame dt ms: p50 33.0',
       'unexplained step per frame m:',
-      'jumps judged 1 (frame switch 1, drift correction 0, unclear 0), truncated 0',
+      'jumps judged 1 (frame switch 1, drift correction 0, unclear 0); not counted: moving 0, long frame 0, no anchor 0, truncated 0; settling 0',
+      'counted: a loss, a gap or a jump with no rate only when the camera step per frame before it is at most 0.02 m and 1 deg; a jump only when its frame is at most 3 times the one before',
+      'pre-step per frame 0.000 m / 0.00 deg (still); extrapolation ratio 1.00',
       'anchor now (tracked yes): p=(1.000',
       'anchor to marker now: 0.600 m',
       'jump 1: dt 33 ms',

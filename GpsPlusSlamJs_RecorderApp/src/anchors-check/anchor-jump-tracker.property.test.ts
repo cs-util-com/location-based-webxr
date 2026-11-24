@@ -14,6 +14,7 @@ import {
   poseStep,
   type EpisodeEvent,
   type FrameSample,
+  type PoseStep,
 } from './anchor-jump-tracker';
 
 const unitQuat = fc
@@ -67,6 +68,21 @@ const FRAME_MS = 33;
 const JUMP_AT = 10;
 const FRAMES = JUMP_AT + Math.ceil(SETTLE_DELAYS_MS.at(-1)! / FRAME_MS) + 2;
 
+/** 1 over the jump limits, 0 under, `null` within the arc margin of them. */
+function wantedJumps(step: PoseStep): number | null {
+  if (
+    step.translationM > JUMP_TRANSLATION_M + 0.005 ||
+    step.rotationDeg > JUMP_ROTATION_DEG + 0.01
+  )
+    return 1;
+  if (
+    step.translationM < JUMP_TRANSLATION_M - 0.005 &&
+    step.rotationDeg < JUMP_ROTATION_DEG - 0.01
+  )
+    return 0;
+  return null;
+}
+
 describe('anchor jump tracker properties', () => {
   // Why this matters: the verdict must name the model that produced the
   // data, for any jump big enough to tell the two apart, any anchor and any
@@ -105,12 +121,20 @@ describe('anchor jump tracker properties', () => {
           const jumps = tracker
             .events()
             .filter((e): e is EpisodeEvent => e.kind === 'jump');
-          // A D that leaves the camera under the logging limits is not
-          // logged; when it is, it is one jump with every verdict right.
+          // The step D leaves at the camera, against the perfectly
+          // extrapolated pose (the motion is a constant body step, so that
+          // is the next track pose). The compensation misses it by under
+          // 2 mm (the arc), so near the limit either answer is right.
+          const atCamera = poseStep(
+            cams[JUMP_AT]!,
+            composeRigid(d, cams[JUMP_AT]!)
+          );
+          expect(jumps).toHaveLength(wantedJumps(atCamera) ?? jumps.length);
           expect(jumps.length).toBeLessThanOrEqual(1);
           for (const jump of jumps) {
             const want = followsD ? 'frame switch' : 'drift correction';
             expect(jump.truncated).toBe(false);
+            expect(jump.notCounted).toBeNull();
             for (const r of jump.readings) {
               expect(r.comparison?.verdicts).toEqual({
                 tight: want,
@@ -161,6 +185,74 @@ describe('anchor jump tracker properties', () => {
           expect(tracker.noteSession('end', 500)).toEqual([
             { kind: 'session-end', t: 500 },
           ]);
+          expect(tracker.events().map((e) => e.kind)).toEqual(['session-end']);
+        }
+      )
+    );
+  });
+
+  // Why this matters: real frames are neither evenly spaced nor noise-free.
+  // Steady motion up to 3 m/s and 300 deg/s, with millimetre and tenth-of-a
+  // degree pose noise and frame times between 16 and 33 ms (an
+  // extrapolation ratio up to about 2), must still log nothing.
+  it('logs nothing for steady motion with pose noise and uneven frame times', () => {
+    const FRAMES_N = 40;
+    const rot = (a: Pose['rotation'], b: Pose['rotation']) =>
+      composeRigid(
+        { position: [0, 0, 0], rotation: a },
+        { position: [0, 0, 0], rotation: b }
+      ).rotation;
+    const axisTurn = (axis: Pose['position'], deg: number) => {
+      const n = Math.hypot(...axis);
+      const h = (deg * Math.PI) / 360;
+      const s = Math.sin(h) / n;
+      return [
+        axis[0] * s,
+        axis[1] * s,
+        axis[2] * s,
+        Math.cos(h),
+      ] as Pose['rotation'];
+    };
+    fc.assert(
+      fc.property(
+        anyPose(3),
+        position(3).filter((v) => Math.hypot(...v) <= 3),
+        position(1).filter((a) => Math.hypot(...a) > 0.1),
+        fc.double({ min: -300, max: 300, noNaN: true }),
+        fc.array(fc.integer({ min: 16, max: 33 }), {
+          minLength: FRAMES_N,
+          maxLength: FRAMES_N,
+        }),
+        fc.array(
+          fc.record({ position: position(0.003), rotation: smallTurn(0.15) }),
+          { minLength: FRAMES_N, maxLength: FRAMES_N }
+        ),
+        (start, velocity, axis, degPerS, dts, noise) => {
+          const tracker = createAnchorJumpTracker();
+          let t = 0;
+          for (let i = 0; i < FRAMES_N; i++) {
+            t += dts[i]!;
+            const s = t / 1000;
+            const n = noise[i]!;
+            tracker.onFrame({
+              t,
+              camera: {
+                position: [
+                  start.position[0] + velocity[0] * s + n.position[0],
+                  start.position[1] + velocity[1] * s + n.position[1],
+                  start.position[2] + velocity[2] * s + n.position[2],
+                ],
+                rotation: rot(
+                  rot(start.rotation, axisTurn(axis, degPerS * s)),
+                  n.rotation
+                ),
+              },
+              anchor: null,
+              anchorTracked: null,
+              marker: null,
+            });
+          }
+          tracker.noteSession('end', t);
           expect(tracker.events().map((e) => e.kind)).toEqual(['session-end']);
         }
       )
