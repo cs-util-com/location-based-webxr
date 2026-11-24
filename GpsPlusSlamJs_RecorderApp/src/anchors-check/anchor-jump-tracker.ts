@@ -440,7 +440,11 @@ function compare(
 
 /**
  * `D` in the raw WebXR frame (the framework computes it in NUE): motion
- * compensated from `rate` when given, else the raw step.
+ * compensated from `rate` when given, else the raw step. Mode `'always'`:
+ * the rate is the frame just before, one frame interval back, and the
+ * counting rules here (steady rate, extrapolation ratio) judge it, not the
+ * framework's guard, which needs a baseline of
+ * `COMPENSATION_BASELINE_MS` and would leave every per-frame rate raw.
  */
 function jumpAt(
   t: number,
@@ -448,14 +452,17 @@ function jumpAt(
   rate: TimedPose | null,
   camera: Pose
 ): Pose {
-  const d = jumpTransform({
-    t,
-    tLast: before.t,
-    lastPose: before.pose,
-    tPrev: rate?.t ?? null,
-    prevPose: rate?.pose ?? null,
-    newPose: camera,
-  });
+  const d = jumpTransform(
+    {
+      t,
+      tLast: before.t,
+      lastPose: before.pose,
+      tPrev: rate?.t ?? null,
+      prevPose: rate?.pose ?? null,
+      newPose: camera,
+    },
+    'always'
+  );
   return {
     position: nueToWebXR(d.position),
     rotation: nueQuaternionToWebXR(d.rotation),
