@@ -124,7 +124,7 @@ DOM glue, its own module since the flows plan M6.
   running session (`hooks.startScanGate`) and its level load's outcome
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1), and the visitor screen
-  either way (`hooks.presentTourLevels()`, r857 review #5); a read that
+  either way (`hooks.presentTourLevels()`); a read that
   settles also resets the QR controller's per-text cache and drops the
   null entries of `ctx.levelByText` (a code decoded before the levels
   parsed cached "not this tour's" and would keep the capture burst shut
