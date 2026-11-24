@@ -23,6 +23,96 @@ wantsFrame? }) => unregister` gives a second CV consumer (an image matcher)
     `viewErrorAtRotationPx`, `estimateQrSizeFromDepth` and
     `estimateQrSizeFromDepthDense`.
 
+### Fixed
+
+- **The robust plane fit samples every point count** (`ar/qr/qr-size-from-depth`,
+  `fitPlaneRobust`). Its triple sampler overflowed double precision and
+  returned one index whenever the count of depth reads divided 512, so the
+  dense QR size measurer found no plane at 16 or 32 reads and lost its
+  outlier robustness at 48. It now steps an exact 32-bit generator and
+  takes each index from the high bits.
+
+## [1.32.0] - 2026-11-24
+
+### ⚠️ Breaking changes
+
+- `visualization/ar-world-group-alignment`: **alignment changes land in
+  the frame they arrive.** `enableArWorldGroupAlignment` no longer eases
+  the group over about 0.3 s: every new alignment, large or small, is
+  copied exactly into `arWorldGroup.matrix` in the frame it is read, so the
+  world under the group jumps at once instead of sliding. Smoothing, if an
+  app wants it, belongs to the app. The `lerpRate` option is removed (it
+  has nothing left to set); `createAlignmentLerper` is unchanged and stays
+  for apps that drive their own group.
+- `ar/replay-scene`: **replay follows the same rule.** The desktop replay
+  scene no longer eases `arWorldGroup` toward each alignment; the new
+  `applyReplayAlignment(matrix)` writes it exactly, in the frame it
+  arrives, and `startReplaySession` uses it. `getAlignmentLerper()` is
+  removed: wire `applyAlignmentMatrix: applyReplayAlignment` into
+  `wireStoreSubscribers` instead. An app that wants smoothing adds it
+  itself, as the RecorderApp does for its live AR view (it drives its own
+  `createAlignmentLerper` from `ar/wire-ar-scene.ts`).
+- `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
+  `(votes) => boolean | void`. Returning `false` says it cast no votes;
+  otherwise the controller asks every deferred anchor to re-place once, and
+  returning nothing keeps today's meaning. A callback whose expression body
+  returns another value (`(v) => list.push(...v)`) no longer type-checks and
+  needs braces. The type is not `unknown` on purpose: `unknown` would also
+  accept `async () => false`, whose Promise would release silently.
+
+- **`tour.json` version 5: stations hold children, stories hold their own**
+  (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,
+  `ar/tour-blocks`). A station holds one ordered list `children`: a free
+  block, or a story `{ id, kind: 'story', title, children }` holding its
+  blocks, choices and quizzes in the order a visitor meets them. A block
+  lives in one place, so being in a story is what shows it; a story block
+  carries its `advance`, and a choice's `goto` names a child of the same
+  story. Child ids are one namespace across the tour. Versions 1 to 4 are
+  refused with `TourManifestOlderFormatError`: no migration.
+  `TOUR_OBJECT_RECORD_FORMAT` is 5, so a draft record of format 4 reads as
+  older. Removed: `TourStation.blocks` and `.steps`, `TourStep`,
+  `TourStepAction`, `TourStationContent`, `parseTourStationContent`,
+  `tourShownBlockIds`, `checkTourBlockIdsUnique`.
+  `placeTourBlocks` loses its `shown` argument. Added:
+  `parseTourStationChildren`, `checkTourChildIdsUnique`, `tourStories`,
+  `tourStoryBlocks`, `tourStationStoryBlocks`, `tourStationBlocks`,
+  `tourStationChildIds`, `tourChildPlace`, the `tourChildren*` functions,
+  `tourFreeBlocks` and the types `TourStationChild`, `TourStory`,
+  `TourStoryChild`, `TourStoryBlock`, `TourChoice`, `TourQuizEntry`.
+  The test-utils export `tourStationContentArbitrary` is gone: use
+  `tourStationChildrenArbitrary`. Reading a station's blocks: `tourStationBlocks(station)`,
+  or `tourFreeBlocks(station)` for the ones standing in the world.
+
+- **AR-space correction, consequences for existing code:**
+  - `SlamAppRootState` gains the required `arSpaceCorrection` slice; a
+    hand-built root state (a test fixture) must add
+    `arSpaceCorrection: { observations: [] }`.
+  - `arSpaceCorrection` is a reserved `extraReducers` key.
+  - `SEGMENTING_ACTION_TYPES` gains
+    `arSpaceCorrection/relocalizationObserved`, so the Tour Viewer's capture
+    geo join and the splat recording reader decline a recording that holds
+    a relocalization, and the QR sighting fold segments at it.
+  - GPS anchors and deferred anchors claim their objects through
+    `ar/pose-committer`: putting an anchored object under another anchor, or
+    tracking it for the correction, now throws (`is already committed by`
+    or `nested pose committers are not supported`).
+
+- **Every container is a folder** (`ar/tour-story`): a story is
+  `{ kind: 'folder', role: 'story', title, children }` (was
+  `kind: 'story'`), read and written in that shape. A folder without a
+  role is a plain folder: it groups free blocks and plain folders, nests
+  at any depth, and carries an optional `pose` (a rigid frame; its
+  `scale` is read only as 1, since a scale other than 1 waits for a
+  renderer that scales the whole group). A child's offset with its
+  folders' poses composed in stays within `TOUR_ITEM_MAX_OFFSET_M`, as a
+  single pose's does. A story stands only at a station's top and
+  holds no folder. `isTourStory` is now `isStory`, with `isTourFolder`
+  and `isTourBlockChild`; `tourChildrenFreeBlocks` is gone (use
+  `tourFreeBlocks`, which flattens plain folders, or the new
+  `composeTourFolderPose` and `decomposeTourFolderPose`); `TourChildrenPlace` carries a `path`.
+
+### Added
+
 - **Nearby targets**: which trackable targets (QR codes now; 2D images,
   3D objects later) are near enough to search for, so a frame-costly
   tracker can skip far-away ones.
@@ -277,156 +367,6 @@ wantsFrame? }) => unregister` gives a second CV consumer (an image matcher)
   view is drawn from its viewpoint (a picture in
   `TOUR_PICTURE_VIEWPOINT_VIEWS`, a video in `TOUR_VIDEO_VIEWPOINT_VIEWS`).
 
-### Changed
-
-- **AR-space correction, consequences for existing code:**
-  - `SlamAppRootState` gains the required `arSpaceCorrection` slice; a
-    hand-built root state (a test fixture) must add
-    `arSpaceCorrection: { observations: [] }`.
-  - `arSpaceCorrection` is a reserved `extraReducers` key.
-  - `SEGMENTING_ACTION_TYPES` gains
-    `arSpaceCorrection/relocalizationObserved`, so the Tour Viewer's capture
-    geo join and the splat recording reader decline a recording that holds
-    a relocalization, and the QR sighting fold segments at it.
-  - GPS anchors and deferred anchors claim their objects through
-    `ar/pose-committer`: putting an anchored object under another anchor, or
-    tracking it for the correction, now throws (`is already committed by`
-    or `nested pose committers are not supported`).
-
-- **A GPS anchor waits like a deferred anchor** (`visualization`,
-  `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in
-  `snap-when-offscreen` a correction above its threshold is held while any
-  drawable part of it (children included) is in view at its current pose,
-  was in view in the previous frame, or would be in view at its new pose.
-  A code-lock release commits it at once, and with an alignment binding
-  (`enableArWorldGroupAlignment` before the anchor is created) a frame
-  switch opens the same window as for deferred anchors. With that binding
-  its target is read from the group's own transform, so under the dev world
-  jump it lands where scene-root content of the same point lands. The
-  bootstrap, the threshold, `markMovedExternally` and the one-time first
-  placement are unchanged; `snap-every-tick` stays ungated. Commits are
-  instant, as before. Throws now also for an object that holds an anchored
-  object, or that is inside or holds a deferred anchor's root (and
-  `deferredAnchor(...).add` for a root holding a GPS-anchored object).
-
-- `visualization/ar-world-group-alignment`: the binding drives the deferred
-  anchors under its group right after its alignment step.
-- `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
-  `utils/data-uri`, strictly: a payload with whitespace or without its
-  padding, which plain `atob` accepted, is now an image that cannot be
-  found, and refuses the model.
-- `ImageHeaderInfo` (`utils/image-header`) is a union on `type` rather
-  than one interface: only its `webp` member has `alpha`, and it is
-  required there. Code that builds a `{ type: 'webp', width, height }`
-  value as an `ImageHeaderInfo` must add `alpha`; code that only reads
-  `type`, `width` and `height` is unaffected.
-- `TourPin` (`ar/tour-manifest`) is a short text in any of its world
-  views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
-  it; it was typed as `pin` alone.
-- `TourPicture` (`ar/tour-manifest`) is a picture in any of its world
-  views (`TourPictureWorldView`), and a free video among the
-  `TourObject`s stands in `screen`, `cutout` or `porthole` with its
-  `widthM`, as `tourObjects` yields them.
-- **Every container is a folder** (`ar/tour-story`): a story is
-  `{ kind: 'folder', role: 'story', title, children }` (was
-  `kind: 'story'`), read and written in that shape. A folder without a
-  role is a plain folder: it groups free blocks and plain folders, nests
-  at any depth, and carries an optional `pose` (a rigid frame; its
-  `scale` is read only as 1, since a scale other than 1 waits for a
-  renderer that scales the whole group). A child's offset with its
-  folders' poses composed in stays within `TOUR_ITEM_MAX_OFFSET_M`, as a
-  single pose's does. A story stands only at a station's top and
-  holds no folder. `isTourStory` is now `isStory`, with `isTourFolder`
-  and `isTourBlockChild`; `tourChildrenFreeBlocks` is gone (use
-  `tourFreeBlocks`, which flattens plain folders, or the new
-  `composeTourFolderPose` and `decomposeTourFolderPose`); `TourChildrenPlace` carries a `path`.
-- A video's and a sound's `transcript` and a character's `caption` are
-  optional: a blank one no longer fails the write.
-
-### Fixed
-
-- **The robust plane fit samples every point count** (`ar/qr/qr-size-from-depth`,
-  `fitPlaneRobust`). Its triple sampler overflowed double precision and
-  returned one index whenever the count of depth reads divided 512, so the
-  dense QR size measurer found no plane at 16 or 32 reads and lost its
-  outlier robustness at 48. It now steps an exact 32-bit generator and
-  takes each index from the high bits.
-
-- **`checkGlbInert` measures a model's pictures from the bytes three.js
-  loads** (`ar/tour-media`). A buffer with a `data:` URI is measured from
-  that URI, buffer 0 too, and the binary chunk only for buffer 0 without
-  one, as three.js's GLTFLoader reads them; an image's `bufferView` is
-  measured before a `uri` beside it. Before, a 4 x 4 header in the binary
-  chunk passed while buffer 0's `data:` URI held a 16384 x 16384 picture
-  that the phone then decoded (about 1 GiB), past the pixel cap. A buffer
-  after the first without a `uri` is now refused: three.js fetches the
-  page itself for it.
-- **`checkGlbInert` reads a model's lists and buffer names as three.js
-  does** (`ar/tour-media`). `buffers`, `bufferViews`, `accessors` and
-  `images` must be lists: an object `buffers` holding an http URI under
-  key `0` passed, and three.js fetched it on every open. A buffer view's
-  `buffer`, and any of its extensions' `buffer` (meshopt), must be a
-  whole number; `"0"` made three.js fetch the page. A `data:` URI needs
-  the comma three.js's own test requires, or it is resolved and fetched.
-- **`checkGlbInert` caps the memory a model's accessors ask for**
-  (`ar/tour-media`): at most 64 MiB together, or 8 times the file's
-  length when that is more. One accessor without a buffer view
-  (`count: 100000000`, `VEC4`, float) made three.js allocate 1.6 GB. An
-  accessor whose count, type or component type cannot be read is refused.
-- A creator's draft record of a narrated long text reads again
-  (`parseTourObject`).
-
-### ⚠️ Breaking changes
-
-- `visualization/ar-world-group-alignment`: **alignment changes land in
-  the frame they arrive.** `enableArWorldGroupAlignment` no longer eases
-  the group over about 0.3 s: every new alignment, large or small, is
-  copied exactly into `arWorldGroup.matrix` in the frame it is read, so the
-  world under the group jumps at once instead of sliding. Smoothing, if an
-  app wants it, belongs to the app. The `lerpRate` option is removed (it
-  has nothing left to set); `createAlignmentLerper` is unchanged and stays
-  for apps that drive their own group.
-- `ar/replay-scene`: **replay follows the same rule.** The desktop replay
-  scene no longer eases `arWorldGroup` toward each alignment; the new
-  `applyReplayAlignment(matrix)` writes it exactly, in the frame it
-  arrives, and `startReplaySession` uses it. `getAlignmentLerper()` is
-  removed: wire `applyAlignmentMatrix: applyReplayAlignment` into
-  `wireStoreSubscribers` instead. An app that wants smoothing adds it
-  itself, as the RecorderApp does for its live AR view (it drives its own
-  `createAlignmentLerper` from `ar/wire-ar-scene.ts`).
-- `ar/qr/qr-tracking-controller`: `dispatchVotes` is typed
-  `(votes) => boolean | void`. Returning `false` says it cast no votes;
-  otherwise the controller asks every deferred anchor to re-place once, and
-  returning nothing keeps today's meaning. A callback whose expression body
-  returns another value (`(v) => list.push(...v)`) no longer type-checks and
-  needs braces. The type is not `unknown` on purpose: `unknown` would also
-  accept `async () => false`, whose Promise would release silently.
-
-- **`tour.json` version 5: stations hold children, stories hold their own**
-  (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,
-  `ar/tour-blocks`). A station holds one ordered list `children`: a free
-  block, or a story `{ id, kind: 'story', title, children }` holding its
-  blocks, choices and quizzes in the order a visitor meets them. A block
-  lives in one place, so being in a story is what shows it; a story block
-  carries its `advance`, and a choice's `goto` names a child of the same
-  story. Child ids are one namespace across the tour. Versions 1 to 4 are
-  refused with `TourManifestOlderFormatError`: no migration.
-  `TOUR_OBJECT_RECORD_FORMAT` is 5, so a draft record of format 4 reads as
-  older. Removed: `TourStation.blocks` and `.steps`, `TourStep`,
-  `TourStepAction`, `TourStationContent`, `parseTourStationContent`,
-  `tourShownBlockIds`, `checkTourBlockIdsUnique`.
-  `placeTourBlocks` loses its `shown` argument. Added:
-  `parseTourStationChildren`, `checkTourChildIdsUnique`, `tourStories`,
-  `tourStoryBlocks`, `tourStationStoryBlocks`, `tourStationBlocks`,
-  `tourStationChildIds`, `tourChildPlace`, the `tourChildren*` functions,
-  `tourFreeBlocks` and the types `TourStationChild`, `TourStory`,
-  `TourStoryChild`, `TourStoryBlock`, `TourChoice`, `TourQuizEntry`.
-  The test-utils export `tourStationContentArbitrary` is gone: use
-  `tourStationChildrenArbitrary`. Reading a station's blocks: `tourStationBlocks(station)`,
-  or `tourFreeBlocks(station)` for the ones standing in the world.
-
-### Added
-
 - **`storage/save-target`** (deep import): saving a file in place.
   `pickWritableFile` (the open dialog for one `DownloadFileType`, write
   permission asked on the same gesture), `pickSaveFile` (the save dialog,
@@ -590,13 +530,79 @@ voiceCredit?, synthetic, durationMs? }`: `audio` names an audio asset,
 
 ### Changed
 
+- **A GPS anchor waits like a deferred anchor** (`visualization`,
+  `createGpsAnchor`): it joins the anchor set of its `arWorldGroup`, so in
+  `snap-when-offscreen` a correction above its threshold is held while any
+  drawable part of it (children included) is in view at its current pose,
+  was in view in the previous frame, or would be in view at its new pose.
+  A code-lock release commits it at once, and with an alignment binding
+  (`enableArWorldGroupAlignment` before the anchor is created) a frame
+  switch opens the same window as for deferred anchors. With that binding
+  its target is read from the group's own transform, so under the dev world
+  jump it lands where scene-root content of the same point lands. The
+  bootstrap, the threshold, `markMovedExternally` and the one-time first
+  placement are unchanged; `snap-every-tick` stays ungated. Commits are
+  instant, as before. Throws now also for an object that holds an anchored
+  object, or that is inside or holds a deferred anchor's root (and
+  `deferredAnchor(...).add` for a root holding a GPS-anchored object).
+
+- `visualization/ar-world-group-alignment`: the binding drives the deferred
+  anchors under its group right after its alignment step.
+- `checkGlbInert` (`ar/tour-media`) reads an image's `data:` URI with
+  `utils/data-uri`, strictly: a payload with whitespace or without its
+  padding, which plain `atob` accepted, is now an image that cannot be
+  found, and refuses the model.
+- `ImageHeaderInfo` (`utils/image-header`) is a union on `type` rather
+  than one interface: only its `webp` member has `alpha`, and it is
+  required there. Code that builds a `{ type: 'webp', width, height }`
+  value as an `ImageHeaderInfo` must add `alpha`; code that only reads
+  `type`, `width` and `height` is unaffected.
+- `TourPin` (`ar/tour-manifest`) is a short text in any of its world
+  views (`pin`, `sign`, `edgeHint`, `ground`), as `tourObjects` yields
+  it; it was typed as `pin` alone.
+- `TourPicture` (`ar/tour-manifest`) is a picture in any of its world
+  views (`TourPictureWorldView`), and a free video among the
+  `TourObject`s stands in `screen`, `cutout` or `porthole` with its
+  `widthM`, as `tourObjects` yields them.
+- A video's and a sound's `transcript` and a character's `caption` are
+  optional: a blank one no longer fails the write.
+
 - **`downloadBlob` reads its save dialog's rejection through
   `classifyPickerRejection`** (`storage/zip-export`). Its behaviour is
   otherwise unchanged (pinned by `download-blob.test.ts`), except that a
   `null`/`undefined` rejection from the dialog or the write now falls back
   to the anchor download instead of throwing.
 
+- `verify:community-key-lifetime` (runs before every publish): lower the
+  minimum remaining key lifetime to 300 days (was 330). The core library
+  signs the bundled key for about 365 days, so a framework-only release
+  now stays publishable until the last core release is about 65 days old.
+
 ### Fixed
+
+- **`checkGlbInert` measures a model's pictures from the bytes three.js
+  loads** (`ar/tour-media`). A buffer with a `data:` URI is measured from
+  that URI, buffer 0 too, and the binary chunk only for buffer 0 without
+  one, as three.js's GLTFLoader reads them; an image's `bufferView` is
+  measured before a `uri` beside it. Before, a 4 x 4 header in the binary
+  chunk passed while buffer 0's `data:` URI held a 16384 x 16384 picture
+  that the phone then decoded (about 1 GiB), past the pixel cap. A buffer
+  after the first without a `uri` is now refused: three.js fetches the
+  page itself for it.
+- **`checkGlbInert` reads a model's lists and buffer names as three.js
+  does** (`ar/tour-media`). `buffers`, `bufferViews`, `accessors` and
+  `images` must be lists: an object `buffers` holding an http URI under
+  key `0` passed, and three.js fetched it on every open. A buffer view's
+  `buffer`, and any of its extensions' `buffer` (meshopt), must be a
+  whole number; `"0"` made three.js fetch the page. A `data:` URI needs
+  the comma three.js's own test requires, or it is resolved and fetched.
+- **`checkGlbInert` caps the memory a model's accessors ask for**
+  (`ar/tour-media`): at most 64 MiB together, or 8 times the file's
+  length when that is more. One accessor without a buffer view
+  (`count: 100000000`, `VEC4`, float) made three.js allocate 1.6 GB. An
+  accessor whose count, type or component type cannot be read is refused.
+- A creator's draft record of a narrated long text reads again
+  (`parseTourObject`).
 
 - **`weightedMedian`, `lowerMedian` and `interpolatingMedian` never return
   -0** (`utils/median`). A 0 and a -0 compare equal, so the result's sign

@@ -4,9 +4,14 @@
 
 Read-only pre-publish guardrail that asserts the bundled
 `COMMUNITY_LICENSE_KEY` shipped by the resolved `gps-plus-slam-js`
-dependency has at least `COMMUNITY_KEY_MIN_DAYS` (default **330**) and at
+dependency has at least `COMMUNITY_KEY_MIN_DAYS` (default **300**) and at
 most `COMMUNITY_KEY_MAX_DAYS` (default **380**) days of lifetime
 remaining.
+
+The core library re-signs the key for about 365 days on each publish, so
+the 300-day floor keeps a framework-only release publishable until the
+last core release is about 65 days old. Past that, release a new core
+version first (it re-signs the key), then the framework.
 
 This is the public-repo defense-in-depth half of Option F documented in
 [../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md](../../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md)
@@ -48,7 +53,7 @@ Exit codes:
 ## Examples
 
 ```bash
-# Default 330–380 day band.
+# Default 300-380 day band.
 pnpm run verify:community-key-lifetime
 
 # Tighten to 350–370 days for stricter CI.
@@ -59,7 +64,7 @@ COMMUNITY_KEY_MIN_DAYS=350 COMMUNITY_KEY_MAX_DAYS=370 \
 ## Tests
 
 Covered by [`verify-community-key-lifetime.test.mjs`](./verify-community-key-lifetime.test.mjs)
-(23 tests, vitest). The script exposes three pure helpers
+(27 tests, vitest). The script exposes three pure helpers
 (`extractTokenLiteral`, `decodeJwtPayload`, `evaluateLifetime`) so the
 parsing/decoding/banding logic can be locked without spawning a
 sub-process.

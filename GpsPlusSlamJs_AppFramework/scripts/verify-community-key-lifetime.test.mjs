@@ -18,6 +18,8 @@ import {
   extractTokenLiteral,
   decodeJwtPayload,
   evaluateLifetime,
+  DEFAULT_MIN_DAYS,
+  DEFAULT_MAX_DAYS,
 } from './verify-community-key-lifetime.mjs';
 
 const SCRIPT_PATH = resolve(
@@ -160,18 +162,51 @@ describe('decodeJwtPayload', () => {
   });
 });
 
+describe('default lifetime band', () => {
+  it('is 300 to 380 days', () => {
+    // Why: the floor decides how long a framework-only release stays
+    // publishable after the last core release (the core re-signs the key
+    // for about 365 days on each publish). 300 leaves about 65 days.
+    expect(DEFAULT_MIN_DAYS).toBe(300);
+    expect(DEFAULT_MAX_DAYS).toBe(380);
+  });
+
+  it('accepts a key from a core release about 40 days old', () => {
+    // Why: pins the real case that motivated the lower floor: a key signed
+    // for 365 days, published 40 days ago, has about 325 days left and must
+    // not block a framework-only release.
+    const now = 1_700_000_000;
+    const r = evaluateLifetime(
+      { exp: now + 325.5 * 86_400 },
+      { nowSec: now, minDays: DEFAULT_MIN_DAYS, maxDays: DEFAULT_MAX_DAYS }
+    );
+    expect(r.ok).toBe(true);
+  });
+
+  it('still blocks a key from a core release about 70 days old', () => {
+    // Why: the floor must still stop a framework release from shipping a
+    // key that is running out; lowering it is not removing it.
+    const now = 1_700_000_000;
+    const r = evaluateLifetime(
+      { exp: now + 295 * 86_400 },
+      { nowSec: now, minDays: DEFAULT_MIN_DAYS, maxDays: DEFAULT_MAX_DAYS }
+    );
+    expect(r).toEqual(expect.objectContaining({ ok: false, reason: 'too-short' }));
+  });
+});
+
 describe('evaluateLifetime — band logic', () => {
-  const MIN = 330;
-  const MAX = 380;
+  const MIN = DEFAULT_MIN_DAYS;
+  const MAX = DEFAULT_MAX_DAYS;
   const NOW = 1_700_000_000; // arbitrary fixed epoch seconds
 
   it('returns ok when the token sits exactly mid-band', () => {
     // Why: sanity baseline. If this fails the band math itself is wrong.
-    const exp = NOW + 355 * 86_400;
+    const exp = NOW + 340 * 86_400;
     const r = evaluateLifetime({ exp }, { nowSec: NOW, minDays: MIN, maxDays: MAX });
     expect(r.ok).toBe(true);
     expect(r.exp).toBe(exp);
-    expect(r.remainingDays).toBeCloseTo(355, 6);
+    expect(r.remainingDays).toBeCloseTo(340, 6);
   });
 
   it('returns ok at the lower boundary (remainingDays === minDays)', () => {
@@ -243,7 +278,7 @@ describe('end-to-end: extract → decode → evaluate', () => {
     // string from gps-plus-slam-js@1.0.4. If any layer (regex, base64,
     // JSON, band math) regresses, this single test catches it. We pin
     // `nowSec` to ~14 days before exp so the result lands inside any
-    // sensible band the project might pick (default 330–380).
+    // sensible band the project might pick (default 300-380).
     const dist = `/*! gps-plus-slam-js | (c) 2026 cs-util-com | UNLICENSED — see EULA.md */
 const e=\`${REAL_TOKEN}\`;export{e as COMMUNITY_LICENSE_KEY};`;
     const token = extractTokenLiteral(dist);
@@ -252,8 +287,8 @@ const e=\`${REAL_TOKEN}\`;export{e as COMMUNITY_LICENSE_KEY};`;
     const nowSec = REAL_EXP_SEC - 355 * 86_400;
     const result = evaluateLifetime(payload, {
       nowSec,
-      minDays: 330,
-      maxDays: 380,
+      minDays: DEFAULT_MIN_DAYS,
+      maxDays: DEFAULT_MAX_DAYS,
     });
     expect(result.ok).toBe(true);
     expect(result.remainingDays).toBeCloseTo(355, 6);
