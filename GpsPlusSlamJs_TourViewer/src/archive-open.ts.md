@@ -129,7 +129,8 @@ DOM glue, its own module since the flows plan M6.
   null entries of `ctx.levelByText` (a code decoded before the levels
   parsed cached "not this tour's" and would keep the capture burst shut
   for a real tour code; resolved levels stay); a failed read
-  says the levels unreadable (no code of this tour can place it); the level texts, the parsed levels and that failure go into
+  says the levels unreadable (no code of this tour can place it); the
+  level texts, the parsed levels and that failure go into
   the tour document as `levelsArrived` / `levelsParsed` /
   `levelsUnreadable` with this open's generation (`currentLevels` is a
   view of the parsed ones, plan M3b), and the teardown dispatches

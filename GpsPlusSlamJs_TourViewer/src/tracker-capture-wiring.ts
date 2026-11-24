@@ -302,7 +302,8 @@ export interface TrackerCaptureWiringDeps {
    *  or null. */
   lastDecodeAtMs(): number | null;
   /** Whether a code's text opens the burst: false for a code the session
-   *  knows it cannot use (no level in this tour, no print size, ignored). */
+   *  knows it cannot use (no level in this tour, its level cannot lock
+   *  (`isLockableLevel`: print size and geo), ignored). */
   opensBurst(text: string): boolean;
   /** The QR controller cannot take a frame now. */
   qrBusy(): boolean;

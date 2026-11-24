@@ -153,7 +153,7 @@ describe("the viewer pipeline under ?qrperf=1", () => {
   });
 
   // Why this test matters: a code the session already knows it cannot use
-  // (no level in this tour, no print size, ignored by the moved-code check)
+  // (no level in this tour, a level that cannot lock, ignored by the moved-code check)
   // must not keep the capture gate's burst open while it stays in view; a
   // code not resolved yet may be the tour's and still stamps, and so does
   // a usable one.
