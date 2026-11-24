@@ -42,7 +42,7 @@ export default defineConfig(
       // public surface for app consumers). Mirrors the RecorderApp boundary so
       // all example apps share one import convention.
       //
-      // `gps-plus-slam-osm` is deliberately NOT restricted: consuming it
+      // `osm-h3` is deliberately NOT restricted: consuming it
       // directly, through its published `exports`, is this demo's entire
       // purpose — it is the only thing that proves that surface works from
       // outside the package.

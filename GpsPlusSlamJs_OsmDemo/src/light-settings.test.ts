@@ -21,7 +21,7 @@ import {
   surfaceGainAt,
   TONE_MAPPING_EXPOSURE,
 } from "./atmosphere-rig.js";
-import { rgbToLab } from "gps-plus-slam-osm";
+import { rgbToLab } from "osm-h3";
 
 import { skyBalanceGain } from "./sky-balance.js";
 

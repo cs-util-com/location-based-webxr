@@ -23,7 +23,7 @@ undulation model that makes it possible.
   bug, not like a bug here — which is why it is in `lessons-learned.md`.
 - **A verified EGM96 grid now ships — as an opt-in import, not in this file.**
   See [`egm96.ts.md`](./egm96.ts.md): `egm96Geoid()` from
-  `gps-plus-slam-osm/elevation/egm96`, ~170 KB, measured at mean 0.25 m /
+  `osm-h3/elevation/egm96`, ~170 KB, measured at mean 0.25 m /
   max 5.0 m against exact evaluations.
   - **The original objection was never "a grid is a bad idea"** — it was "we must
     not ship numbers we cannot verify", because a plausible wrong geoid is a

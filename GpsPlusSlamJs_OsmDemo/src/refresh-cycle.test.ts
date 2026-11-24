@@ -29,7 +29,7 @@ import {
   PROGRESSIVE_RADII,
   SCORE_DISK_MAX_RADIUS,
   SCORE_DISK_RADIUS,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { createDemoStore, selectLayers, selectOsmView } from "./osm-store.js";
 import {

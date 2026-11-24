@@ -35,7 +35,7 @@ import {
   type OsmViewState,
 } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
-import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
+import type { GeoEvent, LatLng } from "osm-h3";
 
 import { DEFAULT_COLOUR_SCHEME } from "./colour-schemes.js";
 import {

@@ -1,6 +1,6 @@
-import type { EnuFrame } from "gps-plus-slam-osm";
+import type { EnuFrame } from "osm-h3";
 
-import { type Heightfield } from "gps-plus-slam-osm";
+import { type Heightfield } from "osm-h3";
 
 /**
  * Where each quest beacon stands in the 3D scene (N6, DEC-U14, DEC-K4).

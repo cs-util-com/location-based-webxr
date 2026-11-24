@@ -5,7 +5,7 @@
  * @see osm-tiles-worker.ts.md
  */
 
-import { DEFAULT_OVERPASS_ENDPOINTS } from "gps-plus-slam-osm/source/overpass-source";
+import { DEFAULT_OVERPASS_ENDPOINTS } from "osm-h3/source/overpass-source";
 import type { FillMessage, OsmTilesEnv } from "./bindings";
 import {
   clearPending,

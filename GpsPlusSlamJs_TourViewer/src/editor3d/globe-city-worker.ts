@@ -25,7 +25,7 @@ import {
   createCachingTileFetch,
   createCityTileSource,
   loadCityData,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import { startWorkerErrorReporting } from "gps-plus-slam-app-framework/utils/sentry-options";
 
 // The worker starts its own error reporting: the page's does not reach this

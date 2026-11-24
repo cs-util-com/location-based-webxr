@@ -28,7 +28,7 @@
  * @see route-path.ts.md
  */
 
-import type { EnuFrame } from "gps-plus-slam-osm";
+import type { EnuFrame } from "osm-h3";
 
 import type { RoutePoint } from "./agent-route.js";
 import type { ScenePoint } from "./pick.js";

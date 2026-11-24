@@ -35,7 +35,7 @@ mapping turns into exactly that, because the haze blends before tone mapping.
   Display-linear out.
 - `veilDisplayLinear(veil)` - the display-linear colour the veil shows: its
   L\*a\*b\* through the nearest 8-bit sRGB colour (`labToRgb` of
-  `gps-plus-slam-osm`), linearised. Also the fallback's fog colour.
+  `osm-h3`), linearised. Also the fallback's fog colour.
 - `veilSceneColour(veil, exposure)` - the scene-linear colour that
   `neutralToneMap` at `exposure` turns into `veilDisplayLinear(veil)`.
   Throws `RangeError` for a lightness outside (0, 100], a non-finite tint,

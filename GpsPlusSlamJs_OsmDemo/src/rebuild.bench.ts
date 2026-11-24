@@ -8,7 +8,7 @@ import {
   OVERPASS_SCHEMA_VERSION,
   SCORE_DISK_MAX_RADIUS,
   type OsmTileResult,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { buildCellMesh, type DrawableCell } from "./cell-mesh.js";
 import { fixedScale } from "./heat-colours.js";

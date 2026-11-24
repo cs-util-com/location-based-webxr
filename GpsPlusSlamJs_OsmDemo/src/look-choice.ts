@@ -13,7 +13,7 @@
  * @see look-choice.ts.md
  */
 
-import type { CityColourScheme } from "gps-plus-slam-osm";
+import type { CityColourScheme } from "osm-h3";
 
 import {
   COLOUR_SCHEME_NAMES,

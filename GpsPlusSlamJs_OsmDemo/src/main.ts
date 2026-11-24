@@ -33,7 +33,7 @@ import {
   type RacingProviderStats,
   type GeoidModel,
   type LatLng,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { DEM_ATTRIBUTION_ENTRIES } from "./dem-provider.js";
 import { pickDefaultCategory } from "./default-category.js";
@@ -149,11 +149,7 @@ import {
 import { attachSheetDrag } from "./sheet-drag.js";
 import { EMPTY_CELL_MESH } from "./cell-mesh.js";
 import { createCellMeshCycle } from "./cell-mesh-cycle.js";
-import {
-  heightfieldFrom,
-  TERRAIN_EXTENT_M,
-  type Heightfield,
-} from "gps-plus-slam-osm";
+import { heightfieldFrom, TERRAIN_EXTENT_M, type Heightfield } from "osm-h3";
 import { createTerrainCycle } from "./terrain-cycle.js";
 import { questBeaconPlacements } from "./quest-beacon-placement.js";
 import { fixedScale, heatColour } from "./heat-colours.js";
@@ -1824,7 +1820,7 @@ async function main(): Promise<void> {
    */
   const geoid = async (): Promise<GeoidModel> => {
     if (geoidModel === undefined) {
-      const { egm96Geoid } = await import("gps-plus-slam-osm/elevation/egm96");
+      const { egm96Geoid } = await import("osm-h3/elevation/egm96");
       geoidModel = egm96Geoid();
     }
     return geoidModel;

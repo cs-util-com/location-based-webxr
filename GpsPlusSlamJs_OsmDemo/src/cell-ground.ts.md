@@ -9,7 +9,7 @@ navigation library's frame-free world meets the demo's ENU one.
 ## Public API
 
 - `groundHeightAtCell(frame, field): (cell: string) => number`
-  - `frame` — the scene's `EnuFrame`, from `gps-plus-slam-osm`.
+  - `frame` — the scene's `EnuFrame`, from `osm-h3`.
   - `field` — anything with `heightAt({x, y})`; `undefined` during a DEM outage.
   - Returns a lookup sampling the field at each cell's **centre**.
 - `GroundSampler` — the one-method slice of `Heightfield` this needs.

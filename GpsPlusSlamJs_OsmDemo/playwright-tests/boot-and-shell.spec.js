@@ -10,7 +10,7 @@
  */
 
 import { test, expect } from "./e2e-test.js";
-import { PROGRESSIVE_RADII } from "gps-plus-slam-osm";
+import { PROGRESSIVE_RADII } from "osm-h3";
 
 import {
   AT_FIXTURE,

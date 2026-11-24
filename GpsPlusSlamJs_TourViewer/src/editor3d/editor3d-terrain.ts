@@ -45,7 +45,7 @@ import {
 import {
   MAPTERHORN_ATTRIBUTION,
   MAPTERHORN_URL_TEMPLATE,
-} from "gps-plus-slam-osm/elevation/terrarium";
+} from "osm-h3/elevation/terrarium";
 
 import { GLOBE_SWITCH } from "../editor/globe-switch.js";
 

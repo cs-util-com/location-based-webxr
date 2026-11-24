@@ -1,8 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  DEFAULT_OVERPASS_ENDPOINTS,
-  OSM_TILES_BASE_URL,
-} from "gps-plus-slam-osm";
+import { DEFAULT_OVERPASS_ENDPOINTS, OSM_TILES_BASE_URL } from "osm-h3";
 
 /** The worker scope the shell talks to, with every reply kept. */
 function workerScope() {

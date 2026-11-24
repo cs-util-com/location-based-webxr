@@ -207,7 +207,7 @@ const fakes = vi.hoisted((): Fakes => ({
   cityAborts: 0,
 }));
 
-vi.mock("gps-plus-slam-osm/elevation/egm96", () => ({
+vi.mock("osm-h3/elevation/egm96", () => ({
   egm96Geoid: () => ({ undulationMetres: () => 47 }),
 }));
 

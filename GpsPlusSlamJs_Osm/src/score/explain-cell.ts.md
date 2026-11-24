@@ -29,7 +29,7 @@ Nothing here is ordered for display. Features come back in the order supplied; r
 ## Examples
 
 ```ts
-import { explainCell } from "gps-plus-slam-osm";
+import { explainCell } from "osm-h3";
 
 // The covering set comes from the provenance map the index already keeps.
 const keys = Object.keys(cellScore.contributors[category] ?? {});

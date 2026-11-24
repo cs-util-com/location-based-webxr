@@ -7,7 +7,7 @@
  * consumer (globe city plan 2026-10-05-0040 §14 L5, the owner's D-K6), the
  * three.js conversion OsmDemo's `mesh-layers.ts` held for buildings and trees
  * was the part both apps needed, so it moved here, behind
- * `gps-plus-slam-osm/three`, with three.js an optional peer: a consumer of
+ * `osm-h3/three`, with three.js an optional peer: a consumer of
  * the data alone never loads it.
  *
  * @see city-objects.ts.md

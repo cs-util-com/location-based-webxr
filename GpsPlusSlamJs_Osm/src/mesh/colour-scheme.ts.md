@@ -66,7 +66,7 @@ without one and gets `DEFAULT_CITY_COLOUR_SCHEME`.
 ## Examples
 
 ```ts
-import { buildCity, DEFAULT_CITY_COLOUR_SCHEME } from "gps-plus-slam-osm/mesh";
+import { buildCity, DEFAULT_CITY_COLOUR_SCHEME } from "osm-h3/mesh";
 
 const blueprint = {
   ...DEFAULT_CITY_COLOUR_SCHEME,

@@ -20,7 +20,7 @@ import {
   DEFAULT_CITY_COLOUR_SCHEME,
   validateCityColourScheme,
   type CityColourScheme,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import {
   ARCHITECT,

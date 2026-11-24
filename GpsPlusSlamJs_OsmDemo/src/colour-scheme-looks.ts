@@ -16,10 +16,7 @@
  * @see colour-scheme-looks.ts.md
  */
 
-import {
-  DEFAULT_CITY_COLOUR_SCHEME,
-  type CityColourScheme,
-} from "gps-plus-slam-osm";
+import { DEFAULT_CITY_COLOUR_SCHEME, type CityColourScheme } from "osm-h3";
 
 import type { ColourScheme } from "./colour-schemes.js";
 import { DEFAULT_GROUND_SLOPE_COLOURS } from "./ground-slope-colours.js";

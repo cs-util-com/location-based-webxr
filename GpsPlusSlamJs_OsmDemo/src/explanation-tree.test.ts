@@ -15,8 +15,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { explainCell, parseRuleTable } from "gps-plus-slam-osm";
-import type { OsmFeature } from "gps-plus-slam-osm";
+import { explainCell, parseRuleTable } from "osm-h3";
+import type { OsmFeature } from "osm-h3";
 
 import { explanationTree } from "./explanation-tree.js";
 

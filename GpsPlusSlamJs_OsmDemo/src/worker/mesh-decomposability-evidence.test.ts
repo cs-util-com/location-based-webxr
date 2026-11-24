@@ -56,7 +56,7 @@ import {
   enuFrameAt,
   parseOverpassJson,
   type OsmFeature,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 /**
  * The common shape of everything the builders return.

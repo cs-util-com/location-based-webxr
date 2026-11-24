@@ -16,7 +16,7 @@ import {
 } from "./city-objects.js";
 
 /**
- * The three.js side of the city (`gps-plus-slam-osm/three`), moved from
+ * The three.js side of the city (`osm-h3/three`), moved from
  * OsmDemo's `mesh-layers.ts` when the globe became the library's second
  * consumer (globe city plan 2026-10-05-0040 §14 L5, the owner's D-K6). These
  * pin what both apps draw: one coloured, single-sided, flat-shaded mesh per

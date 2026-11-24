@@ -29,7 +29,7 @@ import {
   type LatLng,
   type ObstacleIndex,
   type OsmFeature,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { groundHeightAtCell, type GroundSampler } from "./cell-ground.js";
 import { pathFactor, penaltyFor } from "./route-penalty.js";

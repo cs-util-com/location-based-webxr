@@ -59,7 +59,7 @@ The share is applied by `applyWoodsShare` (`city-objects.ts`).
 ## Examples
 
 ```ts
-import { applyWoodsShare, createWoodsGovernor } from "gps-plus-slam-osm/three";
+import { applyWoodsShare, createWoodsGovernor } from "osm-h3/three";
 
 const governor = createWoodsGovernor({
   auto: matchMedia("(pointer: coarse)").matches,

@@ -115,7 +115,7 @@ import {
   type OsmDataSource,
   type OsmFeature,
   type OsmTileResult,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { DemoPipeline } from "./demo-pipeline.js";
 

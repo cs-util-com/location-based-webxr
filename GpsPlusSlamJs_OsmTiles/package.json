@@ -11,13 +11,13 @@
     "typecheck": "node ../scripts/test-timing/timed-stage.mjs typecheck",
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
     "deploy": "wrangler deploy",
-    "build:osm": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm"
+    "build:osm": "node ../scripts/build-workspace-package-if-stale.mjs osm-h3 GpsPlusSlamJs_Osm"
   },
   "engines": {
     "node": ">=26.0.0"
   },
   "dependencies": {
-    "gps-plus-slam-osm": "workspace:*",
+    "osm-h3": "workspace:*",
     "h3-js": "^4.5.0"
   },
   "devDependencies": {

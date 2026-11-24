@@ -16,8 +16,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { enuFrameAt } from "gps-plus-slam-osm";
-import type { CellScore } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
+import type { CellScore } from "osm-h3";
 import { cellToBoundary, latLngToCell } from "h3-js";
 
 import { buildCellMesh } from "./cell-mesh.js";

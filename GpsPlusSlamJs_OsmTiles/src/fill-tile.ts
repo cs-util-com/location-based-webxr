@@ -13,7 +13,7 @@ import {
   buildTileQuery,
   cellToBoundingBox,
   OVERPASS_SELECT_KEYS,
-} from "gps-plus-slam-osm/source/overpass-query";
+} from "osm-h3/source/overpass-query";
 import type { FillMessage, TileBucket } from "./bindings";
 import {
   gzipDecodedSize,

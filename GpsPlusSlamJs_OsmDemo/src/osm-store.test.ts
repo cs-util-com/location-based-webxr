@@ -40,7 +40,7 @@ import { lookWeightsAt } from "./look-driver.js";
 import type { DemoSnapshot } from "./demo-pipeline.js";
 import { DEFAULT_LAYERS, toggleLayer } from "./layers.js";
 
-import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+import { SCORE_DISK_MAX_RADIUS } from "osm-h3";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };
 

@@ -18,7 +18,7 @@ WORKER_IMPORTS)` returns a module's source with every import specifier
     bare name through `imports` (exact, or the longest `prefix/` entry), a
     route path moved under `/w/`, a relative one left alone; an Error names
     a bare name `imports` does not map. `WORKER_IMPORTS` maps `h3-js`,
-    `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge` the way
+    `osm-h3` and `gps-plus-slam-app-framework/osm-bridge` the way
     the globe page's import map does (a test holds them equal). Why: import
     maps do not apply inside a worker, so a worker whose modules import a
     package by name (the Osm library imports `h3-js`) cannot load through

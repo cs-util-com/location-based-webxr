@@ -20,7 +20,7 @@ import {
   SCORE_DISK_RADIUS,
   parseRuleTable,
   type OsmDataSource,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { DemoPipeline } from "./demo-pipeline.js";
 import { packCells, unpackCells } from "./cell-payload.js";

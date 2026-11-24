@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import type { ObstacleIndex, OsmFeature } from "gps-plus-slam-osm";
+import type { ObstacleIndex, OsmFeature } from "osm-h3";
 
 import { createObstacleIndexCache } from "./obstacle-index-cache.js";
 

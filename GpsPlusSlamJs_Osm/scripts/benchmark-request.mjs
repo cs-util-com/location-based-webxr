@@ -105,7 +105,7 @@ function decodeResponse(chunks, response, result) {
  * carrying no User-Agent, which is what Node's fetch sends by default.
  */
 export const BENCHMARK_USER_AGENT =
-  "gps-plus-slam-osm comparison benchmark (github.com/cs-util-com)";
+  "osm-h3 comparison benchmark (github.com/cs-util-com)";
 
 function requestOptions(query, encoding, signal) {
   return {

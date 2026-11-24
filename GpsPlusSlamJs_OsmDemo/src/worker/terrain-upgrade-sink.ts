@@ -4,7 +4,7 @@
  * @see terrain-upgrade-sink.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 /** Just the part of the terrain field this needs, so tests need no field. */
 export interface ReplaceablePosts {

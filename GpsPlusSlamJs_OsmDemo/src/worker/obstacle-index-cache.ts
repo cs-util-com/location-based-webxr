@@ -30,7 +30,7 @@
  * @see obstacle-index-cache.ts.md
  */
 
-import type { ObstacleIndex, OsmFeature } from "gps-plus-slam-osm";
+import type { ObstacleIndex, OsmFeature } from "osm-h3";
 
 export interface ObstacleIndexCache {
   /**

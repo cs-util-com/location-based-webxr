@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
-import type { OsmDataSource, OsmFeature } from "gps-plus-slam-osm";
-import { parseRuleTable } from "gps-plus-slam-osm";
+import { SCORE_DISK_MAX_RADIUS } from "osm-h3";
+import type { OsmDataSource, OsmFeature } from "osm-h3";
+import { parseRuleTable } from "osm-h3";
 
 import { DemoPipeline } from "./demo-pipeline.js";
 

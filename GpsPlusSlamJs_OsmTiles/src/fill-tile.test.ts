@@ -4,7 +4,7 @@ import {
   buildTileQuery,
   cellToBoundingBox,
   OVERPASS_SELECT_KEYS,
-} from "gps-plus-slam-osm/source";
+} from "osm-h3/source";
 import { fillTile, type FillDeps } from "./fill-tile";
 import { tileObjectKey } from "./tile-cell";
 import {

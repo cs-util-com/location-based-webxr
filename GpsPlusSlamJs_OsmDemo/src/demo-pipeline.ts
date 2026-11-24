@@ -29,7 +29,7 @@ import {
   type GeoEvent,
   type LatLng,
   type OsmFeature,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import {
   AFFORDANCE_RES,
   CANDIDATES_PER_BATCH,
@@ -41,7 +41,7 @@ import {
   newGeoEventFor,
   nextEventTime,
   toFetchTile,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import {
   cellToBoundary,
   cellToChildren,
@@ -186,7 +186,7 @@ function boundsOfCell(cell: string): [number, number, number, number] {
   }
   return [south, west, north, east];
 }
-import { SCORE_CHUNK_RES, SCORE_DISK_RADIUS } from "gps-plus-slam-osm";
+import { SCORE_CHUNK_RES, SCORE_DISK_RADIUS } from "osm-h3";
 
 export interface DemoPipelineOptions {
   readonly source: OsmDataSource;

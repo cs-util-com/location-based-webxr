@@ -14,7 +14,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+import { SCORE_DISK_MAX_RADIUS } from "osm-h3";
 
 import {
   AR_REFRESH_DISTANCE_M,

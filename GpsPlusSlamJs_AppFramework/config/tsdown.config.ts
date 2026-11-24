@@ -182,7 +182,7 @@ const entryFiles = [
   'src/licensing/index.ts',
 
   // geo/
-  // osm-bridge/ — wires the optional gps-plus-slam-osm peer to OPFS
+  // osm-bridge/ — wires the optional osm-h3 peer to OPFS
   'src/osm-bridge/index.ts',
   'src/osm-bridge/opfs-osm-blob-store.ts',
   'src/osm-bridge/open-osm-store.ts',

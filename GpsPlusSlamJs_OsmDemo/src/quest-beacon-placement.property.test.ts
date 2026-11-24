@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { enuFrameAt } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
 
 import {
   QUEST_BEACON_HOVER_M,
   questBeaconPlacements,
 } from "./quest-beacon-placement.js";
-import { type Heightfield } from "gps-plus-slam-osm";
+import { type Heightfield } from "osm-h3";
 import {
   uniformIn,
   uniformWithSeams,

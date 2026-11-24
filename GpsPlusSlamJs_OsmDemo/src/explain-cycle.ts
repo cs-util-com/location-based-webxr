@@ -32,7 +32,7 @@
  * @see explain-cycle.ts.md
  */
 
-import type { CellExplanation } from "gps-plus-slam-osm";
+import type { CellExplanation } from "osm-h3";
 
 import { selectOsmView, type DemoStore } from "./osm-store.js";
 

@@ -41,7 +41,7 @@ import {
   type OsmBlobStore,
   type PngDecoder,
   type RacingElevationProvider,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import type { AttributionEntry } from "./attribution-view.js";
 

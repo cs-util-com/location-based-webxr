@@ -1,7 +1,7 @@
 /**
  * The woods governor's link knobs and its `?perf=1` readout.
  *
- * WHY THIS EXISTS. The governor (`gps-plus-slam-osm/three`'s
+ * WHY THIS EXISTS. The governor (`osm-h3/three`'s
  * `woods-governor.ts`) thins the invented woods on a phone that draws a
  * frame in more than 50 ms. Nobody has measured a phone yet, so the owner
  * reads this line on his: whether the woods push it over 50 ms at all, which
@@ -25,7 +25,7 @@ import {
   type TreeForm,
   type WoodsGovernorMode,
   type WoodsGovernorState,
-} from "gps-plus-slam-osm/three";
+} from "osm-h3/three";
 
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 import type { PerfRecorder } from "./perf-log.js";

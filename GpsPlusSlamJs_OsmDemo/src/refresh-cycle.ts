@@ -27,7 +27,7 @@
  * @see refresh-cycle.ts.md
  */
 
-import { PROGRESSIVE_RADII, SCORE_DISK_MAX_RADIUS } from "gps-plus-slam-osm";
+import { PROGRESSIVE_RADII, SCORE_DISK_MAX_RADIUS } from "osm-h3";
 import { createLogger } from "gps-plus-slam-app-framework/utils/logger";
 
 import { latestOnly, type LatestOnly } from "./latest-only.js";

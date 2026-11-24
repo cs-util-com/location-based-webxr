@@ -3,7 +3,7 @@
 ## Purpose
 
 The city as three.js objects, behind the package's opt-in entry point
-`gps-plus-slam-osm/three`: building chunks as meshes, trees as instanced
+`osm-h3/three`: building chunks as meshes, trees as instanced
 meshes, and a disposal that never frees shared resources. Moved from
 OsmDemo's `mesh-layers.ts` (its buildings and trees rows and its geometry
 wrapper) when the globe lab became the package's second consumer (globe city
@@ -119,8 +119,8 @@ three-free; three.js is an optional peer, loaded only by this entry.
 ## Examples
 
 ```ts
-import { buildCity, cityGround, enuFrameAt } from "gps-plus-slam-osm";
-import { cityObjects, disposeCityObjects } from "gps-plus-slam-osm/three";
+import { buildCity, cityGround, enuFrameAt } from "osm-h3";
+import { cityObjects, disposeCityObjects } from "osm-h3/three";
 
 const city = buildCity(features, cityGround(enuFrameAt(origin), field));
 const objects = cityObjects(city);

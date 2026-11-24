@@ -25,7 +25,7 @@ import {
   cellPayloadBuffers,
   decodeCellId,
 } from "./cell-payload.js";
-import type { CellScore } from "gps-plus-slam-osm";
+import type { CellScore } from "osm-h3";
 
 /** A real H3 res-13 index, so the id encoding is exercised on real shapes. */
 const H3_IDS = [

@@ -22,11 +22,8 @@
  */
 
 import type * as THREE from "three";
-import type { GroundTint } from "gps-plus-slam-osm";
-import {
-  applyGroundTint,
-  type AppliedGroundTint,
-} from "gps-plus-slam-osm/three";
+import type { GroundTint } from "osm-h3";
+import { applyGroundTint, type AppliedGroundTint } from "osm-h3/three";
 
 import type { GroundAppearance } from "./ground-mode.js";
 

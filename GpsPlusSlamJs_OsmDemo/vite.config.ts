@@ -14,7 +14,7 @@ import { sentrySourceMapPlugins } from "../GpsPlusSlamJs_AppFramework/scripts/se
  */
 const sentry = sentrySourceMapPlugins(sentryVitePlugin);
 
-// Minimal Vite config: gps-plus-slam-osm and the app framework both resolve
+// Minimal Vite config: osm-h3 and the app framework both resolve
 // through the pnpm workspace symlinks; Leaflet and three come from
 // node_modules. No aliases.
 export default defineConfig({

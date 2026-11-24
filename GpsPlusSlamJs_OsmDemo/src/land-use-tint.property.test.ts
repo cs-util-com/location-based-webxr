@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
-import type { GroundTint } from "gps-plus-slam-osm";
+import type { GroundTint } from "osm-h3";
 
 import { landUseTint } from "./land-use-tint.js";
 

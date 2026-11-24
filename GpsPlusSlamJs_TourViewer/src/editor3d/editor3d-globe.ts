@@ -352,12 +352,11 @@ export async function openGlobeEditor(
   // creator's part of the world, its first station placed on the ground.
   const zone = browserZoneHint();
   const centre = tourAt ?? emptyTourCentre(zone.offsetMin, zone.timeZone);
-  const { egm96Geoid } =
-    await import("gps-plus-slam-osm/elevation/egm96").catch(
-      (error: unknown) => {
-        throw viewFailure("chunk", `the geoid did not load: ${String(error)}`);
-      },
-    );
+  const { egm96Geoid } = await import("osm-h3/elevation/egm96").catch(
+    (error: unknown) => {
+      throw viewFailure("chunk", `the geoid did not load: ${String(error)}`);
+    },
+  );
   const geoid = egm96Geoid();
   const undulationAt = (p: { lat: number; lon: number }) =>
     geoid.undulationMetres({ lat: p.lat, lng: p.lon });
@@ -621,7 +620,7 @@ export async function openGlobeEditor(
             deepHeightsZoom: ground.heights.maxZoom,
             // The library's own parameter types are narrower than the city's
             // seam (it hands the worker's reply through as it came).
-            loadCityThree: () => import("gps-plus-slam-osm/three") as never,
+            loadCityThree: () => import("osm-h3/three") as never,
             createWorker: () =>
               new Worker(new URL("./globe-city-worker.ts", import.meta.url), {
                 type: "module",

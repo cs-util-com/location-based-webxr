@@ -612,7 +612,7 @@ globeTiles, detail, device, source, fallback, meshMaxLevel }` or null; `cache` i
   walls, trees, and with `cityRoads` (default 1) the roads and paths,
   lifted `roadLiftM` (2 m) along the city's up and pulled forward by a
   `roadOffset` polygon offset (0), all three read at start), drawn through
-  `gps-plus-slam-osm/three` (loaded with
+  `osm-h3/three` (loaded with
   the first city, so the boot graph stays free of the library), placed on
   `globe.group` through `ecefFromCityAt`, and faded in by
   `cityShareAt(altitude, cityKm)`: nothing at and above `cityKm`, all of it
@@ -645,7 +645,7 @@ heightM)` (the ECEF point of a place, for an independent placement check)
     Without a city to load (`city=0`, no relief, the relief not at true
     heights near the ground) nothing is waited for. The worker's graph (the
     Osm library and H3) loads only then: the import map's `h3-js`,
-    `gps-plus-slam-osm` and `gps-plus-slam-app-framework/osm-bridge`
+    `osm-h3` and `gps-plus-slam-app-framework/osm-bridge`
     entries are unused at boot, and `build-lookdev.test.mjs` fails if the
     lab's static graph reaches them. Only `/globe/flight-pace.js`,
     `/globe/globe-arrival.js` and `/globe/globe-arrival-prefetch.js` (small,

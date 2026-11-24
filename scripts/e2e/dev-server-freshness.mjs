@@ -145,7 +145,7 @@ export function linkedWorkspaceDeps(packageDir) {
 /**
  * Every file a package's `exports` map points at, plus `main` as a fallback.
  *
- * ALL SUBPATHS, not just `"."`. The demo imports `gps-plus-slam-osm/mesh`,
+ * ALL SUBPATHS, not just `"."`. The demo imports `osm-h3/mesh`,
  * `/elevation/egm96` and ~30 other subpaths directly, and a chunk reachable only
  * from one of those would be invisible to a probe that read `"."` alone.
  *

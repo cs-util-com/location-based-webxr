@@ -169,7 +169,7 @@ export default defineConfig({
     command: "pnpm run dev",
     url: "http://127.0.0.1:5186",
     reuseExistingServer: !process.env.CI,
-    // Generous because the first run builds gps-plus-slam-osm and the app
+    // Generous because the first run builds osm-h3 and the app
     // framework before vite even starts.
     timeout: 240000,
   },

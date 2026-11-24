@@ -23,7 +23,7 @@
  * @see ar-origin.ts.md
  */
 
-import { absoluteDatumFor, type LatLng } from "gps-plus-slam-osm";
+import { absoluteDatumFor, type LatLng } from "osm-h3";
 
 /** The framework's coordinate shape. `lon`, where this demo says `lng`. */
 export interface FrameworkLatLong {

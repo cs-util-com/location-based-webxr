@@ -26,7 +26,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { enuFrameAt, type LatLng, type OsmFeature } from "gps-plus-slam-osm";
+import { enuFrameAt, type LatLng, type OsmFeature } from "osm-h3";
 
 import { planRoute } from "./agent-route.js";
 

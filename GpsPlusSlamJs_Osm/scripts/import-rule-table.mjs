@@ -26,7 +26,7 @@ const OUT = join(
 );
 
 const response = await fetch(CSV_URL, {
-  headers: { "User-Agent": "gps-plus-slam-osm import-rule-table" },
+  headers: { "User-Agent": "osm-h3 import-rule-table" },
 });
 if (!response.ok) {
   console.error(`Fetch failed: ${response.status} ${response.statusText}`);

@@ -36,7 +36,7 @@ import {
   parseRuleTable,
   toFetchTile,
   type OsmDataSource,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 /** `GEO_EVENT_SEED` and `CLIMB_STEPS`, mirrored from `demo-pipeline.ts`. */
 const GEO_EVENT_SEED = 20260804;

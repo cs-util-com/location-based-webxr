@@ -1,7 +1,7 @@
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
-import { enuFrameAt } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
 import { beforeAll, describe, expect, it } from "vitest";
 
 /**

@@ -14,7 +14,7 @@ import.
 ## Invariants & assumptions
 
 - **NOT re-exported from `elevation/index.ts`.** The grid is ~170 KB of base64,
-  so it has its own entry point (`gps-plus-slam-osm/elevation/egm96`) and an app
+  so it has its own entry point (`osm-h3/elevation/egm96`) and an app
   that never needs absolute heights never pays for it.
 - **Provenance is what makes it trustworthy.** The values come from evaluating
   the EGM96 spherical harmonic series to degree 360 with the reference
@@ -54,8 +54,8 @@ import.
 ## Examples
 
 ```ts
-import { egm96Geoid } from "gps-plus-slam-osm/elevation/egm96";
-import { toEllipsoidal } from "gps-plus-slam-osm/elevation";
+import { egm96Geoid } from "osm-h3/elevation/egm96";
+import { toEllipsoidal } from "osm-h3/elevation";
 
 const geoid = egm96Geoid();
 const ellipsoidal = toEllipsoidal(demHeightM, position, geoid);

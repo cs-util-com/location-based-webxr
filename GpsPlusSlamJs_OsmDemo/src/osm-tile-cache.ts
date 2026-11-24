@@ -16,7 +16,7 @@ import {
   createCityTileSource,
   type CachingSource,
   type OsmBlobStore,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import {
   openPersistentOsmStore,
   type OpenOsmStoreOptions,

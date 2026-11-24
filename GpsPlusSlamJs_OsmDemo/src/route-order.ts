@@ -22,7 +22,7 @@
  * @see route-order.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 /**
  * The furthest a single order may reach, in metres.

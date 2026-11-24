@@ -24,7 +24,7 @@
 - Invariants & assumptions:
   - Pure, no imports. The geoid is passed in: the Globe package depends on
     neither the Osm library nor the framework (an app passes
-    `egm96Geoid()` from `gps-plus-slam-osm/elevation`).
+    `egm96Geoid()` from `osm-h3/elevation`).
   - "Drawn" means metres over the ellipsoid in the globe's frame at
     exaggeration 1 (the relief's `heightScale`); a caller drawing at
     another exaggeration multiplies the orthometric part itself.
@@ -33,7 +33,7 @@
 - Example:
 
   ```ts
-  import { egm96Geoid } from "gps-plus-slam-osm/elevation";
+  import { egm96Geoid } from "osm-h3/elevation";
   const geoid = egm96Geoid();
   const drawn = drawnHeightM(fix.altitude, fix, geoid, tour.offsetM);
   // after a drag:

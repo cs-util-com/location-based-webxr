@@ -9,7 +9,7 @@
  * the map is no longer showing. One store is four edges and no ordering.
  *
  * WHY IT IS A FACTORY, GENERIC OVER THE SNAPSHOT. This package is published to
- * npm; `gps-plus-slam-osm` is not. A dependency on it — **including a type-only
+ * npm; `osm-h3` is not. A dependency on it — **including a type-only
  * import, which still lands in the published type declarations** — makes
  * `pnpm install` 404 for every consumer of this framework. That is the same
  * constraint `osm-bridge/opfs-osm-blob-store.ts` documents, and it is why this
@@ -39,7 +39,7 @@ import {
 /**
  * A WGS84 position.
  *
- * Declared structurally rather than imported from `gps-plus-slam-osm`, for the
+ * Declared structurally rather than imported from `osm-h3`, for the
  * publishing reason in the module header. It is two numbers and it is stable.
  */
 export interface OsmViewLatLng {
@@ -81,7 +81,7 @@ export interface OsmViewState<TSnapshot, TGeoEvent = never> {
    * Which render layers are enabled, by name.
    *
    * DELIBERATELY STRUCTURAL — `Record<string, boolean>` rather than the consumer's
-   * own union. This package is published and `gps-plus-slam-osm` is not, so **any**
+   * own union. This package is published and `osm-h3` is not, so **any**
    * reference to it (including a type-only import, which lands in the emitted
    * `.d.ts`) makes `pnpm install` 404 for every consumer. That constraint is already
    * recorded in `osm-bridge/opfs-osm-blob-store.ts` and it is why `TSnapshot` is a
@@ -95,7 +95,7 @@ export interface OsmViewState<TSnapshot, TGeoEvent = never> {
    * Which surface the consumer draws as the ground, by name.
    *
    * A STRING for the same publish-boundary reason as `layers`: this package is
-   * published and `gps-plus-slam-osm` is not, so naming the consumer's union
+   * published and `osm-h3` is not, so naming the consumer's union
    * here would 404 every install. The consumer narrows it at its selector.
    *
    * A MODE RATHER THAN A LAYER, and the distinction is the consumer's: layers
@@ -135,7 +135,7 @@ export interface OsmViewState<TSnapshot, TGeoEvent = never> {
    * The geo-event the consumer last found, or none.
    *
    * A SECOND OPAQUE PAYLOAD, for the same publish-boundary reason `TSnapshot` is
-   * one: a geo-event is a `gps-plus-slam-osm` type, and naming it here — even in
+   * one: a geo-event is a `osm-h3` type, and naming it here — even in
    * a type-only import, which still lands in the emitted `.d.ts` — would 404
    * every consumer's install. The slice stores it and never looks inside.
    *
@@ -156,7 +156,7 @@ export interface OsmViewState<TSnapshot, TGeoEvent = never> {
  * A selected map feature, STRUCTURALLY.
  *
  * The same publish-boundary rule as `layers`: this package is on npm and
- * `gps-plus-slam-osm` is not, so a type-only import of `PoiMarker` here would 404
+ * `osm-h3` is not, so a type-only import of `PoiMarker` here would 404
  * every consumer's install. Three plain strings are all the panel needs, and TS
  * structural typing means a consumer can hand a `PoiMarker` straight in.
  */

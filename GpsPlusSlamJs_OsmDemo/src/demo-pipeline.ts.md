@@ -201,7 +201,7 @@ const lean = await pipeline.update(at, "walkable", undefined, undefined, {
 `demo-pipeline.test.ts` covers `chunkFor` — four positions where the two
 plausible computations diverge, plus a 1600-point sweep. The rest is covered
 indirectly through `heat-colours.test.ts` and by the package gate's typecheck
-against the real `gps-plus-slam-osm` API. Its remaining behaviour (fetch failure
+against the real `osm-h3` API. Its remaining behaviour (fetch failure
 collection, no-refetch) is worth a test with a fake source — see the follow-ups
 doc.
 

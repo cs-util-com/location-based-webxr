@@ -29,7 +29,7 @@
 
 import { greatCircleDistance, UNITS } from "h3-js";
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 import { AR_REFRESH_DISTANCE_M } from "./ar-walking.js";
 

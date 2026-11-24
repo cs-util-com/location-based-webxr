@@ -13,7 +13,7 @@
  *   pays off across a boundary like this one.
  * - **DEM sampling.** ~55 000 posts once the terrain covers the rendered extent.
  *
- * THIS IS THE FIRST CONSUMER TO EXERCISE ANY OF IT. `gps-plus-slam-osm`
+ * THIS IS THE FIRST CONSUMER TO EXERCISE ANY OF IT. `osm-h3`
  * documents itself as worker-safe in six places and shapes its public types
  * around the constraint (structured-cloneable only, no class instances crossing),
  * and until now nothing had ever tested that. Treat the claim as newly verified.
@@ -63,7 +63,7 @@ import {
   type LatLng,
   type OsmFeature,
   type RuleTable,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { planRouteWithIndex } from "../agent-route.js";
 import { createDemProvider } from "../dem-provider.js";
@@ -78,9 +78,9 @@ import {
   createHeightfieldCache,
   TERRAIN_EXTENT_M,
   type HeightfieldData,
-} from "gps-plus-slam-osm";
-import { createTerrainField, type TerrainField } from "gps-plus-slam-osm";
-import { terrainWindowFor } from "gps-plus-slam-osm";
+} from "osm-h3";
+import { createTerrainField, type TerrainField } from "osm-h3";
+import { terrainWindowFor } from "osm-h3";
 import { DEFAULT_COLOUR_SCHEME } from "../colour-schemes.js";
 import { isLookChoice, lookBuildOf, type LookChoice } from "../look-choice.js";
 import { transferablesOf } from "./mesh-transfer.js";

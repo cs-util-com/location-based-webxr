@@ -65,7 +65,7 @@ no library function and have no setup that activates one. Coupling the demo's
 tests to license activation just to obtain six lines of flat-earth arithmetic
 would be the wrong trade.
 
-`gps-plus-slam-osm`'s `enuFrameAt(origin).toLatLng(point)` is the same
+`osm-h3`'s `enuFrameAt(origin).toLatLng(point)` is the same
 approximation, already injected into `ArModeDeps` as `enuFrameAt`, ungated and
 directly testable. **That is reuse, not re-implementation** — the rule's purpose
 is served better by the ungated equivalent already in hand.

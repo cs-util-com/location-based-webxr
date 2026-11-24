@@ -91,7 +91,7 @@ Vite detection finds `src/main.ts` through `index.html` but does not follow
     merely uncancellable there: `InFlightRequests` marks it `pinned`, which pins
     the request for every other joiner too. **A post-hoc check is a correctness
     guard, never a cost one.**
-- **This is the first consumer to exercise `gps-plus-slam-osm`'s worker-safety.**
+- **This is the first consumer to exercise `osm-h3`'s worker-safety.**
   The package documents the claim in six places and shapes its public types around
   it; nothing had ever tested it. Treat it as newly verified rather than
   long-established.
@@ -198,7 +198,7 @@ The land-use ground tint is built on every full pass unless the request sends
 `groundTint: false`, which the page does while AR runs: AR draws no ground
 plane, and the tint at the demo's window is a ~4 MB class raster costing
 ~85 ms in this worker and ~20 ms of texel expansion on the page
-(`gps-plus-slam-osm` `ground-tint.bench.ts`). On desktop it is built whatever
+(`osm-h3` `ground-tint.bench.ts`). On desktop it is built whatever
 the tint layer switch says, because that switch is a uniform and skipping the
 tint while it is off would make switching it on cost a full rebuild. The flag
 is one of the build choices (`meshBuildChoices`), so leaving AR rebuilds the

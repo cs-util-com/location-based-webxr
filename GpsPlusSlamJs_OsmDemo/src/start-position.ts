@@ -11,7 +11,7 @@
  * @see start-position.ts.md
  */
 
-import { siteById, type LatLng } from "gps-plus-slam-osm";
+import { siteById, type LatLng } from "osm-h3";
 
 import { PICKER_PLACES, placeById } from "./picker-places.js";
 

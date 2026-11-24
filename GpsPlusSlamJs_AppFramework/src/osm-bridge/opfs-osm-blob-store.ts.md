@@ -2,7 +2,7 @@
 
 ## Purpose
 
-OPFS-backed persistence for the `OsmBlobStore` that `gps-plus-slam-osm` asks a
+OPFS-backed persistence for the `OsmBlobStore` that `osm-h3` asks a
 consumer to inject.
 
 ## Public API
@@ -35,8 +35,8 @@ prefetch) keeps the `console.warn` default.
 
 ## Invariants & assumptions
 
-- **It takes NO dependency on `gps-plus-slam-osm`, and that is load-bearing.**
-  The framework is published to npm and `gps-plus-slam-osm` is not, so any
+- **It takes NO dependency on `osm-h3`, and that is load-bearing.**
+  The framework is published to npm and `osm-h3` is not, so any
   dependency on it — even an optional peer — makes `pnpm install` fail with a
   registry 404 for every framework consumer. `OsmBlobStore` is therefore declared
   structurally (four methods, stable). This module compiles, ships and installs
@@ -77,7 +77,7 @@ prefetch) keeps the `console.warn` default.
 ## Examples
 
 ```ts
-import { CachingSource } from 'gps-plus-slam-osm/source';
+import { CachingSource } from 'osm-h3/source';
 import {
   OpfsOsmBlobStore,
   openOsmStoreDirectory,

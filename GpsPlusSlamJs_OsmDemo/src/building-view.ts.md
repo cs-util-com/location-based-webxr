@@ -276,7 +276,7 @@ map scored.
     exactly the features the 2D view scored, because one pipeline still produces
     both. Two fetch paths would let a discrepancy be the data rather than the
     geometry.
-- **The package produces buffers; this file makes meshes.** `gps-plus-slam-osm`
+- **The package produces buffers; this file makes meshes.** `osm-h3`
   must not depend on `three` (plan §4.2), so it stops at `Float32Array` /
   `Uint32Array` and the consumer does the three lines that follow. That split is
   what made moving the build into a worker a small change rather than a rewrite.
@@ -309,7 +309,7 @@ map scored.
   The camera is parked at `(140, 110, 140)` looking at the origin, with nothing
   in the scene naming a compass direction — so a city mirrored north/south looks
   exactly like a correct one.
-  - That is not hypothetical. `gps-plus-slam-osm` emitted a left-handed mesh
+  - That is not hypothetical. `osm-h3` emitted a left-handed mesh
     frame (ENU north at `+z`) until 2026-07-29, and this view — whose whole job
     is to make the mesh checkable by eye — could not show it. It was found in a
     code review instead, and fixed as a breaking change.
@@ -361,7 +361,7 @@ and W6 replaced that with assertions over the real instance matrices in
 rather than through a helper it happened to call. The class itself needs a
 `WebGLRenderer` and
 so cannot be constructed under vitest; the e2e suite exercises it instead. The
-geometry it renders is tested in `gps-plus-slam-osm`'s `mesh/buildings.test.ts`
+geometry it renders is tested in `osm-h3`'s `mesh/buildings.test.ts`
 (including the differential triangulation harness against `earcut`) and
 `mesh/mesh-orientation.test.ts` (the frame).
 

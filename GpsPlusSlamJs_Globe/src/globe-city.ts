@@ -2,7 +2,7 @@
  * The city in the globe's own scene (globe city plan 2026-10-05-0040 §12.5
  * C4, §14): loaded and built in a worker from the Osm library alone (the
  * lab's `globe-city-worker.js`), drawn through the library's
- * `gps-plus-slam-osm/three`, and placed on the globe's Earth-centred group
+ * `osm-h3/three`, and placed on the globe's Earth-centred group
  * by `ecefFromCityAt` (the frame at the target, scaled from the library's
  * ruler to the true ellipsoid, R2), so a frame recentre moves nothing (R16).
  * Moved out of the globe lab as a pure refactor (editor-on-the-full-globe
@@ -78,7 +78,7 @@ interface CityLoadCounts {
   dem: CityJobCounts;
 }
 
-/** The part of the library's `gps-plus-slam-osm/three` the city uses. */
+/** The part of the library's `osm-h3/three` the city uses. */
 export interface GlobeCityThree {
   cityObjects(city: {
     buildings: unknown;
@@ -106,7 +106,7 @@ export interface GlobeCityOptions {
   createWorker: () => GlobeCityWorker;
   /**
    * Loads the library's three.js entry, asked for with the first city
-   * drawn (the lab's: `() => import("gps-plus-slam-osm/three")`, so its boot
+   * drawn (the lab's: `() => import("osm-h3/three")`, so its boot
    * graph stays free of the Osm library). Asked once; its promise is kept.
    */
   loadCityThree: () => Promise<GlobeCityThree>;

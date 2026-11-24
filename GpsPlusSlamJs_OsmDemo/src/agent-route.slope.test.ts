@@ -41,7 +41,7 @@ import {
   enuFrameAt,
   neighbourSpacingM,
   type LatLng,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { planRoute } from "./agent-route.js";
 import type { GroundSampler } from "./cell-ground.js";

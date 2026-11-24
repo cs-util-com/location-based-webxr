@@ -24,7 +24,7 @@
 
 import { describe, expect, it } from "vitest";
 import { cellToLatLng, latLngToCell } from "h3-js";
-import { enuFrameAt } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
 
 import { groundHeightAtCell } from "./cell-ground.js";
 

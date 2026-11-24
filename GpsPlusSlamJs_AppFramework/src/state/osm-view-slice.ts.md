@@ -33,7 +33,7 @@ No selectors are exported. The mount key is the consumer's choice, so a selector
 - **`placeChanged` is the one exception to the geo-event asymmetry (DEC-R12-10).** "640 m NE" survives a step and does not survive a teleport across an ocean, so a declared change clears it while an ordinary move still keeps it.
 - **One geo-event field, so two sets cannot coexist.** The session could not settle whether old and new events had been visible simultaneously; with a single field that reading is unrepresentable rather than merely untested, which is why no test asserts it.
 - **`fetchStarted` deliberately does not clear the snapshot.** Blanking there would flash the view empty on every interaction across an ~15–90 s Overpass fetch. The previous snapshot is the last true picture until the refresh actually fails.
-- **No `gps-plus-slam-osm` types appear here, by hard constraint.** This package is published to npm and that one is not; a type-only import still lands in the published `.d.ts` and makes `pnpm install` 404 for every consumer. `OsmViewLatLng` is therefore declared structurally, and everything larger is deferred to `TSnapshot`. Same reasoning as `osm-bridge/opfs-osm-blob-store.ts`.
+- **No `osm-h3` types appear here, by hard constraint.** This package is published to npm and that one is not; a type-only import still lands in the published `.d.ts` and makes `pnpm install` 404 for every consumer. `OsmViewLatLng` is therefore declared structurally, and everything larger is deferred to `TSnapshot`. Same reasoning as `osm-bridge/opfs-osm-blob-store.ts`.
 - The reducers return fresh objects rather than mutating the immer draft, matching `qr-detected-slice`: `TSnapshot` is opaque and may carry readonly tuples that immer's `WritableDraft` rejects.
 
 ## Examples

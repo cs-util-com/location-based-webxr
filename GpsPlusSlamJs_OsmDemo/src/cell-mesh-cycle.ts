@@ -31,7 +31,7 @@
  * @see cell-mesh-cycle.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 import type { CellMesh } from "./cell-mesh.js";
 import { latestOnly, type LatestOnly } from "./latest-only.js";

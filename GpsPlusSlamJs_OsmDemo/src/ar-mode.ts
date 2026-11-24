@@ -64,7 +64,7 @@ import {
 } from "./ar-descent.js";
 
 import type { BuildingView } from "./building-view.js";
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 import { applyArEnvironment } from "./ar-scene-environment.js";
 import {

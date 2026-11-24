@@ -1,4 +1,4 @@
-# gps-plus-slam-osm demo
+# osm-h3 demo
 
 Two views of the same OSM data, side by side:
 

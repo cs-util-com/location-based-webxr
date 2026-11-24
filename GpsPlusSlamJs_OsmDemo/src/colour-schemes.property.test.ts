@@ -1,5 +1,5 @@
 import fc from "fast-check";
-import { DEFAULT_CITY_COLOUR_SCHEME } from "gps-plus-slam-osm";
+import { DEFAULT_CITY_COLOUR_SCHEME } from "osm-h3";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -525,7 +525,7 @@ describe('createOsmViewSlice — serialisability', () => {
 describe('createOsmViewSlice — the layer set', () => {
   /**
    * WHY THE LAYER SET IS STRUCTURAL HERE. This package is published and
-   * `gps-plus-slam-osm` is not, so any reference to it — including a type-only
+   * `osm-h3` is not, so any reference to it — including a type-only
    * import, which lands in the emitted `.d.ts` — 404s every consumer's install.
    * That is why `TSnapshot` is a generic, and a layer union would hit the same wall.
    * So the slice stores `Record<string, boolean>` and knows nothing about names.

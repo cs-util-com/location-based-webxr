@@ -1,6 +1,6 @@
 // @ts-check
 import { expect } from "@playwright/test";
-import { OSM_TILES_BASE_URL } from "gps-plus-slam-osm/source";
+import { OSM_TILES_BASE_URL } from "osm-h3/source";
 
 import {
   encodeRgbPng,

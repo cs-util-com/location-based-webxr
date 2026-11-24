@@ -4,7 +4,7 @@
  * WHY A WORKER AT ALL. Everything expensive in this demo ran on the UI thread:
  * an Overpass response measured at ~21 MB of JSON to parse, a 19-chunk scoring
  * pass, a mesh build, and (since the terrain extent grew) ~55 000 DEM samples.
- * `gps-plus-slam-osm` was designed for this from the start — it documents itself
+ * `osm-h3` was designed for this from the start — it documents itself
  * as worker-safe in six places, its public types are deliberately
  * structured-cloneable, and its mesh output is `Float32Array` specifically so it
  * can **transfer** rather than copy — but no consumer had ever exercised any of
@@ -37,13 +37,13 @@ import type {
   PoiMarker,
   TreePlacement,
   FurniturePlacement,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import type { RoutePoint } from "../agent-route.js";
 import type { DemoSnapshot } from "../demo-pipeline.js";
 import type { WorkerStageTimings } from "../click-timings.js";
 import type { GeoEventStats } from "../geo-event-stats.js";
-import type { HeightfieldData } from "gps-plus-slam-osm";
+import type { HeightfieldData } from "osm-h3";
 
 /**
  * A built mesh plus the counters the status line reports.

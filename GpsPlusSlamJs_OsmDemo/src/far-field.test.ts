@@ -21,7 +21,7 @@ import {
   MAX_GROUND_SEGMENTS,
   TERRAIN_SPACING_M,
 } from "./building-view.js";
-import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
+import { TERRAIN_EXTENT_M } from "osm-h3";
 import { HAZE_START_RATIO } from "./atmosphere-rig.js";
 import {
   DEFAULT_RENDER_MULTIPLIER,

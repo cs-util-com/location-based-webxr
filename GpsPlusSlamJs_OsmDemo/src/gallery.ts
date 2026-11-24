@@ -29,7 +29,7 @@
 
 import * as THREE from "three";
 import { MapControls } from "three/addons/controls/MapControls.js";
-import { POI_MODELS, type MeshData } from "gps-plus-slam-osm";
+import { POI_MODELS, type MeshData } from "osm-h3";
 
 /** A human, for scale. The one reference that makes every model readable. */
 const HUMAN_HEIGHT_M = 1.8;

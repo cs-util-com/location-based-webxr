@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { GeoEvent } from "gps-plus-slam-osm";
+import type { GeoEvent } from "osm-h3";
 
 import { createGeoEventCycle } from "./geo-event-cycle.js";
 import type { GeoEventStats } from "./geo-event-stats.js";

@@ -24,7 +24,7 @@
 
 import { explanationTree, type FeatureRow } from "./explanation-tree.js";
 import type { RegionSummary } from "./region-summary.js";
-import type { CellExplanation } from "gps-plus-slam-osm";
+import type { CellExplanation } from "osm-h3";
 
 export interface DetailsPanelOptions {
   readonly container: HTMLElement;

@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { CORPUS_SITES } from "gps-plus-slam-osm";
+import { CORPUS_SITES } from "osm-h3";
 
 import { PICKER_PLACES, placeById } from "./picker-places.js";
 

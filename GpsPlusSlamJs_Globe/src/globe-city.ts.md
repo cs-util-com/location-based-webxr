@@ -4,7 +4,7 @@
   2026-10-05-0040 §12.5 C4, §14): asks the city's worker (the lab's
   `labs/globe/globe-city-worker.js`) to build it from the Osm library,
   turns the reply into three.js objects with the library's
-  `gps-plus-slam-osm/three` (`cityObjects`), and places them on the
+  `osm-h3/three` (`cityObjects`), and places them on the
   globe's Earth-centred group through `ecefFromCityAt` (`globe-frame.ts`:
   the frame at the target, scaled from the library's ruler to the true
   ellipsoid, R2). A frame recentre therefore moves nothing (R16). Moved
@@ -20,7 +20,7 @@
     so the lookdev builder finds it;
   - `loadCityThree()` (required): the library's three.js entry, asked for
     once with the first city drawn and its promise kept. The lab's is
-    `() => import("gps-plus-slam-osm/three")`, so its boot graph stays
+    `() => import("osm-h3/three")`, so its boot graph stays
     free of the Osm library (`build-lookdev.test.mjs`) and this package
     needs no dependency on it;
   - `roads` (default true) draws the roads and paths; `roadLiftM` (2) lifts
@@ -132,7 +132,7 @@
     ellipsoid: globe.tiles.ellipsoid,
     createWorker: () =>
       new Worker("/w/labs/globe/globe-city-worker.js", { type: "module" }),
-    loadCityThree: () => import("gps-plus-slam-osm/three"),
+    loadCityThree: () => import("osm-h3/three"),
   });
   const handle = city.load({ lat: 46.948, lng: 7.4474 }, { zoom: 12 });
   ```

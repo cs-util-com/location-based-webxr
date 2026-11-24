@@ -25,13 +25,13 @@ import {
   parseRuleTable,
   type LatLng,
   type OsmDataSource,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import { DemoPipeline } from "./demo-pipeline.js";
 import { DEM_URL_TEMPLATES, createDemProvider } from "./dem-provider.js";
-import { TERRAIN_EXTENT_M } from "gps-plus-slam-osm";
-import { createTerrainField } from "gps-plus-slam-osm";
-import { terrainWindowFor } from "gps-plus-slam-osm";
+import { TERRAIN_EXTENT_M } from "osm-h3";
+import { createTerrainField } from "osm-h3";
+import { terrainWindowFor } from "osm-h3";
 
 const TABLE = parseRuleTable(
   ["id,Key,Value,walkable", "leisure_park,leisure,park,3"].join("\n"),

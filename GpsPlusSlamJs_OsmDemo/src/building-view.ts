@@ -7,7 +7,7 @@
  * looking at exactly the features the 2D view scored. Two fetch paths would
  * mean a discrepancy could be the data rather than the geometry.
  *
- * WHY THE PACKAGE DOES NOT DO THIS. `gps-plus-slam-osm` produces `Float32Array`
+ * WHY THE PACKAGE DOES NOT DO THIS. `osm-h3` produces `Float32Array`
  * positions and normals plus `Uint32Array` indices and stops there, because it
  * must not depend on `three` (plan §4.2). Everything below is the three lines
  * that turn those buffers into a mesh, and they belong in the consumer.
@@ -40,12 +40,8 @@ import {
   type GroundAppearance,
   type GroundStrategy,
 } from "./ground-mode.js";
-import {
-  TERRAIN_EXTENT_M,
-  TERRAIN_SPACING_M,
-  type Heightfield,
-} from "gps-plus-slam-osm";
-import { applyWoodsShare, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
+import { TERRAIN_EXTENT_M, TERRAIN_SPACING_M, type Heightfield } from "osm-h3";
+import { applyWoodsShare, WOODS_GOVERNOR } from "osm-h3/three";
 import { CityLook, type CityDrawContext } from "./city-look.js";
 import { heightRampColours } from "./height-ramp.js";
 import { createWoodsMeter, type WoodsMeter } from "./woods-readout.js";

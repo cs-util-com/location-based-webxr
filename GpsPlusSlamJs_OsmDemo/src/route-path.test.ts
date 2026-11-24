@@ -17,7 +17,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { enuFrameAt } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
 
 import {
   pathLengthM,

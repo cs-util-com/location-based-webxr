@@ -142,7 +142,7 @@ describe('gateCommands', () => {
   });
 
   it('runs changed packages in FULL and first, then dependents without e2e', () => {
-    const commands = gateCommands(['gps-plus-slam-osm'], {
+    const commands = gateCommands(['osm-h3'], {
       skipBrowserEnv: ENV,
     });
     expect(commands).toHaveLength(4);
@@ -153,13 +153,13 @@ describe('gateCommands', () => {
     expect(commands[1].command).toBe('pnpm run test:repo-config');
 
     // The changed package: plain `--filter`, no env, so its own e2e runs.
-    expect(commands[2].command).toContain('--filter gps-plus-slam-osm');
+    expect(commands[2].command).toContain('--filter osm-h3');
     expect(commands[2].command).not.toContain('...');
     expect(commands[2].env).toEqual({});
 
     // Dependents: the closure MINUS the package that just ran, in skip mode.
-    expect(commands[3].command).toContain('--filter "...gps-plus-slam-osm"');
-    expect(commands[3].command).toContain('--filter "!gps-plus-slam-osm"');
+    expect(commands[3].command).toContain('--filter "...osm-h3"');
+    expect(commands[3].command).toContain('--filter "!osm-h3"');
     expect(commands[3].env).toEqual({ [ENV]: '1' });
   });
 

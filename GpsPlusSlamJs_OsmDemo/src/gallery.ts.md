@@ -80,6 +80,6 @@ window.addEventListener("pagehide", dispose, { once: true });
 - `playwright-tests/` › _"the POI model gallery"_ — the page
   loads, reports fifty from the data rather than a hard-coded number, draws
   non-background pixels, and logs no error.
-- `gps-plus-slam-osm`'s `poi-models.contract.test.ts` — that the models
+- `osm-h3`'s `poi-models.contract.test.ts` — that the models
   themselves are non-degenerate. That is the other half of F28 and it lives with
   the data.

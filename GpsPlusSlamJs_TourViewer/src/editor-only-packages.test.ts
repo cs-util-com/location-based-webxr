@@ -31,7 +31,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 /** The packages only the editor's pages may import, by specifier: every
  *  entry of the editor kit but its `./touch`. */
 const EDITOR_ONLY =
-  /^(?:(?:gps-plus-slam-globe|3d-tiles-renderer|gps-plus-slam-osm)(?:\/|$)|gps-plus-slam-editor-kit(?:\/(?!touch(?:\/|$))|$))/;
+  /^(?:(?:gps-plus-slam-globe|3d-tiles-renderer|osm-h3)(?:\/|$)|gps-plus-slam-editor-kit(?:\/(?!touch(?:\/|$))|$))/;
 
 /** The editor kit's entries that bring three: outside the 3D view's own
  *  modules (which the editor's page reaches by `import()` alone), only
@@ -163,7 +163,7 @@ describe("the editor's heavy packages", () => {
         [
           'import { a } from "gps-plus-slam-globe/editor";',
           'import type { B } from "3d-tiles-renderer";',
-          'export * from "gps-plus-slam-osm/elevation/egm96";',
+          'export * from "osm-h3/elevation/egm96";',
           'import "3d-tiles-renderer/plugins";',
           'const m = await import("gps-plus-slam-globe");',
         ].join("\n"),
@@ -191,8 +191,8 @@ describe("the editor's heavy packages", () => {
     ).toHaveLength(2);
     // The whole OSM package, not only its geoid table: no part of it is
     // a visitor's yet, and a part is carved out only with a reason.
-    expect(EDITOR_ONLY.test("gps-plus-slam-osm")).toBe(true);
-    expect(EDITOR_ONLY.test("gps-plus-slam-osm/tiles")).toBe(true);
+    expect(EDITOR_ONLY.test("osm-h3")).toBe(true);
+    expect(EDITOR_ONLY.test("osm-h3/tiles")).toBe(true);
     expect(EDITOR_ONLY.test("gps-plus-slam-osmosis")).toBe(false);
     expect(EDITOR_ONLY.test("gps-plus-slam-globetrotter")).toBe(false);
   });

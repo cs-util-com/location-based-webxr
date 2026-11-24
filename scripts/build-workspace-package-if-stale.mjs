@@ -12,7 +12,7 @@
 // errors that read like the consumer's own bug.
 //
 // WHY IT IS PARAMETERISED. It was framework-only, and the workspace has two
-// such libraries: `gps-plus-slam-app-framework` and `gps-plus-slam-osm`. The
+// such libraries: `gps-plus-slam-app-framework` and `osm-h3`. The
 // framework survived without a guaranteed build because RecorderApp maps it to
 // SOURCE via tsconfig `paths` and its `build:framework` stage happens to run
 // before the other consumers in the cascade. The OSM package has neither, so

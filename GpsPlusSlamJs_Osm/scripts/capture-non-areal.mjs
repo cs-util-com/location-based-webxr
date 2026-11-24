@@ -71,7 +71,7 @@ const ENDPOINTS = [
  * an IP block, and was briefly misread as one here. `capture-fixtures.mjs` has
  * always sent them; this script did not, and paid for it.
  */
-const USER_AGENT = "gps-plus-slam-osm fixture capture (code@csutil.com)";
+const USER_AGENT = "osm-h3 fixture capture (code@csutil.com)";
 
 async function post(endpoint, query) {
   const response = await fetch(endpoint, {

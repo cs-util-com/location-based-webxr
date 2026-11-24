@@ -1,5 +1,5 @@
 import fc from "fast-check";
-import { createWoodsGovernor, WOODS_GOVERNOR } from "gps-plus-slam-osm/three";
+import { createWoodsGovernor, WOODS_GOVERNOR } from "osm-h3/three";
 import { describe, expect, it } from "vitest";
 
 import {

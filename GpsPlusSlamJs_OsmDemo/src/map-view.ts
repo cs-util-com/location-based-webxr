@@ -24,7 +24,7 @@ import {
 
 import { AttributionView, type AttributionEntry } from "./attribution-view.js";
 import { cellToBoundary } from "h3-js";
-import type { CellScore, GeoEvent, LatLng, Region } from "gps-plus-slam-osm";
+import type { CellScore, GeoEvent, LatLng, Region } from "osm-h3";
 
 import { describeEventTime } from "./event-label.js";
 import { describeScale, type HeatScale } from "./heat-colours.js";

@@ -18,7 +18,7 @@
  * these two files answer different halves of the same report.
  */
 
-import { DEFAULT_GROUND_RGB } from "gps-plus-slam-osm";
+import { DEFAULT_GROUND_RGB } from "osm-h3";
 import { describe, expect, it } from "vitest";
 
 import {

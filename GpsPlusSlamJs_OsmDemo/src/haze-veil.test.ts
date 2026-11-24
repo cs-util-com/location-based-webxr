@@ -10,7 +10,7 @@
  * are pinned first.
  */
 import fc from "fast-check";
-import { linearToSrgb, rgbToLab } from "gps-plus-slam-osm";
+import { linearToSrgb, rgbToLab } from "osm-h3";
 import { ShaderChunk } from "three";
 import { describe, expect, it } from "vitest";
 

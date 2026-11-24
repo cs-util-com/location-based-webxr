@@ -89,17 +89,17 @@ const BUILD_FRAMEWORK_STAGE = Object.freeze({
 /** The same, for the OSM library.
  *
  * Unlike `build:framework` this must run BEFORE `typecheck`, not after it.
- * OsmDemo resolves `gps-plus-slam-osm` through the package `exports`, i.e.
+ * OsmDemo resolves `osm-h3` through the package `exports`, i.e.
  * through dist — where RecorderApp maps the framework to SOURCE via tsconfig
  * `paths` and so never needs the framework built to typecheck. Nothing else in
  * the workspace builds this package, so with the stage missing entirely the
  * Cloudflare deployment of /osm/ failed on "Cannot find module
- * 'gps-plus-slam-osm'" while every local run passed against a stale dist left
+ * 'osm-h3'" while every local run passed against a stale dist left
  * behind by an earlier e2e run. */
 const BUILD_OSM_STAGE = Object.freeze({
   name: "build:osm",
   command:
-    "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm",
+    "node ../scripts/build-workspace-package-if-stale.mjs osm-h3 GpsPlusSlamJs_Osm",
   counts: /** @type {null} */ (null),
   wrapperScript: false,
 });
@@ -236,7 +236,7 @@ export const PROJECTS = [
       // Placed right after the framework and before every app: it is a pure
       // library with no framework dependency, so a break here is never caused
       // by an app and should surface before the slow app gates run.
-      packageGateStage("test:osm", "gps-plus-slam-osm"),
+      packageGateStage("test:osm", "osm-h3"),
       // The globe intro's private package (W7, plan 2026-09-26-0539 §7.1):
       // pure TypeScript with no workspace dependency, like osm.
       packageGateStage("test:globe", "gps-plus-slam-globe"),
@@ -605,7 +605,7 @@ export const PROJECTS = [
   demoAppProject("GpsPlusSlamJs_AnchorStarter"),
   // The mesh cursor's worker (polish round M5) is spawned from a URL, which
   // dpdm cannot follow: its own root keeps it inside the cycle gate. Its 3D
-  // editor imports gps-plus-slam-osm through `exports` -> dist (the geoid,
+  // editor imports osm-h3 through `exports` -> dist (the geoid,
   // the relief's constants), so the OSM build runs FIRST, before the first
   // stage that reads a dist, for the reason OsmDemo's does (see there).
   // Its lint:css also reads the landing's own sheets (src/landing/*.css,
@@ -691,7 +691,7 @@ export const PROJECTS = [
     // The `osm-tiles` Worker (its own wrangler.toml, deployed on its own).
     // Wrangler bundles src/osm-tiles-worker.ts at deploy, so the gate proves
     // the TypeScript and the handler behaviour, like the site worker's. It
-    // imports the Overpass query from `gps-plus-slam-osm` through its dist,
+    // imports the Overpass query from `osm-h3` through its dist,
     // so `build:osm` runs before `typecheck` (the OsmDemo reason).
     name: "GpsPlusSlamJs_OsmTiles",
     dir: "GpsPlusSlamJs_OsmTiles",
@@ -718,7 +718,7 @@ export const PROJECTS = [
     // 1. It needs `build:osm` FIRST. Every other app's dependency build sits
     //    after `typecheck`, which is safe only because RecorderApp maps the
     //    framework to SOURCE via tsconfig `paths`. Nothing maps
-    //    `gps-plus-slam-osm`, so `tsc` cannot see one of its types until dist
+    //    `osm-h3`, so `tsc` cannot see one of its types until dist
     //    exists — and until this stage was added, nothing in the workspace
     //    built it at all, which is what broke the /osm/ deployment.
     // 2. It needs `build:framework` FIRST TOO, since 2026-08-15. It used to

@@ -13,7 +13,7 @@
  * relief matters for a standalone 3D view, so the origin's height is subtracted
  * and the datum cancels exactly. **A later AR mode will need the opposite** —
  * absolute height against an ellipsoidal GNSS altitude, which is what the
- * geoid model in `gps-plus-slam-osm` is for. Do not reuse this there.
+ * geoid model in `osm-h3` is for. Do not reuse this there.
  *
  * WHY `undefined` IS NEVER `0`. `elevationAt` returns `undefined` for "no data",
  * and the tempting `?? 0` turns a DEM outage into a sea-level hole shaped

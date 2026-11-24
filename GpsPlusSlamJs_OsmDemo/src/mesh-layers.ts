@@ -40,7 +40,7 @@ import {
   type PoiHostLayer,
   type PoiModel,
   type PoiPlacement,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 // The buildings', trees' and (since 2026-10-11) roads' three.js objects, and
 // the geometry wrapper every layer here shares, are the library's since 2026-10-06 (globe city plan
 // 2026-10-05-0040 §14 L5): the globe draws the same city.
@@ -55,7 +55,7 @@ import {
   type LookMix,
   type LookObjectOptions,
   type TreeObjectOptions,
-} from "gps-plus-slam-osm/three";
+} from "osm-h3/three";
 
 import { RENDER_ORDER, groundLift } from "./layer-order.js";
 import type { LayerSet } from "./layers.js";
@@ -393,7 +393,7 @@ export const MESH_LAYERS: readonly MeshLayerDescriptor[] = [
     // skips a child wholesale when `sharedResources` is set, so a hoisted
     // material is either disposed on the first refresh or drags the chunk's
     // owned geometry into a leak. `mesh-layers.test.ts` pins the pairing.
-    // The library's `buildingObjects` (gps-plus-slam-osm/three): one mesh per
+    // The library's `buildingObjects` (osm-h3/three): one mesh per
     // chunk, a material per chunk, white plus vertex colours, single-sided,
     // flat, roughness 0.55, `userData.solid` for picking and the material's
     // `neutralSurface` for the noon brightening. Its header carries why.

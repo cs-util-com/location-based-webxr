@@ -37,7 +37,7 @@ import {
   type OsmDataSource,
   type OsmTileResult,
   type OsmTileTimings,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import { DemoPipeline } from "./demo-pipeline.js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };

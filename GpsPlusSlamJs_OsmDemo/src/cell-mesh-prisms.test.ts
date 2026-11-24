@@ -19,7 +19,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildCellMesh, type CellMeshOptions } from "./cell-mesh.js";
 import { CELL_BAR_MAX_HEIGHT_M, CELL_PRISM_HEIGHT_M } from "./cell-presets.js";
-import { enuFrameAt } from "gps-plus-slam-osm";
+import { enuFrameAt } from "osm-h3";
 import { latLngToCell } from "h3-js";
 
 const COLOGNE = { lat: 50.9413, lng: 6.9583 };

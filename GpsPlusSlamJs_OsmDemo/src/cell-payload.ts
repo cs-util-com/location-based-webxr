@@ -29,7 +29,7 @@
  * @see cell-payload.ts.md
  */
 
-import type { CellScore } from "gps-plus-slam-osm";
+import type { CellScore } from "osm-h3";
 
 /**
  * The wire form: flat arrays plus the two small string tables needed to read

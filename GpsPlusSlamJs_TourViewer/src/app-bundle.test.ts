@@ -275,7 +275,7 @@ describe("the NOTICE the app ships", () => {
 const THREE_D_ONLY: readonly [string, RegExp][] = [
   ["the globe", /\/GpsPlusSlamJs_Globe\/|\/gps-plus-slam-globe\//],
   ["the 3D tiles renderer", /\/node_modules\/3d-tiles-renderer\//],
-  ["the elevation package", /\/GpsPlusSlamJs_Osm\/|\/gps-plus-slam-osm\//],
+  ["the elevation package", /\/GpsPlusSlamJs_Osm\/|\/osm-h3\//],
   ["the 3D view", /\/src\/editor3d\//],
   [
     "the editor kit's scene or globe",

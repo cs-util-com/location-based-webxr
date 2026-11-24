@@ -513,7 +513,7 @@ importers:
       gps-plus-slam-app-framework:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_AppFramework
-      gps-plus-slam-osm:
+      osm-h3:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_Osm
       h3-js:
@@ -598,7 +598,7 @@ importers:
 
   GpsPlusSlamJs_OsmTiles:
     dependencies:
-      gps-plus-slam-osm:
+      osm-h3:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_Osm
       h3-js:
@@ -926,7 +926,7 @@ importers:
       gps-plus-slam-globe:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_Globe
-      gps-plus-slam-osm:
+      osm-h3:
         specifier: workspace:*
         version: link:../GpsPlusSlamJs_Osm
       leaflet:

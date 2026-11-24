@@ -30,7 +30,7 @@ imports alike).
   only.
 - `gps-plus-slam-editor-kit/globe` (`src/globe/`, not created yet) - the
   globe's blocks; the only entry that may name `gps-plus-slam-globe`,
-  `3d-tiles-renderer` or `gps-plus-slam-osm`. By `import()` only.
+  `3d-tiles-renderer` or `osm-h3`. By `import()` only.
 
 ## As a dependency of a Vite app
 

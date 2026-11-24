@@ -30,7 +30,7 @@ The trunk-and-crown trees, an option beside the crown-only default (the owner ch
 ## Examples
 
 ```ts
-import { cityObjects } from "gps-plus-slam-osm/three";
+import { cityObjects } from "osm-h3/three";
 
 for (const object of cityObjects(city, { treeForm: "trunk" })) root.add(object);
 // nothing else: each tree mesh re-sorts itself before it renders

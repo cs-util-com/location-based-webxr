@@ -24,7 +24,7 @@ import {
   tourMediaTypeOfEntry,
 } from "gps-plus-slam-app-framework/ar/tour-media";
 import { drawnHeightM } from "gps-plus-slam-globe/editor";
-import { egm96Geoid } from "gps-plus-slam-osm/elevation/egm96";
+import { egm96Geoid } from "osm-h3/elevation/egm96";
 
 // Why these tests matter: the sample tour (owner decision S-D9) is the
 // owner's first phone test of stations before in-app authoring exists. It is

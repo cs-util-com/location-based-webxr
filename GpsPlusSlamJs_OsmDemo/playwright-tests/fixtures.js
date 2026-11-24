@@ -23,10 +23,7 @@ import { expect } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  DEFAULT_OVERPASS_ENDPOINTS,
-  OSM_TILES_BASE_URL,
-} from "gps-plus-slam-osm";
+import { DEFAULT_OVERPASS_ENDPOINTS, OSM_TILES_BASE_URL } from "osm-h3";
 import { terrariumPng } from "../../scripts/e2e/terrarium-png.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));

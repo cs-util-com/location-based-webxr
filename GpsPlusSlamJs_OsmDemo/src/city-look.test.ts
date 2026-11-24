@@ -19,14 +19,14 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type * as OsmThree from "gps-plus-slam-osm/three";
-import { setTreeLookWeights } from "gps-plus-slam-osm/three";
+import type * as OsmThree from "osm-h3/three";
+import { setTreeLookWeights } from "osm-h3/three";
 
 import { CityLook, TREE_MIX_STEP } from "./city-look.js";
 
 // The trees' mix is spied, not faked: the real one runs, so every other
 // test still recolours real objects.
-vi.mock("gps-plus-slam-osm/three", async (importOriginal) => {
+vi.mock("osm-h3/three", async (importOriginal) => {
   const real = await importOriginal<typeof OsmThree>();
   return { ...real, setTreeLookWeights: vi.fn(real.setTreeLookWeights) };
 });

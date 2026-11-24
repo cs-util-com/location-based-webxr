@@ -27,9 +27,7 @@ const source = readFileSync(join(here, "globe-city-worker.js"), "utf8");
 
 describe("the globe lab's city worker and the tile host", () => {
   it("takes the host's base URL from the Osm library", () => {
-    const fromOsm = source.match(
-      /import \{([^}]*)\} from "gps-plus-slam-osm";/,
-    );
+    const fromOsm = source.match(/import \{([^}]*)\} from "osm-h3";/);
     assert.ok(fromOsm, "the worker imports the Osm library");
     assert.match(fromOsm[1], /\bOSM_TILES_BASE_URL\b/);
     assert.doesNotMatch(source, /osm-tiles\.[a-z]+\.workers\.dev/);

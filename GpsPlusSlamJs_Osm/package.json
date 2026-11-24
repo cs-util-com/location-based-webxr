@@ -1,5 +1,5 @@
 {
-  "name": "gps-plus-slam-osm",
+  "name": "osm-h3",
   "version": "0.1.0",
   "description": "OpenStreetMap → H3 affordance index. Fetches raw OSM data, indexes it per H3 cell, and scores each cell against a pluggable affordance rule table. Pure data — no Three.js, no AR, no framework dependency.",
   "type": "module",

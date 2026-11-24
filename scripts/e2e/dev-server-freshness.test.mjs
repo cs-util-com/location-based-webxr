@@ -147,7 +147,7 @@ describe('entryFilesOf', () => {
   });
 
   it('resolves EVERY subpath, not just "."', () => {
-    // A chunk reachable only from `gps-plus-slam-osm/mesh` is invisible to a
+    // A chunk reachable only from `osm-h3/mesh` is invisible to a
     // probe that reads the root entry alone.
     const dir = packageWith(
       { exports: { '.': './dist/index.js', './mesh': './dist/mesh/index.js' } },

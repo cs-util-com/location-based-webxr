@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { POI_MODELS } from "gps-plus-slam-osm";
+import { POI_MODELS } from "osm-h3";
 
 import { galleryPositions, rowLabel } from "./gallery.js";
 

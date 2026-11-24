@@ -49,7 +49,7 @@ import {
   createCachingTileFetch,
   createCityTileSource,
   loadCityData,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import { openPersistentOsmStore } from "gps-plus-slam-app-framework/osm-bridge";
 
 import { cityHeights } from "/globe/globe-city-heights.js";

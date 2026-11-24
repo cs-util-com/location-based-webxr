@@ -31,7 +31,7 @@
  * @see terrain-texture.ts.md
  */
 
-import type { HeightfieldData } from "gps-plus-slam-osm";
+import type { HeightfieldData } from "osm-h3";
 
 /** A height field ready to become a `DataTexture`. */
 export interface TerrainTexture {

@@ -64,7 +64,7 @@
  * @see url-state.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 /** Where the user is, and whether they got there by naming the place. */
 export interface PlaceInUrl {

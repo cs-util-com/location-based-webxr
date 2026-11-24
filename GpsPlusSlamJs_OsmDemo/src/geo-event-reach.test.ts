@@ -34,7 +34,7 @@ import {
   SCORE_DISK_MAX_RADIUS,
   fetchTilesForScoreWorkingSet,
   toFetchTile,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 /** The demo's opening position — `PICKER_PLACES[0]`, Central Park South. */
 const MANHATTAN = { lat: 40.7677, lng: -73.9807 };

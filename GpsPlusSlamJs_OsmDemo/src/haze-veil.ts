@@ -11,7 +11,7 @@
  * @see haze-veil.ts.md
  */
 
-import { labToRgb, rgbToLab, srgbToLinear } from "gps-plus-slam-osm";
+import { labToRgb, rgbToLab, srgbToLinear } from "osm-h3";
 
 /** A veil as the light dialog states it: what the screen shows. */
 export interface HazeVeil {

@@ -25,10 +25,10 @@ import {
   chunkMeshes,
   enuFrameAt,
   meshCentroidEnu,
-} from "gps-plus-slam-osm";
-import type { OsmFeature } from "gps-plus-slam-osm";
+} from "osm-h3";
+import type { OsmFeature } from "osm-h3";
 
-import { shellRandFor } from "gps-plus-slam-osm";
+import { shellRandFor } from "osm-h3";
 
 const ORIGIN = { lat: 50.9413, lng: 6.9583 };
 const frame = enuFrameAt(ORIGIN);

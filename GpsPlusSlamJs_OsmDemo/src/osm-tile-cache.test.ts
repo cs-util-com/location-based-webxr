@@ -15,7 +15,7 @@ import {
   MemoryBlobStore,
   OSM_TILES_BASE_URL,
   OVERPASS_SCHEMA_VERSION,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import { OpfsOsmBlobStore } from "gps-plus-slam-app-framework/osm-bridge";
 
 import {

@@ -28,7 +28,7 @@
  * @see agent-cycle.ts.md
  */
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 import { clampOrder, MAX_ORDER_M } from "./route-order.js";
 import type { RoutePoint } from "./agent-route.js";

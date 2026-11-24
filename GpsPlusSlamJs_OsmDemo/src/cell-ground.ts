@@ -15,7 +15,7 @@
  */
 
 import { cellToLatLng } from "h3-js";
-import type { EnuFrame } from "gps-plus-slam-osm";
+import type { EnuFrame } from "osm-h3";
 
 /** The part of a `Heightfield` this needs — a sampler, nothing more. */
 export interface GroundSampler {

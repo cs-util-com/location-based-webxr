@@ -24,7 +24,7 @@
  */
 
 import { cellToBoundary } from "h3-js";
-import type { EnuFrame } from "gps-plus-slam-osm";
+import type { EnuFrame } from "osm-h3";
 
 import { heatFraction, type HeatScale } from "./heat-colours.js";
 import { CELL_BAR_MAX_HEIGHT_M, CELL_PRISM_HEIGHT_M } from "./cell-presets.js";

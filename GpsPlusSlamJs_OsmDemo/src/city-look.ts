@@ -17,7 +17,7 @@ import {
   setTreeLookWeights,
   setTrimWeights,
   type LookMix,
-} from "gps-plus-slam-osm/three";
+} from "osm-h3/three";
 
 import {
   colourSchemeOf,

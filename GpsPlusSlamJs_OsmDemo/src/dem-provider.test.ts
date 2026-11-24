@@ -22,7 +22,7 @@ import {
   decodeTerrarium,
   type DecodedImage,
   type LatLng,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import {
   DEM_ATTRIBUTION_ENTRIES,

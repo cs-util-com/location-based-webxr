@@ -43,7 +43,7 @@
  * @see geo-event-cycle.ts.md
  */
 
-import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
+import type { GeoEvent, LatLng } from "osm-h3";
 
 import type { GeoEventStats } from "./geo-event-stats.js";
 import { selectOsmView, type DemoStore } from "./osm-store.js";

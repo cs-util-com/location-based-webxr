@@ -31,7 +31,7 @@ import {
   type SurfaceGainRamp,
 } from "./atmosphere-rig.js";
 import type { ColourSchemeName } from "./colour-schemes.js";
-import { rgbToLab } from "gps-plus-slam-osm";
+import { rgbToLab } from "osm-h3";
 
 import {
   clampHazeVeil,

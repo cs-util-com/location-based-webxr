@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The `?perf=1` perf log for OsmDemo: a bounded record of the frames since load (chained frame intervals, bursts with their draw cost, woods share changes) and the plain-text report the "Copy perf log" button copies, so the woods governor (`gps-plus-slam-osm/three`'s `woods-governor.ts`) can be judged from a real phone by pasting text instead of sending screenshots. Pure: the view feeds the recorder and supplies the device, settings and readout; the report is built here and pinned in node without a GPU. The DOM half is `perf-log-panel.ts`.
+The `?perf=1` perf log for OsmDemo: a bounded record of the frames since load (chained frame intervals, bursts with their draw cost, woods share changes) and the plain-text report the "Copy perf log" button copies, so the woods governor (`osm-h3/three`'s `woods-governor.ts`) can be judged from a real phone by pasting text instead of sending screenshots. Pure: the view feeds the recorder and supplies the device, settings and readout; the report is built here and pinned in node without a GPU. The DOM half is `perf-log-panel.ts`.
 
 ## Public API
 

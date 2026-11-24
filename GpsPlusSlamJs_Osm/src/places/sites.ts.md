@@ -70,7 +70,7 @@ cannot drift apart.
 ## Examples
 
 ```ts
-import { CORPUS_SITES, siteById } from "gps-plus-slam-osm";
+import { CORPUS_SITES, siteById } from "osm-h3";
 
 // Populate a picker.
 for (const site of CORPUS_SITES) {

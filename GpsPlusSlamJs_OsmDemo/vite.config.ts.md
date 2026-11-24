@@ -34,7 +34,7 @@ up error reporting's source maps.
 
 ## Invariants
 
-- No aliases: `gps-plus-slam-osm` and the app framework resolve through the
+- No aliases: `osm-h3` and the app framework resolve through the
   pnpm workspace links.
 
 ## Tests

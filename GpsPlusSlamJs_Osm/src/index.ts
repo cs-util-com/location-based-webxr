@@ -1,5 +1,5 @@
 /**
- * `gps-plus-slam-osm` — OpenStreetMap → H3 affordance index.
+ * `osm-h3` — OpenStreetMap → H3 affordance index.
  *
  * Pure data: no Three.js, no AR, no framework dependency, and the only runtime
  * dependency is `h3-js` (a peer). Persistence and workers are injected by the

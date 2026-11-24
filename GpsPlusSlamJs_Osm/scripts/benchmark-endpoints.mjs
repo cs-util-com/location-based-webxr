@@ -269,8 +269,7 @@ async function timeEndpoint(endpoint, query) {
       headers: {
         // Every instance asks for an identifying User-Agent; the FOSSGIS policy
         // makes it a requirement rather than a courtesy.
-        "User-Agent":
-          "gps-plus-slam-osm endpoint benchmark (github.com/cs-util-com)",
+        "User-Agent": "osm-h3 endpoint benchmark (github.com/cs-util-com)",
       },
     });
     const retryAfter = response.headers.get("retry-after");

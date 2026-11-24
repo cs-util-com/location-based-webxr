@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { heightfieldFrom, type HeightfieldData } from "gps-plus-slam-osm";
+import { heightfieldFrom, type HeightfieldData } from "osm-h3";
 import {
   sampleTerrainTexture,
   terrainNormal,

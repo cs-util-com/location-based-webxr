@@ -29,7 +29,7 @@
  */
 
 import { formatDistance } from "gps-plus-slam-app-framework/utils/format-distance";
-import type { GeoEvent, LatLng } from "gps-plus-slam-osm";
+import type { GeoEvent, LatLng } from "osm-h3";
 import { normalizeBearingDeg } from "gps-plus-slam-app-framework/utils/bearing-degrees";
 
 /** The eight compass points, in bearing order from north. */

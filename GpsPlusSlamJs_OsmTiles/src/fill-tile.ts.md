@@ -92,7 +92,7 @@ Worker (CPU). The fill writes no list of stored tiles; there is none
   gzipped error page would be stored. Its cost is bounded by constants.
 - **The query is the client's own**:
   `buildTileQuery(cellToBoundingBox(cell), 180, OVERPASS_SELECT_KEYS)` from
-  `gps-plus-slam-osm/source`, so a stored tile is byte for byte what the
+  `osm-h3/source`, so a stored tile is byte for byte what the
   browser's direct race would have received and the client needs no second
   parser.
 - **Serial, never a race**: one operator after another, a long per-attempt

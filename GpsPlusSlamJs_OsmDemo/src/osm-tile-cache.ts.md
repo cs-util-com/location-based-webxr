@@ -34,7 +34,7 @@
   - The framework's `openPersistentOsmStore` answers `undefined` instead of falling back,
     because a prefetch must know when nothing it fetches would outlive the
     page; the worker's `openOsmStore` falls back to memory instead.
-  - It imports only `gps-plus-slam-osm` and
+  - It imports only `osm-h3` and
     `gps-plus-slam-app-framework/osm-bridge`.
 - Examples:
 

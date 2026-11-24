@@ -2,7 +2,7 @@
  * The `?perf=1` perf log: a bounded record of the frames since load and the
  * plain-text report the "Copy perf log" button copies.
  *
- * WHY THIS EXISTS. The woods governor (`gps-plus-slam-osm/three`'s
+ * WHY THIS EXISTS. The woods governor (`osm-h3/three`'s
  * `woods-governor.ts`) is judged on a real phone, and its one-line readout
  * (`woods-readout.ts`) shows only the present. This keeps the session's
  * timeline (every chained frame interval, every burst start with its draw
@@ -22,10 +22,7 @@
  */
 
 import { percentileOfSorted } from "gps-plus-slam-app-framework/utils/percentile";
-import {
-  WOODS_GOVERNOR,
-  type WoodsGovernorMode,
-} from "gps-plus-slam-osm/three";
+import { WOODS_GOVERNOR, type WoodsGovernorMode } from "osm-h3/three";
 
 import { describeDrawCost, type DrawCost } from "./draw-cost.js";
 

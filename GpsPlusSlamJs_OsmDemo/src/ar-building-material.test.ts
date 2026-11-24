@@ -21,7 +21,7 @@ import {
   PITCHED_ROOF_TONES,
   WALL_TONES,
   srgbToLinear,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 
 import {
   AR_SHELL_PARAMS,

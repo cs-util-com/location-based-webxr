@@ -13,7 +13,7 @@
     "test:unit": "node ../scripts/test-timing/timed-stage.mjs test:unit",
     "test:watch": "vitest",
     "build:framework": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-app-framework GpsPlusSlamJs_AppFramework",
-    "build:osm": "node ../scripts/build-workspace-package-if-stale.mjs gps-plus-slam-osm GpsPlusSlamJs_Osm",
+    "build:osm": "node ../scripts/build-workspace-package-if-stale.mjs osm-h3 GpsPlusSlamJs_Osm",
     "test:e2e": "pnpm run build:framework && pnpm run build:osm && node ../scripts/test-timing/timed-stage.mjs test:e2e",
     "test:e2e:headed": "pnpm run build:framework && pnpm run build:osm && playwright test --config playwright-tests/playwright.config.js --headed",
     "test:e2e:ui": "pnpm run build:framework && pnpm run build:osm && playwright test --config playwright-tests/playwright.config.js --ui",
@@ -40,7 +40,7 @@
     "gps-plus-slam-app-framework": "workspace:*",
     "gps-plus-slam-editor-kit": "workspace:*",
     "gps-plus-slam-globe": "workspace:*",
-    "gps-plus-slam-osm": "workspace:*",
+    "osm-h3": "workspace:*",
     "leaflet": "^1.9.4",
     "qrcode": "^1.5.4",
     "three": "^0.185.1"

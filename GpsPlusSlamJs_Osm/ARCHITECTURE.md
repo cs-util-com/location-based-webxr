@@ -11,7 +11,7 @@ in two places is a fact that will disagree with itself.
 
 **Scope marker used throughout:**
 
-- 🟩 **package** — a guarantee of `gps-plus-slam-osm`. Depend on it.
+- 🟩 **package** — a guarantee of `osm-h3`. Depend on it.
 - 🟦 **reference consumer** — how `GpsPlusSlamJs_OsmDemo` chooses to use it. A
   worked example, not an API promise. Your app may do it differently.
 
@@ -36,7 +36,7 @@ the user walks into the woods and loses signal. The limits of that are §6.
 
 ```mermaid
 flowchart TB
-  subgraph pkg["🟩 gps-plus-slam-osm — pure data (Three.js only in the opt-in ./three entry), no framework"]
+  subgraph pkg["🟩 osm-h3 — pure data (Three.js only in the opt-in ./three entry), no framework"]
     direction TB
     src["source/<br/>Overpass, caching, budget"]
     model["model/<br/>parse, geometry, tags"]

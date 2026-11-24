@@ -3,7 +3,7 @@
  * corpus (DEC-R6b-1, DEC-R6b-2, DEC-R6b-4).
  *
  * WHY THIS IS A SECOND LIST, when DEC-R4-11 deliberately built ONE. The corpus
- * table in `gps-plus-slam-osm` earns its entries by being **awkward to render**:
+ * table in `osm-h3` earns its entries by being **awkward to render**:
  * a beach where the ground stops being ground, stacked U-Bahn tagging, a flat
  * centre. Several are deliberately unphotogenic, and the sixth testing session
  * asked for the opposite — a dropdown a visitor wants to click. Those are two
@@ -31,7 +31,7 @@
  * @see picker-places.ts.md
  */
 
-import { siteById, type LatLng } from "gps-plus-slam-osm";
+import { siteById, type LatLng } from "osm-h3";
 
 export interface PickerPlace {
   /** Stable, filename- and URL-safe. Accepted by `?site=`. */

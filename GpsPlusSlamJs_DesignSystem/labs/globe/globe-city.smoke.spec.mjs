@@ -1,7 +1,7 @@
 /**
  * The city in the globe's scene (globe city plan 2026-10-05-0040 §12.5 C4,
  * §14): built in a worker from the Osm library alone, drawn through
- * `gps-plus-slam-osm/three`, placed on the globe's Earth-centred group.
+ * `osm-h3/three`, placed on the globe's Earth-centred group.
  *
  * Nothing leaves 127.0.0.1: Overpass answers with a grid of fixture buildings
  * around the target, and every height tile (the prefetch's and the city

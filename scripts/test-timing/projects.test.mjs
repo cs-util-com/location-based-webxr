@@ -305,7 +305,7 @@ describe('browser-stage exclusion (DEC-G2)', () => {
   });
 
   it('TourViewer builds the OSM package before it reads a dist', () => {
-    // Its 3D editor imports gps-plus-slam-osm (the geoid, the relief's
+    // Its 3D editor imports osm-h3 (the geoid, the relief's
     // constants), resolved through `exports` -> dist with no tsconfig
     // `paths`, exactly as OsmDemo does: without the stage first, its
     // typecheck reads whatever dist a sibling gate left behind.

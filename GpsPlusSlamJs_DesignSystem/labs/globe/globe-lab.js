@@ -1873,7 +1873,7 @@ async function start() {
           // lab's boot graph stays free of the Osm library
           // (`build-lookdev.test.mjs` holds it to that), so a page that
           // never reaches a city never loads it.
-          loadCityThree: () => import("gps-plus-slam-osm/three"),
+          loadCityThree: () => import("osm-h3/three"),
           roads: params.cityRoads === 1,
           roadLiftM: params.roadLiftM,
           roadOffset: params.roadOffset,

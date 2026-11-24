@@ -26,8 +26,7 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const ENTRIES = ["touch", "chrome", "scene", "globe"] as const;
 
 /** The packages only `src/globe/` may name. */
-const GLOBE_ONLY =
-  /^(?:gps-plus-slam-globe|3d-tiles-renderer|gps-plus-slam-osm)(?:\/|$)/;
+const GLOBE_ONLY = /^(?:gps-plus-slam-globe|3d-tiles-renderer|osm-h3)(?:\/|$)/;
 
 /** three, which neither `touch` nor `chrome` may name. */
 const THREE = /^three(?:\/|$)/;
@@ -129,7 +128,7 @@ describe("the kit's import rule", () => {
       ["scene/a.ts", "../globe/b.js"],
       ["scene/a.ts", "gps-plus-slam-globe/editor"],
       ["chrome/a.ts", "3d-tiles-renderer"],
-      ["scene/a.ts", "gps-plus-slam-osm/elevation/egm96"],
+      ["scene/a.ts", "osm-h3/elevation/egm96"],
       ["chrome/a.ts", "gps-plus-slam-editor-kit/touch"],
       ["chrome/a.ts", "../kit-imports.js"],
       ["a.ts", "./b.js"],

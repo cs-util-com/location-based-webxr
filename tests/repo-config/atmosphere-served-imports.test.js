@@ -340,8 +340,8 @@ describe("the terrain lab served modules stay servable inside a worker", () => {
       "src",
       "__planted__.ts",
     );
-    const typeOnly = "import type { EnuFrame } from 'gps-plus-slam-osm';";
-    const value = "import { enuFrameAt } from 'gps-plus-slam-osm';";
+    const typeOnly = "import type { EnuFrame } from 'osm-h3';";
+    const value = "import { enuFrameAt } from 'osm-h3';";
     expect(servedGraphProblems([fake], () => typeOnly, [])).toEqual([]);
     expect(servedGraphProblems([fake], () => value, []).join("\n")).toContain(
       "bare import",

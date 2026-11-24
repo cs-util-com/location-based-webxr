@@ -1,7 +1,7 @@
 /**
- * OSM bridge — wires `gps-plus-slam-osm` to browser storage.
+ * OSM bridge — wires `osm-h3` to browser storage.
  *
- * `gps-plus-slam-osm` is an **optional peer dependency**: only this subpath
+ * `osm-h3` is an **optional peer dependency**: only this subpath
  * needs it, so a framework consumer that does not want OSM never installs it.
  */
 

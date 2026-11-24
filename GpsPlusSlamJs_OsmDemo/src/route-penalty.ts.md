@@ -112,7 +112,7 @@ numbers become routes.
 
 `penaltyFor` prices the GROUND; `pathFactor` prices the WAY. The planner
 multiplies both, and the split exists because `walkable` was answering two
-questions at once — see `gps-plus-slam-osm`'s `roads.ts.md` on
+questions at once — see `osm-h3`'s `roads.ts.md` on
 `isPedestrianPath`.
 
 - `NON_PATH_PENALTY = 1.5` — a starting value, expected to want tuning by eye.

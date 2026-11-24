@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Draws the colour-looks shader programs of `gps-plus-slam-osm/three` in a
+ * Draws the colour-looks shader programs of `osm-h3/three` in a
  * real WebGL 2 context, for `looks-programs.spec.js`. The unit tests check
  * the shader TEXT the patches write; only a GPU driver says whether that
  * text compiles and links, and what it draws. Each check renders the fixed
@@ -9,14 +9,14 @@
  */
 
 import * as THREE from "three";
-import { decodeLookColours } from "gps-plus-slam-osm";
+import { decodeLookColours } from "osm-h3";
 import {
   applyGroundTint,
   buildingObjects,
   createLookMix,
   roadObjects,
   setTrimWeights,
-} from "gps-plus-slam-osm/three";
+} from "osm-h3/three";
 
 /** The square canvas every check draws into, pixels. */
 const SIZE = 64;
@@ -108,7 +108,7 @@ const LOOK_PALETTES = [
  *
  * @param {readonly number[]} palette
  * @param {readonly (readonly number[])[] | undefined} lookPalettes
- * @returns {import("gps-plus-slam-osm").GroundTint}
+ * @returns {import("osm-h3").GroundTint}
  */
 function edgeTint(palette, lookPalettes) {
   return {
@@ -204,12 +204,12 @@ const QUAD_CODES = [
  *
  * @param {Float32Array} colors
  * @param {readonly Uint8Array[] | undefined} lookColours
- * @returns {import("gps-plus-slam-osm").MeshChunk}
+ * @returns {import("osm-h3").MeshChunk}
  */
 function quadChunk(colors, lookColours) {
   const plane = new THREE.PlaneGeometry(10, 10).rotateX(-Math.PI / 2);
   const index = plane.getIndex();
-  return /** @type {import("gps-plus-slam-osm").MeshChunk} */ ({
+  return /** @type {import("osm-h3").MeshChunk} */ ({
     key: "0,0",
     mesh: {
       positions: Float32Array.from(plane.getAttribute("position").array),

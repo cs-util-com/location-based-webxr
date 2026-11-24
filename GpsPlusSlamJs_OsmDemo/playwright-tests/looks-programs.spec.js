@@ -2,7 +2,7 @@
 /**
  * The colour-looks shader programs in a real WebGL 2 context: they compile
  * and link, and at a weight of 1 for one look they draw what that look's
- * fixed program draws. The unit tests in `gps-plus-slam-osm` check the
+ * fixed program draws. The unit tests in `osm-h3` check the
  * shader text only; nothing else compiles it before a phone does.
  *
  * Draws on an empty page (`looks-programs.html`) through

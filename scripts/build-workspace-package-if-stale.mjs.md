@@ -37,8 +37,8 @@
     RecorderApp maps the framework to SOURCE via tsconfig `paths` and the
     cascade happens to build it before the apps that do not.
   - `build:osm` runs BEFORE `typecheck`, because nothing maps
-    `gps-plus-slam-osm` to source. With the stage missing altogether, `tsc`
-    reported "Cannot find module 'gps-plus-slam-osm'" plus a cascade of
+    `osm-h3` to source. With the stage missing altogether, `tsc`
+    reported "Cannot find module 'osm-h3'" plus a cascade of
     implicit-any errors that read like OsmDemo's own bug, and the Cloudflare
     `/osm/` deployment failed while every local run passed against a stale
     dist left behind by an earlier e2e run.

@@ -22,7 +22,7 @@
 
 import { greatCircleDistance, UNITS } from "h3-js";
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 import { farTravelMessage, shouldRefreshFor } from "./ar-walking.js";
 

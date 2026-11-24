@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import type { CellExplanation } from "gps-plus-slam-osm";
+import type { CellExplanation } from "osm-h3";
 
 import { createDemoStore, selectOsmView } from "./osm-store.js";
 import { createExplainCycle } from "./explain-cycle.js";

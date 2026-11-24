@@ -20,7 +20,7 @@
  * @see explanation-tree.ts.md
  */
 
-import type { CellExplanation } from "gps-plus-slam-osm";
+import type { CellExplanation } from "osm-h3";
 
 import { magnitudeOf } from "./contributor-order.js";
 

@@ -28,7 +28,7 @@
 
 import { greatCircleDistance, UNITS } from "h3-js";
 
-import type { LatLng } from "gps-plus-slam-osm";
+import type { LatLng } from "osm-h3";
 
 /**
  * How far the user must walk before AR refetches, metres.

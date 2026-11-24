@@ -1,15 +1,15 @@
 /**
  * OPFS-backed persistence for the OSM package's injected blob store.
  *
- * WHY THIS LIVES IN THE FRAMEWORK AND NOT IN `gps-plus-slam-osm`. That package
+ * WHY THIS LIVES IN THE FRAMEWORK AND NOT IN `osm-h3`. That package
  * is pure data by design (its plan §4.2): persistence is *injected* precisely so
  * it runs unchanged in Node, in a Worker, and in the Investigation harness, none
  * of which have OPFS. The framework is where browser APIs are allowed to appear,
  * so the adapter belongs here.
  *
- * WHY IT TAKES NO DEPENDENCY ON `gps-plus-slam-osm` AT ALL, and this turned out
+ * WHY IT TAKES NO DEPENDENCY ON `osm-h3` AT ALL, and this turned out
  * to be load-bearing rather than fastidious: the framework is **published to
- * npm** and `gps-plus-slam-osm` is **not**, so a dependency on it — even an
+ * npm** and `osm-h3` is **not**, so a dependency on it — even an
  * optional peer — makes `pnpm install` fail with a registry 404 for every
  * consumer. Declaring `OsmBlobStore` structurally instead means this module
  * compiles, ships and installs standing alone, and starts working the moment
@@ -52,10 +52,10 @@ const consoleWarn: OsmBlobStoreWarn = (message, details) => {
 };
 
 /**
- * The shape `gps-plus-slam-osm` asks for.
+ * The shape `osm-h3` asks for.
  *
  * Declared structurally rather than imported, and that is not fastidiousness:
- * the framework is published to npm while `gps-plus-slam-osm` is not, so ANY
+ * the framework is published to npm while `osm-h3` is not, so ANY
  * dependency on it — including a type-only import, which still lands in the
  * published type declarations — makes `pnpm install` 404 for every consumer.
  * The interface is four methods and stable.

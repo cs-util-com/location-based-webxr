@@ -6,7 +6,7 @@
  * 46-50 m in central Europe). Pure.
  *
  * The geoid is passed in, not imported: the Osm library's `egm96Geoid()`
- * (`gps-plus-slam-osm/elevation`) is what an app passes; the globe package
+ * (`osm-h3/elevation`) is what an app passes; the globe package
  * does not depend on that library, and its shape is the library's
  * `GeoidModel`, so the library's model fits as it is.
  *

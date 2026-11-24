@@ -6,7 +6,7 @@
  */
 
 import { getResolution, isValidCell } from "h3-js";
-import { OVERPASS_SCHEMA_VERSION } from "gps-plus-slam-osm/source/overpass-query";
+import { OVERPASS_SCHEMA_VERSION } from "osm-h3/source/overpass-query";
 
 /** The fetch resolution every client asks for (res 7, the library's). */
 export const TILE_RESOLUTION = 7;
