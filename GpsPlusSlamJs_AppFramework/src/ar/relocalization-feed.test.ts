@@ -277,6 +277,42 @@ describe('createRelocalizationFeed', () => {
     );
   });
 
+  it('says in the readout line when the dispatch failed, and only then', () => {
+    // Why this test matters: the readout line is what a field diagnosis
+    // reads to tell whether a jump reached the recording. The dispatch
+    // failure is logged once per session, so without this every later
+    // failed jump would read as recorded.
+    const store = newStore();
+    let dispatchFails = true;
+    const feed = createRelocalizationFeed({
+      getStore: () => ({
+        dispatch: (action) => {
+          if (dispatchFails) throw new Error('store broke');
+          return store.dispatch(action);
+        },
+      }),
+    });
+    const infos: string[] = [];
+    const off = subscribeToLogs((e) => {
+      if (e.tag === 'ArSpaceCorrection' && e.level === LogLevel.INFO) {
+        infos.push(e.message);
+      }
+    });
+    feed.frame(1000, at(0));
+    feed.frame(1033, at(3));
+    feed.frame(1066, at(6));
+    dispatchFails = false;
+    feed.frame(1099, at(9));
+    off();
+    const notRecorded = '; NOT recorded (the dispatch failed)';
+    expect(infos.map((m) => m.endsWith(notRecorded))).toEqual([
+      true,
+      true,
+      false,
+    ]);
+    expect(observationsOf(store).map((o) => o.t)).toEqual([1099]);
+  });
+
   it('rejects a missing getStore', () => {
     // Why this test matters: a wiring mistake must fail at setup, not later.
     expect(() =>

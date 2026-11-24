@@ -51,7 +51,8 @@ export const CAMERA_MOTION_COMPENSATION: CompensationMode = 'guarded';
  * The longest gap `t - tLast` the compensation is used across, ms. The
  * sweeps measured up to 500 ms; past it one frame's velocity is stretched
  * over an unmeasured stall, so the plain D is used. The feed forgets its
- * last pose past the same gap, so only a hand-built or replayed observation
+ * last pose past this very gap (its `RELOCALIZATION_MAX_GAP_MS` IS this
+ * constant), so only a hand-built or replayed observation
  * reaches this fallback; it is not refused, because refusing would lose the
  * jump.
  */

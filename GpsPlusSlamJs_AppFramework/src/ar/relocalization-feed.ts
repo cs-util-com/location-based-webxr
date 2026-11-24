@@ -16,7 +16,11 @@
  *
  * Sidecar: `relocalization-feed.ts.md`.
  */
-import { compensationVerdict, jumpTransform } from './ar-space-correction';
+import {
+  compensationVerdict,
+  jumpTransform,
+  MAX_COMPENSATION_GAP_MS,
+} from './ar-space-correction';
 import { registerXrFrameUpdate } from './xr-frame-loop';
 import type { Pose } from './qr/qr-pose';
 import {
@@ -30,8 +34,13 @@ const log = createLogger('ArSpaceCorrection');
 /** A position step strictly over this between two frames is a jump, metres. */
 export const RELOCALIZATION_JUMP_M = 1;
 
-/** The longest frame interval the jump rule judges, ms. */
-export const RELOCALIZATION_MAX_GAP_MS = 500;
+/**
+ * The longest frame interval the jump rule judges, ms: the compensation's
+ * own gap bound, one constant, so every live observation can be
+ * compensated and only a hand-built or replayed one takes the `gap`
+ * fallback.
+ */
+export const RELOCALIZATION_MAX_GAP_MS = MAX_COMPENSATION_GAP_MS;
 
 /** The jump rule's answer; `cannot-judge` forgets the earlier poses. */
 export type RelocalizationJumpVerdict = 'jump' | 'no-jump' | 'cannot-judge';
@@ -190,17 +199,21 @@ function createFeed(options: RelocalizationFeedOptions): {
   /**
    * Run one hook of an observation; a throw is logged once per hook for the
    * session and the observation goes on, so one faulty consumer never stops
-   * the recording of later relocalizations.
+   * the recording of later relocalizations. Returns whether it ran
+   * without a throw.
    */
-  function hook(name: string, run: () => void): void {
+  function hook(name: string, run: () => void): boolean {
     try {
       run();
+      return true;
     } catch (error) {
-      if (failedHooks.has(name)) return;
-      failedHooks.add(name);
-      log.error(
-        `relocalization feed: ${name} failed; later failures of it are not logged: ${String(error)}`
-      );
+      if (!failedHooks.has(name)) {
+        failedHooks.add(name);
+        log.error(
+          `relocalization feed: ${name} failed; later failures of it are not logged: ${String(error)}`
+        );
+      }
+      return false;
     }
   }
 
@@ -224,8 +237,18 @@ function createFeed(options: RelocalizationFeedOptions): {
       return;
     }
     hook('beforeDispatch', () => options.beforeDispatch?.());
-    hook('dispatch', () => store.dispatch(relocalizationObserved(observation)));
-    hook('readout', () => log.info(describeObservation(observation)));
+    const recorded = hook('dispatch', () =>
+      store.dispatch(relocalizationObserved(observation))
+    );
+    // The dispatch failure is logged once per session; the readout line
+    // says it for every jump, so the log never claims a jump was recorded
+    // that the recording lacks.
+    hook('readout', () =>
+      log.info(
+        describeObservation(observation) +
+          (recorded ? '' : '; NOT recorded (the dispatch failed)')
+      )
+    );
     hook('onObserved', () => options.onObserved?.(observation));
   }
 

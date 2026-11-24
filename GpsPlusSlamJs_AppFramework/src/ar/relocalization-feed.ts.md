@@ -6,7 +6,7 @@ Watches the raw viewer pose of every XR frame and turns a platform frame switch 
 
 ## Public API
 
-- `RELOCALIZATION_JUMP_M = 1`, `RELOCALIZATION_MAX_GAP_MS = 500`.
+- `RELOCALIZATION_JUMP_M = 1`, `RELOCALIZATION_MAX_GAP_MS = 500` (it IS `MAX_COMPENSATION_GAP_MS` of `ar-space-correction`, imported, not a second literal).
 - `relocalizationJumpVerdict(prev, next, dtMs, maxStepM?)`: `'jump'` on a 3D step strictly over `maxStepM`, `'cannot-judge'` past `RELOCALIZATION_MAX_GAP_MS`, else `'no-jump'`; `prev` null is `'no-jump'`. `RangeError` on a position that is not three finite numbers, a bad bound, or (with `prev`) a negative or non-finite interval. A local copy of the library's `rawPoseJumpVerdict`, to be replaced by it once the library exports it.
 - `createRelocalizationFeed({ getStore, beforeDispatch?, onObserved? })`: a feed the caller drives.
   - `frame(t, pose | null)`: one render frame, `t` in the epoch-ms XR clock. Never throws.
@@ -20,7 +20,7 @@ Watches the raw viewer pose of every XR frame and turns a platform frame switch 
 - **Raw only:** the observation is `{ t, tLast, lastPose, tPrev, prevPose, newPose }` as the frames gave them (copied, so reused caller arrays change nothing). `t` is the jump frame's own time, `newPose` its own pose.
 - **Forgetting:** a `null` or emulated pose, a non-finite pose or time, a clock that did not advance, a gap over 500 ms and `forget()` all drop the earlier poses, so nothing is observed across a tracking loss, a recovery, an origin reset or a stall. After a jump the frame before it is dropped as `prevPose`: it is in the old frame.
 - **Order:** `beforeDispatch` (the QR sighting fold closes its burst) runs before the dispatch, then the readout line is logged (`ArSpaceCorrection`, info), then `onObserved`.
-- **The readout line** (info, in the copy-log buffer): `relocalization observed: |D| x m, y deg; compensation on/off (reason; camera step ... mm, turn ... deg); frame gap ... ms`. The registry adds `AR content corrected: k of n tracked objects in t ms` per observation where content correction is on.
+- **The readout line** (info, in the copy-log buffer): `relocalization observed: |D| x m, y deg; compensation on/off (reason; camera step ... mm, turn ... deg); frame gap ... ms`, ending in `; NOT recorded (the dispatch failed)` for every jump whose dispatch threw (the failure itself is logged only once; a store subscriber that threw after the reducer ran reads the same, since the recording's writer may be that subscriber). The registry adds `AR content corrected: k of n tracked objects in t ms` per observation where content correction is on.
 - **The current store:** `getStore` is read at each jump, so a per-recording store swap needs no call. `null` drops the observation with a warning.
 - **Never in the way:** each part of an observation (`beforeDispatch`, the dispatch, the readout line, `onObserved`) runs on its own: a throw is logged once per part for the session and the rest goes on, so a failing `beforeDispatch` still records the jump and a throwing store subscriber does not stop later ones. Any other fault inside a frame is logged once as an error and switches the feed off for the session; the frame loop never sees a throw. A viewer pose that throws is a skipped frame that forgets the earlier pose, with one warning per run of such frames.
 - **One copy per pose:** a caller's pose is copied; the XR wrapper's pose from `rawCameraPose` is fresh and kept as it is.
@@ -29,7 +29,7 @@ Watches the raw viewer pose of every XR frame and turns a platform frame switch 
 
 ## Parameters
 
-- `RELOCALIZATION_JUMP_M = 1` and `RELOCALIZATION_MAX_GAP_MS = 500`: the library rule's values. At 1.5 m/s walking a 500 ms gap is 0.75 m, below the bound; a 700 ms gap would let a stall read as a 1.05 m jump. A 300 ms gap rule would miss jumps across short stalls. Lowering the bound below about 0.3 m would approach a fast walker's per-frame step at low frame rates.
+- `RELOCALIZATION_JUMP_M = 1` and `RELOCALIZATION_MAX_GAP_MS = 500`: the library rule's values. The gap is the compensation's own `MAX_COMPENSATION_GAP_MS` by construction: two independent values would let a raised feed gap produce live jumps the compensation silently refuses with reason `gap`. At 1.5 m/s walking a 500 ms gap is 0.75 m, below the bound; a 700 ms gap would let a stall read as a 1.05 m jump. A 300 ms gap rule would miss jumps across short stalls. Lowering the bound below about 0.3 m would approach a fast walker's per-frame step at low frame rates.
 
 ## Example
 
@@ -44,5 +44,5 @@ const feed = startRelocalizationFeed({
 
 ## Tests
 
-- `relocalization-feed.test.ts`: the jump rule's cells and errors; one 3 m switch giving the exact raw observation and the hook order; walking never dispatching; nothing across a lost pose, a forget or a long gap, and the rule working after each; no `prevPose` from before a jump; copied poses; bad times and poses without a throw; the store current at the jump and a missing store; a fault in the rule switching the feed off once; a throwing dispatch, `beforeDispatch` or `onObserved` logged once each with every jump still recorded; the readout line; the XR wrapper's clock, emulated poses, dispose, a throwing viewer pose forgetting the earlier pose with one warning per run of failures, and a throwing viewer pose never reaching the frame loop.
+- `relocalization-feed.test.ts`: the jump rule's cells and errors; one 3 m switch giving the exact raw observation and the hook order; walking never dispatching; nothing across a lost pose, a forget or a long gap, and the rule working after each; no `prevPose` from before a jump; copied poses; bad times and poses without a throw; the store current at the jump and a missing store; a fault in the rule switching the feed off once; a throwing dispatch, `beforeDispatch` or `onObserved` logged once each with every jump still recorded; the readout line, and its `NOT recorded` ending exactly for the jumps whose dispatch threw; the XR wrapper's clock, emulated poses, dispose, a throwing viewer pose forgetting the earlier pose with one warning per run of failures, and a throwing viewer pose never reaching the frame loop.
 - `relocalization-feed.property.test.ts`: random walks with jumps, stalls and lost poses against an independent model: observations exactly at the model's jumps, all accepted by the reducer.
