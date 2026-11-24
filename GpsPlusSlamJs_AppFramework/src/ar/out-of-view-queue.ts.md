@@ -35,6 +35,7 @@ the Tour Viewer's `?debug=1` anchor log checks `outFrames <= queued`.
   every entry going out (each re-entry again) grows without limit under a
   churning ring and lets a starved entry pass; the most entries out at
   once is too small (a key waits for keys that went out after it).
+- A paused run (a pass of the deferred set with no previous view, `!hasPrev`: the build path) is outside the property oracle's scope. Such a pass sorts no entry, so it picks none and calls `advanceOutOfViewRuns` with no entry out: no run advances, ends or gains a queued entry, and no entry is served ahead of a waiting one. `queued` and `outFrames` stand still across it, so the bound still holds when the run resumes.
 - `pass` must increase by one per call within one set; the caller keeps
   the clock. An entry handed to another set starts with
   `freshOutOfViewRun()`, since pass numbers are per set.

@@ -146,8 +146,9 @@ logs `deferral off` once when it is created.
 6. Deferred keys and pending members: each pending key is sorted into "cache invalid", "cached
    test says out", or "in, but the cache is stale"; one key is picked (out
    first, round robin from the entry after the last pick, found by
-   reference in the last pick's ring so a key removed or added in between
-   never shifts the place), its bounds rebuilt if needed, and it commits
+   reference in the last pass's ring so a key removed or added in between
+   never shifts the place; each pass rebases the place onto its own ring,
+   so a removed entry is held one pass at most), its bounds rebuilt if needed, and it commits
    `out-of-view` only when a fresh test agrees. A commit needs the content
    out of view at its current pose in this and the previous view, and at
    its new pose in this view (three tests). A member is tested at its target

@@ -535,11 +535,12 @@ function createAnchorSet(
   let lastCam: THREE.Vector3 | null = null;
   const lastTargetInv = target.target().clone().invert();
   let lastTargetVersion = target.version();
-  // The round robin's place: the ring of the last pick's pass and the
-  // pick's index in it. The next pass starts at the first entry after the
-  // pick that is still in the ring, so an entry removed or added in between
-  // never shifts it (an index into the new ring skipped the next entry, or
-  // wrapped back onto the one just served).
+  // The round robin's place: a ring and the index of the last served place
+  // in it. The next pass starts at the first entry after it that is still
+  // in the ring, so an entry removed or added in between never shifts it
+  // (an index into the new ring skipped the next entry, or wrapped back onto
+  // the one just served). Every pass rebases it onto its own ring, so a
+  // removed entry is held for one pass at most.
   let lastRing: readonly Deferred[] = [];
   let lastPickAt = -1;
   // The classify passes so far: the clock of the out-of-view queue.
@@ -974,13 +975,24 @@ function createAnchorSet(
     return isMember(c) ? memberInView(c, fresh) : keyInView(c, fresh);
   }
 
-  /** Where this pass's round robin starts in `ordered`: after the last pick. */
+  /**
+   * Where this pass's round robin starts in `ordered`: after the last pick.
+   * Rebases the cursor onto `ordered` (just before the start), so the next
+   * pass starts there too unless this pass picks.
+   */
   function ringStart(ordered: readonly Deferred[]): number {
+    let start = 0;
     for (let j = 1; lastPickAt >= 0 && j <= lastRing.length; j += 1) {
       const at = ordered.indexOf(lastRing[(lastPickAt + j) % lastRing.length]!);
-      if (at >= 0) return at;
+      if (at >= 0) {
+        start = at;
+        break;
+      }
     }
-    return 0;
+    lastRing = ordered;
+    lastPickAt =
+      ordered.length > 0 ? (start + ordered.length - 1) % ordered.length : -1;
+    return start;
   }
 
   /** Pending keys and members by what their cached tests say, in round-robin order. */
@@ -1019,7 +1031,6 @@ function createAnchorSet(
     const { out, build, stale } = classifyDeferred(ordered);
     const pick = out[0] ?? build[0] ?? stale[0];
     if (!pick) return;
-    lastRing = ordered;
     lastPickAt = ordered.indexOf(pick);
     if (isMember(pick)) {
       if (!memberInView(pick, true)) commitMember(pick, 'out-of-view');

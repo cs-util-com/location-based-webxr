@@ -64,7 +64,8 @@ export const MAX_COMPENSATION_GAP_MS = 500;
  * Tracking noise sits on every pose and does not shrink with the interval,
  * so one frame's step divided by one frame's interval reads the noise as a
  * rate that grows with the frame rate (1 mm and 0.05 deg per axis read as
- * about 7.5 deg/s at 90 Hz, and a still phone was compensated by its own
+ * about 10 deg/s at 90 Hz: the median turn between two such poses is
+ * 0.11 deg over 11 ms, and a still phone was compensated by its own
  * noise). Over 100 ms the same noise is about 1 deg/s and 0.02 m/s at any
  * frame rate. The feed hands over the newest frame at least this far back;
  * a shorter baseline (a short history, or an older recording) cannot tell

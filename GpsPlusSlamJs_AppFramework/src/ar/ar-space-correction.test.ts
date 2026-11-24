@@ -636,6 +636,53 @@ describe('ar-space-correction compensation guard', () => {
     expect(compensationVerdict(enough).reason).toBe('moving');
   });
 
+  it('pins the velocity-lag residual of a turn ramping from 0 to 30 deg/s over the 100 ms before the jump', () => {
+    // Why this test matters: the rate is the mean over the baseline, so a
+    // turn that starts during it is under-read. Here the camera turns in
+    // place, its rate ramping linearly from 0 to 30 deg/s over the 100 ms
+    // before the jump (baseline 100 ms, gap 33 ms). It has turned 0.67 deg
+    // by the last frame: 6.7 deg/s over the baseline, under the 7.5 deg/s
+    // threshold, so the guard keeps the plain D and the last 0.83 deg of
+    // the turn is read into it (0.144 m at 10 m). Compensating anyway would
+    // leave 0.61 deg (0.106 m): the lag the mean rate cannot remove. A
+    // threshold of 6.5 deg/s or lower would reverse the verdict.
+    const rampMs = 100;
+    const peakDegS = 30;
+    const tJump = 1133;
+    const turnedDeg = (tMs: number): number => {
+      const s = Math.max(0, tMs - (tJump - rampMs)) / 1000;
+      return ((peakDegS / (rampMs / 1000)) * (s * s)) / 2;
+    };
+    const cam = (tMs: number): THREE.Matrix4 =>
+      new THREE.Matrix4().compose(
+        new THREE.Vector3(0, 1.5, 0),
+        new THREE.Quaternion().setFromAxisAngle(
+          new THREE.Vector3(0, 1, 0),
+          THREE.MathUtils.degToRad(turnedDeg(tMs))
+        ),
+        new THREE.Vector3(1, 1, 1)
+      );
+    const jump: RelocalizationJump = {
+      t: tJump,
+      tLast: 1100,
+      lastPose: fromThree(cam(1100)),
+      tPrev: 1000,
+      prevPose: fromThree(cam(1000)),
+      newPose: fromThree(JUMP.clone().multiply(cam(tJump))),
+    };
+    const verdict = compensationVerdict(jump);
+    expect(verdict.reason).toBe('still');
+    expect(verdict.turnDeg).toBeCloseTo(0.6735, 3);
+    const camera = new THREE.Vector3(0, 1.5, 0);
+    const guarded = residualAt(jumpTransform(jump), camera, 10);
+    const always = residualAt(jumpTransform(jump, 'always'), camera, 10);
+    report(
+      `ramped turn 0-30 deg/s over 100 ms: guarded ${guarded.toFixed(3)} m, always ${always.toFixed(3)} m at 10 m`
+    );
+    expect(guarded).toBeCloseTo(0.144, 2);
+    expect(always).toBeCloseTo(0.106, 2);
+  });
+
   it('never compensates across a gap longer than MAX_COMPENSATION_GAP_MS, whatever the mode', () => {
     // Why this test matters: past 500 ms the compensation is unmeasured and
     // one frame's velocity is stretched over a long stall; a replayed
