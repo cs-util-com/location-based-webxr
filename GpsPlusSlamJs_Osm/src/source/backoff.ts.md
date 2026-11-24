@@ -32,6 +32,9 @@ wait, and an abortable sleep.
 - A past HTTP-date clamps to 0 ("retry now"), never to a negative delay.
 - **`sleep` clears its timer on abort.** A pending 30 s backoff would otherwise
   keep the process alive and then retry an area the user has already left.
+- **The package's one sleep.** `city/city-data.ts` (its retry pause) and
+  `elevation/opentopodata-provider.ts` (its 1 req/s throttle) default to it
+  rather than keeping their own copies.
 - 500 is deliberately **not** retryable: it usually means the query itself broke
   the server, and retrying costs quota for the same answer.
 

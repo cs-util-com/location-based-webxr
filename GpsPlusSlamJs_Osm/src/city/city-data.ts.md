@@ -37,7 +37,8 @@ finished, abort() }`. Options: `source`, `heightFetch` (e.g.
     `heightDeadlineMs?` (default 20 s per height tile; `Infinity` waits),
     `retryDelaysMs?` (default 10 / 30 / 60 s), `undulationMetres?`
     (default 0: the tiles' heights, the globe relief's convention),
-    `sleep?` (a test seam).
+    `sleep?` (a test seam; default the package's one abortable `sleep` of
+    `source/backoff.ts`, which rejects at an abort and clears its timer).
     - `onData({ stage, features, ground, groundM, window, tiles })`: `first` after
       the first rings (only when more rings follow), `full` after every
       ring, `retry` after a retry that brought something new. `ground` is
@@ -99,5 +100,6 @@ missingTiles, missingHeights, elapsedMs }`, never rejects.
   warm, fetched and failed, retries a failed and a rate-limited tile, gives
   up after its last retry, builds nothing on missing or mean-filled heights,
   gives up a hanging height at its deadline and fills it on a retry, loads
-  tiles and heights side by side, stops at an abort; the source factory's
+  tiles and heights side by side, stops at an abort (its default retry
+  pause cut short, no timer left); the source factory's
   user agent and cache.
