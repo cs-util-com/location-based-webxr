@@ -221,7 +221,7 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
       const results = [
         ...done.results,
         ...offNow
-          .filter((o) => !done.results.some((r) => r.id === o.id))
+          .filter((p) => !done.results.some((r) => r.id === p.id))
           .map(offResult),
       ];
       const restart = restarting
