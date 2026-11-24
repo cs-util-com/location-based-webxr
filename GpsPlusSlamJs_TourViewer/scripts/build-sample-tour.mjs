@@ -23,8 +23,18 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, "..", "public", "samples", "marienplatz-tour.zip");
-/** A fixed date, so a rebuild with unchanged content gives the same bytes. */
-export const FIXED_DATE = new Date(Date.UTC(2026, 9, 5, 12, 0, 0));
+/**
+ * A fixed date, so a rebuild with unchanged content gives the same bytes.
+ * Local time on purpose: the zip's DOS date is written from the local
+ * clock fields, so a local-time date reads the same in every time zone
+ * (the extended UTC timestamp is left out with it, in `ZIP_ENTRY_OPTIONS`).
+ */
+const FIXED_DATE = new Date(2026, 9, 5, 12, 0, 0);
+/** Entry options for a zip with the same bytes in every time zone. */
+export const ZIP_ENTRY_OPTIONS = Object.freeze({
+  lastModDate: FIXED_DATE,
+  extendedTimestamp: false,
+});
 
 // --- The knight: pixel art, 24 x 40 cells, each 8 x 8 pixels. ---
 const KNIGHT = [
@@ -659,7 +669,7 @@ export function buildSampleTour() {
 export async function buildSampleTourZip() {
   const { tour, files } = buildSampleTour();
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
-  const options = { lastModDate: FIXED_DATE };
+  const options = ZIP_ENTRY_OPTIONS;
   // Through the format's own reader and writer: a tour the reader
   // refuses fails the build, not the phone.
   await writer.add(

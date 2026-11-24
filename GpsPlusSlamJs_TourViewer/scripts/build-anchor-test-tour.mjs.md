@@ -34,11 +34,12 @@ the tour the phone test of the deferred anchors walks. Vite copies
 - Every asset is generated: the sample tour's pixel-art knight PNG and a
   tower GLB (two grey boxes, one JSON and one binary chunk, no URIs, one
   rotation channel). Entries are stored uncompressed with the sample
-  tour's fixed date, so a rebuild with unchanged content gives identical
-  bytes.
+  tour's entry options (`ZIP_ENTRY_OPTIONS`: a fixed local date, no
+  extended timestamp), so a rebuild with unchanged content gives identical
+  bytes in every time zone.
 - It reuses `build-sample-tour.mjs`'s exported helpers (`knightPng`,
   `boxGeometry`, `glbOf`, `geoAt`, `facingFrom`, `headingTo`,
-  `FIXED_DATE`).
+  `ZIP_ENTRY_OPTIONS`).
 
 ## Usage
 

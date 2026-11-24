@@ -47,7 +47,10 @@ into the build, so a branch preview serves it at
   no recorded voice is licence-clean to ship), and an arch GLB (two pillars and a lintel, one grey
   material, one JSON and one binary chunk, no URIs).
 - Entries are stored uncompressed with a fixed date, so a rebuild with
-  unchanged content gives identical bytes.
+  unchanged content gives identical bytes. The date is local time and the
+  extended UTC timestamp is left out (`ZIP_ENTRY_OPTIONS`): the zip's DOS
+  date is written from the local clock fields, so a UTC date would give
+  other bytes in another time zone.
 
 ## Shared helpers
 
@@ -55,7 +58,8 @@ Its generators are exported for `build-anchor-test-tour.mjs`, which builds
 the anchor field-test tour from the same pieces: `knightPng`,
 `fanfareWav`, `boxGeometry`, `glbOf(gltf, bin)` (a binary glTF of one
 JSON and one binary chunk), `geoAt`, `facingFrom`, `headingTo` and
-`FIXED_DATE`. Exporting them changed no byte of the sample zip.
+`ZIP_ENTRY_OPTIONS`. Making the entry dates time-zone free rebuilt the
+zip once; its content is unchanged.
 
 ## Usage
 

@@ -24,7 +24,7 @@ import {
 import {
   boxGeometry,
   facingFrom,
-  FIXED_DATE,
+  ZIP_ENTRY_OPTIONS,
   geoAt,
   glbOf,
   headingTo,
@@ -304,7 +304,7 @@ export function buildAnchorTestTour() {
 export async function buildAnchorTestTourZip() {
   const { tour, files } = buildAnchorTestTour();
   const writer = new ZipWriter(new Uint8ArrayWriter(), { level: 0 });
-  const options = { lastModDate: FIXED_DATE };
+  const options = ZIP_ENTRY_OPTIONS;
   // Through the format's own reader and writer: a tour the reader
   // refuses fails the build, not the phone.
   await writer.add(
