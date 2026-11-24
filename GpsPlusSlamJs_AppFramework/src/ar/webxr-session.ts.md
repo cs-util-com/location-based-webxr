@@ -83,6 +83,18 @@ scene (GPS world frame — NUE: X=North, Y=Up, Z=East)
 | `stopCameraFrameCapture()`  | `() => void`                                                                 | Stop QR frame capture. Safe when not running.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `getCameraFrameCount()`     | `() => number`                                                               | Frames captured since the last `startCameraFrameCapture` (0 when idle).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
+Camera-frame consumers beside QR:
+
+- `registerCameraFrameConsumer(config: CameraFrameConsumerConfig) => () => void`:
+  a consumer such as an image matcher, with its own `CameraFrameSource`
+  (`config.intervalMs`, default 125; `config.wantsFrame`, its busy veto) and
+  its own lazy aspect-preserving blit at `config.captureSize` (long edge, at
+  least 1), delivering to `config.onFrame` (a throw is logged and never
+  reaches the loop). It starts at once and returns `unregister`, which stops
+  it and frees its blit (idempotent, a no-op after teardown). Throws
+  `TypeError` without `onFrame`, `RangeError` on a bad `captureSize`, and
+  `Error` before `initAR`. Teardown frees every consumer.
+
 ### Exported for unit testing only
 
 These exports are internal implementation whose contracts are pinned directly by unit tests (documented test-only exports per the 2026-07-10 quality-review B-5 precedent; consolidated by surface-reduction step 3). They are NOT re-exported by the `ar/` barrel; if one gains a production consumer, move it out of the test-only block and into the barrel:
@@ -153,6 +165,7 @@ Removed in surface-reduction step 3 (zero consumers): `getLiveCss3dManager()` an
 5. Trigger image capture / depth sampling if active. The depth sampler is created with an `acquireRgbLookup` callback (Iter 8 RGB voxel coloring): when a sample is actually emitted (and the `rgb` option is on), a dedicated small 256×192 `CameraBlitCapture` (`depthRgbBlit`, lazily created, disposed by `resetWebXRState()`) blits `latestCameraTexture` and `createRgbLookup` maps each point's view coordinates to a color — at most one GPU readback per ~1 Hz sample, never per frame
 6. Trigger camera frame capture for CV if active (B2). A `CameraFrameSource<CapturedCameraFrame>` (created in `initAR` when the `cameraFrame` callbacks group was passed) is ticked with the XR `time`; it throttles to the detection cadence (~8 Hz) and, when due, blits `latestCameraTexture` to **top-left RGBA** via a dedicated session-owned `CameraBlitCapture` (`cameraFrameBlit`, lazy, disposed by `resetWebXRState()`) sized to the **camera aspect** with its longer edge at `captureSize` (default `DEFAULT_CAMERA_FRAME_CAPTURE_SIZE` = 1024, e.g. 1024×768 for 4:3 — `computeAspectFitSize`, so the target is undistorted), and hands the frame to the callback (QR detection today, object detection / OpenCV later). The throttle gates the blit itself, so the (larger) readback runs ~8×/s, not per frame — the §A.4 efficiency win.
    - **Pose paired with frame** (QR perf plan 2026-09-23, M4): the source's `capture` is `acquireCameraFrame(xrTimeMs)`, which pairs the RGBA image with `latestArPose` - set in step 3 of the SAME tick - and the epoch-ms capture time `performance.timeOrigin + xrTimeMs` (the depth sampler's clock), via `capturedCameraFrame()`. With no pose it returns `null` **before** the blit, so an unpairable tick costs no readback and does not consume the interval slot. Consumers therefore never read "the pose now" after an asynchronous decode.
+   - **Extra consumers** (`registerCameraFrameConsumer`, via `tickCameraFrameSources`): ticked right after QR's source, in registration order, with the same `tickArPose`. A consumer due on the same XR frame as QR blits the same camera texture with the same pose and time, into its own buffer at its own size; ticking QR first means no consumer can change a QR capture.
 7. Render scene
 
 Per-frame dispatch order: after the dimensionless `runFrameUpdates(dt, elapsed)`
@@ -249,3 +262,13 @@ detection cadence, not per frame) live in `camera-frame-source.test.ts`; the
 image + pose + time pairing is pinned by `captured-camera-frame.test.ts`.
 `acquireCameraFrame` itself (the null-before-blit without a pose) has no unit
 test here: this jsdom file cannot create a live source.
+
+**Extra camera-frame consumers** (`webxr-session.camera-frame-consumers.test.ts`,
+`.property.test.ts`, driving the real frame loop): QR's capture count, detect
+count and delivered frames (pose and time) are identical with and without a
+matcher registered, over one scripted session and over random cadences, busy
+times and lost poses; the consumer gets its own blit at its own size, the same
+pose and time as QR on a shared frame, its own throttle and veto; unregister
+and teardown free its blit (a late unregister leaves the next session alone);
+a throwing consumer costs QR nothing; bad configs and a call before initAR
+throw.

@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Camera-frame consumers beside QR** (`/ar`):
+  `registerCameraFrameConsumer({ captureSize, onFrame, intervalMs?,
+wantsFrame? }) => unregister` gives a second CV consumer (an image matcher)
+  its own throttle, busy veto and blit at its own size. On a frame both are
+  due, both read the same camera image and pose into separate buffers. QR's
+  captures are unchanged by test.
+
 - **Rectangular planar targets**: the QR pose, size and vote modules take a
   target aspect ratio (height over width, default 1 for a QR code, which is
   unchanged bit for bit), so a printed rectangular image can share the QR

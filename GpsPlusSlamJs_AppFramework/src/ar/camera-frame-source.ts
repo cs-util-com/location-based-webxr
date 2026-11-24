@@ -23,16 +23,11 @@
  * see `camera-frame-source.test.ts`, which pins the cadence as a performance
  * regression test.
  *
- * SCOPE — single consumer (by design, for now). The session wires exactly ONE
- * `CameraFrameSource` + one callback + one blit (initAR `callbacks.cameraFrame`). One
- * CV consumer at a time (QR *or* object detection) is the only current need.
- * If two live CV consumers must run **simultaneously** (e.g. QR + OpenCV object
- * detection at different cadences/resolutions), DO NOT bolt a second global
- * callback onto the session — generalize to a small **multi-consumer registry**:
- * `registerCameraFrameConsumer({ intervalMs, captureSize, onFrame }) =>
- * unregister`, each consumer getting its own throttle + (shared-where-equal)
- * blit. This class already supports that — it's per-instance and the cadence is
- * per-instance — so the change is in `webxr-session.ts`'s wiring, not here.
+ * SCOPE: one instance per consumer. The session wires QR's source from initAR
+ * `callbacks.cameraFrame`, and `registerCameraFrameConsumer({ intervalMs,
+ * captureSize, wantsFrame, onFrame }) => unregister` adds further consumers
+ * (an image matcher), each with its own instance, so its own throttle and
+ * veto, and its own blit. Nothing here is shared between consumers.
  *
  * @see camera-blit-capture.ts — `captureToRgba` (the production `capture`).
  * @see webxr-session.ts — owns the camera-frame blit and wires this in the frame loop.
