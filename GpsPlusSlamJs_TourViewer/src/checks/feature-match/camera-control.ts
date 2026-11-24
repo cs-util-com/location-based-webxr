@@ -116,6 +116,6 @@ export function createCameraControl(
     start,
     stop,
     on: () => stream !== null,
-    report: () => (stream ? cameraReport(stream.getTracks()[0]) : null),
+    report: () => (stream ? cameraReport(stream.getVideoTracks()[0]) : null),
   };
 }

@@ -328,6 +328,25 @@ describe("handleMeasure keeps loaded methods across pairs", () => {
     resultsOf(await run(request({ job: 2 }), e));
     expect(count).toEqual({ init: 2, dispose: 0 });
   });
+
+  // Why: a failed load has no runner to name its backend, so the result
+  // carries the backend the method asked for. The page restarts the worker
+  // only for a failure on WebGPU; a wrapper that dropped the backend made
+  // every failed load read "-", and a lost device between pairs never
+  // restarted the worker.
+  it("reports the backend asked for on a failed load", async () => {
+    const fail = { extract: false, init: true };
+    const { method } = countingMethod(fail, {
+      id: "a-webgpu",
+      backend: "webgpu",
+    });
+    const { e } = env({ build: () => [method] });
+    const results = resultsOf(await run(request({ job: 1 }), e));
+    expect(results[0]).toMatchObject({
+      backend: "webgpu",
+      error: "init: Error: no session",
+    });
+  });
 });
 
 // Why: every kept model method holds its sessions (and their memory), so

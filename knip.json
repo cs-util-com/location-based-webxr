@@ -86,7 +86,8 @@
         "config/stylelint.config.mjs",
         "playwright-tests/**/*.{js,ts}",
         "config/eslint.config.mjs",
-        "src/timing/alignment-timing-main.ts"
+        "src/timing/alignment-timing-main.ts",
+        "src/anchors-check/anchors-check-main.ts"
       ],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": [

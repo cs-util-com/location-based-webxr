@@ -8,7 +8,7 @@ What the camera says about itself at a photo, for the desk: whether Chrome on th
 
 - `CameraReport`: `Record<string, number | string>`. Numbers: `focusDistance`, `zoom`, `width`, `height`, `frameRate` (the settings) and `focusDistanceMin`, `focusDistanceMax`, `focusDistanceStep`, `zoomMin`, `zoomMax`, `zoomStep` (the capability ranges). Strings: `focusMode` (the setting) and `focusModes` (the capability's choices joined with commas). A field the camera did not give is absent.
 - `cameraReport(track: unknown): CameraReport`: the report of a video track; `{}` for anything that is not one.
-- `knownCameraReport(v)`: the known fields of a stored report (numbers finite, modes strings); a field this build does not know, or one of the wrong type, is dropped, not the report. `undefined` when `v` is not an object or nothing known is left, so an empty report is stored as absent.
+- `knownCameraReport(v)`: the known fields of a stored report (numbers finite, modes non-empty strings); a field this build does not know, or one of the wrong type or an empty mode (it would render a bare `focusMode` label), is dropped, not the report. `undefined` when `v` is not an object or nothing known is left, so an empty report is stored as absent.
 - `cameraReportText(report)`: one log line, for example `focusDistance 0.42 (0.1-10), focusMode continuous (manual,continuous), zoom 1 (1-8), 1920x1080 at 30 fps`; `nothing reported` for an empty report.
 
 ## Invariants and defensive measures
@@ -20,11 +20,11 @@ What the camera says about itself at a photo, for the desk: whether Chrome on th
 ## Example
 
 ```ts
-const report = cameraReport(stream.getTracks()[0]);
+const report = cameraReport(stream.getVideoTracks()[0]);
 log(`camera at ${shot.id}: ${cameraReportText(report)}`);
 ```
 
 ## Tests
 
-- `camera-report.test.ts`: the fields of a Chrome-like track, the device id left out; missing, throwing and malformed methods and fields; the log line, and `knownCameraReport` keeping the known fields and giving `undefined` for an empty or unknown report.
-- `camera-report.property.test.ts`: for any track-like value (methods returning anything, throwing, or missing) the report never throws, reads back unchanged through `knownCameraReport` and has no device id.
+- `camera-report.test.ts`: the fields of a Chrome-like track, the device id left out; missing, throwing and malformed methods and fields; the log line, and `knownCameraReport` keeping the known fields and giving `undefined` for an empty or unknown report or an empty mode.
+- `camera-report.property.test.ts`: for any track-like value (methods returning anything, throwing, or missing) the report never throws, reads back unchanged through `knownCameraReport` and has no device id; for any stored JSON, what `knownCameraReport` keeps holds only finite numbers and non-empty modes and reads back unchanged.

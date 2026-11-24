@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { MethodResult, SizeResult } from "./bench-run";
 import {
@@ -361,6 +361,20 @@ describe("gapStats on a long run", () => {
     const gaps = Array.from({ length: 1_000_000 }, (_, i) => (i % 97) + 1);
     gaps[123_456] = 999;
     expect(gapStats(gaps).max).toBe(999);
+  });
+
+  // Why: a long run holds hundreds of thousands of gaps; each sort of them
+  // costs the page a visible pause, so p95, p99 and the max come from one.
+  it("sorts the gaps once for all three numbers", () => {
+    const arraySort = vi.spyOn(Array.prototype, "sort");
+    const typedSort = vi.spyOn(Float64Array.prototype, "sort");
+    try {
+      gapStats([5, 3, 9, 1, 7]);
+      expect(arraySort.mock.calls.length + typedSort.mock.calls.length).toBe(1);
+    } finally {
+      arraySort.mockRestore();
+      typedSort.mockRestore();
+    }
   });
 });
 
