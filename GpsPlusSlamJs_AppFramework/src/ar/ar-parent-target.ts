@@ -212,7 +212,9 @@ function isFiniteMatrix(matrix: unknown): boolean {
 function validDeferral(value: unknown): AnchorDeferral {
   if (value === undefined || value === true) return true;
   if (value === false || value === 'ab') return value;
-  throw new RangeError('createArParentTarget: deferAnchors must be a boolean or "ab"');
+  throw new RangeError(
+    'createArParentTarget: deferAnchors must be a boolean or "ab"'
+  );
 }
 
 function validDevJump(jump: DevWorldJump | null): DevWorldJump | null {
@@ -275,7 +277,10 @@ export function devWorldJumpFromPage(): DevWorldJump | null {
  * {@link anchorDeferralFromPage} calls it only in development builds.
  */
 export function parseAnchorDeferral(search: string): AnchorDeferral {
-  const value = new URLSearchParams(search).get('anchors')?.trim().toLowerCase();
+  const value = new URLSearchParams(search)
+    .get('anchors')
+    ?.trim()
+    .toLowerCase();
   if (value === '0') return false;
   return value === 'ab' ? 'ab' : true;
 }

@@ -78,16 +78,16 @@ into)` (writes the target local position, returns the threshold below
   pass of every set as `DeferredAnchorPassSample { passMs, dt, counts,
 deferring, commits }`. `commits` lists the pass's commits as
   `DeferredAnchorCommit { key, kind, waitMs, movedM, pendingFrames,
-  outFrames, queued }` (usually none; valid during the call only):
+outFrames, queued }` (usually none; valid during the call only):
   `pendingFrames` the passes it waited pending; for an `out-of-view`
   commit `outFrames` the passes it was pending and out of view (at least
-  1) and `queued` the most keys pending out of view at once meanwhile (at
-  least 1), so a reader can check that it landed within its queue (one
-  traversal per pass, round robin: `outFrames <= queued`). `passMs` is the pass's `performance.now()` span, measured
-  only while an observer is set, so a page without one pays nothing. A
-  throwing observer is logged and the frame goes on. The returned stop
-  clears it only while it is still the current one. `TypeError` for a
-  non-function. The Tour Viewer's `?debug=1` anchor log uses it.
+  1. and `queued` the most keys pending out of view at once meanwhile (at
+     least 1), so a reader can check that it landed within its queue (one
+     traversal per pass, round robin: `outFrames <= queued`). `passMs` is the pass's `performance.now()` span, measured
+     only while an observer is set, so a page without one pays nothing. A
+     throwing observer is logged and the frame goes on. The returned stop
+     clears it only while it is still the current one. `TypeError` for a
+     non-function. The Tour Viewer's `?debug=1` anchor log uses it.
 - `__runPassForTests(parent, cameraOrView, dt, elapsedS)`: test only. Runs
   the binding's alignment step and one pass; returns
   `{ sphereTests, traversals, windowOpen, followUpdates }`.
@@ -175,7 +175,7 @@ logs `deferral off` once when it is created.
   the intermediate nodes' transform. A fix belongs in the member and the set
   together (the member's own threshold check compares in that frame too).
 - Every commit logs `commit <kind>[ (detail)]: <key>, waited <ms> ms,
-  moved <m> m, <N> frames pending`, and an `out-of-view` commit adds
+moved <m> m, <N> frames pending`, and an `out-of-view` commit adds
   `, out of view <k> frame(s) (<q> queued)`.
 
 ## Example
