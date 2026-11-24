@@ -1,15 +1,36 @@
-# gps-plus-slam-osm
+# osm-h3
 
-OpenStreetMap → H3 affordance index.
+OpenStreetMap data on an H3 grid, for maps, games, simulations and AR.
 
-Fetches raw OSM data for the area around a user, indexes it per H3 cell, and
-scores each cell against a **pluggable affordance rule table** — machine-readable
-answers to "can you walk here / play here / safely spawn a virtual object here".
+> osm-h3 is not endorsed by or affiliated with the OpenStreetMap Foundation.
+
+What it does for anyone working with OpenStreetMap (OSM) data:
+
+- **Fetches OSM data through the Overpass API**, politely: fixed H3 fetch
+  tiles, a permanent cache-first store you can back with OPFS, IndexedDB or
+  anything else, a request budget, deduplication, backoff and server
+  rotation. See [Network usage](#network-usage--read-this-before-deploying).
+- **Indexes every feature per H3 cell**, so "what is in this cell" is a
+  lookup, not a geometry query.
+- **Scores each cell against a rule table**: a pluggable table of OSM tags
+  and weights answers questions such as "can you walk here / play here /
+  safely spawn a virtual object here". A default table ships with the
+  package; bring your own for your own categories.
+- **Groups cells into regions**: connected areas above a threshold.
+- **Finds paths over cells**: breadth-first and A\* search over cells, or
+  over height-aware columns with obstacles and building passages.
+- **Places spawn points**: deterministic timed picks on a score heat map,
+  the same for every client that shares a seed.
+- **Optional elevation and mesh data**: elevation providers, Terrarium
+  tiles, the EGM96 geoid, and buildings, roads, barriers, trees and a ground
+  tint as plain typed arrays.
+- **An optional three.js entry** (`osm-h3/three`) that turns a built city
+  into three.js objects.
 
 This package is **pure data**. Its core has no dependency on Three.js, on
 `gps-plus-slam-app-framework`, or on `gps-plus-slam-js`. Persistence, Web
 Workers and rendering are all injected or done by the consumer. The one
-exception is opt-in: the `gps-plus-slam-osm/three` entry point turns a built
+exception is opt-in: the `osm-h3/three` entry point turns a built
 city into three.js objects (three.js is an optional peer, loaded only by that
 entry), because two apps draw the same city (OsmDemo and the globe lab;
 globe city plan 2026-10-05-0040 §14).
@@ -125,9 +146,9 @@ import {
   thresholdFor,
   connectedComponents,
   buildRegions,
-} from "gps-plus-slam-osm";
+} from "osm-h3";
 import { latLngToCell } from "h3-js";
-import { SCORE_CHUNK_RES } from "gps-plus-slam-osm";
+import { SCORE_CHUNK_RES } from "osm-h3";
 
 const store = new MemoryBlobStore(); // or your own OPFS/IndexedDB implementation
 const source = new CachingSource(
@@ -187,7 +208,7 @@ Four things worth knowing before you rely on the output:
 ## Installation
 
 ```bash
-pnpm add gps-plus-slam-osm h3-js
+pnpm add osm-h3 h3-js
 ```
 
 `h3-js` is a **peer dependency** (`>=4.2.1` — the version that first shipped `polygonToCellsExperimental`, which cell coverage requires) so that your application and this
@@ -214,6 +235,56 @@ properties, enums or namespaces) and `verbatimModuleSyntax` (a type is
 imported with `type`, or the stripped import asks the browser for a name that
 does not exist), and relative imports carry `.js`. The labs' route table is
 `GpsPlusSlamJs_DesignSystem/serve-routes.mjs`.
+
+## Releasing
+
+Releases are published by the GitHub Action
+[`.github/workflows/publish-osm-h3.yml`](../.github/workflows/publish-osm-h3.yml)
+through npm Trusted Publishing (OIDC): no npm token is stored anywhere.
+
+1. Bump `version` in `package.json` and give it a heading in
+   [`CHANGELOG.md`](./CHANGELOG.md) (a repo test checks that the heading
+   exists).
+2. Once that is on `main`, publish a GitHub release whose tag is
+   `osm-h3@<version>`, exactly the manifest's version. Mark it as a
+   pre-release to publish to the `next` dist-tag instead of `latest`.
+3. The workflow checks the tag against `package.json`, builds and publishes.
+   Tags with any other prefix (such as `app-framework@`) do not touch this
+   package.
+
+### One-time setup before the first release
+
+npm adds a trusted publisher in the settings of a package that already
+exists, so the very first version is published by hand:
+
+1. On a clean checkout of `main`, with Node 26 and an npm account that has
+   two-factor authentication on, log in once with `npm login` (pnpm reads
+   the same `~/.npmrc`). Then, from the repository root and this folder:
+
+   ```bash
+   pnpm install --frozen-lockfile
+   cd GpsPlusSlamJs_Osm
+   pnpm build
+   pnpm publish --access public
+   ```
+
+   `prepublishOnly` builds and runs `pnpm pack --dry-run` once more before
+   the upload. Tag that commit `osm-h3@<version>` with a plain git tag; do
+   not publish a GitHub release for it, which would run the workflow against
+   a version that is already on npm.
+
+2. On npmjs.com, open the package `osm-h3`, then Settings, Trusted
+   Publisher, and choose GitHub Actions with:
+   - Organization or user: `cs-util-com`
+   - Repository: `location-based-webxr`
+   - Workflow filename: `publish-osm-h3.yml`
+   - Environment: blank
+
+   A new trusted publisher entry must complete its first publish within
+   two days, or it expires and has to be deleted and added again, so add it
+   when the next release is ready.
+   After that release has gone through, the package's publishing access can
+   be set to require two-factor authentication and disallow tokens.
 
 ## License
 

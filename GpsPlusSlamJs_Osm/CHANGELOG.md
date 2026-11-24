@@ -1,8 +1,37 @@
 # Changelog
 
-## [Unreleased]
+All notable changes to `osm-h3` are recorded here. Releases are tagged
+`osm-h3@<version>`.
+
+## [0.1.0] - Unreleased
+
+The first release. Earlier development happened under the working name
+`gps-plus-slam-osm`, which was never published.
 
 ### Added
+
+- **OpenStreetMap through Overpass** (`source`): `OverpassSource` with
+  server rotation, backoff honouring `Retry-After` and a local slot budget;
+  `CachingSource` over any `BlobStore` (`MemoryBlobStore` built in), keyed by
+  fixed H3 tiles; `ensureWorkingSetLoaded` and `mergeTiles`.
+- **An H3 cell index of OSM features** (`spatial`): `buildFeatureIndex`,
+  cell coverage of areas, lines and points.
+- **Rule-table scoring per cell** (`rules`, `score`): `loadRuleTable`, the
+  default affordance table, `scoreCells`, `thresholdFor`,
+  `cellsAboveThreshold` and per-cell explanations.
+- **Regions** (`regions`): `connectedComponents` and `buildRegions`.
+- **Paths over cells** (`nav`): breadth-first and A\* search over cells or
+  height-aware columns, with obstacles and building passages.
+- **Spawn points** (`places`): deterministic timed spawn points on a score
+  heat map (`newGeoEventFor`, `bestPickForTile`), identical for every client
+  that shares a seed, so clients agree without coordinating.
+- **Optional elevation** (`elevation`): elevation providers, Terrarium
+  tiles, heightfields and the EGM96 geoid (its own entry,
+  `osm-h3/elevation/egm96`).
+- **Optional mesh data** (`mesh`, `city`): buildings, roads, barriers,
+  trees and a ground tint as plain typed arrays, with colour schemes.
+- **An optional three.js entry** (`osm-h3/three`): a built city as three.js
+  objects; three.js is an optional peer, loaded only by this entry.
 
 - **Buildings, roads and trees can draw a mix of their looks** (`three`):
   `buildingObjects` and `roadObjects` take `{ looks }`, a shared

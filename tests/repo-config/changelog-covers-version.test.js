@@ -150,3 +150,28 @@ describe('AppFramework CHANGELOG covers the released version', () => {
     ).toBe(true);
   });
 });
+
+describe('osm-h3 CHANGELOG covers the manifest version', () => {
+  // Why this test matters: osm-h3 has its own publish workflow and release
+  // stream, so it can drift the same way the framework's changelog did. The
+  // heading may say "Unreleased" in place of a date until the release.
+  it('has an entry for the version currently in package.json', () => {
+    const osmDir = resolve(repoRoot, 'GpsPlusSlamJs_Osm');
+    const pkg = JSON.parse(
+      readFileSync(resolve(osmDir, 'package.json'), 'utf8')
+    );
+    const changelog = readFileSync(resolve(osmDir, 'CHANGELOG.md'), 'utf8');
+
+    expect(pkg.name).toBe('osm-h3');
+    expect(
+      hasVersionHeading(changelog, pkg.version),
+      `GpsPlusSlamJs_Osm/CHANGELOG.md has no "## [${pkg.version}]" heading.`
+    ).toBe(true);
+  });
+
+  it('accepts an "Unreleased" marker in place of the date', () => {
+    // Why this test matters: the pre-release heading form must count, or
+    // the guard above would force a made-up release date.
+    expect(hasVersionHeading('## [0.1.0] - Unreleased\n', '0.1.0')).toBe(true);
+  });
+});

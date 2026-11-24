@@ -27,7 +27,7 @@
 //
 // WHY THE PACKAGE LIST IS HARD-CODED. No manifest field distinguishes
 // "published to npm" from "not": `gps-plus-slam-recorder` and
-// `gps-plus-slam-osm` both lack `"private": true` and are both 404 on the
+// `osm-h3` both lack `"private": true` and are both 404 on the
 // registry, while `gps-plus-slam-app-framework` is published. Deriving the
 // set would be wrong in a way that reads as correct.
 
@@ -42,9 +42,9 @@ const REPO_ROOT = path.resolve(here, '../..');
 const GUARDED = [
   // Published to npm (1.24.0 as of 2026-09-08).
   'GpsPlusSlamJs_AppFramework',
-  // NOT published - the publish workflow fires only on an `app-framework@`
-  // tag - but it declares a floor, and an unrun floor misleads whether or
-  // not anyone can install it today.
+  // osm-h3: not published yet (its own workflow, publish-osm-h3.yml, fires
+  // on an `osm-h3@` tag), but it declares a floor, and an unrun floor
+  // misleads whether or not anyone can install it today.
   'GpsPlusSlamJs_Osm',
 ];
 

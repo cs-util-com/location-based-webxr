@@ -1,0 +1,119 @@
+name: Publish osm-h3 to npm
+
+# Publishes `osm-h3` (GpsPlusSlamJs_Osm) to the npm registry whenever a
+# GitHub Release whose tag starts with `osm-h3@` is published on this
+# repository. A sibling of publish.yml (the AppFramework's stream): one
+# workflow per package keeps each package's trusted publisher entry pointing
+# at a file that publishes only that package.
+#
+# Authentication: npm Trusted Publishing (OIDC). No long-lived NPM_TOKEN
+# secret. The Trusted Publisher must be registered on npmjs.com ->
+# osm-h3 -> Settings -> Trusted Publisher with provider=GitHub Actions,
+# owner=cs-util-com, repo=location-based-webxr,
+# workflow=publish-osm-h3.yml, environment blank. The package's README
+# ("Releasing") holds the one-time setup, including the first publish by hand
+# that has to exist before the entry can be added.
+#
+# Tag scheme: `osm-h3@<version>`, e.g. `osm-h3@0.2.0`. Other release tags
+# fall through to a no-op.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance + Trusted Publishing OIDC
+
+jobs:
+  publish:
+    if: startsWith(github.event.release.tag_name, 'osm-h3@')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          # Check out the exact tagged commit so a later push to main cannot
+          # change what gets published.
+          ref: ${{ github.event.release.tag_name }}
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          # The package's published engines floor (>=26.0.0) and the line it
+          # is built and tested on.
+          node-version: "26"
+          cache: "pnpm"
+          # Even with Trusted Publishing (no token), the registry-url line
+          # in .npmrc is still required so pnpm targets the public registry.
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify tag matches package.json version
+        # package.json#version is the source of truth shipped to npm; the
+        # release tag is metadata. Abort fast if they disagree so a typo in
+        # the GitHub UI cannot ship.
+        working-directory: GpsPlusSlamJs_Osm
+        run: |
+          PKG_VERSION="osm-h3@$(node -p "require('./package.json').version")"
+          if [ "$PKG_VERSION" != "${{ github.event.release.tag_name }}" ]; then
+            echo "::error::Release tag ${{ github.event.release.tag_name }} does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      # Read-only Trusted-Publishing diagnostic, as in publish.yml: the
+      # registry answers an OIDC mismatch with a misleading
+      # `404 Not Found - PUT https://registry.npmjs.org/<name>`, so the log
+      # prints both sides (the OIDC claims and npm's saved entry) before the
+      # publish. Never blocks.
+      - name: Trusted-Publishing diagnostic (read-only)
+        if: always()
+        working-directory: GpsPlusSlamJs_Osm
+        env:
+          ACTIONS_ID_TOKEN_REQUEST_URL: ${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
+        run: |
+          echo "::group::GitHub OIDC claims that will be presented to npm"
+          ID_TOKEN_RESPONSE=$(curl -sSL \
+            -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org")
+          ID_TOKEN=$(echo "$ID_TOKEN_RESPONSE" | node -e 'process.stdin.on("data",d=>{try{process.stdout.write(JSON.parse(d).value||"")}catch(e){}})')
+          if [ -z "$ID_TOKEN" ]; then
+            echo "::warning::Could not obtain OIDC token. Response: $ID_TOKEN_RESPONSE"
+          else
+            echo "$ID_TOKEN" | awk -F. '{print $2}' | base64 -d 2>/dev/null \
+              | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{const c=JSON.parse(d);for(const k of ["iss","aud","sub","repository","repository_owner","workflow","workflow_ref","job_workflow_ref","ref","ref_type","sha","environment","event_name","run_id","actor"]){if(k in c)console.log(`  ${k}: ${JSON.stringify(c[k])}`)}}catch(e){console.log("  (failed to parse)",e.message)}})'
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Trusted Publisher entries npm has saved for osm-h3"
+          curl -sSL "https://registry.npmjs.org/-/package/osm-h3/access" \
+            | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{try{console.log(JSON.stringify(JSON.parse(d),null,2))}catch(e){console.log(d)}})' \
+            || echo "  (endpoint not reachable or not JSON)"
+          echo "::endgroup::"
+
+          echo "::group::What to compare"
+          echo "    Owner:          cs-util-com  (OIDC: repository_owner)"
+          echo "    Repo:           location-based-webxr  (OIDC: repository, after the slash)"
+          echo "    Workflow:       publish-osm-h3.yml  (OIDC: workflow_ref filename)"
+          echo "    Environment:    (blank)      (OIDC: environment - must be absent or empty)"
+          echo "::endgroup::"
+
+      - name: Publish osm-h3
+        working-directory: GpsPlusSlamJs_Osm
+        # `pnpm publish` performs the Trusted Publishing OIDC exchange
+        # itself (pnpm 11). `prepublishOnly` (`build` + `verify:pack`) runs
+        # inside it. No NODE_AUTH_TOKEN: the id-token permission above and
+        # the trusted publisher entry on npmjs.com authorize this publish.
+        # `--no-git-checks`: the checkout is a detached HEAD. Provenance is
+        # generated by the registry under Trusted Publishing.
+        #
+        # Pre-releases land on the `next` dist-tag so `pnpm add osm-h3`
+        # keeps installing the `latest` release.
+        run: |
+          if [ "${{ github.event.release.prerelease }}" = "true" ]; then
+            pnpm publish --access public --no-git-checks --tag next
+          else
+            pnpm publish --access public --no-git-checks
+          fi
