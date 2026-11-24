@@ -49,6 +49,14 @@ into the build, so a branch preview serves it at
 - Entries are stored uncompressed with a fixed date, so a rebuild with
   unchanged content gives identical bytes.
 
+## Shared helpers
+
+Its generators are exported for `build-anchor-test-tour.mjs`, which builds
+the anchor field-test tour from the same pieces: `knightPng`,
+`fanfareWav`, `boxGeometry`, `glbOf(gltf, bin)` (a binary glTF of one
+JSON and one binary chunk), `geoAt`, `facingFrom`, `headingTo` and
+`FIXED_DATE`. Exporting them changed no byte of the sample zip.
+
 ## Usage
 
 From `GpsPlusSlamJs_TourViewer`: `node scripts/build-sample-tour.mjs`, then

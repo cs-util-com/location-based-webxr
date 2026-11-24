@@ -20,7 +20,9 @@ already-queued requests, so call ordering cannot deadlock.
 blocks browsers, for the "download the file and open it here" spec (tour
 kit plan K0). `/ranges-ok/sample-tour.zip` serves the committed sample tour
 (`public/samples/marienplatz-tour.zip`, owner decision S-D9) for
-`sample-tour.spec.js`. `/ranges-ok/no-gps-tour.zip` is the standard zip with
+`sample-tour.spec.js`. `/ranges-ok/anchor-test-tour.zip` serves the committed anchor field-test
+tour (`public/samples/anchor-test-tour.zip`) for `anchor-test-tour.spec.js`.
+`/ranges-ok/no-gps-tour.zip` is the standard zip with
 its `tour.json` marked `needsNoGps` (owner decision Q-QF-1), for the ar-mode spec whose visitor is never asked for the location.
 `/ranges-ok/stations-tour.zip` is a tour
 with three stations in fixed order (tour kit plan K4, `stations.spec.js`):

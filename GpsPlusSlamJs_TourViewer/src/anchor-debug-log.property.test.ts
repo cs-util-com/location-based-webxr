@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
 import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
-import { createAnchorDebugLog, summarizeSamples } from "./anchor-debug-log.js";
+import {
+  createAnchorDebugLog,
+  PASS_P95_LIMIT_MS,
+  summarizeSamples,
+} from "./anchor-debug-log.js";
 
 const finite = fc.double({ min: -1e6, max: 1e6, noNaN: true });
 
@@ -49,6 +53,7 @@ describe("createAnchorDebugLog (properties)", () => {
               passMs,
               dt: 1 / 60,
               deferring: true,
+              commits: [],
               counts: {
                 sphereTests: 0,
                 traversals: 0,
@@ -65,6 +70,54 @@ describe("createAnchorDebugLog (properties)", () => {
           expect(text).toContain(
             `max ${Math.max(...kept).toFixed(3)} (n ${String(kept.length)})`,
           );
+        },
+      ),
+    );
+  });
+});
+
+describe("the pass verdict (properties)", () => {
+  // Why: the printed PASS or FAIL must be exactly the nearest-rank p95 of
+  // the deferral-on passes against the limit, whatever deferral-off passes
+  // an A/B session mixes in.
+  it("is PASS exactly when the deferral-on p95 is within the limit", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            passMs: fc.double({ min: 0, max: 2, noNaN: true }),
+            deferring: fc.boolean(),
+          }),
+          { minLength: 1, maxLength: 80 },
+        ),
+        (passes) => {
+          const log = createAnchorDebugLog();
+          for (const p of passes) {
+            log.pass({
+              passMs: p.passMs,
+              dt: 1 / 60,
+              deferring: p.deferring,
+              counts: {
+                sphereTests: 0,
+                traversals: 0,
+                windowOpen: false,
+                followUpdates: 0,
+              },
+              commits: [],
+            });
+          }
+          const onMs = passes.filter((p) => p.deferring).map((p) => p.passMs);
+          const word =
+            onMs.length === 0
+              ? "not measured"
+              : nearestRankPercentile(onMs, 0.95) <= PASS_P95_LIMIT_MS
+                ? "PASS"
+                : "FAIL";
+          const line = log
+            .text()
+            .split(/\n/)
+            .find((l) => l.startsWith("pass p95"));
+          expect(line).toMatch(new RegExp(`(: ${word}$)|(^pass p95: ${word})`));
         },
       ),
     );

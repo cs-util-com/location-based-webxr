@@ -21,6 +21,7 @@ import {
 import type {
   TourAsset,
   TourManifest,
+  TourStation,
 } from "gps-plus-slam-app-framework/ar/tour-manifest";
 import type { Object3D } from "three";
 import { TOUR_MAX_IMAGE_PIXELS } from "gps-plus-slam-app-framework/ar/tour-media";
@@ -69,7 +70,6 @@ import {
 } from "./station-guide.js";
 import { createFigureMemo } from "./figure-memo.js";
 import { createStationPrefetch, decodeFigure } from "./station-prefetch.js";
-import { createStationRelocator, firstDeviceFix } from "./tour-relocation.js";
 import { alignmentReady, codeLinedUp, isPlacementReady } from "./tour-flow.js";
 import type {
   TourViewerSession,
@@ -263,9 +263,13 @@ export function wireVisitorStations(deps: {
   };
   now: () => number;
   schedule: (fn: () => void, ms: number) => () => void;
-  /** The test switch `?relocate=here`: move the
-   *  tour's geo stations to the phone's first GPS fix. Off by default. */
-  relocate?: { onRelocated: () => void };
+  /** The stations as the guide reads them: the test switch
+   *  `?relocate=here` hands over the moved ones (the same the content
+   *  placement draws, `tour-relocation.ts`), or null while they are held
+   *  back for the first fix. Absent: the file's stations. */
+  stationsOf?: (
+    stations: readonly TourStation[],
+  ) => readonly TourStation[] | null;
   /** The walk's sheet and its toast; absent: no sheet
    *  (the line and the skip button alone, as before). */
   walk?: {
@@ -282,15 +286,6 @@ export function wireVisitorStations(deps: {
   };
 }): VisitorStations {
   const { ctx, arStore, seams, dom } = deps;
-  const relocator = createStationRelocator(
-    deps.relocate !== undefined,
-    deps.relocate?.onRelocated,
-  );
-  /** The phone's first DEVICE fix, for the test relocation (never a
-   *  code's vote). */
-  function firstFix(): { lat: number; lon: number; alt: number } | null {
-    return firstDeviceFix(selectGpsPositions(arStore.getState()));
-  }
   const objectUrls = {
     create: (blob: Blob) => URL.createObjectURL(blob),
     revoke: (url: string) => {
@@ -453,7 +448,10 @@ export function wireVisitorStations(deps: {
     if (ctx.tourManifestStatus !== "settled" || manifest === null) {
       return null;
     }
-    const stations = relocator(manifest.stations, firstFix());
+    const stations =
+      deps.stationsOf === undefined
+        ? manifest.stations
+        : deps.stationsOf(manifest.stations);
     if (stations === null) return null;
     return { stations, order: manifest.order, assets: assetsById() };
   }

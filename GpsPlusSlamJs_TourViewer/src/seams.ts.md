@@ -148,6 +148,10 @@ createAudioElement; xrProjection0 }`
   (`.../visualization/ar-world-group-alignment`) on purpose: the
   `/visualization` barrel pulls the leaflet map modules, which crash in a
   windowless unit-test environment.
+- The real `enableArWorldGroupAlignment` passes the deferred anchors' field-test
+  switches (`anchor-test-switches.ts`): read from the address only with
+  `?debug=1`, in every build; without it the jump is off and the deferral on,
+  so the framework's development-only page readers never apply here.
 
 ## Examples
 

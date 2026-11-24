@@ -65,6 +65,7 @@ import {
 // Deep import on purpose: the /visualization barrel pulls the leaflet-based
 // map modules, which crash in a windowless (node) unit-test environment.
 import { enableArWorldGroupAlignment } from "gps-plus-slam-app-framework/visualization/ar-world-group-alignment";
+import { anchorTestSwitchesFromSearch } from "./anchor-test-switches.js";
 import type { SubscribableStore } from "gps-plus-slam-app-framework/state";
 import {
   downloadBlob,
@@ -308,7 +309,13 @@ export const realSeams: TourViewerSeams = {
   controllerDeps: {},
   getArWorldGroup,
   getStationAnchorParent: getArWorldGroup,
-  enableArWorldGroupAlignment,
+  // The field-test switches only with ?debug=1, in every build
+  // (anchor-test-switches.ts).
+  enableArWorldGroupAlignment: (options) =>
+    enableArWorldGroupAlignment({
+      ...options,
+      ...anchorTestSwitchesFromSearch(globalThis.location?.search),
+    }),
   startCameraFrameCapture,
   stopCameraFrameCapture,
   registerFrameUpdate,

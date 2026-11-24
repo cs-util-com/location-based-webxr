@@ -24,7 +24,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const OUT = join(here, "..", "public", "samples", "marienplatz-tour.zip");
 /** A fixed date, so a rebuild with unchanged content gives the same bytes. */
-const FIXED_DATE = new Date(Date.UTC(2026, 9, 5, 12, 0, 0));
+export const FIXED_DATE = new Date(Date.UTC(2026, 9, 5, 12, 0, 0));
 
 // --- The knight: pixel art, 24 x 40 cells, each 8 x 8 pixels. ---
 const KNIGHT = [
@@ -89,7 +89,7 @@ function pngChunk(type, data) {
   return Buffer.concat([length, body, crc]);
 }
 
-function knightPng() {
+export function knightPng() {
   const width = KNIGHT[0].length * SCALE;
   const height = KNIGHT.length * SCALE;
   const raw = Buffer.alloc((width * 4 + 1) * height);
@@ -119,7 +119,7 @@ function knightPng() {
 }
 
 // --- The fanfare: three rising notes, 16 kHz mono 16-bit WAV. ---
-function fanfareWav() {
+export function fanfareWav() {
   const rate = 16_000;
   const notes = [
     [523.25, 0.25],
@@ -243,7 +243,7 @@ function marketWav() {
 }
 
 // --- The arch: two pillars and a lintel, one grey mesh, a GLB. ---
-function boxGeometry(cx, cy, cz, sx, sy, sz, positions, indices) {
+export function boxGeometry(cx, cy, cz, sx, sy, sz, positions, indices) {
   const base = positions.length / 3;
   for (const [x, y, z] of [
     [-1, -1, -1],
@@ -340,6 +340,11 @@ function archGlb() {
       },
     ],
   };
+  return glbOf(gltf, bin);
+}
+
+/** A binary glTF of `gltf` and its one binary chunk `bin` (4-byte aligned). */
+export function glbOf(gltf, bin) {
   let json = Buffer.from(JSON.stringify(gltf), "utf8");
   json = Buffer.concat([json, Buffer.alloc((4 - (json.length % 4)) % 4, 0x20)]);
   const header = Buffer.alloc(12);
@@ -366,7 +371,7 @@ const M_PER_DEG = 111_320;
 // between pixel centres): 515.83 m at the column, 514.17 m at the gate,
 // 516.23 m at the steps. The 3D editor draws a station at alt - N, so each
 // stands on the ground it draws (src/sample-tour.test.ts holds it).
-function geoAt(northM, eastM, altM) {
+export function geoAt(northM, eastM, altM) {
   return {
     lat: COLUMN.lat + northM / M_PER_DEG,
     lon:
@@ -380,7 +385,7 @@ function geoAt(northM, eastM, altM) {
 // visitor comes from, facing that way (the walk is unchanged: he greets
 // the visitor as he arrives). `fromDeg`: that direction's heading,
 // clockwise from north; the station's frame has x north, y up, z east.
-function facingFrom(fromDeg) {
+export function facingFrom(fromDeg) {
   const round = (v) => Math.round(v * 1e6) / 1e6 || 0;
   const r = (fromDeg * Math.PI) / 180;
   const half = ((90 - fromDeg) * Math.PI) / 360;
@@ -392,7 +397,7 @@ function facingFrom(fromDeg) {
 
 /** The heading (degrees) from the station at (north, east) to the one at
  *  (fromNorth, fromEast), in metres from the column. */
-function headingTo([north, east], [fromNorth, fromEast]) {
+export function headingTo([north, east], [fromNorth, fromEast]) {
   const deg = (Math.atan2(fromEast - east, fromNorth - north) * 180) / Math.PI;
   return (deg + 360) % 360;
 }

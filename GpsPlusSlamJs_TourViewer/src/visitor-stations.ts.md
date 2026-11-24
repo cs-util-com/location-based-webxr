@@ -10,15 +10,18 @@ in those modules, the composition in `playwright-tests/stations.spec.js`.
 
 ## Public API
 
-- `wireVisitorStations({ ctx, mode, arStore, seams, dom, now, schedule, relocate? }):
+- `wireVisitorStations({ ctx, mode, arStore, seams, dom, now, schedule, stationsOf? }):
 VisitorStations` - `{ tick, loadContent, codeLocked, unlockAudio, stop }`
   (properties, handed to the hooks unbound). `loadContent(path)` reads one
   of the open tour's entries through the stations' prefetch cache: the
   station content's photos (`viewer-placement.ts`) read through it, but
   the cache holds story media only, so a return to a station reads its item
-  photos from the archive again until item photos join the prefetch. `relocate` (`{ onRelocated }`) turns on the
-  test switch `?relocate=here` (`tour-relocation.ts`): the stations are
-  held back until the phone's first raw GPS fix, then moved there.
+  photos from the archive again until item photos join the prefetch. `stationsOf`
+  is the test switch `?relocate=here` (`createTourRelocation`,
+  `tour-relocation.ts`): the guide reads the stations it hands over, held
+  back (null) until the phone's first device fix, then moved there; the
+  content placement reads the same function, so content stands with its
+  moved station. Absent: the file's stations.
 - `stationPlacementAllowed(ctx, mode): boolean` - the guide's
   `placementAllowed`, exported so the placement test drives the page's
   own rule (see below).

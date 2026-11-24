@@ -15,6 +15,7 @@ import { packNewTour } from "./starter-tour.js";
 import {
   createGpsPositionHandler,
   selectAlignmentMatrix,
+  selectGpsPositions,
 } from "gps-plus-slam-app-framework/state";
 import { debugUiEnabledFromSearch } from "gps-plus-slam-app-framework/utils/debug-flag";
 import { guardSlidersIn } from "gps-plus-slam-app-framework/utils/slider-scroll-guard";
@@ -108,7 +109,11 @@ import { routeVisitorTap, wireVisitorStations } from "./visitor-stations.js";
 import { createVoiceFocus } from "./voice-focus.js";
 import { createToast } from "gps-plus-slam-app-framework/utils/toast-core";
 import { createWalkToast } from "./walk-toast.js";
-import { relocationRequested } from "./tour-relocation.js";
+import {
+  createTourRelocation,
+  firstDeviceFix,
+  relocationRequested,
+} from "./tour-relocation.js";
 import { tourCodesUsable, wireVisitorScreen } from "./visitor-screen.js";
 import { wireVisitorStart } from "./visitor-start.js";
 import { wireFoldingLabel } from "./folding-label.js";
@@ -999,8 +1004,19 @@ const qrPerf =
   mode === "visitor" && debug && qrPerfEnabled(location.search)
     ? createQrPerfReport({ intervalMs: CAMERA_FRAME_INTERVAL_MS })
     : null;
+// The test switch ?relocate=here (tour-relocation.ts):
+// the station guide and the content placement read the same moved
+// stations, moved to the phone's first device fix (never a code's vote).
+const stationsOf = createTourRelocation(
+  relocationRequested(location.search),
+  () => firstDeviceFix(selectGpsPositions(arStore.getState())),
+  () => {
+    element("relocate-note").hidden = false;
+  },
+);
 const viewer = createViewerPlacement({
   ...(qrPerf === null ? {} : { qrPerf }),
+  ...(stationsOf === undefined ? {} : { stationsOf }),
   worldSound,
   // What a part says on a tap (a ground arrow's description).
   worldSay: (text) => {
@@ -1157,16 +1173,7 @@ const stations = wireVisitorStations({
       arrow: svgElement("walk-edge-pill-arrow"),
     },
   },
-  // The test switch ?relocate=here (tour-relocation.ts, owner decision S-D9).
-  ...(relocationRequested(location.search)
-    ? {
-        relocate: {
-          onRelocated: () => {
-            element("relocate-note").hidden = false;
-          },
-        },
-      }
-    : {}),
+  ...(stationsOf === undefined ? {} : { stationsOf }),
 });
 // Every camera frame: the visitor's stations, and the creator's open
 // station (each does nothing in the other mode).
