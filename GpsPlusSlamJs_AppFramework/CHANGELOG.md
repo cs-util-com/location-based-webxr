@@ -6,6 +6,9 @@
 
 ### ⚠️ Breaking changes
 
+This minor release carries breaking changes, listed below. Consumers who
+need the previous API can pin `1.31.0`.
+
 - `visualization/ar-world-group-alignment`: **alignment changes land in
   the frame they arrive.** `enableArWorldGroupAlignment` no longer eases
   the group over about 0.3 s: every new alignment, large or small, is
@@ -33,7 +36,7 @@
 - **`tour.json` version 5: stations hold children, stories hold their own**
   (`ar/tour-manifest`, `ar/tour-stations`, `ar/tour-story`,
   `ar/tour-blocks`). A station holds one ordered list `children`: a free
-  block, or a story `{ id, kind: 'story', title, children }` holding its
+  block, or a story `{ id, kind: 'folder', role: 'story', title, children }` holding its
   blocks, choices and quizzes in the order a visitor meets them. A block
   lives in one place, so being in a story is what shows it; a story block
   carries its `advance`, and a choice's `goto` names a child of the same
@@ -68,12 +71,16 @@
     or `nested pose committers are not supported`).
 
 - **Every container is a folder** (`ar/tour-story`): a story is
-  `{ kind: 'folder', role: 'story', title, children }` (was
-  `kind: 'story'`), read and written in that shape. A folder without a
+  `{ kind: 'folder', role: 'story', title, children }`, read and written
+  in that shape. A folder without a
   role is a plain folder: it groups free blocks and plain folders, nests
-  at any depth, and carries an optional `pose` (a rigid frame; its
-  `scale` is read only as 1, since a scale other than 1 waits for a
-  renderer that scales the whole group). A child's offset with its
+  at any depth, and carries an optional `pose` (a rigid frame) and an
+  optional `scale`: a value from `TOUR_FOLDER_MIN_SCALE` to
+  `TOUR_FOLDER_MAX_SCALE` (0.1 to 10) is honoured and makes the whole
+  group larger, its children's offsets and how large they are drawn
+  alike; a value outside that range fails a file of this minor and, in a
+  newer one's, is dropped (read as 1) and reported as a `folderScale`
+  drop. A child's offset with its
   folders' poses composed in stays within `TOUR_ITEM_MAX_OFFSET_M`, as a
   single pose's does. A story stands only at a station's top and
   holds no folder. `isTourStory` is now `isStory`, with `isTourFolder`
@@ -275,8 +282,9 @@
   folder may carry a `title` (`TOUR_FOLDER_TITLE_RULE`, the story title's
   rule); one over its cap is left out of a newer minor's file and
   reported as a `folderTitle` drop.
-- `TourChildDrop` names a plain folder's scale other than 1, read as 1,
-  as a `folderScale` drop.
+- `TourChildDrop` names a plain folder's scale outside
+  `TOUR_FOLDER_MIN_SCALE` to `TOUR_FOLDER_MAX_SCALE` (0.1 to 10), read
+  as 1, as a `folderScale` drop.
 - **A short text has more world views than a pin** (`ar/tour-kinds`): `sign`
   (a sign on posts) and `edgeHint` (a hint that keeps to the screen's edge
   while its spot is out of view), beside `pin` and `ground` (an arrow on

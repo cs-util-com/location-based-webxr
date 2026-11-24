@@ -277,7 +277,7 @@ describe('end-to-end: extract → decode → evaluate', () => {
     // Why: smoke-tests the whole pipeline against the real bundled
     // string from gps-plus-slam-js@1.0.4. If any layer (regex, base64,
     // JSON, band math) regresses, this single test catches it. We pin
-    // `nowSec` to ~14 days before exp so the result lands inside any
+    // `nowSec` to about 355 days before exp so the result lands inside any
     // sensible band the project might pick (default 300-380).
     const dist = `/*! gps-plus-slam-js | (c) 2026 cs-util-com | UNLICENSED — see EULA.md */
 const e=\`${REAL_TOKEN}\`;export{e as COMMUNITY_LICENSE_KEY};`;

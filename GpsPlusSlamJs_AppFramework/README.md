@@ -121,7 +121,7 @@ Optional:
 
 ### Licensing
 
-A **free community license key is bundled** with the framework, so you can start building right away — no signup and no API-key request process. The key is refreshed every time a new framework version is released and is valid for a year, so keeping the framework reasonably up to date keeps the license valid automatically. See the core library's [EULA](https://www.npmjs.com/package/gps-plus-slam-js) for the full terms, and pass `licenseKey` to `createSlamAppStore` if you hold a paid key.
+A **free community license key is bundled** with the framework, so you can start building right away — no signup and no API-key request process. The key is re-signed with each release of the core library (`gps-plus-slam-js`) and is valid for about a year from then. A framework release ships the key of the core version it depends on, and is published only while that key has at least 300 days left, so keeping the framework reasonably up to date keeps the license valid automatically. See the core library's [EULA](https://www.npmjs.com/package/gps-plus-slam-js) for the full terms, and pass `licenseKey` to `createSlamAppStore` if you hold a paid key.
 
 ## Quick Start
 
