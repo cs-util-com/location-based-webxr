@@ -530,6 +530,10 @@ export interface TourViewerSession {
   viewerLastEvaluation: LastEvaluation | null;
   /** Last detection's RMS reprojection error — the on-device quality number. */
   latestReprojectionPx: number | null;
+  /** The viewer pipeline's newest decode of any code (epoch ms, the QR
+   *  controller's clock), lock or not: the tracker capture gate's burst
+   *  opens on it. Null before one and after `endQrPipeline`. */
+  qrDecodeAtMs: number | null;
   /** The viewer pipeline's code keep-alive (authoring plan M2b): created
    *  per AR entry with the pipeline, stopped at AR exit (`endQrPipeline`)
    *  and when its tour closes; the status line reads its phase. */
@@ -608,6 +612,7 @@ export function endQrPipeline(ctx: TourViewerSession): void {
   ctx.qrController?.dispose();
   ctx.qrController = null;
   ctx.fusedPose = null;
+  ctx.qrDecodeAtMs = null;
   // The code's keep-alive ends with the AR entry (authoring plan M2b): its
   // pose is in this session's odometry frame, which the next entry resets.
   ctx.viewerKeepAlive?.stop();
@@ -739,6 +744,7 @@ export function createTourViewerSession(
     viewerReprojectionPx: null,
     viewerLastEvaluation: null,
     latestReprojectionPx: null,
+    qrDecodeAtMs: null,
     viewerKeepAlive: null,
     viewerVoteBudget: null,
     viewerVoteSink: null,

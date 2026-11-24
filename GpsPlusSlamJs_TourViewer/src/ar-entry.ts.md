@@ -61,7 +61,36 @@ since the flows plan M6.
     (authoring plan 2026-09-28-0953 M4); every camera frame (a
     `CapturedCameraFrame`: pixels plus the pose and time of its capture) is
     kept as `ctx.latestFrame` for the photo capture (M4) and offered to the
-    QR controller.
+    QR controller. A captured frame renders and ticks nothing.
+  - **The `?qrperf=1` instrument** (`deps.qrPerf`,
+    [qr-perf-report.ts.md](qr-perf-report.ts.md)): each capture's
+    `onCaptureTiming` and every XR frame's interval (one
+    `seams.registerFrameUpdate` per session) go to it; absent, the capture
+    config is unchanged.
+  - **The tracker capture gate is the visitor's:** a visitor's session with
+    a QR controller builds one `createTrackerCaptureWiring`
+    ([tracker-capture-wiring.ts.md](tracker-capture-wiring.ts.md)) and
+    passes its `wantsFrame` in the capture config; a frame is offered to QR
+    only when the gate routed it there (every frame before the gate
+    decided). Force-on is the stored `trackerCaptureForceOn` pref, a
+    codes-only tour or the scan gate scanning. The burst reads the
+    session's newest decode (`ctx.qrDecodeAtMs`) besides the detections;
+    the alignment counts only while `stationAlignmentSignals`' readiness
+    holds (the store's identity from the first fix is no solve). A
+    creator's capture keeps `{ intervalMs }` alone. Each session builds a
+    new gate; the session end drops it.
+  - **The per-frame UI runs on the render loop:** once the runtime started,
+    each session registers one `seams.registerFrameUpdate` that calls
+    `renderArStatus()` then `hooks.tickStations()` at the capture cadence
+    (`CAMERA_FRAME_INTERVAL_MS`, about 8 Hz, kept on its grid unless a
+    stall left it a whole step behind; a non-finite frame time ticks
+    nothing). A capture the tracker gate vetoes therefore never slows the
+    stations, the HUD or the status line. Every session end clears the
+    frame loop's registrations, so it is registered per session and never
+    unregistered by hand; a failed start registers none. It also runs during
+    a tracking loss and without camera access. Under a null pose an aligned
+    visitor has no position and arrives nowhere; an unaligned one is judged
+    by a fresh lone fix as before.
   - Every session starts the scan gate (`hooks.startScanGate`; a
     creator's is `not-required/creator`, a visitor's holds placement back)
     before the visitor's placement subscription; the session end cancels
@@ -140,8 +169,8 @@ entry; C7).
   of every viewer/placement/author field the dead session owned (the list
   in `onSessionEnd`, one line per field - a field missing there blends the
   dead session into the next one).
-- **The visitor's stations (tour kit plan K4):** every camera frame and
-  every store dispatch of a visitor session calls `hooks.tickStations()`
+- **The visitor's stations (tour kit plan K4):** every per-frame tick (the
+  render loop's, above) and every store dispatch of a visitor session calls `hooks.tickStations()`
   (next to `tryPlaceTour`); the session end calls `hooks.stopStations()`
   (the story stops, the HUD goes, the progress stays) AFTER it ends the
   placement trigger (`ctx.placementUnsubscribe`), so a gate or presence

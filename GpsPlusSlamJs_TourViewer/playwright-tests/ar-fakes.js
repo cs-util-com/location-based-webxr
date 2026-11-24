@@ -74,8 +74,18 @@ export async function installTourViewerArFakes(page, options = {}) {
          *  recording slice actually started (the silent-drop trap). */
         alignmentStore: /** @type {any} */ (null),
         cameraFrameCallback: /** @type {any} */ (null),
+        /** The render loop's registrations (`registerFrameUpdate`),
+         *  cleared at each initAR as the framework clears them at each
+         *  session end, and its page clock in seconds. */
+        frameUpdates:
+          /** @type {Set<(dt: number, elapsedS: number) => void>} */ (
+            new Set()
+          ),
+        frameElapsedS: 0,
         /** Deliver n fake frames (RGBA + the capture pose, as the framework
-         *  pairs them) through the initAR camera callback. */
+         *  pairs them) through the initAR camera callback, each followed by
+         *  one render frame a second later, so every emitted frame also runs
+         *  the per-frame UI (the status line, the stations) once. */
         emitFrames(n = 1) {
           for (let i = 0; i < n; i += 1) {
             test.cameraFrameCallback?.({
@@ -83,6 +93,8 @@ export async function installTourViewerArFakes(page, options = {}) {
               cameraPose: { position: [0, 0, 0], rotation: [0, 0, 0, 1] },
               capturedAtMs: Date.now(),
             });
+            test.frameElapsedS += 1;
+            for (const fn of [...test.frameUpdates]) fn(1, test.frameElapsedS);
           }
         },
         /** Scripted device-level QR results for the author pipeline (M3). */
@@ -397,6 +409,7 @@ export async function installTourViewerArFakes(page, options = {}) {
               isolationOptions,
             });
             test.cameraFrameCallback = callbacks?.cameraFrame?.onFrame ?? null;
+            test.frameUpdates.clear();
             // The controller's WRAPPED onSessionEnd — invoking it simulates
             // the XR session dying out from under the app.
             test.sessionEndCallback = callbacks?.onSessionEnd ?? null;
@@ -484,7 +497,22 @@ export async function installTourViewerArFakes(page, options = {}) {
           return { dispose() {} };
         },
         startCameraFrameCapture: (config) => {
-          test.captureCalls.push(config ?? {});
+          // A plain copy the spec can read back: a function is recorded
+          // as "function" (a hook such as the visitor's capture veto).
+          test.captureCalls.push(
+            Object.fromEntries(
+              Object.entries(config ?? {}).map(([key, value]) => [
+                key,
+                typeof value === "function" ? "function" : value,
+              ]),
+            ),
+          );
+        },
+        registerFrameUpdate: (fn) => {
+          test.frameUpdates.add(fn);
+          return () => {
+            test.frameUpdates.delete(fn);
+          };
         },
         queryGeolocationPermission: () =>
           Promise.resolve(test.locationPermission),

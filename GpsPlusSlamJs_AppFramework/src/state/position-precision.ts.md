@@ -46,6 +46,13 @@ number | null, tooWeak: boolean }`.
   GPS-only tour (no codes) asking for a code where GPS cannot tell the
   stations apart, which waits for its own decision; until then the factor
   and `CODE_HELD_ERROR_M` carry no app behaviour.
+- `deviceAccuracySeriesM(points)`: per reading, the rolling median of the
+  last `DEVICE_ACCURACY_WINDOW_FIXES` usable device accuracies up to and
+  including it (null until one exists). Its last entry equals what an
+  aligned, code-free `positionPrecision` reports. The nearby-targets
+  position source (`ar/targets/nearby-position.ts`) judges each past fix
+  with it. Pinned by the property "agrees with positionPrecision on every
+  prefix".
 - Constants: `POSITION_PRECISION_CEILING_M` (25),
   `DEVICE_ACCURACY_WINDOW_FIXES` (10), `CODE_HELD_ERROR_M` (1),
   `TELL_APART_FACTOR` (1.5). Each doc comment carries its evidence and

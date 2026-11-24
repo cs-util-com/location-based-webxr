@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fc from 'fast-check';
 import {
   canTellApart,
+  deviceAccuracySeriesM,
   positionPrecision,
   type PositionKind,
   type PositionPrecision,
@@ -306,6 +307,31 @@ describe('canTellApart (property)', () => {
         }
       ),
       { numRuns: 300 }
+    );
+  });
+});
+
+describe('deviceAccuracySeriesM', () => {
+  // Why this test matters: the gate judges each past sample by the accuracy
+  // as of its own time; that history must be the same one rule the app's
+  // precision uses, so every prefix's last entry equals the aligned verdict.
+  it('agrees with positionPrecision on every prefix', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.oneof(devicePointArb, otherPointArb), { maxLength: 40 }),
+        (points) => {
+          const series = deviceAccuracySeriesM(points);
+          expect(series).toHaveLength(points.length);
+          for (let i = 0; i < points.length; i += 1) {
+            const p = positionPrecision({
+              position: 'aligned',
+              codeHold: false,
+              gpsPoints: points.slice(0, i + 1),
+            });
+            expect(series[i]).toBe(p.accuracyM);
+          }
+        }
+      )
     );
   });
 });

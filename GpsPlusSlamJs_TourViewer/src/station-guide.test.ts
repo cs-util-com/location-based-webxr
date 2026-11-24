@@ -295,6 +295,13 @@ function harness(
       };
       guide.tick();
     },
+    /** The page's own position from the device's inputs
+     *  (`visitorPosition`), then one tick. */
+    fromDevice: (input: Parameters<typeof visitorPosition>[0]) => {
+      visitor = visitorPosition(input);
+      guide.tick();
+    },
+    now: () => now,
     advance: (ms: number) => (now += ms),
     allow: (v: boolean) => (allowed = v),
     /** Tracking ready or not (the alignment is ready on it or a code). */
@@ -347,6 +354,71 @@ describe("wireStationGuide", () => {
     expect(h.dom.line.textContent).toBe(
       "2 stations to find - nearest: WELL, 30 m",
     );
+  });
+
+  // Why this test matters: the stations tick on the render loop, so they
+  // also tick during a tracking loss, when the AR pose is null, and on a
+  // phone without camera access. A second of such ticks, standing on the
+  // station by a fix too old to count, finds nothing and throws nothing.
+  it("ticks under a null AR pose judge no arrival and throw nothing", () => {
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const staleFix = {
+      latitude: zero.lat,
+      longitude: zero.lon,
+      latLongAccuracy: 4,
+      timestamp: h.now() - FIX_MAX_AGE_MS - 1,
+    };
+    for (const gpsPositions of [[], [staleFix]]) {
+      for (let i = 0; i < 8; i += 1) {
+        expect(() => {
+          h.fromDevice({
+            alignment: identity,
+            arPose: null,
+            gpsPositions: gpsPositions as unknown as Parameters<
+              typeof visitorPosition
+            >[0]["gpsPositions"],
+            zero,
+          });
+        }).not.toThrow();
+      }
+    }
+    expect(h.found).toEqual([]);
+    expect(h.dom.line.textContent).toBe(
+      "Next: GATE - waiting for your position…",
+    );
+  });
+
+  // Why this test matters: the null-pose rule above is the aligned
+  // visitor's. An unaligned one (no code, tracking not ready) is judged by
+  // a fresh lone fix, which needs no pose: standing on the station by such
+  // a fix finds it even during a tracking loss.
+  it("an unaligned visitor under a null AR pose is judged by a fresh lone fix", () => {
+    const h = harness({
+      assets: new Set(),
+      stations: [station("gate", 0, 0)],
+      order: "fixed",
+    });
+    h.ready(false);
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    h.fromDevice({
+      alignment: identity,
+      arPose: null,
+      gpsPositions: [
+        {
+          latitude: zero.lat,
+          longitude: zero.lon,
+          latLongAccuracy: 4,
+          timestamp: h.now(),
+        },
+      ] as unknown as Parameters<typeof visitorPosition>[0]["gpsPositions"],
+      zero,
+    });
+    expect(h.found).toEqual(["gate"]);
   });
 
   it("says when it has no position yet, or the GPS is too weak to guide", () => {

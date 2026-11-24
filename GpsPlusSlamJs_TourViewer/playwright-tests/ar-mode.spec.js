@@ -480,7 +480,8 @@ test("visitor mode boots to running: session started, alignment bound, capture a
   expect(wiring.alignment).toEqual([
     { hasStore: true, groupName: "fake-world-group" },
   ]);
-  expect(wiring.capture).toEqual([{ intervalMs: 125 }]);
+  // The visitor's capture asks the tracker capture gate before each frame.
+  expect(wiring.capture).toEqual([{ intervalMs: 125, wantsFrame: "function" }]);
 });
 
 test("camera frames flow through the foundation and surface in the status line", async ({

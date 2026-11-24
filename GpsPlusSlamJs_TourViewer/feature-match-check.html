@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/design.css" />
     <link rel="stylesheet" href="/src/checks/feature-match/guided-view.css" />
     <link rel="stylesheet" href="/src/checks/feature-match/cockpit-view.css" />
+    <link rel="stylesheet" href="/src/checks/feature-match/worker-spike.css" />
     <script>
       // ?ui=cockpit shows the cockpit; the guided run is the default.
       (function () {
@@ -1124,8 +1125,14 @@
     </script>
     <script type="module">
       import { startFeatureMatchCheck } from "./src/checks/feature-match/feature-match-check.ts";
+      import { startWorkerSpike } from "./src/checks/feature-match/worker-spike.ts";
 
-      startFeatureMatchCheck(document);
+      // ?spike=worker: the background measuring test instead of the page.
+      if (new URLSearchParams(location.search).get("spike") === "worker") {
+        startWorkerSpike(document);
+      } else {
+        startFeatureMatchCheck(document);
+      }
     </script>
   </body>
 </html>

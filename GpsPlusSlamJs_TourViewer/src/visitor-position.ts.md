@@ -35,10 +35,13 @@ guide). Plan:
     fix older than `FIX_MAX_AGE_MS`, and one with no time.
   - `fixAccuracyM` - the latest device fix's own reported accuracy (m),
     or null when `fixNue` is or that fix states none (missing, zero,
-    negative, not finite). Where the fix alone is the position, the guide
+    negative, not finite: the framework's `finitePositive`). Where the fix alone is the position, the guide
     judges it by the worse of this and the device median: one ±40 m Wi-Fi fix
     after a run of ±5 m GPS fixes leaves the median at 5 m (r881
     re-review M-A).
+- `cameraNue(alignment, arPose)` - `nue` alone, for a caller that needs
+  nothing else per call (the tracker capture wiring asks at up to 60 Hz).
+- `ArPoseLike` - the WebXR pose shape both take.
 
 ## Invariants & assumptions
 

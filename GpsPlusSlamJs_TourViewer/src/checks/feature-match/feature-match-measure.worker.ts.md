@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The feature-match measuring worker, so measuring a pair never freezes the camera preview. It wires `measure-worker-core.ts` to the real PNG decoder (`png-frame.ts`), this worker's WebGPU probe (`webgpu-probe.ts`), the methods built for the worker (`buildMethods(selection, deps, "worker")`) and `postMessage`. `measure-client.ts` is its page side; `measure-protocol.ts` holds the messages.
+The feature-match measuring worker, so measuring a pair never freezes the camera preview. It calls `serveMeasureWorker()` from `measure-worker-env.ts` with the page's method selection unchanged; that module wires `measure-worker-core.ts` to the real PNG decoder (`png-frame.ts`), this worker's WebGPU probe (`webgpu-probe.ts`), the methods built for the worker (`buildMethods(selection, deps, "worker")`) and `postMessage`. `measure-client.ts` is its page side; `measure-protocol.ts` holds the messages.
 
 ## Public API
 
@@ -10,10 +10,11 @@ None: a module worker entry, spawned with `new Worker(new URL("./feature-match-m
 
 ## Invariants
 
-- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods (ALIKED's and LightGlue's ONNX sessions, sift.js) are kept for the worker's life in `env.kept`. The page starts a new worker after a crash, so a crash also starts with fresh sessions.
-- Messages are handled one after another on a promise chain; the client sends one at a time anyway. Each step is chained for both outcomes (`then(step, step)`), so a rejected step never blocks the messages after it.
+- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods are kept for the worker's life (`measure-worker-env.ts`); a new worker after a crash starts with fresh sessions.
+- Messages are handled one after another on a promise chain; the client sends one at a time anyway.
+- The worker spike's XFeat probe (`xfeat-probe.worker.ts`) runs the same wiring with XFeat as the only method.
 - Its own dpdm cycle root in `scripts/test-timing/projects.mjs`: dpdm cannot follow a `new URL(...)` spawn.
 
 ## Tests
 
-Not unit-tested (it needs a real worker); the core it runs is (`measure-worker-core.test.ts`), and `playwright-tests/feature-match-check.spec.js` runs it whole.
+Not unit-tested (it needs a real worker); the core it runs is (`measure-worker-core.test.ts`), and `playwright-tests/feature-match-check.spec.js` runs it whole, in the photo test and in the worker spike.

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createTourViewerStore } from "./tour-viewer-session.js";
 import { guideTourChanged } from "./visitor-guide-slice.js";
 import {
+  selectTrackerCaptureForceOn,
   selectVisitorPrefs,
   visitorPrefsLoaded,
   type VisitorPrefsState,
@@ -81,5 +82,25 @@ describe("the visitor's preference in the page's store", () => {
     expect(
       preferredView(selectVisitorPrefs(store.getState()), "longText", "world"),
     ).toBe("lectern");
+  });
+});
+
+describe("the tracker capture force-on setting", () => {
+  // Why this test matters: the setting keeps QR at full cadence all
+  // session; a stored value of another shape must not switch it on.
+  it("is on only for a stored true", () => {
+    const store = createTourViewerStore();
+    expect(selectTrackerCaptureForceOn(store.getState())).toBe(false);
+    for (const [stored, on] of [
+      [{ trackerCaptureForceOn: true }, true],
+      [{ trackerCaptureForceOn: "true" }, false],
+      [{ trackerCaptureForceOn: 1 }, false],
+      [[true], false],
+      ["x", false],
+      [{ views: {} }, false],
+    ] as const) {
+      store.dispatch(visitorPrefsLoaded(stored));
+      expect(selectTrackerCaptureForceOn(store.getState())).toBe(on);
+    }
   });
 });

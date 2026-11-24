@@ -2815,3 +2815,104 @@ test("a shot's PNG decodes in a module worker to the very bytes it was made from
   });
   expect(same).toBe(true);
 });
+
+const SPIKE = "/feature-match-check.html?spike=worker&baseline=1&pairs=2";
+
+/**
+ * Why this test matters: the background measuring test is run by a person
+ * on a phone who cannot read code. It must go from one Start button through
+ * a visible progress to a plain result card, measure with the photo test's
+ * own worker, answer the XFeat question even when XFeat cannot start, and
+ * confirm the Copy log tap.
+ */
+test("the background measuring test goes from Start to a result card and copies its log", async ({
+  page,
+  context,
+}) => {
+  const errors = /** @type {string[]} */ ([]);
+  page.on("pageerror", (error) => errors.push(error.message));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  // SIFT is stubbed; ALIKED's models and XFeat's runtime are refused.
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(SPIKE);
+
+  const start = page.locator("#spike-start");
+  await expect(page.locator("#spike-intro-text")).toContainText(
+    "It takes about",
+  );
+  await expect(start).toBeEnabled();
+  expect(await pageOverflow(page)).toBe(0);
+
+  await start.click();
+  // Running: the step of how many, the time left and a plain status line.
+  await expect(start).toBeHidden();
+  await expect(page.locator("#spike-step")).toHaveText(/^Step [1-5] of 5$/);
+  await expect(page.locator("#spike-left")).toHaveText(
+    /^(about \d+ (s|min) left|almost done)$/,
+  );
+  await expect(page.locator("#spike-status")).not.toBeEmpty();
+  await expect(page.locator("#spike-keep")).toBeVisible();
+
+  // The result card in plain words: a yes or a no with a gap in ms (a fake
+  // camera in a headless browser can land on either side of the rule).
+  await expect(page.locator("#spike-result")).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("#spike-camera")).toHaveText(
+    /^(Yes|No)\. .*\d+ ms/,
+  );
+  await expect(page.locator("#spike-xfeat")).toHaveText(/^Could not start: /);
+  const methods = page.locator("#spike-methods li");
+  await expect(methods).toHaveCount(2);
+  await expect(methods.nth(0)).toContainText(/per pair, first load/);
+  await expect(methods.nth(1)).toContainText("could not run:");
+  await expect(page.locator(".finder")).toBeHidden();
+  await expect(page.locator("#spike-log-box")).not.toHaveAttribute("open");
+  expect(await pageOverflow(page)).toBe(0);
+
+  const copy = page.locator("#spike-copy");
+  await copy.click();
+  await expect(copy).toHaveText("Copied");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  // The log names both workers' answers and the verdict with its sweep,
+  // and the card's yes or no is the log's verdict, not a second opinion.
+  expect(copied).toContain("pair 2: done in");
+  const verdict = copied.match(
+    /camera verdict: (smooth|stutter); factor 1\.1: [Yn]{3}, 1\.25: [Yn]{3}, 1\.5: [Yn]{3} \(caps 150\/250\/400 ms\)/,
+  );
+  expect(verdict).not.toBeNull();
+  const card = (await page.locator("#spike-camera").textContent()) ?? "";
+  expect(card.startsWith("Yes")).toBe(verdict?.[1] === "smooth");
+  expect(copied).toContain("RESULT XFeat in a worker: Could not start");
+  expect(copied).toContain("SPIKE-DONE");
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Why this test matters: a refused camera must say so in one plain sentence
+ * with what to do, never show a stack trace, and keep the log copyable.
+ */
+test("the background measuring test explains a refused camera", async ({
+  page,
+}) => {
+  await routeNetwork(page, fulfillSift);
+  await fakeCamera(page, "reject");
+  await page.goto(SPIKE);
+  await expect(page.locator("#spike-error-msg")).toHaveText(
+    "The camera was blocked.",
+  );
+  await expect(page.locator("#spike-error-todo")).toContainText(
+    "Allow the camera",
+  );
+  // The error name stays in the log, which is collapsed.
+  await expect(page.locator("#spike-error")).not.toContainText(
+    "NotAllowedError",
+  );
+  await expect(page.locator("#spike-log")).toBeHidden();
+  await expect(page.locator("#spike-retry")).toBeVisible();
+  await expect(page.locator("#spike-copy")).toBeVisible();
+  await expect(page.locator("#spike-start")).toBeHidden();
+  await expect(page.locator("#spike-log")).toContainText(
+    "ERROR camera: NotAllowedError",
+  );
+});
