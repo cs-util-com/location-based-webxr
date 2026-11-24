@@ -283,6 +283,31 @@ function checkedAlignment(
   };
 }
 
+const IDENTITY_PARTS: RigidParts = {
+  m: new ThreeMatrix4(),
+  q: new ThreeQuaternion(),
+};
+
+/**
+ * The relocalization correction of one capture: the identity for a
+ * recording without observations, undefined when its frame is unknown.
+ */
+function captureCorrection(
+  correction: ReturnType<typeof relocalizationCorrection>,
+  point: { readonly capturedAt?: number },
+  alignmentEpoch: number | undefined,
+): RigidParts | undefined {
+  return correction === null
+    ? IDENTITY_PARTS
+    : correction.forCapture(point.capturedAt, alignmentEpoch);
+}
+
+/** `p` moved by the rigid transform. */
+function movedBy(delta: RigidParts, p: Vec3): Vec3 {
+  const v = new ThreeVector3(...p).applyMatrix4(delta.m);
+  return [v.x, v.y, v.z];
+}
+
 /** A rigid NUE transform as three.js parts. */
 interface RigidParts {
   readonly m: ThreeMatrix4;
@@ -308,6 +333,14 @@ function relocalizationCorrection(state: ReplayedJoinState) {
       return typeof capturedAt === "number" && Number.isFinite(capturedAt)
         ? epochAt(times, capturedAt)
         : undefined;
+    },
+    /**
+     * The correction of a capture taken at `capturedAt`, placed through an
+     * alignment of epoch `a`; undefined when either frame is unknown.
+     */
+    forCapture(capturedAt: unknown, a?: number): RigidParts | undefined {
+      const c = this.epochOf(capturedAt);
+      return c === undefined ? undefined : this.between(c, a);
     },
     /** `Delta(a)^-1 * Delta(c)`; `a` defaults to the last epoch. */
     between(c: number, a: number = n): RigidParts | undefined {
@@ -394,18 +427,9 @@ export function computeCaptureGeoJoin(
     // its own epoch; it is moved into the frame of the alignment that
     // places it. A capture whose time is unknown cannot be given a frame
     // and is dropped, never placed in a guessed one.
-    let position: Vec3 = point.position;
-    let delta: RigidParts | undefined;
-    if (correction !== null) {
-      const epoch = correction.epochOf(point.capturedAt);
-      delta =
-        epoch === undefined
-          ? undefined
-          : correction.between(epoch, alignmentEpoch);
-      if (delta === undefined) return [];
-      const p = new ThreeVector3(...point.position).applyMatrix4(delta.m);
-      position = [p.x, p.y, p.z];
-    }
+    const delta = captureCorrection(correction, point, alignmentEpoch);
+    if (delta === undefined) return [];
+    const position = movedBy(delta, point.position);
     const geo = fusedGpsFromOdom(pointMatrix, [...position], zero);
     // A capture the solve cannot place is DROPPED, never defaulted (PR #370
     // review). `main.ts` converts these back with
@@ -456,7 +480,7 @@ export function computeCaptureGeoJoin(
     // A relocalization turns the stored NUE rotation on the LEFT, as it
     // turns the position: R_nue' = q_delta * R_nue.
     const captured = new ThreeQuaternion(cx, cy, cz, cw);
-    if (delta !== undefined) captured.premultiply(delta.q);
+    captured.premultiply(delta.q);
     const world = pointAlignmentQuat
       .clone()
       .multiply(captured)

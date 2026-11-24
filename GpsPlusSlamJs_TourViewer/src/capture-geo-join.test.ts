@@ -591,18 +591,22 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
       arSpaceCorrection: { observations: [jump] },
     };
   }
-  function expectSamePose(
+  /** How two placements differ: an empty list when they are the same. */
+  function poseMismatches(
     actual: CaptureWorldPose | undefined,
     expected: CaptureWorldPose | undefined,
-  ) {
-    expect(actual).toBeDefined();
-    expect(expected).toBeDefined();
-    expect(actual!.geo.lat).toBeCloseTo(expected!.geo.lat, 9);
-    expect(actual!.geo.lon).toBeCloseTo(expected!.geo.lon, 9);
-    expect(actual!.geo.altitude).toBeCloseTo(expected!.geo.altitude, 6);
-    const a = new ThreeQuaternion(...actual!.rotationNue);
-    const e = new ThreeQuaternion(...expected!.rotationNue);
-    expect(a.angleTo(e)).toBeLessThan(1e-6);
+  ): string[] {
+    if (actual === undefined || expected === undefined) return ["missing"];
+    const out: string[] = [];
+    if (Math.abs(actual.geo.lat - expected.geo.lat) > 1e-9) out.push("lat");
+    if (Math.abs(actual.geo.lon - expected.geo.lon) > 1e-9) out.push("lon");
+    if (Math.abs(actual.geo.altitude - expected.geo.altitude) > 1e-6) {
+      out.push("altitude");
+    }
+    const a = new ThreeQuaternion(...actual.rotationNue);
+    const e = new ThreeQuaternion(...expected.rotationNue);
+    if (a.angleTo(e) > 1e-6) out.push("rotation");
+    return out;
   }
 
   it("places a photo from before the jump where the oracle-corrected photo lands", () => {
@@ -610,7 +614,7 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
     const [expected] = computeCaptureGeoJoin(
       baseState({ points: [{ ...early, ...moved(oracleJumpNue(), early) }] }),
     );
-    expectSamePose(actual, expected);
+    expect(poseMismatches(actual, expected)).toEqual([]);
     // The jump is not a no-op: the raw placement is metres away.
     const [raw] = computeCaptureGeoJoin(baseState({ points: [early] }));
     expect(
@@ -622,7 +626,7 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
   it("leaves a photo from after the jump as captured", () => {
     const [actual] = computeCaptureGeoJoin(relocalized([late]));
     const [expected] = computeCaptureGeoJoin(baseState({ points: [late] }));
-    expectSamePose(actual, expected);
+    expect(poseMismatches(actual, expected)).toEqual([]);
   });
 
   it("drops a photo without a capture time instead of guessing its frame", () => {
@@ -658,13 +662,13 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
       () => picked,
     );
     const [earlyRaw] = computeCaptureGeoJoin(baseState({ points: [early] }));
-    expectSamePose(earlyPose, earlyRaw);
+    expect(poseMismatches(earlyPose, earlyRaw)).toEqual([]);
     const [lateBack] = computeCaptureGeoJoin(
       baseState({
         points: [{ ...late, ...moved(oracleJumpNue().invert(), late) }],
       }),
     );
-    expectSamePose(latePose, lateBack);
+    expect(poseMismatches(latePose, lateBack)).toEqual([]);
   });
 
   it("between two jumps, an alignment picked after the first moves an early photo by the first jump only", () => {
@@ -699,7 +703,7 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
       baseState({ points: [{ ...early, ...moved(oracleJumpNue(), early) }] }),
       () => picked,
     );
-    expectSamePose(actual, expected);
+    expect(poseMismatches(actual, expected)).toEqual([]);
   });
 
   it("drops a photo whose picked alignment names an epoch the recording does not have", () => {
