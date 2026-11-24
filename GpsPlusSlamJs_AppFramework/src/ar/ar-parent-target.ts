@@ -16,13 +16,19 @@
  * `?devWorldJumpDeg=<deg>` add a synthetic world jump to T every 10 s
  * (north by m metres, a yaw by deg degrees), so a tester can watch content
  * hold through a jump. Also in development builds only, `?anchors=0`
- * turns the anchor deferral off (`defersAnchors` false): every correction
- * lands on the anchors at once, for a frame-time comparison with it on.
- * Production builds drop both readers entirely
- * (`ar-parent-target.build.test.ts`).
+ * turns the anchor deferral off (`defersAnchors()` false): every correction
+ * lands on the anchors at once, for a frame-time comparison with it on;
+ * `?anchors=ab` alternates on and off every
+ * {@link ANCHOR_DEFERRAL_AB_PERIOD_S} on the session clock, so one session
+ * measures both. Production builds drop both page readers entirely
+ * (`ar-parent-target.build.test.ts`); an app that wants the switches there
+ * (behind its own debug flag) parses them itself and passes them in.
  *
- * Internal: no package entry, reached through `enableArWorldGroupAlignment`
- * and the binding registry below. Sidecar: `ar-parent-target.ts.md`.
+ * A package entry for its parsers and types (`parseDevWorldJump`,
+ * `parseAnchorDeferral`, `AnchorDeferral`, `DevWorldJump`), which an app
+ * uses to offer the switches behind its own debug flag; the target itself
+ * is reached through `enableArWorldGroupAlignment` and the binding
+ * registry below. Sidecar: `ar-parent-target.ts.md`.
  */
 
 import * as THREE from 'three';
@@ -37,6 +43,15 @@ import type { SubscribableStore } from '../state/subscribe-to-selector';
 
 /** Seconds between two synthetic dev jumps. */
 export const DEV_WORLD_JUMP_PERIOD_S = 10;
+
+/** Seconds of each half of the A/B deferral (`anchors=ab`): on first, then off. */
+export const ANCHOR_DEFERRAL_AB_PERIOD_S = 15;
+
+/**
+ * The anchor deferral: on (true), off (false: anchors follow every change
+ * at once), or 'ab' (on and off in turns of {@link ANCHOR_DEFERRAL_AB_PERIOD_S}).
+ */
+export type AnchorDeferral = boolean | 'ab';
 
 /** A synthetic world jump step (development builds only). */
 export interface DevWorldJump {
@@ -57,8 +72,11 @@ export interface ArParentTarget {
   frameEpoch(): number;
   /** Whether the session's alignment is mature; sticky once true. */
   isMature(): boolean;
-  /** False when the anchors under this target follow every change at once (`?anchors=0`, development builds only). */
-  readonly defersAnchors: boolean;
+  /**
+   * False while the anchors under this target follow every change at once
+   * (`anchors=0`, or the off half of `anchors=ab` by the last {@link tick}).
+   */
+  defersAnchors(): boolean;
   /** Seconds since the first {@link tick} (the session's first frame), or since this was first asked. */
   sessionElapsedS(elapsedS: number): number;
   /** Start the session clock on the first call; advance the dev jump clock. */
@@ -70,8 +88,8 @@ export interface ArParentTarget {
 export interface ArParentTargetOptions {
   /** A synthetic jump; tests pass it, apps get it from {@link devWorldJumpFromPage}. */
   readonly devJump?: DevWorldJump | null;
-  /** False turns the anchor deferral off; apps get it from {@link anchorDeferralFromPage}. Default true. */
-  readonly deferAnchors?: boolean;
+  /** False turns the anchor deferral off, 'ab' alternates it; apps get it from {@link anchorDeferralFromPage}. Default true. */
+  readonly deferAnchors?: AnchorDeferral;
 }
 
 interface StateWithEpoch {
@@ -96,6 +114,9 @@ export function createArParentTarget(
   let version = 0;
   let mature = false;
   let startS: number | null = null;
+  /** Seconds since the session start at the last tick. */
+  let tickedS = 0;
+  const deferral = validDeferral(options.deferAnchors);
   const extent = createGpsExtentTracker();
 
   function recompose(): void {
@@ -124,7 +145,10 @@ export function createArParentTarget(
       : () => undefined;
 
   return {
-    defersAnchors: options.deferAnchors !== false,
+    defersAnchors() {
+      if (deferral !== 'ab') return deferral;
+      return Math.floor(tickedS / ANCHOR_DEFERRAL_AB_PERIOD_S) % 2 === 0;
+    },
     target() {
       refresh();
       return composed;
@@ -158,6 +182,7 @@ export function createArParentTarget(
       // The binding ticks from the session's first frame, so the session
       // clock starts there even when the first anchor comes later.
       if (startS === null) startS = elapsedS;
+      tickedS = Math.max(0, elapsedS - startS);
       if (devJump === null) return;
       if (firstTickS === null) firstTickS = elapsedS;
       const due = Math.floor((elapsedS - firstTickS) / devJump.periodS);
@@ -187,6 +212,14 @@ function isFiniteMatrix(matrix: unknown): boolean {
   return true;
 }
 
+function validDeferral(value: unknown): AnchorDeferral {
+  if (value === undefined || value === true) return true;
+  if (value === false || value === 'ab') return value;
+  throw new RangeError(
+    'createArParentTarget: deferAnchors must be a boolean or "ab"'
+  );
+}
+
 function validDevJump(jump: DevWorldJump | null): DevWorldJump | null {
   if (jump === null) return null;
   const { metres, degrees, periodS } = jump;
@@ -201,21 +234,29 @@ function validDevJump(jump: DevWorldJump | null): DevWorldJump | null {
   return metres === 0 && degrees === 0 ? null : jump;
 }
 
+/** The largest dev jump a page URL can ask for, either way (m, deg). */
+const DEV_WORLD_JUMP_MAX_M = 100;
+const DEV_WORLD_JUMP_MAX_DEG = 180;
+
 /**
- * The dev jump a page URL asks for (`devWorldJumpM`, `devWorldJumpDeg`),
- * or null. Pure; {@link devWorldJumpFromPage} calls it only in development
+ * The dev jump a page URL asks for (`devWorldJumpM`, `devWorldJumpDeg`,
+ * each clamped to 100 m and 180 deg either way), or null. Pure; {@link devWorldJumpFromPage} calls it only in development
  * builds.
  */
 export function parseDevWorldJump(search: string): DevWorldJump | null {
   const params = new URLSearchParams(search);
-  const read = (name: string): number => {
+  // Clamped: the address is untrusted, and a jump of 1e308 m would turn
+  // the composed transform to NaN after a few jumps.
+  const read = (name: string, limit: number): number => {
     const raw = params.get(name);
     if (raw === null || raw.trim() === '') return 0;
     const value = Number(raw);
-    return Number.isFinite(value) ? value : 0;
+    return Number.isFinite(value)
+      ? Math.min(limit, Math.max(-limit, value))
+      : 0;
   };
-  const metres = read('devWorldJumpM');
-  const degrees = read('devWorldJumpDeg');
+  const metres = read('devWorldJumpM', DEV_WORLD_JUMP_MAX_M);
+  const degrees = read('devWorldJumpDeg', DEV_WORLD_JUMP_MAX_DEG);
   if (metres === 0 && degrees === 0) return null;
   return { metres, degrees, periodS: DEV_WORLD_JUMP_PERIOD_S };
 }
@@ -242,12 +283,17 @@ export function devWorldJumpFromPage(): DevWorldJump | null {
 }
 
 /**
- * Whether a page URL keeps the anchor deferral on: false only for
- * `anchors=0`. Pure; {@link anchorDeferralFromPage} calls it only in
- * development builds.
+ * The anchor deferral a page URL asks for: false for `anchors=0`, 'ab'
+ * for `anchors=ab` (any case), else true. Pure;
+ * {@link anchorDeferralFromPage} calls it only in development builds.
  */
-export function parseAnchorDeferral(search: string): boolean {
-  return new URLSearchParams(search).get('anchors')?.trim() !== '0';
+export function parseAnchorDeferral(search: string): AnchorDeferral {
+  const value = new URLSearchParams(search)
+    .get('anchors')
+    ?.trim()
+    .toLowerCase();
+  if (value === '0') return false;
+  return value === 'ab' ? 'ab' : true;
 }
 
 /**
@@ -255,7 +301,7 @@ export function parseAnchorDeferral(search: string): boolean {
  * (deferral on). Written like {@link devWorldJumpFromPage}, so a
  * production build folds it to true and drops the reader.
  */
-export function anchorDeferralFromPage(): boolean {
+export function anchorDeferralFromPage(): AnchorDeferral {
   if (
     (import.meta as ImportMetaWithEnv).env &&
     (import.meta as ImportMetaWithEnv).env!.DEV === true

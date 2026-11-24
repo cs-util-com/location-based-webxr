@@ -3,9 +3,9 @@
  * decision S-D9, 2026-10-05): the sample tour sits at a public place, and
  * `?relocate=here` moves every station so that the first one stands a few
  * metres north of the phone's first GPS fix, keeping the stations' layout
- * (distances, relative heights, headings). A station's pins and photos are
- * relative to it (tour editor plan W3), so they would move with it; only
- * the guide reads the moved stations today.
+ * (distances, relative heights, headings). A station's blocks are relative
+ * to it, so they move with it: the guide and the
+ * content placement read the same moved stations (`createTourRelocation`).
  *
  * Nothing about the phone's position is stored or sent: the move happens in
  * memory, for the open tour only.
@@ -88,6 +88,25 @@ export function relocateStations(
       },
     };
   });
+}
+
+/**
+ * The page's relocation, shared by the station guide and the content
+ * placement so both move the same stations to the same fix: undefined when
+ * off (both then read the file's stations), else the stations moved to the
+ * first fix `firstFix` gives, null until there is one
+ * ({@link createStationRelocator}).
+ */
+export function createTourRelocation(
+  enabled: boolean,
+  firstFix: () => RelocationTarget | null,
+  onRelocated?: (target: RelocationTarget) => void,
+):
+  | ((stations: readonly TourStation[]) => readonly TourStation[] | null)
+  | undefined {
+  if (!enabled) return undefined;
+  const relocate = createStationRelocator(true, onRelocated);
+  return (stations) => relocate(stations, firstFix());
 }
 
 /**

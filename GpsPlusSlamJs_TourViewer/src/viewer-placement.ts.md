@@ -564,6 +564,14 @@ pieces: `qr-viewer-mode.test.ts`, `image-planes.test.ts`,
   back, closes a model's card and turns a lectern to its first page. The
   same choice stored again (a new value, the same content) rebuilds
   nothing.
+- The optional `stationsOf` dep (the test switch `?relocate=here`,
+  `createTourRelocation` in `tour-relocation.ts`): the stations whose
+  free blocks and reached story blocks are drawn, the same moved stations
+  the station guide reads. While it returns null (no device fix yet) no
+  content is placed and the next `tryPlaceTour` tries again. The tour's
+  items outside the stations are not moved. Absent: the file's stations.
+  (`viewer-placement-story-blocks.test.ts`, "the stations the page
+  places".)
 - The optional `narration` dep (`{ verdictOf, revision }`,
   `narration-visitor.ts`) gives `shownView` each text's read-along
   verdict. A read-along settling bumps `revision`; `redrawForPrefs` then

@@ -268,3 +268,19 @@ describe("the sample tour (public/samples/marienplatz-tour.zip)", () => {
     );
   });
 });
+
+// Why: the committed zip is what the phone opens, and the build script is
+// what a reviewer reads; a script edited without rebuilding the zip (or a
+// zip edited by hand) would test one tour and ship another.
+describe("the committed sample tour and its build script", () => {
+  it("are the same bytes", async () => {
+    const script = new URL("../scripts/build-sample-tour.mjs", import.meta.url)
+      .href;
+    const built = (await import(script)) as {
+      buildSampleTourZip(): Promise<Uint8Array>;
+    };
+    expect(
+      Buffer.from(await built.buildSampleTourZip()).equals(readFileSync(ZIP)),
+    ).toBe(true);
+  });
+});

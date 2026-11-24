@@ -23,15 +23,19 @@
  * - a code lock (`requestAnchorRelease('code-lock')`, called by the QR
  *   tracking controller) re-places every anchor once, at once, ends the
  *   follow phase for the session and closes the window;
- * - with the deferral off (`defersAnchors` false, `?anchors=0` in a
- *   development build) the set follows for the whole session, as content
- *   did before deferral existed, and its position members land every
- *   correction at once: a GPS anchor loses its own `snap-when-offscreen`
- *   view gate too, in view or not.
+ * - with the deferral off (`defersAnchors()` false: `?anchors=0`, or the
+ *   off half of `?anchors=ab`) the set follows, as content did before
+ *   deferral existed, and its position members land every correction at
+ *   once: a GPS anchor loses its own `snap-when-offscreen` view gate too,
+ *   in view or not. The set reads the switch at each pass.
  *
  * A debug readout may observe every production pass
- * ({@link observeDeferredAnchorPasses}): its time, its counts and the
- * frame's dt. Without an observer the pass is not timed.
+ * ({@link observeDeferredAnchorPasses}): its time, its counts, the frame's
+ * dt and its commits. Without an observer the pass is not timed. Each
+ * commit line, and each commit the observer sees, says how many passes the
+ * key waited pending and, for an out-of-view commit, how many of them it was
+ * out of view and the largest number of keys out of view at once meanwhile
+ * (one commit per pass, so that is how long it may have to wait).
  *
  * Position members (`joinAnchorSet`, used by `createGpsAnchor`) share the
  * set's gate, budget, log, release and window: the member computes its
@@ -130,9 +134,21 @@ interface KeyEntry {
   readonly local: THREE.Matrix4;
   following: boolean;
   pendingSinceMs: number | null;
+  /** Passes this key has been pending since its last commit. */
+  pendingFrames: number;
+  /** Consecutive passes its cached tests said out of view, while pending. */
+  outFrames: number;
+  /**
+   * The keys out of view when this run out of view began, itself
+   * included; and the set's count of entries out of view just after it
+   * (`outEntries`), so its queue also counts every key that went out after it.
+   */
+  queuedAtEntry: number;
+  enteredAt: number;
 }
 
-type CommitKind =
+/** How a commit came about (its log line's kind). */
+type DeferredAnchorCommitKind =
   | 'first'
   | 'out-of-view'
   | 'release:code-lock'
@@ -141,6 +157,7 @@ type CommitKind =
   | 'window'
   | 'every-tick'
   | 'deferral-off';
+type CommitKind = DeferredAnchorCommitKind;
 
 /**
  * @internal A position-only member of a parent's anchor set
@@ -194,6 +211,10 @@ interface MemberEntry {
   readonly target: THREE.Vector3;
   pending: boolean;
   pendingSinceMs: number | null;
+  pendingFrames: number;
+  outFrames: number;
+  queuedAtEntry: number;
+  enteredAt: number;
   /** The membership's calls, re-pointed when the entry moves to a bound set. */
   leave: () => void;
   runPass: AnchorSetMembership['runPassForTests'];
@@ -217,9 +238,11 @@ type TargetReads = Pick<
 >;
 
 const FIXED_IDENTITY = new THREE.Matrix4();
+/** The shared empty commit list of a pass without commits (never written). */
+const NO_COMMITS: DeferredAnchorCommit[] = [];
 /** The target of a set without a binding: T stays identity, no epochs. */
 const FIXED_TARGET: TargetReads = {
-  defersAnchors: true,
+  defersAnchors: () => true,
   target: () => FIXED_IDENTITY,
   version: () => 0,
   frameEpoch: () => 0,
@@ -237,6 +260,27 @@ export interface DeferredAnchorPassCounts {
   readonly followUpdates: number;
 }
 
+/** One commit, as the pass observer sees it. */
+interface DeferredAnchorCommit {
+  /** The anchor's key, or a position member's object name. */
+  readonly key: string;
+  readonly kind: CommitKind;
+  /** Milliseconds it waited pending (session clock). */
+  readonly waitMs: number;
+  /** The largest displacement of its content (m). */
+  readonly movedM: number;
+  /** Passes it waited pending. */
+  readonly pendingFrames: number;
+  /** For an out-of-view commit: the passes it was out of view (at least 1); else 0. */
+  readonly outFrames: number;
+  /**
+   * For an out-of-view commit, its queue (at least 1; else 0): the keys out
+   * of view when it went out, itself included, plus every key that went out
+   * after it. One traversal per pass, round robin, so `outFrames <= queued`.
+   */
+  readonly queued: number;
+}
+
 /** One production pass, as an observer sees it. */
 export interface DeferredAnchorPassSample {
   /** The pass's own time (ms, `performance.now()` around it). */
@@ -244,8 +288,10 @@ export interface DeferredAnchorPassSample {
   /** The frame's dt (s), as the frame loop handed it to the pass. */
   readonly dt: number;
   readonly counts: DeferredAnchorPassCounts;
-  /** False while the deferral is off (`?anchors=0`). */
+  /** False while the deferral is off (`?anchors=0`, the off half of `?anchors=ab`). */
   readonly deferring: boolean;
+  /** The commits of this pass (usually none); valid during the call only. */
+  readonly commits: readonly DeferredAnchorCommit[];
 }
 
 let passObserver: ((sample: DeferredAnchorPassSample) => void) | null = null;
@@ -463,9 +509,11 @@ function createAnchorSet(
   binding: ArParentBinding | null
 ): AnchorSet {
   const target: TargetReads = binding?.target ?? FIXED_TARGET;
-  /** Read once: the switch is a page flag, fixed for the session. */
-  const deferring = target.defersAnchors;
+  /** Re-read at each pass: `anchors=ab` switches it on the session clock. */
+  let deferring = target.defersAnchors();
   if (!deferring) log.info('deferral off: every correction lands at once');
+  /** This pass's commits, for the observer (a new list only when one happens). */
+  let passCommits: DeferredAnchorCommit[] = NO_COMMITS;
   const keys = new Map<string, KeyEntry>();
   const handles = new Map<string, DeferredAnchor>();
   const keyOfRoot = new Map<THREE.Object3D, KeyEntry>();
@@ -493,6 +541,10 @@ function createAnchorSet(
   const lastTargetInv = target.target().clone().invert();
   let lastTargetVersion = target.version();
   let roundRobin = 0;
+  // Entries out of view (a pending key's out-of-view run starting), over
+  // the set's life: a key's queue is the keys out with it when it went out
+  // plus the entries since, each of which the round robin may pick first.
+  let outEntries = 0;
 
   // Per-pass scratch.
   const targetInv = new THREE.Matrix4();
@@ -549,6 +601,46 @@ function createAnchorSet(
     }
   }
 
+  /** Log and record one commit, and reset the entry's wait. */
+  function report(
+    c: Deferred,
+    name: string,
+    kind: CommitKind,
+    detail: string,
+    movedM: number
+  ): void {
+    const waitMs =
+      c.pendingSinceMs === null ? 0 : Math.max(0, nowMs - c.pendingSinceMs);
+    const out = kind === 'out-of-view';
+    const outFrames = out ? Math.max(1, c.outFrames) : 0;
+    const queued = out
+      ? Math.max(1, c.queuedAtEntry + outEntries - c.enteredAt)
+      : 0;
+    const pendingFrames = c.pendingFrames;
+    c.pendingSinceMs = null;
+    c.pendingFrames = 0;
+    c.outFrames = 0;
+    c.queuedAtEntry = 0;
+    const outText = out
+      ? `, out of view ${String(outFrames)} frame${outFrames === 1 ? '' : 's'} (${String(queued)} queued)`
+      : '';
+    log.info(
+      `commit ${kind}${detail ? ` (${detail})` : ''}: ${name}, waited ` +
+        `${waitMs.toFixed(0)} ms, moved ${movedM.toFixed(3)} m, ` +
+        `${String(pendingFrames)} frames pending${outText}`
+    );
+    if (passCommits === NO_COMMITS) passCommits = [];
+    passCommits.push({
+      key: name,
+      kind,
+      waitMs,
+      movedM,
+      pendingFrames,
+      outFrames,
+      queued,
+    });
+  }
+
   function commit(
     key: KeyEntry,
     local: THREE.Matrix4,
@@ -556,14 +648,8 @@ function createAnchorSet(
     detail = ''
   ): void {
     const moved = keyDisplacement(key.local, local, key);
-    const waitMs =
-      key.pendingSinceMs === null ? 0 : Math.max(0, nowMs - key.pendingSinceMs);
     assign(key, local);
-    key.pendingSinceMs = null;
-    log.info(
-      `commit ${kind}${detail ? ` (${detail})` : ''}: ${key.key}, waited ` +
-        `${waitMs.toFixed(0)} ms, moved ${moved.toFixed(3)} m`
-    );
+    report(key, key.key, kind, detail, moved);
     notify(key.roots.values());
   }
 
@@ -605,16 +691,10 @@ function createAnchorSet(
   function commitMember(m: MemberEntry, kind: CommitKind): void {
     const o = m.root;
     const moved = o.position.distanceTo(m.target);
-    const waitMs =
-      m.pendingSinceMs === null ? 0 : Math.max(0, nowMs - m.pendingSinceMs);
     o.position.copy(m.target);
     o.updateWorldMatrix(true, true);
     m.pending = false;
-    m.pendingSinceMs = null;
-    log.info(
-      `commit ${kind}: ${o.name || 'position member'}, waited ` +
-        `${waitMs.toFixed(0)} ms, moved ${moved.toFixed(3)} m`
-    );
+    report(m, o.name || 'position member', kind, '', moved);
     m.member.placed();
   }
 
@@ -648,6 +728,7 @@ function createAnchorSet(
       const threshold = memberStep(m, dt, elapsedS);
       if (threshold === null) {
         m.pendingSinceMs = null;
+        m.pendingFrames = 0;
         continue;
       }
       const delta = m.root.position.distanceTo(m.target);
@@ -656,6 +737,7 @@ function createAnchorSet(
         commitMember(m, 'release:code-lock');
       } else if (delta < threshold || delta <= DEFERRED_ANCHOR_EPSILON_M) {
         m.pendingSinceMs = null;
+        m.pendingFrames = 0;
       } else if (landing !== null) {
         commitMember(m, landing);
       } else {
@@ -864,6 +946,7 @@ function createAnchorSet(
     if (c.following) return false;
     if (keyDisplacement(c.local, targetInv, c) <= DEFERRED_ANCHOR_EPSILON_M) {
       c.pendingSinceMs = null;
+      c.pendingFrames = 0;
       return false;
     }
     c.pendingSinceMs ??= nowMs;
@@ -906,11 +989,26 @@ function createAnchorSet(
     const stale: Deferred[] = [];
     for (let i = 0; i < ordered.length; i += 1) {
       const c = ordered[(i + roundRobin) % ordered.length]!;
-      if (!isDeferredPending(c) || !hasPrev) continue;
+      if (!isDeferredPending(c)) {
+        heldInView(c);
+        continue;
+      }
+      c.pendingFrames += 1;
+      if (!hasPrev) continue;
       if (!allBuilt(c)) build.push(c);
       else if (!deferredInView(c, false)) out.push(c);
-      else if (anyStale(c)) stale.push(c);
+      else {
+        heldInView(c);
+        if (anyStale(c)) stale.push(c);
+      }
     }
+    const entering = out.filter((c) => c.outFrames === 0);
+    outEntries += entering.length;
+    for (const c of entering) {
+      c.queuedAtEntry = out.length;
+      c.enteredAt = outEntries;
+    }
+    for (const c of out) c.outFrames += 1;
     return { out, build, stale };
   }
 
@@ -923,6 +1021,7 @@ function createAnchorSet(
     roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
     if (isMember(pick)) {
       if (!memberInView(pick, true)) commitMember(pick, 'out-of-view');
+      else heldInView(pick);
       return;
     }
     excludeNested(pick);
@@ -931,6 +1030,13 @@ function createAnchorSet(
     // part mounted without boundsChanged() counts from here on.
     for (const r of pick.roots.values()) r.corners = rootCorners(r.root);
     if (!keyInView(pick, true)) commit(pick, targetInv, 'out-of-view');
+    else heldInView(pick);
+  }
+
+  /** In view, or not pending: its out-of-view run starts over. */
+  function heldInView(c: Deferred): void {
+    c.outFrames = 0;
+    c.queuedAtEntry = 0;
   }
 
   /** This view is the next pass's previous view. */
@@ -950,6 +1056,7 @@ function createAnchorSet(
     counters.sphereTests = 0;
     counters.traversals = 0;
     followUpdates = 0;
+    passCommits = NO_COMMITS;
     if (disposed || !Number.isFinite(elapsedS) || handOver())
       return { ...counters, windowOpen, followUpdates };
     nowMs = elapsedS * 1000;
@@ -957,6 +1064,11 @@ function createAnchorSet(
     parent.updateWorldMatrix(true, false);
     targetInv.copy(target.target()).invert();
     followInv.copy(parent.matrix).invert();
+    const nowDeferring = target.defersAnchors();
+    if (nowDeferring !== deferring) {
+      deferring = nowDeferring;
+      log.info(`deferral ${deferring ? 'on' : 'off'} (a/b)`);
+    }
 
     rebasePrevView();
     readView(view);
@@ -1041,6 +1153,10 @@ function createAnchorSet(
       target: new THREE.Vector3(),
       pending: false,
       pendingSinceMs: null,
+      pendingFrames: 0,
+      outFrames: 0,
+      queuedAtEntry: 0,
+      enteredAt: 0,
       leave: () => undefined,
       runPass: () => ({ ...counters, windowOpen, followUpdates }),
     };
@@ -1062,6 +1178,9 @@ function createAnchorSet(
     }
     entry.pending = false;
     entry.pendingSinceMs = null;
+    entry.pendingFrames = 0;
+    entry.outFrames = 0;
+    entry.queuedAtEntry = 0;
     entry.leave = () => {
       members.delete(entry);
       if (!binding && members.size === 0) dispose();
@@ -1170,6 +1289,10 @@ function createAnchorSet(
       local: new THREE.Matrix4(),
       following: false,
       pendingSinceMs: null,
+      pendingFrames: 0,
+      outFrames: 0,
+      queuedAtEntry: 0,
+      enteredAt: 0,
     };
     keys.set(key, entry);
     return entry;
@@ -1185,7 +1308,7 @@ function createAnchorSet(
     const counts = pass(null, dt, elapsedS);
     const passMs = performance.now() - startMs;
     try {
-      observer({ passMs, dt, counts, deferring });
+      observer({ passMs, dt, counts, deferring, commits: passCommits });
     } catch (error) {
       log.error('pass observer threw', error);
     }

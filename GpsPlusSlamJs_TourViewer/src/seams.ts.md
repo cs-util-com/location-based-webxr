@@ -148,6 +148,10 @@ createAudioElement; xrProjection0 }`
   (`.../visualization/ar-world-group-alignment`) on purpose: the
   `/visualization` barrel pulls the leaflet map modules, which crash in a
   windowless unit-test environment.
+- The real `enableArWorldGroupAlignment` passes the deferred anchors' field-test
+  switches (`anchor-test-switches.ts`): read from the address only with
+  `?debug=1`, in every build; without it the jump is off and the deferral on,
+  so the framework's development-only page readers never apply here.
 
 ## Examples
 
@@ -160,5 +164,7 @@ const controller = createEnableGpsArController(seams.controllerDeps);
 
 `seams.test.ts` — override inert under VITEST; every device function
 `main.ts` wires is present; the stations' anchor parent is the framework's
-`getArWorldGroup` itself. The override path is exercised by
+`getArWorldGroup` itself; the alignment seam hands the framework the
+field-test switches with `debug=1` on a visitor's page and none without
+it (the e2e fakes replace this seam, so only this test sees it). The override path is exercised by
 `playwright-tests/ar-fakes.js` + `ar-mode.spec.js`.

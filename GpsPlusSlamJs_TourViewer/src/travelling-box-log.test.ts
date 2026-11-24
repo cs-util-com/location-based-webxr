@@ -237,6 +237,7 @@ describe("the travelling box's field log", () => {
           windowOpen: false,
           followUpdates: 0,
         },
+        commits: [],
       });
     }
     anchors.entry({

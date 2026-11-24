@@ -47,7 +47,19 @@ into the build, so a branch preview serves it at
   no recorded voice is licence-clean to ship), and an arch GLB (two pillars and a lintel, one grey
   material, one JSON and one binary chunk, no URIs).
 - Entries are stored uncompressed with a fixed date, so a rebuild with
-  unchanged content gives identical bytes.
+  unchanged content gives identical bytes. The date is local time and the
+  extended UTC timestamp is left out (`ZIP_ENTRY_OPTIONS`): the zip's DOS
+  date is written from the local clock fields, so a UTC date would give
+  other bytes in another time zone.
+
+## Shared helpers
+
+Its generators are exported for `build-anchor-test-tour.mjs`, which builds
+the anchor field-test tour from the same pieces: `knightPng`,
+`fanfareWav`, `boxGeometry`, `glbOf(gltf, bin)` (a binary glTF of one
+JSON and one binary chunk), `geoAt`, `facingFrom`, `headingTo` and
+`ZIP_ENTRY_OPTIONS`. Making the entry dates time-zone free rebuilt the
+zip once; its content is unchanged.
 
 ## Usage
 
@@ -62,5 +74,7 @@ parsers and checks (a valid version 4 tour, three geo stations 20-40 m
 apart at Marienplatz, each within 0.5, 1 and 2 m of the measured ground as
 the 3D editor draws it (the Globe's `drawnHeightM` with the Osm library's
 `egm96Geoid`), every named asset present, allowed, within the image
-cap and inert, entries uncompressed); `playwright-tests/sample-tour.spec.js`
+cap and inert, entries uncompressed, and the same bytes as
+`buildSampleTourZip()`, so the script and the zip cannot drift apart);
+`playwright-tests/sample-tour.spec.js`
 opens it through the real page.

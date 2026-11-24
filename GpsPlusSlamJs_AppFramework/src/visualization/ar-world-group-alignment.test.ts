@@ -375,4 +375,51 @@ describe('enableArWorldGroupAlignment: the parent binding', () => {
     handle.dispose();
     expect(disposed).toBe(1);
   });
+
+  // Why: an app may decide the test switches itself (the Tour Viewer reads
+  // them behind its debug flag, in production builds too); what it passes
+  // must win over the development-only page readers, both ways.
+  it('takes the dev jump and the deferral switch from its options over the page', () => {
+    const g = globalThis as { location?: unknown };
+    const before = g.location;
+    g.location = { search: '?devWorldJumpM=3&anchors=0' };
+    try {
+      // Control: without options, the test's DEV build reads the page.
+      const fromPage = new THREE.Group();
+      const pageHandle = enableArWorldGroupAlignment({
+        store: makeFakeStore(null),
+        arWorldGroup: fromPage,
+      });
+      expect(getArParentBinding(fromPage)!.target.defersAnchors()).toBe(false);
+      pageHandle.dispose();
+
+      const group = new THREE.Group();
+      const handle = enableArWorldGroupAlignment({
+        store: makeFakeStore(null),
+        arWorldGroup: group,
+        devJump: { metres: 2, degrees: 0, periodS: 10 },
+        deferAnchors: true,
+      });
+      const target = getArParentBinding(group)!.target;
+      expect(target.defersAnchors()).toBe(true);
+      runFrameUpdates(1 / 30, 0);
+      runFrameUpdates(1 / 30, 10);
+      // 2 m north from the options, not 3 m from the page.
+      expect(group.matrix.elements[12]).toBeCloseTo(2, 9);
+      handle.dispose();
+
+      const off = new THREE.Group();
+      const offHandle = enableArWorldGroupAlignment({
+        store: makeFakeStore(null),
+        arWorldGroup: off,
+        devJump: null,
+      });
+      runFrameUpdates(1 / 30, 0);
+      runFrameUpdates(1 / 30, 10);
+      expect(off.matrix.elements[12]).toBe(0);
+      offHandle.dispose();
+    } finally {
+      g.location = before;
+    }
+  });
 });

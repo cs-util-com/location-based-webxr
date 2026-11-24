@@ -9,7 +9,7 @@
  * new walk takes the reached blocks out again.
  */
 import { describe, expect, it, vi } from "vitest";
-import { Object3D, Scene } from "three";
+import { Object3D, Scene, Vector3 } from "three";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
 import type {
   QrDetectionEvent,
@@ -148,6 +148,9 @@ function harness(
     verdictOf(block: unknown): NarrationVerdict | undefined;
     revision(): number;
   },
+  stationsOf?: (
+    stations: readonly TourStation[],
+  ) => readonly TourStation[] | null,
 ) {
   fake.configs.length = 0;
   const ctx = createTourViewerSession();
@@ -203,6 +206,7 @@ function harness(
     hooks: createUnwiredHooks(),
     now: () => 1000,
     ...(narration === undefined ? {} : { narration }),
+    ...(stationsOf === undefined ? {} : { stationsOf }),
   });
   placement.startViewerPipeline();
   const config = fake.configs[0];
@@ -289,6 +293,61 @@ describe("a station's reached story blocks (B2b)", () => {
     );
     await h.sync();
     expect(h.drawn()).toEqual([]);
+  });
+});
+
+describe("the stations the page places (the test switch ?relocate=here)", () => {
+  // Why: `?relocate=here` must move a test tour's content with its
+  // stations, or a tour built at a public place could not be tried
+  // anywhere else: a station's free blocks and its reached story blocks
+  // stand at the station the page hands over, and nothing is placed
+  // while that is still held back (no fix yet).
+  it("draws free and story blocks at the moved station, and waits while it is held back", async () => {
+    const FREE: TourStation = {
+      ...STATION,
+      ...stationContent([
+        {
+          id: "free-pin",
+          kind: "shortText",
+          view: "pin",
+          caption: "Free",
+          pose: POSE,
+        },
+        ...STATION.children,
+      ]),
+    };
+    const moved: TourStation = {
+      ...FREE,
+      geo: { ...FREE.geo, lat: FREE.geo.lat + 100 / 111_320 },
+    };
+    let held = true;
+    const h = harness([FREE], undefined, (stations) =>
+      held ? null : stations.map((s) => (s.id === "gate" ? moved : s)),
+    );
+    h.store.dispatch(
+      walkStarted({ order: "fixed", route: walkRoute([FREE], new Set()) }),
+    );
+    await h.lock();
+    h.ctx.placementUnsubscribe = () => undefined;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(showAllContentSet(true));
+    await h.sync();
+    expect(h.drawn(), "nothing while the stations are held back").toEqual([]);
+    held = false;
+    h.placement.tryPlaceTour();
+    h.store.dispatch(blockShown({ stationId: "gate", blockId: "sign" }));
+    await h.sync();
+    expect(h.drawn().sort()).toEqual(["free-pin", "sign"]);
+    for (const id of ["free-pin", "sign"]) {
+      let object: Object3D | undefined;
+      h.scene.traverse((o) => {
+        if (o.userData["objectId"] === id) object = o;
+      });
+      const at = object!.getWorldPosition(new Vector3());
+      // North is x in the page's frame: the station's 100 m plus the
+      // block's own 1 m.
+      expect(at.x, id).toBeCloseTo(101, 0);
+    }
   });
 });
 

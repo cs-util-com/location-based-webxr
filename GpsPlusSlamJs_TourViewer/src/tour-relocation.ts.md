@@ -19,10 +19,13 @@ anywhere. Nothing about the phone's position is stored or sent.
   station keeps its north / east / up offset from that one (heading
   included). Since version 3 every station has a geo pose, so every one
   moves. An empty list stays empty. The moved list feeds the station guide
-  only (`visitor-stations.ts`); the content playback
-  (`viewer-placement.ts`) draws the file's stations, so a relocated
-  tour's pins and photos stay where the file puts them. The switch is
-  test-only and the sample tour has no items. A
+  (`visitor-stations.ts`) and the content placement
+  (`viewer-placement.ts`) alike, so a station's free blocks and its story
+  blocks stand at the moved station. It moves neither the tour's free
+  items (outside any station) nor the tour's codes: both stay where the
+  file puts them, so scanning one of the tour's codes on a moved tour
+  aligns the session to the code's place in the file, far from the moved
+  stations. A test on a moved tour scans no code. A
   target altitude that is not finite (a fix without altitude) keeps the
   stations' own heights.
 - `firstDeviceFix(points): RelocationTarget | null` - the first point of a
@@ -31,6 +34,10 @@ anywhere. Nothing about the phone's position is stored or sent.
   since QR-first M1 a code scanned before any fix stores its votes first,
   on a 30 m ring around the code, and the relocation once latched one of
   them (M1 review #3).
+- `createTourRelocation(enabled, firstFix, onRelocated?)` - the page's one
+  relocation, handed to the guide and the placement as their
+  `stationsOf`: undefined when off; on, `(stations) => moved | null`
+  over a `createStationRelocator` fed by `firstFix()`.
 - `createStationRelocator(enabled, onRelocated?)` - for an open page: off,
   stations pass through; on, `null` until the first fix, which is then kept
   as the target (a later fix never drags the tour), `onRelocated` told
@@ -61,6 +68,8 @@ const stations = relocate(manifest.stations, firstFix()); // null until a fix
 ## Tests
 
 `tour-relocation.test.ts` (unit and property: distances kept for any layout
-and target, every station moved, an empty tour left empty, the fix kept); `playwright-tests/sample-tour.spec.js` (the sample tour moved to
+and target, every station moved, an empty tour left empty, the fix kept,
+`createTourRelocation` off and on); `viewer-placement-story-blocks.test.ts`
+(content drawn at the moved station, nothing while held back); `playwright-tests/sample-tour.spec.js` (the sample tour moved to
 the fakes' first fix offers its first station about 15 m away and shows the
 note; without the switch it stays about 230 km away).

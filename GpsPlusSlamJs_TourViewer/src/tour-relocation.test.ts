@@ -10,6 +10,7 @@ import {
 
 import {
   createStationRelocator,
+  createTourRelocation,
   firstDeviceFix,
   RELOCATE_LEAD_NORTH_M,
   relocateStations,
@@ -99,6 +100,33 @@ describe("createStationRelocator", () => {
     const other = [geoStation("b", 40, 0)];
     const moved = relocate(other, null);
     expect(moved?.[0]?.geo.lat).toBeGreaterThan(52.52);
+  });
+});
+
+describe("createTourRelocation", () => {
+  // Why: the station guide and the content placement must read the SAME
+  // moved stations, or a relocated tour's content would stand apart from
+  // its stations; off, both read the file's own.
+  it("is absent when off, and moves to the first fix it reads when on", () => {
+    expect(createTourRelocation(false, () => null)).toBeUndefined();
+    const stations = [geoStation("a", 48.1374, 11.5755)];
+    let fix: RelocationTarget | null = null;
+    const told: RelocationTarget[] = [];
+    const placed = createTourRelocation(
+      true,
+      () => fix,
+      (t) => told.push(t),
+    )!;
+    expect(placed(stations)).toBeNull();
+    fix = { lat: 52.52, lon: 13.4, alt: 30 };
+    const moved = placed(stations);
+    expect(moved?.[0]?.geo.lat).toBeCloseTo(
+      52.52 + RELOCATE_LEAD_NORTH_M / 111_320,
+      9,
+    );
+    fix = { lat: 40.7, lon: -74, alt: 10 };
+    expect(placed(stations)).toBe(moved);
+    expect(told).toEqual([{ lat: 52.52, lon: 13.4, alt: 30 }]);
   });
 });
 

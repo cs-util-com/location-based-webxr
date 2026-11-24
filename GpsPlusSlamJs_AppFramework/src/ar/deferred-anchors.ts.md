@@ -76,7 +76,17 @@ into)` (writes the target local position, returns the threshold below
 - `observeDeferredAnchorPasses(observer): () => void`: a diagnostic
   observer (one at a time; a newer one replaces) that sees every production
   pass of every set as `DeferredAnchorPassSample { passMs, dt, counts,
-deferring }`. `passMs` is the pass's `performance.now()` span, measured
+deferring, commits }`. `commits` lists the pass's commits as
+  `DeferredAnchorCommit { key, kind, waitMs, movedM, pendingFrames,
+outFrames, queued }` (usually none; valid during the call only):
+  `pendingFrames` the passes it waited pending; for an `out-of-view`
+  commit `outFrames` the passes it was pending and out of view, never
+  below one, and `queued` its queue, never below one: the keys pending out
+  of view when it went out, itself included, plus every key that went out
+  after it, since the round robin may pick each of those first. One
+  traversal per pass, so a reader can check that it landed within its
+  queue: `outFrames <= queued`. The most keys out at once would be too
+  small a bound while other keys keep going out. `passMs` is the pass's `performance.now()` span, measured
   only while an observer is set, so a page without one pays nothing. A
   throwing observer is logged and the frame goes on. The returned stop
   clears it only while it is still the current one. `TypeError` for a
@@ -87,8 +97,9 @@ deferring }`. `passMs` is the pass's `performance.now()` span, measured
 
 ## Phases, in pass order
 
-With the deferral off (`target.defersAnchors` false, `?anchors=0` in
-development builds) every key follows each frame as in phase 4, and every
+The set reads `target.defersAnchors()` at the start of every pass and logs
+`deferral on (a/b)` or `deferral off (a/b)` when it changes (`?anchors=ab`).
+With the deferral off (`defersAnchors()` false, `?anchors=0`) every key follows each frame as in phase 4, and every
 pending member commits at once (`deferral-off`), so every correction lands
 at once. That includes the position members: a GPS anchor in
 `snap-when-offscreen` mode loses its own view gate as well and lands in
@@ -166,7 +177,9 @@ logs `deferral off` once when it is created.
   accepts, both the commit and the target-pose view test would be off by
   the intermediate nodes' transform. A fix belongs in the member and the set
   together (the member's own threshold check compares in that frame too).
-- Every commit logs `commit <kind>: <key>, waited <ms>, moved <m>`.
+- Every commit logs `commit <kind>[ (detail)]: <key>, waited <ms> ms,
+moved <m> m, <N> frames pending`, and an `out-of-view` commit adds
+  `, out of view <k> frame(s) (<q> queued)`.
 
 ## Example
 
@@ -190,8 +203,12 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   frame (the group lands on T, a visible anchor holds), nesting, the
   binding-dispose fallback, the dev jump agreement and the per-pass budget
   (20 keys x 30 meshes, follow updates skipped while the parent is still),
-  the deferral switch (an in-view key lands on every correction) and the
-  pass observer (production passes, stop, a throwing observer).
+  the deferral switch (an in-view key lands on every correction), the A/B
+  switch (on, then off after the period, logged), the frames waited (pending
+  frames, out-of-view frames against the queue, a key's queue growing
+  as others go out after it, the count starting over after a follow start
+  within epsilon, the observer's `commits`)
+  and the pass observer (production passes, stop, a throwing observer).
 - `deferred-anchors.property.test.ts`: random T, look, epoch, camera jump,
   release and maturity sequences; safety (an in-view change only at a
   release, or to the NUE pose while the oracle's own model says a follow is

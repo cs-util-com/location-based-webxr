@@ -260,6 +260,13 @@ export function createViewerPlacement(deps: {
     verdictOf(block: TourBlock): NarrationVerdict | undefined;
     revision(): number;
   };
+  /** The stations as the page places their content: the test switch
+   *  `?relocate=here` hands over the moved ones, the same the station
+   *  guide reads (`tour-relocation.ts`), or null while they are held back
+   *  for the first fix. Absent: the file's stations. */
+  stationsOf?: (
+    stations: readonly TourStation[],
+  ) => readonly TourStation[] | null;
 }): ViewerPlacement {
   const {
     ctx,
@@ -1085,6 +1092,15 @@ export function createViewerPlacement(deps: {
     return ids;
   }
 
+  /** The open tour's stations where the page places their content
+   *  (`deps.stationsOf`); none while they are held back. */
+  function placedStations(): readonly TourStation[] {
+    const stations = ctx.tourDocument.manifest()?.stations ?? [];
+    return deps.stationsOf === undefined
+      ? stations
+      : (deps.stationsOf(stations) ?? []);
+  }
+
   /** What the side table was last told, to tell it only changes. */
   let shownKey: string | null = null;
   let shownTo: StationContent | null = null;
@@ -1147,7 +1163,7 @@ export function createViewerPlacement(deps: {
       ) !== drawnKindOf(block, visitorView(block, stored));
     const items = itemsPartOf;
     if (items !== null) {
-      for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+      for (const station of placedStations()) {
         if (tourFreeBlocks(station).some(changed)) {
           content.setPart(station.id, "items", items(station));
         }
@@ -1176,7 +1192,7 @@ export function createViewerPlacement(deps: {
     if (partOf === null) return;
     const state = arStore.getState();
     const wanted: typeof storyParts = new Map();
-    for (const station of ctx.tourDocument.manifest()?.stations ?? []) {
+    for (const station of placedStations()) {
       const reached = selectShownBlocks(state, station.id);
       if (reached.length === 0) continue;
       for (const block of reachedWorldBlocks(station, reached)) {
@@ -1229,6 +1245,12 @@ export function createViewerPlacement(deps: {
     const zero = selectZeroReference(arStore.getState());
     const scene = seams.getScene();
     if (zero === null || scene === null) return;
+    // Held back (`?relocate=here` before its first fix): try again later.
+    const stations =
+      deps.stationsOf === undefined
+        ? manifest.stations
+        : deps.stationsOf(manifest.stations);
+    if (stations === null) return;
     ctx.contentAttempted = true;
     const content = stationContentFor(scene);
     // Through the session, which knows the folder the manifest sits under:
@@ -1293,7 +1315,7 @@ export function createViewerPlacement(deps: {
       partLogs.set(part, { what: "content", basis: "geo", zero });
       return part;
     };
-    for (const station of manifest.stations) {
+    for (const station of stations) {
       if (tourFreeBlocks(station).length === 0) continue;
       content.setPart(station.id, "items", itemsPartOf(station));
     }

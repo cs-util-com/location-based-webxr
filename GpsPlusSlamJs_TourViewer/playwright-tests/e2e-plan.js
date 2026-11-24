@@ -33,6 +33,7 @@ export const PROJECTS = /** @type {const} */ (["dom", "webgl"]);
  * @type {Readonly<Record<string, { project: "dom" | "webgl", area: "editor" | "viewer" | "both", lane: 1 | 2 | 3 | 4 | 5 }>>}
  */
 export const SPECS = {
+  "anchor-test-tour.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "ar-layout.spec.js": { project: "dom", area: "viewer", lane: 2 },
   "ar-mode.spec.js": { project: "dom", area: "viewer", lane: 1 },
   "blocks-tour.spec.js": { project: "webgl", area: "both", lane: 4 },

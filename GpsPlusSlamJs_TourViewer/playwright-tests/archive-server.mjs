@@ -1102,6 +1102,11 @@ const sampleZipBytes = new Uint8Array(
     new URL("../public/samples/marienplatz-tour.zip", import.meta.url),
   ),
 );
+const anchorTestZipBytes = new Uint8Array(
+  readFileSync(
+    new URL("../public/samples/anchor-test-tour.zip", import.meta.url),
+  ),
+);
 const ETAG = '"e2e-tour-v1"';
 
 /**
@@ -1357,6 +1362,11 @@ createServer((req, res) => {
   if (url.pathname === "/ranges-ok/sample-tour.zip") {
     // The committed sample tour (public/samples, owner decision S-D9).
     handleArchive(req, res, "ranges-ok", sampleZipBytes, '"e2e-sample-v1"');
+    return;
+  }
+  if (url.pathname === "/ranges-ok/anchor-test-tour.zip") {
+    // The committed anchor field-test tour (public/samples).
+    handleArchive(req, res, "ranges-ok", anchorTestZipBytes, '"e2e-anchor-v1"');
     return;
   }
   if (url.pathname === "/ranges-ok/no-gps-tour.zip") {
