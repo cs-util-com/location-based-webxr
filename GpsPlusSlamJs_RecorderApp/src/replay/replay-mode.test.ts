@@ -379,7 +379,7 @@ describe('replay-mode', () => {
     mockCorrection.onPlaced = onPlaced;
     const controller = await startReplayMode(fakeZipData, makeConfig());
 
-    const deps = mockWireArSpaceCorrection.mock.calls[0]![0] as unknown as {
+    const deps = mockWireArSpaceCorrection.mock.calls[0]![0] as {
       arWorldGroup: unknown;
       storeRef: { get(): unknown };
       enabled: boolean;

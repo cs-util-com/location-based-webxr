@@ -1122,7 +1122,7 @@ export function validateFrameTileDisplayOptions(
  * only an explicit `false` switches the correction off.
  */
 export function validateArSpaceCorrectionOptions(
-  options: Partial<ArSpaceCorrectionOptions>
+  options: Partial<ArSpaceCorrectionOptions> = {}
 ): ArSpaceCorrectionOptions {
   return validateOptionFields(
     options,
@@ -1162,7 +1162,7 @@ export function validateRecordingOptions(
       options.loopClosureDebug ?? {}
     ),
     arSpaceCorrection: validateArSpaceCorrectionOptions(
-      options.arSpaceCorrection ?? {}
+      options.arSpaceCorrection
     ),
   };
 }

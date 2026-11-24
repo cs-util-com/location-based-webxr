@@ -16,7 +16,7 @@ The relocalization feed records each observation into the store whether this mod
   - `arContent: THREE.Group | null`: a group under `arWorldGroup` whose children are corrected by themselves (the fused GPS markers go here). `null` when off.
   - `onPlaced: ArContentPlacedHook | undefined`: report an object whose raw pose was just written, for content that stays under its own framework node of `arWorldGroup` (frame tiles, QR debug axis and cube). `undefined` when off, so callers pass nothing on.
   - `dispose()`: stop correcting, stop following the store, remove `arContent`. Idempotent.
-- `ArContentPlacedHook = (object, capturedAt?) => void`: `capturedAt` is the capture time of the data the pose came from, in the epoch-ms XR clock (`performance.timeOrigin + XRFrame time`, the clock of the relocalization observations and of `image.timestamp`); omitted means "now".
+- `ArContentPlacedHook` (module-internal type of `onPlaced`) `= (object, capturedAt?) => void`: `capturedAt` is the capture time of the data the pose came from, in the epoch-ms XR clock (`performance.timeOrigin + XRFrame time`, the clock of the relocalization observations and of `image.timestamp`); omitted means "now".
 
 ## Invariants and defensive measures
 

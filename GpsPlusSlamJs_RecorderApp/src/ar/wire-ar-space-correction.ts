@@ -34,7 +34,7 @@ import type { RecorderStore } from '../state/recorder-store';
 const log = createLogger('ArSpaceCorrection');
 
 /** Report an object whose raw pose was just written (see the module doc). */
-export type ArContentPlacedHook = (
+type ArContentPlacedHook = (
   object: THREE.Object3D,
   capturedAt?: number
 ) => void;
