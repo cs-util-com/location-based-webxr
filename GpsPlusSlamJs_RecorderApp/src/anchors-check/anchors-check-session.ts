@@ -276,13 +276,13 @@ export function createAnchorsCheck(
     }
     placing = true;
     view.status(MESSAGES.placing, 'info');
-    const owner = session;
+    const placingIn = session;
     try {
       const created = await frame.createAnchor(
         deps.makeTransform(target),
         space
       );
-      if (session !== owner) {
+      if (session !== placingIn) {
         // The session ended while ARCore made the anchor: it is dead.
         created.delete();
         return;
@@ -294,7 +294,7 @@ export function createAnchorsCheck(
       report(tracker.notePlaced(lastT, target));
       view.status(MESSAGES.placed, 'info');
     } catch (error) {
-      if (session !== owner) return;
+      if (session !== placingIn) return;
       report(tracker.noteAnchorFailed(lastT, errorText(error)));
       view.status(`Could not create the anchor: ${errorText(error)}`, 'error');
     } finally {
