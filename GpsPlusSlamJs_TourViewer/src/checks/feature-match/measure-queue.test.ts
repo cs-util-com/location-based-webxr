@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { MethodResult } from "./bench-run";
+import { makeFrame } from "./bench-image";
+import type { BenchMethod, MethodResult } from "./bench-run";
 import { WorkerCrashed } from "./measure-client";
+import type { MeasureDone, MeasureJob } from "./measure-protocol";
+import { handleMeasure, type MeasureEnv } from "./measure-worker-core";
 import type * as SliceModule from "./feature-match-slice";
 import {
   featureMatchActions as A,
@@ -37,17 +40,68 @@ const everyShot = [
     shot(s.id, `p${String(i)}`),
   ),
 ];
-/** ALIKED on WebGPU: one size per entry (its error), or a failed load. */
+/**
+ * ALIKED on WebGPU, shaped as the worker core answers: one size per entry
+ * (its error) on the runner's backend, or a failed load on the backend the
+ * method asked for.
+ */
 const gpu = (
   sizes: (string | null)[],
   error: string | null = null,
+  id = "aliked-lightglue-webgpu",
+  label = "ALIKED",
 ): MethodResult =>
   ({
-    ...result("aliked-lightglue-webgpu", error),
-    label: "ALIKED",
+    ...result(id, error),
+    label,
     backend: error === null ? "webgpu (execution provider)" : "webgpu",
     sizes: sizes.map((e) => ({ error: e })),
   }) as unknown as MethodResult;
+/** SIFT + LightGlue on WebGPU, as `gpu`. */
+const lg = (sizes: (string | null)[], error: string | null = null) =>
+  gpu(sizes, error, "sift-lightglue-webgpu", "SIFT + LightGlue");
+
+/** A model method on WebGPU for the real worker core; in `fails`, its load fails. */
+const coreMethod = (
+  id: string,
+  label: string,
+  fails: ReadonlySet<string>,
+): BenchMethod => ({
+  id,
+  label,
+  backend: "webgpu",
+  init: () =>
+    fails.has(id)
+      ? Promise.reject(new Error("device lost"))
+      : Promise.resolve({
+          backend: "webgpu (execution provider)",
+          downloads: [],
+          initMs: 5,
+          notes: [],
+          extract: () =>
+            Promise.resolve({
+              count: 1,
+              descriptorBytes: 1,
+              x: Float32Array.of(0),
+              y: Float32Array.of(0),
+              payload: null,
+            }),
+          match: () => Promise.resolve(Int32Array.of(0, 0)),
+          dispose: () => undefined,
+        }),
+});
+
+/** The worker core's answer to `job`, as the client hands it to the queue. */
+async function coreDone(job: MeasureJob, e: MeasureEnv): Promise<MeasureDone> {
+  const done: MeasureDone[] = [];
+  const request = { type: "measure", job: 1, ...job, sizes: [4] };
+  await handleMeasure(request, e, (a) => {
+    if (a.type === "done") {
+      done.push(a);
+    }
+  });
+  return done[0]!;
+}
 
 // Why these tests matter: the queue is the only thing that measures on the
 // phone now; it must send each ready pair once with the right photos and
@@ -237,21 +291,38 @@ describe("startMeasureQueue", () => {
   });
 
   // Why: a device lost between pairs shows up as a failed load of a
-  // method this worker had loaded before; that is the restart case too.
-  // A first load failing (a download) is not: a new worker cannot help.
-  it("restarts the worker when a WebGPU method this worker loaded fails to load", async () => {
+  // method that loaded before; that is the restart case too. A first load
+  // failing (a download) is not: a new worker cannot help. Fed by the real
+  // worker core, so the results are shaped as on the phone (a failed load
+  // once read backend "-" there and never restarted the worker).
+  it("restarts the worker when a WebGPU method that loaded before fails to load", async () => {
     const h = harness();
     for (const a of everyShot) {
       h.store.dispatch(a);
     }
-    await settle();
-    h.calls[0]!.resolve(doneOf([gpu([], "init: offline")]));
-    await settle();
+    const fails = new Set<string>(["aliked-lightglue-webgpu"]);
+    const e: MeasureEnv = {
+      decode: () => Promise.resolve(makeFrame(4, 2, new Uint8ClampedArray(32))),
+      webgpu: () => Promise.resolve(true),
+      build: () => [
+        coreMethod("aliked-lightglue-webgpu", "ALIKED", fails),
+        coreMethod("sift-lightglue-webgpu", "SIFT + LightGlue", fails),
+      ],
+      now: () => 0,
+      kept: new Map(),
+    };
+    const answer = async (i: number) => {
+      await settle();
+      h.calls[i]!.resolve(await coreDone(h.calls[i]!.job, e));
+      await settle();
+    };
+    await answer(0);
     expect(h.closed()).toBe(0);
-    h.calls[1]!.resolve(doneOf([gpu([null])]));
-    await settle();
-    h.calls[2]!.resolve(doneOf([result("sift"), gpu([], "init: device lost")]));
-    await settle();
+    fails.clear();
+    await answer(1);
+    expect(h.closed()).toBe(0);
+    fails.add("aliked-lightglue-webgpu");
+    await answer(2);
     expect(h.closed()).toBe(1);
     expect(h.state().results[h.calls[2]!.key!]).toMatchObject({
       status: "done",
@@ -259,10 +330,37 @@ describe("startMeasureQueue", () => {
     });
   });
 
+  // Why: a new worker has nothing loaded, yet a method that loaded earlier
+  // in the run and now fails its first load there meets a lost device, not
+  // a download; that holds after a restart made for another method and
+  // after a crash alike.
+  it("restarts when a method that loaded earlier in the run fails its load in a new worker", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([gpu([null]), lg([null])]));
+    await settle();
+    h.calls[1]!.resolve(doneOf([gpu(["extract: device lost"]), lg([null])]));
+    await settle();
+    expect(h.closed()).toBe(1);
+    h.calls[2]!.resolve(doneOf([gpu([null]), lg([], "init: Error: lost")]));
+    await settle();
+    expect(h.closed()).toBe(2);
+    h.calls[3]!.reject(new WorkerCrashed("the measuring worker stopped"));
+    await settle();
+    h.calls[4]!.resolve(doneOf([gpu([], "init: Error: lost"), lg([null])]));
+    await settle();
+    expect(h.closed()).toBe(3);
+  });
+
   // Why: a WebGPU error that a fresh worker does not cure would restart
-  // the worker on every pair; after one failed retry the method is off
-  // for this run, marked failed in every later pair, and the rest goes on.
-  it("turns a method off for the run when it fails again right after a restart", async () => {
+  // the worker on every pair; a failed size right after the restart turns
+  // the method off for this run, marked failed (on the backend it failed
+  // on) in every later pair, and the rest goes on. The pair that failed
+  // is kept for this load only.
+  it("turns a method off for the run when it fails a size again right after a restart", async () => {
     const h = harness();
     for (const a of everyShot) {
       h.store.dispatch(a);
@@ -271,9 +369,13 @@ describe("startMeasureQueue", () => {
     h.calls[0]!.resolve(doneOf([result("sift"), gpu([null, "extract: oom"])]));
     await settle();
     expect(h.closed()).toBe(1);
-    h.calls[1]!.resolve(doneOf([result("sift"), gpu([], "init: oom")]));
+    h.calls[1]!.resolve(doneOf([result("sift"), gpu(["extract: oom"])]));
     await settle();
     expect(h.closed()).toBe(1);
+    expect(h.state().results[h.calls[1]!.key!]).toMatchObject({
+      status: "done",
+      persisted: false,
+    });
     expect(h.lines).toContain(
       "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
     );
@@ -289,11 +391,36 @@ describe("startMeasureQueue", () => {
       text: "done in 40 ms (2 methods, 1 could not load)",
       persisted: false,
     });
-    expect(h.matches.get(k)).toContain(
+    const saved = h.matches.get(k)!;
+    expect(saved).toContain(
       "off for this run: it failed on WebGPU again after the worker restarted",
     );
+    expect(saved).toContain('"webgpu (execution provider)"');
     expect(h.state().queue.crashes).toBe(0);
     expect(h.calls).toHaveLength(4);
+  });
+
+  // Why: right after a restart the new worker fetches its models again; a
+  // load failing then may be a download, so it keeps the method on (and
+  // retried), and only a failed size after that turns it off.
+  it("keeps a method on when its load fails right after its restart", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([gpu(["extract: device lost"])]));
+    await settle();
+    h.calls[1]!.resolve(doneOf([gpu([], "init: Error: offline")]));
+    await settle();
+    expect(h.lines.filter((l) => l.includes("off for this run"))).toEqual([]);
+    expect(h.calls[2]!.job.methods).toMatchObject({ aliked: true });
+    h.calls[2]!.resolve(doneOf([gpu(["extract: device lost"])]));
+    await settle();
+    expect(h.lines).toContain(
+      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+    );
+    expect(h.calls[3]!.job.methods).toMatchObject({ aliked: false });
   });
 
   // Why: only a failure on the very next pair turns a method off; a good
@@ -312,6 +439,50 @@ describe("startMeasureQueue", () => {
     await settle();
     expect(h.closed()).toBe(2);
     expect(h.calls[3]!.job.methods).toMatchObject({ aliked: true });
+  });
+
+  // Why: an error that comes back after every good pair (one pair's
+  // photos, the Nth session) would restart the worker, and fetch the
+  // models again, forever; three restarts per method and run is the cap.
+  it("turns a method off for the run after three restarts, good pairs in between or not", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    for (let i = 0; i < 6; i += 2) {
+      h.calls[i]!.resolve(doneOf([gpu(["extract: device lost"])]));
+      await settle();
+      h.calls[i + 1]!.resolve(doneOf([gpu([null])]));
+      await settle();
+    }
+    expect(h.closed()).toBe(3);
+    h.calls[6]!.resolve(doneOf([gpu(["extract: device lost"])]));
+    await settle();
+    expect(h.closed()).toBe(3);
+    expect(h.lines).toContain(
+      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+    );
+    expect(h.calls[7]!.job.methods).toMatchObject({ aliked: false });
+  });
+
+  // Why: a method turned off on a failed size may have lost the device for
+  // the other WebGPU method too; it still needs a fresh worker.
+  it("still restarts for the other WebGPU method when one is turned off", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([gpu(["extract: device lost"]), lg([null])]));
+    await settle();
+    expect(h.closed()).toBe(1);
+    h.calls[1]!.resolve(doneOf([gpu(["extract: device lost"]), lg([null])]));
+    await settle();
+    expect(h.lines).toContain(
+      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+    );
+    expect(h.closed()).toBe(2);
   });
 
   it("starts nothing more once stopped", async () => {

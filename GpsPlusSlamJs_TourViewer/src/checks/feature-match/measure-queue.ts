@@ -66,11 +66,14 @@ const firstError = (r: MethodResult): string =>
 const OFF_TEXT =
   "off for this run: it failed on WebGPU again after the worker restarted";
 
-/** The result of a method turned off for the run, marked failed. */
-const offResult = (id: string, label: string): MethodResult => ({
-  id,
-  label,
-  backend: "webgpu",
+/** Restarts made for one method in a run; the next failure turns it off. */
+const MAX_RESTARTS = 3;
+
+/** The result of a method turned off for the run, on the backend it failed on. */
+const offResult = (r: MethodResult): MethodResult => ({
+  id: r.id,
+  label: r.label,
+  backend: r.backend,
   downloads: [],
   initMs: Number.NaN,
   notes: [],
@@ -97,15 +100,17 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
   const { store, log } = deps;
   let stopped = false;
   // The worker's WebGPU health, beside the client it describes rather than
-  // in the store: it lasts as long as one worker (or this page load), and
+  // in the store: it lasts as long as this queue (this page load), and
   // every pair it touches is stored for this load only, so a reload starts
   // afresh anyway.
-  /** Methods loaded in the current worker. */
-  const loaded = new Set<string>();
-  /** The methods the last restart was for: failing again turns them off. */
-  let retried = new Set<string>();
-  /** Methods off for this run (id to label): measured no more. */
-  const off = new Map<string, string>();
+  /** Methods that loaded at least once this run, in any worker. */
+  const loadedOnce = new Set<string>();
+  /** Restarts made for each method this run. */
+  const restarts = new Map<string, number>();
+  /** Methods restarted for and not measured well since: a failed size turns them off. */
+  const retried = new Set<string>();
+  /** Methods off for this run, by id (their failing result): measured no more. */
+  const off = new Map<string, MethodResult>();
 
   const measure = async (key: string, s: FeatureMatchState): Promise<void> => {
     const pair = planResultKeys(s.plan).get(key)!;
@@ -150,8 +155,9 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
       }
       log(`${pair.id}: measuring ${context}`);
       const turn = turnOf(pair.kind);
-      const offIds = [...off].filter(([id]) => methods[boxOf(id)!]);
-      const offBoxes = new Set(offIds.map(([id]) => boxOf(id)));
+      // Off turns the method's box off: its WASM twin is not tried instead.
+      const offNow = [...off.values()].filter((r) => methods[boxOf(r.id)!]);
+      const offBoxes = new Set(offNow.map((r) => boxOf(r.id)));
       const done = await deps.client.measure(
         {
           a,
@@ -168,45 +174,59 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
         },
         (line) => log(`${pair.id}: ${line}`),
       );
-      // A WebGPU method that fails again on the pair right after the
-      // restart made for it is turned off for this run; the rest goes on.
-      const again = done.results.filter(
-        (r) => retried.has(r.id) && failedOnGpu(r) && boxOf(r.id) !== null,
-      );
-      for (const r of again) {
-        off.set(r.id, r.label);
-        log(`${r.label} is ${OFF_TEXT}`);
-      }
       // A failed size on WebGPU (a lost device, or an error the device
-      // keeps giving), or a failed load of a method this worker had
-      // loaded (a device lost between pairs), restarts the worker so the
-      // next pair gets a fresh device. A first load failing is a download.
-      const restartFor = done.results.filter(
-        (r) =>
-          !off.has(r.id) &&
-          failedOnGpu(r) &&
-          (r.error === null || loaded.has(r.id)),
+      // keeps giving), or a failed load of a method that loaded before in
+      // this run (a device lost between pairs or in the new worker), is a
+      // WebGPU failure. A first load failing is a download.
+      const worker = done.results.filter(
+        (r) => boxOf(r.id) !== null && !off.has(r.id),
       );
-      for (const r of done.results) {
+      const failures = worker.filter(
+        (r) => failedOnGpu(r) && (r.error === null || loadedOnce.has(r.id)),
+      );
+      for (const r of worker) {
         if (r.error === null) {
-          loaded.add(r.id);
+          loadedOnce.add(r.id);
+        }
+        if (!failedOnGpu(r)) {
+          retried.delete(r.id);
         }
       }
-      retried = new Set(restartFor.map((r) => r.id));
-      if (restartFor.length > 0) {
+      // A failed size right after a restart for it (a failed load then may
+      // be the new worker's download, so it stays retried), or a failure
+      // after MAX_RESTARTS restarts, turns the method off for this run.
+      for (const r of failures) {
+        if (
+          (retried.has(r.id) && r.error === null) ||
+          (restarts.get(r.id) ?? 0) >= MAX_RESTARTS
+        ) {
+          off.set(r.id, r);
+          retried.delete(r.id);
+          log(`${r.label} is ${OFF_TEXT}`);
+        }
+      }
+      // Any WebGPU failure restarts the worker, so the next pair gets a
+      // fresh device, while a method still on runs on WebGPU; each method
+      // still on that failed counts the restart and is retried.
+      const restarting =
+        failures.length > 0 &&
+        worker.some((r) => !off.has(r.id) && r.backend.startsWith("webgpu"));
+      if (restarting) {
+        for (const r of failures.filter((f) => !off.has(f.id))) {
+          restarts.set(r.id, (restarts.get(r.id) ?? 0) + 1);
+          retried.add(r.id);
+        }
         deps.client.close();
-        loaded.clear();
       }
       const results = [
         ...done.results,
-        ...offIds
-          .filter(([id]) => !done.results.some((r) => r.id === id))
-          .map(([id, label]) => offResult(id, label)),
+        ...offNow
+          .filter((o) => !done.results.some((r) => r.id === o.id))
+          .map(offResult),
       ];
-      const restart =
-        restartFor.length > 0
-          ? `; the worker restarts after ${restartFor.map((r) => r.label).join(", ")} failed on WebGPU (${firstError(restartFor[0]!)})`
-          : "";
+      const restart = restarting
+        ? `; the worker restarts after ${failures.map((r) => r.label).join(", ")} failed on WebGPU (${firstError(failures[0]!)})`
+        : "";
       const notLoaded = results.filter((r) => r.error !== null);
       if (notLoaded.length === results.length) {
         failed(
@@ -244,10 +264,7 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
           ),
           // A method that could not load (a download) or failed on WebGPU
           // is not a measured outcome: a reload measures the pair again.
-          persisted:
-            notLoaded.length === 0 &&
-            restartFor.length === 0 &&
-            again.length === 0,
+          persisted: notLoaded.length === 0 && failures.length === 0,
           measureMs: done.measureMs,
           context,
           ...(hidden ? { hidden } : {}),
@@ -255,9 +272,7 @@ export function startMeasureQueue(deps: MeasureQueueDeps): () => void {
       );
     } catch (e) {
       if (e instanceof WorkerCrashed) {
-        // The client starts a new worker: nothing is loaded in it.
-        loaded.clear();
-        retried = new Set();
+        // The client starts a new worker; `loadedOnce` holds across it.
         store.dispatch(
           A.workerCrashed({ key, text: said(`not measured: ${e.message}`) }),
         );
