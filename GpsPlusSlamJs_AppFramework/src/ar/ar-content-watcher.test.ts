@@ -195,8 +195,10 @@ describe('ar-content-watcher', () => {
             t,
             tLast: tOf(f - 1),
             lastPose: toPose(rawCamera(tOf(f - 1), before)),
-            tPrev: tOf(f - 2),
-            prevPose: toPose(rawCamera(tOf(f - 2), before)),
+            // The baseline as the feed picks it: the newest frame at
+            // least 100 ms before tLast (four 33 ms frames back).
+            tPrev: tOf(f - 5),
+            prevPose: toPose(rawCamera(tOf(f - 5), before)),
             newPose: toPose(rawCamera(t)),
           })
         );

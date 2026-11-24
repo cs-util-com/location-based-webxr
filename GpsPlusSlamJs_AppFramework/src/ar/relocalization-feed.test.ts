@@ -113,6 +113,29 @@ describe('createRelocalizationFeed', () => {
     expect(observed).toEqual(obs);
   });
 
+  it('hands over the newest frame at least 100 ms before the last one as the baseline, else the oldest kept', () => {
+    // Why this test matters: the guard reads the camera's rate over this
+    // baseline; over one frame the tracking noise reads as a fast rate at a
+    // high frame rate. A frame rate of 90 Hz (11.1 ms) over half a second:
+    // the baseline is the newest frame at or before tLast - 100 ms. With
+    // only 50 ms of history it is the oldest frame kept, and the guard
+    // keeps the plain D for that short baseline.
+    const { feed, store } = feedWith();
+    const dt = 1000 / 90;
+    for (let k = 0; k <= 45; k++) feed.frame(1000 + k * dt, at(k * 0.001));
+    feed.frame(1000 + 46 * dt, at(3));
+    const [obs] = observationsOf(store!);
+    expect(obs!.tLast).toBeCloseTo(1000 + 45 * dt, 9);
+    const back = obs!.tLast - obs!.tPrev!;
+    expect(back).toBeGreaterThanOrEqual(100);
+    expect(back).toBeLessThan(100 + dt);
+
+    const short = feedWith();
+    for (let k = 0; k <= 4; k++) short.feed.frame(5000 + k * dt, at(0));
+    short.feed.frame(5000 + 5 * dt, at(3));
+    expect(observationsOf(short.store!)[0]).toMatchObject({ tPrev: 5000 });
+  });
+
   it('walking frames never dispatch', () => {
     // Why this test matters: a false jump would move every placed object.
     const { feed, store } = feedWith();
@@ -273,7 +296,7 @@ describe('createRelocalizationFeed', () => {
     off();
     expect(infos).toHaveLength(1);
     expect(infos[0]).toMatch(
-      /\|D\| 3\.000 m, 0\.00 deg; compensation off \(still; camera step 0\.0 mm, turn 0\.00 deg\); frame gap 33 ms/
+      /\|D\| 3\.000 m, 0\.00 deg; compensation off \(short-baseline; camera step 0\.0 mm, turn 0\.00 deg over 33 ms\); frame gap 33 ms/
     );
   });
 
