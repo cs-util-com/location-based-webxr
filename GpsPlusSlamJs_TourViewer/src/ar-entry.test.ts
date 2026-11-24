@@ -2069,6 +2069,13 @@ describe("the tracker capture gate is the visitor's", () => {
     const deps = vi.mocked(createTrackerCaptureWiring).mock.calls[0]![0];
     h.ctx.qrDecodeAtMs = 1_234;
     expect(deps.lastDecodeAtMs()).toBe(1_234);
+    // A code with no level in this tour opens no burst; one not yet
+    // resolved does.
+    h.ctx.levelByText.set("foreign", null);
+    expect(deps.opensBurst("foreign")).toBe(false);
+    expect(deps.opensBurst("unresolved")).toBe(true);
+    // One stations array without a manifest, so the spots stay memoised.
+    expect(deps.stations()).toBe(deps.stations());
     h.ctx.scanGate = { kind: "scanning", escapeOffered: false };
     expect(deps.scanning()).toBe(true);
     h.ctx.scanGate = { kind: "idle" };

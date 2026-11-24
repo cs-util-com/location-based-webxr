@@ -3,10 +3,10 @@
  * framework's generic gate (`ar/targets/tracker-capture-gate`) and
  * registers QR, the first tracker, with the tour's codes as targets. The
  * camera asks `wantsFrame` before each capture: in full cadence while a
- * code is near (the nearby-targets kernel), right after any code was
- * decoded and while the scan card asks for a code, at 1 Hz otherwise, so
- * codes without a position and codes of other tours are still read outside
- * every gate.
+ * code is near (the nearby-targets kernel), right after a code that may be
+ * the tour's was decoded and while the scan card asks for a code, at 1 Hz
+ * otherwise, so codes without a position and codes of other tours are
+ * still read outside every gate.
  *
  * Every AR position handed to the kernel is odom-NUE: the store keeps its
  * odometry so, and the live pose and a code's sighting (raw WebXR) go
@@ -20,7 +20,10 @@
 
 import type { LatLong } from "gps-plus-slam-app-framework/core";
 import type { QrLevel } from "gps-plus-slam-app-framework/ar/qr/qr-level";
-import type { QrFrontEnd } from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
+import type {
+  QrDetection,
+  QrFrontEnd,
+} from "gps-plus-slam-app-framework/ar/qr/qr-frontend";
 import type { QrGeoPose } from "gps-plus-slam-app-framework/ar/qr/qr-gps-vote";
 import {
   createNearbyPositionSource,
@@ -104,19 +107,20 @@ export function codeReachM(
 }
 
 /**
- * The front end with every decode stamped: `onDecode` runs when a detect
- * resolves with a code, before the controller validates or locks it. The
- * burst opens on it, so the decodes a lock needs run at full cadence.
+ * The front end with every decode stamped: `onDecode` runs with the decoded
+ * code when a detect resolves with one, before the controller validates or
+ * locks it. The burst opens on it, so the decodes a lock needs run at full
+ * cadence; the caller skips the codes that open no burst.
  */
 export function stampDecodes(
   frontEnd: QrFrontEnd,
-  onDecode: () => void,
+  onDecode: (decoded: QrDetection) => void,
 ): QrFrontEnd {
   return {
     kind: frontEnd.kind,
     detect: async (image) => {
       const result = await frontEnd.detect(image);
-      if (result !== null) onDecode();
+      if (result !== null) onDecode(result);
       return result;
     },
     ...(frontEnd.dispose === undefined
@@ -125,10 +129,15 @@ export function stampDecodes(
   };
 }
 
-/** The newest detection's time of any code (epoch ms), or null. */
-export function newestHitAtMs(detections: QrDetectionsView): number | null {
+/** The newest detection's time (epoch ms) of any code whose text
+ *  `opensBurst`, or null. */
+export function newestHitAtMs(
+  detections: QrDetectionsView,
+  opensBurst: (text: string) => boolean,
+): number | null {
   let newest: number | null = null;
-  for (const marker of Object.values(detections.markers)) {
+  for (const [text, marker] of Object.entries(detections.markers)) {
+    if (!opensBurst(text)) continue;
     const last = marker.detections[marker.detections.length - 1];
     const t = last?.timestamp;
     if (typeof t === "number" && Number.isFinite(t) && (newest ?? t) <= t) {
@@ -151,22 +160,33 @@ export function codeTargets(input: {
   readonly zero: LatLong | null;
   readonly detections: QrDetectionsView;
 }): Target[] {
-  if (input.levels === null) return [];
-  const sightings = sightingsById(input.detections, input.levelIdByText);
-  const spots = [...input.levels.values()]
+  return withSightings(
+    codeSpots(input.levels, input.stations, input.zero),
+    sightingsById(input.detections, input.levelIdByText),
+  );
+}
+
+/** The codes' targets without sightings: spot, accuracy and reach, the
+ *  costly part (geodesic distances over codes and stations). */
+function codeSpots(
+  levels: ReadonlyMap<string, QrLevel> | null,
+  stations: readonly CodeStation[],
+  zero: LatLong | null,
+): Target[] {
+  if (levels === null) return [];
+  const spots = [...levels.values()]
     .map((level) => level.qr.geo)
     .filter((geo): geo is QrGeoPose => geo !== undefined);
   const targets: Target[] = [];
-  for (const [id, level] of input.levels) {
+  for (const [id, level] of levels) {
     const geo = level.qr.geo;
     const nue =
-      geo === undefined || input.zero === null
+      geo === undefined || zero === null
         ? null
-        : calcRelativeCoordsInMeters(input.zero, {
+        : calcRelativeCoordsInMeters(zero, {
             lat: geo.lat,
             lon: geo.lon,
           });
-    const sighting = sightings.get(id);
     targets.push({
       key: id,
       kind: "qr",
@@ -180,13 +200,37 @@ export function codeTargets(input: {
           ? HUD_ARRIVAL_BAND_M
           : codeReachM(
               geo,
-              input.stations,
+              stations,
               spots.filter((other) => other !== geo),
             ),
-      ...(sighting === undefined ? {} : { sighting }),
     });
   }
   return targets;
+}
+
+/** The targets with each code's sighting added; a code without one is
+ *  passed as it is. */
+function withSightings(
+  spots: readonly Target[],
+  sightings: ReadonlyMap<string, ArPose>,
+): Target[] {
+  return spots.map((target) => {
+    const sighting = sightings.get(target.key);
+    return sighting === undefined ? target : { ...target, sighting };
+  });
+}
+
+/** `fn` memoised on its last arguments (by identity). */
+function lastCall<A extends readonly unknown[], R>(
+  fn: (...args: A) => R,
+): (...args: A) => R {
+  let last: { args: A; result: R } | null = null;
+  return (...args) => {
+    if (last === null || args.some((a, i) => a !== last!.args[i])) {
+      last = { args, result: fn(...args) };
+    }
+    return last.result;
+  };
 }
 
 /** A heading-uncertain mint's alignment GPS extent, which the kernel
@@ -254,8 +298,12 @@ export interface TrackerCaptureWiringDeps {
   levelIdByText(): ReadonlyMap<string, string>;
   stations(): readonly CodeStation[];
   detections(): QrDetectionsView;
-  /** The newest decode of any code (epoch ms, `stampDecodes`), or null. */
+  /** The newest decode that opens the burst (epoch ms, `stampDecodes`),
+   *  or null. */
   lastDecodeAtMs(): number | null;
+  /** Whether a code's text opens the burst: false for a code the session
+   *  knows it cannot use (no level in this tour, no print size, ignored). */
+  opensBurst(text: string): boolean;
   /** The QR controller cannot take a frame now. */
   qrBusy(): boolean;
   /** The visitor's setting: QR at full cadence everywhere. */
@@ -297,28 +345,25 @@ export function createTrackerCaptureWiring(
     captureIntervalMs: deps.captureIntervalMs,
   });
   const fullHz = 1000 / deps.captureIntervalMs;
-  let memo: { key: readonly unknown[]; targets: Target[] } | null = null;
+  // Two memos: the spots on what they read (levels, stations, zero), the
+  // sightings on the detections (new per decode; their epoch is in them)
+  // and the text map, which grows in place as codes resolve, so its size
+  // is part of the key.
+  const spots = lastCall(codeSpots);
+  const sightings = lastCall(
+    (
+      detections: QrDetectionsView,
+      levelIdByText: ReadonlyMap<string, string>,
+      _size: number,
+    ) => sightingsById(detections, levelIdByText),
+  );
+  const combined = lastCall(withSightings);
   const targets = (): Target[] => {
-    const input = {
-      levels: deps.levels(),
-      levelIdByText: deps.levelIdByText(),
-      stations: deps.stations(),
-      zero: deps.zero(),
-      detections: deps.detections(),
-    };
-    // The text map grows in place as codes resolve: its size is the key.
-    const key = [
-      input.levels,
-      input.levelIdByText,
-      input.levelIdByText.size,
-      input.stations,
-      input.zero,
-      input.detections,
-    ];
-    if (memo === null || key.some((k, i) => k !== memo!.key[i])) {
-      memo = { key, targets: codeTargets(input) };
-    }
-    return memo.targets;
+    const levelIdByText = deps.levelIdByText();
+    return combined(
+      spots(deps.levels(), deps.stations(), deps.zero()),
+      sightings(deps.detections(), levelIdByText, levelIdByText.size),
+    );
   };
   gate.register({
     kind: "qr",
@@ -332,7 +377,10 @@ export function createTrackerCaptureWiring(
     },
     isBusy: () => deps.qrBusy(),
     lastHitAtMs: () =>
-      laterOf(deps.lastDecodeAtMs(), newestHitAtMs(deps.detections())),
+      laterOf(
+        deps.lastDecodeAtMs(),
+        newestHitAtMs(deps.detections(), (text) => deps.opensBurst(text)),
+      ),
     forceOn: () => deps.forcePref() || deps.codesOnly() || deps.scanning(),
   });
   let routes: readonly FrameRoute[] | null = null;
@@ -364,7 +412,8 @@ function laterOf(a: number | null, b: number | null): number | null {
 
 /** The live pose: the aligned camera and its odom-NUE AR position of the
  *  same tick, with the precision rule's acc_fix (a code hold: 1 m). Null
- *  without a ready alignment or a pose. */
+ *  without a ready alignment or a pose, so before the alignment is ready
+ *  the AR gate and 'dr' are off: only a fresh lone fix opens a code. */
 function livePose(deps: TrackerCaptureWiringDeps): LivePose | null {
   const pose = deps.arPose();
   const nue = cameraNue(readyAlignment(deps), pose);

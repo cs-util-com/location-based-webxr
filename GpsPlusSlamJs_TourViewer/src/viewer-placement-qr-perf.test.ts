@@ -39,6 +39,8 @@ function pipeline(qrPerf?: ReturnType<typeof createQrPerfReport>) {
 function pipelineWith(o: {
   qrPerf?: ReturnType<typeof createQrPerfReport>;
   decoded?: unknown;
+  /** The front end's detect; default one resolving with `decoded`. */
+  detect?: () => Promise<unknown>;
   now?: () => number;
 }) {
   captured.configs.length = 0;
@@ -47,7 +49,7 @@ function pipelineWith(o: {
     schedule: () => () => undefined,
     createQrFrontEnd: () => ({
       kind: "barcode-detector",
-      detect: () => Promise.resolve(o.decoded ?? null),
+      detect: o.detect ?? (() => Promise.resolve(o.decoded ?? null)),
     }),
     solveQrPose: () => null,
     getIntrinsics: () => null,
@@ -75,6 +77,16 @@ function pipelineWith(o: {
 }
 
 const IMAGE = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
+
+const CODE = {
+  text: "https://example.test/level.json",
+  corners: [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ],
+};
 
 describe("the viewer pipeline under ?qrperf=1", () => {
   // Why this test matters: the report's detect and solve figures are only
@@ -119,6 +131,61 @@ describe("the viewer pipeline under ?qrperf=1", () => {
     expect(report.text()).toContain("hits 1");
     endQrPipeline(hit.ctx);
     expect(hit.ctx.qrDecodeAtMs).toBeNull();
+  });
+
+  // Why this test matters: a detect still in flight when the pipeline ends
+  // must not stamp the ended session; a stamp then would open the next
+  // session's burst for a decode it never made.
+  it("a decode that resolves after the pipeline ended stamps nothing", async () => {
+    let resolve: (value: unknown) => void = () => undefined;
+    const pending = pipelineWith({
+      detect: () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+      now: () => 1_234,
+    });
+    const detecting = pending.config.frontEnd.detect(IMAGE);
+    endQrPipeline(pending.ctx);
+    resolve(CODE);
+    await expect(detecting).resolves.toBe(CODE);
+    expect(pending.ctx.qrDecodeAtMs).toBeNull();
+  });
+
+  // Why this test matters: a code the session already knows it cannot use
+  // (no level in this tour, no print size, ignored by the moved-code check)
+  // must not keep the capture gate's burst open while it stays in view; a
+  // code not resolved yet may be the tour's and still stamps, and so does
+  // a usable one.
+  it("stamps a decode only for a code that may be the tour's", async () => {
+    const stampFor = async (
+      setUp: (ctx: ReturnType<typeof pipelineWith>["ctx"]) => void,
+    ) => {
+      const p = pipelineWith({ decoded: CODE, now: () => 1_234 });
+      setUp(p.ctx);
+      await p.config.frontEnd.detect(IMAGE);
+      return p.ctx.qrDecodeAtMs;
+    };
+    const usable = { version: 1, qr: { physicalSizeM: 0.2 } } as const;
+    expect(await stampFor(() => undefined)).toBe(1_234);
+    expect(
+      await stampFor((ctx) => ctx.levelByText.set(CODE.text, usable)),
+    ).toBe(1_234);
+    expect(
+      await stampFor((ctx) => ctx.levelByText.set(CODE.text, null)),
+    ).toBeNull();
+    expect(
+      await stampFor((ctx) =>
+        ctx.levelByText.set(CODE.text, { version: 1, qr: {} }),
+      ),
+    ).toBeNull();
+    expect(
+      await stampFor((ctx) => {
+        ctx.levelByText.set(CODE.text, usable);
+        ctx.levelIdByText.set(CODE.text, "level-1");
+        ctx.ignoredCodes.set("level-1", { text: CODE.text, vetoSpreadM: 9 });
+      }),
+    ).toBeNull();
   });
 
   // Why this test matters: without the flag the pipeline runs on the seams

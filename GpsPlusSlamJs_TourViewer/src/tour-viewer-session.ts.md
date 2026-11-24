@@ -39,6 +39,14 @@ lives here.
   (`viewer-placement.ts`) and the status line's hint guard
   (`ar-entry.ts`); `viewerIgnoredText` names only the latest veto of
   this AR entry and is never the test of "ignored".
+- `codeOpensBurst(ctx, text)` - whether a decode or detection of this
+  text opens the tracker capture gate's burst: false once the session
+  knows the code is none it can use (`levelByText` holds null for it: no
+  level in this tour; its level has no print size; `isCodeIgnored`),
+  true for a text not resolved yet (it may be the tour's) and for a usable
+  code. Read by the decode stamp (`viewer-placement.ts`) and the gate's
+  detections (`ar-entry.ts`); tests in `viewer-placement-qr-perf.test.ts`
+  and `ar-entry.test.ts`.
 - `interface TourViewerSession` - the fields, grouped by owner:
   - the open tour (`archive-open.ts`): `session`, `currentLevels`,
     `levelsUnreadable` (the levels' read failed: the tour has no usable
