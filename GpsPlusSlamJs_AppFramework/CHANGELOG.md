@@ -1978,7 +1978,7 @@ weeks, and the one where several helpers stopped existing three times over.
 - **`compassVoteWeight` store option** — the carrier for a vote-weight
   control. Dispatched once `gpsData` exists; absent means the library
   default, so existing consumers are unaffected.
-- **`enableCompassExperiment` and `enableRansacComparison` store opt-ins.**
+- **`enableCompassExperiment` and an estimator-comparison store opt-in.**
 
 ## [1.13.0] — 2026-07-18
 
