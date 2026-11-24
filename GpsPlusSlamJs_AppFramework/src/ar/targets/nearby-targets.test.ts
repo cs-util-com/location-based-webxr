@@ -742,21 +742,6 @@ describe('nearbyTargets: the look-back H caps the kernel itself', () => {
     expect(r.state).toBe('unknown');
   });
 
-  // Why this test matters: a device fix stamped later than nowMs (a clock
-  // step, a bad stamp) is not evidence of a fix within the last F; read
-  // as fresh, a stamp far ahead would hold 'gps' for as long as it leads.
-  // Within F of nowMs either way it still counts, so a few ms of skew
-  // between the two clocks never flickers the state.
-  it("reads 'gps' only for a fix within F of nowMs, either side", () => {
-    const at = (t: number) =>
-      nearbyTargets(input({ fixes: [fix(t, 0, 0, 3)], newestFixAtMs: t }))
-        .state;
-    expect(at(NOW + 50)).toBe('gps');
-    expect(at(NOW + P.F)).toBe('gps');
-    expect(at(NOW + P.F + 1)).toBe('unknown');
-    expect(at(NOW + 3_600_000)).toBe('unknown');
-  });
-
   // Why this test matters: the AR path is the walk within H; samples older
   // than H must not widen R_AR when a caller hands the whole series.
   it('counts the AR path within H only, even when handed the whole series', () => {

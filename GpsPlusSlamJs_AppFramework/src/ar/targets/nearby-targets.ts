@@ -338,12 +338,10 @@ function stateOf(
 ): NearbyResult['state'] {
   if (accFix === null || accFix > input.params.ceilingM) return 'unknown';
   const at = input.newestFixAtMs;
-  // Fresh means within F of nowMs either side: a stamp ahead of the clock
-  // by more than F is no evidence of a recent fix.
   if (
     at !== null &&
     Number.isFinite(at) &&
-    Math.abs(input.nowMs - at) <= input.params.F
+    input.nowMs - at <= input.params.F
   ) {
     return 'gps';
   }

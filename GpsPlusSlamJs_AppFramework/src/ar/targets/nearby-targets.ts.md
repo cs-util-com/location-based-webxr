@@ -58,9 +58,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
 ## The rule
 
 - **State.**
-  - `'gps'`: the newest fix is within F of `nowMs` (either side: a stamp
-    more than F ahead of the clock is not fresh) and `acc_fix` is at most
-    the ceiling.
+  - `'gps'`: the newest fix is at most F old and `acc_fix` is at most the
+    ceiling.
   - `'dr'`: otherwise, when a live pose with a finite AR position is
     present and a device AR sample exists at or before `newestFixAtMs` and
     within H (the dead-reckoning anchor: the newest such sample, the last
@@ -157,8 +156,7 @@ if (r.open.length > 0) captureFrame();
     target pose, so the tracker wiring tests pin which one is passed), no
     live pose;
   - the H cap when handed the whole series ('dr', the AR path and the
-    `acc_fix` fallback); a fix stamped more than F ahead of `nowMs` is
-    not fresh;
+    `acc_fix` fallback);
   - no drift without a finite live AR position;
   - `timeSlot` (constant per period, every slot reached at strides 2 and
     3), `firstIndexAtOrAfter`, parameter validation.
