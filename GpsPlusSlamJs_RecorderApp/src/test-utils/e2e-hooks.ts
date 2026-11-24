@@ -141,10 +141,13 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
       const state = store.getState();
       store.dispatch(endSession());
       hideRecordingControls();
+      const startTime = state.recording.sessionMetadata?.startTime;
+      // A wall clock stepped backwards must not give a negative duration.
+      const endTime = Math.max(Date.now(), startTime ?? -Infinity);
       showSessionSummary(
         buildSessionSummary({
-          endTime: Date.now(),
-          startTime: state.recording.sessionMetadata?.startTime,
+          endTime,
+          startTime,
           imageCount: 0,
           depthSampleCount: 0,
           errors: [],

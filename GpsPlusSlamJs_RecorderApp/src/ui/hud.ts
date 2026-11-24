@@ -348,7 +348,7 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
     hudState.cachedElements.btnStop.classList.add('hidden');
     hudState.cachedElements.btnRefPoint.classList.add('hidden');
     hudState.cachedElements.btnPhaseMark.classList.add('hidden');
-    hudState.cachedElements.btnPhaseMark.textContent = DEFAULT_PHASE_MARK_LABEL;
+    resetPhaseMarkButtonLabel(hudState.cachedElements.btnPhaseMark);
     hudState.cachedElements.recordingIndicator.classList.add('hidden');
   }
 
@@ -382,6 +382,14 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
 
 const DEFAULT_REF_POINT_LABEL = '📍 Mark Point';
 const DEFAULT_PHASE_MARK_LABEL = '🏁 Phase';
+/** The phase button's accessible name; the aria-label overrides the text. */
+const DEFAULT_PHASE_MARK_ARIA_LABEL = 'Mark phase';
+
+/** Back to the unnumbered label, visible text and accessible name together. */
+function resetPhaseMarkButtonLabel(btn: HTMLElement): void {
+  btn.textContent = DEFAULT_PHASE_MARK_LABEL;
+  btn.setAttribute('aria-label', DEFAULT_PHASE_MARK_ARIA_LABEL);
+}
 
 export function showArReadyControls(): void {
   if (!hudState.cachedElements) {
@@ -399,7 +407,7 @@ export function showArReadyControls(): void {
   hudState.cachedElements.recordingIndicator.classList.add('hidden');
   // Hide the phase marker button and drop the last session's number
   hudState.cachedElements.btnPhaseMark.classList.add('hidden');
-  hudState.cachedElements.btnPhaseMark.textContent = DEFAULT_PHASE_MARK_LABEL;
+  resetPhaseMarkButtonLabel(hudState.cachedElements.btnPhaseMark);
   // Reset ref point button label for next session (Change D)
   hudState.cachedElements.btnRefPoint.textContent = DEFAULT_REF_POINT_LABEL;
   // Clear any leftover proximity hint (D3) so it does not linger into the
@@ -409,14 +417,20 @@ export function showArReadyControls(): void {
 
 /**
  * Show the last phase marker's number on the phase button ("🏁 Phase 3"), so
- * the walker can always see how many markers this recording holds. No-op
- * before `initUI()`.
+ * the walker can always see how many markers this recording holds. The
+ * aria-label moves with it ("Mark phase, 3 marked"), since it overrides the
+ * text for screen readers. No-op before `initUI()`.
  */
 export function setPhaseMarkButtonLabel(lastNumber: number): void {
   if (!hudState.cachedElements) {
     return;
   }
-  hudState.cachedElements.btnPhaseMark.textContent = `${DEFAULT_PHASE_MARK_LABEL} ${lastNumber}`;
+  const btn = hudState.cachedElements.btnPhaseMark;
+  btn.textContent = `${DEFAULT_PHASE_MARK_LABEL} ${lastNumber}`;
+  btn.setAttribute(
+    'aria-label',
+    `${DEFAULT_PHASE_MARK_ARIA_LABEL}, ${lastNumber} marked`
+  );
 }
 
 /**

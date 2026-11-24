@@ -7,7 +7,7 @@ The Playwright `window.testHooks` surface plus the map-browser fixture builders,
 ## Public API
 
 - `installE2eTestHooks(deps: E2eHookDeps): void` — assigns `window.testHooks` as ONE object literal. `deps.ensureMapBrowserRoot` is injected from `main.ts` and implemented in [ui/map-browser-launcher.ts](../ui/map-browser-launcher.ts.md) (the same full-bleed root container the real replay path uses). `deps.getStore` / `deps.setStore` give the hooks main.ts's current store and its store swap (which also updates `storeRef`).
-- `startRecordingWithoutAr` / `stopRecordingWithoutAr` hooks: Playwright has no WebXR session, so the first builds a fresh recorder store on a `NullStorageBackend` (it writes nothing), dispatches the real `startSession`, swaps it in and shows the RECORDING controls; every HUD tap after that runs the real handler against the real store. The second dispatches `endSession` and shows the summary built by the real `buildSessionSummary` from the store's slices, with the AR-only inputs (GPS, odometry, images, zip) empty. Used by `phase-marker.spec.js`.
+- `startRecordingWithoutAr` / `stopRecordingWithoutAr` hooks: Playwright has no WebXR session, so the first builds a fresh recorder store on a `NullStorageBackend` (it writes nothing), dispatches the real `startSession`, swaps it in and shows the RECORDING controls; every HUD tap after that runs the real handler against the real store. The second dispatches `endSession` and shows the summary built by the real `buildSessionSummary` from the store's slices, with the AR-only inputs (GPS, odometry, images, zip) empty. Its end time is `Math.max(Date.now(), startTime)`, so a wall clock stepped backwards never gives a negative duration. Used by `phase-marker.spec.js`.
 
 ## Invariants & assumptions
 
@@ -34,3 +34,4 @@ if (
 ## Tests
 
 - Exercised end-to-end by the whole Playwright suite (every spec goes through `waitForTestHooks`); the hook/key contract is verified by `playwright-tests/test-hooks-verification.spec.js`.
+- `e2e-hooks.test.ts`: the no-AR stop clamps its end time to the start when the clock stepped back, and keeps the real stop time otherwise.

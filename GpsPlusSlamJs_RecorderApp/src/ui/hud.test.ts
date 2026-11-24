@@ -2378,6 +2378,29 @@ describe('setNewRefPointButtonVisible', () => {
     expect(btn.textContent).toBe('🏁 Phase');
   });
 
+  // Why: the button's aria-label overrides its text for screen readers, so
+  // a label that stayed "Mark phase" hid the count from them; it must move
+  // with the visible number and drop back to "Mark phase" on every reset.
+  it('keeps the phase button aria-label in step with its count', async () => {
+    vi.resetModules();
+    setupMinimalDOM();
+    const fresh = await import('./hud.js');
+    fresh.initUI(createMockCallbacks());
+    const btn = document.getElementById('btn-phase-mark')!;
+
+    fresh.showRecordingControls();
+    fresh.setPhaseMarkButtonLabel(3);
+    expect(btn.getAttribute('aria-label')).toBe('Mark phase, 3 marked');
+
+    fresh.hideRecordingControls();
+    expect(btn.getAttribute('aria-label')).toBe('Mark phase');
+
+    fresh.showRecordingControls();
+    fresh.setPhaseMarkButtonLabel(5);
+    fresh.resetUIForNewRecording({ keepFolder: true });
+    expect(btn.getAttribute('aria-label')).toBe('Mark phase');
+  });
+
   // Why: Clicking the + button should call onMarkNewRefPoint to trigger
   // handleMarkRefPoint({ forceNew: true }) via main.ts wiring.
   it('calls onMarkNewRefPoint when btn-new-ref-point is clicked', () => {
