@@ -138,8 +138,13 @@ interface KeyEntry {
   pendingFrames: number;
   /** Consecutive passes its cached tests said out of view, while pending. */
   outFrames: number;
-  /** The most keys out of view at once over those passes. */
-  outQueueMax: number;
+  /**
+   * The keys out of view when this run out of view began, itself
+   * included; and the set's count of entries out of view just after it
+   * (`outEntries`), so its queue also counts every key that went out after it.
+   */
+  queuedAtEntry: number;
+  enteredAt: number;
 }
 
 /** How a commit came about (its log line's kind). */
@@ -208,7 +213,8 @@ interface MemberEntry {
   pendingSinceMs: number | null;
   pendingFrames: number;
   outFrames: number;
-  outQueueMax: number;
+  queuedAtEntry: number;
+  enteredAt: number;
   /** The membership's calls, re-pointed when the entry moves to a bound set. */
   leave: () => void;
   runPass: AnchorSetMembership['runPassForTests'];
@@ -267,7 +273,11 @@ interface DeferredAnchorCommit {
   readonly pendingFrames: number;
   /** For an out-of-view commit: the passes it was out of view (at least 1); else 0. */
   readonly outFrames: number;
-  /** For an out-of-view commit: the most keys out of view at once meanwhile (at least 1); else 0. */
+  /**
+   * For an out-of-view commit, its queue (at least 1; else 0): the keys out
+   * of view when it went out, itself included, plus every key that went out
+   * after it. One traversal per pass, round robin, so `outFrames <= queued`.
+   */
   readonly queued: number;
 }
 
@@ -531,6 +541,10 @@ function createAnchorSet(
   const lastTargetInv = target.target().clone().invert();
   let lastTargetVersion = target.version();
   let roundRobin = 0;
+  // Entries out of view (a pending key's out-of-view run starting), over
+  // the set's life: a key's queue is the keys out with it when it went out
+  // plus the entries since, each of which the round robin may pick first.
+  let outEntries = 0;
 
   // Per-pass scratch.
   const targetInv = new THREE.Matrix4();
@@ -599,12 +613,14 @@ function createAnchorSet(
       c.pendingSinceMs === null ? 0 : Math.max(0, nowMs - c.pendingSinceMs);
     const out = kind === 'out-of-view';
     const outFrames = out ? Math.max(1, c.outFrames) : 0;
-    const queued = out ? Math.max(1, c.outQueueMax) : 0;
+    const queued = out
+      ? Math.max(1, c.queuedAtEntry + outEntries - c.enteredAt)
+      : 0;
     const pendingFrames = c.pendingFrames;
     c.pendingSinceMs = null;
     c.pendingFrames = 0;
     c.outFrames = 0;
-    c.outQueueMax = 0;
+    c.queuedAtEntry = 0;
     const outText = out
       ? `, out of view ${String(outFrames)} frame${outFrames === 1 ? '' : 's'} (${String(queued)} queued)`
       : '';
@@ -986,10 +1002,13 @@ function createAnchorSet(
         if (anyStale(c)) stale.push(c);
       }
     }
-    for (const c of out) {
-      c.outFrames += 1;
-      c.outQueueMax = Math.max(c.outQueueMax, out.length);
+    const entering = out.filter((c) => c.outFrames === 0);
+    outEntries += entering.length;
+    for (const c of entering) {
+      c.queuedAtEntry = out.length;
+      c.enteredAt = outEntries;
     }
+    for (const c of out) c.outFrames += 1;
     return { out, build, stale };
   }
 
@@ -1017,7 +1036,7 @@ function createAnchorSet(
   /** In view, or not pending: its out-of-view run starts over. */
   function heldInView(c: Deferred): void {
     c.outFrames = 0;
-    c.outQueueMax = 0;
+    c.queuedAtEntry = 0;
   }
 
   /** This view is the next pass's previous view. */
@@ -1136,7 +1155,8 @@ function createAnchorSet(
       pendingSinceMs: null,
       pendingFrames: 0,
       outFrames: 0,
-      outQueueMax: 0,
+      queuedAtEntry: 0,
+      enteredAt: 0,
       leave: () => undefined,
       runPass: () => ({ ...counters, windowOpen, followUpdates }),
     };
@@ -1160,7 +1180,7 @@ function createAnchorSet(
     entry.pendingSinceMs = null;
     entry.pendingFrames = 0;
     entry.outFrames = 0;
-    entry.outQueueMax = 0;
+    entry.queuedAtEntry = 0;
     entry.leave = () => {
       members.delete(entry);
       if (!binding && members.size === 0) dispose();
@@ -1271,7 +1291,8 @@ function createAnchorSet(
       pendingSinceMs: null,
       pendingFrames: 0,
       outFrames: 0,
-      outQueueMax: 0,
+      queuedAtEntry: 0,
+      enteredAt: 0,
     };
     keys.set(key, entry);
     return entry;

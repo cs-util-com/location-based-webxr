@@ -80,14 +80,17 @@ deferring, commits }`. `commits` lists the pass's commits as
   `DeferredAnchorCommit { key, kind, waitMs, movedM, pendingFrames,
 outFrames, queued }` (usually none; valid during the call only):
   `pendingFrames` the passes it waited pending; for an `out-of-view`
-  commit `outFrames` the passes it was pending and out of view (at least
-  1. and `queued` the most keys pending out of view at once meanwhile (at
-     least 1), so a reader can check that it landed within its queue (one
-     traversal per pass, round robin: `outFrames <= queued`). `passMs` is the pass's `performance.now()` span, measured
-     only while an observer is set, so a page without one pays nothing. A
-     throwing observer is logged and the frame goes on. The returned stop
-     clears it only while it is still the current one. `TypeError` for a
-     non-function. The Tour Viewer's `?debug=1` anchor log uses it.
+  commit `outFrames` the passes it was pending and out of view, never
+  below one, and `queued` its queue, never below one: the keys pending out
+  of view when it went out, itself included, plus every key that went out
+  after it, since the round robin may pick each of those first. One
+  traversal per pass, so a reader can check that it landed within its
+  queue: `outFrames <= queued`. The most keys out at once would be too
+  small a bound while other keys keep going out. `passMs` is the pass's `performance.now()` span, measured
+  only while an observer is set, so a page without one pays nothing. A
+  throwing observer is logged and the frame goes on. The returned stop
+  clears it only while it is still the current one. `TypeError` for a
+  non-function. The Tour Viewer's `?debug=1` anchor log uses it.
 - `__runPassForTests(parent, cameraOrView, dt, elapsedS)`: test only. Runs
   the binding's alignment step and one pass; returns
   `{ sphereTests, traversals, windowOpen, followUpdates }`.
@@ -95,7 +98,7 @@ outFrames, queued }` (usually none; valid during the call only):
 ## Phases, in pass order
 
 The set reads `target.defersAnchors()` at the start of every pass and logs
-`deferral on` or `deferral off (a/b)` when it changes (`?anchors=ab`).
+`deferral on (a/b)` or `deferral off (a/b)` when it changes (`?anchors=ab`).
 With the deferral off (`defersAnchors()` false, `?anchors=0`) every key follows each frame as in phase 4, and every
 pending member commits at once (`deferral-off`), so every correction lands
 at once. That includes the position members: a GPS anchor in
@@ -202,7 +205,9 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   (20 keys x 30 meshes, follow updates skipped while the parent is still),
   the deferral switch (an in-view key lands on every correction), the A/B
   switch (on, then off after the period, logged), the frames waited (pending
-  frames, out-of-view frames against the queue, the observer's `commits`)
+  frames, out-of-view frames against the queue, a key's queue growing
+  as others go out after it, the count starting over after a follow start
+  within epsilon, the observer's `commits`)
   and the pass observer (production passes, stop, a throwing observer).
 - `deferred-anchors.property.test.ts`: random T, look, epoch, camera jump,
   release and maturity sequences; safety (an in-view change only at a

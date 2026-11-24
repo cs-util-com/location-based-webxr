@@ -1347,6 +1347,37 @@ function commitLines(body: () => void): string[] {
   return lines;
 }
 
+// Why: a key that starts to follow within epsilon of where it stands is
+// placed without a commit line; the frames it waited before must not
+// carry into its next commit, or the frames-waited numbers run high.
+describe('deferredAnchor: frames waited across a follow', () => {
+  it('starts the next commit from zero frames after a follow start within epsilon', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(3);
+    s.store.setT(tOf(1));
+    s.run(6); // pending, held in view
+    // The correction goes back and a window opens in the same pass: the
+    // key starts to follow at the pose it holds.
+    s.store.setT(IDENTITY.clone());
+    s.store.bumpEpoch();
+    s.run();
+    s.runUntil(s.now() + WINDOW_MIN_S + 3); // the window closes, the follow ends
+    s.store.setT(tOf(3, 4));
+    const lines = commitLines(() => {
+      s.run(2);
+      s.look('out');
+      s.run(2);
+    });
+    expect(lines).toEqual([
+      expect.stringMatching(
+        /, 4 frames pending, out of view 1 frame \(1 queued\)$/
+      ),
+    ]);
+  });
+});
+
 // Why: the field test's criterion "a pending anchor commits within k
 // frames once out of view, k the anchors out of view at once" needs the
 // frames, not only the milliseconds: the commit line and the pass observer
@@ -1387,6 +1418,53 @@ describe('deferredAnchor: frames waited', () => {
     expect(lines.map((l) => l.replace(/^.*, (out of view .*)$/, '$1'))).toEqual(
       ['out of view 1 frame (2 queued)', 'out of view 2 frames (2 queued)']
     );
+  });
+
+  // Why: the queue bound must hold while other keys keep going out. The
+  // round robin picks one key per pass, so a key waits for the keys out
+  // with it when it went out AND for every key that went out after it and
+  // came first in the order; a bound of the most keys out at once would
+  // call that FAIL while the set works as designed.
+  it('counts the keys that went out after it in its queue, so churn stays within it', () => {
+    const s = session();
+    s.look('in');
+    // Camera at (0, 0, 8) looking along -z; a key at `deg` left of that.
+    const left = (deg: number) => {
+      const a = THREE.MathUtils.degToRad(deg);
+      return new THREE.Vector3(-8 * Math.sin(a), 0, 8 - 8 * Math.cos(a));
+    };
+    deferredAnchor(s.group, 'a').add(contentRoot(left(8)));
+    deferredAnchor(s.group, 'b').add(contentRoot(left(4)));
+    deferredAnchor(s.group, 'c').add(contentRoot(left(0)));
+    deferredAnchor(s.group, 'k').add(contentRoot(left(8)));
+    // Turning right by `deg`: the keys leave on the left, a and k first,
+    // then b, then c, one pass apart.
+    const turn = (deg: number) =>
+      s.camera.quaternion.setFromAxisAngle(
+        new THREE.Vector3(0, 1, 0),
+        THREE.MathUtils.degToRad(-deg)
+      );
+    turn(26);
+    s.run(3);
+    s.store.setT(tOf(0.1));
+    // Held in view while each key's bounds are built (one traversal a pass).
+    s.run(8);
+    const lines = commitLines(() => {
+      for (const deg of [30, 34, 38, 42, 46]) {
+        turn(deg);
+        s.run();
+      }
+    });
+    expect(
+      lines.map((l) =>
+        l.replace(/^commit out-of-view: (\w+),.*, (out of view .*)$/, '$1 $2')
+      )
+    ).toEqual([
+      'a out of view 1 frame (2 queued)',
+      'b out of view 1 frame (2 queued)',
+      'c out of view 1 frame (2 queued)',
+      'k out of view 4 frames (4 queued)',
+    ]);
   });
 
   it('gives a release commit its pending frames and no out-of-view part', () => {

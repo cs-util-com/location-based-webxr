@@ -24,8 +24,11 @@
  * (`ar-parent-target.build.test.ts`); an app that wants the switches there
  * (behind its own debug flag) parses them itself and passes them in.
  *
- * Internal: no package entry, reached through `enableArWorldGroupAlignment`
- * and the binding registry below. Sidecar: `ar-parent-target.ts.md`.
+ * A package entry for its parsers and types (`parseDevWorldJump`,
+ * `parseAnchorDeferral`, `AnchorDeferral`, `DevWorldJump`), which an app
+ * uses to offer the switches behind its own debug flag; the target itself
+ * is reached through `enableArWorldGroupAlignment` and the binding
+ * registry below. Sidecar: `ar-parent-target.ts.md`.
  */
 
 import * as THREE from 'three';
@@ -231,21 +234,29 @@ function validDevJump(jump: DevWorldJump | null): DevWorldJump | null {
   return metres === 0 && degrees === 0 ? null : jump;
 }
 
+/** The largest dev jump a page URL can ask for, either way (m, deg). */
+const DEV_WORLD_JUMP_MAX_M = 100;
+const DEV_WORLD_JUMP_MAX_DEG = 180;
+
 /**
- * The dev jump a page URL asks for (`devWorldJumpM`, `devWorldJumpDeg`),
- * or null. Pure; {@link devWorldJumpFromPage} calls it only in development
+ * The dev jump a page URL asks for (`devWorldJumpM`, `devWorldJumpDeg`,
+ * each clamped to 100 m and 180 deg either way), or null. Pure; {@link devWorldJumpFromPage} calls it only in development
  * builds.
  */
 export function parseDevWorldJump(search: string): DevWorldJump | null {
   const params = new URLSearchParams(search);
-  const read = (name: string): number => {
+  // Clamped: the address is untrusted, and a jump of 1e308 m would turn
+  // the composed transform to NaN after a few jumps.
+  const read = (name: string, limit: number): number => {
     const raw = params.get(name);
     if (raw === null || raw.trim() === '') return 0;
     const value = Number(raw);
-    return Number.isFinite(value) ? value : 0;
+    return Number.isFinite(value)
+      ? Math.min(limit, Math.max(-limit, value))
+      : 0;
   };
-  const metres = read('devWorldJumpM');
-  const degrees = read('devWorldJumpDeg');
+  const metres = read('devWorldJumpM', DEV_WORLD_JUMP_MAX_M);
+  const degrees = read('devWorldJumpDeg', DEV_WORLD_JUMP_MAX_DEG);
   if (metres === 0 && degrees === 0) return null;
   return { metres, degrees, periodS: DEV_WORLD_JUMP_PERIOD_S };
 }

@@ -248,6 +248,31 @@ describe('the dev jump from the page', () => {
     expect(parseDevWorldJump('?devWorldJumpM=abc')).toBeNull();
   });
 
+  // Why: the switches work in a production build behind ?debug=1, so the
+  // address is untrusted input: a huge jump (1e308 m) would turn every
+  // transform to NaN after a few jumps and the content would vanish.
+  it('clamps the jump to 100 m and 180 deg either way', () => {
+    expect(
+      parseDevWorldJump('?devWorldJumpM=1e308&devWorldJumpDeg=-1e308')
+    ).toEqual({
+      metres: 100,
+      degrees: -180,
+      periodS: DEV_WORLD_JUMP_PERIOD_S,
+    });
+    expect(
+      parseDevWorldJump('?devWorldJumpM=-250&devWorldJumpDeg=200')
+    ).toMatchObject({
+      metres: -100,
+      degrees: 180,
+    });
+    expect(
+      parseDevWorldJump('?devWorldJumpM=100&devWorldJumpDeg=180')
+    ).toMatchObject({
+      metres: 100,
+      degrees: 180,
+    });
+  });
+
   // Why: the reader exists only in development builds; vitest runs with
   // `import.meta.env.DEV === true`, a production bundle folds it away
   // (`ar-parent-target.build.test.ts`).

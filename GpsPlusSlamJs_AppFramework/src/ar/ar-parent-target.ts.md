@@ -10,9 +10,12 @@ did, content would carry part of the alignment twice. It also answers the
 anchors' other session questions, and holds the registry of alignment
 bindings per group.
 
-Internal: no package entry. Reached through `enableArWorldGroupAlignment`
-(which creates the target and registers the binding) and
-`deferred-anchors.ts` (which looks the binding up).
+A package entry (`gps-plus-slam-app-framework/ar/ar-parent-target`) for its
+parsers and types, which an app uses to offer the switches behind its own
+debug flag (the Tour Viewer's `anchor-test-switches.ts`). The target itself
+is reached through `enableArWorldGroupAlignment` (which creates it and
+registers the binding) and `deferred-anchors.ts` (which looks the binding
+up).
 
 ## Public API
 
@@ -43,6 +46,8 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 - Development-only synthetic world jump
   - `parseDevWorldJump(search)`: `?devWorldJumpM=<m>` and/or
     `?devWorldJumpDeg=<deg>` to `{ metres, degrees, periodS: 10 }`, or null.
+    Each is clamped to 100 m and 180 deg either way: the address is
+    untrusted, and a huge jump would turn the transform to NaN.
   - `devWorldJumpFromPage()`: reads `location.search` only under
     `import.meta.env.DEV`; a production build folds the reader away.
   - The jump (north by `metres`, a yaw by `degrees`) is composed on top of
@@ -80,7 +85,7 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 - `ar-parent-target.test.ts`: T follows the store, bad matrices ignored, the
   epoch read, maturity from device fixes only and sticky, the session clock,
   the dev jump composition and its refusals, the page readers (dev jump
-  and deferral switch, `anchors=ab` included), `defersAnchors()` and its
+  and deferral switch, `anchors=ab` included, the jump clamped), `defersAnchors()` and its
   A/B alternation at the period edges, the registry.
 - `ar-parent-target.build.test.ts`: bundles the alignment module the way an
   app's production build sees it and asserts the dev jump reader and the
