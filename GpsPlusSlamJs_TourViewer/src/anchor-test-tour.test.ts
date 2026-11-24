@@ -170,3 +170,23 @@ describe("the anchor test tour (public/samples/anchor-test-tour.zip)", () => {
     await reader.close();
   });
 });
+
+// Why: the committed zip is what the phone opens, and the build script is
+// what a reviewer reads; a script edited without rebuilding the zip (or a
+// zip edited by hand) would test one tour and ship another.
+describe("the committed anchor test tour and its build script", () => {
+  it("are the same bytes", async () => {
+    const script = new URL(
+      "../scripts/build-anchor-test-tour.mjs",
+      import.meta.url,
+    ).href;
+    const built = (await import(script)) as {
+      buildAnchorTestTourZip(): Promise<Uint8Array>;
+    };
+    expect(
+      Buffer.from(await built.buildAnchorTestTourZip()).equals(
+        readFileSync(ZIP),
+      ),
+    ).toBe(true);
+  });
+});

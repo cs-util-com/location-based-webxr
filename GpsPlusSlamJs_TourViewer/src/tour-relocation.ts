@@ -4,7 +4,7 @@
  * `?relocate=here` moves every station so that the first one stands a few
  * metres north of the phone's first GPS fix, keeping the stations' layout
  * (distances, relative heights, headings). A station's blocks are relative
- * to it (tour editor plan W3), so they move with it: the guide and the
+ * to it, so they move with it: the guide and the
  * content placement read the same moved stations (`createTourRelocation`).
  *
  * Nothing about the phone's position is stored or sent: the move happens in

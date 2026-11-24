@@ -164,5 +164,7 @@ const controller = createEnableGpsArController(seams.controllerDeps);
 
 `seams.test.ts` — override inert under VITEST; every device function
 `main.ts` wires is present; the stations' anchor parent is the framework's
-`getArWorldGroup` itself. The override path is exercised by
+`getArWorldGroup` itself; the alignment seam hands the framework the
+field-test switches with `debug=1` on a visitor's page and none without
+it (the e2e fakes replace this seam, so only this test sees it). The override path is exercised by
 `playwright-tests/ar-fakes.js` + `ar-mode.spec.js`.

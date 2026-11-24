@@ -70,5 +70,7 @@ parsers and checks (a valid version 4 tour, three geo stations 20-40 m
 apart at Marienplatz, each within 0.5, 1 and 2 m of the measured ground as
 the 3D editor draws it (the Globe's `drawnHeightM` with the Osm library's
 `egm96Geoid`), every named asset present, allowed, within the image
-cap and inert, entries uncompressed); `playwright-tests/sample-tour.spec.js`
+cap and inert, entries uncompressed, and the same bytes as
+`buildSampleTourZip()`, so the script and the zip cannot drift apart);
+`playwright-tests/sample-tour.spec.js`
 opens it through the real page.

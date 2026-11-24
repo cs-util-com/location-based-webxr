@@ -9,7 +9,7 @@ the tour the phone test of the deferred anchors walks. Vite copies
 
 `/tour/?qr=<preview origin>/tour/samples/anchor-test-tour.zip&relocate=here&debug=1`
 
-(`&anchors=ab` for the frame-time comparison, `&devWorldJumpM=2` or
+(`&anchors=ab` for the frame-time comparison, staying about 90 s, `&devWorldJumpM=2` or
 `&devWorldJumpDeg=5` for a synthetic world jump; `anchor-test-switches.ts`).
 
 ## What it writes
@@ -51,7 +51,9 @@ From `GpsPlusSlamJs_TourViewer`: `node scripts/build-anchor-test-tour.mjs`
   viewer's parsers: three stations in any order written back to the same
   bytes, 20-40 m apart, A's model and its clip on the mast's top, B's ten
   or more pins with a 40-character label, C's edge hint and character
-  story, the knight within the image cap, entries uncompressed.
+  story, the knight within the image cap, entries uncompressed, and the
+  same bytes as `buildAnchorTestTourZip()`, so the script and the zip
+  cannot drift apart.
 - `playwright-tests/anchor-test-tour.spec.js` opens it through the phone
   test's link: moved to the phone, its tower offered about 15 m away, and
   the debug log's anchor section with its verdict.

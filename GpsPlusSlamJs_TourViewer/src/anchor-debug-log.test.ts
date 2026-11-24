@@ -6,6 +6,7 @@ import {
 import {
   createAnchorDebugLog,
   FRAME_REGRESSION_LIMIT_MS,
+  MIN_AB_TURNS,
   MIN_FRAME_SAMPLES,
   PASS_P95_LIMIT_MS,
   startAnchorDebugLog,
@@ -42,6 +43,24 @@ const commit = (
   outFrames,
   queued,
 });
+
+/**
+ * An `anchors=ab` session: `turns` turns of each half, on first, each
+ * `frames` passes long, with the frame times `onDt` and `offDt` (s).
+ */
+function abSession(
+  log: ReturnType<typeof createAnchorDebugLog>,
+  turns: number,
+  frames: number,
+  onDt: (i: number) => number,
+  offDt: (i: number) => number,
+): void {
+  for (let t = 0; t < turns; t += 1) {
+    for (let i = 0; i < frames; i += 1) log.pass(sample(0.1, 0, onDt(i), true));
+    for (let i = 0; i < frames; i += 1)
+      log.pass(sample(0.05, 0, offDt(i), false));
+  }
+}
 
 const entry = (tag: string, message: string) => ({
   timestamp: 0,
@@ -115,7 +134,7 @@ describe("createAnchorDebugLog", () => {
   });
 
   it("says when the deferral is off, and skips a pass without a frame time", () => {
-    const log = createAnchorDebugLog();
+    const log = createAnchorDebugLog({ deferral: false });
     log.pass(sample(0.1, 0, 0, false));
     expect(log.text()).toContain("deferral off (anchors=0)");
     expect(log.text()).toContain(
@@ -125,8 +144,10 @@ describe("createAnchorDebugLog", () => {
   });
 
   // Why: the readout runs on every camera frame; it recomputes once a
-  // second, and clear() empties everything with the travel log.
-  it("recomputes the readout at most once a second, and clears", () => {
+  // second. clear() runs after every Copy: it empties the lines that copy
+  // carried, and keeps the numbers, so a copy in the middle of a run does
+  // not throw the verdict's data away.
+  it("recomputes the readout at most once a second; clear keeps the numbers", () => {
     const log = createAnchorDebugLog();
     expect(log.readout(0)).toEqual([]);
     log.pass(sample(0.2, 1));
@@ -138,15 +159,35 @@ describe("createAnchorDebugLog", () => {
     log.pass(sample(5, 1));
     expect(log.readout(1500)).toEqual(first);
     expect(log.readout(2000)[0]).toContain("max 5.00 ms");
+    log.entry(entry("DeferredAnchors", "window opened (jump)"));
     log.clear();
-    expect(log.readout(3000)).toEqual([]);
-    expect(log.text()).toContain("passes 0 seen");
-    expect(log.text()).toContain("deferral -");
+    expect(log.readout(3000)[0]).toContain("max 5.00 ms");
+    expect(log.text()).toContain("passes 2 seen");
+    expect(log.text()).toContain("lines 0");
+    expect(log.text()).not.toContain("window opened");
+  });
+
+  // Why: the deferral line says what the page was opened with; an
+  // `anchors=ab` session copied during its first turn has deferral-on
+  // passes only and must still call itself an A/B session.
+  it("labels the session by the switch it was opened with", () => {
+    const ab = createAnchorDebugLog({ deferral: "ab" });
+    expect(ab.text()).toContain("deferral on and off in turns (anchors=ab)");
+    ab.pass(sample(0.1, 0));
+    expect(ab.text()).toContain("deferral on and off in turns (anchors=ab)");
+    expect(ab.readout(0)[0]).toMatch(/^anchors ab: /);
+    expect(createAnchorDebugLog().text()).toContain("deferral on");
+    expect(createAnchorDebugLog({ deferral: false }).text()).toContain(
+      "deferral off (anchors=0)",
+    );
   });
 
   it("refuses a size that is no positive integer", () => {
     expect(() => createAnchorDebugLog({ passes: 0 })).toThrow(RangeError);
     expect(() => createAnchorDebugLog({ lines: 1.5 })).toThrow(RangeError);
+    expect(() =>
+      createAnchorDebugLog({ deferral: "x" as unknown as boolean }),
+    ).toThrow(RangeError);
   });
 });
 
@@ -161,7 +202,7 @@ describe("the field test's verdicts", () => {
       "pass p95: not measured (no pass with the deferral on)",
     );
     expect(text).toContain(
-      `frame p95 regression: not measured, open with &anchors=ab (on n 0, off n 0, need ${String(MIN_FRAME_SAMPLES)} each)`,
+      `frame p95 regression: not measured, open with &anchors=ab and stay about 90 s (turns on 0, off 0, need ${String(MIN_AB_TURNS)} each; frames on n 0, off n 0, need ${String(MIN_FRAME_SAMPLES)} each)`,
     );
     expect(text).toContain(
       "out-of-view commits within their queue: not measured (none yet)",
@@ -185,40 +226,76 @@ describe("the field test's verdicts", () => {
   });
 
   // Why: the frame-time criterion compares one session's two halves
-  // (`anchors=ab`): p95 with the deferral on minus p95 with it off, each
-  // half with enough frames; a regression over the limit fails.
+  // (`anchors=ab`): p95 with the deferral on minus p95 with it off; a
+  // regression over the limit fails. Next to it each half's share of long
+  // frames (over 1.5 times the median), which a p95 alone can hide.
   it("compare the frame p95 of the two halves of an A/B session", () => {
-    const ok = createAnchorDebugLog();
-    for (let i = 0; i < MIN_FRAME_SAMPLES; i += 1) {
-      ok.pass(sample(0.1, 0, 0.0175, true));
-      ok.pass(sample(0.05, 0, 0.017, false));
-    }
+    const ok = createAnchorDebugLog({ deferral: "ab" });
+    // One frame in 50 of the deferral-on half is long (40 ms).
+    abSession(
+      ok,
+      MIN_AB_TURNS,
+      MIN_FRAME_SAMPLES,
+      (i) => (i % 50 === 0 ? 0.04 : 0.0175),
+      () => 0.017,
+    );
+    // The last off turn completes when the deferral comes back on.
+    ok.pass(sample(0.1, 0, 0.0175, true));
     const okText = ok.text();
-    expect(okText).toContain("deferral on and off in turns (anchors=ab)");
     expect(okText).toContain(
-      `frame p95 regression 0.5 ms (on 17.5, off 17.0, limit ${String(FRAME_REGRESSION_LIMIT_MS)}): PASS`,
+      `frame p95 regression 0.5 ms (on 17.5, off 17.0, limit ${String(FRAME_REGRESSION_LIMIT_MS)}; long frames on 2.0%, off 0.0%): PASS`,
     );
     expect(ok.readout(0)[1]).toBe(
       "anchor test: pass PASS, frame PASS, queue -",
     );
 
-    const slow = createAnchorDebugLog();
-    for (let i = 0; i < MIN_FRAME_SAMPLES; i += 1) {
-      slow.pass(sample(0.1, 0, 0.0185, true));
-      slow.pass(sample(0.05, 0, 0.017, false));
-    }
+    const slow = createAnchorDebugLog({ deferral: "ab" });
+    abSession(
+      slow,
+      MIN_AB_TURNS,
+      MIN_FRAME_SAMPLES,
+      () => 0.0185,
+      () => 0.017,
+    );
+    slow.pass(sample(0.1, 0, 0.0185, true));
     expect(slow.text()).toContain(
-      `frame p95 regression 1.5 ms (on 18.5, off 17.0, limit ${String(FRAME_REGRESSION_LIMIT_MS)}): FAIL`,
+      `frame p95 regression 1.5 ms (on 18.5, off 17.0, limit ${String(FRAME_REGRESSION_LIMIT_MS)}; long frames on 0.0%, off 0.0%): FAIL`,
     );
   });
 
-  it("do not compare frame times with too few frames in one half", () => {
-    const log = createAnchorDebugLog();
+  // Why: 300 frames fit in one 15 s turn, so a sample count alone would
+  // compare one stretch of the walk with another (in front of the tower
+  // against somewhere else). Each half needs three completed turns.
+  it("wait for three completed turns of each half, and for enough frames", () => {
+    const log = createAnchorDebugLog({ deferral: "ab" });
+    abSession(
+      log,
+      MIN_AB_TURNS - 1,
+      2 * MIN_FRAME_SAMPLES,
+      () => 0.017,
+      () => 0.017,
+    );
     for (let i = 0; i < MIN_FRAME_SAMPLES; i += 1) log.pass(sample(0.1, 0));
-    for (let i = 0; i < MIN_FRAME_SAMPLES - 1; i += 1)
-      log.pass(sample(0.1, 0, 1 / 60, false));
+    // Three turns on completed only once the deferral goes off again.
     expect(log.text()).toContain(
-      `frame p95 regression: not measured, open with &anchors=ab (on n ${String(MIN_FRAME_SAMPLES)}, off n ${String(MIN_FRAME_SAMPLES - 1)}, need ${String(MIN_FRAME_SAMPLES)} each)`,
+      `frame p95 regression: not measured, open with &anchors=ab and stay about 90 s (turns on ${String(MIN_AB_TURNS - 1)}, off ${String(MIN_AB_TURNS - 1)}, need ${String(MIN_AB_TURNS)} each; frames on n ${String(MIN_AB_TURNS * MIN_FRAME_SAMPLES * 2 - MIN_FRAME_SAMPLES)}, off n ${String((MIN_AB_TURNS - 1) * MIN_FRAME_SAMPLES * 2)}, need ${String(MIN_FRAME_SAMPLES)} each)`,
+    );
+    for (let i = 0; i < 2 * MIN_FRAME_SAMPLES; i += 1)
+      log.pass(sample(0.05, 0, 0.017, false));
+    log.pass(sample(0.1, 0));
+    expect(log.text()).toMatch(/^frame p95 regression 0\.0 ms .*: PASS$/m);
+
+    const short = createAnchorDebugLog({ deferral: "ab" });
+    abSession(
+      short,
+      MIN_AB_TURNS,
+      10,
+      () => 0.017,
+      () => 0.017,
+    );
+    short.pass(sample(0.1, 0));
+    expect(short.text()).toContain(
+      `(turns on ${String(MIN_AB_TURNS)}, off ${String(MIN_AB_TURNS)}, need ${String(MIN_AB_TURNS)} each; frames on n ${String(MIN_AB_TURNS * 10 + 1)}, off n ${String(MIN_AB_TURNS * 10)}, need ${String(MIN_FRAME_SAMPLES)} each)`,
     );
   });
 
@@ -255,7 +332,9 @@ describe("the field test's verdicts", () => {
       "anchor test: pass PASS, frame -, queue FAIL",
     );
     log.clear();
-    expect(log.text()).toContain("commits 0");
+    expect(log.text()).toContain(
+      "out-of-view commits within their queue (2 of 3): FAIL",
+    );
   });
 });
 

@@ -16,6 +16,7 @@
  * @see anchor-debug-log.ts.md
  */
 
+import type { AnchorDeferral } from "gps-plus-slam-app-framework/ar/ar-parent-target";
 import {
   observeDeferredAnchorPasses,
   type DeferredAnchorPassSample,
@@ -44,11 +45,17 @@ const TAG = "DeferredAnchors";
 export const PASS_P95_LIMIT_MS = 0.5;
 /** The field test's limit on the frame p95, deferral on minus off (ms, inclusive). */
 export const FRAME_REGRESSION_LIMIT_MS = 1;
-/**
- * Frames each half needs before the frame p95s are compared: 5 s at 60
- * frames a second, so one 15 s turn of `anchors=ab` is enough.
- */
+/** Frames each half needs before the frame p95s are compared (5 s at 60 fps). */
 export const MIN_FRAME_SAMPLES = 300;
+/**
+ * Completed turns each half of an `anchors=ab` session needs before the
+ * frame p95s are compared: one 15 s turn holds 300 frames, so a count alone
+ * could compare one stretch of the walk with another. Three turns of each
+ * take about 90 s.
+ */
+export const MIN_AB_TURNS = 3;
+/** A frame is long above this many times the session's median frame time. */
+const LONG_FRAME_FACTOR = 1.5;
 
 /** Nearest-rank p50 and p95, the max, the mean and how many samples. */
 export interface SampleSummary {
@@ -92,7 +99,11 @@ export interface AnchorDebugLog {
   text(): string;
   /** The `?debug=1` readout's lines (none before the first pass). */
   readout(nowMs: number): string[];
-  /** Empty the buffers (after a copy or a download, with the travel log). */
+  /**
+   * Empty the event lines (after a copy or a download, with the travel
+   * log). The numbers and the verdicts' data stay, so a copy in the middle
+   * of a run does not lose them.
+   */
   clear(): void;
 }
 
@@ -117,11 +128,24 @@ interface Summaries {
 /**
  * @param options.passes how many passes the summaries cover, per deferral state.
  * @param options.lines how many log lines are kept.
- * @throws RangeError for a size that is no positive integer.
+ * @param options.deferral the switch the page was opened with (default on),
+ *   which names the session.
+ * @throws RangeError for a size that is no positive integer, or a deferral
+ *   that is no boolean and not "ab".
  */
 export function createAnchorDebugLog(
-  options: { readonly passes?: number; readonly lines?: number } = {},
+  options: {
+    readonly passes?: number;
+    readonly lines?: number;
+    readonly deferral?: AnchorDeferral;
+  } = {},
 ): AnchorDebugLog {
+  const deferral = options.deferral ?? true;
+  if (deferral !== true && deferral !== false && deferral !== "ab") {
+    throw new RangeError(
+      `anchor-debug-log: deferral must be a boolean or "ab", got ${String(deferral)}`,
+    );
+  }
   const capacity = options.passes ?? ANCHOR_LOG_PASSES;
   const lineCap = options.lines ?? ANCHOR_LOG_LINES;
   for (const [name, n] of [
@@ -145,8 +169,11 @@ export function createAnchorDebugLog(
   const off = rings();
   let seen = 0;
   let lastDeferring: boolean | null = null;
+  // Turns of each half completed (the deferral switched away from it).
+  let turnsOn = 0;
+  let turnsOff = 0;
   // Commits since the last clear, by kind in the order first seen.
-  let commitKinds = new Map<CommitKind, number>();
+  const commitKinds = new Map<CommitKind, number>();
   let commitCount = 0;
   let outCommits = 0;
   let outMostFrames = 0;
@@ -166,37 +193,61 @@ export function createAnchorDebugLog(
   const passVerdict = (s: Summaries): Verdict =>
     s.pass === null ? null : s.pass.p95 <= PASS_P95_LIMIT_MS;
 
-  /** Deferral-on minus deferral-off frame p95, when both halves have enough frames. */
+  /**
+   * Deferral-on minus deferral-off frame p95, when both halves have their
+   * turns and frames; with each half's share of long frames.
+   */
   const frameRegression = (
     onS: Summaries,
     offS: Summaries,
-  ): { on: number; off: number; delta: number } | null => {
+  ): {
+    on: number;
+    off: number;
+    delta: number;
+    longOn: number;
+    longOff: number;
+  } | null => {
     if (
       onS.frame === null ||
       offS.frame === null ||
       onS.frame.count < MIN_FRAME_SAMPLES ||
-      offS.frame.count < MIN_FRAME_SAMPLES
+      offS.frame.count < MIN_FRAME_SAMPLES ||
+      turnsOn < MIN_AB_TURNS ||
+      turnsOff < MIN_AB_TURNS
     ) {
       return null;
     }
+    const frames = (r: Rings) => r.frameMs.subarray(0, r.kept);
+    const typicalMs = summarizeSamples([...frames(on), ...frames(off)])!.p50;
+    const longShare = (r: Rings): number => {
+      let long = 0;
+      let count = 0;
+      for (const v of frames(r)) {
+        if (!Number.isFinite(v)) continue;
+        count += 1;
+        if (v > LONG_FRAME_FACTOR * typicalMs) long += 1;
+      }
+      return count === 0 ? 0 : long / count;
+    };
     return {
       on: onS.frame.p95,
       off: offS.frame.p95,
       delta: onS.frame.p95 - offS.frame.p95,
+      longOn: longShare(on),
+      longOff: longShare(off),
     };
   };
 
   const queueVerdict = (): Verdict =>
     outCommits === 0 ? null : outOverQueue === 0;
 
-  const deferralText = (): string => {
-    if (on.kept > 0 && off.kept > 0) {
-      return "deferral on and off in turns (anchors=ab)";
-    }
-    if (on.kept > 0) return "deferral on";
-    if (off.kept > 0) return "deferral off (anchors=0)";
-    return `deferral ${lastDeferring === null ? "-" : lastDeferring ? "on" : "off"}`;
-  };
+  const deferralText =
+    deferral === "ab"
+      ? "deferral on and off in turns (anchors=ab)"
+      : deferral
+        ? "deferral on"
+        : "deferral off (anchors=0)";
+  const readoutLabel = deferral === "ab" ? "ab" : deferral ? "on" : "off";
 
   return {
     pass(sample) {
@@ -210,6 +261,10 @@ export function createAnchorDebugLog(
       r.next = (r.next + 1) % capacity;
       r.kept = Math.min(r.kept + 1, capacity);
       seen += 1;
+      if (lastDeferring !== null && lastDeferring !== sample.deferring) {
+        if (lastDeferring) turnsOn += 1;
+        else turnsOff += 1;
+      }
       lastDeferring = sample.deferring;
       // The commits list is valid during this call only: count it now.
       for (const c of sample.commits) {
@@ -240,7 +295,7 @@ export function createAnchorDebugLog(
         .join(", ");
       const out = [
         "--- anchors ---",
-        deferralText(),
+        deferralText,
         `passes ${String(seen)} seen, last ${String(on.kept + off.kept)} summarized`,
         `pass ms ${summaryText(onS.pass, 3)}`,
         `traversals per pass ${traversalText(onS.trav)}`,
@@ -261,8 +316,8 @@ export function createAnchorDebugLog(
           ? "pass p95: not measured (no pass with the deferral on)"
           : `pass p95 ${onS.pass.p95.toFixed(3)} ms (limit ${String(PASS_P95_LIMIT_MS)}): ${verdictWord(onS.pass.p95 <= PASS_P95_LIMIT_MS)}`,
         fr === null
-          ? `frame p95 regression: not measured, open with &anchors=ab (on n ${String(onS.frame?.count ?? 0)}, off n ${String(offS.frame?.count ?? 0)}, need ${String(MIN_FRAME_SAMPLES)} each)`
-          : `frame p95 regression ${fr.delta.toFixed(1)} ms (on ${fr.on.toFixed(1)}, off ${fr.off.toFixed(1)}, limit ${String(FRAME_REGRESSION_LIMIT_MS)}): ${verdictWord(fr.delta <= FRAME_REGRESSION_LIMIT_MS)}`,
+          ? `frame p95 regression: not measured, open with &anchors=ab and stay about 90 s (turns on ${String(turnsOn)}, off ${String(turnsOff)}, need ${String(MIN_AB_TURNS)} each; frames on n ${String(onS.frame?.count ?? 0)}, off n ${String(offS.frame?.count ?? 0)}, need ${String(MIN_FRAME_SAMPLES)} each)`
+          : `frame p95 regression ${fr.delta.toFixed(1)} ms (on ${fr.on.toFixed(1)}, off ${fr.off.toFixed(1)}, limit ${String(FRAME_REGRESSION_LIMIT_MS)}; long frames on ${percent(fr.longOn)}, off ${percent(fr.longOff)}): ${verdictWord(fr.delta <= FRAME_REGRESSION_LIMIT_MS)}`,
         qv === null
           ? "out-of-view commits within their queue: not measured (none yet)"
           : `out-of-view commits within their queue (${String(outCommits - outOverQueue)} of ${String(outCommits)}): ${verdictWord(qv)}`,
@@ -282,35 +337,19 @@ export function createAnchorDebugLog(
         // The numbers of the deferral-on passes, or of the off ones when
         // the session has none (anchors=0).
         const shown = on.kept > 0 ? onS : offS;
-        const label =
-          on.kept > 0 && off.kept > 0 ? "ab" : on.kept > 0 ? "on" : "off";
         const ms = (s: SampleSummary | null, d: number, pick: "p95" | "max") =>
           s === null ? "-" : s[pick].toFixed(d);
         const fr = frameRegression(onS, offS);
         readoutLines = [
-          `anchors ${label}: pass p95 ${ms(shown.pass, 2, "p95")} max ${ms(shown.pass, 2, "max")} ms, trav ${shown.trav === null ? "-" : shown.trav.mean.toFixed(2)}/pass, frame p95 ${ms(shown.frame, 1, "p95")} ms (${String(on.kept > 0 ? on.kept : off.kept)})`,
+          `anchors ${readoutLabel}: pass p95 ${ms(shown.pass, 2, "p95")} max ${ms(shown.pass, 2, "max")} ms, trav ${shown.trav === null ? "-" : shown.trav.mean.toFixed(2)}/pass, frame p95 ${ms(shown.frame, 1, "p95")} ms (${String(on.kept > 0 ? on.kept : off.kept)})`,
           `anchor test: pass ${shortWord(passVerdict(onS))}, frame ${shortWord(fr === null ? null : fr.delta <= FRAME_REGRESSION_LIMIT_MS)}, queue ${shortWord(queueVerdict())}`,
         ];
       }
       return readoutLines;
     },
     clear() {
-      for (const r of [on, off]) {
-        r.next = 0;
-        r.kept = 0;
-      }
-      seen = 0;
-      lastDeferring = null;
-      commitKinds = new Map();
-      commitCount = 0;
-      outCommits = 0;
-      outMostFrames = 0;
-      outMostQueued = 0;
-      outOverQueue = 0;
       lines = [];
       droppedLines = 0;
-      readoutAtMs = -Infinity;
-      readoutLines = [];
     },
   };
 }
@@ -320,11 +359,11 @@ export function createAnchorDebugLog(
  * pass observer and its log stream. Returns the log and the stop function
  * (for tests; the page never stops it).
  */
-export function startAnchorDebugLog(): {
+export function startAnchorDebugLog(deferral: AnchorDeferral = true): {
   readonly log: AnchorDebugLog;
   stop(): void;
 } {
-  const log = createAnchorDebugLog();
+  const log = createAnchorDebugLog({ deferral });
   const stopPasses = observeDeferredAnchorPasses((sample) => {
     log.pass(sample);
   });
@@ -342,6 +381,10 @@ export function startAnchorDebugLog(): {
 
 function verdictWord(v: boolean): string {
   return v ? "PASS" : "FAIL";
+}
+
+function percent(share: number): string {
+  return `${(share * 100).toFixed(1)}%`;
 }
 
 function shortWord(v: Verdict): string {

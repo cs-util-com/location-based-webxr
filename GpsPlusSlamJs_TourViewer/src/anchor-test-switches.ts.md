@@ -3,7 +3,8 @@
 ## Purpose
 
 The deferred anchors' field-test switches for the Tour Viewer, read from
-the page address only on a page with `?debug=1`, in every build. The phone
+the page address only on a visitor's page (a `?qr=` launch,
+`viewerModeFromSearch`) with `?debug=1`, in every build. The phone
 test of the deferred anchors can then run from a deployed preview, with
 no development server and no PC.
 
@@ -21,14 +22,16 @@ readers never apply here, in the development server either.
 - `ANCHOR_SWITCHES_OFF`: `{ devJump: null, deferAnchors: true }`, a
   visitor's page.
 - `anchorTestSwitchesFromSearch(search): AnchorTestSwitches`
-  - With `debug=1` (or `debug=true`, the framework's
+  - On a visitor's page with `debug=1` (or `debug=true`, the framework's
     `debugUiEnabledFromSearch`):
     - `devWorldJumpM=<m>` and/or `devWorldJumpDeg=<deg>`: a synthetic
-      world jump every 10 s (`parseDevWorldJump`), else none;
+      world jump every 10 s (`parseDevWorldJump`, clamped to 100 m and
+      180 deg either way), else none;
     - `anchors=0`: the deferral off for the session; `anchors=ab`: on and
       off in turns of 15 s (`ANCHOR_DEFERRAL_AB_PERIOD_S`), so one session
       measures the frame time both ways; anything else: on.
-  - Without it, or for a value that is not a string:
+  - On a creator's page, without `debug=1`, or for a value that is not
+    a string:
     `ANCHOR_SWITCHES_OFF`, whatever else the address says.
 
 ## Invariants
@@ -38,6 +41,9 @@ readers never apply here, in the development server either.
   session; nothing is stored, sent or written to a recording, and
   `?debug=1` is already the page's diagnostic mode (its readout and Copy
   log). A link someone shares with the switches affects only who opens it.
+- Never on a creator's page: the jump is folded into the world group and
+  a creator's captures (pins, code poses) read world positions, so they
+  would be saved shifted into the tour.
 - The jump moves anchored content on purpose and the deferral off lets
   corrections land in view: a visitor never gets either from a normal link.
 
@@ -47,14 +53,18 @@ readers never apply here, in the development server either.
 enableArWorldGroupAlignment({
   store,
   arWorldGroup,
-  ...anchorTestSwitchesFromSearch(location.search),
+  ...anchorTestSwitchesFromSearch(location.search), // "?qr=...&debug=1&anchors=ab"
 });
 ```
 
 ## Tests
 
 - `anchor-test-switches.test.ts`: the values with `debug=1` and
-  `debug=true`; off without it (`debug=0`, `debug=yes`, none, no string).
+  `debug=true` on a visitor's page; off on a creator's page and without
+  it (`debug=0`, `debug=yes`, none, no string).
+- `seams.test.ts`: the real alignment seam hands the framework the
+  deferral and the jump with `debug=1` on a visitor's page, and neither
+  without it.
 - `anchor-test-switches.property.test.ts`: any address without a debug
   flag gives `ANCHOR_SWITCHES_OFF`.
 - The framework's `ar-world-group-alignment.test.ts`: options passed in win

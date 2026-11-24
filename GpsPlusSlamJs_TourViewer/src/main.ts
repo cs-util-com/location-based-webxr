@@ -133,6 +133,7 @@ import {
 } from "./visitor-guide-slice.js";
 import { wireTourNameField } from "./tour-name-field.js";
 import { startAnchorDebugLog } from "./anchor-debug-log.js";
+import { anchorTestSwitchesFromSearch } from "./anchor-test-switches.js";
 import { renderTourContact } from "./tour-contact.js";
 import {
   NOT_FINISHED,
@@ -1295,8 +1296,14 @@ const saveTravelLog = (text: string): Promise<boolean> =>
 let lastTravel: TravellingBox | null = null;
 // The anchor section of the same Copy log (`anchor-debug-log.ts`): the
 // deferred anchors' log lines and pass, traversal and frame-time numbers,
-// measured only on this debug path.
-const anchorLog = travelLog === null ? null : startAnchorDebugLog().log;
+// measured only on this debug path, named by the deferral switch the page
+// was opened with.
+const anchorLog =
+  travelLog === null
+    ? null
+    : startAnchorDebugLog(
+        anchorTestSwitchesFromSearch(location.search).deferAnchors,
+      ).log;
 if (travelLog !== null) {
   element("travel-log-tools").hidden = false;
   wireTravelLogButtons({

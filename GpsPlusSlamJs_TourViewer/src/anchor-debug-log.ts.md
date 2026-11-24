@@ -22,14 +22,23 @@ path.
   - `FRAME_REGRESSION_LIMIT_MS = 1`: the frame p95 with the deferral on
     minus with it off.
   - `MIN_FRAME_SAMPLES = 300`: frames each half needs before the two are
-    compared (5 s at 60 frames a second; one 15 s turn of `anchors=ab`).
-- `createAnchorDebugLog({ passes = 3600, lines = 2000 }?): AnchorDebugLog`
-  - `RangeError` for a size that is not a positive integer.
+    compared (5 s at 60 frames a second).
+  - `MIN_AB_TURNS = 3`: completed turns each half of an `anchors=ab`
+    session needs before the two are compared. One 15 s turn holds 300
+    frames, so a count alone could compare 15 s in front of the tower with
+    a few seconds somewhere else; three turns of each take about 90 s.
+- `createAnchorDebugLog({ passes = 3600, lines = 2000, deferral = true }?): AnchorDebugLog`
+  - `deferral`: the switch the page was opened with (`true`, `false` for
+    `anchors=0`, `"ab"`), which names the session in the deferral line
+    and the readout, whatever passes it has seen so far.
+  - `RangeError` for a size that is not a positive integer, or a
+    `deferral` that is no boolean and not `"ab"`.
   - `pass(sample)`: one `DeferredAnchorPassSample` from the framework's
     pass observer. Keeps its pass ms, its traversals and its frame time
     (`dt * 1000`; none for a `dt` that is not positive) in three bounded
     rings of `passes` each, one set of rings for the deferral on and one
-    for off (`sample.deferring`), and counts it as seen. Its `commits` are
+    for off (`sample.deferring`), and counts it as seen. A change of
+    `sample.deferring` completes a turn of the half it leaves. Its `commits` are
     counted at once (the list is valid during the call only): by kind, and
     for each `out-of-view` commit its frames out of view against its queue.
   - `entry(logEntry)`: a framework log entry; only the `DeferredAnchors` tag
@@ -50,7 +59,7 @@ path.
     out of view: most 2 frames (queue up to 3), 0 over their queue
     --- verdict ---
     pass p95 0.118 ms (limit 0.5): PASS
-    frame p95 regression 0.4 ms (on 18.3, off 17.9, limit 1): PASS
+    frame p95 regression 0.4 ms (on 18.3, off 17.9, limit 1; long frames on 1.2%, off 0.9%): PASS
     out-of-view commits within their queue (9 of 9): PASS
     lines 3
     14:02:11.512 window opened (jump)
@@ -60,13 +69,16 @@ path.
 
     - The unlabelled pass, traversal and frame lines are the deferral-on
       passes; the `deferral off:` line appears once there are off passes.
-    - The deferral line reads `deferral on`, `deferral off (anchors=0)`,
-      `deferral on and off in turns (anchors=ab)` (both kept), or
-      `deferral -` before the first pass.
+    - The deferral line reads `deferral on`, `deferral off (anchors=0)`
+      or `deferral on and off in turns (anchors=ab)`, from `deferral`.
+    - The frame line's long frames: each half's share of frames longer
+      than 1.5 times the median frame time of both halves together, which
+      shows stutter a p95 can hide.
     - A criterion without its data prints `not measured` and what it
       needs, never PASS: `pass p95: not measured (no pass with the deferral
-on)`, `frame p95 regression: not measured, open with &anchors=ab (on
-n <a>, off n <b>, need 300 each)`, `out-of-view commits within their
+on)`, `frame p95 regression: not measured, open with &anchors=ab and stay
+about 90 s (turns on <t>, off <u>, need 3 each; frames on n <a>, off n
+<b>, need 300 each)`, `out-of-view commits within their
 queue: not measured (none yet)`.
     - `-` stands for a summary without samples.
 
@@ -74,12 +86,16 @@ queue: not measured (none yet)`.
     `anchors ab: pass p95 0.12 max 0.90 ms, trav 0.21/pass, frame p95 18.3 ms (2700)`
     and `anchor test: pass PASS, frame PASS, queue -` (`-` for not
     measured). The first shows the deferral-on numbers, or the off ones
-    when the session has none; its label is `on`, `off` or `ab`. Empty
+    when the session has none; its label is `on`, `off` or `ab`, from
+    `deferral`. Empty
     before the first pass. Recomputed at most once a second (the readout
     renders every camera frame), and at once when the clock goes back.
-  - `clear()`: empties the rings, the counts, the commit counts and the
-    lines.
-- `startAnchorDebugLog(): { log, stop() }`: a log fed by
+  - `clear()`: empties the event lines only, after each Copy or
+    Download. The rings, the turns and the commit counts stay, so a copy in
+    the middle of a run keeps the verdicts' data and the next copy carries
+    the whole run.
+- `startAnchorDebugLog(deferral = true): { log, stop() }`: a log
+  (`createAnchorDebugLog({ deferral })`) fed by
   `observeDeferredAnchorPasses` and `subscribeToLogs`; `stop` ends both
   feeds (the page never calls it).
 
@@ -99,8 +115,10 @@ queue: not measured (none yet)`.
   down. The frame criterion compares the two halves of one session, so
   the walk, the content and the phone's heat are the same for both.
 - The queue criterion: the set traverses one key per pass, round robin, so
-  a key out of view with `q` keys queued commits within `q` passes; a
-  commit with `outFrames > queued` counts as over its queue and fails it.
+  a key commits within `queued` passes of going out of view, `queued`
+  being the keys out of view when it went out (itself included) plus every
+  key that went out after it (`deferred-anchors.ts.md`); a commit with
+  `outFrames > queued` counts as over its queue and fails it.
 - Pass times are `performance.now()` spans, which a browser coarsens
   without cross-origin isolation: on a phone opening the page without it
   they come in steps of about 0.1 ms, so a cheap pass reads 0 or 0.1 and
@@ -110,14 +128,17 @@ queue: not measured (none yet)`.
 - With several anchor sets every set's passes land in the same rings (the
   Tour Viewer has one).
 - Parameters the verdicts rest on: the two limits (from the field test's
-  pass criteria) and `MIN_FRAME_SAMPLES`. A smaller minimum gives a frame
-  verdict sooner on fewer frames; a larger one may need more than one
-  turn of `anchors=ab` per half.
+  pass criteria), `MIN_FRAME_SAMPLES`, `MIN_AB_TURNS` and the long-frame
+  factor 1.5. Fewer turns give a verdict sooner but compare fewer places
+  of the walk; more turns need a longer stay (15 s x 2 per turn). The
+  long-frame share is printed, not judged.
 
 ## Example
 
 ```ts
-const anchorLog = startAnchorDebugLog().log;
+const anchorLog = startAnchorDebugLog(
+  anchorTestSwitchesFromSearch(location.search).deferAnchors,
+).log;
 wireTravelLogButtons({ ...buttons, appendix: anchorLog });
 debugLines = () => [...anchorLog.readout(performance.now())];
 ```
@@ -125,10 +146,12 @@ debugLines = () => [...anchorLog.readout(performance.now())];
 ## Tests
 
 - `anchor-debug-log.test.ts`: the summary, the section's lines, the bounded
-  rings and lines, the deferral-off wording, the once-a-second readout and
-  `clear`, the size refusals, the verdicts (not measured without data, the
-  pass p95 on the deferral-on passes only and inclusive, the frame p95
-  regression of an A/B session both ways and its sample minimum, the
+  rings and lines, the deferral-off wording, the label from the switch, the
+  once-a-second readout and `clear` keeping the numbers, the size refusals,
+  the verdicts (not measured without data, the pass p95 on the deferral-on
+  passes only and inclusive, the frame p95 regression of an A/B session
+  both ways with its long-frame shares, its three turns and its sample
+  minimum, the
   commits by kind and the queue check both ways), and the framework's log
   lines reaching `startAnchorDebugLog` until `stop`.
 - `anchor-debug-log.property.test.ts`: the summary against

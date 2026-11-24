@@ -21,8 +21,11 @@ anywhere. Nothing about the phone's position is stored or sent.
   moves. An empty list stays empty. The moved list feeds the station guide
   (`visitor-stations.ts`) and the content placement
   (`viewer-placement.ts`) alike, so a station's free blocks and its story
-  blocks stand at the moved station; only the tour's items outside any
-  station stay where the file puts them. A
+  blocks stand at the moved station. It moves neither the tour's free
+  items (outside any station) nor the tour's codes: both stay where the
+  file puts them, so scanning one of the tour's codes on a moved tour
+  aligns the session to the code's place in the file, far from the moved
+  stations. A test on a moved tour scans no code. A
   target altitude that is not finite (a fix without altitude) keeps the
   stations' own heights.
 - `firstDeviceFix(points): RelocationTarget | null` - the first point of a
