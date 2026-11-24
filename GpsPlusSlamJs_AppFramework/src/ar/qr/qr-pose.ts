@@ -110,9 +110,7 @@ const DEFAULT_MAX_REPROJECTION_ERROR_PX = 4;
  * Whether `aspectRatio` is a usable planar-target aspect ratio (height over
  * width): a finite number above zero.
  */
-export function isValidAspectRatio(
-  aspectRatio: unknown
-): aspectRatio is number {
+export function isValidAspectRatio(aspectRatio: unknown): boolean {
   return (
     typeof aspectRatio === 'number' &&
     aspectRatio > 0 &&

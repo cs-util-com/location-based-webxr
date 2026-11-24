@@ -15,7 +15,7 @@ conventions.
   it always was), target-local frame (+x right, +y up, z = 0), ordered
   **TL, TR, BR, BL** (symbol reading order). Throws `RangeError` on a
   non-positive / non-finite size or aspect ratio.
-- `isValidAspectRatio(value): value is number`: a finite number above zero.
+- `isValidAspectRatio(value): boolean`: a finite number above zero.
   `assertAspectRatio(aspectRatio, module)` throws a `RangeError` naming the
   module otherwise. Every module that takes an aspect ratio checks it with
   these, so a planar target's shape has one rule.
