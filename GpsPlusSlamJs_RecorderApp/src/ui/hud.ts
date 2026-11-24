@@ -348,6 +348,7 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
     hudState.cachedElements.btnStop.classList.add('hidden');
     hudState.cachedElements.btnRefPoint.classList.add('hidden');
     hudState.cachedElements.btnPhaseMark.classList.add('hidden');
+    hudState.cachedElements.btnPhaseMark.textContent = DEFAULT_PHASE_MARK_LABEL;
     hudState.cachedElements.recordingIndicator.classList.add('hidden');
   }
 

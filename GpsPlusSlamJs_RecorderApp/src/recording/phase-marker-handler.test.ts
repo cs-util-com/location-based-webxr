@@ -26,10 +26,13 @@ import {
 } from 'gps-plus-slam-app-framework/state/recording-slice';
 import { phaseMarked, selectPhaseMarkers } from '../state/phase-markers-slice';
 import { createPhaseMarkerHandler } from './phase-marker-handler';
-import { showToast } from '../ui/toast';
+import { showToast, isAlertToastShowing } from '../ui/toast';
 import { setPhaseMarkButtonLabel } from '../ui/hud';
 
-vi.mock('../ui/toast', () => ({ showToast: vi.fn() }));
+vi.mock('../ui/toast', () => ({
+  showToast: vi.fn(),
+  isAlertToastShowing: vi.fn(() => false),
+}));
 vi.mock('../ui/hud', () => ({ setPhaseMarkButtonLabel: vi.fn() }));
 
 const T0 = 1_750_000_000_000;
@@ -47,6 +50,7 @@ function recordingStore() {
 beforeEach(() => {
   vi.mocked(showToast).mockClear();
   vi.mocked(setPhaseMarkButtonLabel).mockClear();
+  vi.mocked(isAlertToastShowing).mockReset().mockReturnValue(false);
 });
 
 describe('createPhaseMarkerHandler', () => {
@@ -103,14 +107,78 @@ describe('createPhaseMarkerHandler', () => {
   // number from 1 again rather than continue the previous walk's count.
   it('follows a store swap and numbers the next recording from 1', () => {
     let store = recordingStore();
+    let now = T0;
     const handler = createPhaseMarkerHandler({
       getStore: () => store,
       isStopInProgress: () => false,
+      now: () => (now += 1000),
     });
     handler.markPhase();
     handler.markPhase();
     store = recordingStore();
     expect(handler.markPhase()).toBe(1);
+  });
+
+  // Why: a phone held up mid-walk easily registers one tap twice. Two
+  // markers 100 ms apart would split one protocol step into two phases, and
+  // the walker would not notice; the guard drops the second and says so.
+  it('ignores a tap within 500 ms of the last marker and says it is already marked', () => {
+    const store = recordingStore();
+    let now = T0 + 1000;
+    const handler = createPhaseMarkerHandler({
+      getStore: () => store,
+      isStopInProgress: () => false,
+      now: () => now,
+    });
+
+    expect(handler.markPhase()).toBe(1);
+    vi.mocked(setPhaseMarkButtonLabel).mockClear();
+    now += 499;
+    expect(handler.markPhase()).toBeNull();
+    expect(selectPhaseMarkers(store.getState())).toHaveLength(1);
+    expect(setPhaseMarkButtonLabel).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenLastCalledWith(
+      'Phase 1 already marked',
+      expect.objectContaining({ severity: 'info' })
+    );
+
+    now += 1; // 500 ms after the accepted tap
+    expect(handler.markPhase()).toBe(2);
+  });
+
+  // Why: the guard measures time forward from the last marker. A device
+  // clock stepped backwards must not lock the button until it catches up.
+  it('accepts a tap when the clock has stepped back past the last marker', () => {
+    const store = recordingStore();
+    let now = T0 + 10_000;
+    const handler = createPhaseMarkerHandler({
+      getStore: () => store,
+      isStopInProgress: () => false,
+      now: () => now,
+    });
+    expect(handler.markPhase()).toBe(1);
+    now -= 5000;
+    expect(handler.markPhase()).toBe(2);
+  });
+
+  // Why: a warning or error toast (a failed write, a refused ref point) is
+  // the more important message. A phase tap must not replace it with "Phase
+  // N marked"; the button label already shows the number.
+  it('records the marker but keeps a visible warning or error toast on screen', () => {
+    const store = recordingStore();
+    let now = T0;
+    const handler = createPhaseMarkerHandler({
+      getStore: () => store,
+      isStopInProgress: () => false,
+      now: () => now,
+    });
+    vi.mocked(isAlertToastShowing).mockReturnValue(true);
+
+    expect(handler.markPhase()).toBe(1);
+    expect(setPhaseMarkButtonLabel).toHaveBeenLastCalledWith(1);
+    now += 100; // a double tap: still refused, still silent
+    expect(handler.markPhase()).toBeNull();
+    expect(showToast).not.toHaveBeenCalled();
   });
 
   // Why: the whole point of the marker is that it reaches the session zip.

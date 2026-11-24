@@ -34,6 +34,7 @@ import {
   showToast,
   hideToast,
   destroyToast,
+  isAlertToastShowing,
   TOAST_DURATION_ERROR,
 } from './toast.js';
 
@@ -56,6 +57,27 @@ describe('Toast Notification', () => {
   afterEach(() => {
     destroyToast();
     vi.useRealTimers();
+  });
+
+  describe('isAlertToastShowing', () => {
+    // Why: a short info confirmation (a phase marker) asks this before it
+    // shows itself, so it never replaces a warning or error the walker has
+    // not read yet. Wrong after the auto-hide, and every later confirmation
+    // would stay silent; wrong for info, and confirmations could not replace
+    // each other.
+    it('is true only while a warning or error toast is on screen', () => {
+      expect(isAlertToastShowing()).toBe(false);
+      show('saved', { severity: 'info' });
+      expect(isAlertToastShowing()).toBe(false);
+      show('write failed', { severity: 'warning', duration: 1000 });
+      expect(isAlertToastShowing()).toBe(true);
+      vi.advanceTimersByTime(1000);
+      expect(isAlertToastShowing()).toBe(false);
+      show('broken', { severity: 'error' });
+      expect(isAlertToastShowing()).toBe(true);
+      hideToast();
+      expect(isAlertToastShowing()).toBe(false);
+    });
   });
 
   describe('initToast', () => {

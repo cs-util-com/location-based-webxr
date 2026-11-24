@@ -10,7 +10,7 @@ One predicate for "will an action dispatched now reach the recording's `actions/
 
 ## Invariants and defensive measures
 
-- Mirrors the framework persistence middleware's `readIsRecording`: only `state.recording.isRecording === true` counts; a missing slice, a missing state or a non-boolean flag reads as false.
+- Modelled on the framework persistence middleware's `readIsRecording`, but stricter: only `state.recording.isRecording === true` counts; a missing slice, a missing state or a non-boolean flag reads as false, so a tap is never confirmed on a guess.
 - The stop window counts as ended: Stop flushes and exports the zip while `isRecording` is still true, so `stopInProgress === true` always answers false.
 
 ## Example

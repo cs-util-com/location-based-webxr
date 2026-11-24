@@ -2368,6 +2368,14 @@ describe('setNewRefPointButtonVisible', () => {
     fresh.hideRecordingControls();
     expect(btn.classList.contains('hidden')).toBe(true);
     expect(btn.textContent).toBe('🏁 Phase');
+
+    // "New recording" from the summary goes through resetUIForNewRecording,
+    // not hideRecordingControls; it must reset the label too.
+    fresh.showRecordingControls();
+    fresh.setPhaseMarkButtonLabel(4);
+    fresh.resetUIForNewRecording({ keepFolder: true });
+    expect(btn.classList.contains('hidden')).toBe(true);
+    expect(btn.textContent).toBe('🏁 Phase');
   });
 
   // Why: Clicking the + button should call onMarkNewRefPoint to trigger

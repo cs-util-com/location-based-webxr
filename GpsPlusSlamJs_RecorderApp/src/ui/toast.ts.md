@@ -68,6 +68,10 @@ showToast('⚠️ Save failed', {
 });
 ```
 
+### `isAlertToastShowing(): boolean`
+
+True while a warning or error toast is on screen. For short info confirmations (the phase marker) that must not replace an alert the user has not read yet. Read from the DOM: the element is attached on show and removed when its linger ends, so presence plus the severity marker class is what the user sees.
+
 ### `hideToast(): void`
 
 Hide the toast notification immediately. Safe to call when already hidden.
@@ -98,6 +102,7 @@ Located in [toast.test.ts](toast.test.ts):
 - Auto-hide after timeout, and custom duration support
 - Severity styling (info/warning/error), including that the previous severity does not linger
 - Manual hide, hide beating a queued write, and hide being safe when nothing is showing
+- `isAlertToastShowing`: true for warning and error, false for info, after the auto-hide and after a manual hide
 - `destroyToast` removing the toast and letting a later `showToast` build a fresh one
 - Tailwind class assertions for container layout and severity colors
 - AR DOM-overlay nesting (D4 F4-A): container mounts inside `#app`; non-AR toast still visible after re-parent; `document.body` fallback when `#app` absent; the overlay root re-resolved when the toast is rebuilt

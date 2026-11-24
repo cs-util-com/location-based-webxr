@@ -162,6 +162,23 @@ export function showToast(message: string, options: ToastOptions = {}): void {
 }
 
 /**
+ * True while a warning or error toast is on screen.
+ *
+ * For short info confirmations that must not replace an alert the user has
+ * not read yet. Read from the DOM, because the element is attached on show
+ * and removed when its linger ends, so presence plus severity class is the
+ * truth about what the user sees.
+ */
+export function isAlertToastShowing(): boolean {
+  const element = document.getElementById(TOAST_CONTAINER_ID);
+  if (!element) return false;
+  return (
+    element.classList.contains('toast-warning') ||
+    element.classList.contains('toast-error')
+  );
+}
+
+/**
  * Hide the toast notification immediately.
  * Safe to call when already hidden, and it cancels a text write that has been
  * queued but not yet run.

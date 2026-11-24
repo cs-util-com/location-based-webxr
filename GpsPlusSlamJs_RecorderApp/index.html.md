@@ -68,7 +68,7 @@ Every ID below is referenced by TypeScript code. Removing or renaming any of the
 | `btn-stop` | `button` | `hud.ts` | `.hidden` toggled; click stops recording. `aria-label="Stop Recording"` |
 | `recording-indicator` | `span` | `hud.ts` | `.hidden` toggled; pulsing red dot. `aria-label="Recording in progress"` |
 | `btn-ref-point` | `button` | `hud.ts` | `.hidden` toggled; click opens ref-point picker. `aria-label="Mark Reference Point"` |
-| `phase-mark-row` | `div` | `phase-marker.spec.js` | Own `w-fit` row above the bottom controls row, so the phase button never shifts or covers Stop, Mark Point or the map pill |
+| `phase-mark-row` | `div` | `phase-marker.spec.js` (test only, no TypeScript reference) | Right-aligned `w-fit` row (`ml-auto`) above the bottom controls row, so the phase button never shifts or covers Stop, Mark Point or the map pill, and stays clear of the HUD in landscape. The button carries the `mb-2`, so the hidden row adds no height |
 | `btn-phase-mark` | `button` | `hud.ts` | `.hidden` toggled (shown only while recording); click drops the next phase marker; label `🏁 Phase` / `🏁 Phase N`. `aria-label="Mark phase"` |
 | `btn-map-zoom-in` | `button` | `hud.ts` | Click handler for map zoom. `aria-label="Map Zoom In"` |
 | `btn-map-zoom-out` | `button` | `hud.ts` | Click handler for map zoom. `aria-label="Map Zoom Out"` |

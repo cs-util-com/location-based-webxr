@@ -1,10 +1,12 @@
 /**
  * Will an action dispatched now reach the recording's `actions/`?
  *
- * A mirror of the framework persistence middleware's `readIsRecording`
+ * Modelled on the framework persistence middleware's `readIsRecording`
  * (persistence-middleware.ts), the gate every persisted recorder dispatch is
- * subject to: a missing `recording` slice reads as false, exactly like the
- * gate. The stop window counts as ended: Stop flushes and exports the zip for
+ * subject to, but stricter: only `recording.isRecording === true` counts, so
+ * a missing slice, a missing state or a non-boolean flag reads as false and a
+ * tap is never confirmed on a guess. The stop window counts as ended: Stop
+ * flushes and exports the zip for
  * seconds while `recording.isRecording` is still true, so a dispatch in that
  * window could land after the export listed `actions/`.
  *

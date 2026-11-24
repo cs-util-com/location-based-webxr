@@ -114,10 +114,14 @@
         <!-- recording (test-protocol phases). Its own row ABOVE the bottom  -->
         <!-- row, so it never shifts or covers Stop, Mark Point or the map   -->
         <!-- pill; w-fit keeps the row from catching taps across the width.  -->
-        <div id="phase-mark-row" class="mb-2 w-fit">
+        <!-- Right-aligned, above Mark Point and the map pill: on the left   -->
+        <!-- it would cover the lower HUD rows in landscape, where the HUD   -->
+        <!-- reaches down to the controls. The margin sits on the button, so -->
+        <!-- the row adds no height while the button is hidden.              -->
+        <div id="phase-mark-row" class="ml-auto w-fit">
           <button
             id="btn-phase-mark"
-            class="bg-amber-600 hover:bg-amber-700 focus:ring-2 focus:ring-amber-400 focus:outline-none text-white font-bold py-3 px-4 rounded-full shadow-lg transition-all hidden"
+            class="mb-2 bg-amber-600 hover:bg-amber-700 focus:ring-2 focus:ring-amber-400 focus:outline-none text-white font-bold py-3 px-4 rounded-full shadow-lg transition-all hidden"
             title="Mark the next test phase"
             aria-label="Mark phase"
           >

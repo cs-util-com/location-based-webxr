@@ -17,23 +17,61 @@ const PHONE_VIEWPORTS = [
   { name: 'landscape', width: 844, height: 390 },
 ];
 
-/** Bounding boxes of the controls the phase button must leave alone. */
-async function controlBoxes(page) {
-  const ids = [
-    'btn-stop',
-    'recording-indicator',
-    'btn-ref-point',
-    'btn-new-ref-point',
-    'btn-map',
-    'btn-map-zoom-in',
-    'btn-map-zoom-out',
-    'status',
-  ];
+/**
+ * The bottom-row recording controls and the HUD box: the phase button must
+ * cover none of them, and taking its row out of the layout must move none of
+ * them.
+ */
+const FIXED_CONTROLS = [
+  '#btn-stop',
+  '#recording-indicator',
+  '#btn-ref-point',
+  '#btn-new-ref-point',
+  '#btn-map',
+  '#btn-map-zoom-in',
+  '#btn-map-zoom-out',
+  '#status',
+  '#hud > div',
+];
+
+/**
+ * The ref-point hint stacks ABOVE the phase row by design (both sit in the
+ * bottom-anchored controls overlay), so it moves up by the row's height when
+ * the button is shown. It must still never be covered.
+ */
+const STACKED_ABOVE = ['#ref-point-hint'];
+
+async function boxesOf(page, selectors) {
   const boxes = {};
-  for (const id of ids) {
-    boxes[id] = await page.locator(`#${id}`).boundingBox();
+  for (const selector of selectors) {
+    boxes[selector] = await page.locator(selector).boundingBox();
   }
   return boxes;
+}
+
+/** Everything the HUD can show during a recording, at once: the worst case. */
+async function showFullHud(page) {
+  await page.evaluate(() => {
+    for (const id of [
+      'gps-info',
+      'ar-info',
+      'sync-info',
+      'abs-compass-info',
+      'qr-info',
+      'frame-count-info',
+      'tracking-quality',
+    ]) {
+      document.getElementById(id)?.classList.remove('hidden');
+    }
+    document.getElementById('tq-state').textContent = 'Converged';
+    document.getElementById('tq-confidence').textContent = '(92%)';
+    document.getElementById('qr-status').textContent = 'QR: none';
+    const hint = document.getElementById('ref-point-hint');
+    hint.textContent = 'Near reference point';
+    hint.classList.remove('hidden');
+    // Worst case for width: the secondary "add new ref point" button too.
+    document.getElementById('btn-new-ref-point')?.classList.remove('hidden');
+  });
 }
 
 function overlaps(a, b) {
@@ -46,7 +84,7 @@ function overlaps(a, b) {
 }
 
 for (const viewport of PHONE_VIEWPORTS) {
-  test(`${viewport.name}: a tap marks the next phase, the summary counts them, and the button covers and shifts nothing`, async ({
+  test(`${viewport.name}: a tap marks the next phase, the summary counts them, and the button covers no control and shifts no bottom-row control`, async ({
     page,
   }) => {
     await page.setViewportSize(viewport);
@@ -63,17 +101,18 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(page.locator('#btn-stop')).toBeVisible();
     });
 
-    await test.step('shifts and covers none of the recording controls', async () => {
-      // Worst case for width: the secondary "add new ref point" button too.
-      await page.evaluate(() =>
-        document.getElementById('btn-new-ref-point')?.classList.remove('hidden')
-      );
-      const withButton = await controlBoxes(page);
+    await test.step('covers no control, with the full HUD showing', async () => {
+      await showFullHud(page);
+      const withButton = await boxesOf(page, FIXED_CONTROLS);
+      const stacked = await boxesOf(page, STACKED_ABOVE);
       const phaseBox = await phaseButton.boundingBox();
 
-      for (const [id, box] of Object.entries(withButton)) {
-        expect(box, `#${id} is laid out`).not.toBeNull();
-        expect(overlaps(phaseBox, box), `phase button covers #${id}`).toBe(
+      for (const [selector, box] of Object.entries({
+        ...withButton,
+        ...stacked,
+      })) {
+        expect(box, `${selector} is laid out`).not.toBeNull();
+        expect(overlaps(phaseBox, box), `phase button covers ${selector}`).toBe(
           false
         );
       }
@@ -89,24 +128,34 @@ for (const viewport of PHONE_VIEWPORTS) {
       // A thumb-sized target.
       expect(phaseBox.height).toBeGreaterThanOrEqual(40);
 
-      // Shifts nothing: every other control sits exactly where it sits with
-      // the phase button's row taken out of the layout.
+      // Shifts no bottom-row control and not the HUD: each sits exactly where
+      // it sits with the phase button's row taken out of the layout.
       await page.evaluate(() =>
         document.getElementById('phase-mark-row')?.classList.add('hidden')
       );
-      const withoutButton = await controlBoxes(page);
+      const withoutButton = await boxesOf(page, FIXED_CONTROLS);
       await page.evaluate(() =>
         document.getElementById('phase-mark-row')?.classList.remove('hidden')
       );
       expect(withButton).toEqual(withoutButton);
     });
 
-    await test.step('each tap confirms its number', async () => {
+    await test.step('each tap confirms its number, a double tap is dropped', async () => {
+      // The clock is pinned so the 500 ms double-tap guard is tested by
+      // moving time, not by waiting for it.
+      const t0 = new Date('2026-01-01T12:00:00Z').getTime();
+      await page.clock.setFixedTime(t0);
       await phaseButton.click();
       await expect(page.locator('#toast-container')).toContainText(
         'Phase 1 marked'
       );
       await expect(phaseButton).toHaveText('🏁 Phase 1');
+      await phaseButton.click();
+      await expect(page.locator('#toast-container')).toContainText(
+        'Phase 1 already marked'
+      );
+      await expect(phaseButton).toHaveText('🏁 Phase 1');
+      await page.clock.setFixedTime(t0 + 1000);
       await phaseButton.click();
       await expect(page.locator('#toast-container')).toContainText(
         'Phase 2 marked'

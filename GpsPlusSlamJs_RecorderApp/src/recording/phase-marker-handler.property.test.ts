@@ -5,8 +5,8 @@
  * recording into phases by marker number, so two properties have to hold for
  * EVERY tap sequence, not just the ones a hand-written test thinks of:
  * - the numbers a recording carries are 1, 2, 3, ... strictly increasing,
- *   however taps interleave with the stop window and with taps outside a
- *   recording (which are refused, never numbered);
+ *   however taps interleave with the stop window, with taps outside a
+ *   recording and with double taps (all refused, never numbered);
  * - what the store holds survives the session round trip: the persisted
  *   actions, serialised the way the zip stores them and replayed into a fresh
  *   store, rebuild exactly the same markers.
@@ -23,7 +23,10 @@ import {
 import { selectPhaseMarkers } from '../state/phase-markers-slice';
 import { createPhaseMarkerHandler } from './phase-marker-handler';
 
-vi.mock('../ui/toast', () => ({ showToast: vi.fn() }));
+vi.mock('../ui/toast', () => ({
+  showToast: vi.fn(),
+  isAlertToastShowing: vi.fn(() => false),
+}));
 vi.mock('../ui/hud', () => ({ setPhaseMarkButtonLabel: vi.fn() }));
 
 /** In-memory backend: keeps every persisted action in write order. */
@@ -44,13 +47,30 @@ function capturingBackend(): StorageBackend & { written: unknown[] } {
 
 type Step = 'tap' | 'stopWindow' | 'tapOutside';
 
+/** The model: a tap in a running recording, 500 ms or more after the last accepted one. */
+function tapCounts(
+  step: Step,
+  clock: number,
+  lastAcceptedAt: number | null
+): boolean {
+  if (step !== 'tap') return false;
+  return lastAcceptedAt === null || clock - lastAcceptedAt >= 500;
+}
+
 describe('phase-marker handler properties', () => {
+  // The gaps straddle the 500 ms double-tap guard, so the property also pins
+  // that a tap counts exactly when it is at least 500 ms after the last
+  // accepted one.
   it('numbers every accepted tap 1..n, strictly increasing, and the markers survive a round trip', async () => {
     await fc.assert(
       fc.asyncProperty(
-        fc.array(fc.constantFrom<Step>('tap', 'stopWindow', 'tapOutside'), {
-          maxLength: 30,
-        }),
+        fc.array(
+          fc.record({
+            step: fc.constantFrom<Step>('tap', 'stopWindow', 'tapOutside'),
+            gapMs: fc.integer({ min: 0, max: 1500 }),
+          }),
+          { maxLength: 30 }
+        ),
         fc.integer({ min: 1_600_000_000_000, max: 1_900_000_000_000 }),
         async (steps, t0) => {
           const backend = capturingBackend();
@@ -61,13 +81,15 @@ describe('phase-marker handler properties', () => {
           const handler = createPhaseMarkerHandler({
             getStore: () => store,
             isStopInProgress: () => stopping,
-            now: () => (clock += 250),
+            now: () => clock,
           });
 
           let accepted = 0;
+          let lastAcceptedAt: number | null = null;
           const returned: Array<number | null> = [];
           const expected: Array<number | null> = [];
-          for (const step of steps) {
+          for (const { step, gapMs } of steps) {
+            clock += gapMs;
             if (step === 'tapOutside') {
               if (recording) {
                 store.dispatch(endSession());
@@ -86,8 +108,12 @@ describe('phase-marker handler properties', () => {
             stopping = step === 'stopWindow';
             returned.push(handler.markPhase());
             stopping = false;
-            if (step === 'tap') accepted += 1;
-            expected.push(step === 'tap' ? accepted : null);
+            const counts = tapCounts(step, clock, lastAcceptedAt);
+            if (counts) {
+              accepted += 1;
+              lastAcceptedAt = clock;
+            }
+            expected.push(counts ? accepted : null);
           }
           expect(returned).toEqual(expected);
           await store.flushPendingActionWrites();
