@@ -43,6 +43,7 @@ import {
 } from '../ui/navigation';
 import { showSessionSummary } from '../ui/session-summary';
 import { selectRefPointEntries } from '../state/ref-points-slice';
+import { selectPhaseMarkerCount } from '../state/phase-markers-slice';
 import {
   generateSessionFilename,
   getSaveFileName,
@@ -288,6 +289,7 @@ export async function performStop(
     alignmentSnapshotNuePositions:
       gpsEventVisualizer.getAlignmentSnapshotPositions(),
     refPoints,
+    phaseMarkerCount: selectPhaseMarkerCount(state),
     syncResult: runtime.lastSyncResult,
     zipFilename: runtime.lastSyncResult
       ? (getSaveFileName() ?? generateSessionFilename())

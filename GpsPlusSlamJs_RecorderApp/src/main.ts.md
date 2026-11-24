@@ -34,7 +34,7 @@ This module is the entry point that runs on page load. It also exports the follo
    `activeImageQualityAnalyzer` ref (per-recording quality-gate Worker behind
    the stable `qualityAnalyzer` wrapper; fail-open `{ accept: true }` while
    null).
-6. **Handle recording controls** - Start/stop recording, mark reference points
+6. **Handle recording controls** - Start/stop recording, mark reference points, drop phase markers ([phase-marker-handler.ts](recording/phase-marker-handler.ts.md), wired to `onMarkPhase` with the same `getStore` / `isStopInProgress` as the reference-point handlers)
 7. **Handle stop recording** - Collects summary data and shows Session Summary panel
 
 ## Invariants & Assumptions

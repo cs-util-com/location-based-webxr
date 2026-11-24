@@ -43,6 +43,7 @@ import {
 import { webxrToNUE } from 'gps-plus-slam-app-framework/core';
 import type { Vector3, Quaternion } from 'gps-plus-slam-app-framework/core';
 import type { RecorderStore } from '../state/recorder-store';
+import { isRecordingActive as isRecordingActiveNow } from '../state/recording-active';
 
 const log = createLogger('RefPointHandlers');
 
@@ -113,11 +114,10 @@ export function createRefPointHandlers(
    * (DEC-AFK24-6; follow-up 2026-09-24-1130).
    */
   function isRecordingActive(): boolean {
-    if (deps.isStopInProgress?.() === true) return false;
-    const state = deps.getStore().getState() as unknown as {
-      recording?: { isRecording?: boolean };
-    };
-    return state.recording?.isRecording ?? false;
+    return isRecordingActiveNow(
+      deps.getStore().getState(),
+      deps.isStopInProgress?.() === true
+    );
   }
 
   function validateRefPointPrerequisites(): {

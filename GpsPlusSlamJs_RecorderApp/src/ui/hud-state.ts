@@ -19,6 +19,8 @@ export interface UICallbacks {
   onStopRecording: () => void | Promise<void>;
   onMarkRefPoint: () => Promise<void>;
   onMarkNewRefPoint: () => Promise<void>;
+  /** Drop the next numbered phase marker (synchronous store work). */
+  onMarkPhase: () => void;
   onToggleMap: () => void;
   onMapZoomIn: () => void;
   onMapZoomOut: () => void;
@@ -34,6 +36,7 @@ export interface HudCachedElements {
   btnStop: HTMLElement;
   btnRefPoint: HTMLElement;
   btnNewRefPoint: HTMLElement;
+  btnPhaseMark: HTMLElement;
   recordingIndicator: HTMLElement;
 }
 

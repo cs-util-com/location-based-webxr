@@ -51,6 +51,7 @@ function setupMinimalDOM(): void {
     <button id="btn-stop" class="hidden"></button>
     <button id="btn-ref-point" class="hidden"></button>
     <button id="btn-new-ref-point" class="hidden"></button>
+    <button id="btn-phase-mark" class="hidden"></button>
     <button id="btn-map"></button>
     <button id="btn-open-folder"></button>
     <button id="btn-choose-save"></button>
@@ -89,6 +90,7 @@ function createMockCallbacks(): UICallbacks {
     onStopRecording: vi.fn(),
     onMarkRefPoint: vi.fn(),
     onMarkNewRefPoint: vi.fn(),
+    onMarkPhase: vi.fn(),
     onToggleMap: vi.fn(),
     onMapZoomIn: vi.fn(),
     onMapZoomOut: vi.fn(),
@@ -162,6 +164,7 @@ describe('initUI', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
       <div id="recording-indicator"></div>
     `;
 
@@ -181,6 +184,7 @@ describe('initUI', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
       <div id="recording-indicator"></div>
     `;
 
@@ -227,6 +231,7 @@ describe('initUI', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
       <div id="recording-indicator"></div>
     `;
 
@@ -245,6 +250,7 @@ describe('initUI', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
       <div id="recording-indicator"></div>
     `;
 
@@ -265,6 +271,7 @@ describe('initUI', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
     `;
 
     expect(() => initUI(createMockCallbacks())).toThrow(
@@ -955,6 +962,7 @@ describe('updateStatus', () => {
       <button id="btn-stop"></button>
       <button id="btn-ref-point"></button>
       <button id="btn-new-ref-point"></button>
+      <button id="btn-phase-mark"></button>
       <div id="recording-indicator"></div>
     `;
     initUI(createMockCallbacks());
@@ -1981,6 +1989,7 @@ describe('resetUIForNewRecording', () => {
       <button id="btn-stop" class="hidden"></button>
       <button id="btn-ref-point" class="hidden"></button>
       <button id="btn-new-ref-point" class="hidden"></button>
+      <button id="btn-phase-mark" class="hidden"></button>
       <div id="setup-modal" class="hidden"></div>
       <div id="new-scenario-section" class="hidden"></div>
       <input id="new-scenario-name" type="text" />
@@ -2019,6 +2028,7 @@ describe('resetUIForNewRecording', () => {
       <button id="btn-stop" class="hidden"></button>
       <button id="btn-ref-point" class="hidden"></button>
       <button id="btn-new-ref-point" class="hidden"></button>
+      <button id="btn-phase-mark" class="hidden"></button>
       <div id="setup-modal" class="hidden"></div>
       <div id="new-scenario-section" class="hidden"></div>
       <input id="new-scenario-name" type="text" />
@@ -2337,6 +2347,29 @@ describe('setNewRefPointButtonVisible', () => {
     expect(btn.classList.contains('hidden')).toBe(true);
   });
 
+  // Why: the phase button exists only while recording (a marker outside a
+  // recording would be refused), and a new recording must not start out
+  // showing the previous walk's last number.
+  it('shows the phase button only while recording, and resets its number for the next one', async () => {
+    vi.resetModules();
+    setupMinimalDOM();
+    const fresh = await import('./hud.js');
+    const cbs = createMockCallbacks();
+    fresh.initUI(cbs);
+    const btn = document.getElementById('btn-phase-mark')!;
+
+    fresh.showRecordingControls();
+    expect(btn.classList.contains('hidden')).toBe(false);
+    fresh.setPhaseMarkButtonLabel(3);
+    expect(btn.textContent).toBe('🏁 Phase 3');
+    btn.click();
+    expect(cbs.onMarkPhase).toHaveBeenCalledOnce();
+
+    fresh.hideRecordingControls();
+    expect(btn.classList.contains('hidden')).toBe(true);
+    expect(btn.textContent).toBe('🏁 Phase');
+  });
+
   // Why: Clicking the + button should call onMarkNewRefPoint to trigger
   // handleMarkRefPoint({ forceNew: true }) via main.ts wiring.
   it('calls onMarkNewRefPoint when btn-new-ref-point is clicked', () => {
@@ -2366,6 +2399,7 @@ describe('updatePermissionStatus — Grant Permissions button visibility', () =>
       <button id="btn-stop" class="hidden"></button>
       <button id="btn-ref-point" class="hidden"></button>
       <button id="btn-new-ref-point" class="hidden"></button>
+      <button id="btn-phase-mark" class="hidden"></button>
       <button id="btn-map"></button>
       <button id="btn-open-folder"></button>
       <button id="btn-choose-save"></button>

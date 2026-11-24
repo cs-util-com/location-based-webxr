@@ -52,6 +52,11 @@ import type { StorageBackend } from 'gps-plus-slam-app-framework/storage/storage
 import { ScenarioWrappingStorageBackend } from '../storage/scenario-storage';
 import type { SessionMetadata as OpfsSessionMetadata } from 'gps-plus-slam-app-framework/storage/opfs-storage';
 import { routingReducer, type RoutingState } from './routing-slice';
+import {
+  phaseMarked,
+  phaseMarkersReducer,
+  type PhaseMarkersState,
+} from './phase-markers-slice';
 import { scenarioReducer, type ScenarioState } from './scenario-slice';
 
 // --- Recorder-owned types ---
@@ -66,6 +71,7 @@ export interface CombinedRootState extends LibraryRootState {
   trackingQuality: TrackingQualitySliceState;
   arSpaceCorrection: ArSpaceCorrectionState;
   refPoints: RefPointsState;
+  phaseMarkers: PhaseMarkersState;
   routing: RoutingState;
   scenario: ScenarioState;
   qrDetected: QrDetectedState;
@@ -172,9 +178,13 @@ export function createRecorderStore(
     persistedExtraPrefixes: [
       slicePrefixOf(addRefPointEntry.type),
       slicePrefixOf(recordQrDetection.type),
+      // Phase markers are annotations only: persisted so the offline
+      // analysis can split a protocol walk, read by nothing in fusion.
+      slicePrefixOf(phaseMarked.type),
     ],
     extraReducers: {
       refPoints: refPointsReducer,
+      phaseMarkers: phaseMarkersReducer,
       routing: routingReducer,
       scenario: scenarioReducer,
       qrDetected: qrDetectedReducer,

@@ -139,6 +139,9 @@ export const REQUIRED_TEST_HOOKS = [
   'hideSetupModal',
   'showRecordingControls',
   'showSessionSummary',
+  // A recording without AR, ended into the real summary (phase markers)
+  'startRecordingWithoutAr',
+  'stopRecordingWithoutAr',
   'validateEnterButton',
   'updatePermissionStatus',
   'setPermissionsReady',

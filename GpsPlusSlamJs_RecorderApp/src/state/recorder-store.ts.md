@@ -7,6 +7,7 @@ Recorder-app composable Redux store. Wraps the framework's
 and supplies the recorder-only slices via `extraReducers`:
 
 - `refPoints` — local [ref-points-slice.ts](ref-points-slice.ts.md).
+- `phaseMarkers` - local [phase-markers-slice.ts](phase-markers-slice.ts.md) (test-protocol phase markers; annotation only).
 - `routing` — local [routing-slice.ts](routing-slice.ts.md).
 - `scenario` — local [scenario-slice.ts](scenario-slice.ts.md).
 - `qrDetected` — framework-owned QR slice, mounted here with a longer
@@ -35,7 +36,7 @@ exposes a _different_, nullable variant from `sensors/gps.ts`. See
 - `RecorderStore` — `{ getState, dispatch, subscribe, writeFrame, writeSessionMetadata }`.
 - `RecorderStoreOptions` — `{ onWriteFailure?, storageBackend?, enableDevChecks?, licenseKey?, enableCompassColdStartOverride?, enableCompassRotationPrior?, enableCompassWebXRConsistency? }`.
 - `CombinedRootState` — `LibraryRootState` + `recording`, `tracking`,
-  `trackingQuality`, `arSpaceCorrection`, `refPoints`, `routing`, `scenario`, `qrDetected`.
+  `trackingQuality`, `arSpaceCorrection`, `refPoints`, `phaseMarkers`, `routing`, `scenario`, `qrDetected`.
 - `RECORDER_QR_MAX_HISTORY` — live QR history cap the recorder opts into.
 - `RootState`, `AppDispatch` — convenience type aliases.
 
@@ -46,9 +47,9 @@ exposes a _different_, nullable variant from `sensors/gps.ts`. See
   `NullStorageBackend`.
 - `licenseKey` defaults to the bundled community key via the framework
   factory; validation always runs and throws on invalid keys.
-- `refPoints`/`routing`/`scenario`/`qrDetected` are mounted as
+- `refPoints`/`phaseMarkers`/`routing`/`scenario`/`qrDetected` are mounted as
   `extraReducers` — the framework factory has no concept of them.
-- `refPoints/*` and `qrDetected/*` actions are whitelisted for
+- `refPoints/*`, `qrDetected/*` and `phaseMarkers/*` actions are whitelisted for
   persistence via `persistedExtraPrefixes`, derived from the slices' own
   action types (never string literals).
 

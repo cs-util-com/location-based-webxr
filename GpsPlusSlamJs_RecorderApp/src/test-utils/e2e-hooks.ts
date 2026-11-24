@@ -18,6 +18,7 @@
 import {
   populateScenarios,
   showRecordingControls,
+  hideRecordingControls,
   validateEnterButton,
   updatePermissionStatus,
   setPermissionsReady,
@@ -32,6 +33,18 @@ import type { DebugWheel } from '../ui/hud-debug-wheel';
 import { createMapBrowser } from '../ui/map-browser';
 import { type RecordingCoverage } from '../ui/recording-index';
 import { gpsPathToCoverageCells } from 'gps-plus-slam-app-framework/geo';
+import { NullStorageBackend } from 'gps-plus-slam-app-framework/storage/null-storage-backend';
+import {
+  startSession,
+  endSession,
+} from 'gps-plus-slam-app-framework/state/recording-slice';
+import {
+  createRecorderStore,
+  type RecorderStore,
+} from '../state/recorder-store';
+import { selectRefPointEntries } from '../state/ref-points-slice';
+import { selectPhaseMarkerCount } from '../state/phase-markers-slice';
+import { buildSessionSummary } from '../recording/build-session-summary';
 
 /** A fixture tour: a named GPS path Playwright hands in as plain JSON. */
 interface FixtureTour {
@@ -68,6 +81,10 @@ export interface E2eHookDeps {
   ensureMapBrowserRoot: () => HTMLElement;
   /** The in-recording settings wheel, or null without `?debug=1` (2026-09-02). */
   getDebugWheel: () => DebugWheel | null;
+  /** main.ts's current store, the one every HUD handler dispatches into. */
+  getStore: () => RecorderStore;
+  /** Swap main.ts's store (and its `storeRef`), as a recording start does. */
+  setStore: (store: RecorderStore) => void;
 }
 
 /**
@@ -75,7 +92,7 @@ export interface E2eHookDeps {
  * functions instead of simulating DOM changes.
  */
 export function installE2eTestHooks(deps: E2eHookDeps): void {
-  const { ensureMapBrowserRoot, getDebugWheel } = deps;
+  const { ensureMapBrowserRoot, getDebugWheel, getStore, setStore } = deps;
   window.testHooks = {
     populateScenarios,
     // The in-recording settings wheel (2026-09-02): lets a spec read what the
@@ -92,6 +109,58 @@ export function installE2eTestHooks(deps: E2eHookDeps): void {
     validateEnterButton,
     showRecordingControls,
     showSessionSummary,
+    /**
+     * A recording without AR (Playwright has no WebXR session): a fresh
+     * recorder store that writes nothing (NullStorageBackend), the real
+     * `startSession`, and the RECORDING controls. Every HUD tap after it runs
+     * the real handler against the real store, so a spec can tap a recording
+     * control and read the outcome in the real summary.
+     */
+    startRecordingWithoutAr: () => {
+      const store = createRecorderStore({
+        storageBackend: new NullStorageBackend(),
+      });
+      store.dispatch(
+        startSession({
+          contextTag: 'e2e',
+          sessionName: 'e2e',
+          startTime: Date.now(),
+        })
+      );
+      setStore(store);
+      hideSetupModal();
+      showRecordingControls();
+    },
+    /**
+     * End that recording and show the summary built by the real
+     * `buildSessionSummary` from the store's slices. No AR means no GPS,
+     * odometry, images or zip, so those inputs are empty.
+     */
+    stopRecordingWithoutAr: () => {
+      const store = getStore();
+      const state = store.getState();
+      store.dispatch(endSession());
+      hideRecordingControls();
+      showSessionSummary(
+        buildSessionSummary({
+          endTime: Date.now(),
+          startTime: state.recording.sessionMetadata?.startTime,
+          imageCount: 0,
+          depthSampleCount: 0,
+          errors: [],
+          qrAnchors: [],
+          failedWriteCount: state.recording.failedWriteCount,
+          gpsPositions: [],
+          odometryPositions: [],
+          alignmentMatrix: null,
+          alignmentSnapshotNuePositions: [],
+          refPoints: selectRefPointEntries(state.refPoints),
+          phaseMarkerCount: selectPhaseMarkerCount(state),
+          syncResult: null,
+          zipFilename: undefined,
+        })
+      );
+    },
     updatePermissionStatus,
     setPermissionsReady,
     // Toast (2026-08-24). The toast is the ONLY UI in this app rewritten onto

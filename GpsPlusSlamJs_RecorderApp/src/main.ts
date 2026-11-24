@@ -86,6 +86,7 @@ import {
   hasReadFolderPermission,
 } from './storage/external-file-storage';
 import { createRecordingSessionHandlers } from './recording/recording-session-handlers';
+import { createPhaseMarkerHandler } from './recording/phase-marker-handler';
 import { createSystemSessionEndHandler } from './recording/system-session-end';
 import {
   createFolderManager,
@@ -384,6 +385,13 @@ const recordingSessionHandlers = createRecordingSessionHandlers({
 const refPointHandlers = createRefPointHandlers({
   getStore: () => store,
   getCurrentSessionName: () => recordingSessionHandlers.getCurrentSessionName(),
+  isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
+});
+
+// Phase markers: one tap drops the next numbered test-protocol marker into
+// the running recording (annotation only, read by nothing in fusion).
+const phaseMarkerHandler = createPhaseMarkerHandler({
+  getStore: () => store,
   isStopInProgress: () => recordingSessionHandlers.isStopInProgress(),
 });
 
@@ -936,6 +944,9 @@ async function main(): Promise<void> {
     onMarkRefPoint: () => refPointHandlers.handleMarkRefPoint(),
     onMarkNewRefPoint: () =>
       refPointHandlers.handleMarkRefPoint({ forceNew: true }),
+    onMarkPhase: () => {
+      phaseMarkerHandler.markPhase();
+    },
     onToggleMap: handleToggleMap,
     onMapZoomIn: handleMapZoomIn,
     onMapZoomOut: handleMapZoomOut,
@@ -1661,6 +1672,11 @@ if (
     installE2eTestHooks({
       ensureMapBrowserRoot,
       getDebugWheel: () => debugWheel,
+      getStore: () => store,
+      setStore: (newStore) => {
+        store = newStore;
+        storeRef.set(newStore);
+      },
     })
   );
 }

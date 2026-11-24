@@ -40,7 +40,8 @@ flow that persists, packages and summarises what it produced.
 7. Final external sync, then stop the sync manager.
 8. Unsubscribe the store, collect tracker errors, hide the map overlay, and
    export a ZIP from OPFS **only when there is no external save location**.
-9. Dispatch `endSession`, build the summary, clear the per-session results, and
+9. Dispatch `endSession`, build the summary (including the phase-marker count
+   read from the post-flush state snapshot), clear the per-session results, and
    render the summary screen.
 
 ## Invariants & assumptions

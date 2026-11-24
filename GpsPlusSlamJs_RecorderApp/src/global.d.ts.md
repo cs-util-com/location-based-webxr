@@ -8,7 +8,7 @@ Declares recorder-app-specific global types for Playwright test hooks and build 
 
 ### Window extensions
 
-- `window.testHooks` exposes selected UI helpers for Playwright E2E tests in development mode.
+- `window.testHooks` exposes selected UI helpers for Playwright E2E tests in development mode, including `startRecordingWithoutAr` / `stopRecordingWithoutAr` (see [e2e-hooks.ts](test-utils/e2e-hooks.ts.md)).
 - `window.refPointPickerApi` exposes the real reference-point picker flow for browser-driven tests.
 
 ### Global build metadata

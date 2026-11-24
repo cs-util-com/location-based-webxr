@@ -59,6 +59,7 @@ function baseInputs(
     alignmentMatrix: null,
     alignmentSnapshotNuePositions: [],
     refPoints: [],
+    phaseMarkerCount: 0,
     syncResult: null,
     zipFilename: undefined,
     ...overrides,
@@ -188,7 +189,16 @@ describe('buildSessionSummary — assembly', () => {
     expect(summary.lastGps).toBeNull();
     expect(summary.gpsEventCount).toBe(0);
     expect(summary.refPointCount).toBe(0);
+    expect(summary.phaseMarkerCount).toBe(0);
     expect(summary.rawGpsPath).toEqual([]);
+  });
+
+  // Why: the summary is where the walker checks, before leaving the test
+  // site, that every protocol step got its marker.
+  it('passes the phase marker count through to the summary', () => {
+    expect(
+      buildSessionSummary(baseInputs({ phaseMarkerCount: 7 })).phaseMarkerCount
+    ).toBe(7);
   });
 
   it('includes per-sample accuracy in rawGpsPath only when positive', () => {
