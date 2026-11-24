@@ -229,6 +229,59 @@ describe('extractActionTimestamp', () => {
     ).toBeNull();
   });
 
+  it('returns epoch ms from phaseMarkers/phaseMarked.payload.timestamp', () => {
+    // Why: a phase marker's `timestamp` is epoch ms (`Date.now()` at the
+    // tap). Without this case each marker returned null and zeroed the
+    // replay delay on BOTH sides of it, the same gap the diagnostics note
+    // case closed, so a walk with markers replayed shorter than it was.
+    const ts = 1708300008000;
+    expect(
+      extractActionTimestamp({
+        type: 'phaseMarkers/phaseMarked',
+        payload: { number: 2, timestamp: ts },
+      })
+    ).toBe(ts);
+  });
+
+  it('returns null for a phase marker whose timestamp is not finite', () => {
+    // Why: a malformed marker read from a zip must degrade to "no delay",
+    // never pace on NaN or a string.
+    for (const timestamp of [null, 'x', Number.NaN, Infinity]) {
+      expect(
+        extractActionTimestamp({
+          type: 'phaseMarkers/phaseMarked',
+          payload: { number: 1, timestamp },
+        })
+      ).toBeNull();
+    }
+  });
+
+  it('returns epoch ms from refPoints/addRefPointEntry.payload.timestamp', () => {
+    // Why: a ref point entry carries the epoch ms of the mark. Null here
+    // zeroed the replay delay around every ref point mark.
+    const ts = 1708300009000;
+    expect(
+      extractActionTimestamp({
+        type: 'refPoints/addRefPointEntry',
+        payload: { id: 'h3', timestamp: ts, rawGpsPoint: {} },
+      })
+    ).toBe(ts);
+  });
+
+  it('returns null for a ref point entry with a zero or non-finite timestamp', () => {
+    // Why: the legacy-recording migration writes `timestamp: 0` when the
+    // old mark had none. Pacing on 0 would turn the delay after it into
+    // the max clamp, so only a positive finite epoch counts.
+    for (const timestamp of [0, -5, Number.NaN, null]) {
+      expect(
+        extractActionTimestamp({
+          type: 'refPoints/addRefPointEntry',
+          payload: { id: 'h3', timestamp, rawGpsPoint: {} },
+        })
+      ).toBeNull();
+    }
+  });
+
   it('returns null for endSession (no timestamp)', () => {
     // Why: endSession has no timestamp in its payload
     expect(extractActionTimestamp(makeEndSessionAction())).toBeNull();

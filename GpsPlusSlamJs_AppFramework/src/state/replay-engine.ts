@@ -151,6 +151,24 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
       // sides of the pairwise delay, so the real gap around it was skipped.
       return typeof payload.atMs === 'number' ? payload.atMs : null;
 
+    case 'phaseMarkers/phaseMarked':
+      // payload.timestamp - epoch ms (`Date.now()` at the tap). Same reason
+      // as the note above: a null here zeroed the delay on both sides of
+      // every marker.
+      return Number.isFinite(payload.timestamp)
+        ? (payload.timestamp as number)
+        : null;
+
+    case 'refPoints/addRefPointEntry':
+      // payload.timestamp - epoch ms of the mark. The legacy-recording
+      // migration writes 0 when the old mark had no time; pacing on that
+      // would make the delay after it the max clamp, so only a positive
+      // finite epoch counts.
+      return Number.isFinite(payload.timestamp) &&
+        (payload.timestamp as number) > 0
+        ? (payload.timestamp as number)
+        : null;
+
     case 'recording/endSession':
       // No timestamp in payload
       return null;

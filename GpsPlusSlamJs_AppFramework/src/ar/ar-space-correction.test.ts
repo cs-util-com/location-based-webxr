@@ -5,8 +5,8 @@ import type { Pose } from './qr/qr-pose';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
   CAMERA_MOTION_COMPENSATION,
-  COMPENSATION_MIN_STEP_M,
-  COMPENSATION_MIN_TURN_DEG,
+  COMPENSATION_MIN_SPEED_M_PER_S,
+  COMPENSATION_MIN_TURN_RATE_DEG_PER_S,
   IDENTITY_POSE,
   MAX_COMPENSATION_GAP_MS,
   compensationVerdict,
@@ -529,11 +529,15 @@ describe('ar-space-correction quaternion handling', () => {
 });
 
 describe('ar-space-correction compensation guard', () => {
-  /** A jump seen by a camera that moved `stepM` along X and turned `turnDeg` about Y in 33 ms. */
+  /**
+   * A jump seen by a camera that moved `stepM` along X and turned `turnDeg`
+   * about Y in one render interval of `intervalMs` (33 ms unless given).
+   */
   function steppedJump(
     stepM: number,
     turnDeg: number,
-    gapMs = 33
+    gapMs = 33,
+    intervalMs = 33
   ): RelocalizationJump {
     const cam = (k: number): THREE.Matrix4 =>
       new THREE.Matrix4().compose(
@@ -544,10 +548,10 @@ describe('ar-space-correction compensation guard', () => {
         ),
         new THREE.Vector3(1, 1, 1)
       );
-    const kJump = 1 + gapMs / 33;
+    const kJump = 1 + gapMs / intervalMs;
     return {
-      t: 1033 + gapMs,
-      tLast: 1033,
+      t: 1000 + intervalMs + gapMs,
+      tLast: 1000 + intervalMs,
       lastPose: fromThree(cam(1)),
       tPrev: 1000,
       prevPose: fromThree(cam(0)),
@@ -559,11 +563,14 @@ describe('ar-space-correction compensation guard', () => {
     // Why this test matters: the guard is the decision that a still camera
     // gets the plain D (the compensation only adds the extrapolated pose
     // noise there) and a moving one the compensated D. Cells just below and
-    // just above each threshold pin the boundary on both axes.
-    const below = COMPENSATION_MIN_STEP_M * 0.9;
-    const above = COMPENSATION_MIN_STEP_M * 1.1;
-    const turnBelow = COMPENSATION_MIN_TURN_DEG * 0.9;
-    const turnAbove = COMPENSATION_MIN_TURN_DEG * 1.1;
+    // just above each threshold pin the boundary on both axes. The
+    // thresholds are rates, so a 33 ms step is the rate times 0.033 s.
+    const step = COMPENSATION_MIN_SPEED_M_PER_S * 0.033;
+    const turn = COMPENSATION_MIN_TURN_RATE_DEG_PER_S * 0.033;
+    const below = step * 0.9;
+    const above = step * 1.1;
+    const turnBelow = turn * 0.9;
+    const turnAbove = turn * 1.1;
     for (const [step, turn, expected] of [
       [0, 0, 'still'],
       [below, turnBelow, 'still'],
@@ -576,6 +583,37 @@ describe('ar-space-correction compensation guard', () => {
       expect(jumpTransform(jump)).toEqual(
         jumpTransform(jump, expected === 'moving' ? 'always' : 'off')
       );
+    }
+  });
+
+  it('gates on the camera speed, not the per-frame step, at 30, 60 and 90 Hz', () => {
+    // Why this test matters: a threshold per render interval gates on a
+    // speed that scales with the frame rate (5 mm per frame is 0.15 m/s at
+    // 30 Hz but 0.45 m/s at 90 Hz), so a slow walker on a 90 Hz phone was
+    // read as still. The guard divides the step by its own interval, so the
+    // same speed and turn rate get the same verdict at every frame rate.
+    // Parameters: 0.15 m/s and 7.5 deg/s, probed at 0.9x and 1.1x.
+    expect(COMPENSATION_MIN_SPEED_M_PER_S).toBe(0.15);
+    expect(COMPENSATION_MIN_TURN_RATE_DEG_PER_S).toBe(7.5);
+    for (const hz of [30, 60, 90]) {
+      const dtMs = 1000 / hz;
+      const dtS = dtMs / 1000;
+      for (const [speed, rate, expected] of [
+        [0.15 * 0.9, 7.5 * 0.9, 'still'],
+        [0.15 * 1.1, 0, 'moving'],
+        [0, 7.5 * 1.1, 'moving'],
+      ] as const) {
+        const jump = steppedJump(speed * dtS, rate * dtS, dtMs, dtMs);
+        const verdict = compensationVerdict(jump);
+        expect({ hz, speed, rate, reason: verdict.reason }).toEqual({
+          hz,
+          speed,
+          rate,
+          reason: expected,
+        });
+        // The logged step stays the raw per-interval motion.
+        expect(verdict.stepM).toBeCloseTo(speed * dtS, 9);
+      }
     }
   });
 

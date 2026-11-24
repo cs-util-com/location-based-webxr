@@ -116,9 +116,10 @@ queue: not measured (none yet)`.
   the walk, the content and the phone's heat are the same for both.
 - The queue criterion: the set traverses one key per pass, round robin, so
   a key commits within `queued` passes of going out of view, `queued`
-  being the keys out of view when it went out (itself included) plus every
-  key that went out after it (`deferred-anchors.ts.md`); a commit with
-  `outFrames > queued` counts as over its queue and fails it.
+  being the distinct keys out of view during its run (itself included; a
+  key that goes out again in the same run counts once, so a ring of keys
+  churning in and out cannot stretch it, `deferred-anchors.ts.md`); a
+  commit with `outFrames > queued` counts as over its queue and fails it.
 - Pass times are `performance.now()` spans, which a browser coarsens
   without cross-origin isolation: on a phone opening the page without it
   they come in steps of about 0.1 ms, so a cheap pass reads 0 or 0.1 and

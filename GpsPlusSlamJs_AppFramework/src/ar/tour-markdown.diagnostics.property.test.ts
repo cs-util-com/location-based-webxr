@@ -43,28 +43,76 @@ const SHAPE: Record<TourMdDiagnosticKind, RegExp> = {
 };
 
 /** A fence line inside a part (so after a line break in it): a fence
- *  after any indentation and quote or list marks; group 1 is its mark.
- *  Only the list marks the reader takes as items (`-`, `*`, `1.`): after
- *  a `+` or a `1)` the line stays a paragraph line, and its fence is
- *  text. Still counted here, though the reader shows them as typed: a
- *  fence after four columns of indentation or after a third list level,
- *  and one right under a box line after a number other than 1 (only an
- *  item numbered 1 interrupts a paragraph line). */
+ *  after any indentation and quote or list marks; group 1 is what lies
+ *  before it, group 2 its mark. Only the list marks the reader takes as
+ *  items (`-`, `*`, `1.`): after a `+` or a `1)` the line stays a
+ *  paragraph line, and its fence is text. A quote or list mark after four
+ *  or more columns of indentation is text as well (`marksStartContainers`).
+ *  Still counted here, though the reader shows them as typed: a fence
+ *  after a third list level, and one right under a box line after a
+ *  number other than 1 (only an item numbered 1 interrupts a paragraph
+ *  line). A fence after four columns of indentation with no mark before it
+ *  counts, as for the reader, which strips a paragraph line's indentation
+ *  before it looks for a fence. */
 const FENCE_LINE_INSIDE =
-  /[\r\n](?:[ \t]|>|[-*](?=[ \t])|\d{1,9}\.(?=[ \t]))*(`{3,}|~{3,})/g;
+  /[\r\n]((?:[ \t]|>|[-*](?=[ \t])|\d{1,9}\.(?=[ \t]))*)(`{3,}|~{3,})/g;
+
+/**
+ * Whether every quote or list mark in a fence line's `prefix` starts a
+ * container. A mark after four or more columns of indentation does not:
+ * the reader takes such a line as a paragraph's continuation, whose text
+ * starts with the mark, so the fence after it is text. The columns count
+ * from the line start past `itemColumn` (the content column of the list
+ * item the part sits in), and after a mark past the one space it takes.
+ */
+function marksStartContainers(prefix: string, itemColumn: number): boolean {
+  let col = 0;
+  let indent = 0;
+  let limit = itemColumn + 4;
+  for (const ch of prefix) {
+    if (ch === ' ' || ch === '\t') {
+      const width = ch === '\t' ? 4 - (col % 4) : 1;
+      col += width;
+      indent += width;
+      continue;
+    }
+    // A mark's first character (`>`, `-`, `*` or a digit of `1.`).
+    if (indent >= limit) return false;
+    col += 1;
+    if (/\d/.test(ch)) continue;
+    indent = 0;
+    limit = 5;
+  }
+  return true;
+}
 
 /** The mark of a code box still open after the fence lines inside `text`,
  *  starting from `open`: a fence opens a box when none is open, and closes
  *  it when it has the same sign and is at least as long, as the reader
- *  decides. */
-function fenceStateAfter(text: string, open: string | null): string | null {
+ *  decides. `marks` are the container marks before the part on its line;
+ *  under a list mark with no quote mark, the part's later lines continue
+ *  at that item's content column. */
+function fenceStateAfter(
+  text: string,
+  open: string | null,
+  marks = ''
+): string | null {
+  const itemColumn = itemContentColumn(marks);
   let mark = open;
   for (const fence of text.matchAll(FENCE_LINE_INSIDE)) {
-    const found = fence[1] ?? '';
+    if (!marksStartContainers(fence[1] ?? '', itemColumn)) continue;
+    const found = fence[2] ?? '';
     if (mark === null) mark = found;
     else if (found.startsWith(mark)) mark = null;
   }
   return mark;
+}
+
+/** The content column of the list item a part sits in, from the marks
+ *  before it: 0 with no list mark or with a quote mark. */
+function itemContentColumn(marks: string): number {
+  if (!/\S/.test(marks) || marks.includes('>')) return 0;
+  return segmentColumns(marks)[0]?.width ?? 0;
 }
 
 /** What lies on a part's line before it: for a part inside a quote or a
@@ -213,7 +261,11 @@ function expectPartsOfTheirShape(body: string): number {
       checked += 1;
     }
     // A code part's first line is a fence line too.
-    openMark = fenceStateAfter(d.kind === 'code' ? `\n${own}` : own, openMark);
+    openMark = fenceStateAfter(
+      d.kind === 'code' ? `\n${own}` : own,
+      openMark,
+      marks
+    );
     if (openMark === null) opener = null;
     else if (!wasOpen) opener = boxOpener(d.kind, marks);
   }
@@ -285,6 +337,12 @@ describe('diagnoseTourMarkdown properties', () => {
       'x\n```\na\n```\n\ny\n```\nb',
       '```\n\na\n```\n\n```\nb',
       '[\r\n```](asset:p)\n\na',
+      // A run that failed (seed 474061767): the `>` after four spaces is
+      // the text of a paragraph's continuation line, not a quote mark, so
+      // its fence leaves the box open and `a` is the box's later part.
+      '```\r\n    >```\n\na',
+      // The same under a list item: past its content column, still text.
+      '- ```\n      >```\n\n  a',
     ]) {
       expect(expectPartsOfTheirShape(body), body).toBeGreaterThan(0);
     }

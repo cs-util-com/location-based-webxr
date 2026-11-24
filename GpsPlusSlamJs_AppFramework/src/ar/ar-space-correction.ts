@@ -59,17 +59,25 @@ export const CAMERA_MOTION_COMPENSATION: CompensationMode = 'guarded';
 export const MAX_COMPENSATION_GAP_MS = 500;
 
 /**
- * Motion thresholds of the guard, per measured interval `tLast - tPrev`: the
- * camera moved more than this many metres OR turned more than this many
- * degrees. PROVISIONAL: about three times the per-pose noise the ratio sweep
- * assumed for a phone (1 mm and 0.05 deg per axis, so the step between two
- * still poses is about 2.3 mm and 0.11 deg at its median), until the
- * still-phone noise floor is measured on the phone (the feed logs the step
- * of every jump). A walk at 0.3 m/s moves 10 mm per 33 ms frame and a
- * 10 deg/s head turn 0.33 deg, both above.
+ * Motion thresholds of the guard, as rates: the camera moved faster than
+ * this many metres per second OR turned faster than this many degrees per
+ * second, each measured as the step between `prevPose` and `lastPose`
+ * divided by its own interval `tLast - tPrev`. Rates, not steps, so the
+ * gate means the same speed at every frame rate (a fixed 5 mm step was
+ * 0.15 m/s at 30 Hz but 0.45 m/s at 90 Hz).
+ *
+ * PROVISIONAL: at 30 Hz (a 33 ms interval) they are 5 mm and 0.25 deg per
+ * step, about three times the per-pose noise the ratio sweep assumed for a
+ * phone (1 mm and 0.05 deg per axis, so the step between two still poses is
+ * about 2.3 mm and 0.11 deg at its median), until the still-phone noise
+ * floor is measured on the phone (the feed logs the step of every jump).
+ * Pose noise does not shrink with the interval, so at a higher frame rate
+ * the same noise reads as a faster rate: at 90 Hz the 2.3 mm median still
+ * step is about 0.21 m/s, above the threshold. A walk at 0.3 m/s and a
+ * 10 deg/s head turn are above both thresholds at any frame rate.
  */
-export const COMPENSATION_MIN_STEP_M = 0.005;
-export const COMPENSATION_MIN_TURN_DEG = 0.25;
+export const COMPENSATION_MIN_SPEED_M_PER_S = 0.15;
+export const COMPENSATION_MIN_TURN_RATE_DEG_PER_S = 7.5;
 
 /** Whether `jumpTransform` compensated a jump, and why. */
 export interface CompensationVerdict {
@@ -228,7 +236,7 @@ export function compensationVerdict(
   ): CompensationVerdict => ({ compensated: false, reason, stepM, turnDeg });
   const blocked = compensationBlocker(jump, jump.tPrev, mode, stepM, turnDeg);
   if (blocked !== null) return plain(blocked);
-  const moving = isMoving(stepM, turnDeg);
+  const moving = isMoving(stepM, turnDeg, jump.tLast - jump.tPrev);
   return {
     compensated: true,
     reason: moving ? 'moving' : 'always',
@@ -237,8 +245,14 @@ export function compensationVerdict(
   };
 }
 
-const isMoving = (stepM: number, turnDeg: number): boolean =>
-  stepM > COMPENSATION_MIN_STEP_M || turnDeg > COMPENSATION_MIN_TURN_DEG;
+/** The step over its own interval `dtMs` (> 0) against the rate thresholds. */
+const isMoving = (stepM: number, turnDeg: number, dtMs: number): boolean => {
+  const dtS = dtMs / 1000;
+  return (
+    stepM / dtS > COMPENSATION_MIN_SPEED_M_PER_S ||
+    turnDeg / dtS > COMPENSATION_MIN_TURN_RATE_DEG_PER_S
+  );
+};
 
 /** The first reason, in order, not to compensate a jump with an earlier frame. */
 function compensationBlocker(
@@ -251,7 +265,9 @@ function compensationBlocker(
   if (!(jump.tLast > tPrev)) return 'no-rate';
   if (jump.t - jump.tLast > MAX_COMPENSATION_GAP_MS) return 'gap';
   if (mode === 'off') return 'off';
-  if (mode === 'guarded' && !isMoving(stepM, turnDeg)) return 'still';
+  if (mode === 'guarded' && !isMoving(stepM, turnDeg, jump.tLast - tPrev)) {
+    return 'still';
+  }
   return null;
 }
 
