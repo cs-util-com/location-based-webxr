@@ -11,7 +11,7 @@ import {
   type XrSystemLike,
   type XrTransformLike,
 } from './anchors-check-session';
-import type { TrackerEvent } from './anchor-jump-tracker';
+import type { EpisodeEvent, TrackerEvent } from './anchor-jump-tracker';
 
 const pose = (x: number, y: number, z: number): Pose => ({
   position: [x, y, z],
@@ -32,6 +32,9 @@ interface FrameSpec {
   emulated?: boolean;
   hit?: Pose | null;
   anchor?: Pose | null;
+  /** What `trackedAnchors.has` answers; undefined: no `trackedAnchors`. */
+  tracked?: boolean;
+  getPoseThrows?: boolean;
   createAnchor?: XrFrameLike['createAnchor'] | null;
 }
 
@@ -45,11 +48,17 @@ function frame(spec: FrameSpec = {}): XrFrameLike {
             transform: transform(camera),
             emulatedPosition: spec.emulated ?? false,
           },
-    getPose: () => (spec.anchor ? { transform: transform(spec.anchor) } : null),
+    getPose: () => {
+      if (spec.getPoseThrows) throw new Error('InvalidStateError');
+      return spec.anchor ? { transform: transform(spec.anchor) } : null;
+    },
     getHitTestResults: () =>
       spec.hit
         ? [{ getPose: () => ({ transform: transform(spec.hit!) }) }]
         : [],
+    ...(spec.tracked === undefined
+      ? {}
+      : { trackedAnchors: { has: () => spec.tracked! } }),
   };
   if (spec.createAnchor !== null) {
     f.createAnchor =
@@ -71,7 +80,7 @@ function harness(
     xr?: boolean;
   } = {}
 ) {
-  const listeners: Record<string, ((e?: unknown) => void)[]> = {};
+  let listeners: Record<string, ((e?: unknown) => void)[]> = {};
   const requests: { mode: string; init: unknown }[] = [];
   const statuses: { text: string; tone: string }[] = [];
   const states: StartState[] = [];
@@ -85,25 +94,30 @@ function harness(
     opts.features === undefined
       ? ['hit-test', 'anchors', 'dom-overlay']
       : opts.features;
-  const session: XrSessionLike = {
-    ...(features === null ? {} : { enabledFeatures: features }),
-    requestReferenceSpace: () => Promise.resolve('viewer-space'),
-    requestHitTestSource: () => Promise.resolve('hit-source'),
-    addEventListener: (type: string, listener: (e?: unknown) => void) => {
-      (listeners[type] ??= []).push(listener);
-    },
-    end: () => {
-      for (const l of listeners.end ?? []) l();
-      return Promise.resolve();
-    },
-  } as XrSessionLike;
+  // A fresh session per request, as WebXR gives one.
+  const makeSession = (): XrSessionLike => {
+    const own: Record<string, ((e?: unknown) => void)[]> = {};
+    listeners = own;
+    return {
+      ...(features === null ? {} : { enabledFeatures: features }),
+      requestReferenceSpace: () => Promise.resolve('viewer-space'),
+      requestHitTestSource: () => Promise.resolve('hit-source'),
+      addEventListener: (type: string, listener: (e?: unknown) => void) => {
+        (own[type] ??= []).push(listener);
+      },
+      end: () => {
+        for (const l of own.end ?? []) l();
+        return Promise.resolve();
+      },
+    } as XrSessionLike;
+  };
   const xr: XrSystemLike = {
     isSessionSupported: () => Promise.resolve(true),
     requestSession: (mode, init) => {
       requests.push({ mode, init });
       return opts.requestFails
         ? Promise.reject(new Error('NotAllowedError'))
-        : Promise.resolve(session);
+        : Promise.resolve(makeSession());
     },
   };
   const transforms: Pose[] = [];
@@ -140,6 +154,7 @@ function harness(
     await new Promise((r) => setTimeout(r, 0));
   };
   const lastStatus = () => statuses[statuses.length - 1];
+  const lastShown = () => shown[shown.length - 1]?.events ?? [];
   return {
     controller,
     requests,
@@ -150,9 +165,13 @@ function harness(
     tick,
     select,
     lastStatus,
+    lastShown,
     transforms,
   };
 }
+
+const episodesOf = (events: readonly TrackerEvent[]) =>
+  events.filter((e): e is EpisodeEvent => 'readings' in e);
 
 describe('support check', () => {
   // Why this matters: a phone without WebXR AR must be told plainly, with
@@ -261,9 +280,9 @@ describe('placing', () => {
     );
   });
 
-  // Why this matters: the async-UI rule: a failed placement says so and the
-  // next tap works.
-  it('reports a failed placement and lets the next tap try again', async () => {
+  // Why this matters: the async-UI rule: a failed placement says so, the
+  // log keeps it, and the next tap works.
+  it('reports and logs a failed placement and lets the next tap try again', async () => {
     const h = harness();
     await h.controller.toggle();
     h.tick(0, { hit: pose(0, 0, -1) });
@@ -275,6 +294,9 @@ describe('placing', () => {
       tone: 'error',
     });
     expect(h.scene.marker).toEqual([]);
+    expect(h.controller.log()).toContain(
+      'could not create the anchor: no plane'
+    );
     await h.select();
     expect(h.lastStatus()?.text).toBe(MESSAGES.placed);
   });
@@ -304,11 +326,31 @@ describe('placing', () => {
     await h.select({ createAnchor: make('second') });
     expect(deleted).toEqual(['first']);
   });
+
+  // Why this matters: an anchor that arrives after its session ended
+  // belongs to a dead session; it must be deleted, not shown or logged.
+  it('deletes an anchor that arrives after the session ended', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -1) });
+    let resolve!: (a: XrAnchorLike) => void;
+    const deleted: string[] = [];
+    await h.select({
+      createAnchor: () => new Promise<XrAnchorLike>((r) => (resolve = r)),
+    });
+    await h.controller.toggle();
+    resolve({ anchorSpace: 'late', delete: () => deleted.push('late') });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(deleted).toEqual(['late']);
+    expect(h.scene.marker.filter((m) => m !== null)).toEqual([]);
+    expect(h.controller.log()).not.toContain('placed anchor');
+    expect(h.lastStatus()?.text).toBe(MESSAGES.ended);
+  });
 });
 
 describe('frames', () => {
   // Why this matters: end to end through the wiring, a camera jump must
-  // reach the on-screen list with the anchor's verdict.
+  // reach the on-screen list with the anchor's verdict at every delay.
   it('feeds frames to the tracker and shows a jump with its verdict', async () => {
     const h = harness();
     await h.controller.toggle();
@@ -318,18 +360,51 @@ describe('frames', () => {
     for (let i = 1; i < 6; i++)
       h.tick(i * 33, { camera: pose(0, 1.5, -0.01 * i), anchor: spot });
     // The world shifts 0.8 m in x, and the anchor goes with it.
-    for (let i = 6; i < 20; i++) {
+    for (let i = 6; i < 80; i++) {
       h.tick(i * 33, {
         camera: pose(0.8, 1.5, -0.01 * i),
         anchor: pose(0.8, 0, -2),
       });
     }
-    const last = h.shown[h.shown.length - 1]!.events;
-    const jump = last.find((e) => e.kind === 'jump');
-    expect(jump?.kind === 'jump' && jump.settled?.verdicts.main).toBe(
+    const [jump] = episodesOf(h.lastShown());
+    expect(jump?.kind).toBe('jump');
+    expect(jump?.truncated).toBe(false);
+    expect(jump?.readings.at(-1)?.comparison?.verdicts.main).toBe(
       'frame switch'
     );
     expect(h.controller.log()).toContain('jump 1');
+  });
+
+  // Why this matters: a lost anchor may return a frozen pose; WebXR's
+  // trackedAnchors says so, and such a pose is neither shown nor judged.
+  it('does not show or judge an anchor that trackedAnchors does not hold', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -2) });
+    await h.select();
+    h.tick(33, { anchor: pose(0, 0, -2), tracked: false });
+    expect(h.scene.anchor.at(-1)).toBeNull();
+    expect(h.controller.log()).toContain('anchor now (tracked no): p=(0.000');
+    h.tick(66, { anchor: pose(0, 0, -2), tracked: true });
+    expect(h.scene.anchor.at(-1)).toEqual(pose(0, 0, -2));
+  });
+
+  // Why this matters: an exception in the frame callback would stop the
+  // render loop for good; it is logged once and the next frame runs.
+  it('keeps running when a frame throws, and says so once', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -2) });
+    await h.select();
+    expect(() => h.tick(33, { getPoseThrows: true })).not.toThrow();
+    expect(() => h.tick(66, { getPoseThrows: true })).not.toThrow();
+    const errors = h.statuses.filter((s) => s.text.includes('A frame failed'));
+    expect(errors).toHaveLength(1);
+    const log = h.controller.log();
+    expect(log).toContain('a frame failed: InvalidStateError');
+    expect(log).toContain('frame errors: 2 (first: InvalidStateError)');
+    h.tick(99, { anchor: pose(0, 0, -2) });
+    expect(h.scene.anchor.at(-1)).toEqual(pose(0, 0, -2));
   });
 
   // Why this matters: an emulated position is ARCore saying tracking is
@@ -340,11 +415,11 @@ describe('frames', () => {
     h.tick(0);
     h.tick(33, { emulated: true, camera: pose(5, 1.5, 0) });
     h.tick(66, { camera: pose(2, 1.5, 0) });
-    expect(h.controller.log()).toContain('tracking loss of 66 ms');
+    expect(h.controller.log()).toContain('tracking-loss 1: dt 66 ms');
   });
 
   // Why this matters: the stop button ends the session, the button reverts
-  // and the log is kept for copying.
+  // and the log is kept for copying, with the session lines.
   it('ends the session on the second toggle and keeps the log', async () => {
     const h = harness();
     await h.controller.toggle();
@@ -353,6 +428,24 @@ describe('frames', () => {
     expect(h.states).toEqual(['starting', 'running', 'idle']);
     expect(h.lastStatus()?.text).toBe(MESSAGES.ended);
     expect(h.scene.anchor[h.scene.anchor.length - 1]).toBeNull();
-    expect(h.controller.log()).toContain('userAgent: test-agent');
+    const log = h.controller.log();
+    expect(log).toContain('userAgent: test-agent');
+    expect(log).toContain('[t 0 ms] session start');
+    expect(log).toContain('[t 0 ms] session end');
+  });
+
+  // Why this matters: two sessions' frames are not consecutive; a restart
+  // must not log a gap or a jump between them.
+  it('does not compare the frames of two sessions', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0);
+    h.tick(33);
+    await h.controller.toggle();
+    await h.controller.toggle();
+    h.tick(5000, { camera: pose(9, 1.5, 9) });
+    h.tick(5033, { camera: pose(9, 1.5, 9) });
+    expect(episodesOf(h.lastShown())).toEqual([]);
+    expect(h.controller.log().match(/session start/g)).toHaveLength(2);
   });
 });

@@ -31,12 +31,26 @@ tap, feeds each frame to the tracker and keeps the log's environment lines.
   hit pose in the `local` space (a free-space anchor, not a hit-result
   anchor), puts the marker at the same pose, deletes the previous anchor and
   records the placement. In progress: "Placing the anchor..."; failure: the
-  cause, and the next tap tries again.
-- Per frame: viewer pose (`null` when absent or `emulatedPosition`), hit
-  pose, anchor pose (`null` when untracked), all into the tracker; the view
-  gets the events when any closed.
-- Session end: the anchor and marker are cleared (an anchor dies with its
-  session), the pending jump is closed, the log is kept.
+  cause on screen and in the log, and the next tap tries again. The session
+  is captured before the await: an anchor that arrives after its session
+  ended is deleted and ignored.
+- Per frame:
+  - the inputs are the viewer pose (`null` when absent or
+    `emulatedPosition`), the hit pose, the anchor's `getPose` result and
+    `frame.trackedAnchors.has(anchor)` (`null` where the browser has no
+    `trackedAnchors`);
+  - all of them go into the tracker, and the view gets the events when any
+    closed;
+  - an anchor that `trackedAnchors` does not hold is hidden and not judged;
+  - the body runs in a try/catch, because an exception would stop the
+    three.js loop for good. The first error goes on screen and into the
+    log; later ones are counted in the `frame errors` line.
+- The first frame of a session records `session start`.
+- Session end:
+  - the anchor and marker are cleared (an anchor dies with its session);
+  - `session end` closes a pending episode and resets the tracker's frame
+    continuity;
+  - the log is kept.
 - A failure after the session started ends it first, then shows the cause.
 
 ## State
@@ -50,5 +64,7 @@ the closure for the page's lifetime; the measurement page has no Redux store
 `anchors-check-session.test.ts` with fake XR objects: support check, the
 requested features, a refused session, anchors not granted, the
 `createAnchor` fallback, placement at the hit pose, a failed placement and
-retry, no hit, anchor replacement, a jump end to end, an emulated pose as a
-loss, the stop toggle, and a failure after start.
+retry, no hit, anchor replacement, a late anchor after the end, a jump end to
+end, an untracked anchor, a throwing frame, an emulated pose as a loss, the
+stop toggle with the session lines, no comparison across a restart, and a
+failure after start.

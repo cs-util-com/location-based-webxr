@@ -7,7 +7,7 @@
  */
 
 import { copyWithFeedback } from 'gps-plus-slam-app-framework/utils/copy-with-feedback';
-import { onScreenLine, verdictCounts } from './anchor-jump-report';
+import { countsLine, onScreenLine } from './anchor-jump-report';
 import type {
   AnchorsCheckController,
   AnchorsCheckView,
@@ -81,11 +81,7 @@ export function createAnchorsCheckPage(
         state === 'checking' || state === 'unavailable' || state === 'starting';
     },
     showEvents(events) {
-      const c = verdictCounts(events);
-      counts.textContent =
-        c.jumps === 0
-          ? 'No jumps yet.'
-          : `Jumps: ${c.jumps} (frame switch ${c['frame switch']}, drift correction ${c['drift correction']}, unclear ${c.unclear})`;
+      counts.textContent = countsLine(events);
       list.replaceChildren(
         ...events.map((e) => {
           const item = doc.createElement('li');

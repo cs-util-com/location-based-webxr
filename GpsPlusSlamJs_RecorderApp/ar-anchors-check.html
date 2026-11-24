@@ -138,12 +138,20 @@
               not anchored) appear there.
             </li>
             <li>
-              Walk an indoor loop of at least 50 m, several laps. If no jump is
-              listed after a few laps, cover the camera for a few seconds.
+              Walk an indoor loop of at least 50 m, several laps. A jump is a
+              camera step of more than 0.25 m or 5 deg that your own walking and
+              turning do not explain, so quick turns are fine.
             </li>
             <li>
-              Keep going until 2 or more jumps are listed, then return to the
-              mark and note whether the green box still sits on it.
+              If no jump is listed after a few laps, stand still, cover the
+              camera for a few seconds, then uncover it: that is a tracking
+              loss, judged like a jump.
+            </li>
+            <li>
+              Each jump and loss is judged over 2 s: walk on calmly. A second
+              one inside those 2 s cuts the first short ("truncated"). Keep
+              going until 2 or more are judged, then return to the mark and note
+              whether the green box still sits on it.
             </li>
             <li>Press Copy log and paste the log.</li>
           </ol>
@@ -153,7 +161,7 @@
         <div id="ac-status" class="ac-status" role="status">
           Checking for WebXR AR...
         </div>
-        <div id="ac-counts" class="ac-counts">No jumps yet.</div>
+        <div id="ac-counts" class="ac-counts">Nothing judged yet.</div>
         <ul id="ac-verdicts" class="ac-verdicts"></ul>
         <textarea id="ac-log" readonly hidden aria-label="Log"></textarea>
       </div>

@@ -8,11 +8,12 @@ import {
 import {
   JUMP_ROTATION_DEG,
   JUMP_TRANSLATION_M,
+  SETTLE_DELAYS_MS,
   VERDICT_TOLERANCES,
   createAnchorJumpTracker,
   poseStep,
+  type EpisodeEvent,
   type FrameSample,
-  type JumpEvent,
 } from './anchor-jump-tracker';
 
 const unitQuat = fc
@@ -62,10 +63,15 @@ function cameraTrack(start: Pose, step: Pose, frames: number): Pose[] {
   return out;
 }
 
+const FRAME_MS = 33;
+const JUMP_AT = 10;
+const FRAMES = JUMP_AT + Math.ceil(SETTLE_DELAYS_MS.at(-1)! / FRAME_MS) + 2;
+
 describe('anchor jump tracker properties', () => {
   // Why this matters: the verdict must name the model that produced the
   // data, for any jump big enough to tell the two apart, any anchor and any
-  // smooth camera motion. The camera's own motion must not leak into D.
+  // smooth camera motion, at every delay. The camera's own motion must not
+  // leak into D, and the walk after the jump must not log a second one.
   it('names frame switch and drift correction for any separable jump', () => {
     fc.assert(
       fc.property(
@@ -82,31 +88,36 @@ describe('anchor jump tracker properties', () => {
             separation.translationM > 2 * tol.positionM ||
               separation.rotationDeg > 2 * tol.rotationDeg
           );
-          const cams = cameraTrack(start, motion, 20);
+          const cams = cameraTrack(start, motion, FRAMES);
           const samples: FrameSample[] = cams.map((camera, i) => {
-            const after = i >= 10;
+            const after = i >= JUMP_AT;
             return {
-              t: i * 33,
+              t: i * FRAME_MS,
               camera: after ? composeRigid(d, camera) : camera,
               anchor: after && followsD ? moved : anchor0,
+              anchorTracked: true,
               marker: anchor0,
             };
           });
           const tracker = createAnchorJumpTracker();
           for (const s of samples) tracker.onFrame(s);
-          tracker.flush();
+          tracker.noteSession('end', FRAMES * FRAME_MS);
           const jumps = tracker
             .events()
-            .filter((e): e is JumpEvent => e.kind === 'jump');
-          // A D that moves the camera less than the logging limits is not
-          // logged; when it is, the verdict must be right at every tolerance.
+            .filter((e): e is EpisodeEvent => e.kind === 'jump');
+          // A D that leaves the camera under the logging limits is not
+          // logged; when it is, it is one jump with every verdict right.
+          expect(jumps.length).toBeLessThanOrEqual(1);
           for (const jump of jumps) {
             const want = followsD ? 'frame switch' : 'drift correction';
-            expect(jump.atJump?.verdicts).toEqual({
-              tight: want,
-              main: want,
-              loose: want,
-            });
+            expect(jump.truncated).toBe(false);
+            for (const r of jump.readings) {
+              expect(r.comparison?.verdicts).toEqual({
+                tight: want,
+                main: want,
+                loose: want,
+              });
+            }
             // The camera turns while it moves, so its path is an arc and the
             // linear extrapolation misses it by about step length times turn
             // angle (at most 0.052 m * 0.035 rad, under 2 mm here).
@@ -117,23 +128,40 @@ describe('anchor jump tracker properties', () => {
     );
   });
 
-  // Why this matters: the jump list is only readable if steady motion under
-  // the limits never enters it.
-  it('logs nothing for motion under the logging limits', () => {
+  // Why this matters: the jump list is only readable if steady motion never
+  // enters it, whatever its speed: a fast turn or a quick walk is motion the
+  // compensation explains, not a jump.
+  it('logs nothing for steady motion of any plausible speed', () => {
     fc.assert(
       fc.property(
         anyPose(3),
         fc.record({
-          position: position(JUMP_TRANSLATION_M / 2),
-          rotation: smallTurn(JUMP_ROTATION_DEG * 0.9),
+          position: position(0.15),
+          rotation: smallTurn(4 * JUMP_ROTATION_DEG),
         }),
         (start, motion) => {
+          // The arc residual is about step length times turn angle per frame:
+          // at most 0.26 m * 0.35 rad, under the translation limit.
+          fc.pre(
+            Math.hypot(...motion.position) *
+              2 *
+              Math.acos(Math.min(1, motion.rotation[3])) <
+              JUMP_TRANSLATION_M / 2
+          );
           const tracker = createAnchorJumpTracker();
           for (const [i, camera] of cameraTrack(start, motion, 30).entries()) {
-            tracker.onFrame({ t: i * 16, camera, anchor: null, marker: null });
+            tracker.onFrame({
+              t: i * 16,
+              camera,
+              anchor: null,
+              anchorTracked: null,
+              marker: null,
+            });
           }
-          expect(tracker.flush()).toEqual([]);
-          expect(tracker.events()).toEqual([]);
+          expect(tracker.noteSession('end', 500)).toEqual([
+            { kind: 'session-end', t: 500 },
+          ]);
+          expect(tracker.events().map((e) => e.kind)).toEqual(['session-end']);
         }
       )
     );

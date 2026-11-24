@@ -2,15 +2,19 @@ import { describe, it, expect } from 'vitest';
 import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
 import {
   buildLog,
+  countsLine,
   formatPose,
   onScreenLine,
   percentile,
   verdictCounts,
 } from './anchor-jump-report';
 import {
+  SETTLE_DELAYS_MS,
   createAnchorJumpTracker,
-  type JumpEvent,
+  type EpisodeEvent,
+  type FrameSample,
   type TrackerEvent,
+  type Verdict,
 } from './anchor-jump-tracker';
 
 const pose = (x: number, y: number, z: number): Pose => ({
@@ -18,37 +22,38 @@ const pose = (x: number, y: number, z: number): Pose => ({
   rotation: [0, 0, 0, 1],
 });
 
-function jumpWith(
-  main: 'frame switch' | 'drift correction' | 'unclear' | null,
-  settled = true
-): JumpEvent {
-  const cmp =
-    main === null
-      ? null
-      : {
-          anchorAfter: pose(1, 0, 0),
-          toPredicted: { translationM: 0.01, rotationDeg: 0.2 },
-          toBefore: { translationM: 0.6, rotationDeg: 3 },
-          verdicts: { tight: 'unclear' as const, main, loose: main },
-        };
-  return {
-    kind: 'jump',
-    index: 3,
-    t: 1000,
-    dtMs: 33,
-    cameraBefore: pose(0, 1.5, 0),
-    cameraAfter: pose(0.6, 1.5, 0),
-    cameraStep: { translationM: 0.6, rotationDeg: 3.1 },
-    stepClass: '0.3-1 m',
-    d: pose(0.6, 0, 0),
-    anchorBefore: pose(0.4, 0, 0),
-    predicted: pose(1, 0, 0),
-    marker: pose(0.4, 0, 0),
-    atJump: cmp,
-    settled: settled ? cmp : null,
-    settledFrames: settled ? 10 : 0,
-  };
+const FRAME_MS = 33;
+const SPAN = Math.ceil(SETTLE_DELAYS_MS.at(-1)! / FRAME_MS) + 2;
+
+const sample = (t: number, x: number, anchor: Pose | null): FrameSample => ({
+  t,
+  camera: pose(x, 1.5, 0),
+  anchor,
+  anchorTracked: anchor === null ? null : true,
+  marker: pose(0.4, 0, 0),
+});
+
+/**
+ * A real tracker run: still camera, a 0.6 m jump in x after 5 frames, the
+ * anchor following it (or staying), then `framesAfter` frames.
+ */
+function run(opts: {
+  follows?: boolean;
+  framesAfter?: number;
+  anchor?: boolean;
+}) {
+  const { follows = true, framesAfter = SPAN, anchor = true } = opts;
+  const a0 = anchor ? pose(0.4, 0, 0) : null;
+  const a1 = anchor ? (follows ? pose(1, 0, 0) : a0) : null;
+  const tracker = createAnchorJumpTracker();
+  for (let i = 0; i < 5; i++) tracker.onFrame(sample(i * FRAME_MS, 0, a0));
+  for (let i = 0; i < framesAfter; i++)
+    tracker.onFrame(sample((5 + i) * FRAME_MS, 0.6, a1));
+  return tracker;
 }
+
+const firstEpisode = (events: readonly TrackerEvent[]) =>
+  events.find((e): e is EpisodeEvent => e.kind === 'jump')!;
 
 describe('percentile', () => {
   // Why this matters: the noise floor for the jump guard is read off these
@@ -76,96 +81,143 @@ describe('formatPose', () => {
 
 describe('onScreenLine', () => {
   // Why this matters: the on-screen verdict is what the walker watches; it
-  // must name the settled main-tolerance verdict and the step band.
-  it('names the settled verdict, the camera step and its band', () => {
-    expect(onScreenLine(jumpWith('frame switch'))).toBe(
-      'Jump 3: frame switch (camera 0.60 m / 3.1 deg, 0.3-1 m)'
+  // must name the counted verdict, every delay's verdict and the band.
+  it('names the final verdict, the verdict per delay and the band', () => {
+    const jump = firstEpisode(run({}).events());
+    expect(onScreenLine(jump)).toBe(
+      'Jump 1: frame switch (0 ms switch, 100 ms switch, 300 ms switch, 1000 ms switch, 2000 ms switch); unexplained 0.60 m / 0.0 deg, 0.3-1 m'
     );
   });
-  it('falls back to the jump-frame verdict while settling', () => {
-    expect(onScreenLine(jumpWith('drift correction', false))).toContain(
-      'drift correction (settling)'
+
+  // Why this matters: the settling label must come from the real snapshot's
+  // flag; a hand-built event cannot show that it is wired the right way.
+  it('labels the snapshot pending episode as settling', () => {
+    const tracker = run({ framesAfter: 5 });
+    expect(onScreenLine(firstEpisode(tracker.snapshot()))).toMatch(
+      /^Jump 1: settling, frame switch so far \(0 ms switch, 100 ms switch\)/
     );
   });
+
+  // Why this matters: a cut-short verdict must not read as a full one.
+  it('labels a truncated episode as not counted', () => {
+    const tracker = run({ framesAfter: 5 });
+    tracker.noteSession('end', 500);
+    expect(onScreenLine(firstEpisode(tracker.events()))).toMatch(
+      /^Jump 1: truncated, not counted \(frame switch at 100 ms\)/
+    );
+  });
+
   it('says plainly when no anchor was tracked', () => {
-    expect(onScreenLine(jumpWith(null))).toContain('no anchor tracked');
+    const jump = firstEpisode(run({ anchor: false }).events());
+    expect(onScreenLine(jump)).toContain('unclear (no anchor tracked)');
+    expect(onScreenLine(jump)).toContain('2000 ms none');
   });
-  it('describes losses, gaps and placements', () => {
+
+  it('describes losses, gaps, placements and notes', () => {
     const tracker = createAnchorJumpTracker();
     expect(onScreenLine(tracker.notePlaced(5, pose(0, 0, -1))[0]!)).toBe(
       'Anchor and marker placed'
     );
-    const loss: TrackerEvent = {
-      kind: 'tracking-loss',
-      tLost: 0,
-      tRecovered: 1500,
-      durationMs: 1500,
-      cameraStep: { translationM: 2, rotationDeg: 1 },
-      anchorBefore: null,
-      anchorAfter: null,
-      anchorStep: null,
-    };
-    expect(onScreenLine(loss)).toBe(
-      'Tracking lost for 1.5 s, camera step 2.00 m / 1.0 deg'
+    expect(onScreenLine(tracker.noteAnchorFailed(6, 'no plane')[0]!)).toBe(
+      'Could not create the anchor: no plane'
     );
-    expect(onScreenLine({ ...loss, kind: 'frame-gap', t: 1, dtMs: 600 })).toBe(
-      'Frame gap of 600 ms, camera step 2.00 m / 1.0 deg'
+    expect(onScreenLine(tracker.noteFrameError(7, 'boom')[0]!)).toBe(
+      'A frame failed: boom'
+    );
+    expect(onScreenLine(tracker.noteSession('start', 8)[0]!)).toBe(
+      'AR session started'
+    );
+    const loss: EpisodeEvent = {
+      ...firstEpisode(run({}).events()),
+      kind: 'tracking-loss',
+      dtMs: 1500,
+    };
+    expect(onScreenLine(loss)).toMatch(/^Tracking loss 1 \(1\.5 s\): /);
+    expect(onScreenLine({ ...loss, kind: 'frame-gap', dtMs: 600 })).toMatch(
+      /^Frame gap 1 \(600 ms\): /
     );
   });
 });
 
-describe('verdictCounts', () => {
-  // Why this matters: "two or more jumps" is the stop condition of the walk.
-  it('counts jumps by settled main verdict', () => {
-    const counts = verdictCounts([
-      jumpWith('frame switch'),
-      jumpWith('frame switch'),
-      jumpWith('drift correction'),
-      jumpWith(null),
-    ]);
+describe('verdictCounts and countsLine', () => {
+  // Why this matters: "two or more judged" is the stop condition of the
+  // walk; truncated and still-settling episodes are not judged.
+  it('counts only full episodes, by their final main verdict', () => {
+    const fs = firstEpisode(run({}).events());
+    const dc = firstEpisode(run({ follows: false }).events());
+    const none = firstEpisode(run({ anchor: false }).events());
+    const cut = run({ framesAfter: 5 });
+    cut.noteSession('end', 500);
+    const truncated = firstEpisode(cut.events());
+    const pending = firstEpisode(run({ framesAfter: 5 }).snapshot());
+    const counts = verdictCounts(
+      [fs, fs, dc, none, truncated, pending],
+      'jump'
+    );
     expect(counts).toEqual({
-      jumps: 4,
+      judged: 4,
       'frame switch': 2,
       'drift correction': 1,
       unclear: 1,
-    });
+      truncated: 1,
+      settling: 1,
+    } satisfies Record<Verdict | 'judged' | 'truncated' | 'settling', number>);
+    expect(verdictCounts([fs], 'tracking-loss').judged).toBe(0);
+  });
+
+  it('says how many jumps and losses are judged', () => {
+    expect(countsLine([])).toBe('Nothing judged yet.');
+    const fs = firstEpisode(run({}).events());
+    expect(countsLine([fs, { ...fs, kind: 'tracking-loss' }])).toBe(
+      'Judged: 1 jump (frame switch 1, drift correction 0, unclear 0); 1 tracking loss (frame switch 1, drift correction 0, unclear 0)'
+    );
   });
 });
 
 describe('buildLog', () => {
   // Why this matters: the pasted log is the whole result of the walk; it
-  // must carry the limits it was taken with, the distributions, every event
-  // with D * anchorBefore and the verdict at all three tolerances.
+  // must carry the limits it was taken with, the distributions, and every
+  // event with what an offline recompute needs: the rate frame, the camera
+  // before and after, D, D * anchorBefore and each reading with its
+  // tracked flag and verdicts.
   it('holds the header, the distributions and every event in full', () => {
+    const tracker = run({});
+    tracker.noteAnchorFailed(3000, 'no plane');
+    tracker.noteSession('end', 3100);
     const text = buildLog({
       nowIso: '2026-01-01T00:00:00.000Z',
       environment: { userAgent: 'UA', anchors: 'granted' },
-      events: [jumpWith('frame switch')],
-      stats: {
-        frames: 3,
-        lostFrames: 0,
-        dtMs: [16, 33],
-        translationM: [0.01, 0.02],
-        rotationDeg: [0.1, 0.2],
-      },
+      events: tracker.snapshot(),
+      stats: tracker.stats(),
       anchorNow: pose(1, 0, 0),
+      anchorNowTracked: true,
       markerNow: pose(0.4, 0, 0),
     });
     for (const needle of [
       'WebXR anchors check',
       'userAgent: UA',
       'anchors: granted',
-      'jump logged above 0.25 m or 5 deg',
+      'jump logged when the step left after the motion compensation is above 0.25 m or 5 deg',
       'frame gap above 500 ms',
+      'anchor read at 0, 100, 300, 1000, 2000 ms',
       'tight 0.05 m / 1.5 deg',
-      'frame dt ms: p50 16.0, p95 33.0',
-      'jumps: 1 (frame switch 1, drift correction 0, unclear 0;',
+      'frame dt ms: p50 33.0',
+      'unexplained step per frame m:',
+      'jumps judged 1 (frame switch 1, drift correction 0, unclear 0), truncated 0',
+      'anchor now (tracked yes): p=(1.000',
       'anchor to marker now: 0.600 m',
-      'jump 3',
+      'jump 1: dt 33 ms',
+      'camera prev: [t 99 ms] p=(0.000',
+      'camera before: [t 132 ms] p=(0.000',
+      'camera after: p=(0.600',
       'D: p=(0.600',
+      'anchorBefore (tracked yes): p=(0.400',
       'D * anchorBefore: p=(1.000',
-      'verdict tight unclear, main frame switch, loose frame switch',
-      'settled after 10 frames',
+      'anchor at 0 ms (read at 0 ms, tracked yes): p=(1.000',
+      'anchor at 2000 ms (read at 2013 ms, tracked yes)',
+      'verdict tight frame switch, main frame switch, loose frame switch',
+      'could not create the anchor: no plane',
+      'session end',
     ]) {
       expect(text).toContain(needle);
     }

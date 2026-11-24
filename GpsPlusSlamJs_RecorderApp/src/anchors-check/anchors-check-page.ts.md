@@ -24,6 +24,7 @@ overlayRoot, connect(controller) }`; `connect` returns `{ copy() }` (the
 - `beforexrselect` is prevented on the panel, so a button tap during AR is
   not also a placement.
 - A missing element id throws at load, naming the id.
+- The counts line and every list line come from `anchor-jump-report.ts` (`countsLine`, `onScreenLine`); the page adds no wording of its own.
 
 ## Tests
 

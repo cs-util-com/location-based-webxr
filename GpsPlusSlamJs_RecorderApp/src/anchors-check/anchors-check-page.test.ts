@@ -10,6 +10,7 @@ import {
 } from './anchors-check-page';
 import type { AnchorsCheckController } from './anchors-check-session';
 import { createAnchorJumpTracker } from './anchor-jump-tracker';
+import { countsLine } from './anchor-jump-report';
 
 /**
  * Wired against the REAL `ar-anchors-check.html` markup: the element ids are
@@ -95,16 +96,17 @@ describe('anchors check page', () => {
     expect(el('ac-status').classList.contains('ac-status-error')).toBe(false);
   });
 
-  // Why this matters: the walker stops at two jumps; the count and the
-  // lines must be on screen.
-  it('lists the events and counts the jumps', () => {
+  // Why this matters: the walker stops at two judged jumps or losses; the
+  // count and the lines must be on screen, from the markup's first state on.
+  it('lists the events and counts the judged ones', () => {
+    expect(el('ac-counts').textContent).toBe(countsLine([]));
     const { page } = connect(undefined);
     const tracker = createAnchorJumpTracker();
     const events = [
       ...tracker.notePlaced(0, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
     ];
     page.view.showEvents(events);
-    expect(el('ac-counts').textContent).toBe('No jumps yet.');
+    expect(el('ac-counts').textContent).toBe(countsLine(events));
     expect([...el('ac-verdicts').children].map((li) => li.textContent)).toEqual(
       ['Anchor and marker placed']
     );

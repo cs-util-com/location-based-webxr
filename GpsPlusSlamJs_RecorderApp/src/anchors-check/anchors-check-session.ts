@@ -44,6 +44,8 @@ export interface XrFrameLike {
   // Method syntax on purpose: its parameters are checked bivariantly, so
   // the real XRFrame (typed XRRigidTransform, XRSpace) fits this shape.
   createAnchor?(pose: unknown, space: unknown): Promise<XrAnchorLike>;
+  /** The anchors WebXR still tracks this frame (`XRAnchorSet`). */
+  readonly trackedAnchors?: { has(anchor: XrAnchorLike): boolean };
 }
 
 export interface XrSessionLike {
@@ -121,6 +123,7 @@ export const MESSAGES = Object.freeze({
   noHit:
     'No surface under the ring yet. Aim at the floor until the white ring shows, then tap.',
   ended: 'AR ended. The log is kept: press Copy log.',
+  frameFailed: 'A frame failed; the check goes on and the log has it:',
 });
 
 function toPose(t: XrTransformLike): Pose {
@@ -150,6 +153,12 @@ function hitPose(
   return hit ? toPose(hit.transform) : null;
 }
 
+/** Does WebXR still track `anchor`? `null`: no anchor, or not reported. */
+function isTracked(frame: XrFrameLike, anchor: XrAnchorLike | null) {
+  if (anchor === null || frame.trackedAnchors === undefined) return null;
+  return frame.trackedAnchors.has(anchor);
+}
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -166,6 +175,9 @@ export function createAnchorsCheck(
   let lastHit: Pose | null = null;
   let anchor: XrAnchorLike | null = null;
   let anchorPose: Pose | null = null;
+  let anchorTracked: boolean | null = null;
+  let frameErrors = 0;
+  let firstFrameError = '';
   let marker: Pose | null = null;
   let lastT = 0;
   let anchorsUsable = false;
@@ -176,10 +188,25 @@ export function createAnchorsCheck(
     if (events.length > 0) view.showEvents(tracker.snapshot());
   }
 
+  /**
+   * The XR frame callback. An exception here would stop three.js's render
+   * loop for good, so it is logged and the next frame runs.
+   */
   function onFrame(t: number, frame: XrFrameLike, base: unknown): void {
+    try {
+      frameBody(t, frame, base);
+    } catch (error) {
+      onFrameError(t, errorText(error));
+    }
+  }
+
+  function frameBody(t: number, frame: XrFrameLike, base: unknown): void {
     space = base;
     lastT = t;
-    if (!frameChecked) checkFrame(frame);
+    if (!frameChecked) {
+      checkFrame(frame);
+      report(tracker.noteSession('start', t));
+    }
     if (hitSource !== null) {
       lastHit = hitPose(frame, hitSource, base);
       scene.showReticle(lastHit);
@@ -187,15 +214,27 @@ export function createAnchorsCheck(
     const seen =
       anchor === null ? null : frame.getPose(anchor.anchorSpace, base);
     anchorPose = seen ? toPose(seen.transform) : null;
-    scene.showAnchor(anchorPose);
+    anchorTracked = anchorPose === null ? null : isTracked(frame, anchor);
+    scene.showAnchor(anchorTracked === false ? null : anchorPose);
     report(
       tracker.onFrame({
         t,
         camera: cameraPose(frame, base),
         anchor: anchorPose,
+        anchorTracked,
         marker,
       })
     );
+  }
+
+  function onFrameError(t: number, message: string): void {
+    frameErrors++;
+    if (frameErrors === 1) {
+      firstFrameError = message;
+      report(tracker.noteFrameError(t, message));
+      view.status(`${MESSAGES.frameFailed} ${message}`, 'error');
+    }
+    environment['frame errors'] = `${frameErrors} (first: ${firstFrameError})`;
   }
 
   /** Once per session: does the frame offer `createAnchor` at all? */
@@ -237,11 +276,17 @@ export function createAnchorsCheck(
     }
     placing = true;
     view.status(MESSAGES.placing, 'info');
+    const owner = session;
     try {
       const created = await frame.createAnchor(
         deps.makeTransform(target),
         space
       );
+      if (session !== owner) {
+        // The session ended while ARCore made the anchor: it is dead.
+        created.delete();
+        return;
+      }
       anchor?.delete();
       anchor = created;
       marker = target;
@@ -249,6 +294,8 @@ export function createAnchorsCheck(
       report(tracker.notePlaced(lastT, target));
       view.status(MESSAGES.placed, 'info');
     } catch (error) {
+      if (session !== owner) return;
+      report(tracker.noteAnchorFailed(lastT, errorText(error)));
       view.status(`Could not create the anchor: ${errorText(error)}`, 'error');
     } finally {
       placing = false;
@@ -262,10 +309,11 @@ export function createAnchorsCheck(
     // An anchor dies with its session; a restart begins with a new tap.
     anchor = null;
     anchorPose = null;
+    anchorTracked = null;
     marker = null;
     scene.showAnchor(null);
     scene.showMarker(null);
-    tracker.flush();
+    tracker.noteSession('end', lastT);
     view.showEvents(tracker.events());
     view.setStartState('idle');
     view.status(MESSAGES.ended, 'info');
@@ -336,6 +384,7 @@ export function createAnchorsCheck(
         events: tracker.snapshot(),
         stats: tracker.stats(),
         anchorNow: anchorPose,
+        anchorNowTracked: anchorTracked,
         markerNow: marker,
       });
     },

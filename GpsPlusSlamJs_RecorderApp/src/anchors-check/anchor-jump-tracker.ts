@@ -1,8 +1,9 @@
 /**
- * Per-frame logic of the WebXR anchors check page: detects camera jumps
- * between consecutive frames, the jump transform `D`, the pose step across
- * tracking losses and long frame gaps, and the verdict per jump (does the
- * anchor follow `D`, or keep its coordinates).
+ * Per-frame logic of the WebXR anchors check page. It detects camera jumps
+ * (a step the motion compensation cannot explain), tracking losses and long
+ * frame gaps, computes the jump transform `D` of each, reads the anchor at
+ * fixed delays after it and gives the verdict per reading (does the anchor
+ * follow `D`, or keep its coordinates).
  *
  * No DOM, no WebXR objects, no three.js: the page hands in one plain sample
  * per XR frame. Poses are raw WebXR poses (the `local` reference space).
@@ -13,6 +14,7 @@
 import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
 import {
   composeRigid,
+  invertRigid,
   jumpTransform,
   type RelocalizationJump,
 } from 'gps-plus-slam-app-framework/ar/ar-space-correction';
@@ -22,14 +24,23 @@ import {
 } from 'gps-plus-slam-app-framework/ar/nue-webxr-conversions';
 import { geodesicAngleRad } from 'gps-plus-slam-app-framework/utils/geodesic-angle';
 
-/** A camera translation above this between two frames is logged as a jump. */
+/**
+ * A camera step the motion compensation leaves unexplained above this
+ * translation is logged as a jump.
+ */
 export const JUMP_TRANSLATION_M = 0.25;
-/** A camera rotation above this between two frames is logged as a jump. */
+/** The same for the rotation. */
 export const JUMP_ROTATION_DEG = 5;
-/** A frame interval above this is a "cannot judge" gap, never a jump. */
+/** A frame interval above this is a frame gap, never a jump. */
 export const FRAME_GAP_MS = 500;
-/** Frames after a jump frame before its settled anchor pose is judged. */
-export const SETTLE_FRAMES = 10;
+/**
+ * Delays after an episode (jump, loss, gap) at which the anchor is read and
+ * judged. In ms, not frames, so the window is the same at 30 and 60 Hz. The
+ * last reading gives the counted verdict.
+ */
+export const SETTLE_DELAYS_MS: readonly number[] = Object.freeze([
+  100, 300, 1000, 2000,
+]);
 /** Lower edge of the reported band below the relocalization rule. */
 export const BAND_LOWER_M = 0.3;
 /**
@@ -72,17 +83,27 @@ export interface PoseStep {
 export interface FrameSample {
   readonly t: number;
   readonly camera: Pose | null;
-  /** The anchor's pose this frame; `null` when none exists or untracked. */
+  /** The anchor's pose as `getPose` returned it; `null` when none. */
   readonly anchor: Pose | null;
+  /**
+   * `frame.trackedAnchors.has(anchor)`; `null` when unknown (no anchor, or
+   * the browser has no `trackedAnchors`). A pose with `false` is logged but
+   * never judged.
+   */
+  readonly anchorTracked: boolean | null;
   /** The non-anchored marker; constant once placed. */
   readonly marker: Pose | null;
 }
 
-export interface AnchorComparison {
-  readonly anchorAfter: Pose;
-  /** anchorAfter against `D * anchorBefore`. */
+export interface TimedPose {
+  readonly t: number;
+  readonly pose: Pose;
+}
+
+interface AnchorComparison {
+  /** The anchor against `D * anchorBefore`. */
   readonly toPredicted: PoseStep;
-  /** anchorAfter against anchorBefore. */
+  /** The anchor against anchorBefore. */
   readonly toBefore: PoseStep;
   readonly verdicts: {
     readonly tight: Verdict;
@@ -91,47 +112,49 @@ export interface AnchorComparison {
   };
 }
 
-export interface JumpEvent {
-  readonly kind: 'jump';
+export interface AnchorReading {
+  /** The nominal delay; 0 is the episode frame itself. */
+  readonly delayMs: number;
+  /** The actual time of the reading after the episode frame. */
+  readonly atMs: number;
+  readonly anchor: Pose | null;
+  readonly tracked: boolean | null;
+  /** `null` when either anchor pose is missing or not tracked. */
+  readonly comparison: AnchorComparison | null;
+}
+
+export type EpisodeKind = 'jump' | 'tracking-loss' | 'frame-gap';
+
+/** A jump, a tracking loss or a frame gap, with its anchor readings. */
+export interface EpisodeEvent {
+  readonly kind: EpisodeKind;
+  /** 1-based, counted per kind. */
   readonly index: number;
   readonly t: number;
+  /** Time since the last tracked frame (the loss or gap length). */
   readonly dtMs: number;
-  readonly cameraBefore: Pose;
+  /** The frame before `cameraBefore`, from which the rate came; `null`: none, D uncompensated. */
+  readonly cameraPrev: TimedPose | null;
+  readonly cameraBefore: TimedPose;
   readonly cameraAfter: Pose;
+  /** cameraBefore to cameraAfter, raw. */
   readonly cameraStep: PoseStep;
+  /** The step the compensation leaves: extrapolated pose to cameraAfter. */
+  readonly unexplainedStep: PoseStep;
   readonly stepClass: StepClass;
-  /** The jump transform in the raw WebXR frame (motion-compensated). */
+  /** The jump transform in the raw WebXR frame. */
   readonly d: Pose;
   readonly anchorBefore: Pose | null;
+  readonly anchorBeforeTracked: boolean | null;
   /** `D * anchorBefore`. */
   readonly predicted: Pose | null;
   readonly marker: Pose | null;
-  /** The anchor in the jump frame; `null` when it was not tracked. */
-  readonly atJump: AnchorComparison | null;
-  /** The anchor `settledFrames` frames later. */
-  readonly settled: AnchorComparison | null;
-  readonly settledFrames: number;
-}
-
-interface TrackingLossEvent {
-  readonly kind: 'tracking-loss';
-  readonly tLost: number;
-  readonly tRecovered: number;
-  readonly durationMs: number;
-  readonly cameraStep: PoseStep;
-  readonly anchorBefore: Pose | null;
-  readonly anchorAfter: Pose | null;
-  readonly anchorStep: PoseStep | null;
-}
-
-interface FrameGapEvent {
-  readonly kind: 'frame-gap';
-  readonly t: number;
-  readonly dtMs: number;
-  readonly cameraStep: PoseStep;
-  readonly anchorBefore: Pose | null;
-  readonly anchorAfter: Pose | null;
-  readonly anchorStep: PoseStep | null;
+  /** The episode frame (delay 0), then one per reached `SETTLE_DELAYS_MS`. */
+  readonly readings: readonly AnchorReading[];
+  /** Only in `snapshot()`: still collecting readings. */
+  readonly pending: boolean;
+  /** Closed before the last delay (a later episode, a placement, the end). */
+  readonly truncated: boolean;
 }
 
 interface PlacedEvent {
@@ -140,8 +163,19 @@ interface PlacedEvent {
   readonly pose: Pose;
 }
 
+interface NoteEvent {
+  readonly kind: 'anchor-failed' | 'frame-error';
+  readonly t: number;
+  readonly message: string;
+}
+
+interface SessionEvent {
+  readonly kind: 'session-start' | 'session-end';
+  readonly t: number;
+}
+
 export type TrackerEvent =
-  JumpEvent | TrackingLossEvent | FrameGapEvent | PlacedEvent;
+  EpisodeEvent | PlacedEvent | NoteEvent | SessionEvent;
 
 /** Per-frame distributions over every judged frame pair. */
 export interface FrameStats {
@@ -150,6 +184,9 @@ export interface FrameStats {
   readonly dtMs: readonly number[];
   readonly translationM: readonly number[];
   readonly rotationDeg: readonly number[];
+  /** The unexplained step, for pairs with a known rate. */
+  readonly unexplainedM: readonly number[];
+  readonly unexplainedDeg: readonly number[];
 }
 
 export interface AnchorJumpTracker {
@@ -157,11 +194,16 @@ export interface AnchorJumpTracker {
   onFrame(sample: FrameSample): readonly TrackerEvent[];
   /** A new anchor and marker were placed at `pose`. */
   notePlaced(t: number, pose: Pose): readonly TrackerEvent[];
-  /** Close a pending jump with what is known (session end). */
-  flush(): readonly TrackerEvent[];
+  noteAnchorFailed(t: number, message: string): readonly TrackerEvent[];
+  noteFrameError(t: number, message: string): readonly TrackerEvent[];
+  /**
+   * A session started or ended: closes a pending episode and resets the
+   * frame continuity (the recorded events stay).
+   */
+  noteSession(what: 'start' | 'end', t: number): readonly TrackerEvent[];
   /** Closed events, in order. */
   events(): readonly TrackerEvent[];
-  /** Closed events plus a still-settling jump, without closing it. */
+  /** Closed events plus a still-settling episode flagged `pending`. */
   snapshot(): readonly TrackerEvent[];
   stats(): FrameStats;
 }
@@ -204,6 +246,13 @@ function isClose(step: PoseStep, tol: Tolerance): boolean {
   );
 }
 
+function isJump(step: PoseStep): boolean {
+  return (
+    step.translationM > JUMP_TRANSLATION_M ||
+    step.rotationDeg > JUMP_ROTATION_DEG
+  );
+}
+
 /** The size band of a logged camera step. */
 export function classifyStep(step: PoseStep): StepClass {
   if (step.translationM >= RELOCALIZATION_RULE_M) return 'at least 1 m';
@@ -230,6 +279,11 @@ export function classifyAnchor(
   return 'unclear';
 }
 
+/** The pose to judge: none when WebXR says the anchor is not tracked. */
+function judged(anchor: Pose | null, tracked: boolean | null): Pose | null {
+  return tracked === false ? null : anchor;
+}
+
 function compare(
   before: Pose | null,
   after: Pose | null,
@@ -237,7 +291,6 @@ function compare(
 ): AnchorComparison | null {
   if (before === null || after === null || predicted === null) return null;
   return {
-    anchorAfter: after,
     toPredicted: poseStep(after, predicted),
     toBefore: poseStep(after, before),
     verdicts: {
@@ -246,10 +299,6 @@ function compare(
       loose: classifyAnchor(before, after, predicted, VERDICT_TOLERANCES.loose),
     },
   };
-}
-
-function maybeStep(a: Pose | null, b: Pose | null): PoseStep | null {
-  return a !== null && b !== null ? poseStep(a, b) : null;
 }
 
 /** The jump transform in the raw WebXR frame (the framework computes it in NUE). */
@@ -261,222 +310,325 @@ function jumpInWebXr(jump: RelocalizationJump): Pose {
   };
 }
 
-interface Timed {
-  readonly t: number;
-  readonly camera: Pose;
+interface Seen {
+  readonly anchor: Pose | null;
+  readonly tracked: boolean | null;
 }
 
 interface Pending {
-  readonly event: JumpEvent;
-  framesSeen: number;
+  readonly base: Omit<EpisodeEvent, 'readings' | 'pending' | 'truncated'>;
+  readonly readings: AnchorReading[];
+}
+
+/** The episode frame's raw inputs. */
+interface EpisodeInput {
+  readonly kind: EpisodeKind;
+  readonly t: number;
+  readonly before: TimedPose;
+  readonly rate: TimedPose | null;
+  readonly camera: Pose;
+  readonly d: Pose;
+  readonly anchorBefore: Seen;
+  readonly now: Seen;
+  readonly marker: Pose | null;
 }
 
 export function createAnchorJumpTracker(): AnchorJumpTracker {
   const closed: TrackerEvent[] = [];
-  const dtMs: number[] = [];
-  const translationM: number[] = [];
-  const rotationDeg: number[] = [];
+  const stats = {
+    dtMs: [] as number[],
+    translationM: [] as number[],
+    rotationDeg: [] as number[],
+    unexplainedM: [] as number[],
+    unexplainedDeg: [] as number[],
+  };
+  const counts: Record<EpisodeKind, number> = {
+    jump: 0,
+    'tracking-loss': 0,
+    'frame-gap': 0,
+  };
   let frames = 0;
   let lostFrames = 0;
-  let jumpCount = 0;
-  let prev: Timed | null = null;
-  let last: Timed | null = null;
-  let lastAnchor: Pose | null = null;
-  let lost: { t: number; camera: Pose; anchor: Pose | null } | null = null;
+  /** The frame before `last`, for the rate; `null` when no rate is known. */
+  let prev: TimedPose | null = null;
+  let last: TimedPose | null = null;
+  let lastSeen: Seen = { anchor: null, tracked: null };
+  let lost: { before: TimedPose; seen: Seen } | null = null;
   let pending: Pending | null = null;
 
-  function close(p: Pending, anchor: Pose | null): JumpEvent {
+  function finish(p: Pending, isPending: boolean): EpisodeEvent {
     return {
-      ...p.event,
-      settled: compare(p.event.anchorBefore, anchor, p.event.predicted),
-      settledFrames: p.framesSeen,
+      ...p.base,
+      readings: [...p.readings],
+      pending: isPending,
+      truncated: !isPending && p.readings.length <= SETTLE_DELAYS_MS.length,
     };
   }
 
-  /** Close the pending jump on the anchor of the latest judged frame. */
   function closePending(out: TrackerEvent[]): void {
     if (pending === null) return;
-    out.push(close(pending, lastAnchor));
+    out.push(finish(pending, false));
     pending = null;
   }
 
-  /** Make `sample` the latest judged frame; `keepPrev` false forgets the rate. */
+  function reading(p: Pending, delayMs: number, atMs: number, seen: Seen) {
+    const { anchorBefore, anchorBeforeTracked, predicted } = p.base;
+    return {
+      delayMs,
+      atMs,
+      anchor: seen.anchor,
+      tracked: seen.tracked,
+      comparison: compare(
+        judged(anchorBefore, anchorBeforeTracked),
+        judged(seen.anchor, seen.tracked),
+        predicted
+      ),
+    };
+  }
+
+  function openEpisode(input: EpisodeInput, out: TrackerEvent[]): void {
+    closePending(out);
+    const { before, camera, d } = input;
+    const unexplainedStep = poseStep(
+      composeRigid(invertRigid(d), camera),
+      camera
+    );
+    const anchorBefore = input.anchorBefore.anchor;
+    const usable = judged(anchorBefore, input.anchorBefore.tracked);
+    counts[input.kind]++;
+    const p: Pending = {
+      base: {
+        kind: input.kind,
+        index: counts[input.kind],
+        t: input.t,
+        dtMs: input.t - before.t,
+        cameraPrev: input.rate,
+        cameraBefore: before,
+        cameraAfter: camera,
+        cameraStep: poseStep(before.pose, camera),
+        unexplainedStep,
+        stepClass: classifyStep(unexplainedStep),
+        d,
+        anchorBefore,
+        anchorBeforeTracked: input.anchorBefore.tracked,
+        predicted: usable === null ? null : composeRigid(d, usable),
+        marker: input.marker,
+      },
+      readings: [],
+    };
+    p.readings.push(reading(p, 0, 0, input.now));
+    pending = p;
+  }
+
+  /** Take the readings this frame reaches; close the episode after the last. */
+  function settle(t: number, seen: Seen, out: TrackerEvent[]): void {
+    if (pending === null) return;
+    const atMs = t - pending.base.t;
+    let next = pending.readings.length - 1;
+    while (next < SETTLE_DELAYS_MS.length && atMs >= SETTLE_DELAYS_MS[next]!) {
+      pending.readings.push(
+        reading(pending, SETTLE_DELAYS_MS[next]!, atMs, seen)
+      );
+      next++;
+    }
+    if (next === SETTLE_DELAYS_MS.length) closePending(out);
+  }
+
   function advance(
     t: number,
     camera: Pose,
-    anchor: Pose | null,
-    keepPrev: boolean
-  ): void {
-    prev = keepPrev ? last : null;
-    last = { t, camera };
-    lastAnchor = anchor;
+    seen: Seen,
+    rate: TimedPose | null
+  ) {
+    prev = rate;
+    last = { t, pose: camera };
+    lastSeen = seen;
+  }
+
+  function resetFrames(): void {
+    prev = null;
+    last = null;
+    lastSeen = { anchor: null, tracked: null };
+    lost = null;
   }
 
   function onLost(out: TrackerEvent[]): void {
     lostFrames++;
     if (lost !== null || last === null) return;
     closePending(out);
-    lost = { t: last.t, camera: last.camera, anchor: lastAnchor };
+    lost = { before: last, seen: lastSeen };
   }
 
-  function onRecovered(
-    t: number,
-    camera: Pose,
-    anchor: Pose | null,
-    from: { t: number; camera: Pose; anchor: Pose | null },
-    out: TrackerEvent[]
-  ): void {
-    out.push({
-      kind: 'tracking-loss',
-      tLost: from.t,
-      tRecovered: t,
-      durationMs: t - from.t,
-      cameraStep: poseStep(from.camera, camera),
-      anchorBefore: from.anchor,
-      anchorAfter: anchor,
-      anchorStep: maybeStep(from.anchor, anchor),
-    });
-    lost = null;
-    advance(t, camera, anchor, false);
-  }
-
-  function onGap(
-    t: number,
-    dt: number,
-    camera: Pose,
-    step: PoseStep,
-    anchor: Pose | null,
-    out: TrackerEvent[]
-  ): void {
-    closePending(out);
-    out.push({
-      kind: 'frame-gap',
-      t,
-      dtMs: dt,
-      cameraStep: step,
-      anchorBefore: lastAnchor,
-      anchorAfter: anchor,
-      anchorStep: maybeStep(lastAnchor, anchor),
-    });
-    advance(t, camera, anchor, false);
-  }
-
-  /** Count a quiet frame towards the pending jump's settle window. */
-  function settle(anchor: Pose | null, out: TrackerEvent[]): void {
-    if (pending === null) return;
-    pending.framesSeen++;
-    if (pending.framesSeen < SETTLE_FRAMES) return;
-    out.push(close(pending, anchor));
-    pending = null;
-  }
-
-  function openJump(
+  /** An episode with no usable rate: D is uncompensated. */
+  function openUnrated(
+    kind: 'tracking-loss' | 'frame-gap',
     sample: FrameSample,
-    from: Timed,
+    before: TimedPose,
+    seenBefore: Seen,
     camera: Pose,
-    dt: number,
-    step: PoseStep,
-    anchor: Pose | null
+    seen: Seen,
+    out: TrackerEvent[]
   ): void {
     const d = jumpInWebXr({
       t: sample.t,
-      tLast: from.t,
-      lastPose: from.camera,
-      tPrev: prev?.t ?? null,
-      prevPose: prev?.camera ?? null,
+      tLast: before.t,
+      lastPose: before.pose,
+      tPrev: null,
+      prevPose: null,
       newPose: camera,
     });
-    const predicted = lastAnchor === null ? null : composeRigid(d, lastAnchor);
-    jumpCount++;
-    pending = {
-      framesSeen: 0,
-      event: {
-        kind: 'jump',
-        index: jumpCount,
+    openEpisode(
+      {
+        kind,
         t: sample.t,
-        dtMs: dt,
-        cameraBefore: from.camera,
-        cameraAfter: camera,
-        cameraStep: step,
-        stepClass: classifyStep(step),
+        before,
+        rate: null,
+        camera,
         d,
-        anchorBefore: lastAnchor,
-        predicted,
+        anchorBefore: seenBefore,
+        now: seen,
         marker: sample.marker,
-        atJump: compare(lastAnchor, anchor, predicted),
-        settled: null,
-        settledFrames: 0,
       },
-    };
+      out
+    );
+    advance(sample.t, camera, seen, null);
   }
 
   function onTracked(
     sample: FrameSample,
     camera: Pose,
-    anchor: Pose | null,
+    seen: Seen,
     out: TrackerEvent[]
   ): void {
-    if (lost !== null) return onRecovered(sample.t, camera, anchor, lost, out);
-    if (last === null) return advance(sample.t, camera, anchor, false);
-    const from = last;
+    if (lost !== null) {
+      const from = lost;
+      lost = null;
+      return openUnrated(
+        'tracking-loss',
+        sample,
+        from.before,
+        from.seen,
+        camera,
+        seen,
+        out
+      );
+    }
+    if (last === null) return advance(sample.t, camera, seen, null);
+    const from: TimedPose = last;
     const dt = sample.t - from.t;
     if (!(dt > 0)) {
       frames--;
       return;
     }
-    const step = poseStep(from.camera, camera);
     if (dt > FRAME_GAP_MS)
-      return onGap(sample.t, dt, camera, step, anchor, out);
-    dtMs.push(dt);
-    translationM.push(step.translationM);
-    rotationDeg.push(step.rotationDeg);
-    if (
-      step.translationM > JUMP_TRANSLATION_M ||
-      step.rotationDeg > JUMP_ROTATION_DEG
-    ) {
-      closePending(out);
-      openJump(sample, from, camera, dt, step, anchor);
-    } else {
-      settle(anchor, out);
+      return openUnrated(
+        'frame-gap',
+        sample,
+        from,
+        lastSeen,
+        camera,
+        seen,
+        out
+      );
+    const step = poseStep(from.pose, camera);
+    stats.dtMs.push(dt);
+    stats.translationM.push(step.translationM);
+    stats.rotationDeg.push(step.rotationDeg);
+    // Without a rate (the first frame after a start, a loss or a gap) the
+    // frame only sets the rate: a raw step would read every quick turn as
+    // a jump.
+    if (prev === null) {
+      settle(sample.t, seen, out);
+      return advance(sample.t, camera, seen, from);
     }
-    advance(sample.t, camera, anchor, true);
+    const rate: TimedPose = prev;
+    const d = jumpInWebXr({
+      t: sample.t,
+      tLast: from.t,
+      lastPose: from.pose,
+      tPrev: rate.t,
+      prevPose: rate.pose,
+      newPose: camera,
+    });
+    const unexplained = poseStep(composeRigid(invertRigid(d), camera), camera);
+    stats.unexplainedM.push(unexplained.translationM);
+    stats.unexplainedDeg.push(unexplained.rotationDeg);
+    if (!isJump(unexplained)) {
+      settle(sample.t, seen, out);
+      return advance(sample.t, camera, seen, from);
+    }
+    openEpisode(
+      {
+        kind: 'jump',
+        t: sample.t,
+        before: from,
+        rate,
+        camera,
+        d,
+        anchorBefore: lastSeen,
+        now: seen,
+        marker: sample.marker,
+      },
+      out
+    );
+    // The frame before the jump, carried into the new frame by D: the next
+    // frame's rate is then the camera's own speed, not the jump.
+    advance(sample.t, camera, seen, {
+      t: from.t,
+      pose: composeRigid(d, from.pose),
+    });
   }
 
-  function onFrame(sample: FrameSample): readonly TrackerEvent[] {
-    const out: TrackerEvent[] = [];
-    frames++;
-    const anchor = isFinitePose(sample.anchor) ? sample.anchor : null;
-    if (isFinitePose(sample.camera))
-      onTracked(sample, sample.camera, anchor, out);
-    else onLost(out);
+  function record(out: TrackerEvent[]): readonly TrackerEvent[] {
     closed.push(...out);
     return out;
   }
 
   return {
-    onFrame,
+    onFrame(sample) {
+      const out: TrackerEvent[] = [];
+      frames++;
+      const anchor = isFinitePose(sample.anchor) ? sample.anchor : null;
+      const seen: Seen = {
+        anchor,
+        tracked: anchor === null ? null : sample.anchorTracked,
+      };
+      if (isFinitePose(sample.camera))
+        onTracked(sample, sample.camera, seen, out);
+      else onLost(out);
+      return record(out);
+    },
     notePlaced(t, pose) {
       const out: TrackerEvent[] = [];
       closePending(out);
+      // The next frame's anchor is a new one: never compare it with the old.
+      lastSeen = { anchor: null, tracked: null };
+      if (lost !== null) lost = { before: lost.before, seen: lastSeen };
       out.push({ kind: 'placed', t, pose });
-      closed.push(...out);
-      return out;
+      return record(out);
     },
-    flush() {
+    noteAnchorFailed: (t, message) =>
+      record([{ kind: 'anchor-failed', t, message }]),
+    noteFrameError: (t, message) =>
+      record([{ kind: 'frame-error', t, message }]),
+    noteSession(what, t) {
       const out: TrackerEvent[] = [];
       closePending(out);
-      closed.push(...out);
-      return out;
+      resetFrames();
+      out.push({ kind: what === 'start' ? 'session-start' : 'session-end', t });
+      return record(out);
     },
     events: () => [...closed],
     snapshot: () =>
-      pending === null ? [...closed] : [...closed, close(pending, lastAnchor)],
+      pending === null ? [...closed] : [...closed, finish(pending, true)],
     stats: () => ({
       frames,
       lostFrames,
-      dtMs: [...dtMs],
-      translationM: [...translationM],
-      rotationDeg: [...rotationDeg],
+      dtMs: [...stats.dtMs],
+      translationM: [...stats.translationM],
+      rotationDeg: [...stats.rotationDeg],
+      unexplainedM: [...stats.unexplainedM],
+      unexplainedDeg: [...stats.unexplainedDeg],
     }),
   };
 }

@@ -26,24 +26,41 @@ its URL. `src/anchors-check/anchors-check-isolation.test.ts` asserts that.
    the session does not grant `anchors`, the status line says so plainly.
 3. Aim at the mark until the white ring sits on it, then tap: a green box
    (the anchor) and a red ring (the marker, never moved) appear there.
-4. Walk an indoor loop of at least 50 m, several laps. If no jump is listed
-   after a few laps, cover the camera for a few seconds.
-5. Keep going until 2 or more jumps are listed; return to the mark and note
-   whether the green box still sits on it.
-6. Press **Copy log** (it works during AR; the panel takes taps away from the
+4. Walk an indoor loop of at least 50 m, several laps. A jump is a camera
+   step of more than 0.25 m or 5 deg that your own walking and turning do not
+   explain, so quick turns are fine.
+5. If no jump is listed after a few laps, stand still, cover the camera for
+   a few seconds and uncover it: a tracking loss, judged like a jump.
+6. Each jump and loss is judged over 2 s (anchor read at 0, 100, 300, 1000
+   and 2000 ms); walk on calmly. A second one inside those 2 s cuts the first
+   short ("truncated", not counted). Keep going until the counts line shows
+   2 or more judged; return to the mark and note whether the green box still
+   sits on it.
+7. Press **Copy log** (it works during AR; the panel takes taps away from the
    scene). If the copy fails, the log appears in a text box to copy by hand.
 
 Nothing is uploaded or stored.
 
 ## What it shows and logs
 
-- On screen, one line per event: `Jump n: <verdict> (camera <m> / <deg>,
-<band>)`, tracking losses, frame gaps and the placement, plus a jump count
-  by verdict.
+- On screen, one line per event:
+  `Jump n: <verdict> (<verdict per delay>); unexplained <m> / <deg>, <band>`,
+  the same for tracking losses and frame gaps, with `settling` or
+  `truncated` where it applies. Placements, failed anchors, frame errors and
+  the session lines also show. A counts line shows the judged jumps and
+  losses by verdict.
 - The log (see `src/anchors-check/anchor-jump-report.ts.md`): device and
   feature lines, the limits and tolerances, the frame dt and per-frame step
   distributions, the jump counts and bands, the anchor and marker now, then
   every event in full.
+
+## Limits
+
+- Free-space anchors only: the anchor comes from `frame.createAnchor` at the
+  hit pose, not from a hit-test result's `createAnchor`. A plane-attached
+  anchor may behave differently and is not measured here.
+- For a tracking loss or a frame gap, `D` is uncompensated, so its verdict
+  holds only while the camera stays still across it.
 
 ## Structure
 
