@@ -166,7 +166,13 @@ describe("the viewer pipeline under ?qrperf=1", () => {
       await p.config.frontEnd.detect(IMAGE);
       return p.ctx.qrDecodeAtMs;
     };
-    const usable = { version: 1, qr: { physicalSizeM: 0.2 } } as const;
+    const usable = {
+      version: 1,
+      qr: {
+        physicalSizeM: 0.2,
+        geo: { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 },
+      },
+    } as const;
     expect(await stampFor(() => undefined)).toBe(1_234);
     expect(
       await stampFor((ctx) => ctx.levelByText.set(CODE.text, usable)),

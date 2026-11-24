@@ -656,6 +656,13 @@ export function wireArchiveOpen(deps: {
           // would otherwise be invisible until AR re-entry (M4 milestone
           // review #1).
           ctx.qrController?.reset();
+          // The session's own cache has the same blind spot: a code decoded
+          // before the levels parsed resolved to null ("not this tour's"),
+          // and that null would keep the capture burst shut for a real
+          // tour code. Resolved levels stay; they were read against levels.
+          for (const [text, level] of ctx.levelByText) {
+            if (level === null) ctx.levelByText.delete(text);
+          }
           ctx.viewerUnknownCode = null;
           ctx.viewerUnusableCode = null;
           hooks.renderArStatus();

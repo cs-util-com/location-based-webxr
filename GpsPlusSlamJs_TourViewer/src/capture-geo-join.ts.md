@@ -63,9 +63,10 @@ capture and never runs a join.
   undefined for a photo it never saw. `extentOf` defaults to the
   framework's `createGpsExtentTracker` over the store's device fixes.
   - **The fit epoch follows the matrix, not the moment.** A
-    relocalization leaves `alignmentMatrix` reference-identical, so the
-    tracker remembers the observation count at the last change of that
-    reference and stamps each moment with it: an alignment fit wholly
+    relocalization leaves `alignmentMatrix` untouched, so the tracker
+    remembers the observation count at the last change of its 16 values
+    (compared by value: a new array with equal values is not a refit) and
+    stamps each moment with it: an alignment fit wholly
     before a jump stays an epoch-0 alignment after it, and its epoch-0
     captures get no correction. `fitEpochOf(matrix)` gives that epoch for
     the matrix of the last state observed (the final alignment, after the
@@ -212,4 +213,6 @@ pick epoch, a final alignment fit before the jump (the photo placed raw), a
 final alignment or a pick without a fit epoch (dropped), a walk whose fixes
 all came before the jump settling after it (its photo placed with no jump,
 against the same walk with no relocalization), and the tracker's fit epoch
-following a refit while `fitEpochOf` vouches only for the last matrix.
+following a refit while `fitEpochOf` vouches only for the last matrix,
+and a new matrix array with equal values keeping the fit epoch while a
+changed value bumps it.

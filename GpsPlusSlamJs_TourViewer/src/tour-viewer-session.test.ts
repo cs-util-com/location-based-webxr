@@ -10,11 +10,37 @@
 import { describe, expect, it, vi } from "vitest";
 import { createQrVoteBudget } from "gps-plus-slam-app-framework/ar/qr/qr-vote-budget";
 import {
+  codeOpensBurst,
   createTourViewerSession,
   endQrPipeline,
   endTourCodeVotes,
   isCodeIgnored,
 } from "./tour-viewer-session.js";
+
+// Why: the burst runs the decoder at full cadence so a code can lock. A
+// printed code that was never minted (a size but no geo) can solve a pose
+// but cannot vote, so it never locks: opening the burst for it only burns
+// battery while it stays in view. The rule is the scan gate's
+// `isLockableLevel`, size AND geo.
+describe("codeOpensBurst", () => {
+  const text = "https://example.test/?qr=a";
+  const geo = { lat: 47.5, lon: 8.7, alt: 400, headingDeg: 0 };
+  it("opens only for a code that can lock, or one not resolved yet", () => {
+    const ctx = createTourViewerSession();
+    expect(codeOpensBurst(ctx, text)).toBe(true);
+    ctx.levelByText.set(text, { version: 1, qr: { physicalSizeM: 0.2 } });
+    expect(codeOpensBurst(ctx, text)).toBe(false);
+    ctx.levelByText.set(text, { version: 1, qr: { geo } });
+    expect(codeOpensBurst(ctx, text)).toBe(false);
+    ctx.levelByText.set(text, {
+      version: 1,
+      qr: { physicalSizeM: 0.2, geo },
+    });
+    expect(codeOpensBurst(ctx, text)).toBe(true);
+    ctx.levelByText.set(text, null);
+    expect(codeOpensBurst(ctx, text)).toBe(false);
+  });
+});
 
 // Why: the viewer pipeline and the status line must agree on which codes
 // are ignored; both read the veto memory by level id through this, and a

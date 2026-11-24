@@ -124,7 +124,11 @@ DOM glue, its own module since the flows plan M6.
   running session (`hooks.startScanGate`) and its level load's outcome
   reaches the gate either way (`hooks.reconsiderScanGate(levels)` or
   `"unavailable"` on a failed read, M5 review #1), and the visitor screen
-  either way (`hooks.presentTourLevels()`, r857 review #5); a failed read
+  either way (`hooks.presentTourLevels()`, r857 review #5); a read that
+  settles also resets the QR controller's per-text cache and drops the
+  null entries of `ctx.levelByText` (a code decoded before the levels
+  parsed cached "not this tour's" and would keep the capture burst shut
+  for a real tour code; resolved levels stay); a failed read
   says the levels unreadable (no code of this tour can place it, r857
   review #4); the level texts, the parsed levels and that failure go into
   the tour document as `levelsArrived` / `levelsParsed` /
@@ -298,7 +302,9 @@ a closing tour stops the stations once (`hooks.stopStations`: the walk's
 views start anew with the next tour), and never with no tour open; and
 that it lets the tour's media go once (`hooks.releaseTourMedia`). Its "the levels' settle reaches the visitor
 screen" block (in `archive-open-file.test.ts`) holds `presentTourLevels`
-on a read and on a failed read, and `levelsUnreadable`. The logic
+on a read and on a failed read, and `levelsUnreadable`; its "the levels'
+settle forgets the codes resolved before it" block holds the dropped null
+entries of `levelByText` and the kept resolved one. The logic
 beneath: `tour-session.test.ts`,
 `stats-view.test.ts`, `open-errors.test.ts`, `tour-flow.test.ts`
 (`clearCacheLabel`).

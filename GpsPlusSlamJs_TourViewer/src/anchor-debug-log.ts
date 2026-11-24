@@ -172,7 +172,7 @@ export function createAnchorDebugLog(
   // Turns of each half completed (the deferral switched away from it).
   let turnsOn = 0;
   let turnsOff = 0;
-  // Commits since the last clear, by kind in the order first seen.
+  // Commits by kind in the order first seen, kept across `clear()`.
   const commitKinds = new Map<CommitKind, number>();
   let commitCount = 0;
   let outCommits = 0;

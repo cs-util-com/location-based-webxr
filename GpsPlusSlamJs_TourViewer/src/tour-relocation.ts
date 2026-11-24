@@ -1,6 +1,6 @@
 /**
- * Test-only relocation of a tour's stations to the phone's position (owner
- * decision S-D9, 2026-10-05): the sample tour sits at a public place, and
+ * Test-only relocation of a tour's stations to the phone's position: the
+ * sample tour sits at a public place, and
  * `?relocate=here` moves every station so that the first one stands a few
  * metres north of the phone's first GPS fix, keeping the stations' layout
  * (distances, relative heights, headings). A station's blocks are relative
@@ -32,9 +32,9 @@ export interface RelocationTarget {
 
 /**
  * The phone's first DEVICE fix in a GPS history, as a relocation target;
- * null while none is stored. A code's synthetic votes are skipped: since
- * QR-first M1 a code scanned before any fix stores its votes first, and they
- * sit on a 30 m ring around the code, not where the phone is.
+ * null while none is stored. A code's synthetic votes are skipped: a code
+ * scanned before any fix stores its votes first, and they sit on a 30 m
+ * ring around the code, not where the phone is.
  */
 export function firstDeviceFix(
   points: readonly GpsPoint[],

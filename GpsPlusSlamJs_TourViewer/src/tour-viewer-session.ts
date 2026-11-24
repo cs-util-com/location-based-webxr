@@ -69,7 +69,7 @@ import type { MovedCodeChecks } from "./moved-code-check.js";
 import type { QrVoteKeepAlive } from "./qr-vote-keep-alive.js";
 import type { CodeVoteDeps, CodeVoteOptions } from "./qr-viewer-mode.js";
 import type { ViewerVoteSink } from "./viewer-vote-sink.js";
-import type { ScanGate } from "./scan-gate.js";
+import { isLockableLevel, type ScanGate } from "./scan-gate.js";
 import type { StationContent } from "./station-content.js";
 import type { TourViewerSeams } from "./seams.js";
 import type { PlacementState } from "./tour-flow.js";
@@ -665,9 +665,10 @@ export function isCodeIgnored(
  * Whether a decode or detection of this text opens the tracker capture
  * gate's burst. Not for a code the session already knows it cannot use:
  * one with no level in this tour (`levelByText` null), one whose level
- * has no print size (unusable), or one the moved-code check ignores. A
- * text not resolved yet may be the tour's, so it opens the burst: the
- * decodes its lock needs then run at full cadence.
+ * cannot lock (`isLockableLevel`: no print size, or never minted so no
+ * geo to vote with), or one the moved-code check ignores. A text not
+ * resolved yet may be the tour's, so it opens the burst: the decodes its
+ * lock needs then run at full cadence.
  */
 export function codeOpensBurst(
   ctx: Pick<
@@ -681,7 +682,7 @@ export function codeOpensBurst(
   return (
     level !== null &&
     level !== undefined &&
-    level.qr.physicalSizeM !== undefined &&
+    isLockableLevel(level) &&
     !isCodeIgnored(ctx, text)
   );
 }
