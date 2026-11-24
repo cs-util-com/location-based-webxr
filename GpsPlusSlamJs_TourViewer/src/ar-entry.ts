@@ -66,10 +66,12 @@ import {
 } from "./tour-flow.js";
 import {
   createTrackerCaptureWiring,
+  type CodeStation,
   type TrackerCaptureWiring,
 } from "./tracker-capture-wiring.js";
 import { selectTrackerCaptureForceOn } from "./visitor-prefs-slice.js";
 import { stationAlignmentSignals } from "./visitor-stations.js";
+
 import { scanCardShown } from "./scan-gate.js";
 import {
   FIND_CODE,
@@ -88,12 +90,17 @@ import type { LocationGate } from "./visitor-screen.js";
 import type { RecordingPanel } from "./recording-panel.js";
 import {
   endQrPipeline,
+  codeOpensBurst,
   isCodeIgnored,
   type ArController,
   type TourViewerHooks,
   type TourViewerSession,
   type TourViewerStore,
 } from "./tour-viewer-session.js";
+
+/** A tour without stations: one array, so the gate's memo on the
+ *  stations holds while there are none. */
+const NO_STATIONS: readonly CodeStation[] = [];
 
 const log = createLogger("ArEntry");
 
@@ -858,9 +865,10 @@ export function wireArEntry(deps: {
       codeLinedUp: signals.codeLinedUp,
       levels: () => ctx.currentLevels,
       levelIdByText: () => ctx.levelIdByText,
-      stations: () => ctx.tourDocument.manifest()?.stations ?? [],
+      stations: () => ctx.tourDocument.manifest()?.stations ?? NO_STATIONS,
       detections: () => arStore.getState().qrDetected,
       lastDecodeAtMs: () => ctx.qrDecodeAtMs,
+      opensBurst: (text) => codeOpensBurst(ctx, text),
       // Gone or busy: the frame would be dropped anyway.
       qrBusy: () => ctx.qrController?.isBusy() ?? true,
       forcePref: () => selectTrackerCaptureForceOn(arStore.getState()),

@@ -22,8 +22,10 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
   - `input.targets`: `Target[]` with `key`, `kind`, `north`/`east`
     (GPS-world NUE, m), `accM` (null: `defaultTargetAccM`), `reachM` (how
     close counts as "at" it), an optional `alignmentGpsExtentM` (set for a
-    heading-uncertain mint) and an optional `sighting` (an AR pose in the
-    current AR frame where it was last seen).
+    heading-uncertain mint) and an optional `sighting`: where the DEVICE
+    stood (the camera's odom-NUE position) when its tracker last saw the
+    target in the current AR frame, never the target's own solved pose.
+    The AR gate's radius is around that point.
   - `input.fixes`: `Fix[]` (`t`, `north`, `east`, `accM`), device fixes
     only, oldest first.
   - `input.newestFixAtMs`: the newest device fix time, or null.
@@ -44,7 +46,9 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
   constant within a period; the period count is mixed (murmur3's 32-bit
   finaliser) before `mod n`, so a caller seeing only every m-th period
   still reaches every slot. A non-finite time gives 0; negative times stay
-  in range.
+  in range. The price of having no cursor: a slot's revisit wait is
+  geometric, mean n periods, P(wait > w) = (1 - 1/n)^w (n 3: more than 10
+  periods about 1.7 % of the time), not a strict a, b, c turn.
 - `firstIndexAtOrAfter(series, fromMs)`: binary search on a series sorted by
   `t` (no shared helper existed).
 - `checkNearbyParams(p)`, `DEFAULT_NEARBY_PARAMS` (frozen).
@@ -74,8 +78,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/targets/nearby-targets`
   decisive sample decides: inside its R_enter opens, outside its R_leave
   closes, the band between continues; reaching the end closes. `distM` is
   the distance of the newest judged sample.
-- **The AR gate** (any state): a target with a sighting opens while the live
-  AR pose is within `reachM + arMarginM + alpha x path`, where the path runs
+- **The AR gate** (any state): a target with a sighting (the device's
+  position when it saw the target) opens while the live AR pose is within `reachM + arMarginM + alpha x path`, where the path runs
   sighting, first AR sample after it, the samples on, then `live.ar`. The
   path counts DEVICE samples within H only: a lock's vote ring and its
   keep-alive's rings (about three per device fix for minutes after a lock)
@@ -146,7 +150,8 @@ if (r.open.length > 0) captureFrame();
   - `acc_fix` per source, dead reckoning, the hysteresis band, H expiry,
     bad accuracies, ordering, the default target accuracy;
   - the AR gate: the path walked, vote rings that add nothing, a target
-    without a position, no live pose;
+    without a position, the radius around the device's sighting position
+    (not the target's pose), no live pose;
   - the H cap when handed the whole series ('dr' and the AR path);
   - no drift without a finite live AR position;
   - `timeSlot` (constant per period, every slot reached at strides 2 and
@@ -154,6 +159,7 @@ if (r.open.length > 0) captureFrame();
 - `nearby-targets.property.test.ts`: enter then band stays open, leave then
   band stays closed, band longer than H closes, monotone in both
   accuracies, never `'gps'` from one millisecond past F, invariant to
-  target order.
+  target order; `timeSlot`'s revisit wait is geometric (each slot's share
+  1/n, mean wait n, P(wait > w) = (1 - 1/n)^w at w 1, n and 10).
 - See also [nearby-position.ts.md](nearby-position.ts.md) and the gate on
   top, [tracker-capture-gate.ts.md](tracker-capture-gate.ts.md).

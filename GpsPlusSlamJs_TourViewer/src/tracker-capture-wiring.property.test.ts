@@ -115,6 +115,7 @@ describe("tracker capture wiring: the station-band property", () => {
             stations: () => [station],
             detections: () => ({ markers: {} }),
             lastDecodeAtMs: () => null,
+            opensBurst: () => true,
             qrBusy: () => false,
             forcePref: () => false,
             codesOnly: () => false,

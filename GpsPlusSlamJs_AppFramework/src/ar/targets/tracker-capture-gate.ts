@@ -135,7 +135,13 @@ export function createTrackerCaptureGate(
     register(tracker) {
       checkCadence(tracker.cadence);
       trackers.push(tracker);
+      // Each registration's own handle: removing it removes that entry
+      // only, so a stale handle never removes a later registration of the
+      // same tracker.
+      let removed = false;
       return () => {
+        if (removed) return;
+        removed = true;
         const i = trackers.indexOf(tracker);
         if (i >= 0) trackers.splice(i, 1);
       };
@@ -167,8 +173,11 @@ function routeOf(
   const rates = [baseHz];
   if (sinceHit >= 0 && sinceHit < c.burstMs) rates.push(c.burstHz);
   if (tracker.forceOn()) rates.push(c.inGateHz);
-  const hz = rates.find((r) => inSlot(r, nowMs, intervalMs));
-  if (hz === undefined) return null;
+  // The fastest rate that wants the frame: its period drives the turn, so
+  // a burst inside the slow rate's slot still turns per capture.
+  const wanting = rates.filter((r) => inSlot(r, nowMs, intervalMs));
+  if (wanting.length === 0) return null;
+  const hz = Math.max(...wanting);
   const periodMs = Math.max(1000 / hz, intervalMs);
   const targetIds = open
     ? capped(
