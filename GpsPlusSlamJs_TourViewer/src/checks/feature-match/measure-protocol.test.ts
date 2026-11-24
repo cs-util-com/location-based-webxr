@@ -46,6 +46,10 @@ describe("requestOf", () => {
       { methods: { sift: true } },
       { sizes: [0] },
       { sizes: "640" },
+      // No size, or one that is not a finite number, measures nothing.
+      { sizes: [] },
+      { sizes: [Infinity] },
+      { sizes: [NaN] },
       { pair: 1 },
     ]) {
       expect(requestOf(request(bad))).toBeNull();

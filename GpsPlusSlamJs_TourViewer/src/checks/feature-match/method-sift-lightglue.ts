@@ -115,6 +115,7 @@ export function siftLightGlueMethod(
   const expected = (options.sha256 ?? SIFT_LIGHTGLUE_SHA256).toLowerCase();
   return {
     id: `sift-lightglue-${backend}`,
+    backend,
     label: `SIFT + LightGlue (onnxruntime-web) ${backend}`,
     async init(): Promise<MethodRunner> {
       const url = options.modelUrl ?? defaultModelUrl();

@@ -10,7 +10,7 @@ A `fetch` that keeps each URL's bytes once fetched. The measuring worker builds 
 
 ## Invariants and defensive measures
 
-- Each call gets its own `Response` over a copy of the bytes, so every caller can read the body.
+- Each call gets its own `Response` over the kept bytes, so every caller can read the body. The memo makes no copy of its own: the `Response` constructor copies the bytes it is given, so a caller writing into what it read never changes the kept bytes (a test pins it).
 - Concurrent calls for one URL share one fetch.
 - A rejected fetch is not kept: the caller sees the rejection and the next call fetches again.
 - An error status (`!res.ok`) is returned to its callers as it came (a clone each) and not kept, so a passing server error is retried by the next pair.
@@ -24,4 +24,4 @@ const deps = { ...loadDeps, fetch: memoFetch((url, init) => fetch(url, init)) };
 
 ## Tests
 
-`fetch-memo.test.ts`: one fetch per URL with a readable body for each caller, and neither a rejected fetch nor an error status kept.
+`fetch-memo.test.ts`: one fetch per URL with a readable body for each caller, the kept bytes unchanged by a caller that writes into its body, and neither a rejected fetch nor an error status kept.

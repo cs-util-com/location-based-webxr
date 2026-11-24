@@ -11,6 +11,7 @@ import {
   planText,
   type PhotoMeta,
   type PlanAction,
+  type RunPlan,
 } from "./run-plan";
 
 const photo = (id: string, greyMean = 120): PhotoMeta => ({
@@ -279,5 +280,147 @@ describe("greySd", () => {
     const back = parsePlan(planText(without));
     expect(back?.shots["flat-s1/F1"]?.photo.id).toBe("p2");
     expect(back?.shots["flat-s1/F1"]?.photo.greySd).toBeUndefined();
+  });
+});
+
+describe("skipped shots", () => {
+  // Why: "Skip photo" must move the run on without a photo, and the next
+  // photo must not walk back into the skipped shot: the tester chose to
+  // leave it for later.
+  it("skips the current shot and moves on past it", () => {
+    const p = run([{ type: "skip", shots: ["light-s1/L1"] }]);
+    expect(p.skipped).toEqual(["light-s1/L1"]);
+    expect(p.current).toBe(1);
+    const q = run(
+      [shoot("light-s1/L2", "p2"), shoot("light-s1/L3", "p3", 60)],
+      p,
+    );
+    expect(q.current).toBe(3);
+  });
+
+  // Why: "Skip scene" skips every open shot of the scene at once and
+  // lands on the next scene's first shot.
+  it("skips a scene's open shots and lands on the next scene", () => {
+    const p = run([
+      shoot("light-s1/L1", "p1"),
+      {
+        type: "skip",
+        shots: ["light-s1/L2", "light-s1/L3", "light-s1/L4"],
+      },
+    ]);
+    expect(p.skipped).toHaveLength(3);
+    expect(p.current).toBe(4);
+  });
+
+  // Why: a skip of a shot with a photo, of an unknown shot or of one
+  // already skipped changes nothing, so a double tap is harmless.
+  it("refuses a skip of a taken, unknown or already skipped shot", () => {
+    const p = run([shoot("light-s1/L1", "p1")]);
+    expect(planReducer(p, { type: "skip", shots: ["light-s1/L1"] })).toBe(p);
+    expect(planReducer(p, { type: "skip", shots: ["nope/L9"] })).toBe(p);
+    expect(planReducer(p, { type: "skip", shots: [] })).toBe(p);
+    const q = run([{ type: "skip", shots: ["light-s1/L2"] }], p);
+    expect(planReducer(q, { type: "skip", shots: ["light-s1/L2"] })).toBe(q);
+  });
+
+  // Why: the current shot can be one already skipped (the last open shot
+  // was skipped, then Back); "Skip photo" there must not be a dead button:
+  // it moves on to the next open shot.
+  it("moves on when the current shot is already skipped", () => {
+    const p: RunPlan = { ...EMPTY_PLAN, skipped: ["light-s1/L1"], current: 0 };
+    const q = planReducer(p, { type: "skip", shots: ["light-s1/L1"] });
+    expect(q.current).toBe(1);
+    expect(q.skipped).toEqual(["light-s1/L1"]);
+  });
+
+  // Why: tapping a skipped shot in the strip takes it now: moving to it
+  // un-skips it, and a photo of it does too.
+  it("un-skips a shot moved to or photographed", () => {
+    const p = run([{ type: "skip", shots: ["light-s1/L1"] }]);
+    expect(run([{ type: "move", index: 0 }], p).skipped).toEqual([]);
+    expect(run([shoot("light-s1/L1", "p1")], p).skipped).toEqual([]);
+  });
+
+  // Why: every shot taken or skipped leaves no open shot; the run stays
+  // on the last one instead of jumping into a skipped shot.
+  it("stays put when every other shot is taken or skipped", () => {
+    const p = run([
+      { type: "size", spots: 1, extra: 0 },
+      {
+        type: "skip",
+        shots: [
+          "light-s1/L1",
+          "light-s1/L2",
+          "light-s1/L3",
+          "light-s1/L4",
+          "flat-s1/F1",
+          "flat-s1/F2",
+          "flat-s1/F3",
+          "flat-s1/F4",
+          "flat-s1/F5",
+          "flat-s1/F6",
+          "deep-s1/D1",
+          "deep-s1/D2",
+        ],
+      },
+    ]);
+    expect(p.current).toBe(12);
+    const q = run([shoot("deep-s1/D3", "p13")], p);
+    expect(q.current).toBe(12);
+  });
+
+  // Why: the skips survive a reload; a stored skip of a shot that has a
+  // photo or is not in the list is dropped alone; reset clears them.
+  it("stores the skips and drops a bad one on read", () => {
+    const p = run([
+      shoot("light-s1/L1", "p1"),
+      { type: "skip", shots: ["light-s1/L2"] },
+    ]);
+    expect(parsePlan(planText(p))?.skipped).toEqual(["light-s1/L2"]);
+    const raw = JSON.parse(planText(p)) as Record<string, unknown>;
+    raw.skipped = ["light-s1/L1", "nope/X", 7, "light-s1/L3"];
+    expect(parsePlan(JSON.stringify(raw))?.skipped).toEqual(["light-s1/L3"]);
+    delete raw.skipped;
+    expect(parsePlan(JSON.stringify(raw))?.skipped).toEqual([]);
+    expect(run([{ type: "reset" }], p).skipped).toEqual([]);
+  });
+});
+
+// Why this test matters: each photo keeps what the camera reported (focus
+// distance, zoom) for the desk; a stored plan with a mangled report must
+// not bring it back as a photo, and one without a report is still read.
+describe("the camera report of a photo", () => {
+  it("keeps a report through storage and only its known fields", () => {
+    const camera = { focusDistance: 0.42, zoom: 1, focusMode: "continuous" };
+    const p = planReducer(EMPTY_PLAN, {
+      type: "photo",
+      shot: "flat-s1/F1",
+      photo: { ...photo("p1"), camera },
+    });
+    expect(parsePlan(planText(p))?.shots["flat-s1/F1"]?.photo.camera).toEqual(
+      camera,
+    );
+    // A field this build does not know (a newer browser, a later build)
+    // costs the report that field only, never the photo; a report with
+    // nothing known left, an empty one included, is stored as absent.
+    const cameraOf = (camera: unknown) =>
+      planReducer(EMPTY_PLAN, {
+        type: "photo",
+        shot: "flat-s1/F1",
+        photo: { ...photo("p2"), camera },
+      } as unknown as PlanAction).shots["flat-s1/F1"]?.photo;
+    expect(cameraOf({ zoom: 2, deviceId: "x" })?.camera).toEqual({ zoom: 2 });
+    for (const bad of [{}, { deviceId: "x" }, { zoom: "1" }, [], "x"]) {
+      const ph = cameraOf(bad);
+      expect(ph?.id).toBe("p2");
+      expect(ph).not.toHaveProperty("camera");
+    }
+    const stored = JSON.parse(planText(p)) as {
+      shots: Record<string, { photo: Record<string, unknown> }>;
+    };
+    stored.shots["flat-s1/F1"]!.photo.camera = { zoom: 1, lens: "wide" };
+    expect(
+      parsePlan(JSON.stringify(stored))?.shots["flat-s1/F1"]?.photo.camera,
+    ).toEqual({ zoom: 1 });
   });
 });

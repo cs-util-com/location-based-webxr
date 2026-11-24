@@ -10,6 +10,7 @@ The rear camera of the feature matching page on one video element, shared by bot
   - `start()`: resolves "on" (running), "failed" (refused or no camera API: `fail("camera", e)` was called) or "stopped" (a stop came while it waited). Never rejects.
   - `stop()`: stops the tracks, clears `video.srcObject`, logs "camera off" and calls `changed(false)`; a no-op without a stream except that it raises the generation.
   - `on()`: whether a stream is running.
+  - `report()`: what the running stream's first track reports (`cameraReport` of `camera-report.ts`: focus distance, zoom, size and their ranges); null while the camera is off.
 
 ## Invariants and assumptions
 
@@ -33,4 +34,4 @@ if ((await cam.start()) === "on") {
 
 ## Tests
 
-`camera-control.test.ts` (jsdom, faked streams): two taps open one stream and a stop ends it, a stream that arrives after a stop is stopped, a refused camera is reported and retried, and a start after a stop during a pending start opens its own stream. The page flows are in `playwright-tests/feature-match-check.spec.js`.
+`camera-control.test.ts` (jsdom, faked streams): the running track's report and none while off; two taps open one stream and a stop ends it, a stream that arrives after a stop is stopped, a refused camera is reported and retried, and a start after a stop during a pending start opens its own stream. The page flows are in `playwright-tests/feature-match-check.spec.js`.

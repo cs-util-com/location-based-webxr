@@ -12,8 +12,8 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `shotList(spots, extra)` -> `Shot[]`: every shot in the order the run walks them. A shot has `id` (`<scene id>/<key>`, e.g. `flat-s1/F3`), `scene`, `kind`, `spot`, `step` (0 for the scene's first shot), `key`, `text` and `handsOff`.
   - The shots per scene:
     - light: L1 normal light, L2 again unchanged, L3 light dimmed, L4 as dark as possible;
-    - flat: F1 upright at 1.5 m, F2 again unchanged, F3 tilted 30-45 deg, F4 from 3 m, F5 from 1 m, F6 1 m to the side;
-    - deep: D1 a deep scene, D2 again unchanged, D3 1 m to the side;
+    - flat: F1 upright at 1.5 m, F2 again unchanged, F3 turned 30-45 deg in its own plane (pair `2d`: a turn, not a tilt away from the surface), F4 from 3 m, F5 from 1 m, F6 1 m to one side;
+    - deep: D1 a deep scene, D2 again unchanged, D3 1 m to one side;
     - own: X1, X2.
   - `handsOff`: `"still"` for L2, F2 and D2 (nothing changes once the phone rests), `"move"` for F3 (the phone turns first), `null` for the rest (the gyroscope cannot judge a step or a light change): which shots the cockpit may take by itself.
   - One place: 13 shots (L1-L4 at 0-3, F1-F6 at 4-9, D1-D3 at 10-12).
@@ -43,7 +43,7 @@ The photo test's protocol as plain data. A run is a list of scenes; each scene i
 - `ShotLight` (re-exported from `bench-export.ts`): the `LightCheck` values plus `"not-darker-than-dimmed"`.
 - `lightOf(shot, photos)`: a light shot's check against its scene's L1 (L2 by the control rule `1a`, L3 by `1b`, L4 by `1c`), and L4 against L3 (`"not-darker-than-dimmed"` when L4 passes against L1 but is brighter than L3); null for any other shot or while a photo it needs is missing.
 - `needsRetake(shot, photos)`: its light check exists and is not `"ok"`.
-- `nextOpen(list, photos, from)`: the first shot without a photo after `from`, else the first one before it; null when every shot has one (or only `from` is open).
+- `nextOpen(list, photos, from, skipped = empty)`: the first open shot (no photo, not in `skipped`) after `from`, else the first one before it; null when no other shot is open.
 - `runZipName(session)`: `feature-match-run-<session>.zip`.
 - `summaryText({ session, spots, extra, photos, retakes, results, device })`: the plain-text summary in the zip and on the end screen: session, shots taken of total and places, missing shot ids, pairs ready of total, every light check, retakes (`planRetakes`: the takes past the first), "Pairs measured on this phone: X, failed: Y, pending (to be measured on the PC): Z" over the ready pairs' current result keys, "Timings: N measured beside the camera, M idle, K with the page hidden", the methods line when `methods` is given ("Methods on this phone: SIFT, ALIKED + LightGlue (XFeat is not measured on this phone: it is for the PC)"), the file name, the phone, and a line that no location, time or names are included.
 

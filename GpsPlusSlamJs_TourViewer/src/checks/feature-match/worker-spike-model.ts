@@ -25,8 +25,13 @@ const CAP_RANGE = [150, 250, 400] as const;
 
 /** A first guess of one pair's time, until a pair is measured. */
 const PAIR_GUESS_MS = 20_000;
-/** A guess of the XFeat try, load included. */
+/**
+ * A guess of the XFeat try once its model is cached, for the run's total
+ * before the try starts; the try itself counts down to its limit.
+ */
 const XFEAT_GUESS_MS = 20_000;
+/** How long the XFeat probe may take, its first download (65 MB) included. */
+export const XFEAT_LIMIT_MS = 300_000;
 
 /** The frame gaps of one window, in ms. */
 export interface GapStats {
@@ -34,6 +39,17 @@ export interface GapStats {
   readonly p95: number;
   readonly p99: number;
   readonly max: number;
+}
+
+/** The largest value, by a loop: a spread of a long run's gaps overflows. */
+function largest(values: readonly number[]): number {
+  let max = Number.NEGATIVE_INFINITY;
+  for (const v of values) {
+    if (v > max) {
+      max = v;
+    }
+  }
+  return max;
 }
 
 /** The gaps' p95, p99 and largest; non-finite and negative gaps dropped. */
@@ -46,7 +62,7 @@ export function gapStats(gaps: readonly number[]): GapStats {
     count: ok.length,
     p95: nearestRankPercentile(ok, 0.95),
     p99: nearestRankPercentile(ok, 0.99),
-    max: Math.max(...ok),
+    max: largest(ok),
   };
 }
 
@@ -219,9 +235,10 @@ export function spikeProgress(p: ProgressInput): SpikeProgress {
     }
     case "xfeat":
       index = of;
-      within = Math.min(0.9, elapsed / XFEAT_GUESS_MS);
-      leftMs = Math.max(0, XFEAT_GUESS_MS - elapsed);
-      status = "Trying XFeat in a background worker";
+      within = Math.min(0.9, elapsed / XFEAT_LIMIT_MS);
+      leftMs = Math.max(0, XFEAT_LIMIT_MS - elapsed);
+      status =
+        "Trying XFeat in a background worker: loading the XFeat model (the first time it downloads, which can take a few minutes)";
       break;
   }
   return {
@@ -229,7 +246,12 @@ export function spikeProgress(p: ProgressInput): SpikeProgress {
     of,
     fraction: clamp01((index - 1 + clamp01(within)) / of),
     leftMs,
-    left: leftText(leftMs),
+    // The XFeat try may end any moment or only at its limit: an upper
+    // bound, never "almost done" while the download may still run.
+    left:
+      step.kind === "xfeat" && leftMs > 0
+        ? `up to ${leftText(leftMs).replace(/^about /, "")}`
+        : leftText(leftMs),
     status,
   };
 }
@@ -358,7 +380,7 @@ const nameOf = (e: unknown): string =>
 
 /** The plain sentence for a failure; its text and stack go to the log. */
 export function plainError(
-  where: "camera" | "worker" | "models" | "hidden" | "page",
+  where: "camera" | "worker" | "models" | "pairs" | "hidden" | "page",
   e: unknown,
 ): PlainError {
   if (where === "camera") {
@@ -397,6 +419,11 @@ export function plainError(
       return {
         message: "The measuring models could not load.",
         todo: "Check the internet connection and tap Try again, or tap Copy log and send it.",
+      };
+    case "pairs":
+      return {
+        message: "No photo pair could be measured.",
+        todo: "Tap Copy log and send it, then tap Try again.",
       };
     case "hidden":
       return {
@@ -468,6 +495,8 @@ export function spikeSummary(input: {
           ? plainError("models", null)
           : input.workerCrashed === true
             ? plainError("worker", null)
-            : null,
+            : input.methods.length === 0
+              ? plainError("pairs", null)
+              : null,
   };
 }

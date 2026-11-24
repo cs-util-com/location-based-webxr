@@ -83,13 +83,16 @@ const slice = createSlice({
         s.step = { kind: "photos", taken: s.step.taken + 1 };
       }
     },
-    pairMeasured(s, a: PayloadAction<{ ms: number; now: number }>) {
+    /** A pair answered; `ms` is its time, null when it failed (no estimate). */
+    pairMeasured(s, a: PayloadAction<{ ms: number | null; now: number }>) {
       if (s.phase === "running" && s.step?.kind === "pairs") {
         s.step = {
           kind: "pairs",
           done: Math.min(s.plan.pairs, s.step.done + 1),
         };
-        s.pairMs.push(a.payload.ms);
+        if (a.payload.ms !== null) {
+          s.pairMs.push(a.payload.ms);
+        }
         s.stepStartedAt = a.payload.now;
       }
     },

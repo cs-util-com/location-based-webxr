@@ -77,6 +77,7 @@ function framesJson(p: DerivedPair, i: RunZipInput): string {
       sourceHeight: ph.source.height,
       greyMean: round2(ph.greyMean),
       ...(ph.greySd === undefined ? {} : { greySd: round2(ph.greySd) }),
+      ...(ph.camera === undefined ? {} : { camera: ph.camera }),
       ...(turn === null ? {} : { crop: centreCrop(ph.width, ph.height) }),
     };
   };

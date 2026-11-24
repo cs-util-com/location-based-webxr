@@ -11,7 +11,7 @@ The messages between the feature-match page and its measuring worker (`feature-m
 - `MeasureRequest`: a job plus `type: "measure"` and a positive integer `job` id.
 - `MeasureDone { results, frames { a, b }, settings, measureMs }`: the method results, the sizes of the frames measured (the squares for a rotation pair), the run settings line and the measuring time with load times left out.
 - `MeasureAnswer`: `progress { job, line }`, `done { job, ...MeasureDone }` or `failed { job, message }`.
-- `requestOf(data)` -> `MeasureRequest | null`: the worker's check (Blobs, a known turn, boolean methods, positive sizes, a string pair).
+- `requestOf(data)` -> `MeasureRequest | null`: the worker's check (Blobs, a known turn, boolean methods, at least one size, each a finite positive number, a string pair).
 - `answerOf(data)` -> `MeasureAnswer | null`: the page's check (each result with an id, a label and a sizes list, positive frame sizes, a string settings line, a finite `measureMs`).
 
 ## Invariants

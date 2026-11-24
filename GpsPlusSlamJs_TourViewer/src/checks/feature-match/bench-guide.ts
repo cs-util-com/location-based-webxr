@@ -6,10 +6,14 @@
  * @see bench-guide.ts.md
  */
 
+/** The welcome screen's first line: what a run is. */
+export const WELCOME_LEDE =
+  "Take a few shots of each scene: a first shot, then one change per shot (the light, a turn, a step). The pairs are made from the shots and saved in one zip.";
+
 /** The general rules, shown once in "Before you start". */
 export const BEFORE_YOU_START: readonly string[] = [
   "Put the phone on a stand. Lock the screen rotation. Do not zoom.",
-  "Each scene is a few shots of one place: a first shot, then one change per shot (the light, a tilt, a step). The pairs to measure are made from the shots.",
+  "Each scene is a few shots of one place: a first shot, then one change per shot (the light, a turn, a step). The pairs to measure are made from the shots.",
   "Nothing personal in the picture: no faces, documents, screens, letters, house numbers, and no window showing the outside.",
   "Aim at something with detail (furniture, shelves, pictures, patterned fabric); a plain white wall gives nothing to match.",
   "The next shot comes up by itself; Details, Shots takes any shot again or skips one.",

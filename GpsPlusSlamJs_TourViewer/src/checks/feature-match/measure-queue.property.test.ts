@@ -22,7 +22,7 @@ const SHOTS = planShots(initialFeatureMatchState({ session: "s1" }).plan).map(
 );
 
 type Step =
-  | { readonly kind: "shot"; readonly shot: number; readonly photo: number }
+  | { readonly kind: "shot"; readonly shot: number }
   | { readonly kind: "answer"; readonly outcome: "done" | "failed" | "crash" }
   | { readonly kind: "speed" }
   | { readonly kind: "restore" };
@@ -33,7 +33,6 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant("shot" as const),
       shot: fc.nat(SHOTS.length - 1),
-      photo: fc.nat(30),
     }),
   },
   {
@@ -70,6 +69,7 @@ describe("the measuring queue (model-based)", () => {
           const open = h.calls.length - answered;
           expect(open).toBeLessThanOrEqual(1);
           for (const c of h.calls.slice(sent.size)) {
+            // The job itself names one ready pair of the plan.
             expect(c.key).not.toBeNull();
             expect(sent.has(c.key!)).toBe(false);
             sent.add(c.key!);
@@ -86,16 +86,22 @@ describe("the measuring queue (model-based)", () => {
             crashesInRow++;
             c.reject(new WorkerCrashed("stopped"));
           } else {
-            crashesInRow = 0;
+            // Only a pair the worker measured resets the count; a pair
+            // whose every method failed does not.
+            if (outcome === "done") {
+              crashesInRow = 0;
+            }
             c.resolve(
               doneOf([result("sift", outcome === "failed" ? "init: x" : null)]),
             );
           }
           await settle();
         };
-        for (const s of steps) {
+        for (const [i, s] of steps.entries()) {
           if (s.kind === "shot") {
-            h.store.dispatch(shot(SHOTS[s.shot]!, `p${String(s.photo)}`));
+            // A photo id per step: a retake never reuses an id, so a
+            // result key names one take only.
+            h.store.dispatch(shot(SHOTS[s.shot]!, `p${String(i)}`));
           } else if (s.kind === "restore") {
             h.store.dispatch(
               A.restoreFinished({ stored: [], results: {}, log: [] }),

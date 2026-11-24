@@ -116,9 +116,10 @@ function parts(kind: DiagramKind): Parts {
     case "rot-35":
       return {
         a: phone(0) + caption("upright"),
-        b: phone(35) + caption("tilted 30-45"),
-        mid: "tilt",
-        label: "Photo A upright, photo B tilted 30 to 45 degrees.",
+        b: phone(35) + caption("turned 30-45"),
+        mid: "turn",
+        label:
+          "Photo A upright, photo B turned 30 to 45 degrees in its own plane.",
       };
     case "dist-2x":
       return {
@@ -139,7 +140,7 @@ function parts(kind: DiagramKind): Parts {
         a: topView(45, 72, false) + caption("flat"),
         b: topView(95, 72, false) + caption("1 m aside"),
         mid: "step aside",
-        label: "Photo B of the flat surface from 1 m to the side.",
+        label: "Photo B of the flat surface from 1 m to one side.",
       };
     case "side-same-deep":
       return {
@@ -153,7 +154,7 @@ function parts(kind: DiagramKind): Parts {
         a: topView(45, 72, true) + caption("deep"),
         b: topView(95, 72, true) + caption("1 m aside"),
         mid: "step aside",
-        label: "Photo B of the deep scene from 1 m to the side.",
+        label: "Photo B of the deep scene from 1 m to one side.",
       };
     case "other":
       return {

@@ -67,15 +67,15 @@ const SCENE_SHOTS: Readonly<Record<SceneKind, readonly ShotDef[]>> = {
   flat: [
     { key: "F1", text: "upright at 1.5 m", handsOff: null },
     { key: "F2", text: "again, unchanged", handsOff: "still" },
-    { key: "F3", text: "tilted 30-45 deg", handsOff: "move" },
+    { key: "F3", text: "turned 30-45 deg in its plane", handsOff: "move" },
     { key: "F4", text: "from 3 m", handsOff: null },
     { key: "F5", text: "from 1 m", handsOff: null },
-    { key: "F6", text: "1 m to the side at 1.5 m", handsOff: null },
+    { key: "F6", text: "1 m to one side at 1.5 m", handsOff: null },
   ],
   deep: [
     { key: "D1", text: "a deep scene", handsOff: null },
     { key: "D2", text: "again, unchanged", handsOff: "still" },
-    { key: "D3", text: "1 m to the side", handsOff: null },
+    { key: "D3", text: "1 m to one side", handsOff: null },
   ],
   own: [
     { key: "X1", text: "your own first photo", handsOff: null },
@@ -306,17 +306,19 @@ export const needsRetake = (shot: string, photos: ShotPhotos): boolean => {
 };
 
 /**
- * The first shot without a photo after `from`, else the first one before
- * it; null when every shot has one.
+ * The first open shot (no photo, not skipped) after `from`, else the
+ * first one before it; null when no other shot is open.
  */
 export function nextOpen(
   list: readonly Shot[],
   photos: ShotPhotos,
   from: number,
+  skipped: ReadonlySet<string> = new Set(),
 ): number | null {
-  const after = list.findIndex((s, i) => i > from && !photos[s.id]);
+  const open = (s: Shot): boolean => !photos[s.id] && !skipped.has(s.id);
+  const after = list.findIndex((s, i) => i > from && open(s));
   if (after >= 0) return after;
-  const first = list.findIndex((s) => !photos[s.id]);
+  const first = list.findIndex(open);
   return first >= 0 && first !== from ? first : null;
 }
 

@@ -100,3 +100,18 @@ describe("createCameraControl", () => {
     expect(gum).toHaveBeenCalledTimes(2);
   });
 });
+
+// Why this test matters: each photo records what the camera reports; the
+// control hands out the running track's report and none when it is off.
+describe("the camera report", () => {
+  it("reports the running track, and null when the camera is off", async () => {
+    const { stream, track } = fakeStream();
+    Object.assign(track, { getSettings: () => ({ zoom: 2, deviceId: "x" }) });
+    const { cam } = setup(() => Promise.resolve(stream));
+    expect(cam.report()).toBeNull();
+    await cam.start();
+    expect(cam.report()).toEqual({ zoom: 2 });
+    cam.stop();
+    expect(cam.report()).toBeNull();
+  });
+});

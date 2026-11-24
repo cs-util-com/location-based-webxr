@@ -11,7 +11,12 @@
 import type { Frame } from "./bench-image";
 import { runSettings, type MethodSelection } from "./bench-methods";
 import { errorText } from "./bench-net";
-import { runBenchmark, type BenchMethod, type MethodResult } from "./bench-run";
+import {
+  runBenchmark,
+  type BenchMethod,
+  type MethodResult,
+  type MethodRunner,
+} from "./bench-run";
 import { requestOf, type MeasureAnswer } from "./measure-protocol";
 import { rotationSquare } from "./rotation-square";
 
@@ -23,6 +28,104 @@ export interface MeasureEnv {
   /** The methods to run, built for the worker. */
   readonly build: (selection: MethodSelection) => BenchMethod[];
   readonly now: () => number;
+  /**
+   * The methods this worker has loaded, by method id, kept for the next
+   * pair. One per worker: a worker started again starts empty.
+   */
+  readonly kept: KeptRunners;
+}
+
+/** Loaded method runners by method id (their ONNX sessions, sift.js). */
+type KeptRunners = Map<string, Promise<MethodRunner>>;
+
+/** The note a runner loaded for an earlier pair adds to its result. */
+const KEPT_NOTE = "loaded for an earlier pair";
+
+/** A method that runs a model (it has a backend choice), unlike sift.js. */
+const runsModel = (m: BenchMethod): boolean => m.backend !== undefined;
+
+/**
+ * Wraps each method so it loads once per worker: the first pair's load
+ * is kept in `kept`, later pairs take it with an init time of 0, and the
+ * per-pair dispose is a no-op. A load that fails is forgotten, so the
+ * next pair tries again. At most one model method stays loaded: loading
+ * one first disposes the others' kept sessions, so the peak memory is the
+ * largest model's, not the sum (with two ticked, each pair loads both).
+ */
+function keepLoaded(
+  methods: readonly BenchMethod[],
+  kept: KeptRunners,
+): BenchMethod[] {
+  return methods.map((m) => ({
+    id: m.id,
+    label: m.label,
+    init: async () => {
+      const had = kept.get(m.id);
+      if (had === undefined && runsModel(m)) {
+        for (const other of methods) {
+          if (other.id !== m.id && runsModel(other)) {
+            drop(kept, other.id);
+          }
+        }
+      }
+      const p = had ?? m.init();
+      if (had === undefined) {
+        kept.set(m.id, p);
+        p.catch(() => {
+          if (kept.get(m.id) === p) {
+            kept.delete(m.id);
+          }
+        });
+      }
+      const r = await p;
+      return {
+        ...r,
+        initMs: had === undefined ? r.initMs : 0,
+        notes: had === undefined ? r.notes : [...r.notes, KEPT_NOTE],
+        dispose: () => undefined,
+      };
+    },
+  }));
+}
+
+/** Forgets the kept runner of method `id` and disposes it once loaded. */
+function drop(kept: KeptRunners, id: string): void {
+  const p = kept.get(id);
+  kept.delete(id);
+  p?.then(
+    (runner) => {
+      try {
+        runner.dispose();
+      } catch {
+        // A broken session: nothing more to free, and no one to tell.
+      }
+    },
+    () => undefined,
+  );
+}
+
+/**
+ * Drops the kept runner of every method whose pair failed (a size with an
+ * error), so a broken session is loaded again for the next pair. A lost
+ * GPU device is the page's to handle: it ends this worker (see
+ * `measure-queue.ts`).
+ */
+function dropFailed(results: readonly MethodResult[], kept: KeptRunners) {
+  for (const r of results) {
+    if (r.sizes.some((s) => s.error !== null)) {
+      drop(kept, r.id);
+    }
+  }
+}
+
+/** Drops the kept runners of methods not built for this pair (unticked). */
+function dropUnbuilt(methods: readonly BenchMethod[], kept: KeptRunners) {
+  const built = new Set(methods.map((m) => m.id));
+  for (const id of [...kept.keys()]) {
+    if (!built.has(id)) {
+      drop(kept, id);
+    }
+  }
 }
 
 /**
@@ -54,9 +157,30 @@ const hasJob = (data: unknown): number | null => {
  * Answers one message: a request is measured and answered with progress
  * lines and then `done` or `failed`. A malformed message that names a job
  * is answered `failed`, so the page does not wait for it; one without a
- * job is dropped. Never rejects.
+ * job is dropped. Never rejects: a throw outside the measuring (a post
+ * that cannot be sent) answers `failed` once more, and a post that throws
+ * then too is given up (the page's timeout ends the job).
  */
 export async function handleMeasure(
+  data: unknown,
+  env: MeasureEnv,
+  post: (answer: MeasureAnswer) => void,
+): Promise<void> {
+  try {
+    await answer(data, env, post);
+  } catch (e) {
+    const job = hasJob(data);
+    if (job !== null) {
+      try {
+        post({ type: "failed", job, message: errorText(e) });
+      } catch {
+        // The page cannot be told; its timeout ends the job.
+      }
+    }
+  }
+}
+
+async function answer(
   data: unknown,
   env: MeasureEnv,
   post: (answer: MeasureAnswer) => void,
@@ -91,12 +215,14 @@ export async function handleMeasure(
       { pair: req.pair, backends: [], precisions: [], runs: 1 },
       await env.webgpu(),
     );
-    const methods = env.build({
+    const built = env.build({
       ...req.methods,
       xfeat: false,
       backends: settings.backends,
       precisions: settings.precisions,
     });
+    dropUnbuilt(built, env.kept);
+    const methods = keepLoaded(built, env.kept);
     const log = (line: string) => post({ type: "progress", job, line });
     log(settings.line);
     const results = await runBenchmark(
@@ -105,6 +231,7 @@ export async function handleMeasure(
       { sizes: req.sizes, runs: settings.runs, warmup: settings.warmup },
       { now: env.now, yieldToUi: () => Promise.resolve(), log },
     );
+    dropFailed(results, env.kept);
     post({
       type: "done",
       job,

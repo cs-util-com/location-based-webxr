@@ -1,27 +1,18 @@
 /**
- * The guided view's screens as plain data, read from the page state: the
- * run screen (which shot, which step is lit, what the big button does),
- * the shots sheet's rows and the end screen; plus the current shot's
- * context both views read, and the motion and device helpers. Pure, so
- * the view only copies fields into the DOM and every rule is unit-tested.
+ * The photo test's shared readings of the page state: the current shot's
+ * context both views read, the shot rows and counts, the measuring line,
+ * and the motion and device helpers. Pure, so every rule is unit-tested.
  *
  * @see guided-model.ts.md
  */
 import type { DeviceInfo } from "./bench-report";
 // Types only: the slice imports still-detector, which imports this module.
 import type { FeatureMatchState, MeasureProgress } from "./feature-match-slice";
-import type { DiagramKind } from "./guided-diagram";
-import {
-  LIGHT_NOTE,
-  retakeText,
-  shotCard,
-  type ShotCard,
-} from "./guided-texts";
+import { shotCard, type ShotCard } from "./guided-texts";
 import { planPhotos, planShots, type PhotoMeta } from "./run-plan";
 import {
   derivedPairs,
   lightOf,
-  nextOpen,
   pairsUsing,
   previousInScene,
   readyPairs,
@@ -80,187 +71,10 @@ export const warned = (light: ShotLight | null): light is ShotLight =>
 const shotLabel = (shot: Shot): string =>
   shot.kind === "light" ? `${shot.key} place ${String(shot.spot)}` : shot.key;
 
-/** Shots with a photo, and every shot. */
-export function shotCounts(s: FeatureMatchState): {
-  readonly done: number;
-  readonly total: number;
-} {
-  const list = planShots(s.plan);
-  return {
-    done: list.filter((sh) => s.plan.shots[sh.id]).length,
-    total: list.length,
-  };
-}
-
 /** The pairs whose two shots have a photo: what Download all saves. */
 export const readyCount = (s: FeatureMatchState): number =>
   readyPairs(derivedPairs(s.plan.spots, s.plan.extra), planPhotos(s.plan))
     .length;
-
-/** A step of the card's setup / change / shot list. */
-type StepMark = "now" | "past" | "todo";
-
-interface ThumbView {
-  readonly filled: boolean;
-  readonly disabled: boolean;
-  readonly sub: string;
-}
-
-type PrimaryMode = "capture" | "cancel" | "next" | "missing" | "finish";
-
-interface PrimaryView {
-  readonly mode: PrimaryMode;
-  readonly label: string;
-  readonly sub: string;
-  readonly disabled: boolean;
-  /** The shot "next" and "missing" move to; -1 otherwise. */
-  readonly index: number;
-}
-
-export interface RunView {
-  readonly pos: string;
-  readonly done: number;
-  readonly total: number;
-  readonly shot: string;
-  readonly key: string;
-  readonly title: string;
-  /** "place N" on the light shots, else empty. */
-  readonly place: string;
-  readonly purpose: string;
-  readonly avoid: string;
-  readonly diagram: DiagramKind;
-  readonly steps: {
-    readonly a: string;
-    readonly change: string;
-    readonly b: string;
-  };
-  /** "a" on a scene's first shot, "b" on a later one, "done" once taken. */
-  readonly chip: { readonly shot: "a" | "b" | "done"; readonly text: string };
-  readonly seq: {
-    readonly a: StepMark;
-    readonly change: StepMark;
-    readonly b: StepMark;
-  };
-  /** The shot has its photo and no count runs: the finder shows it. */
-  readonly reviewing: boolean;
-  readonly note: { readonly warn: boolean; readonly text: string };
-  /** The scene's previous photo can be laid over the finder. */
-  readonly ghost: boolean;
-  /** Thumb "a": the scene's previous shot; "b": this one. */
-  readonly slots: { readonly a: ThumbView; readonly b: ThumbView };
-  /** Photo ids of the two thumbs. */
-  readonly photos: { readonly a: string | null; readonly b: string | null };
-  readonly primary: PrimaryView;
-}
-
-function primaryView(s: FeatureMatchState, c: ShotContext): PrimaryView {
-  const base = { disabled: s.busy !== "idle", index: -1 };
-  const count = s.guided.count;
-  if (count) {
-    return {
-      ...base,
-      mode: "cancel",
-      label: "Cancel",
-      sub: `shooting ${c.shot.key} in ${String(count.left)} s`,
-    };
-  }
-  if (c.photo && c.fixAt !== c.index) {
-    return {
-      ...base,
-      mode: "next",
-      index: c.fixAt,
-      label: "Back to L1",
-      sub: "L1 is too dark to dim from",
-    };
-  }
-  const secs = s.plan.settings.countdown;
-  const timing = secs ? `then ${String(secs)} s hands off` : "shoots at once";
-  if (!c.photo || warned(c.light)) {
-    return {
-      ...base,
-      mode: "capture",
-      label: `${c.photo ? "Retake" : "Capture"} ${c.shot.key}`,
-      sub: timing,
-    };
-  }
-  const next = nextOpen(c.list, planPhotos(s.plan), c.index);
-  if (next === null) {
-    return { ...base, mode: "finish", label: "Finish", sub: "all shots done" };
-  }
-  const to = c.list[next]!;
-  return next > c.index
-    ? {
-        ...base,
-        mode: "next",
-        index: next,
-        label: "Next shot",
-        sub: `${to.key}: ${shotCard(to).title}`,
-      }
-    : {
-        ...base,
-        mode: "missing",
-        index: next,
-        label: "Next missing shot",
-        sub: "some shots are not taken yet",
-      };
-}
-
-/** The run screen for the current shot. */
-export function runView(s: FeatureMatchState): RunView {
-  const c = shotContext(s);
-  const { shot, card, photo } = c;
-  const busy = s.busy !== "idle";
-  const counting = s.guided.count !== null;
-  const first = shot.step === 0;
-  const reviewing = Boolean(photo) && !counting;
-  const mark = (part: "a" | "change" | "b"): StepMark => {
-    if (reviewing) return "past";
-    if (first) return part === "a" ? "now" : "todo";
-    return part === "a" ? "past" : "now";
-  };
-  const { done, total } = shotCounts(s);
-  const retake = retakeText(shot.key, c.redoes);
-  return {
-    pos: `Shot ${String(c.index + 1)} of ${String(total)}`,
-    done,
-    total,
-    shot: shot.id,
-    key: shot.key,
-    title: card.title,
-    place: shot.kind === "light" ? `place ${String(shot.spot)}` : "",
-    purpose: card.purpose,
-    avoid: card.avoid,
-    diagram: card.diagram,
-    steps: {
-      a: card.setup,
-      change: first ? "This is the scene's first shot." : card.change,
-      b: card.capture,
-    },
-    chip: reviewing
-      ? { shot: "done", text: "Check" }
-      : { shot: first ? "a" : "b", text: `Shot ${shot.key}` },
-    seq: { a: mark("a"), change: mark("change"), b: mark("b") },
-    reviewing,
-    note: c.light
-      ? { warn: warned(c.light), text: `${LIGHT_NOTE[c.light]} ${retake}` }
-      : { warn: false, text: `Photo taken. Check it is sharp. ${retake}` },
-    ghost: !photo && Boolean(c.prevPhoto),
-    slots: {
-      a: {
-        filled: Boolean(c.prevPhoto),
-        disabled: !c.prev || counting || busy,
-        sub: c.prev ? c.prev.key : "-",
-      },
-      b: {
-        filled: Boolean(photo),
-        disabled: !photo || counting || busy,
-        sub: photo ? "retake" : "empty",
-      },
-    },
-    photos: { a: c.prevPhoto?.id ?? null, b: photo?.id ?? null },
-    primary: primaryView(s, c),
-  };
-}
 
 export interface ShotRow {
   readonly index: number;
@@ -295,45 +109,6 @@ export function shotRows(s: FeatureMatchState): ShotRow[] {
   });
 }
 
-export interface EndView {
-  readonly all: boolean;
-  readonly done: number;
-  readonly total: number;
-  readonly kicker: string;
-  readonly title: string;
-  readonly lede: string;
-  readonly canDownload: boolean;
-  readonly download: {
-    readonly label: string;
-    readonly text: string;
-    /** "ok" after a saved zip, "err" after a failed one. */
-    readonly tone: "" | "ok" | "err";
-  };
-}
-
-function downloadView(
-  s: FeatureMatchState,
-  ready: number,
-): EndView["download"] {
-  const z = s.runZip;
-  switch (z.phase) {
-    case "preparing":
-      return { label: "Preparing the zip...", text: z.text, tone: "" };
-    case "saved":
-      return { label: "Download again", text: z.text, tone: "ok" };
-    case "failed":
-      return { label: "Download all", text: z.text, tone: "err" };
-    case "idle":
-      return {
-        label: "Download all",
-        text:
-          z.text ||
-          `One zip with ${String(ready)} pair${ready === 1 ? "" : "s"}, saved to this phone only.`,
-        tone: "",
-      };
-  }
-}
-
 /** "about 3 min" or "under a minute", rounded up to whole minutes. */
 const minutesText = (ms: number): string =>
   ms < 60_000
@@ -351,7 +126,7 @@ export function measureText(p: MeasureProgress): string {
   }
   const of = `${String(p.done)} of ${String(p.total)} pairs`;
   if (p.stopped) {
-    return `Measuring stopped: the worker crashed twice. ${of} measured; the rest go to the PC.`;
+    return `Measuring stopped: the worker crashed ${String(p.crashes)} times in a row. ${of} measured; the rest go to the PC.`;
   }
   if (p.running !== null) {
     const left =
@@ -366,38 +141,6 @@ export function measureText(p: MeasureProgress): string {
     return `Measured on this phone: ${of}${failed}.`;
   }
   return `${of} measured on this phone; the rest go to the PC.`;
-}
-
-/**
- * The end screen: what is captured and whether the zip can be made, and
- * with `progress` how far the phone got with measuring the pairs.
- */
-export function endView(
-  s: FeatureMatchState,
-  progress?: MeasureProgress,
-): EndView {
-  const { done, total } = shotCounts(s);
-  const ready = readyCount(s);
-  const all = done === total;
-  return {
-    all,
-    done,
-    total,
-    kicker: all
-      ? "All shots taken"
-      : `${String(done)} of ${String(total)} shots taken`,
-    title: all ? "Thank you. One last step." : "You can send what you have.",
-    lede: [
-      all
-        ? "Download the zip, then send it together with the summary below."
-        : "Only pairs with both shots go into the zip. Go back to the shots any time to add the rest.",
-      progress ? measureText(progress) : "",
-    ]
-      .filter((t) => t !== "")
-      .join(" "),
-    canDownload: ready > 0 && s.busy === "idle",
-    download: downloadView(s, ready),
-  };
 }
 
 /** The summary's phone line: model, OS version and cores, nothing else. */
@@ -449,14 +192,3 @@ export function motionStep(level: number, r: RotationRate): number {
 }
 
 export const isMoving = (level: number): boolean => level > STEADY_THRESHOLD;
-
-/** The intro's "Keep the phone still" text for the countdown and sound settings. */
-export function introCountdownText(s: {
-  readonly countdown: number;
-  readonly sound: boolean;
-}): string {
-  if (s.countdown <= 0) {
-    return "A tap shakes the phone, and the countdown is off: each photo is taken at your tap. Rest the phone on something steady, or set a countdown under Shots.";
-  }
-  return `A tap shakes the phone, so each photo is taken ${String(s.countdown)} seconds after your tap${s.sound ? ", with a beep per second" : ""}. Hands off until the click.`;
-}

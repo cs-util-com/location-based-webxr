@@ -6,6 +6,7 @@ The general rules the feature matching page shows before the first shot, and the
 
 ## Public API
 
+- `WELCOME_LEDE`: the welcome screen's first line: a few shots per scene, a first shot then one change per shot (the light, a turn, a step), the pairs made from the shots and saved in one zip.
 - `BEFORE_YOU_START`: the six general rules: a stand, screen rotation and zoom; a scene is a few shots of one place, with one change per shot, and the pairs are made from the shots; nothing personal in the picture; aim at detail; the next shot comes up by itself (Details, Shots takes any shot again or skips one); Download all saves every ready pair in one zip, measured on the PC.
 - `SPOT_NOTE`: the light scene is repeated at up to three places; after L4, point the phone elsewhere and L1 of the next place comes up by itself.
 

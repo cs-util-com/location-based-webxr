@@ -205,6 +205,7 @@ export function alikedMethod(
 ): BenchMethod {
   return {
     id: `aliked-lightglue-${backend}`,
+    backend,
     label: `ALIKED + LightGlue (onnxruntime-web) ${backend}`,
     async init(): Promise<MethodRunner> {
       const ort = await loadOrtRuntime(deps);

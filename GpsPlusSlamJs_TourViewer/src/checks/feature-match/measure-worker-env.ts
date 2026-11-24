@@ -50,14 +50,19 @@ export function serveMeasureWorker(
     ),
     build: (selection) => buildMethods(pick(selection), deps, "worker"),
     now: () => performance.now(),
+    // The loaded methods (sift.js and at most one model method's sessions)
+    // live as long as this worker; the page starts a new worker after a
+    // crash or a WebGPU error.
+    kept: new Map(),
   };
 
   // One pair after another: the client sends the next only when the last
-  // has answered; the chain keeps that order even if it did not.
+  // has answered; the chain keeps that order even if it did not. The same
+  // step runs after a rejection too, so one failure never blocks the rest.
   let chain: Promise<void> = Promise.resolve();
   ctx.addEventListener("message", (event) => {
-    chain = chain.then(() =>
-      handleMeasure(event.data, env, (answer) => ctx.postMessage(answer)),
-    );
+    const step = () =>
+      handleMeasure(event.data, env, (answer) => ctx.postMessage(answer));
+    chain = chain.then(step, step);
   });
 }

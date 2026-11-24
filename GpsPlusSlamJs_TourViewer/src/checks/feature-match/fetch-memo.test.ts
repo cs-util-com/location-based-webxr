@@ -33,6 +33,19 @@ describe("memoFetch", () => {
     expect(calls).toEqual(["https://m/a.onnx"]);
   });
 
+  // Why: the memo hands its kept bytes to each new Response without a
+  // copy of its own (the Response takes one), so a caller that writes into
+  // the body it read must still not change what the next caller reads.
+  it("keeps its bytes intact when a caller writes into the body it read", async () => {
+    const { fetch } = counting({ "https://m/c.onnx": ok("abc") });
+    const f = memoFetch(fetch);
+    const first = new Uint8Array(
+      await (await f("https://m/c.onnx")).arrayBuffer(),
+    );
+    first.fill(0);
+    expect(await (await f("https://m/c.onnx")).text()).toBe("abc");
+  });
+
   it("keeps no failed fetch and no error status", async () => {
     let up = false;
     const { calls, fetch } = counting({

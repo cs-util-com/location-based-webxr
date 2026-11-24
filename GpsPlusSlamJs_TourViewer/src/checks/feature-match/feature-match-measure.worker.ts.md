@@ -10,7 +10,7 @@ None: a module worker entry, spawned with `new Worker(new URL("./feature-match-m
 
 ## Invariants
 
-- The models are fetched once per worker (`memoFetch`), not once per pair.
+- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods are kept for the worker's life (`measure-worker-env.ts`); a new worker after a crash starts with fresh sessions.
 - Messages are handled one after another on a promise chain; the client sends one at a time anyway.
 - The worker spike's XFeat probe (`xfeat-probe.worker.ts`) runs the same wiring with XFeat as the only method.
 - Its own dpdm cycle root in `scripts/test-timing/projects.mjs`: dpdm cannot follow a `new URL(...)` spawn.

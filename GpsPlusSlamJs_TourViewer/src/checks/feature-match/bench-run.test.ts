@@ -271,3 +271,27 @@ describe("runBenchmark", () => {
     expect(res!.sizes[0]!.correct).toBe(1);
   });
 });
+
+// Why: a method that fails to load has no runner to report its backend;
+// the queue must still tell a WebGPU load failure (a lost device) from a
+// WASM one, so the result carries the backend the method asked for.
+describe("runBenchmark, a method that fails to load", () => {
+  it("records the backend it asked for, or - when it has no choice", async () => {
+    const failing = (backend?: "webgpu" | "wasm"): BenchMethod => ({
+      id: "m",
+      label: "M",
+      ...(backend === undefined ? {} : { backend }),
+      init: () => Promise.reject(new Error("device lost")),
+    });
+    const input = { a: frame(8, 8), b: frame(8, 8), warp: null };
+    const [gpu, plain] = await runBenchmark(
+      [failing("webgpu"), failing()],
+      input,
+      { sizes: [8], runs: 1 },
+      hooks(),
+    );
+    expect(gpu!.backend).toBe("webgpu");
+    expect(gpu!.error).toBe("init: Error: device lost");
+    expect(plain!.backend).toBe("-");
+  });
+});

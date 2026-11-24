@@ -666,35 +666,52 @@
     </div>
     <!-- The guided run (the default view; ?ui=cockpit shows the cockpit). -->
     <div id="guided" hidden>
-      <!-- First run: what, why still, nothing uploaded, what you send back. -->
+      <!-- First run: the scenes, what is kept, where the light scene happens. -->
       <section id="g-intro" class="screen intro" hidden>
         <div class="intro-head">
-          <p class="kicker">Photo test, about 15 minutes</p>
-          <h1>How well do feature matchers work on your phone?</h1>
+          <p class="kicker">Photo test, about 10 minutes</p>
+          <h1>Three scenes, one photo at a time</h1>
           <p class="lede">
-            You take pairs of photos of the same scene. Between the two photos
-            of a pair you change exactly one thing: the light, a turn of the
-            phone, the distance or where you stand. Later, matching programs try
-            to find the same points in both photos.
+            Each scene starts with one base photo. Every later photo changes one
+            thing - the light, the angle, the distance or where you stand - and
+            is compared against that base. Measuring starts by itself as soon as
+            two photos of a scene are taken.
           </p>
         </div>
-        <ul class="facts">
+        <ol class="scene-cards">
           <li>
-            <span class="fact-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <rect x="7" y="3" width="10" height="16" rx="2" />
-                <path d="M5 21h14M12 19v2" />
-              </svg>
-            </span>
+            <span class="scene-num">1</span>
             <div>
-              <strong>Keep the phone still while it shoots.</strong>
-              <span id="g-intro-still"
-                >A tap shakes the phone, so each photo is taken 3 seconds after
-                your tap, with a beep per second. Hands off until the
-                click.</span
-              >
+              <strong>Light</strong>
+              <span class="rule-tag still">Phone stays still</span>
+              <p>
+                Stand the phone on a table. Four photos; you stand up only
+                twice, to dim the light.
+              </p>
             </div>
           </li>
+          <li>
+            <span class="scene-num">2</span>
+            <div>
+              <strong>Flat surface</strong>
+              <span class="rule-tag hand">Hand-held</span>
+              <p>
+                A poster or a patterned door. Six photos: the phone turned in
+                its plane, far, near, one side. The 90 and 180 degree turns are
+                computed.
+              </p>
+            </div>
+          </li>
+          <li>
+            <span class="scene-num">3</span>
+            <div>
+              <strong>Deep</strong>
+              <span class="rule-tag hand">Hand-held</span>
+              <p>Aimed into a hallway. Three photos, one from the side.</p>
+            </div>
+          </li>
+        </ol>
+        <ul class="facts">
           <li>
             <span class="fact-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24">
@@ -703,21 +720,9 @@
               </svg>
             </span>
             <div>
-              <strong>Nothing is uploaded.</strong>
-              The photos stay on this phone until you tap Download. They hold
-              pixels only: no location, no time, no camera data.
-            </div>
-          </li>
-          <li>
-            <span class="fact-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24">
-                <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
-              </svg>
-            </span>
-            <div>
-              <strong>You send back one file.</strong>
-              At the end, one zip with all photos, each named by its pair, plus
-              a short summary you can paste into a message.
+              <strong>Nothing gets lost.</strong>
+              Each photo is saved on this phone the moment it is taken. If the
+              page reloads, it picks up where you were. Nothing is uploaded.
             </div>
           </li>
           <li>
@@ -729,16 +734,15 @@
             </span>
             <div>
               <strong>Nothing personal in the picture.</strong>
-              No faces, papers, screens, house numbers or windows to the
-              outside. Aim at something with detail: shelves, a poster, a
-              patterned rug.
+              No faces, papers, screens or windows to the outside. Aim at
+              something with detail.
             </div>
           </li>
         </ul>
         <div class="intro-setup">
           <div class="spots" role="radiogroup" aria-labelledby="g-spots-label">
             <span id="g-spots-label" class="spots-label"
-              >Light tests (need a dark room) at</span
+              >Do the light scene at</span
             >
             <button type="button" role="radio" data-spots="1">1 place</button>
             <button type="button" role="radio" data-spots="2">2 places</button>
@@ -754,87 +758,79 @@
         </div>
       </section>
 
-      <!-- One step at a time: header, step card, viewfinder, action bar. -->
+      <!-- The run: scene header, shot strip, shot card, viewfinder, action bar. -->
       <section id="g-run" class="screen run" hidden>
         <header class="run-head">
+          <div class="scene-title">
+            <span id="g-scene-kicker" class="scene-kicker"></span>
+            <h1 id="g-scene-name"></h1>
+          </div>
+          <span id="g-rule-chip" class="rule-chip" data-rule="still">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="7" y="3" width="10" height="16" rx="2" />
+              <path d="M4 21h16" />
+            </svg>
+            <span id="g-rule-text"></span>
+          </span>
           <button
-            id="g-open-help"
+            id="g-open-menu"
             type="button"
             class="icon-btn"
-            aria-label="What is this test?"
+            aria-label="Menu"
+            aria-haspopup="dialog"
           >
-            ?
-          </button>
-          <div class="progress" aria-live="polite">
-            <span id="g-head-pos" class="head-pos">Shot 1 of 13</span>
-            <span class="bar" aria-hidden="true"
-              ><span id="g-head-bar"></span
-            ></span>
-          </div>
-          <button id="g-open-pairs" type="button" class="pairs-btn">
-            Shots <span id="g-head-done">0/13</span>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16M4 12h16M4 17h16" />
+            </svg>
           </button>
         </header>
 
+        <nav id="g-strip" class="strip" aria-label="All photos, by scene">
+          <div id="g-segs" class="segs" role="tablist"></div>
+          <div id="g-thumbs" class="thumbs"></div>
+        </nav>
+
         <article class="card" aria-live="polite">
+          <div id="g-card-banner" class="banner" hidden>
+            <strong id="g-banner-title"></strong>
+            <span id="g-banner-text"></span>
+          </div>
           <div class="card-top">
-            <span id="g-card-key" class="key-chip">L1</span>
-            <h2>
-              <span id="g-card-title"></span>
-              <small id="g-card-place" class="place"></small>
-            </h2>
-            <span id="g-card-shot" class="shot-chip" data-shot="a">Shot A</span>
+            <span id="g-card-code" class="code-chip"></span>
+            <h2 id="g-card-title"></h2>
+            <span id="g-card-count" class="card-count"></span>
           </div>
           <div class="card-body">
             <div id="g-card-diagram" class="diagram" aria-hidden="true"></div>
-            <ol class="seq">
-              <li id="g-seq-a" data-part="a">
-                <span class="seq-tag">A</span><span id="g-seq-a-text"></span>
-              </li>
-              <li id="g-seq-change" data-part="change">
-                <span class="seq-tag">then</span
-                ><span id="g-seq-change-text"></span>
-              </li>
-              <li id="g-seq-b" data-part="b">
-                <span class="seq-tag">B</span><span id="g-seq-b-text"></span>
-              </li>
-            </ol>
+            <ol id="g-card-steps" class="steps"></ol>
           </div>
-          <p class="foot-lines">
-            <span id="g-card-purpose" class="purpose"></span>
-            <span id="g-card-avoid" class="avoid"></span>
-          </p>
+          <p id="g-card-note" class="note"></p>
         </article>
 
         <div id="g-finder" class="finder">
           <video id="g-video" playsinline muted></video>
+          <p id="g-cam-wait" class="cam-wait"></p>
           <canvas id="g-ghost" class="ghost" aria-hidden="true" hidden></canvas>
-          <div id="g-review" class="review" hidden>
-            <figure>
-              <canvas id="g-review-a" aria-label="Photo A"></canvas>
-              <figcaption>A</figcaption>
-            </figure>
-            <figure>
-              <canvas id="g-review-b" aria-label="Photo B"></canvas>
-              <figcaption>B</figcaption>
-            </figure>
-            <p id="g-review-note" class="review-note"></p>
-          </div>
-          <div class="finder-chips">
-            <span id="g-steady" class="chip" hidden>steady</span>
-            <span id="g-cam-chip" class="chip dim" hidden></span>
-            <span id="g-store-chip" class="chip warn" hidden
-              >not stored on this phone: download soon</span
+          <div class="finder-top">
+            <span id="g-still-chip" class="chip still" hidden
+              >Do not move the phone</span
             >
+            <span id="g-steady" class="chip" hidden>steady</span>
             <button
               id="g-ghost-toggle"
               type="button"
               class="chip chip-btn"
               aria-pressed="false"
               hidden
-            >
-              Show A
-            </button>
+            ></button>
+          </div>
+          <div class="finder-bottom">
+            <span id="g-saved-chip" class="chip saved">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M5 12l4 4 10-10" />
+              </svg>
+              <span id="g-saved-text"></span>
+            </span>
           </div>
           <div id="g-count" class="count" hidden aria-live="assertive">
             <span id="g-count-num" class="count-num">3</span>
@@ -844,103 +840,103 @@
         </div>
 
         <footer class="actions">
-          <button
-            id="g-slot-a"
-            type="button"
-            class="slot"
-            data-slot="a"
-            aria-label="Photo A: retake"
-          >
-            <span class="slot-img"><canvas hidden></canvas></span>
-            <span class="slot-label">A</span>
-            <span class="slot-sub">empty</span>
-          </button>
-          <button
-            id="g-slot-b"
-            type="button"
-            class="slot"
-            data-slot="b"
-            aria-label="Photo B: retake"
-          >
-            <span class="slot-img"><canvas hidden></canvas></span>
-            <span class="slot-label">B</span>
-            <span class="slot-sub">empty</span>
+          <button id="g-secondary" type="button" class="secondary side">
+            Skip photo
           </button>
           <button id="g-primary" type="button" class="primary main">
-            <span id="g-primary-label">Capture A</span>
+            <span id="g-primary-label"></span>
             <span id="g-primary-sub" class="primary-sub"></span>
           </button>
         </footer>
       </section>
 
-      <!-- The end: one download, the summary, the copy-log button. -->
+      <!-- The end: measuring progress per scene, the choice, one download. -->
       <section id="g-end" class="screen end" hidden>
         <div class="end-head">
           <p id="g-end-kicker" class="kicker"></p>
           <h1 id="g-end-title"></h1>
           <p id="g-end-lede" class="lede"></p>
         </div>
-        <div class="end-download">
-          <button id="g-download-all" type="button" class="primary big">
-            Download all
-          </button>
-          <p id="g-download-state" class="state" aria-live="polite"></p>
-          <p id="g-store-state" class="state err" hidden>
-            Some photos could not be stored on this phone, so a reload would
-            lose them: download now.
-          </p>
-        </div>
-        <div class="end-summary">
-          <label for="g-summary" class="label">Summary to paste back</label>
-          <textarea id="g-summary" readonly rows="7"></textarea>
-          <div class="row">
-            <button id="g-copy-summary" type="button" class="secondary">
-              Copy summary
-            </button>
-            <span
-              id="g-copy-summary-state"
-              class="state"
-              aria-live="polite"
-            ></span>
+        <section class="panel end-progress" aria-labelledby="g-progress-title">
+          <div class="panel-head">
+            <h2 id="g-progress-title">Measuring on this phone</h2>
+            <span id="g-end-eta" class="eta" aria-live="polite"></span>
           </div>
-        </div>
-        <div class="end-log">
-          <div class="row">
-            <button id="g-copy-log" type="button" class="secondary">
-              Copy log
+          <ul id="g-end-list" class="plist"></ul>
+          <div id="g-retry" class="retry" hidden>
+            <span id="g-retry-text"></span>
+            <button id="g-retry-failed" type="button" class="secondary">
+              Retry failed
             </button>
-            <span id="g-copy-log-state" class="state" aria-live="polite"></span>
           </div>
           <p class="hint">
-            Not needed when you send the zip - it already holds the log. Use it
-            to paste a quick note into a chat, or when something went wrong.
+            Measuring runs while this page is open. Whatever is not finished can
+            be measured on the PC later, from the same photos.
           </p>
-        </div>
+        </section>
+        <section class="panel end-zip" aria-labelledby="g-zip-title">
+          <h2 id="g-zip-title" class="visually-hidden">The zip</h2>
+          <div
+            id="g-choice"
+            class="choice"
+            role="radiogroup"
+            aria-label="When to make the zip"
+          >
+            <button type="button" role="radio" data-choice="now">
+              <i aria-hidden="true"></i>
+              <span>
+                <b>Good enough - make the zip now</b>
+                <small id="g-choice-now-sub"></small>
+              </span>
+            </button>
+            <button type="button" role="radio" data-choice="wait">
+              <i aria-hidden="true"></i>
+              <span>
+                <b>Wait for the rest</b>
+                <small id="g-choice-wait-sub"></small>
+              </span>
+            </button>
+          </div>
+          <button id="g-download" type="button" class="primary big dl">
+            <span id="g-dl-label"></span>
+            <span id="g-dl-sub" class="primary-sub"></span>
+          </button>
+          <p id="g-download-state" class="state" aria-live="polite"></p>
+          <p class="trust">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="5" y="10" width="14" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            <span id="g-trust-text"></span>
+          </p>
+        </section>
+        <section id="g-end-missing" class="panel end-missing" hidden>
+          <h2>Not taken</h2>
+          <p class="hint">Optional. Tap one to take it now.</p>
+          <div id="g-missing-list" class="row"></div>
+        </section>
         <div class="end-more row">
           <button id="g-end-back" type="button" class="secondary">
-            Back to the pairs
+            Back to the photos
           </button>
-          <button id="g-open-measure" type="button" class="secondary">
-            Speed and synthetic tests (optional)
-          </button>
+          <button id="g-end-menu" type="button" class="secondary">Menu</button>
         </div>
       </section>
 
-      <!-- Overlay: every pair at a glance, jump to one, settings. -->
+      <!-- Menu: everything that is not part of the main path. -->
       <div
-        id="g-sheet-pairs"
+        id="g-sheet-menu"
         class="sheet"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="g-pairs-title"
+        aria-labelledby="g-menu-title"
         hidden
       >
         <div class="sheet-box">
           <div class="sheet-head">
-            <h2 id="g-pairs-title">All pairs</h2>
-            <span id="g-pairs-count" class="state"></span>
+            <h2 id="g-menu-title">Menu</h2>
             <button
-              id="g-close-pairs"
+              id="g-close-menu"
               type="button"
               class="icon-btn"
               aria-label="Close"
@@ -948,12 +944,26 @@
               &times;
             </button>
           </div>
-          <ul id="g-pair-grid" class="pair-grid"></ul>
-          <div class="legend" aria-hidden="true">
-            <span><i class="dot done"></i>done</span>
-            <span><i class="dot half"></i>A only</span>
-            <span><i class="dot retake"></i>retake suggested</span>
-            <span><i class="dot missing"></i>missing</span>
+          <div class="menu-list">
+            <button type="button" class="menu-item" data-act="cockpit">
+              <b>Switch to the cockpit view</b>
+              <small>Every photo and pair in one table</small>
+            </button>
+            <button type="button" class="menu-item" data-act="own">
+              <b>Add your own pair</b>
+              <small>Two extra photos, one change of your choice</small>
+            </button>
+            <button type="button" class="menu-item" data-act="skip-scene">
+              <b id="g-skip-scene-label">Skip this scene</b>
+              <small>Its photos can still be taken later from the strip</small>
+            </button>
+            <button type="button" class="menu-item" data-act="finish">
+              <b>Finish now</b>
+              <small>See the measuring and make the zip</small>
+            </button>
+            <button type="button" class="menu-item" data-act="help">
+              <b>How this test works</b>
+            </button>
           </div>
           <div class="sheet-settings">
             <div class="setting" role="radiogroup" aria-labelledby="g-cd-label">
@@ -967,15 +977,23 @@
               click</label
             >
           </div>
-          <div class="sheet-foot row">
-            <button id="g-add-other" type="button" class="secondary">
-              Add an extra pair (other)
+          <div class="menu-list debug">
+            <span class="menu-group">For debugging</span>
+            <button type="button" class="menu-item" data-act="copy-log">
+              <b>Copy log</b>
+              <small id="g-copy-log-state">The zip holds it too</small>
             </button>
-            <button id="g-go-end" type="button" class="primary">
-              Finish and download
+            <button type="button" class="menu-item" data-act="measure">
+              <b>Speed and synthetic tests</b>
+              <small>Optional measuring on this phone</small>
             </button>
-            <button id="g-start-over" type="button" class="danger">
-              Start over
+            <button
+              type="button"
+              class="menu-item danger-item"
+              data-act="reset"
+            >
+              <b>Start over</b>
+              <small>Deletes every photo on this phone</small>
             </button>
           </div>
         </div>

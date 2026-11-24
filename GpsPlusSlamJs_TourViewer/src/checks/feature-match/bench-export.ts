@@ -9,6 +9,7 @@ import { packFilesAsZip } from "gps-plus-slam-app-framework/storage";
 
 import { toFramePoint } from "./bench-image";
 import type { MethodResult, Points } from "./bench-run";
+import type { SquareCrop, TurnDegrees } from "./rotation-square";
 
 /** The names the saved files get. */
 export const FRAME_FILES = {
@@ -37,6 +38,7 @@ export const PAIRS = [
   { key: "t0", label: "rotation: control, centre squares" },
   { key: "t90", label: "rotation: centre square turned 90 deg" },
   { key: "t180", label: "rotation: centre square turned 180 deg" },
+  // The PC reader reads this label as it is; the shot is a turn in plane.
   { key: "2d", label: "rotation: tilted 30-45 deg" },
   { key: "3b", label: "distance: 1.5 m to 3 m" },
   { key: "3c", label: "distance: 1 m to 3 m" },
@@ -227,6 +229,16 @@ export interface MatchesAbout {
   readonly settings: string;
   readonly methods: Readonly<Record<string, boolean>>;
   readonly sizes: readonly number[];
+  /**
+   * A rotation pair: both frames were cut to these centre squares of the
+   * shot files and B turned clockwise, so the keypoints are in the
+   * squares' pixels (B's after the turn).
+   */
+  readonly square?: {
+    readonly a: SquareCrop;
+    readonly b: SquareCrop;
+    readonly turn: TurnDegrees;
+  };
 }
 
 /**
@@ -267,6 +279,15 @@ export function matchesInfo(
             settings: about.settings,
             methods: about.methods,
             sizes: about.sizes,
+            ...(about.square
+              ? {
+                  square: {
+                    a: about.square.a,
+                    b: about.square.b,
+                    turn: { degrees: about.square.turn, direction: "cw" },
+                  },
+                }
+              : {}),
           },
         }),
     methods: results.map((r) => ({

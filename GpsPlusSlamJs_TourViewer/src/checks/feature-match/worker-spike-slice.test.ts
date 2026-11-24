@@ -69,6 +69,18 @@ describe("worker spike slice", () => {
     expect(s.stepStartedAt).toBe(4300);
   });
 
+  // Why: a pair that failed fast says nothing about how long a pair takes;
+  // it moves the step on but feeds no time to the estimate.
+  it("counts a failed pair without its time", () => {
+    const store = running();
+    store.dispatch(A.stepBegan({ step: { kind: "pairs", done: 0 }, now: 0 }));
+    store.dispatch(A.pairMeasured({ ms: null, now: 10 }));
+    store.dispatch(A.pairMeasured({ ms: 4000, now: 4010 }));
+    const s = store.getState();
+    expect(s.step).toEqual({ kind: "pairs", done: 2 });
+    expect(s.pairMs).toEqual([4000]);
+  });
+
   // Why: the plan's pair count is the cap; a stray answer cannot push the
   // step text past "pair 2 of 2".
   it("never counts more pairs than planned", () => {

@@ -12,4 +12,4 @@
 
 ## Tests
 
-Checked by screenshots at 390x844, 844x390 and 1280x800 in the start, running and result states (no horizontal scroll at any of them); the spike tests in `playwright-tests/feature-match-check.spec.js` check the states themselves.
+Checked in `playwright-tests/feature-match-check.spec.js`: no horizontal scroll at 390x844 at the start and on the result card, and on the result card also at 844x390 and 1280x800 with Copy log still on screen; the same spike tests check the states themselves.

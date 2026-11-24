@@ -41,6 +41,12 @@ export interface MethodRunner {
 export interface BenchMethod {
   readonly id: string;
   readonly label: string;
+  /**
+   * The backend asked for, on a method that runs a model (ONNX Runtime,
+   * LiteRT); absent on one with no backend choice (SIFT). A failed load
+   * reports it, since there is no runner to say which one runs.
+   */
+  readonly backend?: string;
   init(): Promise<MethodRunner>;
 }
 
@@ -176,7 +182,7 @@ function emptyResult(method: BenchMethod, error: string): MethodResult {
   return {
     id: method.id,
     label: method.label,
-    backend: "-",
+    backend: method.backend ?? "-",
     downloads: [],
     initMs: NaN,
     notes: [],

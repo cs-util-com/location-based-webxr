@@ -31,6 +31,15 @@ export const SCENE_SETUP: Readonly<Record<SceneKind, string>> = {
   own: "Anything you want to test.",
 };
 
+/** The guided view's "New scene" banner: what the scene asks of the tester. */
+export const SCENE_INTRO: Readonly<Record<SceneKind, string>> = {
+  light:
+    "Stand the phone on a table or shelf, aimed at a detailed part of the room. It stays there for all four photos.",
+  flat: "Pick the phone up: from here it is hand-held. Find a flat surface with detail, like a poster or a patterned door.",
+  deep: "Still hand-held. Aim into a hallway or a deep room, with things near and far.",
+  own: "Anything you want to test: two photos, one change between them.",
+};
+
 const STILL = "Change nothing.";
 const AGAIN = "Capture again.";
 const NO_MOVE = "Capture without moving the phone.";
@@ -88,11 +97,12 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
     avoid: "Moving between the two shots.",
   },
   F3: {
-    title: "Slight tilt",
-    change: "Tilt the phone 30-45 deg, like a clock hand at one o'clock.",
-    capture: "Capture tilted.",
+    title: "Turn the phone",
+    change:
+      "Turn the phone 30-45 deg in its own plane, like a clock hand at one o'clock. Keep facing the surface: do not tilt it away.",
+    capture: "Capture turned.",
     diagram: "rot-35",
-    purpose: "Does a method cope with a slight tilt?",
+    purpose: "Does a method cope with a turned picture?",
     avoid: STEPPING,
   },
   F4: {
@@ -114,7 +124,7 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
   F6: {
     title: "Step aside",
     change:
-      "Back to 1.5 m, then about 1 m to the side, parallel to the surface. Aim at the same centre.",
+      "Back to 1.5 m, then about 1 m to one side (left or right, one photo), parallel to the surface. Aim at the same centre.",
     capture: "Capture from the new place.",
     diagram: "side-flat",
     purpose: "Does a method match after a change of viewpoint?",
@@ -138,7 +148,8 @@ export const SHOT_WORDS: Readonly<Record<ShotKey, ShotWords>> = {
   },
   D3: {
     title: "Deep scene, step aside",
-    change: "Step about 1 m to the side. Aim at the same centre.",
+    change:
+      "Step about 1 m to one side (left or right, one photo). Aim at the same centre.",
     capture: "Capture from the new place.",
     diagram: "side-deep",
     purpose: "Does a method match a deep scene after a change of viewpoint?",

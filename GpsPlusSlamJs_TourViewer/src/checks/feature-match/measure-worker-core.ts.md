@@ -6,9 +6,9 @@ What the measuring worker does with one request: decode both photos, cut and tur
 
 ## Public API
 
-- `MeasureEnv { decode, webgpu, build, now }`: the PNG decoder (`pngFrame`), the WebGPU probe of the worker (`webGpuProbe`; a dedicated worker has its own `navigator.gpu`), the method builder (`buildMethods(selection, deps, "worker")`) and the clock.
+- `MeasureEnv { decode, webgpu, build, now, kept }`: the PNG decoder (`pngFrame`), the WebGPU probe of the worker (`webGpuProbe`; a dedicated worker has its own `navigator.gpu`), the method builder (`buildMethods(selection, deps, "worker")`), the clock and `kept` (`Map<string, Promise<MethodRunner>>`: the loaded methods by method id, one map per worker).
 - `measureMsOf(results)`: the time a pair took, in ms: for every size without an error, two extracts and one match (their medians). Downloads, session creation and failed sizes are left out, so it is the cost of one more pair; the end screen's estimate multiplies it.
-- `handleMeasure(data, env, post)`: answers one message with progress lines and then `done` or `failed`. Never rejects.
+- `handleMeasure(data, env, post)`: answers one message with progress lines and then `done` or `failed`. Never rejects: a throw outside the measuring (a post that cannot be sent) answers `failed` once more, and if that post throws too it is given up (the page's timeout ends the job).
 
 ## Invariants and defensive measures
 
@@ -18,6 +18,10 @@ What the measuring worker does with one request: decode both photos, cut and tur
 - XFeat is always off in the worker (`xfeat: false`), whatever the request says.
 - A rotation pair cuts A's centre square unturned and B's turned by `turn` (`rotationSquare`), as the PC side does.
 - Any throw after the decode answers `failed` with its text.
+- **A method loads once per worker.** Its first load is kept in `kept`; later pairs reuse it with `initMs` 0 and the note "loaded for an earlier pair", and the per-pair dispose is a no-op. A phone log showed ALIKED + LightGlue spending about a second per pair building its ONNX sessions again.
+- **At most one model method stays loaded.** A method that runs a model (it has a `backend`: ALIKED, SIFT + LightGlue, XFeat) disposes the other model methods' kept runners before it loads, so the peak memory is the largest model's, not the sum; sift.js stays. Trade-off: with two model methods ticked, each pair loads both again (the keeping only pays with one), but a low-memory phone no longer runs out of memory, restarts and runs out again.
+- A dispose that throws (a broken session) is swallowed: there is nothing more to free.
+- **A failed load or pair drops the kept runner.** A load that rejects is forgotten, so the next pair tries again; a pair with a failed size disposes and drops that method's runner, so a broken session is loaded again for the next pair. A lost GPU device likely stays lost in this worker, so a new session would fail too: the page restarts the worker after a WebGPU error (`measure-queue.ts`). A method no longer built (unticked between pairs) has its kept runner disposed and dropped before the pair runs. A worker crash ends the worker and its map with it; the page's new worker loads afresh, so the crash count (`MAX_CRASHES`) is unaffected.
 
 ## Example
 
@@ -27,4 +31,4 @@ await handleMeasure(event.data, env, (answer) => self.postMessage(answer));
 
 ## Tests
 
-`measure-worker-core.test.ts` (a fake decoder, probe and method): a pair measured with the photo test settings and posted, a rotation pair cut to centre squares with B turned, the load time left out of the measuring time, a decode failure, a malformed request with a job answered and one without dropped, and `measureMsOf` summing both extracts and the match of every size that ran.
+`measure-worker-core.test.ts` (a fake decoder, probe and method): a pair measured with the photo test settings and posted, a rotation pair cut to centre squares with B turned, the load time left out of the measuring time, a decode failure, a malformed request with a job answered and one without dropped, and `measureMsOf` summing both extracts and the match of every size that ran; a method loaded once for two pairs and again with an empty kept map (`serveMeasureWorker` makes one per worker), a runner dropped after a failed pair, the kept runner of a method no longer built disposed, a failed load forgotten; one model method kept at a time beside SIFT; a post that throws answered `failed`, every post throwing still resolving, and a dispose that throws swallowed. `measure-worker-core.property.test.ts`: over any run of good and failing pairs, loads are one plus one per failed pair before the last, and exactly the dropped runners are disposed; over any run of pairs with any model methods ticked, at most one model method stays kept, SIFT loads once, and every model load but the kept one is disposed.

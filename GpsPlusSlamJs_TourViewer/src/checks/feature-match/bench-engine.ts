@@ -40,6 +40,7 @@ import {
   timingBackends,
 } from "./bench-timing";
 import {
+  benchWaitText,
   featureMatchActions as A,
   logText,
   type BenchOptions,
@@ -315,10 +316,11 @@ export function startBenchEngine(deps: BenchEngineDeps): BenchEngine {
     const idle = s.busy === "idle" && s.queue.running === null;
     ui.runSynthetic.disabled = !idle;
     ui.runSpeed.disabled = !idle;
+    const wait = benchWaitText(s);
     ui.runSynthetic.textContent =
-      s.running === "synthetic" ? "Running..." : idleLabels.synthetic;
+      s.running === "synthetic" ? "Running..." : wait || idleLabels.synthetic;
     ui.runSpeed.textContent =
-      s.running === "speed" ? "Timing..." : idleLabels.speed;
+      s.running === "speed" ? "Timing..." : wait || idleLabels.speed;
     ui.syntheticState.textContent = s.status.synthetic;
     ui.speedState.textContent = s.status.speed;
     ui.copyState.textContent = s.status.copy;

@@ -55,6 +55,10 @@ const actionArb: fc.Arbitrary<PlanAction> = fc.oneof(
     ),
   }),
   fc.constant({ type: "reset" as const }),
+  fc.record({
+    type: fc.constant("skip" as const),
+    shots: fc.array(shotArb, { maxLength: 3 }),
+  }),
 );
 
 /** What a photo action did: refused (the same plan), or its take and position. */
@@ -78,14 +82,21 @@ function expectedStep(p: RunPlan, a: PlanAction & { type: "photo" }) {
       ? p.current
       : needsRetake(a.shot, photos)
         ? index
-        : (nextOpen(list, photos, index) ?? index);
+        : (nextOpen(
+            list,
+            photos,
+            index,
+            new Set(p.skipped.filter((id) => id !== a.shot)),
+          ) ?? index);
   return { take, current };
 }
 
 describe("run plan properties", () => {
-  // Why: any sequence of taps keeps the run inside its list and every
-  // stored shot a shot of the list, and the plan survives storage.
-  it("keeps current and every record inside the list, and round-trips", () => {
+  // Why: any sequence of taps keeps the run inside its list, every stored
+  // shot a shot of the list, every skipped shot a listed one without a
+  // photo, named once (the walk and the end view trust both), and the
+  // plan survives storage.
+  it("keeps current, every record and every skip inside the list, and round-trips", () => {
     fc.assert(
       fc.property(fc.array(actionArb, { maxLength: 40 }), (actions) => {
         let p = EMPTY_PLAN;
@@ -95,6 +106,11 @@ describe("run plan properties", () => {
           expect(p.current >= 0 && p.current < ids.length).toBe(true);
           for (const id of Object.keys(p.shots)) {
             expect(ids).toContain(id);
+          }
+          expect(new Set(p.skipped).size).toBe(p.skipped.length);
+          for (const id of p.skipped) {
+            expect(ids).toContain(id);
+            expect(p.shots[id]).toBeUndefined();
           }
         }
         expect(parsePlan(planText(p))).toEqual(p);

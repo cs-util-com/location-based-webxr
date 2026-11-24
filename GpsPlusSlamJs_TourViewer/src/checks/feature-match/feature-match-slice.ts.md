@@ -23,11 +23,14 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### Run plan actions
 
-`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy, and every plan action is refused in a tab that does not hold the run (`otherTab`). An accepted photo, move, resize or reset ends a countdown, and drops the stored ids and results the plan no longer names. An accepted reset also empties the log: the stored log is the run's, and a new run's zip must not carry the earlier runs' lines.
+`planSized`, `planMoved`, `planShotTaken({ shot, photo })`, `planShotLost(shot)`, `planSkipped(shots)`, `planSettingsChanged`, `planReset`: each wraps `planReducer` (`run-plan.ts`, which holds the rules) on `state.plan`. A photo or a reset is refused while busy, and every plan action is refused in a tab that does not hold the run (`otherTab`). An accepted photo, move, resize or reset ends a countdown, and drops the stored ids and results the plan no longer names. An accepted reset also empties the log: the stored log is the run's, and a new run's zip must not carry the earlier runs' lines. A photo or skip that closes the last open shot while the run screen shows opens the end view.
 
-### Countdown
+### Guided screens and countdown
 
-`state.guided` `{ count }` is the countdown before the current shot's photo; the view owns the timer.
+`state.guided` `{ count, screen, retake, choice }`: the countdown before the current shot's photo (the view owns the timer), the screen the guided view shows (`intro`, `run`, `end`; a fresh run starts on the intro, a started one on the run screen or, with no shot open, the end view), whether the current shot, already taken, was chosen for a retake, and the end view's choice (`now`: the zip with what is finished; `wait`: for the rest).
+
+- `guidedShown(screen)`, `retakeChosen(on)` (only for a current shot with a photo; a move, resize or reset ends it), `endChoiceSet(choice)`: each refused for an unknown value or no change.
+- `failedRetried()`: "Retry failed": drops every failure kept for this page load only (a crash, a model that did not load), so the queue measures those pairs again, and starts the crash count over; a failure the method reported stays. Refused when there is nothing to retry.
 
 - `guidedCountSet({ shot, left } | null)`: one countdown second or its end; refused while busy, for a shot other than the current one and for a count that is not a whole number of at least 1. A count ends an armed or waiting hands-off shot.
 - A run or the zip starting ends the count too: a count that ran on would shoot into a refused photo.
@@ -45,10 +48,10 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 
 ### Guided run zip actions
 
-`state.runZip` `{ phase, text }` is Download all, shared by both views (workflow status, so it lives here).
+`state.runZip` `{ phase, text, missing, done }` is Download all, shared by both views (workflow status, so it lives here). `missing` counts the pairs not yet measured when the zip started: their results are not in it. `done` is the results done at that moment, so once measuring ends the end view counts what the zip lacks as the results done since (a stop or failures leave fewer than `missing`).
 
-- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing` and ends a countdown.
-- `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation.
+- `runZipStarted()`: refused unless idle with at least one ready pair, and in a tab that does not hold the run (`otherTab`: its plan may be stale); sets busy `saving`, phase `preparing`, `missing` and `done` from `measureProgress` (pairs neither done nor failed) and ends a countdown.
+- `runZipEnded({ phase, text })`: `saved`, `failed` or `idle` (the save dialog was closed); only ends a zip in preparation and keeps its `missing` and `done`.
 - An accepted photo, lost photo, resize or reset makes a saved or failed zip stale and resets it to `idle`; a move does not.
 
 ### Camera start and photo store
@@ -70,9 +73,10 @@ The state of the feature matching check page (`feature-match-check.html`) as one
 - `queueHasWork(options)` (module-private): a worker method is ticked (SIFT, ALIKED + LightGlue, SIFT + LightGlue; XFeat's runtime does not start in a module worker) and a size is above 0.
 - `nextMeasureKey(s)`: the first ready pair in run order without a result, once the restore finished, in the tab that holds the run, while no pair and no run is going, before `MAX_CRASHES` (2) crashes in a row and with work ticked. Null when none.
 - `queueStarted(key)`: refused unless `key` is `nextMeasureKey`.
-- `resultStored` and `resultFailed` free the queue when they name the running pair and reset the crash count; a stale key still frees it.
+- `resultStored` and `resultFailed` free the queue when they name the running pair; a stale key still frees it. Only `resultStored` (the worker measured the pair) resets the crash count: a failure that may not have involved the worker (a photo that could not be read) leaves it.
 - `workerCrashed({ key, text })`: only for the running pair; counts the crash and fails the pair for this load only (not persisted).
-- `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
+- `benchWaitText(s)`: "Waits for the pair being measured" while the queue holds a pair and no run is busy, else empty; the speed and synthetic buttons show it as the reason they are off.
+- `measureProgress(s)` -> `MeasureProgress { total, done, failed, waiting, running, stopped, crashes, estimateMs }`: over the ready pairs; `estimateMs` is the lower median of the measured times times the pairs left (the running one whole), null before a pair is done.
 
 ### Flat target actions
 
@@ -98,5 +102,5 @@ currentShot(store.getState().plan)?.id; // "light-s1/L2"
 
 ## Tests
 
-- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), the measuring queue (the next key and its refusals, one pair at a time, a stale result freeing the queue, the crash count and its stop, the progress and estimate, a run refused while a pair measures), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
+- `feature-match-slice.test.ts`: one run or save at a time, the log and errors, the flat target capture (phases, taps, the stale prepared zip, Save, the overview, poses), the rules one deleted line would lose (synthetic status keys, speed and copy), the run plan inside the page state (refusals while busy, the same state for refused plan actions), the countdown (only for the current shot, never while busy, dropped at a photo, move, reset, a run or the zip starting), the guided screens (intro or run at start, the end view once the last shot closes, the retake choice until the run moves, the end choice, Retry failed), Download all (started only idle with a ready pair and never in another tab, the log emptied at a reset, ended only while preparing, stale after a new photo), the camera start and photo store flags, what storage holds (stored ids, results refused for stale keys, the restore once with the log joined, the other tab refusing every plan action), the measuring queue (the next key and its refusals, one pair at a time, a stale result freeing the queue, the crash count and its stop, the progress and estimate, a run refused while a pair measures), and the hands-off shot (the due rules, armed once per previous photo, waiting, taking and its three ends, a move shot, readings lost, the ends at a countdown or run, the clears at a pause, move, reset or camera off).
 - `feature-match-slice.property.test.ts`: random run, save, countdown and shot sequences keep the busy invariants above and a countdown only on the current shot, and the flat prepared zip is always valid.

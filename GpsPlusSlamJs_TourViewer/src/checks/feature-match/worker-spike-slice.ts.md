@@ -13,7 +13,7 @@ The worker spike page's run status as one Redux slice: the phase (starting, read
 ## Invariants and defensive measures
 
 - Start only once, and only with the camera on: `runStarted` moves `ready` to `running` and nothing else.
-- Steps, photos and pairs change the state only while running; `photoTaken` only in the photos step, `pairMeasured` only in the pairs step, its count capped at the plan.
+- Steps, photos and pairs change the state only while running; `photoTaken` only in the photos step, `pairMeasured` only in the pairs step, its count capped at the plan. A failed pair sends `ms: null`: it moves the count on but adds no time, so a fast failure never makes the estimate optimistic.
 - `finished` only ends a running run; `cameraFailed` only before the run, `runFailed` only during it. A late answer after the end changes nothing.
 - Outside the store on purpose (in `worker-spike.ts`): the raw frame gaps (thousands of numbers per second), the camera stream, the workers and the photos.
 

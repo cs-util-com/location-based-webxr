@@ -20,7 +20,7 @@ The ALIKED + LightGlue method of the benchmark: the split ONNX exports of the AL
 - `ortApi(mod)`: checks `InferenceSession.create`, `Tensor` and `env.wasm`.
 - `loadOrtRuntime(deps)`: imports and configures the runtime once per page (per `importModule`); shared with `method-sift-lightglue.ts` and `method-dino.ts`, so every ONNX method of the page uses the same runtime and settings.
 - `OrtSession`: the session shape the ONNX methods use.
-- `alikedMethod(backend, deps)`: the `BenchMethod`.
+- `alikedMethod(backend, deps)`: the `BenchMethod`, with `backend` set to the one asked for.
 
 ## Invariants
 

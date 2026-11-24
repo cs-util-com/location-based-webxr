@@ -1,9 +1,9 @@
 /* The guided view of the feature-matching check, ported from the
-   prototype at public/prototypes/feature-match-2-guided/style.css. Every
-   rule is scoped to html[data-ui="guided"] at zero added specificity, so
-   the cockpit view (?ui=cockpit) never sees it and the flat-target
-   styles still win inside #flat. Dark on purpose: in the light tests the
-   screen itself lights the room, so it stays dim. */
+   prototype at public/prototypes/feature-match-3-scenes-guided/style.css
+   (the scenes direction). Every rule is scoped to html[data-ui="guided"]
+   at zero added specificity, so the cockpit view (?ui=cockpit) never sees
+   it and the flat-target styles still win inside #flat. Dark on purpose:
+   in the light scene the screen itself lights the room, so it stays dim. */
 :where(html[data-ui="guided"]) {
   color-scheme: dark;
   --bg: #121417;
@@ -15,8 +15,8 @@
   --ink-3: #7b858f;
   --accent: #f2b544;
   --accent-ink: #1d1503;
-  --a: #f2b544;
-  --b: #6cc6e8;
+  --still: #f2b544;
+  --hand: #6cc6e8;
   --ok: #6fcf8e;
   --warn: #f0a04b;
   --danger: #ef6f5e;
@@ -41,33 +41,6 @@
 :where(html[data-ui="guided"]) body {
   overflow: hidden;
 }
-/* The page also loads the shared design.css for the shared blocks. Its
-   layered rules lose to every rule here, but they still set what the
-   prototype leaves at the browser default: undo those on the class names
-   both use. Kept before the view's own rules, which may set them again. */
-:where(html[data-ui="guided"]) :is(h1, h2) {
-  font-weight: bold;
-}
-:where(html[data-ui="guided"]) :is(.hint, .legend) {
-  font-family: inherit;
-  font-weight: inherit;
-  text-transform: none;
-  letter-spacing: normal;
-}
-:where(html[data-ui="guided"]) .legend {
-  flex-direction: row;
-}
-:where(html[data-ui="guided"]) .sheet {
-  border-radius: 0;
-}
-:where(html[data-ui="guided"]) .progress {
-  width: auto;
-  height: auto;
-  overflow: visible;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
 :where(html[data-ui="guided"]) button {
   font: inherit;
   color: inherit;
@@ -78,12 +51,25 @@
   cursor: default;
 }
 :where(html[data-ui="guided"]) button:focus-visible {
-  outline: 3px solid var(--b);
+  outline: 3px solid var(--hand);
   outline-offset: 2px;
 }
+:where(html[data-ui="guided"]) svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+:where(html[data-ui="guided"]) .visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
 :where(html[data-ui="guided"]) .primary,
-:where(html[data-ui="guided"]) .secondary,
-:where(html[data-ui="guided"]) .danger {
+:where(html[data-ui="guided"]) .secondary {
   min-height: 48px;
   padding: 10px 18px;
   border-radius: 12px;
@@ -97,11 +83,6 @@
 :where(html[data-ui="guided"]) .secondary {
   background: var(--panel-2);
   border: 1px solid var(--line);
-}
-:where(html[data-ui="guided"]) .danger {
-  background: transparent;
-  border: 1px solid var(--danger);
-  color: var(--danger);
 }
 :where(html[data-ui="guided"]) .big {
   width: 100%;
@@ -120,8 +101,15 @@
   font-size: 0.85rem;
 }
 :where(html[data-ui="guided"]) .state {
+  margin: 0;
   color: var(--ink-2);
   font-size: 0.88rem;
+}
+:where(html[data-ui="guided"]) .state.ok {
+  color: var(--ok);
+}
+:where(html[data-ui="guided"]) .state.err {
+  color: var(--danger);
 }
 :where(html[data-ui="guided"]) .kicker {
   margin: 0 0 4px;
@@ -143,12 +131,18 @@
 :where(html[data-ui="guided"]) .icon-btn {
   width: 44px;
   height: 44px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--panel);
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 700;
   flex: none;
+}
+:where(html[data-ui="guided"]) .icon-btn svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* ---- screens ---- */
@@ -168,6 +162,7 @@
   max-width: 920px;
   margin: 0 auto;
 }
+:where(html[data-ui="guided"]) .scene-cards,
 :where(html[data-ui="guided"]) .facts {
   list-style: none;
   margin: 0;
@@ -175,9 +170,10 @@
   display: grid;
   gap: 8px;
 }
+:where(html[data-ui="guided"]) .scene-cards li,
 :where(html[data-ui="guided"]) .facts li {
   display: grid;
-  grid-template-columns: 40px 1fr;
+  grid-template-columns: 36px 1fr;
   gap: 10px;
   align-items: start;
   padding: 10px 12px;
@@ -187,19 +183,49 @@
   color: var(--ink-2);
   font-size: 0.92rem;
 }
+:where(html[data-ui="guided"]) .scene-cards p {
+  margin: 2px 0 0;
+}
+:where(html[data-ui="guided"]) .scene-cards strong,
+:where(html[data-ui="guided"]) .facts strong {
+  color: var(--ink);
+  font-size: 1rem;
+  margin-right: 6px;
+}
 :where(html[data-ui="guided"]) .facts strong {
   display: block;
+}
+:where(html[data-ui="guided"]) .scene-num {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel-2);
   color: var(--ink);
-  font-size: 0.98rem;
+  font-weight: 800;
+}
+:where(html[data-ui="guided"]) .rule-tag {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+:where(html[data-ui="guided"]) .rule-tag.still {
+  background: rgb(242 181 68 / 18%);
+  color: var(--still);
+}
+:where(html[data-ui="guided"]) .rule-tag.hand {
+  background: rgb(108 198 232 / 16%);
+  color: var(--hand);
 }
 :where(html[data-ui="guided"]) .fact-icon svg {
-  width: 36px;
-  height: 36px;
-  fill: none;
+  width: 32px;
+  height: 32px;
   stroke: var(--accent);
   stroke-width: 1.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 :where(html[data-ui="guided"]) .spots {
   display: flex;
@@ -231,10 +257,12 @@
   :where(html[data-ui="guided"]) .intro {
     grid-template-columns: 1fr 1fr;
     column-gap: 20px;
-    align-content: center;
   }
   :where(html[data-ui="guided"]) .intro-head {
     grid-column: 1 / -1;
+  }
+  :where(html[data-ui="guided"]) .scene-cards {
+    grid-row: span 2;
   }
   :where(html[data-ui="guided"]) .intro-setup {
     align-self: end;
@@ -244,64 +272,277 @@
 /* ---- run screen ---- */
 :where(html[data-ui="guided"]) .run {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  grid-template-areas: "head" "card" "finder" "actions";
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  grid-template-areas: "head" "strip" "card" "finder" "actions";
 }
 @media (orientation: landscape) and (min-width: 700px) {
   :where(html[data-ui="guided"]) .run {
-    grid-template-columns: minmax(300px, 37%) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    grid-template-areas: "head finder" "card finder" "actions finder";
+    grid-template-columns: minmax(330px, 44%) minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "head finder" "strip finder" "card finder" "actions finder";
+    column-gap: 12px;
   }
 }
 :where(html[data-ui="guided"]) .run-head {
   grid-area: head;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
+  min-width: 0;
 }
-:where(html[data-ui="guided"]) .progress {
+:where(html[data-ui="guided"]) .scene-title {
   flex: 1;
   min-width: 0;
   display: grid;
-  gap: 5px;
 }
-:where(html[data-ui="guided"]) .head-pos {
-  font-weight: 600;
+:where(html[data-ui="guided"]) .scene-kicker {
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-:where(html[data-ui="guided"]) .bar {
-  display: block;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--panel-2);
+:where(html[data-ui="guided"]) .scene-title h1 {
+  font-size: 1.3rem;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-:where(html[data-ui="guided"]) .bar span {
-  display: block;
-  height: 100%;
-  width: 0;
-  background: var(--ok);
-  transition: width 0.3s;
-}
-:where(html[data-ui="guided"]) .pairs-btn {
+:where(html[data-ui="guided"]) .rule-chip {
   flex: none;
-  min-height: 44px;
-  padding: 6px 14px;
-  border-radius: 22px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  font-weight: 600;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+  padding: 4px 12px 4px 9px;
+  border-radius: 18px;
+  font-weight: 700;
+  font-size: 0.88rem;
+  white-space: nowrap;
 }
-:where(html[data-ui="guided"]) .pairs-btn span {
-  color: var(--ok);
-  font-variant-numeric: tabular-nums;
+:where(html[data-ui="guided"]) .rule-chip svg {
+  width: 18px;
+  height: 18px;
+}
+:where(html[data-ui="guided"]) .rule-chip[data-rule="still"] {
+  background: rgb(242 181 68 / 16%);
+  color: var(--still);
+  border: 1px solid rgb(242 181 68 / 45%);
+}
+:where(html[data-ui="guided"]) .rule-chip[data-rule="hand"] {
+  background: rgb(108 198 232 / 14%);
+  color: var(--hand);
+  border: 1px solid rgb(108 198 232 / 40%);
 }
 
+/* the shot strip: every scene as a segment with its measuring badge, the
+   photos of one scene below it as thumbnails */
+:where(html[data-ui="guided"]) .strip {
+  grid-area: strip;
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+:where(html[data-ui="guided"]) .segs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+:where(html[data-ui="guided"]) .seg {
+  position: relative;
+  display: grid;
+  gap: 1px;
+  justify-items: start;
+  min-width: 0;
+  min-height: 44px;
+  padding: 5px 8px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+}
+:where(html[data-ui="guided"]) .seg-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--ink-2);
+}
+:where(html[data-ui="guided"]) .seg[aria-selected="true"] {
+  background: var(--panel-2);
+  border-color: #4a5560;
+}
+:where(html[data-ui="guided"]) .seg[aria-selected="true"] .seg-name {
+  color: var(--ink);
+}
+:where(html[data-ui="guided"]) .seg[data-now="true"]::before {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: -1px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+:where(html[data-ui="guided"]) .seg .badge {
+  max-width: 100%;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+:where(html[data-ui="guided"]) .thumbs {
+  display: flex;
+  gap: 5px;
+}
+:where(html[data-ui="guided"]) .th {
+  position: relative;
+  flex: 1 1 0;
+  max-width: 64px;
+  height: 62px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1.5px dashed var(--line);
+  background: var(--bg);
+  overflow: hidden;
+  display: grid;
+  place-items: end center;
+}
+:where(html[data-ui="guided"]) .th img,
+:where(html[data-ui="guided"]) .th canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+:where(html[data-ui="guided"]) .th-code {
+  position: relative;
+  margin-bottom: 3px;
+  padding: 0 5px;
+  border-radius: 5px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  color: var(--ink-2);
+  background: rgb(0 0 0 / 60%);
+}
+:where(html[data-ui="guided"]) .th[data-st="open"] {
+  place-items: center;
+}
+:where(html[data-ui="guided"]) .th[data-st="open"] .th-code {
+  background: none;
+  margin: 0;
+}
+:where(html[data-ui="guided"]) .th[data-st="taken"] {
+  border: 1.5px solid #59636d;
+}
+:where(html[data-ui="guided"]) .th[data-st="taken"] .th-code {
+  color: var(--ink);
+}
+:where(html[data-ui="guided"]) .th[data-st="skipped"] {
+  place-items: center;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--panel) 0 5px,
+    var(--bg) 5px 10px
+  );
+}
+:where(html[data-ui="guided"]) .th[data-st="skipped"] .th-code {
+  margin: 0;
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
+:where(html[data-ui="guided"]) .th[aria-current="step"] {
+  border: 2.5px solid var(--accent);
+  box-shadow: 0 0 0 3px rgb(242 181 68 / 22%);
+}
+:where(html[data-ui="guided"]) .th[aria-current="step"] .th-code {
+  color: var(--accent);
+}
+:where(html[data-ui="guided"]) .th[data-retake="true"] {
+  border: 2.5px solid var(--ink);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 18%);
+}
+:where(html[data-ui="guided"]) .th[data-warn="true"]::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--warn);
+  box-shadow: 0 0 0 2px #000;
+}
+:where(html[data-ui="guided"]) .th-hint {
+  align-self: center;
+  margin-left: auto;
+  padding-left: 4px;
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  line-height: 1.25;
+  max-width: 120px;
+}
+
+/* per-scene measuring badge: quiet, glanceable */
+:where(html[data-ui="guided"]) .badge {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  color: var(--ink-3);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+:where(html[data-ui="guided"]) .badge i {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+}
+:where(html[data-ui="guided"]) .badge[data-b="measuring"] {
+  color: var(--hand);
+}
+:where(html[data-ui="guided"]) .badge[data-b="measuring"] i {
+  border-right-color: transparent;
+  animation: g-spin 1.1s linear infinite;
+}
+:where(html[data-ui="guided"]) .badge[data-b="done"] {
+  color: var(--ok);
+}
+:where(html[data-ui="guided"]) .badge[data-b="done"] i {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+:where(html[data-ui="guided"]) .badge[data-b="none"] {
+  color: var(--ink-3);
+}
+:where(html[data-ui="guided"]) .badge[data-b="none"] i {
+  border-style: dashed;
+}
+@keyframes g-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :where(html[data-ui="guided"]) .badge[data-b="measuring"] i {
+    animation: none;
+  }
+}
+
+/* the shot card */
 :where(html[data-ui="guided"]) .card {
   grid-area: card;
   min-height: 0;
@@ -314,6 +555,32 @@
   flex-direction: column;
   gap: 8px;
 }
+:where(html[data-ui="guided"]) .banner {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border-left: 4px solid var(--hand);
+  font-size: 0.88rem;
+  color: var(--ink-2);
+}
+:where(html[data-ui="guided"]) .banner strong {
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+:where(html[data-ui="guided"]) .banner[data-kind="still"] {
+  border-left-color: var(--still);
+}
+:where(html[data-ui="guided"]) .banner[data-kind="retake"] {
+  border-left-color: var(--ink);
+}
+:where(html[data-ui="guided"]) .banner[data-kind="warn"] {
+  border-left-color: var(--warn);
+}
+:where(html[data-ui="guided"]) .banner[data-kind="warn"] strong {
+  color: #ffd9b0;
+}
 :where(html[data-ui="guided"]) .card-top {
   display: flex;
   gap: 8px;
@@ -323,168 +590,85 @@
   flex: 1;
   min-width: 0;
   margin: 0;
-  font-size: 1.12rem;
+  font-size: 1.15rem;
   line-height: 1.2;
 }
-:where(html[data-ui="guided"]) .key-chip {
+:where(html[data-ui="guided"]) .code-chip {
   flex: none;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--panel-2);
-  color: var(--ink-2);
-  font:
-    600 0.85rem/1.4 ui-monospace,
-    monospace;
-}
-:where(html[data-ui="guided"]) .shot-chip {
-  flex: none;
-  min-width: 74px;
+  min-width: 40px;
   text-align: center;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-weight: 700;
-  font-size: 0.9rem;
+  padding: 3px 8px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 800;
 }
-:where(html[data-ui="guided"]) .shot-chip[data-shot="a"] {
-  background: var(--a);
-  color: #1d1503;
+:where(html[data-ui="guided"]) .code-chip[data-mode="retake"] {
+  background: var(--ink);
+  color: var(--bg);
 }
-:where(html[data-ui="guided"]) .shot-chip[data-shot="b"] {
-  background: var(--b);
-  color: #041b24;
-}
-:where(html[data-ui="guided"]) .shot-chip[data-shot="done"] {
+:where(html[data-ui="guided"]) .code-chip[data-mode="done"] {
   background: var(--ok);
   color: #06210f;
 }
+:where(html[data-ui="guided"]) .card-count {
+  flex: none;
+  color: var(--ink-3);
+  font-size: 0.85rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 :where(html[data-ui="guided"]) .card-body {
   display: grid;
-  flex: none;
-  gap: 8px;
-}
-@media (orientation: portrait) and (min-width: 600px),
-  (orientation: landscape) and (max-width: 699px) {
-  :where(html[data-ui="guided"]) .card-body {
-    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
-    align-items: center;
-  }
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
 }
 :where(html[data-ui="guided"]) .diagram svg {
   display: block;
   width: 100%;
   height: auto;
-  max-height: 96px;
 }
-@media (orientation: landscape) and (min-width: 700px) {
-  :where(html[data-ui="guided"]) .diagram svg {
-    max-height: 150px;
-  }
-}
-/* A phone on its side leaves the card about the screen height less 180 px:
-   below 560 px the diagram (up to 150 px) would push the sequence under the
-   action bar, so it goes and the A / then / B text carries the step. The
-   card scrolls as the last resort instead of letting its parts overlap. */
-@media (orientation: landscape) and (min-width: 700px) and (max-height: 559px) {
-  :where(html[data-ui="guided"]) .diagram {
-    display: none;
-  }
-}
-:where(html[data-ui="guided"]) .seq {
-  list-style: none;
+:where(html[data-ui="guided"]) .steps {
   margin: 0;
   padding: 0;
+  list-style: none;
   display: grid;
-  gap: 4px;
+  gap: 5px;
+  counter-reset: step;
 }
-:where(html[data-ui="guided"]) .seq li {
+:where(html[data-ui="guided"]) .steps li {
+  counter-increment: step;
   display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 8px;
+  grid-template-columns: 22px 1fr;
+  gap: 6px;
   align-items: baseline;
-  padding: 4px 6px;
-  border-radius: 8px;
-  color: var(--ink-3);
-  font-size: 0.92rem;
-  line-height: 1.3;
+  line-height: 1.32;
 }
-:where(html[data-ui="guided"]) .seq-tag {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: center;
-  border-radius: 6px;
-  padding: 1px 0;
+:where(html[data-ui="guided"]) .steps li::before {
+  content: counter(step);
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
   background: var(--panel-2);
   color: var(--ink-2);
+  font-size: 0.75rem;
+  font-weight: 800;
 }
-:where(html[data-ui="guided"]) .seq li.now {
-  background: var(--panel-2);
-  color: var(--ink);
-  font-weight: 600;
-}
-:where(html[data-ui="guided"]) .seq li.now[data-part="a"] .seq-tag {
-  background: var(--a);
-  color: #1d1503;
-}
-:where(html[data-ui="guided"]) .seq li.now[data-part="b"] .seq-tag,
-:where(html[data-ui="guided"]) .seq li.now[data-part="change"] .seq-tag {
-  background: var(--b);
-  color: #041b24;
-}
-:where(html[data-ui="guided"]) .seq li.past {
-  opacity: 0.55;
-}
-:where(html[data-ui="guided"]) .seq li.past .seq-tag::after {
-  content: " ✓";
-}
-/* The same short landscape screens get tighter spacing too: the step text
-   wraps by the platform's font, and Linux fonts ran about 30 px taller than
-   Windows ones at 915x412. After the rules above, as all are equally
-   specific. */
-@media (orientation: landscape) and (min-width: 700px) and (max-height: 559px) {
-  :where(html[data-ui="guided"]) .card {
-    gap: 6px;
-    padding: 8px 12px;
-  }
-  :where(html[data-ui="guided"]) .seq {
-    gap: 2px;
-  }
-  :where(html[data-ui="guided"]) .seq li {
-    padding: 2px 6px;
-    line-height: 1.25;
-  }
-}
-:where(html[data-ui="guided"]) .foot-lines {
+:where(html[data-ui="guided"]) .note {
   margin: 0;
+  color: var(--ink-2);
   font-size: 0.85rem;
   line-height: 1.35;
 }
-:where(html[data-ui="guided"]) .purpose {
-  color: var(--ink-2);
-}
-/* Below 400 px of height (a phone on its side at 800x360) the card cannot
-   hold the step text and both foot lines: the purpose line goes (the help
-   explains each family) and the column grows so the step text wraps less.
-   The warning line stays. At 37 % the foot line ran 2 px past the card;
-   at 55 % it leaves 28 px with Windows fonts and with the wider, taller
-   Linux ones (46 % and 50 % left the Linux layout 2 and 11 px short). */
-@media (orientation: landscape) and (min-width: 700px) and (max-height: 399px) {
-  :where(html[data-ui="guided"]) .run {
-    grid-template-columns: minmax(300px, 55%) minmax(0, 1fr);
-  }
-  :where(html[data-ui="guided"]) .purpose {
-    display: none;
-  }
-}
-:where(html[data-ui="guided"]) .avoid {
-  color: var(--warn);
-}
-:where(html[data-ui="guided"]) .place {
-  white-space: nowrap;
-  color: var(--ink-3);
-  font-size: 0.85rem;
+:where(html[data-ui="guided"]) .note .ok {
+  color: var(--ok);
   font-weight: 600;
+}
+:where(html[data-ui="guided"]) .note:empty {
+  display: none;
 }
 
 /* viewfinder */
@@ -497,7 +681,7 @@
   background: #000;
 }
 :where(html[data-ui="guided"]) .finder video,
-:where(html[data-ui="guided"]) .finder > canvas,
+:where(html[data-ui="guided"]) .finder canvas,
 :where(html[data-ui="guided"]) .finder .ghost {
   position: absolute;
   inset: 0;
@@ -505,44 +689,62 @@
   height: 100%;
   object-fit: contain;
 }
+:where(html[data-ui="guided"]) .cam-wait {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
 :where(html[data-ui="guided"]) .finder .ghost {
   opacity: 0.4;
   pointer-events: none;
 }
-:where(html[data-ui="guided"]) .finder-chips {
+:where(html[data-ui="guided"]) .finder-top,
+:where(html[data-ui="guided"]) .finder-bottom {
   position: absolute;
-  top: 8px;
   left: 8px;
   right: 8px;
   display: flex;
   gap: 6px;
-  justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   pointer-events: none;
 }
+:where(html[data-ui="guided"]) .finder-top {
+  top: 8px;
+}
+:where(html[data-ui="guided"]) .finder-bottom {
+  bottom: 8px;
+  justify-content: space-between;
+}
 :where(html[data-ui="guided"]) .chip {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   padding: 4px 10px;
   border-radius: 14px;
-  background: rgb(0 0 0 / 60%);
+  background: rgb(0 0 0 / 62%);
   color: var(--ink);
   font-size: 0.8rem;
   font-weight: 600;
 }
-/* Why a tap or a countdown ended without a photo (a toast, `toast-core`). */
-:where(html[data-ui="guided"]) .shot-note {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  max-width: calc(100% - 24px);
-  text-align: center;
-  pointer-events: none;
+:where(html[data-ui="guided"]) .chip svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.4;
 }
 :where(html[data-ui="guided"]) .chip.dim {
   color: var(--ink-2);
 }
-:where(html[data-ui="guided"]) .chip.warn {
-  color: var(--warn);
+:where(html[data-ui="guided"]) .chip.still {
+  color: var(--still);
+}
+:where(html[data-ui="guided"]) .chip.saved {
+  color: var(--ink-2);
+}
+:where(html[data-ui="guided"]) .chip.saved svg {
+  color: var(--ok);
 }
 :where(html[data-ui="guided"]) .chip-btn {
   pointer-events: auto;
@@ -551,8 +753,8 @@
   margin-left: auto;
 }
 :where(html[data-ui="guided"]) .chip-btn[aria-pressed="true"] {
-  background: var(--a);
-  color: #1d1503;
+  background: var(--accent);
+  color: var(--accent-ink);
 }
 :where(html[data-ui="guided"]) #g-steady.moving {
   color: var(--warn);
@@ -607,124 +809,37 @@
     opacity: 0;
   }
 }
-:where(html[data-ui="guided"]) .review {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 8px;
-  padding: 8px;
-  background: #0b0d0f;
-}
-:where(html[data-ui="guided"]) .review figure {
-  margin: 0;
-  position: relative;
-  min-height: 0;
-}
-:where(html[data-ui="guided"]) .review canvas {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-:where(html[data-ui="guided"]) .review figcaption {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  padding: 2px 9px;
-  border-radius: 6px;
-  font-weight: 800;
-  background: var(--a);
-  color: #1d1503;
-}
-:where(html[data-ui="guided"]) .review figure + figure figcaption {
-  background: var(--b);
-  color: #041b24;
-}
-:where(html[data-ui="guided"]) .review-note {
-  grid-column: 1 / -1;
-  margin: 0;
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: var(--panel);
-  font-size: 0.9rem;
-}
-:where(html[data-ui="guided"]) .review-note.ok {
-  border-left: 4px solid var(--ok);
-}
-:where(html[data-ui="guided"]) .review-note.warn {
-  border-left: 4px solid var(--warn);
-  color: #ffd9b0;
-}
 
 /* action bar: fixed heights, nothing moves under the finger */
 :where(html[data-ui="guided"]) .actions {
   grid-area: actions;
   display: grid;
-  grid-template-columns: 76px 76px minmax(0, 1fr);
+  grid-template-columns: 104px minmax(0, 1fr);
   gap: 8px;
-  height: 92px;
+  height: 76px;
 }
-:where(html[data-ui="guided"]) .slot {
-  position: relative;
-  display: grid;
-  grid-template-rows: 1fr auto;
-  justify-items: center;
-  align-items: center;
-  padding: 4px;
-  border-radius: 12px;
-  border: 2px dashed var(--line);
-  background: var(--panel);
-  overflow: hidden;
-}
-:where(html[data-ui="guided"]) .slot .slot-img {
-  position: absolute;
-  inset: 0;
-}
-:where(html[data-ui="guided"]) .slot canvas {
-  width: 100%;
+:where(html[data-ui="guided"]) .side {
   height: 100%;
-  object-fit: cover;
-  opacity: 0.55;
-}
-:where(html[data-ui="guided"]) .slot-label {
-  position: relative;
-  font-size: 1.4rem;
-  font-weight: 800;
-}
-:where(html[data-ui="guided"]) .slot-sub {
-  position: relative;
-  font-size: 0.72rem;
-  color: var(--ink-2);
-  font-weight: 600;
-  background: rgb(0 0 0 / 55%);
-  padding: 0 6px;
-  border-radius: 6px;
-}
-:where(html[data-ui="guided"]) .slot[data-filled="true"] {
-  border-style: solid;
-}
-:where(html[data-ui="guided"]) .slot[data-slot="a"][data-filled="true"] {
-  border-color: var(--a);
-}
-:where(html[data-ui="guided"]) .slot[data-slot="b"][data-filled="true"] {
-  border-color: var(--b);
-}
-:where(html[data-ui="guided"]) .slot[data-retaking="true"] {
-  outline: 3px solid var(--ink);
+  padding: 6px 8px;
+  font-size: 0.92rem;
+  line-height: 1.2;
 }
 :where(html[data-ui="guided"]) .main {
   display: grid;
   align-content: center;
   gap: 2px;
   height: 100%;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   border-radius: 16px;
 }
 :where(html[data-ui="guided"]) .main.counting {
   background: var(--panel-2);
   color: var(--ink);
   border: 2px solid var(--ink-2);
+}
+:where(html[data-ui="guided"]) .main.retake {
+  background: var(--ink);
+  color: var(--bg);
 }
 :where(html[data-ui="guided"]) .main.next {
   background: var(--ok);
@@ -736,48 +851,242 @@
   opacity: 0.8;
 }
 
-/* ---- end screen ---- */
-:where(html[data-ui="guided"]) .end {
-  align-content: start;
+/* compact landscape phone: the left column has to fit in about 390 px */
+@media (orientation: landscape) and (max-height: 520px) {
+  :where(html[data-ui="guided"]) .screen {
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  :where(html[data-ui="guided"]) .run {
+    gap: 6px;
+  }
+  :where(html[data-ui="guided"]) .scene-title h1 {
+    font-size: 1.1rem;
+  }
+  :where(html[data-ui="guided"]) .scene-kicker {
+    font-size: 0.7rem;
+  }
+  :where(html[data-ui="guided"]) .rule-chip {
+    min-height: 30px;
+    font-size: 0.8rem;
+  }
+  :where(html[data-ui="guided"]) .icon-btn {
+    width: 40px;
+    height: 40px;
+  }
+  :where(html[data-ui="guided"]) .strip {
+    padding: 4px;
+    gap: 4px;
+  }
+  :where(html[data-ui="guided"]) .seg {
+    min-height: 36px;
+    padding: 3px 6px;
+  }
+  :where(html[data-ui="guided"]) .th {
+    height: 44px;
+  }
+  :where(html[data-ui="guided"]) .card {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+  :where(html[data-ui="guided"]) .card-top h2 {
+    font-size: 1rem;
+  }
+  :where(html[data-ui="guided"]) .card-body {
+    grid-template-columns: 56px minmax(0, 1fr);
+    gap: 8px;
+  }
+  :where(html[data-ui="guided"]) .steps li,
+  :where(html[data-ui="guided"]) .banner,
+  :where(html[data-ui="guided"]) .note {
+    font-size: 0.84rem;
+  }
+  :where(html[data-ui="guided"]) .actions {
+    height: 60px;
+  }
+  :where(html[data-ui="guided"]) .main {
+    font-size: 1.1rem;
+  }
 }
-:where(html[data-ui="guided"]) .end-download,
-:where(html[data-ui="guided"]) .end-summary,
-:where(html[data-ui="guided"]) .end-log {
+
+/* ---- end screen ---- */
+:where(html[data-ui="guided"]) .panel {
   padding: 12px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+  display: grid;
+  gap: 10px;
+  align-content: start;
 }
-:where(html[data-ui="guided"]) .end-download .state {
-  margin: 8px 0 0;
+:where(html[data-ui="guided"]) .panel h2 {
+  margin: 0;
+  font-size: 1.05rem;
 }
-:where(html[data-ui="guided"]) .end-download .state.ok {
+:where(html[data-ui="guided"]) .panel-head {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+:where(html[data-ui="guided"]) .eta {
+  color: var(--hand);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+:where(html[data-ui="guided"]) .eta.done {
   color: var(--ok);
 }
-:where(html[data-ui="guided"]) .end-download .state.err {
-  color: var(--danger);
+:where(html[data-ui="guided"]) .plist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
 }
-:where(html[data-ui="guided"]) .label {
-  display: block;
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-:where(html[data-ui="guided"]) textarea {
-  width: 100%;
-  resize: none;
-  font:
-    12.5px/1.4 ui-monospace,
-    monospace;
-  color: var(--ink);
-  background: var(--bg);
-  border: 1px solid var(--line);
+:where(html[data-ui="guided"]) .prow {
+  display: grid;
+  gap: 6px;
+  padding: 9px 10px;
   border-radius: 10px;
-  padding: 8px;
-  margin-bottom: 8px;
+  background: var(--panel-2);
+}
+:where(html[data-ui="guided"]) .prow-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+:where(html[data-ui="guided"]) .prow-head b {
+  flex: 1;
+  min-width: 0;
+}
+:where(html[data-ui="guided"]) .prow-head .pairs {
+  color: var(--ink-3);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+:where(html[data-ui="guided"]) .bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+:where(html[data-ui="guided"]) .bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--hand);
+  transition: width 0.4s;
+}
+:where(html[data-ui="guided"]) .bar.done span {
+  background: var(--ok);
+}
+:where(html[data-ui="guided"]) .methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--ink-2);
+}
+:where(html[data-ui="guided"]) .methods li {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+:where(html[data-ui="guided"]) .methods li::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-3);
+}
+:where(html[data-ui="guided"]) .methods li.done::before {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+:where(html[data-ui="guided"]) .methods li.run::before {
+  border-color: var(--hand);
+  background: var(--hand);
+  animation: g-blink 1s ease-in-out infinite;
+}
+@keyframes g-blink {
+  50% {
+    opacity: 0.3;
+  }
+}
+:where(html[data-ui="guided"]) .prow-note {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 0.82rem;
+}
+:where(html[data-ui="guided"]) .choice {
+  display: grid;
+  gap: 8px;
+}
+:where(html[data-ui="guided"]) .choice button {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  align-items: start;
+  text-align: left;
+  padding: 11px 12px;
+  border-radius: 12px;
+  border: 1.5px solid var(--line);
+  background: var(--panel-2);
+}
+:where(html[data-ui="guided"]) .choice i {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 50%;
+  border: 2px solid var(--ink-3);
+}
+:where(html[data-ui="guided"]) .choice button[aria-checked="true"] {
+  border-color: var(--accent);
+}
+:where(html[data-ui="guided"]) .choice button[aria-checked="true"] i {
+  border: 6px solid var(--accent);
+}
+:where(html[data-ui="guided"]) .choice b {
+  display: block;
+}
+:where(html[data-ui="guided"]) .choice small {
+  display: block;
+  color: var(--ink-2);
+  font-size: 0.84rem;
+  margin-top: 2px;
+}
+:where(html[data-ui="guided"]) .dl {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+}
+:where(html[data-ui="guided"]) .trust {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 0.84rem;
+}
+:where(html[data-ui="guided"]) .trust svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--ok);
+}
+:where(html[data-ui="guided"]) .end-missing .row button {
+  min-height: 44px;
 }
 @media (orientation: landscape) and (min-width: 700px) {
   :where(html[data-ui="guided"]) .end {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
     column-gap: 16px;
     max-width: 1000px;
   }
@@ -785,28 +1094,29 @@
   :where(html[data-ui="guided"]) .end-more {
     grid-column: 1 / -1;
   }
-  :where(html[data-ui="guided"]) .end-summary {
+  :where(html[data-ui="guided"]) .end-progress {
     grid-row: span 2;
   }
 }
 
-/* ---- sheets ---- */
+/* ---- sheet (menu) ---- */
 :where(html[data-ui="guided"]) .sheet {
   position: fixed;
   inset: 0;
   z-index: 10;
   display: grid;
-  place-items: center;
-  padding: 12px;
-  background: rgb(0 0 0 / 65%);
+  justify-items: end;
+  align-items: start;
+  padding: 10px;
+  background: rgb(0 0 0 / 55%);
 }
 :where(html[data-ui="guided"]) .sheet-box {
-  width: min(100%, 760px);
+  width: min(100%, 380px);
   max-height: 100%;
   overflow-y: auto;
   display: grid;
-  gap: 10px;
-  padding: 14px;
+  gap: 8px;
+  padding: 12px;
   border-radius: 18px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -823,79 +1133,45 @@
 :where(html[data-ui="guided"]) .sheet-head .icon-btn {
   margin-left: auto;
 }
-:where(html[data-ui="guided"]) .pair-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+:where(html[data-ui="guided"]) .menu-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 6px;
+  gap: 4px;
 }
-:where(html[data-ui="guided"]) .pair-grid button {
-  width: 100%;
-  min-height: 54px;
+:where(html[data-ui="guided"]) .menu-list.debug {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+:where(html[data-ui="guided"]) .menu-group {
+  color: var(--ink-3);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+:where(html[data-ui="guided"]) .menu-item {
   display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  column-gap: 8px;
-  align-items: center;
+  gap: 1px;
   text-align: left;
-  padding: 6px 8px;
+  min-height: 48px;
+  padding: 7px 10px;
   border-radius: 10px;
-  border: 1px solid var(--line);
+  border: 0;
+  background: transparent;
+}
+:where(html[data-ui="guided"]) .menu-item:hover {
   background: var(--panel-2);
 }
-:where(html[data-ui="guided"]) .pair-grid .dot {
-  grid-row: span 2;
-}
-:where(html[data-ui="guided"]) .pair-grid b {
-  font:
-    600 0.82rem/1.2 ui-monospace,
-    monospace;
-}
-:where(html[data-ui="guided"]) .pair-grid small {
-  color: var(--ink-2);
-  font-size: 0.76rem;
-  line-height: 1.2;
-}
-:where(html[data-ui="guided"]) .pair-grid button[aria-current="step"] {
-  border: 2px solid var(--accent);
-}
-:where(html[data-ui="guided"]) .dot {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 2px solid var(--ink-3);
-}
-:where(html[data-ui="guided"]) .dot.done {
-  background: var(--ok);
-  border-color: var(--ok);
-}
-:where(html[data-ui="guided"]) .dot.half {
-  background: linear-gradient(90deg, var(--a) 50%, transparent 50%);
-  border-color: var(--a);
-}
-:where(html[data-ui="guided"]) .dot.retake {
-  background: var(--warn);
-  border-color: var(--warn);
-}
-:where(html[data-ui="guided"]) .legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  color: var(--ink-2);
+:where(html[data-ui="guided"]) .menu-item small {
+  color: var(--ink-3);
   font-size: 0.8rem;
 }
-:where(html[data-ui="guided"]) .legend span {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
+:where(html[data-ui="guided"]) .danger-item b {
+  color: var(--danger);
 }
 :where(html[data-ui="guided"]) .sheet-settings {
   display: grid;
-  gap: 6px;
-  padding-top: 6px;
+  gap: 4px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
 }
 :where(html[data-ui="guided"]) .setting {
@@ -904,9 +1180,10 @@
   gap: 6px;
   align-items: center;
   min-height: 44px;
+  padding: 0 4px;
 }
 :where(html[data-ui="guided"]) .setting > span {
-  min-width: 90px;
+  min-width: 84px;
   color: var(--ink-2);
 }
 :where(html[data-ui="guided"]) .setting input {
@@ -917,40 +1194,179 @@
   color: var(--ink-3);
   font-size: 0.85rem;
 }
-:where(html[data-ui="guided"]) .opts fieldset {
+
+/* ---- toast: one quiet line, never in the way ---- */
+:where(html[data-ui="guided"]) .toast {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 32px);
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: var(--panel-2);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  margin: 0 0 8px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 45%);
+  font-size: 0.9rem;
+  pointer-events: none;
+  animation: g-toast-in 0.25s ease-out;
 }
-:where(html[data-ui="guided"]) .opts label {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  margin: 4px 12px 4px 0;
-  min-height: 32px;
+@keyframes g-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
 }
-:where(html[data-ui="guided"]) .opts input[type="number"] {
-  width: 4em;
+:where(html[data-ui="guided"]) .finder .toast {
+  position: absolute;
+  top: 52px;
+  max-width: calc(100% - 24px);
+  background: rgb(27 31 36 / 92%);
 }
-:where(html[data-ui="guided"]) .table-wrap {
-  overflow-x: auto;
+:where(html[data-ui="guided"]) .finder .toast {
+  bottom: auto;
 }
-:where(html[data-ui="guided"]) table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 0.85rem;
-  white-space: nowrap;
+:where(html[data-ui="guided"]) .dl.waiting {
+  background: linear-gradient(
+    90deg,
+    rgb(108 198 232 / 28%) var(--p, 0%),
+    var(--panel-2) var(--p, 0%)
+  );
+  color: var(--ink);
+  border: 1px solid var(--line);
+  opacity: 1;
 }
-:where(html[data-ui="guided"]) th,
-:where(html[data-ui="guided"]) td {
-  padding: 4px 8px;
-  border-bottom: 1px solid var(--line);
-  text-align: left;
+:where(html[data-ui="guided"]) .dl.waiting .primary-sub {
+  color: var(--ink-2);
+  opacity: 1;
+}
+:where(html[data-ui="guided"]) .scene-cards {
+  align-content: start;
+}
+@media (orientation: landscape) and (min-width: 700px) {
+  :where(html[data-ui="guided"]) .run .card {
+    align-self: start;
+    max-height: 100%;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  :where(html[data-ui="guided"]) .card-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  :where(html[data-ui="guided"]) .card-body .diagram,
+  :where(html[data-ui="guided"]) .banner-extra {
+    display: none;
+  }
+  :where(html[data-ui="guided"]) .banner {
+    padding: 6px 9px;
+  }
+}
+@media (orientation: landscape) and (max-height: 520px) {
+  :where(html[data-ui="guided"]) .card {
+    gap: 4px;
+  }
+  :where(html[data-ui="guided"]) .steps {
+    gap: 2px;
+  }
+  :where(html[data-ui="guided"]) .steps li {
+    line-height: 1.25;
+  }
+  :where(html[data-ui="guided"]) .seg {
+    min-height: 34px;
+  }
 }
 
-/* ---- the build only: the shared blocks' first home is out of sight ---- */
+/* ---- the build only ---- */
+/* The page also loads the shared design.css for the shared blocks. Its
+   layered rules lose to every rule here, but they still set what the
+   prototype leaves at the browser default: undo those on the class names
+   both use. Kept before the view's own rules, which may set them again. */
+:where(html[data-ui="guided"]) :is(h1, h2) {
+  font-weight: bold;
+}
+:where(html[data-ui="guided"]) :is(.hint, .legend) {
+  font-family: inherit;
+  font-weight: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+}
+:where(html[data-ui="guided"]) .legend {
+  flex-direction: row;
+}
+:where(html[data-ui="guided"]) .badge {
+  font-family: inherit;
+  font-size: inherit;
+  text-transform: none;
+  letter-spacing: normal;
+  background: none;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  width: auto;
+}
+:where(html[data-ui="guided"]) .sheet {
+  border-radius: 0;
+}
+:where(html[data-ui="guided"]) .progress {
+  width: auto;
+  height: auto;
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* The shared blocks' first home is out of sight. */
 :where(html[data-ui="guided"]) body > .layout {
   display: none;
+}
+/* The wrapper takes no box, so each screen fills the viewport as in the prototype. */
+:where(html[data-ui="guided"]) #guided:not([hidden]) {
+  display: contents;
+}
+/* The zip button while it leaves out pairs still measuring: amber. */
+:where(html[data-ui="guided"]) .dl.warn {
+  background: var(--warn);
+  color: #000;
+}
+/* The zip button after a failed zip: red until the next try. */
+:where(html[data-ui="guided"]) .dl.err {
+  background: var(--danger);
+  color: #fff;
+}
+:where(html[data-ui="guided"]) .state.err {
+  color: var(--danger);
+}
+:where(html[data-ui="guided"]) .state.ok {
+  color: var(--ok);
+}
+/* "Retry failed" under the progress list. */
+:where(html[data-ui="guided"]) .retry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+:where(html[data-ui="guided"]) .retry .hint {
+  flex: 1 1 200px;
+  margin: 0;
+}
+:where(html[data-ui="guided"]) .chip.warn {
+  color: var(--warn);
+}
+/* The shot note (why a tap took no photo) sits in the finder like the prototype's toast. */
+:where(html[data-ui="guided"]) .finder .shot-note {
+  position: absolute;
+  top: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  z-index: 3;
+}
+:where(html[data-ui="guided"]) .menu-item.danger-item b {
+  color: var(--danger);
 }
 
 /* ---- the measure sheet holds the shared options, speed test and results ---- */
@@ -1051,7 +1467,94 @@
   height: 30vh;
 }
 
-/* The wrapper takes no box, so each screen fills the viewport as in the prototype. */
-:where(html[data-ui="guided"]) #guided:not([hidden]) {
-  display: contents;
+/* The measuring block's options and tables, in the measure sheet. */
+:where(html[data-ui="guided"]) .opts fieldset {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin: 0 0 8px;
+}
+:where(html[data-ui="guided"]) .opts label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin: 4px 12px 4px 0;
+  min-height: 32px;
+}
+:where(html[data-ui="guided"]) .opts input[type="number"] {
+  width: 4em;
+}
+:where(html[data-ui="guided"]) .table-wrap {
+  overflow-x: auto;
+}
+:where(html[data-ui="guided"]) table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+:where(html[data-ui="guided"]) th,
+:where(html[data-ui="guided"]) td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+/* The build's diagram shows both photos of a pair side by side (A and B),
+   three times wider than tall: beside the steps it would shrink to a
+   strip, so it stands above them, as wide as reads well. */
+:where(html[data-ui="guided"]) .card-body {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+:where(html[data-ui="guided"]) .card-body .diagram {
+  width: 100%;
+  max-width: 240px;
+}
+:where(html[data-ui="guided"]) .card-body .diagram:empty {
+  display: none;
+}
+/* A short landscape screen leaves the card about 170 px: the scene banner
+   keeps its title (its text restates the first step) and the side note
+   goes, so the steps of the shot fit without scrolling. */
+@media (orientation: landscape) and (max-height: 520px) {
+  :where(html[data-ui="guided"])
+    .banner:is([data-kind="still"], [data-kind="hand"])
+    #g-banner-text,
+  :where(html[data-ui="guided"]) .run .note {
+    display: none;
+  }
+  :where(html[data-ui="guided"]) .th {
+    height: 36px;
+  }
+}
+/* Below 400 px the new-scene banner goes too: the header names the scene
+   and the strip marks it, and the steps keep room to wrap on any font. */
+@media (orientation: landscape) and (max-height: 400px) {
+  :where(html[data-ui="guided"])
+    .banner:is([data-kind="still"], [data-kind="hand"]) {
+    display: none;
+  }
+  :where(html[data-ui="guided"]) .run {
+    row-gap: 4px;
+  }
+  :where(html[data-ui="guided"]) .seg {
+    min-height: 30px;
+    padding: 2px 6px;
+  }
+  :where(html[data-ui="guided"]) .th {
+    height: 32px;
+  }
+  :where(html[data-ui="guided"]) .actions {
+    height: 52px;
+  }
+  :where(html[data-ui="guided"]) .card {
+    padding: 6px 10px;
+  }
+  :where(html[data-ui="guided"]) .steps li {
+    line-height: 1.2;
+  }
+  :where(html[data-ui="guided"]) .strip {
+    padding: 3px;
+    gap: 3px;
+  }
 }
