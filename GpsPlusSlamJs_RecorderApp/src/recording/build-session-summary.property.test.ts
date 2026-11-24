@@ -36,6 +36,7 @@ function baseInputs(
     alignmentMatrix: null,
     alignmentSnapshotNuePositions: [],
     refPoints: [],
+    phaseMarkerCount: 0,
     syncResult: null,
     zipFilename: undefined,
     ...overrides,

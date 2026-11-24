@@ -40,6 +40,9 @@ export function initUI(cbs: UICallbacks): void {
   // Secondary ref point button — always in DOM, shown only for Part B proximity feature
   const btnNewRefPoint = getRequiredElement('btn-new-ref-point');
 
+  // Phase marker button, shown only while recording
+  const btnPhaseMark = getRequiredElement('btn-phase-mark');
+
   // Recording indicator element
   const recordingIndicator = getRequiredElement('recording-indicator');
 
@@ -51,6 +54,7 @@ export function initUI(cbs: UICallbacks): void {
     btnStop,
     btnRefPoint,
     btnNewRefPoint,
+    btnPhaseMark,
     recordingIndicator,
   };
 
@@ -101,6 +105,10 @@ export function initUI(cbs: UICallbacks): void {
 
   btnNewRefPoint.addEventListener('click', () => {
     void hudState.callbacks?.onMarkNewRefPoint();
+  });
+
+  btnPhaseMark.addEventListener('click', () => {
+    hudState.callbacks?.onMarkPhase();
   });
 
   // Optional map button
@@ -339,6 +347,8 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
     hudState.cachedElements.btnStart.classList.add('hidden');
     hudState.cachedElements.btnStop.classList.add('hidden');
     hudState.cachedElements.btnRefPoint.classList.add('hidden');
+    hudState.cachedElements.btnPhaseMark.classList.add('hidden');
+    hudState.cachedElements.btnPhaseMark.textContent = DEFAULT_PHASE_MARK_LABEL;
     hudState.cachedElements.recordingIndicator.classList.add('hidden');
   }
 
@@ -371,6 +381,7 @@ export function resetUIForNewRecording(options: ResetUIOptions): void {
  */
 
 const DEFAULT_REF_POINT_LABEL = '📍 Mark Point';
+const DEFAULT_PHASE_MARK_LABEL = '🏁 Phase';
 
 export function showArReadyControls(): void {
   if (!hudState.cachedElements) {
@@ -386,11 +397,26 @@ export function showArReadyControls(): void {
   hudState.cachedElements.btnNewRefPoint.classList.add('hidden');
   // Hide recording indicator (not recording yet)
   hudState.cachedElements.recordingIndicator.classList.add('hidden');
+  // Hide the phase marker button and drop the last session's number
+  hudState.cachedElements.btnPhaseMark.classList.add('hidden');
+  hudState.cachedElements.btnPhaseMark.textContent = DEFAULT_PHASE_MARK_LABEL;
   // Reset ref point button label for next session (Change D)
   hudState.cachedElements.btnRefPoint.textContent = DEFAULT_REF_POINT_LABEL;
   // Clear any leftover proximity hint (D3) so it does not linger into the
   // next AR_READY state before recording starts.
   updateRefPointHint(undefined);
+}
+
+/**
+ * Show the last phase marker's number on the phase button ("🏁 Phase 3"), so
+ * the walker can always see how many markers this recording holds. No-op
+ * before `initUI()`.
+ */
+export function setPhaseMarkButtonLabel(lastNumber: number): void {
+  if (!hudState.cachedElements) {
+    return;
+  }
+  hudState.cachedElements.btnPhaseMark.textContent = `${DEFAULT_PHASE_MARK_LABEL} ${lastNumber}`;
 }
 
 /**
@@ -466,6 +492,7 @@ export function showRecordingControls(): void {
   hudState.cachedElements.btnStart.classList.add('hidden');
   hudState.cachedElements.btnStop.classList.remove('hidden');
   hudState.cachedElements.btnRefPoint.classList.remove('hidden');
+  hudState.cachedElements.btnPhaseMark.classList.remove('hidden');
 
   // A prior stop may have left the button in its busy state — ensure each new
   // recording starts with a clean, enabled "Stop" button.

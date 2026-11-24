@@ -110,6 +110,24 @@
           role="status"
           class="hidden mx-auto mb-2 w-fit max-w-[90%] text-center text-sm text-white bg-black/70 rounded-lg py-1.5 px-3 shadow-lg"
         ></div>
+        <!-- Phase marker: one tap drops the next numbered marker into the   -->
+        <!-- recording (test-protocol phases). Its own row ABOVE the bottom  -->
+        <!-- row, so it never shifts or covers Stop, Mark Point or the map   -->
+        <!-- pill; w-fit keeps the row from catching taps across the width.  -->
+        <!-- Right-aligned, above Mark Point and the map pill: on the left   -->
+        <!-- it would cover the lower HUD rows in landscape, where the HUD   -->
+        <!-- reaches down to the controls. The margin sits on the button, so -->
+        <!-- the row adds no height while the button is hidden.              -->
+        <div id="phase-mark-row" class="ml-auto w-fit">
+          <button
+            id="btn-phase-mark"
+            class="mb-2 bg-amber-600 hover:bg-amber-700 focus:ring-2 focus:ring-amber-400 focus:outline-none text-white font-bold py-3 px-4 rounded-full shadow-lg transition-all hidden"
+            title="Mark the next test phase"
+            aria-label="Mark phase"
+          >
+            🏁 Phase
+          </button>
+        </div>
         <div class="flex justify-between items-end">
           <!-- Left side: Recording controls -->
           <div class="flex gap-2 items-center">
@@ -364,7 +382,16 @@
               </div>
               <div class="text-xs text-gray-400">Images</div>
             </div>
-            <div class="bg-gray-700/50 rounded-lg p-3 text-center col-span-2">
+            <div class="bg-gray-700/50 rounded-lg p-3 text-center">
+              <div
+                class="text-2xl font-bold text-amber-400"
+                id="summary-phase-markers"
+              >
+                --
+              </div>
+              <div class="text-xs text-gray-400">Phase Markers</div>
+            </div>
+            <div class="bg-gray-700/50 rounded-lg p-3 text-center">
               <div
                 class="text-2xl font-bold text-cyan-400"
                 id="summary-depth-samples"

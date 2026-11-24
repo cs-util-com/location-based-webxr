@@ -38,6 +38,10 @@ declare global {
       validateEnterButton: () => void;
       showRecordingControls: () => void;
       showSessionSummary: (data: SessionSummaryData) => void;
+      /** Start a recording without AR: fresh non-writing store, real startSession, RECORDING controls. */
+      startRecordingWithoutAr: () => void;
+      /** End that recording and show the real summary built from the store. */
+      stopRecordingWithoutAr: () => void;
       updatePermissionStatus: (result: PermissionCheckResult) => void;
       setPermissionsReady: (ready: boolean) => void;
       /**

@@ -70,6 +70,8 @@ export interface SessionSummaryInputs {
   alignmentSnapshotNuePositions: readonly Vector3[];
   /** Reference-point entries (recorder `refPoints` slice). */
   refPoints: readonly RefPointEntry[];
+  /** Phase markers dropped this recording (recorder `phaseMarkers` slice). */
+  phaseMarkerCount: number;
   /** Final sync / OPFS ZIP export result, or null when export failed. */
   syncResult: ZipExportResult | null;
   /**
@@ -107,6 +109,7 @@ export function buildSessionSummary(
     alignmentMatrix,
     alignmentSnapshotNuePositions,
     refPoints,
+    phaseMarkerCount,
     syncResult,
     zipFilename,
   } = inputs;
@@ -123,6 +126,7 @@ export function buildSessionSummary(
     },
     gpsEventCount: gpsPositions.length,
     refPointCount: refPoints.length,
+    phaseMarkerCount,
     imageCount,
     depthSampleCount,
     errors,

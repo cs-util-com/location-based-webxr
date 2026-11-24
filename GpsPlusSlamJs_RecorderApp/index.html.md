@@ -68,6 +68,8 @@ Every ID below is referenced by TypeScript code. Removing or renaming any of the
 | `btn-stop` | `button` | `hud.ts` | `.hidden` toggled; click stops recording. `aria-label="Stop Recording"` |
 | `recording-indicator` | `span` | `hud.ts` | `.hidden` toggled; pulsing red dot. `aria-label="Recording in progress"` |
 | `btn-ref-point` | `button` | `hud.ts` | `.hidden` toggled; click opens ref-point picker. `aria-label="Mark Reference Point"` |
+| `phase-mark-row` | `div` | `phase-marker.spec.js` (test only, no TypeScript reference) | Right-aligned `w-fit` row (`ml-auto`) above the bottom controls row, so the phase button never shifts or covers Stop, Mark Point or the map pill, and stays clear of the HUD in landscape. The button carries the `mb-2`, so the hidden row adds no height |
+| `btn-phase-mark` | `button` | `hud.ts` | `.hidden` toggled (shown only while recording); click drops the next phase marker; label `🏁 Phase` / `🏁 Phase N`. `aria-label="Mark phase"` |
 | `btn-map-zoom-in` | `button` | `hud.ts` | Click handler for map zoom. `aria-label="Map Zoom In"` |
 | `btn-map-zoom-out` | `button` | `hud.ts` | Click handler for map zoom. `aria-label="Map Zoom Out"` |
 | `btn-map` | `button` | `hud.ts` | Click toggles live map overlay. `aria-label="Toggle Map"` |
@@ -98,6 +100,7 @@ Every ID below is referenced by TypeScript code. Removing or renaming any of the
 | `summary-duration` | `div` | `session-summary.ts` | `.textContent` set (e.g., "00:02:15") |
 | `summary-gps-count` | `div` | `session-summary.ts` | `.textContent` set to GPS event count |
 | `summary-ref-points` | `div` | `session-summary.ts` | `.textContent` set to ref-point count |
+| `summary-phase-markers` | `div` | `session-summary.ts` | `.textContent` set to phase-marker count |
 | `summary-images` | `div` | `session-summary.ts` | `.textContent` set to image count |
 | `summary-depth-samples` | `div` | `session-summary.ts` | `.textContent` set to depth sample count |
 | `summary-failed-writes` | `div` | `session-summary.ts` | `.textContent` set; parent `.summary-row` gets `.warning` class if > 0 |
@@ -291,6 +294,7 @@ Elements that get `.hidden` toggled at runtime:
 | `btn-stop` | Recording in progress | `hud.ts` |
 | `recording-indicator` | Recording in progress | `hud.ts` |
 | `btn-ref-point` | Recording in progress | `hud.ts` |
+| `btn-phase-mark` | Recording in progress | `hud.ts` |
 | `replay-controls` | Replay active | `replay-ui.ts` |
 | `replay-legend` | Replay active | `replay-ui.ts` |
 | `session-summary-panel` | After recording stops | `session-summary.ts` |

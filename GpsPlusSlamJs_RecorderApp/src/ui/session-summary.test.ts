@@ -54,6 +54,7 @@ function setupSummaryDOM(): void {
       <div id="summary-duration"></div>
       <div id="summary-gps-count"></div>
       <div id="summary-ref-points"></div>
+      <div id="summary-phase-markers"></div>
       <div id="summary-images"></div>
       <div id="summary-depth-samples"></div>
       <div class="summary-row"><div id="summary-failed-writes"></div></div>
@@ -169,6 +170,20 @@ describe('Session Summary Panel', () => {
 
       const refEl = document.getElementById('summary-ref-points');
       expect(refEl?.textContent).toContain('3');
+    });
+
+    // Why: the count tells the walker, before leaving the site, whether every
+    // protocol step got its marker; a summary without markers reads 0, not a
+    // stale value or "--".
+    it('should display the phase marker count, 0 when absent', () => {
+      showSessionSummary({ ...sampleData, phaseMarkerCount: 4 });
+      expect(
+        document.getElementById('summary-phase-markers')?.textContent
+      ).toBe('4');
+      showSessionSummary(sampleData);
+      expect(
+        document.getElementById('summary-phase-markers')?.textContent
+      ).toBe('0');
     });
 
     it('should display image count', () => {

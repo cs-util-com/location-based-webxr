@@ -23,6 +23,7 @@ interface SessionSummaryData {
   duration: { startTime: number; endTime: number };
   gpsEventCount: number;
   refPointCount: number;
+  phaseMarkerCount?: number; // phase markers dropped this recording; shown as 0 when absent
   imageCount: number;
   depthSampleCount: number;
   errors: string[];
@@ -65,6 +66,7 @@ interface SessionSummaryData {
   <div id="summary-duration"></div>
   <div id="summary-gps-count"></div>
   <div id="summary-ref-points"></div>
+  <div id="summary-phase-markers"></div>
   <div id="summary-images"></div>
   <div id="summary-depth-samples"></div>
   <div id="summary-failed-writes"></div>

@@ -48,6 +48,11 @@ export interface SessionSummaryData {
   readonly gpsEventCount: number;
   /** Number of reference points marked */
   readonly refPointCount: number;
+  /**
+   * Number of phase markers dropped with the "Mark phase" button. Optional
+   * so a caller without markers can leave it out; shown as 0 then.
+   */
+  readonly phaseMarkerCount?: number;
   /** Number of images captured */
   readonly imageCount: number;
   /** Number of depth samples taken */
@@ -128,6 +133,7 @@ let cachedElements: {
   duration: HTMLElement;
   gpsCount: HTMLElement;
   refPoints: HTMLElement;
+  phaseMarkers: HTMLElement;
   images: HTMLElement;
   depthSamples: HTMLElement;
   failedWrites: HTMLElement | null;
@@ -271,6 +277,7 @@ export function initSessionSummary(callbacks: SessionSummaryCallbacks): void {
   const duration = getRequiredElement('summary-duration');
   const gpsCount = getRequiredElement('summary-gps-count');
   const refPoints = getRequiredElement('summary-ref-points');
+  const phaseMarkers = getRequiredElement('summary-phase-markers');
   const images = getRequiredElement('summary-images');
   const depthSamples = getRequiredElement('summary-depth-samples');
   const failedWrites = document.getElementById('summary-failed-writes');
@@ -299,6 +306,7 @@ export function initSessionSummary(callbacks: SessionSummaryCallbacks): void {
     duration,
     gpsCount,
     refPoints,
+    phaseMarkers,
     images,
     depthSamples,
     failedWrites,
@@ -345,6 +353,7 @@ export function showSessionSummary(data: SessionSummaryData): void {
   );
   cachedElements.gpsCount.textContent = String(data.gpsEventCount);
   cachedElements.refPoints.textContent = String(data.refPointCount);
+  cachedElements.phaseMarkers.textContent = String(data.phaseMarkerCount ?? 0);
   cachedElements.images.textContent = String(data.imageCount);
   cachedElements.depthSamples.textContent = String(data.depthSampleCount);
 

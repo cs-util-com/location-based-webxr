@@ -16,6 +16,7 @@ Pure builder that derives the end-of-recording `SessionSummaryData` (shown by `.
   - `odometryPositions`, `alignmentMatrix` — NUE odometry path + solver matrix; feed `totalDistanceMeters` and `computeFusedPath`.
   - `alignmentSnapshotNuePositions` — caller reads `gpsEventVisualizer.getAlignmentSnapshotPositions()`; mapped to GPS only when a `zeroRef` exists (Issue #1).
   - `refPoints` — recorder `refPoints` slice entries; mapped via the shared `refPointEntriesToMarkerData` so summary map and live minimap plot identical markers (2026-07-05 live-map feedback).
+  - `phaseMarkerCount` - the recorder `phaseMarkers` slice count, passed through to `SessionSummaryData.phaseMarkerCount`.
   - `syncResult`, `zipFilename` — final sync / OPFS ZIP export result; the caller resolves the filename only when a result exists, and the builder defensively re-guards (`undefined` without a ZIP).
 - `SummaryGpsPoint` (type) — `Pick<GpsPoint, 'latitude' | 'longitude' | 'latLongAccuracy' | 'zeroRef'>`; the narrow slice the summary reads, so state's full `GpsPoint[]` is assignable while tests construct only four fields.
 

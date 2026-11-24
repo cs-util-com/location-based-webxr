@@ -6,8 +6,8 @@ The recorder HUD's shared mutable state, made explicit as one module (simplify-l
 
 ## Public API
 
-- `UICallbacks` — the callback contract the host app wires into the HUD via `initUI()` (also re-exported by `hud.ts`, which stays the intended import surface for consumers).
-- `HudCachedElements` — the required UI elements cached once during `initUI()` (fail-fast lookups).
+- `UICallbacks` — the callback contract the host app wires into the HUD via `initUI()` (also re-exported by `hud.ts`, which stays the intended import surface for consumers). `onMarkPhase` is synchronous: the phase marker is one store dispatch.
+- `HudCachedElements` — the required UI elements cached once during `initUI()` (fail-fast lookups), including `btnPhaseMark`.
 - `hudState` — one mutable object holding:
   - `callbacks: UICallbacks | null` — set by `initUI()`; null before init.
   - `permissionsReady: boolean` — permission status for Enter-AR validation (written by the permission panel functions).

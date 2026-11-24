@@ -12,6 +12,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { RecorderStore } from '../state/recorder-store';
+import { phaseMarked, phaseMarkersReducer } from '../state/phase-markers-slice';
 import {
   DEFAULT_RECORDING_OPTIONS,
   type RecordingOptions,
@@ -1278,6 +1279,36 @@ describe('handleStopRecording', () => {
     // Why: Recording → Summary is a terminal state transition
     await handlers.handleStopRecording();
     expect(mockReplaceScreenState).toHaveBeenCalledWith('summary');
+  });
+
+  // Why: the summary's "Phase Markers" tile is how the walker checks, before
+  // leaving the site, that every protocol step got its marker. This pins the
+  // real stop flow reading the count from the store's phaseMarkers slice
+  // (built by the real reducer), not just the summary builder passing it on.
+  it('shows the phase-marker count from the store in the summary', async () => {
+    const baseState = mockStore.getState() as unknown as Record<
+      string,
+      unknown
+    >;
+    let phaseMarkers = phaseMarkersReducer(undefined, { type: '@@init' });
+    phaseMarkers = phaseMarkersReducer(
+      phaseMarkers,
+      phaseMarked({ number: 1, timestamp: 1_000_100 })
+    );
+    phaseMarkers = phaseMarkersReducer(
+      phaseMarkers,
+      phaseMarked({ number: 2, timestamp: 1_000_900 })
+    );
+    (mockStore.getState as ReturnType<typeof vi.fn>).mockReturnValue({
+      ...baseState,
+      phaseMarkers,
+    });
+
+    await handlers.handleStopRecording();
+
+    expect(mockShowSessionSummary).toHaveBeenCalledWith(
+      expect.objectContaining({ phaseMarkerCount: 2 })
+    );
   });
 
   it('should show session summary with data', async () => {
