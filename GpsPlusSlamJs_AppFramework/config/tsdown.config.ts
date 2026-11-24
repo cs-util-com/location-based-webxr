@@ -350,6 +350,9 @@ const entryFiles = [
   'src/utils/escape-html.ts',
   'src/utils/format-file-size.ts',
   'src/utils/fused-path.ts',
+  // The shared quaternion angle kernel, deep-imported by the recorder's
+  // anchors check page.
+  'src/utils/geodesic-angle.ts',
   'src/utils/list-formatter.ts',
   'src/utils/logger.ts',
   // The apps' Sentry configuration (moved from the RecorderApp) - deep-imported

@@ -45,6 +45,11 @@ export default defineConfig({
         alignmentTiming: fileURLToPath(
           new URL('../alignment-timing.html', import.meta.url)
         ),
+        // On-phone WebXR anchors check, linked from nothing (see
+        // `ar-anchors-check.html.md`); an entry so it is built and deployed.
+        arAnchorsCheck: fileURLToPath(
+          new URL('../ar-anchors-check.html', import.meta.url)
+        ),
       },
     },
   },
