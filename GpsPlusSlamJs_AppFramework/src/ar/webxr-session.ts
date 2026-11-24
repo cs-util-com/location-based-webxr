@@ -384,6 +384,12 @@ interface ArSessionHandle {
      * consumers (QR perf plan M4 review #1).
      */
     tickArPose: ARPose | null;
+    /**
+     * Extra consumers beside QR (an image matcher), each with its own source,
+     * blit and size: see {@link registerCameraFrameConsumer}. Ticked after
+     * QR's source, from the same camera texture and `tickArPose`.
+     */
+    consumers: CameraFrameConsumerSlot[];
   };
   /**
    * Tracking-state pipeline (Stage 2). Store + host callbacks arrive TOGETHER
@@ -488,6 +494,7 @@ function createCameraFrameCluster(
     onFrame: orNull(cb?.onFrame),
     onCaptureTiming: null,
     tickArPose: null,
+    consumers: [],
   };
 }
 
@@ -588,6 +595,7 @@ export function resetWebXRState(): void {
   cleanupBlitResources();
   activeSession.depth.rgbBlit?.dispose();
   activeSession.cameraFrame.blit?.dispose();
+  releaseCameraFrameConsumers(activeSession.cameraFrame);
   activeSession.sceneGraph.css3d?.dispose();
   activeSession = defaultArSessionHandle();
 }
@@ -660,8 +668,15 @@ function acquireDepthRgbLookup(): RgbLookup | null {
  *
  * The pose is `cameraFrame.tickArPose`, set by `onXRFrame` immediately before it
  * ticks the source - this frame's viewer pose, or null (QR perf plan M4).
+ *
+ * `slot` is the consumer's own blit, size and timing hook: QR's cluster, or an
+ * extra consumer's slot. Every consumer due on one XR frame reads the same
+ * camera texture and pose; each reads back into its own buffer.
  */
-function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
+function acquireCameraFrame(
+  slot: CameraFrameBlitSlot,
+  xrTimeMs: number
+): CapturedCameraFrame | null {
   const { latestCameraTexture, cameraFrame } = activeSession;
   const { tickArPose } = cameraFrame;
   const { renderer } = activeSession.sceneGraph;
@@ -669,7 +684,7 @@ function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
     return null;
   }
   // Size the readback to the camera ASPECT with the longer edge =
-  // cameraFrame.captureSize (Option 1) so a 4:3 frame becomes e.g. 512×384 — the
+  // slot.captureSize (Option 1) so a 4:3 frame becomes e.g. 512×384: the
   // target reaches the detector undistorted instead of squashed into a square.
   // The camera dimensions are set alongside `latestCameraTexture` each frame;
   // `resizeIfNeeded` is a no-op once they stabilise, so the realloc only happens
@@ -677,17 +692,17 @@ function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
   const target = computeAspectFitSize(
     activeSession.latestCameraWidth,
     activeSession.latestCameraHeight,
-    cameraFrame.captureSize
+    slot.captureSize
   );
-  if (!cameraFrame.blit) {
-    cameraFrame.blit = new CameraBlitCapture(target);
+  if (!slot.blit) {
+    slot.blit = new CameraBlitCapture(target);
   } else {
-    cameraFrame.blit.resizeIfNeeded(target.width, target.height);
+    slot.blit.resizeIfNeeded(target.width, target.height);
   }
-  const image = cameraFrame.blit.captureToRgba(
+  const image = slot.blit.captureToRgba(
     renderer,
     latestCameraTexture,
-    cameraFrame.onCaptureTiming ?? undefined
+    slot.onCaptureTiming ?? undefined
   );
   if (!image) return null;
   return capturedCameraFrame(
@@ -696,6 +711,22 @@ function acquireCameraFrame(xrTimeMs: number): CapturedCameraFrame | null {
     xrTimeMs,
     performance.timeOrigin
   );
+}
+
+/**
+ * Tick every camera-frame source with this XR frame's time and pose. QR's
+ * source ticks first, so an extra consumer can never change a QR capture; the
+ * consumers follow in registration order (a copy, as one may unregister from
+ * its own callback).
+ */
+function tickCameraFrameSources(time: number, arPose: ARPose | null): void {
+  const { cameraFrame } = activeSession;
+  if (!cameraFrame.source && cameraFrame.consumers.length === 0) return;
+  cameraFrame.tickArPose = arPose;
+  cameraFrame.source?.onFrame(time);
+  for (const consumer of [...cameraFrame.consumers]) {
+    consumer.source.onFrame(time);
+  }
 }
 
 /**
@@ -1126,7 +1157,8 @@ async function startArSession(
   if (deliverCameraFrame) {
     activeSession.cameraFrame.source =
       new CameraFrameSource<CapturedCameraFrame>({
-        capture: acquireCameraFrame,
+        capture: (xrTimeMs) =>
+          acquireCameraFrame(activeSession.cameraFrame, xrTimeMs),
         onCapture: (frame) => deliverCameraFrame(frame),
       });
   }
@@ -1396,11 +1428,7 @@ function onXRFrame(time: number, frame: XRFrame | undefined): void {
   // Check if we need to capture a camera frame for CV. The source throttles to
   // the detection cadence, so the (more expensive, ~512²) blit runs ~8×/s — not
   // every render frame. Must run after `latestCameraTexture` is set above.
-  const { source: cameraFrameSource } = activeSession.cameraFrame;
-  if (cameraFrameSource) {
-    activeSession.cameraFrame.tickArPose = arPose;
-    cameraFrameSource.onFrame(time);
-  }
+  tickCameraFrameSources(time, arPose);
 
   // Call per-frame callback (e.g., for map overlay position updates)
   const { onFrame } = activeSession;
@@ -1990,4 +2018,113 @@ export function stopCameraFrameCapture(): void {
  */
 export function getCameraFrameCount(): number {
   return activeSession.cameraFrame.source?.getFrameCount() ?? 0;
+}
+
+/** The blit state one camera-frame consumer captures with. */
+interface CameraFrameBlitSlot {
+  /** Lazy; longer edge = `captureSize`, the camera aspect preserved. */
+  blit: CameraBlitCapture | null;
+  /** Longer-edge resolution (px) of this consumer's blit. */
+  captureSize: number;
+  onCaptureTiming: ((timing: CaptureTiming) => void) | null;
+}
+
+/** An extra consumer's own source and blit (see {@link registerCameraFrameConsumer}). */
+interface CameraFrameConsumerSlot extends CameraFrameBlitSlot {
+  source: CameraFrameSource<CapturedCameraFrame>;
+}
+
+/** A camera-frame consumer beside QR, e.g. an image matcher. */
+export interface CameraFrameConsumerConfig {
+  /**
+   * Receives each throttled frame: this consumer's own top-left RGBA buffer
+   * (safe to transfer to a worker) with the camera pose and epoch-ms time of
+   * the XR frame. A throw is logged and never reaches the frame loop.
+   */
+  onFrame: (frame: CapturedCameraFrame) => void;
+  /** Longer-edge resolution (px) of this consumer's blit, at least 1. */
+  captureSize: number;
+  /** Cadence (ms between captures). Default 125; an invalid value falls back to it. */
+  intervalMs?: number;
+  /**
+   * The consumer's busy veto: return `false` while a capture would be wasted.
+   * A vetoed tick skips this consumer's blit without consuming its interval.
+   */
+  wantsFrame?: () => boolean;
+}
+
+/**
+ * Register a camera-frame consumer beside QR's capture: its own
+ * {@link CameraFrameSource} (throttle and veto) and its own blit at its own
+ * `captureSize`, so neither consumer can detach or resize the other's buffer.
+ * When several are due on one XR frame, all blit that frame's camera texture
+ * and pair it with that frame's pose; QR's source is ticked first, so an extra
+ * consumer never changes which frames QR captures. Starts at once.
+ *
+ * @returns `unregister`: stops the consumer and frees its blit. Idempotent,
+ *   and a no-op once the session has ended (teardown frees every consumer).
+ * @throws TypeError without an `onFrame` function; RangeError on a
+ *   `captureSize` that is not a finite number of at least 1; Error before
+ *   `initAR` (the next initAR would drop the consumer).
+ */
+export function registerCameraFrameConsumer(
+  config: CameraFrameConsumerConfig
+): () => void {
+  const onFrame = config?.onFrame;
+  if (typeof onFrame !== 'function') {
+    throw new TypeError(
+      'registerCameraFrameConsumer: onFrame must be a function'
+    );
+  }
+  const { captureSize, intervalMs, wantsFrame } = config;
+  if (!(captureSize >= 1) || !Number.isFinite(captureSize)) {
+    throw new RangeError(
+      `registerCameraFrameConsumer: captureSize must be a finite number >= 1, got ${captureSize}`
+    );
+  }
+  if (!activeSession.sceneGraph.renderer) {
+    throw new Error('registerCameraFrameConsumer: call initAR first');
+  }
+  const { cameraFrame } = activeSession;
+  const slot: CameraFrameConsumerSlot = {
+    blit: null,
+    captureSize: Math.floor(captureSize),
+    onCaptureTiming: null,
+    source: new CameraFrameSource<CapturedCameraFrame>(
+      {
+        capture: (xrTimeMs) => acquireCameraFrame(slot, xrTimeMs),
+        onCapture: (frame) => {
+          try {
+            onFrame(frame);
+          } catch (error) {
+            log.warn('Camera frame consumer failed', error);
+          }
+        },
+      },
+      intervalMs === undefined ? undefined : { intervalMs }
+    ),
+  };
+  slot.source.setWantsFrame(wantsFrame ?? null);
+  slot.source.start();
+  cameraFrame.consumers.push(slot);
+  return () => {
+    const i = cameraFrame.consumers.indexOf(slot);
+    if (i < 0) return;
+    cameraFrame.consumers.splice(i, 1);
+    releaseCameraFrameConsumer(slot);
+  };
+}
+
+function releaseCameraFrameConsumer(slot: CameraFrameConsumerSlot): void {
+  slot.source.stop();
+  slot.blit?.dispose();
+  slot.blit = null;
+}
+
+/** Teardown: stop and free every extra consumer, and forget them. */
+function releaseCameraFrameConsumers(
+  cameraFrame: ArSessionHandle['cameraFrame']
+): void {
+  for (const slot of cameraFrame.consumers) releaseCameraFrameConsumer(slot);
+  cameraFrame.consumers.length = 0;
 }

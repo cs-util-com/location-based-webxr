@@ -16,7 +16,9 @@ whose camera poses SLAM supplies, constrain both. (QR near-frontal pose plan
     the 4 corners in symbol order (TL, TR, BR, BL, pixels, y down), the
     capturing camera's world (raw-WebXR/odom) pose, and the intrinsics of
     the exact buffer the corners came from.
-  - `sizeM`: the printed side length, metres.
+  - `sizeM`: the printed side length (a rectangle's width), metres.
+  - `options.aspectRatio` (default 1, a QR code): height over width of a
+    rectangular planar target; the object points of every view use it.
   - `options.robustScalePx` (default 1): corner errors beyond it count
     linearly, not squared. `Infinity` = plain least squares.
   - `options.maxIterations` (default 30): the cap per start.
@@ -47,13 +49,15 @@ whose camera poses SLAM supplies, constrain both. (QR near-frontal pose plan
   - `null` when:
     - no usable view is left, or `sizeM` is not a positive finite number;
     - an option is out of range (`robustScalePx <= 0`, `maxStarts < 1`,
-      `maxIterations < 1` or NaN);
+      `maxIterations < 1`, an aspect ratio that is not a positive finite
+      number, or NaN);
     - no start converges.
 
-- `viewErrorAtRotationPx(view, rotation, sizeM) → number | null`: one
-  view's RMS corner error at a GIVEN rotation, the view keeping its own
+- `viewErrorAtRotationPx(view, rotation, sizeM, aspectRatio = 1) → number | null`:
+  one view's RMS corner error at a GIVEN rotation, the view keeping its own
   position - the motion detector's turning signal (the newest view against
-  the rotation of the others). `null` for an unusable view or size.
+  the rotation of the others). `null` for an unusable view, size or aspect
+  ratio.
 
 ## How it works
 
@@ -156,6 +160,9 @@ if (res && res.costPx < 2) useRotation(res.rotation);
   - planted bugs (2026-09-24): a refinement that returns its start, a
     reversed ranking, `every` -> `some` on the views, a wrong mean and the
     old norm check each fail at least one test;
+  - (`planar-target-rectangle.test.ts`) exact rotation and a ~0 view
+    error for rectangles of aspect 0.5-2, `null` for an invalid aspect;
+    (`planar-target-aspect-one.golden.test.ts`) aspect 1 unchanged, exactly;
   - agreement with the M0 prototype (`test-utils/qr-multiview-prototype.ts`)
     on 36 noisy walks, centred and one-sided, at 1.2 and 2.5 m;
   - a deterministic work bound (starts, iterations) on a window of 8;

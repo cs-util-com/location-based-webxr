@@ -9,6 +9,14 @@ authored. This is the **measuring stage** of the Note 3 size lifecycle.
 
 ## Public API
 
+- Both measurers take a last `aspectRatio = 1` (height over width of a
+  rectangular planar target; a QR code is 1). The side edges are divided by
+  it so all four estimate the WIDTH, which `sizeM` then is, and the diagonals
+  are compared with `width * sqrt(1 + aspect^2)`; the shared `quadShape`
+  helper computes these terms for both paths. At aspect 1 every division is
+  exact, so a QR's size and quality are unchanged bit for bit. Throws
+  `RangeError` on an invalid aspect ratio. A target measured at the wrong
+  aspect scores a low quality, which the accumulator's threshold refuses.
 - `estimateQrSizeFromDepth(corners, interiorSamples, unprojector)` →
   `{ sizeM, quality } | null`. Unprojects the 4 corner `DepthPoint`s (TL,TR,BR,BL)
   via `createDepthUnprojector`, takes the **median of the 4 edge lengths** as
@@ -33,6 +41,11 @@ authored. This is the **measuring stage** of the Note 3 size lifecycle.
   dependent axis, so no eigensolver). `null` for <3 points or a collinear set.
   PCA is deliberately avoided: one gross depth outlier can flip which axis PCA
   calls the normal.
+  - **The triple sampler is an exact 32-bit LCG** (`Math.imul`), and each index
+    comes from its HIGH bits. A plain `*` passes 2^53 and zeroes the low bits,
+    so `rng % n` once returned one index for every `n` dividing 512 (no plane at
+    16 or 32 reads) and three fixed points at 48 (no robustness at all). The
+    measurer's lattice loses reads where depth is missing, so any count occurs.
 - `createQrSizeAccumulator(options)` → `{ add(obs|null), current(), reset() }`.
   A robust running **median** over accepted observations, reporting a
   `QrSizeEstimate` with the lifecycle `status`. Options: `qualityThreshold`
@@ -84,9 +97,14 @@ if (est.status === 'estimated') buildCube(est.estimateM!);
   recovers the size from interior reads for random size/distance/yaw, and stays
   accurate when a minority of interior reads are gross outliers.
 - Dense unit cases: `fitPlaneRobust` (fronto, single gross outlier rejected,
-  collinear/too-few → null) and `estimateQrSizeFromDepthDense` (fronto from
+  every point count from 4 to 64 fitted with a fifth of gross outliers
+  rejected, collinear/too-few → null) and `estimateQrSizeFromDepthDense` (fronto from
   interior reads only, a tilted square the corner-only path would mis-size,
   outlier robustness, too-few-reads → null).
+- `planar-target-rectangle.test.ts` / `.property.test.ts` - both paths
+  report the width of rectangles of aspect 0.4-2.5 at quality ~1; a 2:1
+  rectangle measured as a square scores below 0.8; an invalid aspect throws.
+  `planar-target-aspect-one.golden.test.ts` - aspect 1 is unchanged, exactly.
 - WS-B lifelong cases: full history beyond 64 samples, the confidence half-width
   tightens as N grows, a late outlier burst can't move the median, and
   `estimated` is retained (not demoted) once reached.

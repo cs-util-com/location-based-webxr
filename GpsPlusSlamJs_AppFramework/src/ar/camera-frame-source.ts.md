@@ -53,14 +53,13 @@ performs the camera-texture blit + readback **only at the detection cadence**
 
 ## Scope / future
 
-Wired for **one** live CV consumer at a time (QR _or_ object detection): the
-session keeps a single source + callback + blit. For **two simultaneous** CV
-consumers at independent cadences/resolutions, generalize the
-`webxr-session.ts` wiring to a small multi-consumer registry
-(`registerCameraFrameConsumer({ intervalMs, captureSize, onFrame }) =>
-unregister`), one `CameraFrameSource` per consumer — the class is already
-per-instance, so only the session wiring changes. See the SCOPE note in
-`camera-frame-source.ts` and the matching comment in `webxr-session.ts`.
+One instance per consumer. The session wires QR's source from initAR
+`callbacks.cameraFrame`; `registerCameraFrameConsumer({ intervalMs,
+captureSize, wantsFrame, onFrame }) => unregister` in `webxr-session.ts` adds
+further consumers (an image matcher at a 480 px long edge), each with its own
+`CameraFrameSource` (throttle and veto) and its own blit, so a buffer one
+consumer transfers to a worker is never another's. See
+[webxr-session.ts.md](webxr-session.ts.md).
 
 ## Examples
 

@@ -14,7 +14,7 @@
 
 import { PlanarPnpSquare, solveLinear } from './planar-pnp.js';
 import type { Vector3 } from 'gps-plus-slam-js';
-import { solveQrPose, type Point2 } from './qr-pose.js';
+import { assertAspectRatio, solveQrPose, type Point2 } from './qr-pose.js';
 import type { QrFusedEntry } from './qr-fused-window.js';
 import { interpolatingMedian as median } from '../../utils/median.js';
 
@@ -32,10 +32,16 @@ export interface QrParallaxSizeOptions {
   minViews?: number;
   /** At most this many of the newest entries are used. Default 32. */
   maxEntries?: number;
+  /**
+   * Height over width of a rectangular planar target; the result is then its
+   * width. Default 1 (a QR code). The `minEdgePx` gate keeps the mean of all
+   * four screen edges, so a very flat target needs a larger width on screen.
+   */
+  aspectRatio?: number;
 }
 
 export interface QrParallaxSize {
-  /** The printed side length, m. */
+  /** The printed side length (a rectangle's width), m. */
   sizeM: number;
   /** The camera spread across the viewing direction, m (the gate's measure). */
   lateralBaselineM: number;
@@ -51,6 +57,7 @@ const DEFAULTS = {
   minEdgePx: 40,
   minViews: 5,
   maxEntries: 32,
+  aspectRatio: 1,
 };
 
 /** The size the single-view solves run at; any positive value works (§2). */
@@ -60,21 +67,28 @@ const solver = new PlanarPnpSquare();
 /**
  * Each entry's own solve at the nominal size, cached on its CORNERS array:
  * `selectQrFusedEntries` builds new entry objects after every detection but
- * keeps the corners by reference (plan §12 #6).
+ * keeps the corners by reference (plan §12 #6). The aspect ratio the solve
+ * ran at is kept with it: one corners array is normally only ever seen at
+ * one aspect, and a different one solves again.
  */
-const solvedCentre = new WeakMap<readonly Point2[], Vector3 | null>();
+const solvedCentre = new WeakMap<
+  readonly Point2[],
+  { aspectRatio: number; centre: Vector3 | null }
+>();
 
-function centreOf(entry: QrFusedEntry): Vector3 | null {
-  if (solvedCentre.has(entry.corners)) return solvedCentre.get(entry.corners)!;
+function centreOf(entry: QrFusedEntry, aspectRatio: number): Vector3 | null {
+  const cached = solvedCentre.get(entry.corners);
+  if (cached && cached.aspectRatio === aspectRatio) return cached.centre;
   const solution = solveQrPose({
     imagePoints: entry.corners,
     sizeM: NOMINAL_SIZE_M,
+    aspectRatio,
     intrinsics: entry.intrinsics,
     cameraPose: entry.cameraPose,
     solver,
   });
   const centre = solution ? solution.qrPoseWorld.position : null;
-  solvedCentre.set(entry.corners, centre);
+  solvedCentre.set(entry.corners, { aspectRatio, centre });
   return centre;
 }
 
@@ -154,13 +168,13 @@ function lateralBaselineM(cams: Vector3[], dirs: Vector3[]): number {
 }
 
 /** The usable views: each camera, its ray direction and its nominal distance. */
-function usableViews(entries: QrFusedEntry[]) {
+function usableViews(entries: QrFusedEntry[], aspectRatio: number) {
   const cams: Vector3[] = [];
   const dirs: Vector3[] = [];
   const dists: number[] = [];
   const edges: number[] = [];
   for (const e of entries) {
-    const centre = centreOf(e);
+    const centre = centreOf(e, aspectRatio);
     if (!centre) continue;
     const cam = e.cameraPose.position;
     const ray = sub(centre, cam);
@@ -179,14 +193,17 @@ function usableViews(entries: QrFusedEntry[]) {
  * when they carry no scale (too few, too close together across the viewing
  * direction, the code too small on screen, or the rays do not meet in front
  * of the cameras). Only the newest entry's frame epoch is used.
+ *
+ * @throws RangeError on an invalid `aspectRatio`.
  */
 export function estimateQrSizeFromParallax(
   entries: readonly QrFusedEntry[],
   options: QrParallaxSizeOptions = {}
 ): QrParallaxSize | null {
   const o = { ...DEFAULTS, ...options };
+  assertAspectRatio(o.aspectRatio, 'qr-size-parallax');
   const recent = recentOfNewestEpoch(entries, o.maxEntries);
-  const { cams, dirs, dists, edges } = usableViews(recent);
+  const { cams, dirs, dists, edges } = usableViews(recent, o.aspectRatio);
   if (cams.length < o.minViews) return null;
   if (median(edges) < o.minEdgePx) return null;
   const baseline = lateralBaselineM(cams, dirs);

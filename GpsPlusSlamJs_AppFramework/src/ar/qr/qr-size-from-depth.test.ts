@@ -165,6 +165,41 @@ describe('fitPlaneRobust', () => {
     expect(fitPlaneRobust(collinear)).toBeNull();
   });
 
+  // Why this test matters: the measurer's 7x7 lattice loses reads where depth
+  // is missing, so the fit sees any count of points. The triple sampler once
+  // multiplied past 2^53, which zeroed the low bits: at 16 or 32 reads every
+  // trial drew one index (no plane at all), and at 48 every trial drew the
+  // same three points (no robustness). Every count must fit, and a fifth of
+  // gross outliers must not move the plane.
+  it('fits every point count, rejecting a fifth of gross outliers', () => {
+    const tilt = (35 * Math.PI) / 180;
+    const normal: Vector3 = [Math.sin(tilt), 0, Math.cos(tilt)];
+    for (let n = 4; n <= 64; n++) {
+      const pts: Vector3[] = [];
+      for (let i = 0; i < n; i++) {
+        // Low-discrepancy in-plane spots: never collinear, whatever n.
+        const u = ((i * 0.6180339887) % 1) - 0.5;
+        const v = ((i * 0.4142135624) % 1) - 0.5;
+        // In-plane axes: (cos, 0, -sin) and y; off-plane by 0.3 m for outliers.
+        const off = n >= 10 && i % 5 === 4 ? 0.3 : 0;
+        pts.push([
+          0.3 * u * Math.cos(tilt) + off * normal[0],
+          0.3 * v,
+          -2 - 0.3 * u * Math.sin(tilt) + off * normal[2],
+        ]);
+      }
+      const fit = fitPlaneRobust(pts);
+      expect(fit, `n = ${n}`).not.toBeNull();
+      const dot = Math.abs(
+        fit!.normal[0] * normal[0] +
+          fit!.normal[1] * normal[1] +
+          fit!.normal[2] * normal[2]
+      );
+      expect(dot, `n = ${n}`).toBeGreaterThan(0.9999);
+      expect(fit!.rms, `n = ${n}`).toBeLessThan(1e-6);
+    }
+  });
+
   it('returns null for fewer than 3 points', () => {
     expect(
       fitPlaneRobust([

@@ -86,6 +86,9 @@ const solution = solveQrPose({
   polar rotation incl. reflection→proper, Rodrigues incl. near-180°, degenerate
   homography), and `solve` on fronto-parallel/tilted/strong-tilt-flip plus the
   rejection paths (`<4` pts, non-finite, bad intrinsics).
+- `planar-target-rectangle.test.ts` / `.property.test.ts` - the solver needs
+  no change for a rectangle: it fits the homography to whatever centred planar
+  object points it is given, and recovers rectangles of aspect 0.4-2.5.
 - `qr-multi-view-pose.test.ts` — `realIppeCandidates` keeps exactly the
   smaller-depth root and it contains the true rotation (tilts 5-50°).
 - `planar-pnp.property.test.ts` — random poses in a realistic viewing cone:

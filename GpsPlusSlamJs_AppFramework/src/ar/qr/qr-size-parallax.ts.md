@@ -21,6 +21,13 @@ newestTimestamp }` (the window's time span, for independence), or `null` when th
     under `minEdgePx` (40 px), a lateral baseline under
     `minLateralBaselineM` (0.08 m), or rays that do not meet ahead of the
     cameras.
+  - `options.aspectRatio` (default 1, a QR code): height over width of a
+    rectangular planar target. The nominal single-view solves run at that
+    shape and `sizeM` is the width. The `minEdgePx` gate keeps the mean of
+    all four screen edges (bit for bit the QR gate), so a flat target needs
+    a wider image on screen. Throws `RangeError` on an invalid aspect ratio.
+    The per-corners solve cache keeps the aspect it ran at and solves again
+    for a different one.
 
 ## Invariants & assumptions
 
@@ -72,3 +79,5 @@ jitter; refusal of a standing phone, a walk straight at the code, a 3 cm
 step, a 5 cm code at 3 m, and 4 views; the newest epoch only; an unusable
 view skipped without misaligning the rest; the reported baseline and a
 stricter gate. Each refusal rule and the epoch filter are mutation-checked.
+`planar-target-rectangle.test.ts` - the width of rectangles of aspect 0.5-2;
+`planar-target-aspect-one.golden.test.ts` - aspect 1 is unchanged, exactly.

@@ -9,10 +9,18 @@ conventions.
 
 ## Public API
 
-- `buildObjectPoints(sizeM): [Vector3,Vector3,Vector3,Vector3]` — the 4 corners
-  of a centered planar square of side `sizeM`, QR-local frame (+x right, +y up,
-  z = 0), ordered **TL, TR, BR, BL** (symbol reading order). Throws `RangeError`
-  on non-positive / non-finite size.
+- `buildObjectPoints(sizeM, aspectRatio = 1): [Vector3,Vector3,Vector3,Vector3]`
+  : the 4 corners of a centered planar rectangle `sizeM` wide and
+  `sizeM * aspectRatio` high (a QR code is aspect 1, bit for bit the square
+  it always was), target-local frame (+x right, +y up, z = 0), ordered
+  **TL, TR, BR, BL** (symbol reading order). Throws `RangeError` on a
+  non-positive / non-finite size or aspect ratio.
+- `isValidAspectRatio(value): boolean`: a finite number above zero.
+  `assertAspectRatio(aspectRatio, module)` throws a `RangeError` naming the
+  module otherwise. Every module that takes an aspect ratio checks it with
+  these, so a planar target's shape has one rule.
+- `SolveQrPoseInput.aspectRatio?` (default 1): `solveQrPose` builds its object
+  points with it; `sizeM` is then the rectangle's width.
 - `intrinsicsFromProjection(projection, width, height): CameraIntrinsics` —
   pinhole `{fx,fy,cx,cy}` (pixels) from a column-major GL projection matrix for
   the **exact** detector-frame size. Throws on a malformed matrix or
@@ -100,6 +108,13 @@ if (solution) placeUnderArWorldGroup(solution.qrPoseWorld);
   for any frustum; (2) OpenCV↔WebXR projection agreement for any pose; (3)
   size↔distance linearity (the premise of the §7 occupancy self-check); (4) full
   `solveQrPose` round-trip recovers the synthetic world pose.
+- `planar-target-rectangle.test.ts` / `.property.test.ts` - rectangles of
+  aspect 0.5, 1/sqrt 2, 1, sqrt 2 and 2 (and random widths, aspects 0.4-2.5
+  and poses): single-view and multi-view pose, parallax and depth width, the
+  corner votes; an invalid aspect refused at every entry point.
+- `planar-target-aspect-one.golden.test.ts` - at aspect 1 (left out or
+  explicit) every module returns exactly the values recorded from the
+  square-only code.
 
 ## Related
 

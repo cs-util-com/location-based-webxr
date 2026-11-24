@@ -40,6 +40,7 @@ import type {
 import type { Vector3 } from 'gps-plus-slam-js';
 import { GPS_POINT_SOURCE_SYNTHETIC_QR, calcGpsCoords } from 'gps-plus-slam-js';
 import {
+  assertAspectRatio,
   buildObjectPoints,
   rotateVectorByQuaternion,
   transformPoint,
@@ -81,8 +82,14 @@ export type QrGeoPose = {
 export interface QrGpsVoteInput {
   /** Solved QR pose in raw-WebXR/odom space (`solveQrPose().qrPoseWorld`). */
   qrPoseWorld: Pose;
-  /** Printed physical side length, meters. */
+  /** Printed physical side length (a rectangle's width), meters. */
   sizeM: number;
+  /**
+   * Height over width of a rectangular planar target. Default 1 (a QR code).
+   * Only the corner votes use it; the centre vote and the wide-baseline
+   * polygon do not depend on the target's shape.
+   */
+  aspectRatio?: number;
   /** Absolute geo pose from the level file. */
   qrGeo: QrGeoPose;
   /**
@@ -226,7 +233,8 @@ export function offsetGeo(
  * (from the solved pose) with its absolute geo position (from the level file),
  * stamped with the tiny synthetic accuracy.
  *
- * @throws RangeError on a non-positive `sizeM` or `syntheticAccuracyM`.
+ * @throws RangeError on a non-positive `sizeM` or `syntheticAccuracyM`, or an
+ *   invalid `aspectRatio`.
  */
 export function buildQrGpsVotes(
   input: QrGpsVoteInput
@@ -234,6 +242,7 @@ export function buildQrGpsVotes(
   const {
     qrPoseWorld,
     sizeM,
+    aspectRatio = 1,
     qrGeo,
     syntheticAccuracyM,
     odomRotation = qrPoseWorld.rotation,
@@ -249,6 +258,7 @@ export function buildQrGpsVotes(
       `qr-gps-vote: syntheticAccuracyM must be positive, got ${syntheticAccuracyM}`
     );
   }
+  assertAspectRatio(aspectRatio, 'qr-gps-vote');
 
   const useWideBaseline =
     baselineM !== undefined && Number.isFinite(baselineM) && baselineM > 0;
@@ -260,11 +270,12 @@ export function buildQrGpsVotes(
 
   // Wide-baseline mode: a regular polygon of radius `baselineM` in the QR plane
   // (Note 2). Otherwise the physical corners: `buildObjectPoints` validates
-  // sizeM (>0, finite) and gives TL,TR,BR,BL; or a single center point.
+  // sizeM (>0, finite) and gives TL,TR,BR,BL of the rectangle; or a single
+  // center point.
   const localPoints: readonly Vector3[] = useWideBaseline
     ? widePlanePoints(baselineM, count)
     : multiCorrespondence
-      ? buildObjectPoints(sizeM)
+      ? buildObjectPoints(sizeM, aspectRatio)
       : [[0, 0, 0]];
 
   return localPoints.map((local, i) => {

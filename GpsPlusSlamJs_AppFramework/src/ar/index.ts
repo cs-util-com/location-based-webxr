@@ -242,6 +242,8 @@ export {
   stopCameraFrameCapture,
   getCameraFrameCount,
   type CameraFrameCaptureConfig,
+  registerCameraFrameConsumer,
+  type CameraFrameConsumerConfig,
   getScene,
   getArWorldGroup,
   getCamera,

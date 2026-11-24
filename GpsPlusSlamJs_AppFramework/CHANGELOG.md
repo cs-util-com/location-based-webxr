@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Camera-frame consumers beside QR** (`/ar`):
+  `registerCameraFrameConsumer({ captureSize, onFrame, intervalMs?,
+wantsFrame? }) => unregister` gives a second CV consumer (an image matcher)
+  its own throttle, busy veto and blit at its own size. On a frame both are
+  due, both read the same camera image and pose into separate buffers. QR's
+  captures are unchanged by test.
+
+- **Rectangular planar targets**: the QR pose, size and vote modules take a
+  target aspect ratio (height over width, default 1 for a QR code, which is
+  unchanged bit for bit), so a printed rectangular image can share the QR
+  pipeline; `sizeM` is then the rectangle's width.
+  - **`ar/qr/qr-pose`**: `buildObjectPoints(sizeM, aspectRatio?)`,
+    `SolveQrPoseInput.aspectRatio`, `isValidAspectRatio`,
+    `assertAspectRatio`.
+  - `QrParallaxSizeOptions.aspectRatio`, `QrMultiViewPoseOptions.aspectRatio`,
+    `QrGpsVoteInput.aspectRatio`, and a last `aspectRatio` argument on
+    `viewErrorAtRotationPx`, `estimateQrSizeFromDepth` and
+    `estimateQrSizeFromDepthDense`.
+
+### Fixed
+
+- **The robust plane fit samples every point count** (`ar/qr/qr-size-from-depth`,
+  `fitPlaneRobust`). Its triple sampler overflowed double precision and
+  returned one index whenever the count of depth reads divided 512, so the
+  dense QR size measurer found no plane at 16 or 32 reads and lost its
+  outlier robustness at 48. It now steps an exact 32-bit generator and
+  takes each index from the high bits.
+
 ## [1.32.0] - 2026-11-24
 
 ### ⚠️ Breaking changes
