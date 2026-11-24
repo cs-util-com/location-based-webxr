@@ -5,7 +5,7 @@
  *
  * Decodes the bundled `COMMUNITY_LICENSE_KEY` shipped by the resolved
  * `gps-plus-slam-js` dependency and asserts its remaining lifetime falls
- * inside the acceptable band (default 330–380 days). Closes the
+ * inside the acceptable band (default 300-380 days). Closes the
  * "no core release for >12 months but framework keeps releasing" edge
  * case from
  * `../../gps-plus-slam/GpsPlusSlamJs_Docs/docs/2026-05-01-community-key-resign-cross-repo-issue.md`
@@ -16,7 +16,7 @@
  * core library's own tests.
  *
  * Configuration (env vars, both optional):
- *   COMMUNITY_KEY_MIN_DAYS  default 330
+ *   COMMUNITY_KEY_MIN_DAYS  default 300
  *   COMMUNITY_KEY_MAX_DAYS  default 380
  *
  * The pure helpers (`extractTokenLiteral`, `decodeJwtPayload`,
@@ -122,6 +122,15 @@ export function evaluateLifetime(payload, { nowSec, minDays, maxDays }) {
   return { ok: true, remainingDays, exp: payload.exp };
 }
 
+/**
+ * Default band for the remaining key lifetime, in days. The core library
+ * re-signs the key for about 365 days on each publish, so a floor of 300
+ * keeps a framework-only release publishable until the last core release
+ * is about 65 days old, while still blocking a key that is running out.
+ */
+export const DEFAULT_MIN_DAYS = 300;
+export const DEFAULT_MAX_DAYS = 380;
+
 // --- CLI entry point --------------------------------------------------------
 
 /**
@@ -133,11 +142,11 @@ function main() {
   const __dirname = dirname(fileURLToPath(import.meta.url));
 
   const MIN_DAYS = Number.parseInt(
-    process.env.COMMUNITY_KEY_MIN_DAYS ?? '330',
+    process.env.COMMUNITY_KEY_MIN_DAYS ?? String(DEFAULT_MIN_DAYS),
     10
   );
   const MAX_DAYS = Number.parseInt(
-    process.env.COMMUNITY_KEY_MAX_DAYS ?? '380',
+    process.env.COMMUNITY_KEY_MAX_DAYS ?? String(DEFAULT_MAX_DAYS),
     10
   );
   if (
