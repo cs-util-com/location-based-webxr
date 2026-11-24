@@ -66,6 +66,7 @@ const { mockGetCurrentArPose, mockRecordingOptions } = vi.hoisted(() => ({
       compassCubes: true,
     },
     loopClosureDebug: { detectorEnabled: false },
+    arSpaceCorrection: { applyEnabled: false },
   },
 }));
 

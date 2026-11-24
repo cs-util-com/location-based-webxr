@@ -13,6 +13,8 @@ Builds the frame-tile stack — a `FrameTileVisualizer` under the alignment-ridi
   - Returns the teardown: unsubscribe, then dispose the visualizer.
   - Throws what `wireFrameTileSubscribers` throws, after disposing the visualizer it had already constructed: the call sites treat a wiring failure as best-effort (log and continue) and never receive the teardown, so the disposal has to happen here (PR #412 review).
 
+- Dep `onPlaced?`: passed to the `FrameTileVisualizer` as its `onPlaced` option (the AR-space correction hook). When neither it nor a tile cap is given, the visualizer is built with no options at all.
+
 ## Invariants & assumptions
 
 - Decode failures are logged and skipped (`Frame tile decode failed for "<file>"`); the feed continues.

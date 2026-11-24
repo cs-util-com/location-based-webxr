@@ -81,6 +81,7 @@ describe('Recording Options Integration', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       store.dispatch(
@@ -114,6 +115,7 @@ describe('Recording Options Integration', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       store.dispatch(
@@ -336,6 +338,7 @@ describe('Recording Options Integration', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       store.dispatch(
@@ -400,6 +403,7 @@ describe('Recording Options Integration', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       store.dispatch(
@@ -463,6 +467,7 @@ describe('Recording Options Integration', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       store.dispatch(

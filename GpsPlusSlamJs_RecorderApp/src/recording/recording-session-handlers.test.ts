@@ -431,6 +431,7 @@ const defaultOptions: RecordingOptions = {
   qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
   compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
   loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+  arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
 };
 
 function createMockDeps(
@@ -759,6 +760,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -801,6 +803,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -841,6 +844,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -882,6 +886,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -921,6 +926,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -956,6 +962,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -996,6 +1003,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);
@@ -1036,6 +1044,7 @@ describe('handleStartRecording', () => {
       qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
       compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
       loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+      arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
     };
     deps = createMockDeps({ getRecordingOptions: () => opts });
     handlers = createRecordingSessionHandlers(deps);

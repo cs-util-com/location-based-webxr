@@ -24,6 +24,7 @@ import { registerXrFrameUpdate } from 'gps-plus-slam-app-framework/ar/xr-frame-l
 import {
   getArWorldGroup,
   getDepthInfoFromFrame,
+  getScene,
 } from 'gps-plus-slam-app-framework/ar/webxr-session';
 import type { QrLevelLookupState } from '../qr/qr-level-source';
 import {
@@ -49,6 +50,7 @@ import { wireFrameTileStack } from '../visualization/frame-tile-stack';
 import { wireOccupancyStack } from '../visualization/occupancy-stack';
 import { setOccupancyGrid } from '../state/occupancy-grid-provider';
 import { wireQrRecording } from '../qr/wire-qr-recording';
+import { wireArSpaceCorrection } from './wire-ar-space-correction';
 import { createGpsExtentTracker } from 'gps-plus-slam-app-framework/state/gps-extent-tracker';
 
 export interface WireArSceneDeps {
@@ -129,6 +131,28 @@ export function wireArScene({
     return () => cubes.dispose();
   });
 
+  // AR-space content correction (`arSpaceCorrection.applyEnabled`, read
+  // once here). The relocalization feed records every jump either way; this
+  // moves the content placed before a jump back onto its physical place:
+  // the fused GPS markers through `arContent`, the frame tiles and the QR
+  // debug objects through `onPlaced` (they keep their own basis nodes).
+  const correction = wireArSpaceCorrection({
+    arWorldGroup,
+    storeRef,
+    enabled: options.arSpaceCorrection.applyEnabled,
+  });
+  scope.add('AR-space correction', () => correction.dispose());
+  const { arContent, onPlaced } = correction;
+  if (arContent !== null) {
+    gpsEventVisualizer.setSceneSource({
+      getScene,
+      getArWorldGroup: () => arContent,
+    });
+    scope.add('GPS marker content group', () =>
+      gpsEventVisualizer.setSceneSource(null)
+    );
+  }
+
   // GPS+VIO alignment spheres — NOT skipped (their snapshot positions feed
   // the session-summary map at stop), only hidden via the framework
   // visibility API. Live only; replay keeps them visible because clearAll
@@ -162,6 +186,7 @@ export function wireArScene({
         Promise.resolve(liveFrameBlobs.get(imageFile) ?? null),
       divisor: options.frameTileDisplay.divisor,
       maxTiles: options.frameTileDisplay.maxTiles,
+      ...(onPlaced ? { onPlaced } : {}),
     })
   );
 
@@ -256,6 +281,7 @@ export function wireArScene({
       setSightingFeeder: (feeder) => {
         resources.qrSightingFeeder = feeder;
       },
+      ...(onPlaced ? { onDebugObjectPlaced: onPlaced } : {}),
     });
     return () => {
       unsubscribeQrRecording();

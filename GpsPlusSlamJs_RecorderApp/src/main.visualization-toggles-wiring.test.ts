@@ -126,6 +126,7 @@ const {
         statsOverlay: false,
       },
       loopClosureDebug: { detectorEnabled: false },
+      arSpaceCorrection: { applyEnabled: false },
     },
   };
 });

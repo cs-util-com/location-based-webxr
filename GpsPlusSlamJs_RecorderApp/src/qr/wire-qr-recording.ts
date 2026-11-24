@@ -127,6 +127,11 @@ export interface WireQrRecordingOptions {
    * while a detect or level fetch is in flight.
    */
   onQrStateChanged?: () => void;
+  /**
+   * The AR-space correction's placement hook for the debug axis and cube
+   * (see `ar/wire-ar-space-correction.ts`); omitted when it is off.
+   */
+  onDebugObjectPlaced?: (object: Object3D, capturedAt: number) => void;
 }
 
 /**
@@ -134,7 +139,8 @@ export interface WireQrRecordingOptions {
  * the producer, tears down the debug subscriber + views, and resets the resolver.
  */
 export function wireQrRecording(options: WireQrRecordingOptions): () => void {
-  const { storeRef, getArWorldGroup, qr, setProducer } = options;
+  const { storeRef, getArWorldGroup, qr, setProducer, onDebugObjectPlaced } =
+    options;
   /** Set only in level-consuming mode. */
   let disposeLevelSource: (() => void) | null = null;
   /**
@@ -357,6 +363,9 @@ export function wireQrRecording(options: WireQrRecordingOptions): () => void {
     onPlacement: (text, placement, timestampMs) => {
       sightings.onPlacement(text, placement, timestampMs);
     },
+    ...(onDebugObjectPlaced === undefined
+      ? {}
+      : { onObjectPlaced: onDebugObjectPlaced }),
   });
 
   // Coalesce the per-action debug updates to at most one per animation frame

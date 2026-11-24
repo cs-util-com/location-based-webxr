@@ -34,6 +34,8 @@ class FrameTileVisualizer {
 }
 ```
 
+- Option `onPlaced?(tile, capturedAt)`: called once per added tile, after its raw capture pose and aspect scale were written and the tile was parented and registered; `capturedAt` is the tile's own capture time (epoch-ms XR clock) or `undefined`. The RecorderApp passes the AR-space correction hook here (`ar/wire-ar-space-correction.ts`), so a tile placed after a relocalization from an image captured before it takes that jump.
+
 ## Design notes
 
 - **AR-space node is injected** (no `getArWorldGroup()` call). Same P3

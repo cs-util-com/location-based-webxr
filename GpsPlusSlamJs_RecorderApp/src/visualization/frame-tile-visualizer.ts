@@ -83,6 +83,17 @@ export interface FrameTileVisualizerOptions {
    * `frameTileDisplay.maxTiles`).
    */
   readonly maxTiles?: number;
+  /**
+   * Called once per added tile, right after it joined the scene with its
+   * raw capture pose, with the frame's capture time (`undefined` for a
+   * frame recorded without one). The AR-space correction hooks in here: a
+   * tile drawn after a relocalization from a pose captured before it must
+   * still receive that relocalization.
+   */
+  readonly onPlaced?: (
+    tile: THREE.Object3D,
+    capturedAt: number | undefined
+  ) => void;
 }
 
 const DEFAULT_SIZE = 0.1;
@@ -95,6 +106,7 @@ export class FrameTileVisualizer {
   private readonly sizeMeters: number;
   /** FIFO tile cap; `Infinity` = unlimited (see the option's docs). */
   private readonly maxTiles: number;
+  private readonly onPlaced: FrameTileVisualizerOptions['onPlaced'];
   /** Insertion-ordered (JS `Map` guarantee) — the FIFO the cap evicts from. */
   private readonly tiles = new Map<string, THREE.Mesh>();
   /**
@@ -118,6 +130,7 @@ export class FrameTileVisualizer {
   ) {
     this.arSpaceNode = arSpaceNode;
     this.sizeMeters = options.sizeMeters ?? DEFAULT_SIZE;
+    this.onPlaced = options.onPlaced;
     // 0 / negative / non-finite ⇒ unlimited (defensive: a corrupt cap must
     // never evict everything or throw — it just degrades to legacy behaviour).
     const cap = options.maxTiles ?? 0;
@@ -176,6 +189,7 @@ export class FrameTileVisualizer {
     );
     this.basisNode.add(mesh);
     this.tiles.set(frame.imageFile, mesh);
+    this.onPlaced?.(mesh, frame.capturedAt);
     // FIFO cap (Step 4, 2026-07-03 fps plan): evict oldest-first so draw
     // calls / GPU textures stay bounded while the recent path keeps its
     // breadcrumb. `while` (not `if`) so a lowered cap on a reused instance

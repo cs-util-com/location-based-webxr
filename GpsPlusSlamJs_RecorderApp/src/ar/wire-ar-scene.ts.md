@@ -69,6 +69,8 @@ camera follower) construct directly and will propagate a throw to
   that talks to the user belongs on the `main.ts` side of the seam. Keep it
   that way — a `showError` dep here would re-merge the two halves.
 
+- **AR-space content correction** (`wire-ar-space-correction.ts`) is wired before the GPS markers, from `arWorldGroup`, `storeRef` and `arSpaceCorrection.applyEnabled`, and registered on the session scope so it is disposed after everything wired later. When on, fused GPS markers go into its `arContent` group (the marker scene source is restored on teardown), and the frame tiles and the QR debug axis and cube report each raw pose write through its `onPlaced`. When off, nothing is passed on and the scene is exactly as before.
+
 ## Examples
 
 ```ts

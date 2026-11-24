@@ -127,3 +127,5 @@ would mean the first recording of the loop recorded nothing at all.
 (The module header's note about the clock domain is the authority: the record
 is stamped **epoch ms** - the frame's capture time - shared with the depth
 stream so the as-of size join can pair them.)
+
+- `onDebugObjectPlaced?`: forwarded to the debug controller as `onObjectPlaced`, so the QR axis and cube are dated for the AR-space content correction.

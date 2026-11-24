@@ -87,6 +87,12 @@ export interface QrDebugControllerDeps {
     placement: DerivedQrPlacement,
     timestampMs: number
   ) => void;
+  /**
+   * Called after a debug object's pose was rewritten, with the capture time
+   * of the observation it was solved from (the AR-space correction's
+   * placement hook). Used by the default view factory only.
+   */
+  onObjectPlaced?: (object: Object3D, capturedAt: number) => void;
   /** As-of depth resolver (default {@link createQrDepthResolver}). */
   resolver?: QrDepthResolver;
   /** PnP backend (default {@link PlanarPnpSquare}). */
@@ -122,7 +128,14 @@ export function createQrDebugController(
 ): QrDebugController {
   const resolver = deps.resolver ?? createQrDepthResolver();
   const solver = deps.solver ?? new PlanarPnpSquare();
-  const createView = deps.createView ?? createQrDebugView;
+  const onObjectPlaced = deps.onObjectPlaced;
+  const createView =
+    deps.createView ??
+    ((parent: Object3D) =>
+      createQrDebugView(
+        parent,
+        onObjectPlaced === undefined ? {} : { onPlaced: onObjectPlaced }
+      ));
   const selectObservations = deps.selectObservations ?? selectQrRawObservations;
 
   const deriveDeps: DeriveQrPoseDeps = {
@@ -215,7 +228,9 @@ export function createQrDebugController(
         view = createView(parent);
         views.set(text, view);
       }
-      view.update(placement.pose, placement.sizeM);
+      // The pose is solved from the newest observation, so its capture time
+      // dates the pose (the correction re-dates the rewritten objects).
+      view.update(placement.pose, placement.sizeM, newest);
     }
   }
 

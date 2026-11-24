@@ -47,6 +47,7 @@ import { createStoreRef } from '../state/store-ref';
 import { loadRecordingOptions } from '../state/recording-options';
 import { createZipFrameBlobSource } from '../storage/zip-frame-blob-source';
 import { wireFrameTileStack } from '../visualization/frame-tile-stack';
+import { wireArSpaceCorrection } from '../ar/wire-ar-space-correction';
 import {
   wireOccupancyStack,
   type OccupancyStackHandle,
@@ -165,6 +166,18 @@ export async function startReplayMode(
   const replaySceneState = initReplayScene(config.container);
   log.info('Replay scene initialized');
 
+  // AR-space content correction, the same wiring as live: the recorded
+  // relocalization observations move the fused markers and the frame tiles
+  // of the old frame back onto their place, as they did in the session.
+  // The setting is re-read per replay. Best-effort: a wiring failure is
+  // logged inside and replay goes on uncorrected.
+  const correction = wireArSpaceCorrection({
+    arWorldGroup: replaySceneState.arWorldGroup,
+    storeRef: createStoreRef(store),
+    enabled: loadRecordingOptions().arSpaceCorrection.applyEnabled,
+  });
+  const { arContent, onPlaced: onContentPlaced } = correction;
+
   // The replay scene OWNS its scene graph (surface-reduction step 2 — the
   // old webxr-session setScene/setArWorldGroup injection is gone), so the
   // scene-reading singleton visualizers wired below must be pointed at the
@@ -172,7 +185,7 @@ export async function startReplayMode(
   // defaults so a later AR session parents markers correctly again.
   gpsEventVisualizer.setSceneSource({
     getScene: () => replaySceneState.scene,
-    getArWorldGroup: () => replaySceneState.arWorldGroup,
+    getArWorldGroup: () => arContent ?? replaySceneState.arWorldGroup,
   });
   refPointVisualizer.setSceneSource(() => replaySceneState.scene);
 
@@ -190,6 +203,7 @@ export async function startReplayMode(
       storeRef: createStoreRef(store),
       blobSource: await createZipFrameBlobSource(zipData),
       divisor: loadRecordingOptions().frameTileDisplay.divisor,
+      ...(onContentPlaced ? { onPlaced: onContentPlaced } : {}),
     });
   } catch (err) {
     log.warn(
@@ -393,6 +407,7 @@ export async function startReplayMode(
       // and a later live AR session gets the default wiring back.
       gpsEventVisualizer.setSceneSource(null);
       refPointVisualizer.setSceneSource(null);
+      correction.dispose();
       disposeReplayScene();
       log.info('Replay mode disposed');
     },

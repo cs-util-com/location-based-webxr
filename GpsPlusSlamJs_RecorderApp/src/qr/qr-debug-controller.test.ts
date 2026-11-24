@@ -11,7 +11,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { Object3D } from 'three';
+import { Group, type Object3D } from 'three';
 import type { Pose } from 'gps-plus-slam-app-framework/ar';
 import type {
   DerivedQrPlacement,
@@ -57,13 +57,16 @@ function fakeDeriver(
 function fakeView(): {
   view: QrDebugView;
   updates: Array<[Pose, number | null]>;
+  capturedAts: Array<number | undefined>;
   readonly disposed: number;
 } {
   const updates: Array<[Pose, number | null]> = [];
+  const capturedAts: Array<number | undefined> = [];
   let disposed = 0;
   const view: QrDebugView = {
-    update: (p, s) => {
+    update: (p, s, t) => {
       updates.push([p, s]);
+      capturedAts.push(t);
     },
     clear: () => {},
     dispose: () => {
@@ -73,6 +76,7 @@ function fakeView(): {
   return {
     view,
     updates,
+    capturedAts,
     get disposed() {
       return disposed;
     },
@@ -144,6 +148,50 @@ describe('createQrDebugController', () => {
     controller.update();
     expect(views).toHaveLength(1);
     expect(views[0]!.updates).toEqual([[pose, 0.2]]);
+  });
+
+  it('dates every view update with the newest observation it was solved from', () => {
+    // Why this test matters: the placement pose is the PnP solve of the
+    // newest observation, and the AR-space correction re-dates the debug
+    // objects by this time; a missing or older time would apply the wrong
+    // relocalizations to a QR cube drawn after a jump.
+    const views: ReturnType<typeof fakeView>[] = [];
+    let observations = [{ text: 'm', timestamp: 500 }];
+    const controller = createQrDebugController({
+      getState: () => makeState(['m']),
+      getArWorldGroup: () => fakeArGroup,
+      createView: () => {
+        const v = fakeView();
+        views.push(v);
+        return v.view;
+      },
+      selectObservations: () => observations as unknown as RawQrObservation[],
+      deriver: fakeDeriver(() => ({ pose, sizeM: 0.2 })),
+    });
+    controller.update();
+    observations = [...observations, { text: 'm', timestamp: 900 }];
+    controller.update();
+    controller.update();
+    expect(views[0]!.capturedAts).toEqual([500, 900, 900]);
+  });
+
+  it('the default view reports its rewritten objects through onObjectPlaced', () => {
+    // Why this test matters: the live wiring passes no view factory, so the
+    // hook must reach the default view, or the QR cube is never corrected.
+    const parent = new Group();
+    const placed: Array<[Object3D, number]> = [];
+    const controller = createQrDebugController({
+      getState: () => makeState(['m']),
+      getArWorldGroup: () => parent,
+      selectObservations: () =>
+        [{ text: 'm', timestamp: 700 }] as unknown as RawQrObservation[],
+      deriver: fakeDeriver(() => ({ pose, sizeM: 0.2 })),
+      onObjectPlaced: (object, capturedAt) => placed.push([object, capturedAt]),
+    });
+    controller.update();
+    expect(placed.map(([, t]) => t)).toEqual([700, 700]);
+    expect(placed.every(([o]) => o.parent?.parent === parent)).toBe(true);
+    controller.dispose();
   });
 
   it('feeds the marker raw observations (selectObservations) into the deriver', () => {

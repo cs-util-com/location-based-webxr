@@ -89,6 +89,7 @@ const inputArb = fc.record(
       'webXRConsistency',
     ]),
     loopClosureDebug: groupArb(['detectorEnabled']),
+    arSpaceCorrection: groupArb(['applyEnabled']),
   },
   { requiredKeys: [] }
 );

@@ -10,11 +10,16 @@ render it off the derived pose, live and on replay.
 
 ## Public API
 
-- `createQrDebugView(parent: Object3D): QrDebugView`
+- `createQrDebugView(parent: Object3D, options?: QrDebugViewOptions): QrDebugView`
+  - `QrDebugViewOptions.onPlaced?(object, capturedAt)`: called right after
+    each raw pose write of the axis and of the cube (the cube after its slab
+    offset), with the capture time `update` was given. The app uses it to
+    date the pose for the AR-space content correction. Not called when
+    `update` has no `capturedAt`.
   - Creates the axis + cube under `parent` (the `arWorldGroup`), hung off an
     internal `WEBXR_TO_NUE` basis node. Objects start **hidden**.
 - `QrDebugView`
-  - `update(pose: Pose, sizeM: number | null): void` — reveal + glue the axis to
+  - `update(pose: Pose, sizeM: number | null, capturedAt?: number): void` — reveal + glue the axis to
     `pose`; show the cube scaled to `sizeM` (in-plane) only when `sizeM` is
     non-null, else keep the cube hidden (axis still shown).
   - `clear(): void` — hide both objects WITHOUT detaching (no flicker on a miss).
@@ -61,6 +66,8 @@ the demo import it this way.
   ([1,0,0] raw → world z=1); reveals + glues axis/cube at the measured size;
   axis-only when size unknown (no NaN scale); cube appears once a size arrives;
   `clear()` hides without detaching, `dispose()` detaches.
+
+- `onPlaced` reports the axis and the cube after their raw writes, with the given capture time, and stays silent without one.
 
 ## History
 
