@@ -357,7 +357,7 @@ describe("startMeasureQueue", () => {
 
   // Why: a WebGPU error that a fresh worker does not cure would restart
   // the worker on every pair; a failed size right after the restart turns
-  // the method off for this run, marked failed (on the backend it failed
+  // the method off for this page load, marked failed (on the backend it failed
   // on) in every later pair, and the rest goes on. The pair that failed
   // is kept for this load only.
   it("turns a method off for the run when it fails a size again right after a restart", async () => {
@@ -377,7 +377,7 @@ describe("startMeasureQueue", () => {
       persisted: false,
     });
     expect(h.lines).toContain(
-      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
     );
     expect(h.calls[2]!.job.methods).toMatchObject({
       sift: true,
@@ -393,7 +393,7 @@ describe("startMeasureQueue", () => {
     });
     const saved = h.matches.get(k)!;
     expect(saved).toContain(
-      "off for this run: it failed on WebGPU again after the worker restarted",
+      "off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
     );
     expect(saved).toContain('"webgpu (execution provider)"');
     expect(h.state().queue.crashes).toBe(0);
@@ -413,12 +413,14 @@ describe("startMeasureQueue", () => {
     await settle();
     h.calls[1]!.resolve(doneOf([gpu([], "init: Error: offline")]));
     await settle();
-    expect(h.lines.filter((l) => l.includes("off for this run"))).toEqual([]);
+    expect(h.lines.filter((l) => l.includes("off for this page load"))).toEqual(
+      [],
+    );
     expect(h.calls[2]!.job.methods).toMatchObject({ aliked: true });
     h.calls[2]!.resolve(doneOf([gpu(["extract: device lost"])]));
     await settle();
     expect(h.lines).toContain(
-      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
     );
     expect(h.calls[3]!.job.methods).toMatchObject({ aliked: false });
   });
@@ -461,7 +463,7 @@ describe("startMeasureQueue", () => {
     await settle();
     expect(h.closed()).toBe(3);
     expect(h.lines).toContain(
-      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
     );
     expect(h.calls[7]!.job.methods).toMatchObject({ aliked: false });
   });
@@ -480,9 +482,105 @@ describe("startMeasureQueue", () => {
     h.calls[1]!.resolve(doneOf([gpu(["extract: device lost"]), lg([null])]));
     await settle();
     expect(h.lines).toContain(
-      "ALIKED is off for this run: it failed on WebGPU again after the worker restarted",
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
     );
     expect(h.closed()).toBe(2);
+  });
+
+  // Why: a lost device can also take the whole worker down (an out of
+  // memory kill); never tied to a method, two such crashes stopped the
+  // queue, SIFT included. A crash while a method that last ran on WebGPU
+  // was sent counts as that method's WebGPU failure instead: the pair fails
+  // for this load only, the method is off after the next one, and the rest
+  // goes on. A crash with no WebGPU method sent still counts as a crash.
+  it("counts a crash while a WebGPU method is sent as its WebGPU failure", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([result("sift"), gpu([null])]));
+    await settle();
+    h.calls[1]!.reject(new WorkerCrashed("the measuring worker stopped"));
+    await settle();
+    expect(h.state().results[h.calls[1]!.key!]).toMatchObject({
+      status: "failed",
+      persisted: false,
+    });
+    expect(h.state().queue.crashes).toBe(0);
+    expect(h.calls[2]!.job.methods).toMatchObject({ aliked: true });
+    h.calls[2]!.reject(new WorkerCrashed("the measuring worker stopped"));
+    await settle();
+    expect(h.state().queue.crashes).toBe(0);
+    expect(h.lines).toContain(
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
+    );
+    expect(h.calls[3]!.job.methods).toMatchObject({
+      sift: true,
+      aliked: false,
+    });
+    h.calls[3]!.reject(new WorkerCrashed("the measuring worker stopped"));
+    await settle();
+    expect(h.state().queue.crashes).toBe(1);
+    // The worker restarts itself after a crash: no close is asked for.
+    expect(h.closed()).toBe(0);
+  });
+
+  // Why: a new worker fetches its models again; offline, or on a cache
+  // miss, that load fails although the method loaded earlier in the page
+  // load. A download is no lost device: no restart, and never off.
+  it("takes a model that could not be fetched for a download, even after it loaded once", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([gpu([null])]));
+    await settle();
+    h.calls[1]!.resolve(doneOf([gpu(["extract: device lost"])]));
+    await settle();
+    expect(h.closed()).toBe(1);
+    for (const error of [
+      "init: Error: ALIKED extractor: TypeError: Failed to fetch for https://x.test/a.onnx (network error or CORS refusal)",
+      "init: Error: ALIKED extractor: HTTP 504 for https://x.test/a.onnx",
+    ]) {
+      const i = h.calls.length - 1;
+      h.calls[i]!.resolve(doneOf([gpu([], error)]));
+      await settle();
+    }
+    expect(h.closed()).toBe(1);
+    expect(h.lines.filter((l) => l.includes("off for this page load"))).toEqual(
+      [],
+    );
+    expect(h.calls.at(-1)!.job.methods).toMatchObject({ aliked: true });
+  });
+
+  // Why: a device that stays lost fails every new worker's load; a failed
+  // load right after a restart keeps the method on (it may be a download),
+  // so only the restart cap ends it: three restarts, then off.
+  it("turns a method off after three restarts when its load fails in every new worker", async () => {
+    const h = harness();
+    for (const a of everyShot) {
+      h.store.dispatch(a);
+    }
+    await settle();
+    h.calls[0]!.resolve(doneOf([gpu([null])]));
+    await settle();
+    for (let i = 1; i <= 3; i++) {
+      h.calls[i]!.resolve(doneOf([gpu([], "init: Error: device lost")]));
+      await settle();
+      expect(h.closed()).toBe(i);
+    }
+    expect(h.lines.filter((l) => l.includes("off for this page load"))).toEqual(
+      [],
+    );
+    h.calls[4]!.resolve(doneOf([gpu([], "init: Error: device lost")]));
+    await settle();
+    expect(h.closed()).toBe(3);
+    expect(h.lines).toContain(
+      "ALIKED is off for this page load: it failed on WebGPU again right after a worker restart, or after 3 restarts",
+    );
+    expect(h.calls[5]!.job.methods).toMatchObject({ aliked: false });
   });
 
   it("starts nothing more once stopped", async () => {

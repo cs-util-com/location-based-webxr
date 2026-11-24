@@ -354,8 +354,8 @@ describe("xfeatOutcome", () => {
 });
 
 // Why: a long run has many frame gaps; spreading them into Math.max
-// throws a RangeError past the engine's argument limit, so the largest
-// gap is found with a loop.
+// throws a RangeError past the engine's argument limit, so the max is
+// the last value of the one sort, never a spread.
 describe("gapStats on a long run", () => {
   it("takes the largest of a million gaps", () => {
     const gaps = Array.from({ length: 1_000_000 }, (_, i) => (i % 97) + 1);
