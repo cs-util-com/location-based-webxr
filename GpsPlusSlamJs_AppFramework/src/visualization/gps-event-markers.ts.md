@@ -28,7 +28,7 @@ Visualizes GPS events as 3D markers during recording and replay. Shows three typ
 - `addAlignmentSnapshot(nuePosition: readonly number[]): void` — add a red snapshot sphere at scene root.
 - `getAlignmentSnapshotPositions(): number[][]` — return positions of all snapshot markers as arrays.
 - `setVisible(visible: boolean): void` — show/hide **all** debug markers (raw + fused + snapshot) and remember the state so markers added later inherit it. Backs the recorder's `visualization.gpsAlignmentMarkers` opt-out (Finding B), read once at Enter-AR (live only — replay keeps markers visible). Affects rendering only: capture, GPS-event recording, counts, and snapshot positions are unchanged. Default visible; `clearAll()` resets it to visible so a live opt-out never leaks into a subsequent replay on the shared singleton.
-- `clearAll(): void` — remove all markers (including snapshots), reset counters/zero-ref, and restore visibility to the default (visible).
+- `clearAll(): void` — remove all markers (including snapshots), reset counters/zero-ref, and restore visibility to the default (visible). Each fused marker is detached from its own parent (`removeFromParent`), not from the current scene source's `arWorldGroup`: the source may have changed since the marker was added (the RecorderApp points `getArWorldGroup` at a correction content group under `arWorldGroup`), and a marker left behind would linger, undisposed, in the scene.
 - `getCounts(): { raw, fused, snapshots }` — get marker counts including alignment snapshots.
 - `setSceneSource(source: GpsMarkerSceneSource | null): void` — point the visualizer at a non-live scene graph (desktop replay, offline e2e fixture); `null` restores the live-session default (`webxr-session`'s `getScene`/`getArWorldGroup`). Introduced by the 2026-07-11 webxr-session surface-reduction plan, step 2 — replay used to inject its scene into the webxr-session singleton (the deleted Risk R1 `setScene`/`setArWorldGroup` exports) so this visualizer would find it; now the replay orchestrator points the visualizer at the replay scene explicitly and restores the default on dispose. Not reset by `clearAll()` — the overriding owner restores it.
 - `getRawMarkerWorldSizes(): Array<{ x, y, z }>` - diagnostic accessor returning the world-space bounding-box size (`THREE.Box3.setFromObject`) of each raw-GPS marker in insertion order. Read only by this module's own unit test, which verifies the accuracy-ellipsoid scaling with it; no app calls it.
@@ -116,6 +116,8 @@ Unit tests in `gps-event-markers.test.ts`:
 - `getCounts` — counter functionality.
 - `marker sizing` — verify legacy 4 cm radius on default code path.
 - `marker transparency` — opacity and depthWrite settings.
+
+- `clearAll` detaches fused markers that the scene source put under a child group of `arWorldGroup` (the AR-space correction content group); fails if it only removes from the group the source names now.
 
 ## Architecture
 

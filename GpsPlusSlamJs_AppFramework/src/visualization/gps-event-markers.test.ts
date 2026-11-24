@@ -116,6 +116,29 @@ describe('GpsEventVisualizer', () => {
      * clearAll() must remove markers from the scene the source currently
      * points at (replay dispose clears before restoring the default).
      */
+    it('clearAll removes a fused marker from the group it was added to, even after the source changed', () => {
+      // Why this test matters: the RecorderApp parents fused markers under
+      // its corrected content group while AR runs; when that source is
+      // restored to the default before a clear, the markers must still leave
+      // the group they are in, or they stay in the scene with freed GPU
+      // resources.
+      const contentGroup = new THREE.Group();
+      mockArWorldGroup.add(contentGroup);
+      visualizer.setSceneSource({
+        getScene: () => mockScene,
+        getArWorldGroup: () => contentGroup,
+      });
+      visualizer.setZeroRef({ lat: 48.8566, lon: 2.3522 });
+      visualizer.addGpsEvent([10, 5, 20], [1, 2, 3]);
+      expect(contentGroup.children).toHaveLength(1);
+
+      visualizer.setSceneSource(null);
+      visualizer.clearAll();
+
+      expect(contentGroup.children).toHaveLength(0);
+      expect(visualizer.getCounts().fused).toBe(0);
+    });
+
     it('clearAll removes markers from the override scene', () => {
       const replayScene = new THREE.Scene();
       const replayGroup = new THREE.Group();
