@@ -6,7 +6,10 @@ import { createCameraControl, type CameraDeps } from "./camera-control";
 function fakeStream() {
   const track = { stop: vi.fn() };
   return {
-    stream: { getTracks: () => [track] } as unknown as MediaStream,
+    stream: {
+      getTracks: () => [track],
+      getVideoTracks: () => [track],
+    } as unknown as MediaStream,
     track,
   };
 }
@@ -113,5 +116,20 @@ describe("the camera report", () => {
     expect(cam.report()).toEqual({ zoom: 2 });
     cam.stop();
     expect(cam.report()).toBeNull();
+  });
+
+  // Why: the report describes the camera; a stream whose first track is
+  // not the video one (an audio track listed first) must still report
+  // the video track's settings.
+  it("reports the video track, whatever the stream lists first", async () => {
+    const audio = { stop: vi.fn(), getSettings: () => ({ zoom: 9 }) };
+    const video = { stop: vi.fn(), getSettings: () => ({ zoom: 2 }) };
+    const stream = {
+      getTracks: () => [audio, video],
+      getVideoTracks: () => [video],
+    } as unknown as MediaStream;
+    const { cam } = setup(() => Promise.resolve(stream));
+    await cam.start();
+    expect(cam.report()).toEqual({ zoom: 2 });
   });
 });

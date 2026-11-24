@@ -9,7 +9,7 @@
  * @see worker-spike-model.ts.md
  */
 import { lowerMedian } from "gps-plus-slam-app-framework/utils/median";
-import { nearestRankPercentile } from "gps-plus-slam-app-framework/utils/percentile";
+import { percentileOfSorted } from "gps-plus-slam-app-framework/utils/percentile";
 
 import { clamp01 } from "../../landing/clamp01.js";
 import type { MethodResult } from "./bench-run";
@@ -41,28 +41,20 @@ export interface GapStats {
   readonly max: number;
 }
 
-/** The largest value, by a loop: a spread of a long run's gaps overflows. */
-function largest(values: readonly number[]): number {
-  let max = Number.NEGATIVE_INFINITY;
-  for (const v of values) {
-    if (v > max) {
-      max = v;
-    }
-  }
-  return max;
-}
-
 /** The gaps' p95, p99 and largest; non-finite and negative gaps dropped. */
 export function gapStats(gaps: readonly number[]): GapStats {
   const ok = gaps.filter((g) => Number.isFinite(g) && g >= 0);
   if (ok.length === 0) {
     return { count: 0, p95: Number.NaN, p99: Number.NaN, max: Number.NaN };
   }
+  // One sort for all three: a long run holds hundreds of thousands of
+  // gaps. The max is the last value, so no spread (it would overflow).
+  const sorted = Float64Array.from(ok).sort();
   return {
     count: ok.length,
-    p95: nearestRankPercentile(ok, 0.95),
-    p99: nearestRankPercentile(ok, 0.99),
-    max: largest(ok),
+    p95: percentileOfSorted(sorted, 0.95),
+    p99: percentileOfSorted(sorted, 0.99),
+    max: sorted[sorted.length - 1]!,
   };
 }
 

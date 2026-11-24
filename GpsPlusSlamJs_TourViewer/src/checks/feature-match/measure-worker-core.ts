@@ -48,9 +48,11 @@ const runsModel = (m: BenchMethod): boolean => m.backend !== undefined;
  * Wraps each method so it loads once per worker: the first pair's load
  * is kept in `kept`, later pairs take it with an init time of 0, and the
  * per-pair dispose is a no-op. A load that fails is forgotten, so the
- * next pair tries again. At most one model method stays loaded: loading
- * one first disposes the others' kept sessions, so the peak memory is the
- * largest model's, not the sum (with two ticked, each pair loads both).
+ * next pair tries again. At most one model method keeps its sessions:
+ * loading one first disposes the others' kept runners (with two ticked,
+ * each pair loads both). The fetched model bytes stay in the worker's
+ * fetch memo, and a session's dispose may free its memory later.
+ * The backend asked for is kept: a failed load reports it.
  */
 function keepLoaded(
   methods: readonly BenchMethod[],
@@ -59,6 +61,7 @@ function keepLoaded(
   return methods.map((m) => ({
     id: m.id,
     label: m.label,
+    ...(m.backend === undefined ? {} : { backend: m.backend }),
     init: async () => {
       const had = kept.get(m.id);
       if (had === undefined && runsModel(m)) {
