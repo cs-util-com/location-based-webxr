@@ -51,7 +51,7 @@
   - `validateQualityFilterConfig(options): QualityFilterConfig` — normalizes an
     UNTRUSTED persisted config: `enabled` boolean-or-default (**never**
     self-enables), thresholds clamped with non-finite values falling back,
-    nullish/missing group default-fills to the DISABLED default, and the
+    nullish/missing group default-fills to the default (enabled), and the
     OPTIONAL `blurMetric` resolves to `'variance-of-laplacian'` when missing or
     unknown — the behaviour a pre-toggle config was tuned under.
   - `QualityVerdict` (`{ accept, reason, sharpness, meanLuminance }`),

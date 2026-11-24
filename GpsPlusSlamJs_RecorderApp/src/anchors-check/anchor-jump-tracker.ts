@@ -109,8 +109,12 @@ export const VERDICT_TOLERANCES: {
 export const STILL_DISPLACEMENT_M = VERDICT_TOLERANCES.main.positionM / 2;
 
 export type Verdict = 'frame switch' | 'drift correction' | 'unclear';
+/**
+ * The size band of a step's translation. A step at most
+ * `JUMP_TRANSLATION_M` is a jump by its rotation (or not a jump at all).
+ */
 export type StepClass =
-  'rotation only' | 'under 0.3 m' | '0.3-1 m' | 'at least 1 m';
+  'at most 0.25 m' | '0.25-0.3 m' | '0.3-1 m' | 'at least 1 m';
 
 export interface PoseStep {
   readonly translationM: number;
@@ -293,6 +297,8 @@ export interface AnchorJumpTracker {
   events(): readonly TrackerEvent[];
   /** Closed events plus a still-settling episode flagged `pending`. */
   snapshot(): readonly TrackerEvent[];
+  /** The readings the still-settling episode holds; 0 when none. */
+  settlingReadings(): number;
   stats(): FrameStats;
 }
 
@@ -394,8 +400,8 @@ function isStill(s: Stillness | null): boolean {
 export function classifyStep(step: PoseStep): StepClass {
   if (step.translationM >= RELOCALIZATION_RULE_M) return 'at least 1 m';
   if (step.translationM >= BAND_LOWER_M) return '0.3-1 m';
-  if (step.translationM <= JUMP_TRANSLATION_M) return 'rotation only';
-  return 'under 0.3 m';
+  if (step.translationM <= JUMP_TRANSLATION_M) return 'at most 0.25 m';
+  return '0.25-0.3 m';
 }
 
 /**
@@ -786,6 +792,7 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
     events: () => [...closed],
     snapshot: () =>
       pending === null ? [...closed] : [...closed, finish(pending, true)],
+    settlingReadings: () => pending?.readings.length ?? 0,
     stats: () => ({
       frames,
       lostFrames,

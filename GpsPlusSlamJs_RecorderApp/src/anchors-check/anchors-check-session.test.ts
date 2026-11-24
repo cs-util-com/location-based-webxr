@@ -77,6 +77,8 @@ function harness(
     features?: readonly string[] | null;
     requestFails?: boolean;
     sceneFails?: boolean;
+    /** `end()` rejects: 'silently' without firing 'end', 'after-end' after. */
+    endRejects?: 'silently' | 'after-end';
     showEventsThrows?: boolean;
     xr?: boolean;
   } = {}
@@ -107,8 +109,13 @@ function harness(
         (own[type] ??= []).push(listener);
       },
       end: () => {
+        if (opts.endRejects === 'silently') {
+          return Promise.reject(new Error('InvalidStateError'));
+        }
         for (const l of own.end ?? []) l();
-        return Promise.resolve();
+        return opts.endRejects === 'after-end'
+          ? Promise.reject(new Error('InvalidStateError'))
+          : Promise.resolve();
       },
     } as XrSessionLike;
   };
@@ -264,6 +271,28 @@ describe('a session that fails after it started', () => {
     });
     expect(h.states[h.states.length - 1]).toBe('idle');
   });
+
+  // Why this matters: when `end()` rejects, the session may never fire
+  // 'end', and the page would stay in 'starting' with the start button
+  // disabled for good. The reset runs anyway, and the cause stays on screen.
+  it('resets the page when end() rejects without an end event', async () => {
+    const h = harness({ sceneFails: true, endRejects: 'silently' });
+    await h.controller.toggle();
+    expect(h.states[h.states.length - 1]).toBe('idle');
+    expect(h.lastStatus()).toEqual({
+      text: 'Could not start AR: no WebGL',
+      tone: 'error',
+    });
+  });
+
+  // Why this matters: the defensive reset must not run twice when the
+  // 'end' event did fire before the rejection: one session, one end.
+  it('resets once when end() rejects after its end event', async () => {
+    const h = harness({ sceneFails: true, endRejects: 'after-end' });
+    await h.controller.toggle();
+    expect(h.states).toEqual(['starting', 'idle']);
+    expect(h.controller.log().match(/session end/g)).toHaveLength(1);
+  });
 });
 
 describe('placing', () => {
@@ -413,6 +442,38 @@ describe('frames', () => {
       'frame switch'
     );
     expect(h.controller.log()).toContain('jump 1');
+  });
+
+  // Why this matters: an episode settles for 2 s; the list must show it
+  // (pending, with its readings so far) from its first frame on, not
+  // "Nothing judged yet" until it closes. Frames that add no reading do
+  // not re-render the list (the per-frame hot path).
+  it('shows a settling episode on each new reading, and only then', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    const spot = pose(0, 0, -2);
+    h.tick(0, { hit: spot });
+    await h.select();
+    for (let i = 1; i < 6; i++)
+      h.tick(i * 33, { camera: pose(0, 1.5, -0.01 * i), anchor: spot });
+    const moved = (i: number) =>
+      h.tick(i * 33, {
+        camera: pose(0.8, 1.5, -0.01 * i),
+        anchor: pose(0.8, 0, -2),
+      });
+    moved(6);
+    const [opened] = episodesOf(h.lastShown());
+    expect(opened?.pending).toBe(true);
+    expect(opened?.readings).toHaveLength(1);
+    const renders = h.shown.length;
+    moved(7);
+    moved(8);
+    expect(h.shown.length).toBe(renders);
+    // 132 ms after the jump frame: the 100 ms reading.
+    moved(10);
+    const [settling] = episodesOf(h.lastShown());
+    expect(settling?.pending).toBe(true);
+    expect(settling?.readings.map((r) => r.delayMs)).toEqual([0, 100]);
   });
 
   // Why this matters: a lost anchor may return a frozen pose; WebXR's

@@ -89,6 +89,8 @@ export function createAnchorsCheckPage(
           return item;
         })
       );
+      // Oldest first: keep the newest entry in view.
+      list.scrollTop = list.scrollHeight;
     },
   };
 
