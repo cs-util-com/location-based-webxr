@@ -6,6 +6,7 @@ import {
   readZipEntries,
 } from "gps-plus-slam-app-framework/storage";
 
+import { relocalizationObserved } from "gps-plus-slam-app-framework/state/ar-space-correction-slice";
 import { debugCapturesOf, type DebugCaptureSource } from "./debug-captures";
 import {
   SAMPLE_PHOTOS,
@@ -81,6 +82,38 @@ describe("debugCapturesOf over the real sample recording", () => {
       return c.geo.lat !== end.geo.lat || c.geo.lon !== end.geo.lon;
     });
     expect(moved.length).toBeGreaterThan(0);
+  });
+
+  it("a relocalization after the walk's last fix leaves every capture where the walk without it places them", async () => {
+    // Why: a relocalization does not touch the alignment, so an alignment
+    // fit before the jump is still an epoch-0 one after it. Placed as if it
+    // were fit after the jump, every capture moves by the whole jump (here
+    // about 3.6 m) while the layer still reports them placed. The jump is
+    // appended after the walk's last action, later than every capture, so
+    // the expected places are the same walk's without it.
+    const source = await sampleSource();
+    const actions = (await source.loadRecordingActions())!;
+    const jumped = {
+      ...source,
+      loadRecordingActions: () =>
+        Promise.resolve([
+          ...actions,
+          relocalizationObserved({
+            t: 9e15,
+            tLast: 9e15 - 10,
+            lastPose: { position: [0, 1.5, 0], rotation: [0, 0, 0, 1] },
+            tPrev: null,
+            prevPose: null,
+            newPose: { position: [3, 1.5, -2], rotation: [0, 0.6, 0, 0.8] },
+          }),
+        ]),
+    };
+    for (const options of [{}, { extentOf: () => MATURE_GPS_EXTENT_M }]) {
+      const plain = await debugCapturesOf(source, options);
+      const read = await debugCapturesOf(jumped, options);
+      if (plain.kind !== "placed") throw new Error("expected a placement");
+      expect(read).toEqual(plain);
+    }
   });
 
   it("names each capture once when the recording captured a file twice", async () => {

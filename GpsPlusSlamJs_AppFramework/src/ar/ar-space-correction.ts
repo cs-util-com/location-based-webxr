@@ -29,21 +29,64 @@ import {
 import type { Pose } from './qr/qr-pose';
 
 /**
- * Compensate the camera's own motion between the frame before the jump and
- * the jump frame, when the frame before that is known. ON because a walking,
- * turning user moves the camera between those frames, and without the
- * compensation that motion is read as part of the jump: at 30 deg/s and a
- * 33 ms frame, 1 deg, which is 0.17 m at 10 m from the camera (sweep in
- * `ar-space-correction.test.ts`). A static camera gives the same D either
- * way (property test). No cap on the extrapolation ratio yet: at pose noise
- * up to 1 mm / 0.05 deg the compensation wins for a walking user at every
- * measured ratio, but at 3 mm / 0.2 deg and a 500 ms gap at 60 or 90 Hz
- * (ratio 30 or 45) plain wins (the sidecar's ratio sweep). The guard for
- * that case belongs to the feed, measured with its real noise.
- * Requirement on the feed: `t - tLast` at most 500 ms; `jumpTransform`
- * itself does not check it.
+ * How `jumpTransform` treats the camera's own motion between the frame
+ * before the jump and the jump frame: `'always'` extrapolates it away when
+ * an earlier frame gives a rate, `'off'` never does, `'guarded'` does only
+ * when the camera measurably moved between the two frames before the jump.
  */
-export const COMPENSATE_CAMERA_MOTION = true;
+export type CompensationMode = 'guarded' | 'always' | 'off';
+
+/**
+ * Default `'guarded'`. A walking, turning user moves the camera between the
+ * last frame and the jump frame, and without the compensation that motion
+ * is read as part of the jump: at 30 deg/s and a 33 ms frame, 1 deg, which
+ * is 0.17 m at 10 m from the camera (sweep in `ar-space-correction.test.ts`).
+ * A still camera gains nothing from it and only gets the extrapolated pose
+ * noise (the ratio sweep: 0.035 m against 0.020 m at 10 m at ratio 1), so
+ * the guard keeps the plain D below the motion thresholds.
+ */
+export const CAMERA_MOTION_COMPENSATION: CompensationMode = 'guarded';
+
+/**
+ * The longest gap `t - tLast` the compensation is used across, ms. The
+ * sweeps measured up to 500 ms; past it one frame's velocity is stretched
+ * over an unmeasured stall, so the plain D is used. The feed forgets its
+ * last pose past this very gap (its `RELOCALIZATION_MAX_GAP_MS` IS this
+ * constant), so only a hand-built or replayed observation
+ * reaches this fallback; it is not refused, because refusing would lose the
+ * jump.
+ */
+export const MAX_COMPENSATION_GAP_MS = 500;
+
+/**
+ * Motion thresholds of the guard, per measured interval `tLast - tPrev`: the
+ * camera moved more than this many metres OR turned more than this many
+ * degrees. PROVISIONAL: about three times the per-pose noise the ratio sweep
+ * assumed for a phone (1 mm and 0.05 deg per axis, so the step between two
+ * still poses is about 2.3 mm and 0.11 deg at its median), until the
+ * still-phone noise floor is measured on the phone (the feed logs the step
+ * of every jump). A walk at 0.3 m/s moves 10 mm per 33 ms frame and a
+ * 10 deg/s head turn 0.33 deg, both above.
+ */
+export const COMPENSATION_MIN_STEP_M = 0.005;
+export const COMPENSATION_MIN_TURN_DEG = 0.25;
+
+/** Whether `jumpTransform` compensated a jump, and why. */
+export interface CompensationVerdict {
+  readonly compensated: boolean;
+  readonly reason:
+    | 'moving'
+    | 'always'
+    | 'still'
+    | 'off'
+    | 'no-earlier-frame'
+    | 'no-rate'
+    | 'gap';
+  /** Camera translation between `prevPose` and `lastPose`, m; null without one. */
+  readonly stepM: number | null;
+  /** Camera rotation between `prevPose` and `lastPose`, deg; null without one. */
+  readonly turnDeg: number | null;
+}
 
 /**
  * The raw input of one jump: the jump frame (`t`, `newPose`), the frame
@@ -154,26 +197,79 @@ function extrapolatePose(
 }
 
 /**
+ * Whether `jumpTransform(jump, mode)` compensates the camera's motion, and
+ * why. The reasons in order: no earlier frame, no measurable rate (`tPrev`
+ * not before `tLast`), a gap past `MAX_COMPENSATION_GAP_MS`, the mode
+ * `'off'`, then (guarded only) the motion thresholds.
+ */
+export function compensationVerdict(
+  jump: RelocalizationJump,
+  mode: CompensationMode = CAMERA_MOTION_COMPENSATION
+): CompensationVerdict {
+  if (jump.prevPose === null || jump.tPrev === null) {
+    return {
+      compensated: false,
+      reason: 'no-earlier-frame',
+      stepM: null,
+      turnDeg: null,
+    };
+  }
+  const prev = jump.prevPose;
+  const last = jump.lastPose;
+  const stepM = Math.hypot(
+    last.position[0] - prev.position[0],
+    last.position[1] - prev.position[1],
+    last.position[2] - prev.position[2]
+  );
+  const turnDeg =
+    (quat.getAngle(unit(prev.rotation), unit(last.rotation)) * 180) / Math.PI;
+  const plain = (
+    reason: CompensationVerdict['reason']
+  ): CompensationVerdict => ({ compensated: false, reason, stepM, turnDeg });
+  const blocked = compensationBlocker(jump, jump.tPrev, mode, stepM, turnDeg);
+  if (blocked !== null) return plain(blocked);
+  const moving = isMoving(stepM, turnDeg);
+  return {
+    compensated: true,
+    reason: moving ? 'moving' : 'always',
+    stepM,
+    turnDeg,
+  };
+}
+
+const isMoving = (stepM: number, turnDeg: number): boolean =>
+  stepM > COMPENSATION_MIN_STEP_M || turnDeg > COMPENSATION_MIN_TURN_DEG;
+
+/** The first reason, in order, not to compensate a jump with an earlier frame. */
+function compensationBlocker(
+  jump: RelocalizationJump,
+  tPrev: number,
+  mode: CompensationMode,
+  stepM: number,
+  turnDeg: number
+): 'no-rate' | 'gap' | 'off' | 'still' | null {
+  if (!(jump.tLast > tPrev)) return 'no-rate';
+  if (jump.t - jump.tLast > MAX_COMPENSATION_GAP_MS) return 'gap';
+  if (mode === 'off') return 'off';
+  if (mode === 'guarded' && !isMoving(stepM, turnDeg)) return 'still';
+  return null;
+}
+
+/**
  * The jump `D` in O: a point at `x` in the old frame is at `D * x` in the
  * new one. Uncompensated `D = B * P_a * P_b^-1 * B^-1` (the camera is taken
  * not to move between the two frames); compensated, `P_b` is replaced by the
- * camera pose extrapolated to the jump frame's time. Without an earlier
- * frame, or with `tPrev` not before `tLast` (no measurable rate), the
- * uncompensated form is used.
- *
- * Requirement on the caller: the gap `t - tLast` is at most 500 ms
- * (measured as ratio 15 at 30 Hz, 30 at 60 Hz and 45 at 90 Hz); a longer
- * gap is not checked here and stretches the measured rates further.
+ * camera pose extrapolated to the jump frame's time. Which of the two is
+ * used is `compensationVerdict(jump, mode)`.
  */
 export function jumpTransform(
   jump: RelocalizationJump,
-  compensate: boolean = COMPENSATE_CAMERA_MOTION
+  mode: CompensationMode = CAMERA_MOTION_COMPENSATION
 ): Pose {
   const before =
-    compensate &&
+    compensationVerdict(jump, mode).compensated &&
     jump.prevPose !== null &&
-    jump.tPrev !== null &&
-    jump.tLast > jump.tPrev
+    jump.tPrev !== null
       ? extrapolatePose(
           jump.prevPose,
           jump.tPrev,

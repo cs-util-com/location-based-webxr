@@ -126,6 +126,10 @@ export function enableArSpaceCorrection(options: {
     place(event.child);
   };
   const onChildRemoved = (event: { child: THREE.Object3D }): void => {
+    // A removed listener of the child may already have put it back into a
+    // watched group: that is a new placement, already tracked.
+    const parent = event.child.parent;
+    if (parent !== null && watched.has(parent)) return;
     leave(event.child);
   };
 
@@ -183,10 +187,14 @@ export function enableArSpaceCorrection(options: {
 
   function leave(child: THREE.Object3D): void {
     pending.delete(child);
+    // A re-add is a new placement; a hint about the old pose must not reach it.
+    hints.delete(child);
     if (containers.has(child)) unwatch(child);
     else registry.untrack(child);
   }
 
+  // The root container: never tracked, excluded or claimed itself.
+  containers.add(arContent);
   watch(arContent);
   log.info(
     'AR content goes into arContent; children added to arWorldGroup ' +

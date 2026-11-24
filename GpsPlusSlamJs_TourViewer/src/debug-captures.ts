@@ -84,9 +84,11 @@ export async function debugCapturesOf(
   if (actions === null) {
     return { kind: "declined", reason: "no recording in this tour" };
   }
+  // The join maps captures across a relocalization itself.
   const pre = preflightCaptureJoin(
     meta,
     actions.map((a) => a.type),
+    { correctsRelocalization: true },
   );
   if (!pre.ok) return { kind: "declined", reason: pre.reason };
   const tracker = createCapturePickTracker(
@@ -142,8 +144,12 @@ export async function debugCapturesOf(
   }
   const verdict = assessReplayedJoin(state);
   if (!verdict.ok) return { kind: "declined", reason: verdict.reason };
-  const poses = computeCaptureGeoJoin(state, (file) =>
-    tracker.alignmentFor(file),
+  // The final alignment's fit epoch: a relocalization leaves the matrix
+  // as it was, so it may predate the last jump.
+  const poses = computeCaptureGeoJoin(
+    state,
+    (file) => tracker.alignmentFor(file),
+    tracker.fitEpochOf(state.gpsData!.gpsEvents.alignmentMatrix),
   ).filter((pose) => images.has(entryOf(pose.imageFile)));
   // One per file: a file captured again keeps its LAST pose, as the zip
   // keeps its last write.

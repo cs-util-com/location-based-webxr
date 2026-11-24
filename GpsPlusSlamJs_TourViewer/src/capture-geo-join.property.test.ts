@@ -3,6 +3,12 @@ import fc from "fast-check";
 import { createSlamAppStore } from "gps-plus-slam-app-framework/state";
 import { NullStorageBackend } from "gps-plus-slam-app-framework/storage";
 import { calcRelativeCoordsInMeters } from "gps-plus-slam-app-framework/core";
+import { WEBXR_TO_NUE } from "gps-plus-slam-app-framework/ar/webxr-nue-basis";
+import {
+  Matrix4 as ThreeMatrix4,
+  Quaternion as ThreeQuaternion,
+  Vector3 as ThreeVector3,
+} from "three";
 
 import {
   advanceMatureAlignmentPick,
@@ -176,6 +182,162 @@ describe("createCapturePickTracker - equals the per-photo fold of the maturity r
         }
       }),
       { numRuns: 300 },
+    );
+  });
+});
+
+/**
+ * Why this property matters: across any number of relocalizations, a photo
+ * from epoch c must land where the same photo lands after moving it, with
+ * three.js and independently of the framework's rigid math, by every jump
+ * recorded after it (the latest on the left). An inverted jump, a wrong
+ * product order or an off-by-one epoch moves photos by metres.
+ */
+describe("capture-geo-join - relocalization property", () => {
+  it("each capture equals its oracle-corrected copy in a recording without jumps", () => {
+    const B = new ThreeMatrix4().copy(WEBXR_TO_NUE);
+    const Binv = B.clone().invert();
+    const metres = (r: number) => fc.double({ min: -r, max: r, noNaN: true });
+    const unitQuat = fc
+      .tuple(metres(1), metres(1), metres(1), metres(1))
+      .filter((q) => Math.hypot(...q) > 0.1)
+      .map((q) => {
+        const n = Math.hypot(...q);
+        return [q[0] / n, q[1] / n, q[2] / n, q[3] / n] as [
+          number,
+          number,
+          number,
+          number,
+        ];
+      });
+    const pose = fc.record({
+      position: fc.tuple(metres(20), metres(3), metres(20)),
+      rotation: unitQuat,
+    });
+    const toMatrix = (p: {
+      position: readonly number[];
+      rotation: readonly number[];
+    }) =>
+      new ThreeMatrix4().compose(
+        new ThreeVector3(p.position[0], p.position[1], p.position[2]),
+        new ThreeQuaternion(
+          p.rotation[0],
+          p.rotation[1],
+          p.rotation[2],
+          p.rotation[3],
+        ),
+        new ThreeVector3(1, 1, 1),
+      );
+    fc.assert(
+      fc.property(
+        fc.array(fc.record({ lastPose: pose, newPose: pose }), {
+          minLength: 1,
+          maxLength: 3,
+        }),
+        fc.array(
+          fc.record({
+            position: fc.tuple(metres(50), metres(5), metres(50)),
+            rotation: unitQuat,
+            slot: fc.integer({ min: 0, max: 3 }),
+          }),
+          { minLength: 1, maxLength: 4 },
+        ),
+        (jumps, captures) => {
+          const observations = jumps.map((j, i) => ({
+            t: 1000 * (i + 1),
+            tLast: 1000 * (i + 1) - 10,
+            lastPose: j.lastPose,
+            tPrev: null,
+            prevPose: null,
+            newPose: j.newPose,
+          }));
+          const nue = jumps.map((j) =>
+            B.clone()
+              .multiply(
+                toMatrix(j.newPose).multiply(toMatrix(j.lastPose).invert()),
+              )
+              .multiply(Binv),
+          );
+          const points = captures.map((c, i) => ({
+            imageFile: `images/${String(i)}.jpg`,
+            position: c.position,
+            rotation: c.rotation,
+            // Slot k lies between jump k-1 and jump k: epoch min(k, n).
+            capturedAt: 1000 * c.slot + 500,
+          }));
+          const corrected = captures.map((c, i) => {
+            const epoch = Math.min(c.slot, jumps.length);
+            const delta = new ThreeMatrix4();
+            for (let k = epoch; k < jumps.length; k++)
+              delta.premultiply(nue[k]!);
+            const p = new ThreeVector3(...c.position).applyMatrix4(delta);
+            const q = new ThreeQuaternion()
+              .setFromRotationMatrix(delta)
+              .multiply(new ThreeQuaternion(...c.rotation));
+            return {
+              imageFile: points[i]!.imageFile,
+              position: [p.x, p.y, p.z] as [number, number, number],
+              rotation: [q.x, q.y, q.z, q.w] as [
+                number,
+                number,
+                number,
+                number,
+              ],
+            };
+          });
+          const gpsData = (
+            pts: NonNullable<
+              ReplayedJoinState["gpsData"]
+            >["odometryPath"]["points"],
+          ) => ({
+            zero: { lat: 47.5, lon: 8.7 },
+            gpsEvents: {
+              gpsPositions: new Array<unknown>(5).fill({}),
+              alignmentMatrix: [
+                1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 0, -7, 1,
+              ],
+              alignmentRotation: [0, 0, 0, 1] as [
+                number,
+                number,
+                number,
+                number,
+              ],
+              gpsAccuracyMedian: 3,
+            },
+            odometryPath: { points: pts },
+          });
+          // The final alignment is fit after the last jump.
+          const actual = computeCaptureGeoJoin(
+            {
+              gpsData: gpsData(points),
+              arSpaceCorrection: { observations },
+            },
+            undefined,
+            observations.length,
+          );
+          const expected = computeCaptureGeoJoin({
+            gpsData: gpsData(corrected),
+          });
+          expect(actual).toHaveLength(captures.length);
+          expect(expected).toHaveLength(captures.length);
+          actual.forEach((a, i) => {
+            const e = expected[i]!;
+            expect(Math.abs(a.geo.lat - e.geo.lat) * 111_320).toBeLessThan(
+              1e-4,
+            );
+            expect(Math.abs(a.geo.lon - e.geo.lon) * 75_000).toBeLessThan(1e-4);
+            expect(Math.abs(a.geo.altitude - e.geo.altitude)).toBeLessThan(
+              1e-4,
+            );
+            expect(
+              new ThreeQuaternion(...a.rotationNue).angleTo(
+                new ThreeQuaternion(...e.rotationNue),
+              ),
+            ).toBeLessThan(1e-5);
+          });
+        },
+      ),
+      { numRuns: 200 },
     );
   });
 });

@@ -20,6 +20,7 @@
  */
 
 import type { LoopClosureHandler } from 'gps-plus-slam-app-framework/core';
+import type { RelocalizationFeed } from 'gps-plus-slam-app-framework/ar/relocalization-feed';
 import type { QrSightingFeeder } from '../qr/qr-sighting-feeder';
 import type { CapturedCameraFrame } from 'gps-plus-slam-app-framework/ar/captured-camera-frame';
 
@@ -52,6 +53,11 @@ export interface ArSessionResources {
    * handler's last-pose memory.
    */
   loopClosureHandler: LoopClosureHandler | null;
+  /**
+   * Records ARCore relocalizations into the current store; the tracking
+   * hooks tell it to forget the earlier poses.
+   */
+  relocalizationFeed: RelocalizationFeed | null;
   /** Thin RAW QR producer fed by the framework's camera-frame callback. */
   /**
    * Whatever consumes camera frames for QR this session — the thin RAW
@@ -75,6 +81,7 @@ export function createArSessionResources(): ArSessionResources {
     alignmentLerper: null,
     statsOverlay: null,
     loopClosureHandler: null,
+    relocalizationFeed: null,
     qrProducer: null,
     qrSightingFeeder: null,
     refPointViews: null,

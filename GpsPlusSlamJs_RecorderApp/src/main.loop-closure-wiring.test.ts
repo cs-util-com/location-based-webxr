@@ -81,6 +81,23 @@ const { mockStore } = vi.hoisted(() => ({
 
 // ---------- mocks for all main.ts dependencies ----------
 
+const { mockFeed, mockStartRelocalizationFeed } = vi.hoisted(() => {
+  const mockFeed = {
+    frame: vi.fn(),
+    forget: vi.fn(),
+    isStopped: vi.fn(() => false),
+    dispose: vi.fn(),
+  };
+  return {
+    mockFeed,
+    mockStartRelocalizationFeed: vi.fn((_options: unknown) => mockFeed),
+  };
+});
+
+vi.mock('gps-plus-slam-app-framework/ar/relocalization-feed', () => ({
+  startRelocalizationFeed: mockStartRelocalizationFeed,
+}));
+
 vi.mock('gps-plus-slam-app-framework/ar/xr-frame-loop', () => ({
   registerXrFrameUpdate: mockRegisterXrFrameUpdate,
 }));
@@ -286,6 +303,12 @@ vi.mock('./storage/folder-manager', () => ({
 // Import after all mocks are set up
 import { handleEnterARForTesting, resetMainState } from './main';
 import { initAR } from 'gps-plus-slam-app-framework/ar/webxr-session';
+import { createRecordingSessionHandlers } from './recording/recording-session-handlers';
+
+// main.ts builds its recording handlers once, at import; their setStore is
+// how a new recording swaps the store. Read before any clearAllMocks.
+const recordingDeps = vi.mocked(createRecordingSessionHandlers).mock
+  .calls[0]![0] as unknown as { setStore: (store: unknown) => void };
 
 /** The tracking group main.ts passed to the mocked initAR (setter fold). */
 function getTrackingCallbacks() {
@@ -465,5 +488,82 @@ describe('loop-closure capture wiring (opt-in)', () => {
 
     expect(xrFrameUnregisterSpies).toHaveLength(1);
     expect(xrFrameUnregisterSpies[0]).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('relocalization feed wiring', () => {
+  // Why these tests matter: the feed is what records every ARCore
+  // relocalization into the recording, so it runs by default; it must
+  // follow the current store, forget across tracking loss and origin
+  // resets (a recovery jump is not a relocalization), be torn down with
+  // the AR session, and never keep Enter AR from finishing.
+  beforeEach(() => {
+    // Tear down the previous test's session first, so its feed's dispose
+    // is not counted here.
+    resetMainState();
+    vi.clearAllMocks();
+    registeredXrFrameCallbacks.length = 0;
+    xrFrameUnregisterSpies.length = 0;
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = false;
+    mockStartRelocalizationFeed.mockImplementation(() => mockFeed);
+    setupDom();
+  });
+
+  type FeedOptions = {
+    getStore: () => unknown;
+    beforeDispatch?: () => void;
+  };
+  const optionsOf = () =>
+    mockStartRelocalizationFeed.mock.calls[0]?.[0] as FeedOptions;
+
+  it('starts by default, dispatching into the current session store', async () => {
+    await handleEnterARForTesting();
+    expect(mockStartRelocalizationFeed).toHaveBeenCalledTimes(1);
+    expect(optionsOf().getStore()).toBe(mockStore);
+    // No QR fold this session: closing its burst is a no-op, never a throw.
+    expect(() => optionsOf().beforeDispatch?.()).not.toThrow();
+  });
+
+  it('follows the store a new recording swaps in, without a restart', async () => {
+    // Why this test matters: each recording has its own store; a feed bound
+    // to the store of Enter AR would record the jumps into a dead store.
+    await handleEnterARForTesting();
+    const recordingStore = { dispatch: vi.fn() };
+    recordingDeps.setStore(recordingStore);
+    expect(optionsOf().getStore()).toBe(recordingStore);
+    expect(mockStartRelocalizationFeed).toHaveBeenCalledTimes(1);
+  });
+
+  it('is not started while the legacy loop-closure detector is on (one producer of frame jumps)', async () => {
+    mockRecordingOptions.loopClosureDebug.detectorEnabled = true;
+    await handleEnterARForTesting();
+    expect(mockStartRelocalizationFeed).not.toHaveBeenCalled();
+  });
+
+  it('forgets the earlier poses on tracking loss, recovery and an origin reset', async () => {
+    await handleEnterARForTesting();
+    const tracking = getTrackingCallbacks();
+    tracking.onLost!();
+    tracking.onRecovered!();
+    (tracking.onRestarted! as (payload: unknown) => void)({});
+    expect(mockFeed.forget).toHaveBeenCalledTimes(3);
+  });
+
+  it('is disposed on re-enter and on resetMainState', async () => {
+    await handleEnterARForTesting();
+    await handleEnterARForTesting();
+    expect(mockFeed.dispose).toHaveBeenCalledTimes(1);
+    resetMainState();
+    expect(mockFeed.dispose).toHaveBeenCalledTimes(2);
+  });
+
+  it('a feed that fails to start never stops Enter AR', async () => {
+    mockStartRelocalizationFeed.mockImplementation(() => {
+      throw new Error('no frame loop');
+    });
+    await handleEnterARForTesting();
+    // Enter AR went on to wire the tracking hooks, and they still work.
+    const tracking = getTrackingCallbacks();
+    expect(() => tracking.onLost!()).not.toThrow();
   });
 });

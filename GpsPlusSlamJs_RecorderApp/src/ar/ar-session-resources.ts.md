@@ -18,6 +18,9 @@ code outside `main.ts` can create and tear them down.
     once per rendered XR frame.
   - `loopClosureHandler: LoopClosureHandler | null` — rebound to the current
     store inside the per-frame callback.
+  - `relocalizationFeed: RelocalizationFeed | null` - the framework feed that
+    records ARCore relocalizations into the current store; the tracking hooks
+    call its `forget()`.
   - `qrProducer: QrFrameSink | null` - the QR producer (the thin RAW
     `QrDetectionController`, or the level-consuming `QrTrackingController`) fed
     by the framework's camera-frame callback.

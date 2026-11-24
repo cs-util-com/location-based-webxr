@@ -372,26 +372,49 @@ export function createArSpaceCorrectionRegistry(options: {
     apply(object, entry, prepare(delta, p), delta, n);
   }
 
+  /**
+   * The store subscriber. It never throws: a failed correction must not
+   * come out of the app's dispatch call (a GPS fix, a recorded frame).
+   */
   function sync(): void {
+    try {
+      syncNow();
+    } catch (error) {
+      log.error(`correction sync failed; skipped: ${String(error)}`);
+    }
+  }
+
+  function syncNow(): void {
     if (store === null) return;
     const state = store.getState();
     const observations = selectArSpaceObservations(state);
     if (observations === seenObservations) return;
     seenObservations = observations;
     const cache: CorrectionCache = new Map();
+    const startMs = performance.now();
+    let corrected = 0;
     for (const [object, entry] of [...entries]) {
+      // An arcorrected listener of an earlier object may have untracked,
+      // removed or re-tracked this one.
+      if (entries.get(object) !== entry) continue;
+      const before = entry.applied;
       try {
         bake(object, entry, state, cache);
+        if (entry.applied !== before) corrected++;
       } catch (error) {
         // One broken object must not stop the others from being corrected.
         log.error(`correction of one object failed; skipped: ${String(error)}`);
       }
     }
+    log.info(
+      `AR content corrected: ${corrected} of ${entries.size} tracked objects ` +
+        `in ${(performance.now() - startMs).toFixed(1)} ms`
+    );
   }
 
-  function untrack(object: THREE.Object3D): void {
+  function untrack(object: THREE.Object3D, only?: Entry): void {
     const entry = entries.get(object);
-    if (entry === undefined) return;
+    if (entry === undefined || (only !== undefined && entry !== only)) return;
     entries.delete(object);
     object.removeEventListener('removed', entry.onRemoved);
     releasePose(object, 'AR-space correction');
@@ -433,7 +456,9 @@ export function createArSpaceCorrectionRegistry(options: {
       stampedAt,
       start: epoch,
       parent,
-      onRemoved: () => untrack(object),
+      // This placement only: a removed listener that ran first may have put
+      // the object back as a new placement.
+      onRemoved: () => untrack(object, entry),
     };
     entries.set(object, entry);
     object.addEventListener('removed', entry.onRemoved);
@@ -467,7 +492,7 @@ export function createArSpaceCorrectionRegistry(options: {
       if (known !== undefined) untrack(object);
       begin(object, state, epoch, stampedAt, p);
     },
-    untrack,
+    untrack: (object) => untrack(object),
     attach(next) {
       unsubscribe?.();
       store = next;

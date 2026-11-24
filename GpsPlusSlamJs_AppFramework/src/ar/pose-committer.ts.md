@@ -7,7 +7,7 @@ One committer per object: a claim that keeps two systems (a GPS anchor, a deferr
 ## Public API
 
 - `PoseCommitter`: `'GPS anchor' | 'deferred anchor' | 'AR-space correction'`.
-- `claimPose(object, committer)`: throws when the object is already claimed (by anyone) or sits inside or holds a claimed object; the message names the holder and says "nested" for the second case.
+- `claimPose(object, committer, into = object.parent)`: throws when the object is already claimed (by anyone), holds a claimed object, or `into` or one of its ancestors is claimed; the message names the holder and says "nested" for the latter cases. A committer that re-parents the object as part of its claim (a deferred anchor) passes the new parent as `into`, so the chain the object is about to live in is checked, not the one it leaves.
 - `releasePose(object, committer)`: releases only `committer`'s own claim; a no-op otherwise.
 - `poseCommitterOf(object)`: the holder of `object` itself, or `null`.
 

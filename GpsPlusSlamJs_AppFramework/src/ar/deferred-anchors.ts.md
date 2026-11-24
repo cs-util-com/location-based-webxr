@@ -35,7 +35,8 @@ Deep import only: `gps-plus-slam-app-framework/ar/deferred-anchors`.
     holds the parent, a root nested in (or holding) another anchor's root,
     and after the set was torn down. The root is claimed as `'deferred anchor'`
     through `pose-committer.ts`, so a GPS anchor or the AR-space correction
-    cannot also write it, or an object inside or holding it.
+    cannot also write it, or an object inside or holding it; the claim checks
+    the chain under the parent the root joins, not the one it leaves.
   - `remove(root)`: detaches it, restores `matrixAutoUpdate` and releases the
     claim; the key is dropped with its last root. No-op after teardown. The
     set's dispose releases every root it still holds.

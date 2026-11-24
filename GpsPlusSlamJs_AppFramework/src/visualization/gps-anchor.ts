@@ -270,7 +270,6 @@ function medianPoint(
   return { lat, lon };
 }
 
-/** Throws for an object inside, or holding, an anchored object. */
 export function createGpsAnchor(options: GpsAnchorOptions): GpsAnchor {
   if (!isDescendantOf(options.object3D, options.arWorldGroup)) {
     throw new Error(

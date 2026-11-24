@@ -30,11 +30,13 @@ const entryFiles = [
   'src/ar/ar-parent-target.ts',
   // AR-space content correction: pure math, the registry that bakes each
   // relocalization jump into tracked objects, the `arContent` watcher that
-  // tracks app content automatically, and the one-committer claim -
+  // tracks app content automatically, the feed that records each jump from
+  // the XR frame loop, and the one-committer claim -
   // deep-imported by apps.
   'src/ar/ar-space-correction.ts',
   'src/ar/ar-space-correction-registry.ts',
   'src/ar/ar-content-watcher.ts',
+  'src/ar/relocalization-feed.ts',
   'src/ar/pose-committer.ts',
   // Shared scene-graph builder for live AR and replay. Both `webxr-session.ts`
   // and `replay-scene.ts` (themselves dist entries) import it, and the `./ar/*`

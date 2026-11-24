@@ -112,6 +112,17 @@ const {
 vi.mock('gps-plus-slam-app-framework/ar/depth-occluder', () => ({
   DepthOccluder: mockDepthOccluderCtor,
 }));
+// The relocalization feed registers its own frame callback; it is covered
+// in main.loop-closure-wiring.test.ts and kept out of the counts here.
+vi.mock('gps-plus-slam-app-framework/ar/relocalization-feed', () => ({
+  startRelocalizationFeed: vi.fn(() => ({
+    frame: vi.fn(),
+    forget: vi.fn(),
+    isStopped: vi.fn(() => false),
+    dispose: vi.fn(),
+  })),
+}));
+
 vi.mock('gps-plus-slam-app-framework/ar/xr-frame-loop', () => ({
   registerXrFrameUpdate: mockRegisterXrFrameUpdate,
 }));

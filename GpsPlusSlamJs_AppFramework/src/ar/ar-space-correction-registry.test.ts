@@ -669,3 +669,107 @@ describe('ar-space-correction-registry', () => {
     registry.dispose();
   });
 });
+
+describe('ar-space-correction-registry: listeners during a sync', () => {
+  const SHIFT: Pose = { position: [3, 0, 0], rotation: [0, 0, 0, 1] };
+
+  function twoCoins() {
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const a = new THREE.Object3D();
+    const b = new THREE.Object3D();
+    group.add(a, b);
+    registry.track(a);
+    registry.track(b);
+    return { store, group, registry, a, b };
+  }
+
+  it('an object untracked by an arcorrected listener of an earlier object is not corrected', () => {
+    // Why this test matters: untrack means "stop correcting; the transform
+    // keeps its value". A listener (a game despawning or freezing a coin)
+    // that untracks a sibling during the same jump must win.
+    const { store, registry, a, b } = twoCoins();
+    a.addEventListener('arcorrected', () => registry.untrack(b));
+    let bEvents = 0;
+    b.addEventListener('arcorrected', () => bEvents++);
+    store.dispatch(relocalizationObserved(jumpObservation(1000, SHIFT)));
+    expect(a.position.length()).toBeGreaterThan(1);
+    expect(b.position.toArray()).toEqual([0, 0, 0]);
+    expect(bEvents).toBe(0);
+    expect(registry.entryOf(b)).toBeUndefined();
+  });
+
+  it('a sibling despawned by a listener raises no "left its parent" warning', () => {
+    // Why this test matters: removing an object is the normal way to
+    // despawn it; the warning is for an unexpected re-parent only.
+    const { store, a, b } = twoCoins();
+    a.addEventListener('arcorrected', () => b.removeFromParent());
+    const warnings: string[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.tag === 'ArSpaceCorrection' && entry.level === LogLevel.WARN) {
+        warnings.push(entry.message);
+      }
+    });
+    store.dispatch(relocalizationObserved(jumpObservation(1000, SHIFT)));
+    unsubscribe();
+    expect(warnings).toEqual([]);
+  });
+
+  it('a placement made by a removed listener is not untracked by the old placement', () => {
+    // Why this test matters: three.js runs an object's earlier removed
+    // listeners first; one that puts the object straight back starts a new
+    // placement, which the old placement's cleanup must leave alone.
+    const store = newStore();
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    registry.attach(store);
+    const coin = new THREE.Object3D();
+    let putBack = true;
+    coin.addEventListener('removed', () => {
+      if (!putBack) return;
+      putBack = false;
+      group.add(coin);
+      registry.track(coin);
+    });
+    group.add(coin);
+    registry.track(coin);
+    coin.removeFromParent();
+    expect(coin.parent).toBe(group);
+    expect(registry.entryOf(coin)).toBeDefined();
+    store.dispatch(relocalizationObserved(jumpObservation(1000, SHIFT)));
+    expect(coin.position.length()).toBeGreaterThan(1);
+  });
+
+  it('a fault while syncing never reaches the dispatcher; it is logged', () => {
+    // Why this test matters: the registry syncs inside a store subscriber.
+    // A throw there would come out of the app's dispatch (a GPS fix, a
+    // recorded frame) and break recording; a failed correction must not.
+    const group = new THREE.Group();
+    const registry = createArSpaceCorrectionRegistry({ group });
+    const real = newStore();
+    let calls = 0;
+    const listeners: (() => void)[] = [];
+    registry.attach({
+      getState: () => {
+        calls++;
+        if (calls > 1) throw new Error('broken state');
+        return real.getState();
+      },
+      subscribe: (l) => {
+        listeners.push(l);
+        return () => undefined;
+      },
+    });
+    const errors: string[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.tag === 'ArSpaceCorrection' && entry.level === LogLevel.ERROR) {
+        errors.push(entry.message);
+      }
+    });
+    expect(() => listeners.forEach((l) => l())).not.toThrow();
+    unsubscribe();
+    expect(errors.join('\n')).toMatch(/broken state/);
+  });
+});

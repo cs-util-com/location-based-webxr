@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import type { Pose } from './qr/qr-pose';
 import { WEBXR_TO_NUE } from './webxr-nue-basis';
 import {
+  MAX_COMPENSATION_GAP_MS,
   correctionTrack,
   epochAt,
   jumpTransform,
@@ -114,6 +115,8 @@ describe('ar-space-correction (properties)', () => {
         point,
         (start, jump, velocity, axisRaw, rateRadS, dtS, ratio, x) => {
           fc.pre(Math.hypot(...axisRaw) > 0.1);
+          // The compensation is used up to a 500 ms gap; past it, plain.
+          fc.pre(ratio * dtS * 1000 <= MAX_COMPENSATION_GAP_MS);
           const axis = new THREE.Vector3(...axisRaw).normalize();
           const at = (tS: number): THREE.Matrix4 => {
             const q = new THREE.Quaternion()
@@ -138,7 +141,7 @@ describe('ar-space-correction (properties)', () => {
             prevPose: fromThree(at(0)),
             newPose: fromThree(J.clone().multiply(at(tJumpS))),
           };
-          const d = jumpTransform(obs);
+          const d = jumpTransform(obs, 'always');
           const oldInO = toO(new THREE.Vector3(...x));
           const expected = toO(new THREE.Vector3(...x).applyMatrix4(J));
           const got = applyModule(d, [oldInO.x, oldInO.y, oldInO.z]);

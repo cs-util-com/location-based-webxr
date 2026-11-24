@@ -115,10 +115,17 @@ function observationProblem(
   );
 }
 
-/** Only `position` and `rotation` of a pose (left as is when not an object). */
+/** A copy of an array; anything else as it is, for the reducer to refuse. */
+const copyOf = <T>(v: T): T => (Array.isArray(v) ? ([...v] as T) : v);
+
+/**
+ * Only `position` and `rotation` of a pose (left as is when not an object),
+ * as copies: the store freezes what it keeps, and a caller that reuses its
+ * arrays must neither change recorded state nor find them frozen.
+ */
 function poseFields(p: Pose): Pose {
   if (typeof p !== 'object' || p === null) return p;
-  return { position: p.position, rotation: p.rotation };
+  return { position: copyOf(p.position), rotation: copyOf(p.rotation) };
 }
 
 /**
