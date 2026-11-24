@@ -645,6 +645,16 @@ const OPTION_BINDINGS: readonly OptionBinding[] = [
       o.loopClosureDebug.detectorEnabled = v;
     },
   },
+  // AR content correction after a relocalization (default ON). Read once at
+  // Enter AR; off stops only the scene correction, never the recording.
+  {
+    kind: 'checkbox',
+    id: 'ar-space-correction-apply',
+    get: (o) => o.arSpaceCorrection.applyEnabled,
+    set: (o, v) => {
+      o.arSpaceCorrection.applyEnabled = v;
+    },
+  },
 
   // QR detection (recorder live-QR WS-2/WS-5). Opt-in; the interval + capture
   // sliders are gated on the enabled checkbox (mirrors depth/images).

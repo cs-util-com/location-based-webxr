@@ -1548,6 +1548,37 @@ describe('settings-modal', () => {
       expect(cb?.checked).toBe(true);
     });
 
+    it('the AR content correction toggle defaults ON, persists an opt-out and populates it', () => {
+      // Why: the correction is on by default (it only moves scene content);
+      // the operator must be able to switch it off for a session and see the
+      // saved choice again when the settings reopen.
+      initSettingsModal();
+      showSettingsModal();
+      const cb = document.getElementById(
+        'ar-space-correction-apply'
+      ) as HTMLInputElement | null;
+      expect(cb).not.toBeNull();
+      expect(cb!.checked).toBe(true);
+
+      cb!.checked = false;
+      cb!.dispatchEvent(new Event('change'));
+      document.getElementById('btn-settings-save')?.click();
+      expect(loadRecordingOptions().arSpaceCorrection.applyEnabled).toBe(false);
+
+      localStorageMock.getItem.mockReturnValueOnce(
+        JSON.stringify({ arSpaceCorrection: { applyEnabled: false } })
+      );
+      initSettingsModal();
+      showSettingsModal();
+      expect(
+        (
+          document.getElementById(
+            'ar-space-correction-apply'
+          ) as HTMLInputElement
+        ).checked
+      ).toBe(false);
+    });
+
     it('populates compass-cold-start-override UNCHECKED from a saved OFF value (opt-out round-trip)', () => {
       // The recorder off-toggle: a persisted coldStartOverride:false must survive
       // load → populate as an unchecked box so the operator can disable Stage 0.

@@ -61,6 +61,28 @@ describe('FrameTileVisualizer', () => {
     texture = new THREE.Texture();
   });
 
+  // Why: the AR-space correction dates each tile by its capture time, so
+  // the hook must see the tile already in the scene with its raw pose, once
+  // per new tile, and with the frame's own capturedAt (undefined for frames
+  // recorded without one).
+  it('onPlaced reports each new tile once, in the scene, with its capture time', () => {
+    const placed: Array<[THREE.Object3D, number | undefined]> = [];
+    const viz = new FrameTileVisualizer(arSpaceNode, {
+      onPlaced: (tile, capturedAt) => {
+        expect(tile.parent).toBe(findBasisNode(arSpaceNode));
+        expect(tile.position.toArray()).toEqual([1, 2, -3]);
+        placed.push([tile, capturedAt]);
+      },
+    });
+    viz.addTile(makeFrame({ capturedAt: 1234 }), texture);
+    viz.addTile(makeFrame({ capturedAt: 1234 }), texture); // same file: no-op
+    viz.addTile(makeFrame({ imageFile: 'frames/old.jpg' }), texture);
+    expect(placed).toEqual([
+      [findTile(arSpaceNode, 'frames/frame-000001.jpg'), 1234],
+      [findTile(arSpaceNode, 'frames/old.jpg'), undefined],
+    ]);
+  });
+
   // Why: every accepted add2dImage must produce one visible tile, and its
   // LOCAL pose must be the captured raw-WebXR pose verbatim (the basis
   // node, not the tile, carries the WebXR→NUE conversion).

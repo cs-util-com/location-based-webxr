@@ -70,7 +70,12 @@ const RAW_GPS_ACCURACY_OPACITY = 0.13;
 export interface GpsMarkerSceneSource {
   /** Scene root — parents raw-GPS (yellow) and snapshot (red) markers. */
   getScene: () => THREE.Scene | null;
-  /** AR world group — parents fused (cyan) markers so they ride the alignment. */
+  /**
+   * Parent of the fused (cyan) markers: a group that rides the alignment,
+   * `arWorldGroup` itself or a content group under it (the RecorderApp
+   * passes its corrected `arContent`, so the markers follow a
+   * relocalization).
+   */
   getArWorldGroup: () => THREE.Group | null;
 }
 
@@ -343,10 +348,14 @@ export class GpsEventVisualizer {
    */
   clearAll(): void {
     const scene = this.sceneSource.getScene();
-    const arWorldGroup = this.sceneSource.getArWorldGroup();
 
     disposeMeshArray(this.rawGpsMarkers, scene);
-    disposeMeshArray(this.fusedMarkers, arWorldGroup);
+    // A fused marker leaves the parent it was added to, which need not be
+    // the current source's group: the source may have changed since (an AR
+    // scene whose content group was torn down, a replay that restored the
+    // live source), and a marker left in the scene would leak.
+    for (const marker of this.fusedMarkers) marker.removeFromParent();
+    disposeMeshArray(this.fusedMarkers, null);
     disposeMeshArray(this.snapshotMarkers, scene);
 
     // Reset state

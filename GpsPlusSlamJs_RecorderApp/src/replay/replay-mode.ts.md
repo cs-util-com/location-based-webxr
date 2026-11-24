@@ -48,6 +48,8 @@ Orchestrates all replay building blocks (Iterations 1-5) into a single entry poi
 - The `mapOverlay` subscriber dep is a **proxy** that delegates to a late-bound real overlay via `setMapOverlay()`. This allows store subscribers to forward map updates to the overlay even though the overlay is created lazily by `handleReplayMapToggle`. The proxy forwards two overlay methods: `setGpsPosition` (recenter) and `render` (the unified `MapData` trajectory snapshot). Each method uses optional chaining on the target so calls are silently dropped when no real overlay is bound.
 - **Ref-point markers are store-driven, not proxied** (2026-07-05 live-map feedback): `wireRefPointMapMarkers` ([ui/ref-point-map-markers.ts](../ui/ref-point-map-markers.ts.md)) renders the replay store's `refPoints` state onto the overlay's Leaflet map (`getLeafletMap()`, late-bound via `setMapOverlay`, which refreshes) through the SAME renderer as the live and summary maps. The replayed `startSession` action carries the original session's start time, so its captures render red and imported sidecar points green. Torn down in `dispose()`.
 
+- **AR-space content correction.** Replay wires the same `wireArSpaceCorrection` as the live session, on the replay store and `arSpaceCorrection.applyEnabled`: fused GPS markers go into its `arContent` group and frame tiles report through its `onPlaced`. `dispose` disposes it after restoring the marker scene source and before the replay scene is torn down. Known limit: a replay opened during live AR restores the default marker source on dispose, so live fused markers go straight under `arWorldGroup` (uncorrected) until the next Enter AR.
+
 ## Examples
 
 ```typescript
@@ -84,3 +86,5 @@ controller.dispose();
   - Pause/resume
   - Speed changes
   - `setMapOverlay` proxy delegation, null clearing, forwarding of `render` (MapData), and the ref-point map-marker wiring (late-binding `getLeafletMap`, refresh on attach, unsubscribe on dispose)
+
+- The AR content correction is wired with the replay store and setting, markers go into `arContent`, tiles get `onPlaced`, and dispose releases it.

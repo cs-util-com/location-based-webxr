@@ -171,6 +171,7 @@ vi.mock('./state/recording-options', () => ({
       compassCubes: false,
     },
     loopClosureDebug: { detectorEnabled: false },
+    arSpaceCorrection: { applyEnabled: false },
     arCrashIsolation: {
       enableDomOverlay: true,
       enableCameraAccess: true,

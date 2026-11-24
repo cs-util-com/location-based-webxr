@@ -30,6 +30,7 @@ import {
   type CompassDebugOptions,
   compassStoreOptions,
   validateLoopClosureDebugOptions,
+  validateArSpaceCorrectionOptions,
   validateQrOptions,
   validateRecordingOptions,
   DEFAULT_RECORDING_OPTIONS,
@@ -1087,6 +1088,49 @@ describe('recording-options', () => {
     });
   });
 
+  describe('validateArSpaceCorrectionOptions', () => {
+    // Why these tests matter: the correction moves the AR content back onto
+    // its physical place after a relocalization, so it is ON by default; a
+    // corrupted or pre-feature stored value must fall back to ON, and only an
+    // explicit false may switch it off (the observation is recorded either way).
+    it('returns the ON default when given an empty object', () => {
+      expect(validateArSpaceCorrectionOptions({})).toEqual({
+        applyEnabled: true,
+      });
+      expect(DEFAULT_RECORDING_OPTIONS.arSpaceCorrection).toEqual({
+        applyEnabled: true,
+      });
+    });
+
+    it('keeps an explicit false and falls back to ON for non-boolean values', () => {
+      expect(validateArSpaceCorrectionOptions({ applyEnabled: false })).toEqual(
+        { applyEnabled: false }
+      );
+      expect(
+        validateArSpaceCorrectionOptions({
+          applyEnabled: 'no' as unknown as boolean,
+        })
+      ).toEqual({ applyEnabled: true });
+      expect(
+        validateArSpaceCorrectionOptions({
+          applyEnabled: 0 as unknown as boolean,
+        })
+      ).toEqual({ applyEnabled: true });
+    });
+
+    it('validateRecordingOptions carries arSpaceCorrection without aliasing the defaults, and a pre-feature blob gets ON', () => {
+      const opts = validateRecordingOptions({
+        arSpaceCorrection: { applyEnabled: false },
+      });
+      expect(opts.arSpaceCorrection).toEqual({ applyEnabled: false });
+      const fresh = validateRecordingOptions({});
+      expect(fresh.arSpaceCorrection).toEqual({ applyEnabled: true });
+      expect(fresh.arSpaceCorrection).not.toBe(
+        DEFAULT_RECORDING_OPTIONS.arSpaceCorrection
+      );
+    });
+  });
+
   describe('validateVisualizationOptions', () => {
     /**
      * Why these tests matter (Finding B / DB-1b of
@@ -1370,6 +1414,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
       localStorageMock.getItem.mockReturnValueOnce(JSON.stringify(stored));
 
@@ -1465,6 +1510,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       saveRecordingOptions(options);
@@ -1493,6 +1539,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       saveRecordingOptions(options);
@@ -1782,6 +1829,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       saveRecordingOptions(customOptions);
@@ -1808,6 +1856,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
 
       saveRecordingOptions(options1);
@@ -1843,6 +1892,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       });
 
       // Reset
@@ -1906,6 +1956,7 @@ describe('recording-options', () => {
         qr: { ...DEFAULT_RECORDING_OPTIONS.qr },
         compassDebug: { ...DEFAULT_RECORDING_OPTIONS.compassDebug },
         loopClosureDebug: { ...DEFAULT_RECORDING_OPTIONS.loopClosureDebug },
+        arSpaceCorrection: { ...DEFAULT_RECORDING_OPTIONS.arSpaceCorrection },
       };
       localStorageMock.setItem(CUSTOM_KEY, JSON.stringify(custom));
 

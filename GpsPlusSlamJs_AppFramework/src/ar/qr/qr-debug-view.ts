@@ -50,18 +50,32 @@ export interface QrDebugView {
    * retained for the generic "pose but no size" case (e.g. a future
    * depth-position/PnP-rotation hybrid).
    */
-  update(pose: Pose, sizeM: number | null): void;
+  update(pose: Pose, sizeM: number | null, capturedAt?: number): void;
   /** Hide the objects (e.g. on reset); does NOT detach them from the scene. */
   clear(): void;
   /** Remove the objects from the parent and free GPU resources. */
   dispose(): void;
 }
 
+export interface QrDebugViewOptions {
+  /**
+   * Called after `update()` wrote an object's pose, when the update named
+   * the capture time of the observation the pose was solved from. An app
+   * that corrects AR content after a relocalization re-dates the object
+   * here, because each update rewrites the raw pose from scratch.
+   */
+  readonly onPlaced?: (object: Object3D, capturedAt: number) => void;
+}
+
 /**
  * Create the debug axis + cube under `parent` (the `arWorldGroup`). Objects
  * start hidden; the first `update()` reveals and positions them.
  */
-export function createQrDebugView(parent: Object3D): QrDebugView {
+export function createQrDebugView(
+  parent: Object3D,
+  options: QrDebugViewOptions = {}
+): QrDebugView {
+  const { onPlaced } = options;
   // Static basis node carrying WEBXR_TO_NUE (matrixAutoUpdate=false so Three.js
   // never recomputes it from position/quaternion/scale). The debug objects hang
   // off it, so their world pose = parent × WEBXR_TO_NUE × pose — the camera's
@@ -98,10 +112,11 @@ export function createQrDebugView(parent: Object3D): QrDebugView {
   }
 
   return {
-    update(pose: Pose, sizeM: number | null): void {
+    update(pose: Pose, sizeM: number | null, capturedAt?: number): void {
       // The axis needs only the pose — show it as soon as a detection locks.
       applyPose(axes, pose);
       axes.visible = true;
+      if (capturedAt !== undefined) onPlaced?.(axes, capturedAt);
 
       // The cube needs a measured size (its front face must land on the printed
       // corners). Until one is available, keep it hidden rather than drawing a
@@ -116,6 +131,7 @@ export function createQrDebugView(parent: Object3D): QrDebugView {
       cube.scale.set(sizeM, sizeM, CUBE_DEPTH_M);
       cube.translateZ(-CUBE_DEPTH_M / 2);
       cube.visible = true;
+      if (capturedAt !== undefined) onPlaced?.(cube, capturedAt);
     },
     clear(): void {
       axes.visible = false;

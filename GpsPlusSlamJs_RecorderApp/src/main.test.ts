@@ -413,6 +413,7 @@ vi.mock('./state/recording-options', () => {
         compassCubes: true,
       },
       loopClosureDebug: { detectorEnabled: false },
+      arSpaceCorrection: { applyEnabled: false },
     }),
   };
 });

@@ -99,6 +99,7 @@ export interface RecordingOptionsInput {
   qr?: Partial<QrCaptureOptions>;
   compassDebug?: Partial<CompassDebugOptions>;
   loopClosureDebug?: Partial<LoopClosureDebugOptions>;
+  arSpaceCorrection?: Partial<ArSpaceCorrectionOptions>;
 }
 
 /**
@@ -167,6 +168,18 @@ export interface CompassDebugOptions {
 export interface LoopClosureDebugOptions {
   /** Wire the live loop-closure handler into the AR frame loop. Default OFF. */
   detectorEnabled: boolean;
+}
+
+/**
+ * The AR-space content correction after an ARCore relocalization. The
+ * observation of each relocalization is always recorded; this group only
+ * decides whether the scene content (GPS markers, frame tiles, the QR debug
+ * cube) is moved back onto its physical place. Read once at Enter AR, and
+ * once per replay.
+ */
+export interface ArSpaceCorrectionOptions {
+  /** Correct AR content after a relocalization. Default ON. */
+  applyEnabled: boolean;
 }
 
 /**
@@ -513,6 +526,8 @@ export type RecordingOptions = {
   compassDebug: CompassDebugOptions;
   /** Live loop-closure capture toggles (experimental, default OFF) */
   loopClosureDebug: LoopClosureDebugOptions;
+  /** AR content correction after a relocalization (default ON) */
+  arSpaceCorrection: ArSpaceCorrectionOptions;
 };
 
 // --- Constants ---
@@ -626,6 +641,11 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // arLoopClosureDetected into the recording AND deforms the live
     // alignment — an experimental capture feature until corpus-validated.
     detectorEnabled: false,
+  },
+  arSpaceCorrection: {
+    // ON by default: the correction only moves scene content; the
+    // observation itself is recorded with the setting on or off.
+    applyEnabled: true,
   },
 };
 
@@ -1096,6 +1116,23 @@ export function validateFrameTileDisplayOptions(
 }
 
 /**
+ * Validate and normalize the AR-space correction toggle. Boolean-or-default:
+ * a missing, corrupted or pre-feature value falls back to the ON default, so
+ * only an explicit `false` switches the correction off.
+ */
+export function validateArSpaceCorrectionOptions(
+  options: Partial<ArSpaceCorrectionOptions> = {}
+): ArSpaceCorrectionOptions {
+  return validateOptionFields(
+    options,
+    DEFAULT_RECORDING_OPTIONS.arSpaceCorrection,
+    {
+      applyEnabled: { kind: 'bool' },
+    }
+  );
+}
+
+/**
  * Validate and normalize a full RecordingOptions object.
  * Merges with defaults and clamps invalid values.
  *
@@ -1122,6 +1159,9 @@ export function validateRecordingOptions(
     compassDebug: validateCompassDebugOptions(options.compassDebug ?? {}),
     loopClosureDebug: validateLoopClosureDebugOptions(
       options.loopClosureDebug ?? {}
+    ),
+    arSpaceCorrection: validateArSpaceCorrectionOptions(
+      options.arSpaceCorrection
     ),
   };
 }

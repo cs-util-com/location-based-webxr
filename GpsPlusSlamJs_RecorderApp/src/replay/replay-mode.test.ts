@@ -147,7 +147,24 @@ const { mockReplayRecordingOptions } = vi.hoisted(() => ({
     // Stats overlay defaults OFF (Step 0 of the 2026-07-03 long-session fps
     // plan); the dedicated tests below flip it on.
     visualization: { statsOverlay: false },
+    arSpaceCorrection: { applyEnabled: true },
   },
+}));
+// The AR-space correction wiring: its own test drives the real module; here
+// a fake shows what replay hands to it and takes from it. Default: off.
+const { mockCorrection, mockWireArSpaceCorrection } = vi.hoisted(() => {
+  const mockCorrection: {
+    arContent: { name: string } | null;
+    onPlaced: ((o: unknown, t?: number) => void) | undefined;
+    dispose: ReturnType<typeof vi.fn>;
+  } = { arContent: null, onPlaced: undefined, dispose: vi.fn() };
+  return {
+    mockCorrection,
+    mockWireArSpaceCorrection: vi.fn((_deps: unknown) => mockCorrection),
+  };
+});
+vi.mock('../ar/wire-ar-space-correction', () => ({
+  wireArSpaceCorrection: mockWireArSpaceCorrection,
 }));
 vi.mock('../state/recording-options', () => ({
   loadRecordingOptions: vi.fn(() => mockReplayRecordingOptions),
@@ -252,6 +269,9 @@ describe('replay-mode', () => {
     // loop that breaks the runAllTimers-based playback tests below).
     mockReplayRecordingOptions.visualization.statsOverlay = false;
     mockReplayRecordingOptions.frameTileDisplay = { divisor: 2, maxTiles: 100 };
+    mockReplayRecordingOptions.arSpaceCorrection = { applyEnabled: true };
+    mockCorrection.arContent = null;
+    mockCorrection.onPlaced = undefined;
     // Default: loadRecording returns our fixture wrapped in the LoadedRecording shape.
     const fixtureEntries = makeMockZipActions();
     vi.mocked(loadRecording).mockResolvedValue({
@@ -348,6 +368,35 @@ describe('replay-mode', () => {
 
     const refSource = refSpy.mock.calls[0]![0]!;
     expect(refSource()).toBe(replayScene.scene);
+  });
+
+  it('wires the AR content correction with the replay store and setting; markers go into arContent, tiles report through onPlaced', async () => {
+    // Why: replay must correct content after a recorded relocalization the
+    // way the live session did (one code path), and honour the setting.
+    mockReplayRecordingOptions.arSpaceCorrection = { applyEnabled: false };
+    mockCorrection.arContent = { name: 'mock-arContent' };
+    const onPlaced = vi.fn();
+    mockCorrection.onPlaced = onPlaced;
+    const controller = await startReplayMode(fakeZipData, makeConfig());
+
+    const deps = mockWireArSpaceCorrection.mock.calls[0]![0] as {
+      arWorldGroup: unknown;
+      storeRef: { get(): unknown };
+      enabled: boolean;
+    };
+    expect(deps.enabled).toBe(false);
+    expect(deps.arWorldGroup).toEqual({ name: 'mock-arWorldGroup' });
+    expect(deps.storeRef.get()).toBe(controller.getStore());
+    const gpsSource = vi.mocked(gpsEventVisualizer.setSceneSource).mock
+      .calls[0]![0]!;
+    expect(gpsSource.getArWorldGroup()).toBe(mockCorrection.arContent);
+    expect(mockFrameTileVisualizerCtor).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'mock-arWorldGroup' }),
+      { onPlaced }
+    );
+
+    controller.dispose();
+    expect(mockCorrection.dispose).toHaveBeenCalledTimes(1);
   });
 
   it('dispose restores the live-session scene sources', async () => {

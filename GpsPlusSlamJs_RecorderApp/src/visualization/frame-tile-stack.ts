@@ -20,7 +20,10 @@ import { decodeFrameTexture } from 'gps-plus-slam-app-framework/visualization/fr
 import { createLogger } from 'gps-plus-slam-app-framework/utils/logger';
 import type { RecorderStore } from '../state/recorder-store';
 import type { StoreRef } from '../state/store-ref';
-import { FrameTileVisualizer } from './frame-tile-visualizer';
+import {
+  FrameTileVisualizer,
+  type FrameTileVisualizerOptions,
+} from './frame-tile-visualizer';
 import { wireFrameTileSubscribers } from './wire-frame-tile-subscribers';
 
 const log = createLogger('Recorder');
@@ -39,6 +42,11 @@ export interface FrameTileStackDeps {
    * pins, and the whole recorded path stays visible.
    */
   readonly maxTiles?: number;
+  /**
+   * The AR-space correction's placement hook (see
+   * `ar/wire-ar-space-correction.ts`); omitted when the correction is off.
+   */
+  readonly onPlaced?: FrameTileVisualizerOptions['onPlaced'];
 }
 
 /** Wires the stack; the returned function unsubscribes and disposes it. */
@@ -48,11 +56,16 @@ export function wireFrameTileStack({
   blobSource,
   divisor,
   maxTiles,
+  onPlaced,
 }: FrameTileStackDeps): () => void {
+  const options: FrameTileVisualizerOptions = {
+    ...(maxTiles === undefined ? {} : { maxTiles }),
+    ...(onPlaced === undefined ? {} : { onPlaced }),
+  };
   const visualizer =
-    maxTiles === undefined
+    Object.keys(options).length === 0
       ? new FrameTileVisualizer(arWorldGroup)
-      : new FrameTileVisualizer(arWorldGroup, { maxTiles });
+      : new FrameTileVisualizer(arWorldGroup, options);
   let unsubscribe: () => void;
   try {
     unsubscribe = wireFrameTileSubscribers({

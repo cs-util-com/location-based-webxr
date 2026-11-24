@@ -25,6 +25,8 @@ maintainer's re-test goal, visualised).
   - `update()` — reconcile views with the current state (call per store change).
   - `dispose()` — tear down all views + reset the resolver.
 
+- Dep `onObjectPlaced?`: handed to the default `createView` as the view's `onPlaced`. Each `view.update` passes the newest observation's timestamp as the capture time, because the placement pose is always the PnP solve of `observations.at(-1)`.
+
 ## Invariants & assumptions
 
 - **Depth first:** each new `latestDepthSample` (identity change) is appended to
@@ -50,6 +52,8 @@ maintainer's re-test goal, visualised).
   feeds the resolver before AR starts; identity de-dup of depth appends;
   `dispose()` tears down views + resets the resolver. PnP/size numerics are
   injected (covered by the framework tests).
+
+- The capture time handed to `view.update` is the newest observation's, and the default view reports its placed objects through `onObjectPlaced`.
 
 ## Related
 

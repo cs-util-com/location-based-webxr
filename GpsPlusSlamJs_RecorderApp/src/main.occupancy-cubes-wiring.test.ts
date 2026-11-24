@@ -283,6 +283,7 @@ vi.mock('./state/recording-options', () => ({
       compassCubes: true,
     },
     loopClosureDebug: { detectorEnabled: false },
+    arSpaceCorrection: { applyEnabled: false },
   }),
 }));
 vi.mock('gps-plus-slam-app-framework/sensors/gps', () => ({

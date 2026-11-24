@@ -97,6 +97,32 @@ describe('createQrDebugView', () => {
     expect(cube.scale.x).toBeCloseTo(0.2, 6);
   });
 
+  it('onPlaced fires after each written object, with the capture time, and only when one is given', () => {
+    // Why this test matters: each update rewrites the raw pose from scratch,
+    // so an app correcting AR content must re-date both objects after every
+    // write; a call before the write, or one for the hidden cube, would
+    // correct a pose that is about to be overwritten.
+    const parent = new Group();
+    const placed: Array<[Object3D, number, Vector3]> = [];
+    const view = createQrDebugView(parent, {
+      onPlaced: (object, capturedAt) =>
+        placed.push([object, capturedAt, object.position.clone()]),
+    });
+    const { axis, cube } = objectsOf(parent);
+    view.update(pose, null, 1000);
+    expect(placed.map(([o, t]) => [o, t])).toEqual([[axis, 1000]]);
+    expect(placed[0]![2].toArray()).toEqual([1, 2, -3]);
+    view.update(pose, 0.2, 2000);
+    expect(placed.slice(1).map(([o, t]) => [o, t])).toEqual([
+      [axis, 2000],
+      [cube, 2000],
+    ]);
+    // The cube is reported after its slab offset was applied.
+    expect(placed[2]![2].z).toBeCloseTo(-3 - 0.005, 9);
+    view.update(pose, 0.2);
+    expect(placed).toHaveLength(3);
+  });
+
   it('clear() hides without detaching; dispose() detaches', () => {
     const parent = new Group();
     const view = createQrDebugView(parent);
