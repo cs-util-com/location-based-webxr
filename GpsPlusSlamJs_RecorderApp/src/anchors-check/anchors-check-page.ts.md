@@ -24,10 +24,13 @@ overlayRoot, connect(controller) }`; `connect` returns `{ copy() }` (the
 - `beforexrselect` is prevented on the panel, so a button tap during AR is
   not also a placement.
 - A missing element id throws at load, naming the id.
+- The list is oldest first; each render scrolls it to its end, so the
+  newest entry is in view.
 - The counts line and every list line come from `anchor-jump-report.ts` (`countsLine`, `onScreenLine`); the page adds no wording of its own.
 
 ## Tests
 
 `anchors-check-page.test.ts` (jsdom, the real markup): the overlay root holds
 the panel, `beforexrselect` is prevented, start states, the error tone, the
-event list, copy success, copy failure and no clipboard.
+event list and its scroll to the newest entry, copy success, copy failure
+and no clipboard.

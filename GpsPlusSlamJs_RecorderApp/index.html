@@ -1096,8 +1096,8 @@ No errors</pre>
                 />
               </div>
               <!-- Image-content gate (defocus / low-light blur + black frames),  -->
-              <!-- off by default until field-tuned. Runs off-thread on frames     -->
-              <!-- that already passed the motion gate.                            -->
+              <!-- on by default (the framework's DEFAULT_QUALITY_FILTER). Runs    -->
+              <!-- off-thread on frames that already passed the motion gate.       -->
               <label class="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"

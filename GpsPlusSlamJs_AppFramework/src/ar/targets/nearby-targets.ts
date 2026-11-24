@@ -169,7 +169,7 @@ export function nearbyTargets(input: NearbyInput): NearbyResult {
   // The kernel's memory is H whatever it is fed: no sample older counts.
   const fromMs = nowMs - params.H;
   const live = usableLive(input.live);
-  const accFix = accuracyNow(live, input.fixes);
+  const accFix = accuracyNow(live, input.fixes, fromMs);
   const anchor = drAnchor(input.arPoses, input.newestFixAtMs, fromMs);
   const state = stateOf(input, live, accFix, anchor);
   // The live sample's drift: the horizontal AR distance since the anchor.
@@ -293,12 +293,19 @@ function usableLive(live: LivePose | null): Live | null {
   return { ...live, arOk };
 }
 
-/** acc_fix now: the live pose's, else the newest usable fix's. */
-function accuracyNow(live: Live | null, fixes: readonly Fix[]): number | null {
+/** acc_fix now: the live pose's, else the newest usable fix's within H
+ *  (an older one is outside the kernel's memory). */
+function accuracyNow(
+  live: Live | null,
+  fixes: readonly Fix[],
+  fromMs: number
+): number | null {
   const own = live === null ? null : finitePositive(live.accM);
   if (own !== null) return own;
   for (let i = fixes.length - 1; i >= 0; i -= 1) {
-    const a = finitePositive(fixes[i]?.accM);
+    const f = fixes[i];
+    if (!(f !== undefined && f.t >= fromMs)) continue;
+    const a = finitePositive(f.accM);
     if (a !== null) return a;
   }
   return null;

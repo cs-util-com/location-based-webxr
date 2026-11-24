@@ -154,8 +154,10 @@ export function extractActionTimestamp(action: ReplayAction): number | null {
     case 'phaseMarkers/phaseMarked':
       // payload.timestamp - epoch ms (`Date.now()` at the tap). Same reason
       // as the note above: a null here zeroed the delay on both sides of
-      // every marker.
-      return Number.isFinite(payload.timestamp)
+      // every marker. The slice accepts 0, and pacing on 0 would make the
+      // delay after it the max clamp, so only a positive finite epoch counts.
+      return Number.isFinite(payload.timestamp) &&
+        (payload.timestamp as number) > 0
         ? (payload.timestamp as number)
         : null;
 

@@ -45,8 +45,9 @@ offline with other rules.
   - `VERDICT_TOLERANCES`: `tight` 0.05 m / 1.5 deg, `main` 0.1 m / 3 deg,
     `loose` 0.25 m / 6 deg.
 - `poseStep(a, b)`: translation (m) and geodesic rotation (deg).
-- `classifyStep(step)`: `'rotation only'` (translation at most 0.25 m),
-  `'under 0.3 m'`, `'0.3-1 m'` or `'at least 1 m'`. Applied to the
+- `classifyStep(step)`: `'at most 0.25 m'` (at most
+  `JUMP_TRANSLATION_M`: a jump by its rotation), `'0.25-0.3 m'`,
+  `'0.3-1 m'` or `'at least 1 m'`, by the translation. Applied to the
   unexplained step.
 - `classifyAnchor(before, after, predicted, tol)`:
   - `'frame switch'` when the anchor is within `tol` of `D * anchorBefore`
@@ -58,7 +59,10 @@ offline with other rules.
   - `notePlaced(t, pose)`, `noteAnchorFailed(t, message)`,
     `noteError('frame-error' | 'anchor-read-error', t, message)`,
     `noteSession('start' | 'end', t)`;
-  - `events()`, `snapshot()`, `stats()`.
+  - `events()`, `snapshot()`, `stats()`;
+  - `settlingReadings()`: the readings the still-settling episode holds (0
+    when none), so the page can render on each new reading without
+    copying the snapshot every frame.
 - Exported types:
   - `FrameSample`: `t`, `camera`, `anchor`, `anchorTracked`, `marker`. A
     `null` camera means tracking is lost.
@@ -114,6 +118,12 @@ offline with other rules.
     - that motion carried over the episode, `(speed + turn rate * anchor
 distance) * dt` with the turn rate in rad/s, moves the anchor under
       `STILL_DISPLACEMENT_M`;
+    - stillness DURING the loss is a precondition of the method, not
+      something the tracker can check: motion while the camera is covered
+      is not observed at all, and the window's net step over its span
+      hides an out-and-back before it. The walker stands still through a
+      covered-camera loss; a loss taken while moving is judged on a `D`
+      that holds that motion;
   - a compensated jump needs a steady rate: the rate frame's own
     unexplained step known and under `STEADY_RATE_FRACTION` of the limits,
     else `'unsteady rate'` (a 0.2 m correction under the limits sits in the
@@ -163,7 +173,10 @@ const tracker = createAnchorJumpTracker();
 tracker.noteSession('start', t0);
 renderer.setAnimationLoop((t, frame) => {
   const events = tracker.onFrame({ t, camera, anchor, anchorTracked, marker });
-  if (events.length > 0) show(tracker.snapshot());
+  if (events.length > 0 || tracker.settlingReadings() !== shown) {
+    shown = tracker.settlingReadings();
+    show(tracker.snapshot());
+  }
 });
 ```
 
@@ -192,7 +205,12 @@ renderer.setAnimationLoop((t, frame) => {
     ratio at exactly 1.5 and just over, the 100 ms window, the displacement
     at the anchor, and jumps kept out of the noise floor;
   - the pending flag, a placement mid-window, the session reset, the notes
-    and bad input.
+    and bad input;
+  - a still camera with seeded Gaussian pose noise (1 mm and 0.05 deg per
+    axis, swept at 0.33x, 1x and 3x, at 30 and 60 Hz) logs no jump and
+    keeps its noise floor under the steady-rate limit. The first jumps
+    appear near 10x at 60 Hz and between 10x and 20x at 30 Hz, the
+    rotation binding first.
 - `anchor-jump-tracker.property.test.ts` covers:
   - for random SE(3) jumps, anchors and smooth camera motion: exactly one
     jump when the step at the camera is over the limits and none when under,

@@ -109,8 +109,10 @@ export function createNearbyPositionSource(
         key[1] !== alignment ||
         key[2] !== zero
       ) {
-        key = [ev, alignment, zero];
+        // The key is set only once the build succeeded: a build that
+        // throws is retried on the next call, never cached as the old one.
         built = ev ? build(ev, usableAlignment(alignment), zero) : EMPTY;
+        key = [ev, alignment, zero];
       }
       const from = nowMs - o.lookBackMs;
       return {

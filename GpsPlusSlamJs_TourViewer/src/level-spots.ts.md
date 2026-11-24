@@ -28,6 +28,9 @@ Both are stored as the optional `qr.spots`, next to the level's own pose.
 
 ## Invariants and defensive measures
 
+- A stored record must be a JSON object that is no array: the guard is the
+  framework's shared `isJsonObject` (`utils/json-guards`, deep-imported),
+  not a local copy.
 - **Lenient by design** (M6 v2 review #9).
   - Visitors' parser (`parseQrLevel`) drops `qr.spots`, so a damaged entry
     must never reject a level.

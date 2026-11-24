@@ -4,6 +4,7 @@ import {
   errorText,
   fetchBytes,
   formatBytes,
+  isDownloadError,
   summarizeResources,
 } from "./bench-net";
 
@@ -73,6 +74,53 @@ describe("fetchBytes", () => {
     ).rejects.toThrow(
       "xfeat model: TypeError: Failed to fetch for https://x.test/blocked.tflite (network error or CORS refusal)",
     );
+  });
+});
+
+describe("isDownloadError", () => {
+  /** The message `fetchBytes` throws for `fetch`, as a load error reads. */
+  const thrown = async (fetch: () => Promise<Response>): Promise<string> => {
+    try {
+      await fetchBytes("https://x.test/m.onnx", "model", {
+        fetch,
+        now: () => 0,
+      });
+    } catch (e) {
+      return `init: ${errorText(e)}`;
+    }
+    throw new Error("fetchBytes did not throw");
+  };
+
+  // Why this test matters: the measuring queue must not take a model that
+  // could not be fetched (offline, a cache miss in a new worker) for a lost
+  // GPU device, or it turns the method off for good. The shapes come from
+  // `fetchBytes` itself, so a reworded message cannot drift past the check.
+  it("knows both failures fetchBytes throws, and a module that could not be fetched", async () => {
+    expect(
+      isDownloadError(
+        await thrown(() => Promise.reject(new TypeError("Failed to fetch"))),
+      ),
+    ).toBe(true);
+    expect(
+      isDownloadError(
+        await thrown(() => Promise.resolve(new Response("", { status: 504 }))),
+      ),
+    ).toBe(true);
+    expect(
+      isDownloadError(
+        "init: TypeError: Failed to fetch dynamically imported module: https://x.test/ort.mjs",
+      ),
+    ).toBe(true);
+  });
+
+  it("does not take a GPU or runtime error for one", () => {
+    for (const text of [
+      "init: Error: device lost",
+      "extract: OrtRun failed: out of memory",
+      "",
+    ]) {
+      expect(isDownloadError(text), text).toBe(false);
+    }
   });
 });
 

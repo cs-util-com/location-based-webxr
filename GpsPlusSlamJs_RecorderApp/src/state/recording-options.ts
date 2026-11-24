@@ -216,10 +216,9 @@ export interface ImageCaptureOptions {
   /**
    * Image-quality gate — drop a blurry/black frame (judged off-thread) and retry
    * the next acceptable frame. Mirrors `ImageCaptureConfig.qualityFilter`; flows
-   * through the same capture seam as `motionFilter`. **Default: disabled**
-   * pending field tuning of the relative blur threshold (a mis-tuned gate
-   * silently dropping good frames is worse than the motion gate's default-on).
-   * See `ar/image-quality.ts` and
+   * through the same capture seam as `motionFilter`. **Default: enabled**
+   * (the framework's `DEFAULT_QUALITY_FILTER`, where the tuning and its
+   * limits are stated). See `ar/image-quality.ts` and
    * `GpsPlusSlamJs_Docs/docs/2026-06-24-1057-image-quality-gate-plan.md`.
    */
   qualityFilter: QualityFilterConfig;
@@ -560,7 +559,7 @@ export const DEFAULT_RECORDING_OPTIONS: RecordingOptions = {
     // DEFAULT_CAPTURE_CONFIG.motionFilter — each default group must be its own
     // object so an accidental in-place mutation cannot leak across them.
     motionFilter: { ...DEFAULT_MOTION_FILTER }, // blurry-frame motion gate (on)
-    // Same spread/alias rationale — blur/blackness image gate (off by default).
+    // Same spread/alias rationale: blur/blackness image gate (on by default).
     qualityFilter: { ...DEFAULT_QUALITY_FILTER },
   },
   // Spread so this default group does not ALIAS the framework's

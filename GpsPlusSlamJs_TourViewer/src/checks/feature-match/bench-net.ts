@@ -36,6 +36,16 @@ export function errorText(e: unknown): string {
   return String(e);
 }
 
+/**
+ * A load error that is a download failing: either failure `fetchBytes`
+ * throws, or a runtime module that could not be fetched. Not a GPU error.
+ */
+export function isDownloadError(text: string): boolean {
+  return /\(network error or CORS refusal\)|: HTTP \d+ for |Failed to fetch dynamically imported module/.test(
+    text,
+  );
+}
+
 /** Bytes for the log: "-" for unknown, else B, KB or MB (powers of 1000). */
 export function formatBytes(n: number | null): string {
   if (n === null || !Number.isFinite(n)) {

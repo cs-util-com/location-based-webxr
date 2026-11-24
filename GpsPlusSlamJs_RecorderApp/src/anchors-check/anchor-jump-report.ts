@@ -368,7 +368,7 @@ export function buildLog(input: LogInput): string {
     countsLogLine('jumps', verdictCounts(events, 'jump')),
     countsLogLine('tracking losses', verdictCounts(events, 'tracking-loss')),
     countsLogLine('frame gaps', verdictCounts(events, 'frame-gap')),
-    `judged jump bands: rotation only ${band('rotation only')}, under 0.3 m ${band('under 0.3 m')}, 0.3-1 m ${band('0.3-1 m')}, at least 1 m ${band('at least 1 m')}`,
+    `judged jump bands: at most 0.25 m ${band('at most 0.25 m')}, 0.25-0.3 m ${band('0.25-0.3 m')}, 0.3-1 m ${band('0.3-1 m')}, at least 1 m ${band('at least 1 m')}`,
     `anchor now (tracked ${trackedText(input.anchorNowTracked)}): ${formatPose(input.anchorNow)}`,
     `marker now: ${formatPose(input.markerNow)}`,
     `anchor to marker now: ${anchorToMarker}`,

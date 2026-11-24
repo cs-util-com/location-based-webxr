@@ -23,7 +23,8 @@ them.
     not, sets `ctx.qrDecodeAtMs` to `now()`, which opens the tracker
     capture gate's burst, unless `codeOpensBurst` says the session knows
     the code is none it can use (no level in this tour, its level cannot
-    lock (`isLockableLevel`: print size and geo), ignored), so a poster in view does not hold the full cadence. A decode
+    lock (`isLockableLevel`: print size and geo), ignored), so a poster
+    in view does not hold the full cadence. A decode
     resolving after the pipeline ended stamps nothing (`live()`). The
     instrument wraps the stamped front end.
   - `now` (M2b review #4): the page clock - the QR controller's detection

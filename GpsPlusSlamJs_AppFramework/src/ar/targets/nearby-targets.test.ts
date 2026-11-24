@@ -664,13 +664,15 @@ describe('nearbyTargets: the AR gate', () => {
     expect(r.open.map((o) => [o.key, o.by])).toEqual([['nogeo', 'ar']]);
   });
 
-  // Why this test matters: a sighting is where the DEVICE stood when it saw
-  // the target, not the target's solved pose. A visitor who read a code
-  // from 6 m away and has not moved must keep it open (distance 0 to the
-  // sighting); the same 6 m measured from the code's own pose is beyond
-  // R_AR (reachM 1 + margin 1), so a tracker passing the target pose would
-  // close a code the visitor is looking at.
-  it('measures from where the device stood at the sighting, not from the target', () => {
+  // Why this test matters (a contract example, not a wiring test): the
+  // kernel measures live.ar against whatever point `sighting` holds; it
+  // cannot tell a camera position from a target pose. This example shows
+  // why the contract asks trackers for the camera position: a visitor who
+  // read a code from 6 m away and has not moved stays open against the
+  // camera point and closes against the code's pose (beyond reachM 1 +
+  // margin 1). Whether a tracker passes the right point belongs in that
+  // tracker's own wiring tests.
+  it('measures from the sighting point it is given (contract example)', () => {
     const camera: ArPose = { t: NOW - 1_000, pos: [0, 0, 0] };
     const codePose: ArPose = { t: NOW - 1_000, pos: [6, 0, 0] };
     const run = (sighting: ArPose) =>
@@ -724,6 +726,20 @@ describe('nearbyTargets: the look-back H caps the kernel itself', () => {
       ).state;
     expect(at(59_000)).toBe('dr');
     expect(at(61_000)).toBe('unknown');
+  });
+
+  // Why this test matters: acc_fix falls back to the newest fix's accuracy
+  // when the live pose states none. A fix older than H is outside the
+  // kernel's memory; its accuracy must not vouch for a fresh device fix
+  // that carried none (the source drops such a fix from `fixes`).
+  it('takes the fallback accuracy from fixes within H only', () => {
+    const r = nearbyTargets(
+      input({
+        fixes: [fix(NOW - 70_000, 0, 0, 3)],
+        newestFixAtMs: NOW - 1_000,
+      })
+    );
+    expect(r.state).toBe('unknown');
   });
 
   // Why this test matters: the AR path is the walk within H; samples older

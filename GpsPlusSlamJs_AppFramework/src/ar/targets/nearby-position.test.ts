@@ -134,6 +134,26 @@ describe('createNearbyPositionSource', () => {
     expect(reads).toBe(2);
   });
 
+  // Why this test matters: the cache key must name what was BUILT. A
+  // rebuild that throws (a getter-backed store value failing once) must
+  // not leave the key pointing at the new series with the old result, or
+  // every later call would hand over stale (here: no) fixes for good.
+  it('retries the rebuild after one that threw', () => {
+    const rows = events([[point(NOW - 1_000), [0, 0, 0]]]);
+    let fail = true;
+    const flaky: NearbyGpsEvents = {
+      get gpsPositions() {
+        if (fail) throw new Error('store read failed');
+        return rows.gpsPositions;
+      },
+      odometryPositions: rows.odometryPositions,
+    };
+    const s = source(() => flaky, ALIGN);
+    expect(() => s.position(NOW)).toThrow('store read failed');
+    fail = false;
+    expect(s.position(NOW).fixes).toHaveLength(1);
+  });
+
   // Why this test matters: on the lone-fix path (no alignment) a fix's
   // position is taken from the zero; a new zero with the same series must
   // rebuild, or every fix would stay placed from the old origin.

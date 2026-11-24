@@ -6,7 +6,9 @@ The two small helpers the feature-match check's modules share, one copy for the 
 
 ## Public API
 
-- `isObj(v)`: `v` is a JSON object: not null and not an array.
+- `isObj(v)`: `v` is a JSON object: not null and not an array. The
+  framework's `isJsonObject` (`utils/json-guards`), re-exported under the
+  check's short name.
 - `plural(n, word)`: "1 pair", "2 pairs": the count, a space and the word with an "s" unless `n` is 1.
 
 ## Invariants

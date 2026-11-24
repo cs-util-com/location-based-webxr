@@ -1329,6 +1329,25 @@ describe('isMacOsMetadataName: the one macOS re-zip rule', () => {
     expect(isMacOsMetadataName('x__MACOSX/a.json')).toBe(false);
   });
 
+  it('pins the edge names at the source', () => {
+    // Why: the rule is shared by the parser and the Tour Viewer file key;
+    // these edges (a bare "._", a nested __MACOSX folder, a name that only
+    // contains the marker) are where a widened or narrowed regex would
+    // slip without the parity property noticing a change of intent.
+    for (const name of [
+      '._',
+      '._x',
+      'dir/._x',
+      '__MACOSX/foo',
+      'dir/__MACOSX/foo',
+    ]) {
+      expect(isMacOsMetadataName(name), name).toBe(true);
+    }
+    for (const name of ['a._b', 'session.json', 'my__MACOSX.json']) {
+      expect(isMacOsMetadataName(name), name).toBe(false);
+    }
+  });
+
   it('agrees with the rule the Tour Viewer file key held, for any name', () => {
     // The Tour Viewer's former private copy, kept as the oracle the shared
     // rule replaced without a change of behaviour.

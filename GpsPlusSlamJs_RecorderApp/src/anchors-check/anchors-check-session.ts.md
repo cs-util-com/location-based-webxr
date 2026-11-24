@@ -42,7 +42,9 @@ tap, feeds each frame to the tracker and keeps the log's environment lines.
     `frame.trackedAnchors.has(anchor)` (`null` where the browser has no
     `trackedAnchors`);
   - all of them go into the tracker, and the view gets the events when any
-    closed;
+    closed or when the settling episode took a reading (its first, in the
+    episode's own frame, included), so a jump is on screen at once, not 2 s
+    later; a frame that changes neither renders nothing;
   - an anchor that `trackedAnchors` does not hold is hidden and not judged;
   - the anchor read alone has its own try/catch: a `getPose` that throws
     on every frame costs only the anchor (taken as none), never the camera
@@ -60,6 +62,9 @@ tap, feeds each frame to the tracker and keeps the log's environment lines.
     continuity;
   - the log is kept.
 - A failure after the session started ends it first, then shows the cause.
+  When `end()` rejects, its 'end' event may never come, so the start path
+  runs the reset itself; the reset runs once per session either way, and
+  the page never stays in 'starting'.
 
 ## State
 
@@ -78,4 +83,6 @@ an anchor read that throws on
 every frame, a view that throws on the error path, an emulated pose as a
 loss, the stop toggle with the session lines, no comparison across a
 restart, a placement that never settles, an old placement settling late during a
-new one, and a failure after start.
+new one, a failure after start (also with an `end()` that rejects, with
+and without its end event), and a settling episode shown on each new
+reading and only then.

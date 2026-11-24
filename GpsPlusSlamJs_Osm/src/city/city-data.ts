@@ -59,6 +59,7 @@ import { cityGround, type CityGround } from "../mesh/city.js";
 import { ENU_METRES_PER_DEG_LNG_EQUATOR } from "../mesh/enu.js";
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import { loadTiles } from "../source/area-loader.js";
+import { sleep as abortableSleep } from "../source/backoff.js";
 import { cellToBoundingBox } from "../source/overpass-query.js";
 import {
   CachingSource,
@@ -398,7 +399,7 @@ export interface CityLoadOptions {
    * convention.
    */
   readonly undulationMetres?: number;
-  /** The pause (a test seam). Default a timer that an abort cuts short. */
+  /** The pause (a test seam). Default the package's abortable `sleep`. */
   readonly sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
 }
 
@@ -411,24 +412,6 @@ function spacingAt(lat: number, zoom: number): number {
     (ENU_METRES_PER_DEG_LNG_EQUATOR * 360 * Math.cos((lat * Math.PI) / 180)) /
     (256 * 2 ** zoom);
   return Math.max(TERRAIN_SPACING_M, pixelM);
-}
-
-function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
-  return new Promise((resolve) => {
-    if (signal.aborted) {
-      resolve();
-      return;
-    }
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
-  });
 }
 
 function now(): number {
@@ -730,7 +713,9 @@ export function loadCityData(
   };
   /** Asks again for what is missing after each pause, until nothing is. */
   const retry = async (): Promise<void> => {
-    const sleep = options.sleep ?? defaultSleep;
+    // The default rejects at an abort: run() ends as "aborted", which the
+    // abort itself already reported.
+    const sleep = options.sleep ?? abortableSleep;
     for (const pause of options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS) {
       if (tiles.missing.size === 0 && heights.state.ground !== undefined)
         return;

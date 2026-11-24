@@ -10,18 +10,18 @@ Controls timed playback of recorded AR+GPS sessions by dispatching Redux actions
 
 Pure function that extracts an absolute epoch-ms timestamp from a Redux action.
 
-| Action type                   | Timestamp source                                                                       | Returns  |
-| ----------------------------- | -------------------------------------------------------------------------------------- | -------- |
-| `gpsData/recordGpsEvent`      | `payload.rawGpsPoint.timestamp` (new) or `payload.gpsPoint.timestamp` (old recordings) | epoch ms |
-| `gpsData/recordGpsEventBatch` | the FIRST event with a finite time, read like the single action (core 1.26)            | epoch ms |
-| `recorder/startSession`       | `payload.startTime`                                                                    | epoch ms |
-| `gpsData/markReferencePoint`  | `payload.timestamp`, fallback to `rawGpsPoint.timestamp` or `gpsPoint.timestamp`       | epoch ms |
-| `recorder/recordDepthSample`  | _(ignored — uses performance.now)_                                                     | `null`   |
-| `diagnostics/note`            | `payload.atMs` (epoch ms by contract, see `diagnostics-action.ts`)                     | epoch ms |
-| `phaseMarkers/phaseMarked`    | `payload.timestamp` when finite (epoch ms at the tap)                                  | epoch ms |
-| `refPoints/addRefPointEntry`  | `payload.timestamp` when finite and positive (the migration writes 0 for "unknown")    | epoch ms |
-| `recorder/endSession`         | _(no timestamp)_                                                                       | `null`   |
-| All other types               | _(no known timestamp location)_                                                        | `null`   |
+| Action type                   | Timestamp source                                                                        | Returns  |
+| ----------------------------- | --------------------------------------------------------------------------------------- | -------- |
+| `gpsData/recordGpsEvent`      | `payload.rawGpsPoint.timestamp` (new) or `payload.gpsPoint.timestamp` (old recordings)  | epoch ms |
+| `gpsData/recordGpsEventBatch` | the FIRST event with a finite time, read like the single action (core 1.26)             | epoch ms |
+| `recorder/startSession`       | `payload.startTime`                                                                     | epoch ms |
+| `gpsData/markReferencePoint`  | `payload.timestamp`, fallback to `rawGpsPoint.timestamp` or `gpsPoint.timestamp`        | epoch ms |
+| `recorder/recordDepthSample`  | _(ignored — uses performance.now)_                                                      | `null`   |
+| `diagnostics/note`            | `payload.atMs` (epoch ms by contract, see `diagnostics-action.ts`)                      | epoch ms |
+| `phaseMarkers/phaseMarked`    | `payload.timestamp` when finite and positive (epoch ms at the tap; the slice accepts 0) | epoch ms |
+| `refPoints/addRefPointEntry`  | `payload.timestamp` when finite and positive (the migration writes 0 for "unknown")     | epoch ms |
+| `recorder/endSession`         | _(no timestamp)_                                                                        | `null`   |
+| All other types               | _(no known timestamp location)_                                                         | `null`   |
 
 **Critical invariant (Risk R4):** `depthSample` uses `performance.now()` (relative to page load), NOT epoch ms. Returning it would mix clock domains and produce garbage delays.
 

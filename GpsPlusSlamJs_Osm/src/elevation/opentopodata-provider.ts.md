@@ -23,7 +23,8 @@ unavailable — batched, self-throttled, and refusing to be used as a grid sourc
   limit by being rate-limited means the shared quota is already gone.
   `maxPointsPerRun` defaults to exactly one request's worth.
 - **1 req/s is waited out**, with an injected clock and sleep so the tests never
-  actually wait.
+  actually wait. The default sleep is the package's abortable `sleep` of
+  `source/backoff.ts`: an abort during the wait rejects at once.
   - **The slot is RESERVED before the wait, not recorded after it.** `nextSlotAt`
     is a monotonic chain — each caller claims `max(now, nextSlotAt)` and pushes
     the chain forward **synchronously**, then sleeps until its own slot. The

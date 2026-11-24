@@ -55,6 +55,9 @@ export function createQrPerfReport(
   const stages = new Map<string, number[]>();
   const counts = { captures: 0, detects: 0, hits: 0 };
   let frameSize = "";
+  // Bumped by clear(): a detect started before it belongs to the stretch
+  // already copied and records nothing when it settles.
+  let generation = 0;
 
   function record(stage: string, ms: number): void {
     if (!Number.isFinite(ms) || ms < 0) return;
@@ -93,13 +96,14 @@ export function createQrPerfReport(
         kind: frontEnd.kind,
         detect: async (image) => {
           const t0 = now();
+          const started = generation;
           counts.detects += 1;
           try {
             const result = await frontEnd.detect(image);
-            if (result !== null) counts.hits += 1;
+            if (result !== null && started === generation) counts.hits += 1;
             return result;
           } finally {
-            record("detect", now() - t0);
+            if (started === generation) record("detect", now() - t0);
           }
         },
         ...(frontEnd.dispose === undefined
@@ -143,6 +147,7 @@ export function createQrPerfReport(
       return lines.join("\n");
     },
     clear() {
+      generation += 1;
       stages.clear();
       counts.captures = 0;
       counts.detects = 0;

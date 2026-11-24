@@ -1,5 +1,5 @@
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { LatLng, OsmFeature } from "../model/osm-feature.js";
 import type {
@@ -726,6 +726,33 @@ describe("loadCityData", () => {
     controller.abort();
     const report = await load.finished;
     expect(report.outcome).toBe("aborted");
+  });
+
+  // WHY: the default pause is the package's one abortable sleep; an abort
+  // during a long retry pause must end the load at once and leave no timer
+  // behind (a pending 10 min timer would hold a test runner or a page).
+  it("cuts its default retry pause short at an abort, no timer left", async () => {
+    vi.useFakeTimers();
+    try {
+      const plan = multiTilePlan();
+      const flaky = plan.overpassTiles.at(-1) ?? "";
+      const load = loadCityData(plan, {
+        source: fakeSource({ failing: { [flaky]: 1 } }),
+        heightFetch: fakeHeights().fetch,
+        decodePng: decodeFlat,
+        onData: () => {},
+        retryDelaysMs: [600_000],
+      });
+      await load.firstPass;
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(1);
+      load.abort();
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await load.finished).outcome).toBe("aborted");
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("stops at an abort, freezes its progress and delivers nothing more", async () => {

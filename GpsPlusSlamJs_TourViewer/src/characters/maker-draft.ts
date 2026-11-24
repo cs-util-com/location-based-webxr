@@ -6,6 +6,7 @@
  * Also the stepper's words and the main button's label, as pure functions.
  */
 
+import { isJsonObject as isObject } from "gps-plus-slam-app-framework/utils/json-guards";
 import { CUT_SETTINGS, type CutSettings } from "./cut-settings.js";
 
 export const MAKER_STEPS = [
@@ -89,9 +90,6 @@ export function freshDraft(): MakerDraft {
 export const DESC_MAX = 2000;
 /** The longest name, saved id, saved name and failure a draft keeps. */
 export const TEXT_MAX = 200;
-
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
 
 function intIn(v: unknown, lo: number, hi: number, fallback: number): number {
   return typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi

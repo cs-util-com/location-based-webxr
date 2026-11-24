@@ -112,6 +112,27 @@ describe('anchors check page', () => {
     );
   });
 
+  // Why this matters: the list grows down, oldest first, in a box of a
+  // third of the screen. The walker must see the newest verdict without
+  // scrolling by hand in AR, so each render scrolls to the end.
+  it('scrolls the list to the newest entry', () => {
+    const { page } = connect(undefined);
+    const list = el('ac-verdicts');
+    let scrolledTo = 0;
+    Object.defineProperty(list, 'scrollHeight', { value: 480 });
+    Object.defineProperty(list, 'scrollTop', {
+      get: () => scrolledTo,
+      set: (v: number) => {
+        scrolledTo = v;
+      },
+    });
+    const tracker = createAnchorJumpTracker();
+    page.view.showEvents([
+      ...tracker.notePlaced(0, { position: [0, 0, 0], rotation: [0, 0, 0, 1] }),
+    ]);
+    expect(scrolledTo).toBe(480);
+  });
+
   // Why this matters: the async-UI rule, success path: busy at once, then
   // the confirmation, the button usable again, the controller's log copied.
   it('copies the log with an in-progress and a copied state', async () => {

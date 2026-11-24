@@ -23,6 +23,7 @@
 
 import type { LatLng } from "../model/osm-feature.js";
 import type { ElevationProvider } from "./elevation-provider.js";
+import { sleep } from "../source/backoff.js";
 
 export const OPENTOPODATA_ATTRIBUTION =
   "Elevation data © OpenTopoData contributors (SRTM / ASTER / EU-DEM)";
@@ -96,9 +97,7 @@ export class OpenTopoDataProvider implements ElevationProvider {
     this.maxPointsPerRun =
       options.maxPointsPerRun ?? OPENTOPODATA_MAX_LOCATIONS_PER_REQUEST;
     this.now = options.now ?? (() => Date.now());
-    this.sleepImpl =
-      options.sleepImpl ??
-      ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.sleepImpl = options.sleepImpl ?? sleep;
   }
 
   async elevationAt(

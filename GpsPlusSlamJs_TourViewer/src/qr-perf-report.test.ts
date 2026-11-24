@@ -185,6 +185,30 @@ describe("createQrPerfReport", () => {
     expect(text).not.toMatch(/^xr-frame/m);
   });
 
+  // Why this test matters: a detect in flight when the Copy log clears
+  // belongs to the stretch already copied. Counted after the clear it
+  // would show a hit without its detect and a detect time from before.
+  it("drops a detect that started before clear()", async () => {
+    const c = clock();
+    const report = createQrPerfReport({ now: c.now });
+    let resolve: (v: unknown) => void = () => {};
+    const frontEnd = {
+      kind: "test",
+      detect: () =>
+        new Promise((r) => {
+          resolve = r;
+        }),
+    } as unknown as QrFrontEnd;
+    const pending = report.wrapFrontEnd(frontEnd).detect(IMAGE);
+    c.advance(30);
+    report.clear();
+    resolve({ points: [P, P, P, P] });
+    await pending;
+    const text = report.text();
+    expect(lineOf(text, "captures")).toBe("captures 0  detects 0  hits 0");
+    expect(text).not.toMatch(/^detect/m);
+  });
+
   // Why this test matters: a long walk must not grow the buffers without
   // bound; each stage keeps its newest samples only.
   it("keeps a bounded window per stage", () => {

@@ -5,6 +5,7 @@ import {
   invertRigid,
 } from 'gps-plus-slam-app-framework/ar/ar-space-correction';
 import { FRAME_JUMP_THRESHOLD_M } from 'gps-plus-slam-app-framework/ar/deferred-anchors';
+import { mulberry32 } from 'gps-plus-slam-app-framework/utils/mulberry32';
 import {
   JUMP_ROTATION_DEG,
   JUMP_TRANSLATION_M,
@@ -150,14 +151,19 @@ describe('poseStep and classifyStep', () => {
     ).toBeCloseTo(30, 9);
   });
 
-  // Why this matters: the bands are what the spike reports (rotation steps
-  // and 0.3-1 m steps decide follow-up work), so each edge is pinned.
+  // Why this matters: the bands are what the spike reports (steps under
+  // the jump translation limit and 0.3-1 m steps decide follow-up work), so
+  // each edge is pinned, and each name says the range it holds: a step of
+  // 0.2 m with a turn is no "rotation only" step.
   it('bands a step by its size', () => {
     expect(classifyStep({ translationM: 0.1, rotationDeg: 8 })).toBe(
-      'rotation only'
+      'at most 0.25 m'
+    );
+    expect(classifyStep({ translationM: 0.25, rotationDeg: 8 })).toBe(
+      'at most 0.25 m'
     );
     expect(classifyStep({ translationM: 0.27, rotationDeg: 0 })).toBe(
-      'under 0.3 m'
+      '0.25-0.3 m'
     );
     expect(classifyStep({ translationM: 0.3, rotationDeg: 0 })).toBe('0.3-1 m');
     expect(classifyStep({ translationM: 0.99, rotationDeg: 0 })).toBe(
@@ -239,7 +245,7 @@ describe('jump detection', () => {
     samples.push(bare(330, pose(0, 1.5, -0.4, 12)));
     const [jump] = episodes(feed(samples));
     expect(jump?.kind).toBe('jump');
-    expect(jump?.stepClass).toBe('rotation only');
+    expect(jump?.stepClass).toBe('at most 0.25 m');
     expect(jump?.readings[0]?.comparison).toBeNull();
   });
 
@@ -820,4 +826,77 @@ describe('the record around the episodes', () => {
     expect(tracker.onFrame(bare(0, pose(5, 0, 0)))).toEqual([]);
     expect(tracker.stats().dtMs).toEqual([]);
   });
+});
+
+describe('a still camera with seeded per-frame pose noise', () => {
+  /** Two standard normal draws (Box-Muller) from a seeded uniform source. */
+  function normals(next: () => number): [number, number] {
+    const u = 1 - next();
+    const r = Math.sqrt(-2 * Math.log(u));
+    const a = 2 * Math.PI * next();
+    return [r * Math.cos(a), r * Math.sin(a)];
+  }
+
+  /** Small rotation about x, y and z (degrees each), as a unit quaternion. */
+  function tilt(dx: number, dy: number, dz: number): Pose['rotation'] {
+    const h = Math.PI / 360;
+    const q: Pose['rotation'] = [dx * h, dy * h, dz * h, 1];
+    const n = Math.hypot(...q);
+    return [q[0] / n, q[1] / n, q[2] / n, q[3] / n];
+  }
+
+  /**
+   * Feeds `seconds` of a camera standing still at 1.5 m, each frame
+   * perturbed by Gaussian noise of `sigmaM` per axis and `sigmaDeg` per
+   * rotation axis, and returns the episodes and the noise floor.
+   */
+  function stillWithNoise(
+    hz: number,
+    sigmaM: number,
+    sigmaDeg: number,
+    seed: number,
+    seconds = 10
+  ) {
+    const next = mulberry32(seed);
+    const tracker = createAnchorJumpTracker();
+    const frames = Math.round(seconds * hz);
+    let t = 0;
+    for (let i = 0; i < frames; i++) {
+      t = (i * 1000) / hz;
+      const [nx, ny] = normals(next);
+      const [nz, rx] = normals(next);
+      const [ry, rz] = normals(next);
+      tracker.onFrame(
+        bare(t, {
+          position: [nx * sigmaM, 1.5 + ny * sigmaM, nz * sigmaM],
+          rotation: tilt(rx * sigmaDeg, ry * sigmaDeg, rz * sigmaDeg),
+        })
+      );
+    }
+    tracker.noteSession('end', t);
+    const { unexplainedM, unexplainedDeg } = tracker.stats();
+    return {
+      episodes: episodes(tracker.events()),
+      maxM: Math.max(...unexplainedM),
+      maxDeg: Math.max(...unexplainedDeg),
+    };
+  }
+
+  // Why this matters: in 'always' mode each frame is extrapolated from the
+  // one before, which roughly doubles per-frame tracking noise in the
+  // unexplained step. A phone held still has about 1 mm and 0.05 deg of
+  // per-axis pose noise; that noise, swept from a third to three times
+  // that size at 30 and 60 Hz, must log no jump, and its noise floor must
+  // stay well inside the steady-rate limit, or every real jump after it
+  // would read 'unsteady rate'.
+  for (const hz of [30, 60]) {
+    for (const scale of [0.33, 1, 3]) {
+      it(`logs no jump at ${String(hz)} Hz, noise x${String(scale)}`, () => {
+        const r = stillWithNoise(hz, 0.001 * scale, 0.05 * scale, 1234 + hz);
+        expect(r.episodes).toEqual([]);
+        expect(r.maxM).toBeLessThan(JUMP_TRANSLATION_M * STEADY_RATE_FRACTION);
+        expect(r.maxDeg).toBeLessThan(JUMP_ROTATION_DEG * STEADY_RATE_FRACTION);
+      });
+    }
+  }
 });

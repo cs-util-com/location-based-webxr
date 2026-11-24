@@ -43,7 +43,9 @@ the QR demo's instrument, kept small and in this app.
 - A failed detect or solve is still timed, and its error is rethrown
   untouched.
 - Every stage keeps a bounded window; the counts are since the last
-  `clear()`.
+  `clear()`. A generation counter bumped by `clear()` drops a detect
+  that started before it: its hit and its time belong to the stretch
+  already copied.
 
 ## Example
 
@@ -62,7 +64,8 @@ startCameraFrameCapture({
 - `qr-perf-report.test.ts`: the flag; readback, flip and their sum per
   capture; detect's wall time, hits and `dispose`; a failed detect; the
   solve; long frames against the median; bad timings ignored; `clear()`;
-  the bounded window.
+  a detect in flight across `clear()` recording nothing; the bounded
+  window.
 - `qr-perf-report.property.test.ts`: for any frame intervals the long-frame
   counts nest (over 2x <= over 1.5x <= kept frames) and the kept frames
   are the positive intervals within the window.

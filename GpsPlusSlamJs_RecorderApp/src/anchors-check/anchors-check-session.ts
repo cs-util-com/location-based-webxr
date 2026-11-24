@@ -197,9 +197,19 @@ export function createAnchorsCheck(
   let anchorsUsable = false;
   let frameChecked = false;
   let placing = false;
+  /** The settling episode's readings when the list was last rendered. */
+  let shownReadings = 0;
 
+  /**
+   * Renders when an event closed or the settling episode took a reading
+   * (its first included), so a jump shows from its own frame on; a frame
+   * that changes neither renders nothing.
+   */
   function report(events: readonly TrackerEvent[]): void {
-    if (events.length > 0) view.showEvents(tracker.snapshot());
+    const settling = tracker.settlingReadings();
+    if (events.length === 0 && settling === shownReadings) return;
+    shownReadings = settling;
+    view.showEvents(tracker.snapshot());
   }
 
   /**
@@ -336,7 +346,10 @@ export function createAnchorsCheck(
     }
   }
 
+  /** Resets the page once per session: the 'end' event, or the start
+   *  path's own fallback when `end()` rejects (then 'end' may never fire). */
   function onEnd(): void {
+    if (session === null) return;
     session = null;
     hitSource = null;
     // A createAnchor of the old session may never settle; it must not
@@ -351,6 +364,7 @@ export function createAnchorsCheck(
     scene.showAnchor(null);
     scene.showMarker(null);
     tracker.noteSession('end', lastT);
+    shownReadings = 0;
     view.showEvents(tracker.events());
     view.setStartState('idle');
     view.status(MESSAGES.ended, 'info');
@@ -383,7 +397,8 @@ export function createAnchorsCheck(
       await scene.start(started, onFrame);
     } catch (error) {
       // End first: its 'end' handler resets the page, then the cause shows.
-      await started.end().catch(() => undefined);
+      // A rejected end() may never fire 'end': reset here then (once).
+      await started.end().catch(() => onEnd());
       view.status(`Could not start AR: ${errorText(error)}`, 'error');
       return;
     }

@@ -11,6 +11,7 @@ Downloads and their accounting for the benchmark: timed fetches, resource-timing
 - `errorText(e)`: `Name: message` for errors, `String(e)` otherwise.
 - `formatBytes(n | null)`: B, KB, MB in powers of 1000; `-` for null.
 - `summarizeResources(entries, prefix, label)`: all entries under a URL prefix as one record, or null if none. `bytes` is null when any entry hides its size (a cross-origin file without `Timing-Allow-Origin`); `cached` is true when nothing came over the network.
+- `isDownloadError(text)`: a load error that is a download failing: either failure `fetchBytes` throws, or a runtime module that could not be fetched ("Failed to fetch dynamically imported module"). The measuring queue uses it so a model it cannot fetch is never taken for a lost GPU device.
 - `fetchBytes(url, label, { fetch, now, lookup? })`: the body as bytes and its record; sent with `referrerPolicy: "no-referrer"`; throws `<label>: HTTP <status> for <url>` on a non-ok response, and `<label>: <error> for <url> (network error or CORS refusal)` when the request itself rejects.
 - `LoadDeps { importModule, fetch, now, resources }`: what a method needs from the browser; tests pass fakes.
 - `lookupIn(deps)`: the resource entry of one URL.
