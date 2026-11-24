@@ -3,6 +3,7 @@ import fc from 'fast-check';
 import {
   DEFAULT_NEARBY_PARAMS,
   nearbyTargets,
+  timeSlot,
   type Fix,
   type NearbyInput,
   type Target,
@@ -191,6 +192,46 @@ describe('nearbyTargets properties', () => {
           );
         }
       )
+    );
+  });
+});
+
+describe('timeSlot properties', () => {
+  // Why this test matters: the round robin mixes the period count, so a
+  // slot's revisit wait is geometric (mean n periods), not a fixed n. Its
+  // tail is the price of being cursor-free: with 3 targets a target waits
+  // more than 10 periods about 1.7 % of the time ((2/3)^10). The test pins
+  // that shape, so a change to the mix that bunched slots (a longer tail,
+  // or a starved slot) fails here, and so does one that made the turn
+  // strict (no tail at all).
+  it('revisits each slot after a geometric wait: mean n, P(wait > w) = (1 - 1/n)^w', () => {
+    const PERIODS = 6_000;
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 2, max: 6 }),
+        fc.integer({ min: 0, max: 2 ** 40 }),
+        (n, start) => {
+          const last = new Array<number>(n).fill(-1);
+          const visits = new Array<number>(n).fill(0);
+          const waits: number[] = [];
+          for (let i = 0; i < PERIODS; i += 1) {
+            const s = timeSlot((start + i) * 1_000, 1_000, n);
+            visits[s] = visits[s]! + 1;
+            if (last[s]! >= 0) waits.push(i - last[s]!);
+            last[s] = i;
+          }
+          for (const v of visits) {
+            expect(Math.abs(v / PERIODS - 1 / n)).toBeLessThan(0.05);
+          }
+          const mean = waits.reduce((a, b) => a + b, 0) / waits.length;
+          expect(Math.abs(mean - n)).toBeLessThan(0.15 * n);
+          for (const w of [1, n, 10]) {
+            const tail = waits.filter((x) => x > w).length / waits.length;
+            expect(Math.abs(tail - (1 - 1 / n) ** w)).toBeLessThan(0.03);
+          }
+        }
+      ),
+      { numRuns: 40 }
     );
   });
 });

@@ -664,6 +664,27 @@ describe('nearbyTargets: the AR gate', () => {
     expect(r.open.map((o) => [o.key, o.by])).toEqual([['nogeo', 'ar']]);
   });
 
+  // Why this test matters: a sighting is where the DEVICE stood when it saw
+  // the target, not the target's solved pose. A visitor who read a code
+  // from 6 m away and has not moved must keep it open (distance 0 to the
+  // sighting); the same 6 m measured from the code's own pose is beyond
+  // R_AR (reachM 1 + margin 1), so a tracker passing the target pose would
+  // close a code the visitor is looking at.
+  it('measures from where the device stood at the sighting, not from the target', () => {
+    const camera: ArPose = { t: NOW - 1_000, pos: [0, 0, 0] };
+    const codePose: ArPose = { t: NOW - 1_000, pos: [6, 0, 0] };
+    const run = (sighting: ArPose) =>
+      nearbyTargets(
+        input({
+          ...base,
+          live: { t: NOW, north: 999, east: 999, ar: [0, 0, 0], accM: 5 },
+          targets: [target('s', 900, 900, { reachM: 1, sighting })],
+        })
+      ).open.map((o) => [o.key, o.by, o.distM]);
+    expect(run(camera)).toEqual([['s', 'ar', 0]]);
+    expect(run(codePose)).toEqual([]);
+  });
+
   // Why this test matters: the AR gate needs the live AR pose.
   it('is closed without a live pose', () => {
     const r = nearbyTargets(

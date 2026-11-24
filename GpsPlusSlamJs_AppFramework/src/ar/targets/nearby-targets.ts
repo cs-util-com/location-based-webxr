@@ -47,7 +47,13 @@ export interface Target {
    *  max(accM, defaultTargetAccM) + the widening; a zero widening, or a
    *  value that is not finite and >= 0, leaves the target unwidened. */
   readonly alignmentGpsExtentM?: number;
-  /** The tracker's newest sighting in the current AR frame (odom-NUE). */
+  /** Where the DEVICE was (the camera's odom-NUE position) when this
+   *  tracker last saw the target in the current AR frame; never the
+   *  target's own solved pose. The AR gate opens while `live.ar` is within
+   *  reachM + arMarginM + alpha x the path walked of this point: a visitor
+   *  back where they saw it can see it again from there. A tracker that
+   *  passed the target's pose instead would measure the visitor's distance
+   *  to the target against a radius around where they stood. */
   readonly sighting?: ArPose;
 }
 
