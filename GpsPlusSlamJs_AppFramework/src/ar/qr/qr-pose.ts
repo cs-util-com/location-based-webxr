@@ -76,6 +76,11 @@ export interface SolveQrPoseInput {
   imagePoints: readonly Point2[];
   /** Printed physical side length of the QR, meters (from the level file). */
   sizeM: number;
+  /**
+   * Height over width of a rectangular planar target; `sizeM` is then its
+   * width. Default 1 (a QR code). See {@link buildObjectPoints}.
+   */
+  aspectRatio?: number;
   /** Intrinsics for the exact pixel buffer the corners came from. */
   intrinsics: CameraIntrinsics;
   /** Capturing camera pose in raw-WebXR/odom space (`DepthSample.cameraPos/Rot`). */
@@ -102,24 +107,56 @@ export interface QrPoseSolution {
 const DEFAULT_MAX_REPROJECTION_ERROR_PX = 4;
 
 /**
- * Build the 4 object points of a centered planar square of side `sizeM`, in
- * the QR-local frame (+x right, +y up, z = 0), ordered TL, TR, BR, BL to match
- * the detector's symbol reading order.
+ * Whether `aspectRatio` is a usable planar-target aspect ratio (height over
+ * width): a finite number above zero.
+ */
+export function isValidAspectRatio(
+  aspectRatio: unknown
+): aspectRatio is number {
+  return (
+    typeof aspectRatio === 'number' &&
+    aspectRatio > 0 &&
+    Number.isFinite(aspectRatio)
+  );
+}
+
+/**
+ * Throw a RangeError naming `module` unless `aspectRatio` is valid (see
+ * {@link isValidAspectRatio}).
+ */
+export function assertAspectRatio(aspectRatio: number, module: string): void {
+  if (!isValidAspectRatio(aspectRatio)) {
+    throw new RangeError(
+      `${module}: aspectRatio must be a positive finite number, got ${aspectRatio}`
+    );
+  }
+}
+
+/**
+ * Build the 4 object points of a centered planar rectangle `sizeM` wide and
+ * `sizeM * aspectRatio` high, in the target-local frame (+x right, +y up,
+ * z = 0), ordered TL, TR, BR, BL to match the detector's symbol reading order.
+ * The default aspect ratio of 1 is the QR code's square, bit for bit.
+ *
+ * @throws RangeError on a non-positive or non-finite size or aspect ratio.
  */
 export function buildObjectPoints(
-  sizeM: number
+  sizeM: number,
+  aspectRatio = 1
 ): [Vector3, Vector3, Vector3, Vector3] {
   if (!(sizeM > 0) || !Number.isFinite(sizeM)) {
     throw new RangeError(
       `qr-pose: sizeM must be a positive number, got ${sizeM}`
     );
   }
-  const h = sizeM / 2;
+  assertAspectRatio(aspectRatio, 'qr-pose');
+  const w = sizeM / 2;
+  const h = (sizeM * aspectRatio) / 2;
   return [
-    [-h, h, 0], // TL
-    [h, h, 0], // TR
-    [h, -h, 0], // BR
-    [-h, -h, 0], // BL
+    [-w, h, 0], // TL
+    [w, h, 0], // TR
+    [w, -h, 0], // BR
+    [-w, -h, 0], // BL
   ];
 }
 
@@ -419,6 +456,7 @@ export function solveQrPose(input: SolveQrPoseInput): QrPoseSolution | null {
   const {
     imagePoints,
     sizeM,
+    aspectRatio = 1,
     intrinsics,
     cameraPose,
     solver,
@@ -430,7 +468,7 @@ export function solveQrPose(input: SolveQrPoseInput): QrPoseSolution | null {
     return null;
   }
 
-  const objectPoints = buildObjectPoints(sizeM);
+  const objectPoints = buildObjectPoints(sizeM, aspectRatio);
   const pnp = solver.solve(objectPoints, imagePoints, intrinsics);
   if (!pnp) {
     return null;

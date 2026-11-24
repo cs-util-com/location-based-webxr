@@ -22,6 +22,7 @@ import type { Quaternion, Vector3 } from 'gps-plus-slam-js';
 import type { CameraIntrinsics, Point2, Pose } from './qr-pose.js';
 import {
   buildObjectPoints,
+  isValidAspectRatio,
   rotateVectorByQuaternion,
   validateQuad,
 } from './qr-pose.js';
@@ -56,6 +57,11 @@ export interface QrMultiViewPoseOptions {
    * lowest robust cost over all views. Default 3.
    */
   maxStarts?: number;
+  /**
+   * Height over width of a rectangular planar target; `sizeM` is then its
+   * width. Default 1 (a QR code). Invalid: the solve returns `null`.
+   */
+  aspectRatio?: number;
 }
 
 export interface QrMultiViewPoseResult {
@@ -236,9 +242,13 @@ interface ViewSeed {
  * SLAM error, the real root's position was never better and at close range
  * worse (p95 1.55 vs 1.26 deg at 0.8 m, 0.5 px; plan §12).
  */
-function seedOf(view: QrViewObservation, sizeM: number): ViewSeed | null {
+function seedOf(
+  view: QrViewObservation,
+  sizeM: number,
+  aspectRatio: number
+): ViewSeed | null {
   const { fx, fy, cx, cy } = view.intrinsics;
-  const object = buildObjectPoints(sizeM);
+  const object = buildObjectPoints(sizeM, aspectRatio);
   const H = homographyFromCorrespondences(
     object.map((o) => [o[0], o[1]] as const),
     view.corners.map((c) => [(c.x - cx) / fx, (c.y - cy) / fy] as const)
@@ -491,12 +501,13 @@ function rankedStarts(
  */
 function usableSeeds(
   views: readonly QrViewObservation[],
-  sizeM: number
+  sizeM: number,
+  aspectRatio: number
 ): { views: QrViewObservation[]; seeds: ViewSeed[] } {
   const used: QrViewObservation[] = [];
   const seeds: ViewSeed[] = [];
   for (const view of views) {
-    const seed = isUsableView(view) ? seedOf(view, sizeM) : null;
+    const seed = isUsableView(view) ? seedOf(view, sizeM, aspectRatio) : null;
     if (!seed) continue;
     used.push(view);
     seeds.push(seed);
@@ -507,6 +518,7 @@ function usableSeeds(
 /** Whether the size and the options are in range (NaN fails every check). */
 function inRange(
   sizeM: number,
+  aspectRatio: number,
   robustScalePx: number,
   maxStarts: number,
   maxIterations: number
@@ -514,6 +526,7 @@ function inRange(
   return (
     sizeM > 0 &&
     Number.isFinite(sizeM) &&
+    isValidAspectRatio(aspectRatio) &&
     robustScalePx > 0 &&
     maxStarts >= 1 &&
     maxIterations >= 1
@@ -550,7 +563,8 @@ function bestRefinement(
  * front-facing winding, bad intrinsics, a non-finite or non-unit camera
  * pose, no single-frame solve or real candidate) is DROPPED and counted in
  * `droppedViews`. `null` when no usable view is left, `sizeM` is not a
- * positive finite number, an option is out of range, or no start converges.
+ * positive finite number, an option (the aspect ratio among them) is out of
+ * range, or no start converges.
  */
 export function solveQrPoseMultiView(
   views: readonly QrViewObservation[],
@@ -561,13 +575,15 @@ export function solveQrPoseMultiView(
     robustScalePx = DEFAULT_ROBUST_SCALE_PX,
     maxIterations = DEFAULT_MAX_ITERATIONS,
     maxStarts = DEFAULT_MAX_STARTS,
+    aspectRatio = 1,
   } = options;
-  if (!inRange(sizeM, robustScalePx, maxStarts, maxIterations)) return null;
-  const { views: used, seeds } = usableSeeds(views, sizeM);
+  if (!inRange(sizeM, aspectRatio, robustScalePx, maxStarts, maxIterations))
+    return null;
+  const { views: used, seeds } = usableSeeds(views, sizeM, aspectRatio);
   if (used.length === 0) return null;
   const pr: Problem = {
     views: used,
-    object: buildObjectPoints(sizeM),
+    object: buildObjectPoints(sizeM, aspectRatio),
     positions: seeds.map((seed) => seed.position),
     robustScalePx,
   };
@@ -594,21 +610,28 @@ export function solveQrPoseMultiView(
  * One view's RMS corner error, px, if the code had world rotation
  * `rotation` and the view's own single-frame position - the motion
  * detector's "does the newest view fit the others' rotation" (plan §26).
- * `null` when the view is unusable or the size invalid.
+ * `null` when the view is unusable or the size or aspect ratio (height over
+ * width, `sizeM` the width; default 1, a QR code) invalid.
  */
 export function viewErrorAtRotationPx(
   view: QrViewObservation,
   rotation: Quaternion,
-  sizeM: number
+  sizeM: number,
+  aspectRatio = 1
 ): number | null {
-  if (!(sizeM > 0) || !Number.isFinite(sizeM) || !isUsableView(view))
+  if (
+    !(sizeM > 0) ||
+    !Number.isFinite(sizeM) ||
+    !isValidAspectRatio(aspectRatio) ||
+    !isUsableView(view)
+  )
     return null;
-  const seed = seedOf(view, sizeM);
+  const seed = seedOf(view, sizeM, aspectRatio);
   if (!seed) return null;
   const r = residuals(
     {
       views: [view],
-      object: buildObjectPoints(sizeM),
+      object: buildObjectPoints(sizeM, aspectRatio),
       positions: [seed.position],
       robustScalePx: DEFAULT_ROBUST_SCALE_PX,
     },

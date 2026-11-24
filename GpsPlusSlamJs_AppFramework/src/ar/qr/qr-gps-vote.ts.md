@@ -19,7 +19,12 @@ recency of its votes.
   the stored point: without it the core, a recording and every GPS listener
   read a vote as a device fix - the Tour Viewer's keep-alive, which re-votes on
   device fixes, would feed on its own votes).
-  Throws `RangeError` on non-positive `sizeM` / `syntheticAccuracyM`.
+  Throws `RangeError` on non-positive `sizeM` / `syntheticAccuracyM` or an
+  invalid `aspectRatio`.
+  - **`aspectRatio`** (default 1, a QR code): height over width of a
+    rectangular planar target, `sizeM` its width. The 4 corner votes sit at
+    the rectangle's corners; the centre vote and the wide-baseline polygon do
+    not depend on the shape.
   - **Wide-baseline mode (Note 2):** `baselineM > 0` switches to `count` (≥3)
     correspondences on a regular polygon of that radius in the QR plane instead
     of the physical corners. Because the full pose + geo + heading are known, the
@@ -99,6 +104,10 @@ for (const v of votes) store.dispatch(recordGpsEvent(v));
   center (so the fusion sees the same rigid square in both frames); and for any
   baseline/count the wide-baseline geo ring is congruent to the odom ring with
   every point at `baselineM` from the center.
+- `planar-target-rectangle.test.ts` - the corner votes of rectangles of
+  aspect 0.5-2 sit at the rectangle's corners in odom and span its height in
+  altitude; an invalid aspect throws. `planar-target-aspect-one.golden.test.ts`
+  - aspect 1 is unchanged, exactly.
 - `qr-gps-vote.integration.test.ts` — the votes flow through the real
   `createSlamAppStore` + `recordGpsEvent` fusion and yield a finite alignment;
   the stored points keep the synthetic-QR source; a lone grossly-wrong high-weight vote does not produce a non-finite alignment

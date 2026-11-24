@@ -9,6 +9,14 @@ authored. This is the **measuring stage** of the Note 3 size lifecycle.
 
 ## Public API
 
+- Both measurers take a last `aspectRatio = 1` (height over width of a
+  rectangular planar target; a QR code is 1). The side edges are divided by
+  it so all four estimate the WIDTH, which `sizeM` then is, and the diagonals
+  are compared with `width * sqrt(1 + aspect^2)`; the shared `quadShape`
+  helper computes these terms for both paths. At aspect 1 every division is
+  exact, so a QR's size and quality are unchanged bit for bit. Throws
+  `RangeError` on an invalid aspect ratio. A target measured at the wrong
+  aspect scores a low quality, which the accumulator's threshold refuses.
 - `estimateQrSizeFromDepth(corners, interiorSamples, unprojector)` →
   `{ sizeM, quality } | null`. Unprojects the 4 corner `DepthPoint`s (TL,TR,BR,BL)
   via `createDepthUnprojector`, takes the **median of the 4 edge lengths** as
@@ -93,6 +101,10 @@ if (est.status === 'estimated') buildCube(est.estimateM!);
   rejected, collinear/too-few → null) and `estimateQrSizeFromDepthDense` (fronto from
   interior reads only, a tilted square the corner-only path would mis-size,
   outlier robustness, too-few-reads → null).
+- `planar-target-rectangle.test.ts` / `.property.test.ts` - both paths
+  report the width of rectangles of aspect 0.4-2.5 at quality ~1; a 2:1
+  rectangle measured as a square scores below 0.8; an invalid aspect throws.
+  `planar-target-aspect-one.golden.test.ts` - aspect 1 is unchanged, exactly.
 - WS-B lifelong cases: full history beyond 64 samples, the confidence half-width
   tightens as N grows, a late outlier burst can't move the median, and
   `estimated` is retained (not demoted) once reached.

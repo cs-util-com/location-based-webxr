@@ -35,6 +35,7 @@ import type { DepthPoint } from '../../types/ar-types.js';
 import type { DepthUnprojector } from '../depth-unprojection.js';
 import { clamp01 } from '../../utils/clamp01.js';
 import { interpolatingMedian } from '../../utils/median.js';
+import { assertAspectRatio } from './qr-pose.js';
 
 /** Where the size lifecycle currently sits for one marker (Note 3 / Note 4). */
 export type QrSizeStatus =
@@ -81,6 +82,52 @@ function dist(a: Vector3, b: Vector3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
+/** A measured quad's width and how far it is from the expected rectangle. */
+interface QuadShape {
+  /** Median of the four edges, each scaled to width units. */
+  widthM: number;
+  /** Mean of the four width-scaled edges (the error terms' scale). */
+  meanWidthM: number;
+  /** Relative edge disagreement and diagonal error, whichever is larger. */
+  shapeErr: number;
+}
+
+/**
+ * The shape terms both depth measurers share. The side edges (TR-BR, BL-TL)
+ * are divided by `aspectRatio` so all four estimate the width; the diagonals
+ * are compared with `width * sqrt(1 + aspect^2)`. At aspect 1 every division
+ * is exact and `Math.sqrt(2)` equals `Math.SQRT2`, so a QR is unchanged.
+ * `null` for a zero-size quad.
+ */
+function quadShape(
+  c: readonly [Vector3, Vector3, Vector3, Vector3],
+  aspectRatio: number
+): QuadShape | null {
+  const [c0, c1, c2, c3] = c;
+  // Consecutive edges (TL-TR, TR-BR, BR-BL, BL-TL) in width units.
+  const widths: [number, number, number, number] = [
+    dist(c0, c1),
+    dist(c1, c2) / aspectRatio,
+    dist(c2, c3),
+    dist(c3, c0) / aspectRatio,
+  ];
+  const meanWidthM = (widths[0] + widths[1] + widths[2] + widths[3]) / 4;
+  if (!(meanWidthM > EPS)) return null; // degenerate / zero-size
+  const edgeErr =
+    Math.max(...widths.map((e) => Math.abs(e - meanWidthM))) / meanWidthM;
+  const expectedDiag = meanWidthM * Math.sqrt(1 + aspectRatio * aspectRatio);
+  const diagErr =
+    Math.max(
+      Math.abs(dist(c0, c2) - expectedDiag),
+      Math.abs(dist(c1, c3) - expectedDiag)
+    ) / expectedDiag;
+  return {
+    widthM: interpolatingMedian(widths),
+    meanWidthM,
+    shapeErr: Math.max(edgeErr, diagErr),
+  };
+}
+
 /**
  * Estimate a QR's physical side length from one detection's depth samples.
  *
@@ -89,31 +136,29 @@ function dist(a: Vector3, b: Vector3): number {
  * @param interiorSamples - a few interior depth samples (may be empty); used
  *   only to strengthen the planarity check against corner edge depth-bleed.
  * @param unprojector - built once per depth sample via `createDepthUnprojector`.
+ * @param aspectRatio - height over width of a rectangular planar target;
+ *   `sizeM` is then its width. Default 1 (a QR code).
  * @returns `{ sizeM, quality }`, or `null` when a corner cannot be unprojected
  *   or the quad is degenerate (collinear / zero-area).
+ * @throws RangeError on an invalid `aspectRatio`.
  */
 export function estimateQrSizeFromDepth(
   corners: readonly [DepthPoint, DepthPoint, DepthPoint, DepthPoint],
   interiorSamples: readonly DepthPoint[],
-  unprojector: DepthUnprojector
+  unprojector: DepthUnprojector,
+  aspectRatio = 1
 ): QrSizeObservation | null {
+  assertAspectRatio(aspectRatio, 'qr-size-from-depth');
   const world: Vector3[] = [];
   for (const c of corners) {
     const p = unprojector.unproject(c);
     if (!p) return null;
     world.push(p);
   }
-  const [c0, c1, c2, c3] = world as [Vector3, Vector3, Vector3, Vector3];
-
-  // Consecutive edges (TL-TR, TR-BR, BR-BL, BL-TL) and the two diagonals.
-  const edges: [number, number, number, number] = [
-    dist(c0, c1),
-    dist(c1, c2),
-    dist(c2, c3),
-    dist(c3, c0),
-  ];
-  const meanEdge = (edges[0] + edges[1] + edges[2] + edges[3]) / 4;
-  if (!(meanEdge > EPS)) return null; // degenerate / zero-size
+  const quad = world as [Vector3, Vector3, Vector3, Vector3];
+  const [c0, c1, c2, c3] = quad;
+  const shape = quadShape(quad, aspectRatio);
+  if (!shape) return null;
 
   // Plane through three adjacent corners (c0 as origin, c1 & c3 as in-plane
   // axes). A collinear triple has a zero-length normal → degenerate quad.
@@ -148,22 +193,12 @@ export function estimateQrSizeFromDepth(
     maxPlaneOffset = Math.max(maxPlaneOffset, planeOffset(p));
   }
 
-  // Relative-error components, all normalized by the mean edge so `quality` is
-  // scale-free: edge agreement, diagonal ≈ √2·edge, and planarity.
-  const edgeErr =
-    Math.max(...edges.map((e) => Math.abs(e - meanEdge))) / meanEdge;
-  const expectedDiag = meanEdge * Math.SQRT2;
-  const diagErr =
-    Math.max(
-      Math.abs(dist(c0, c2) - expectedDiag),
-      Math.abs(dist(c1, c3) - expectedDiag)
-    ) / expectedDiag;
-  const planeErr = maxPlaneOffset / meanEdge;
+  // Relative-error components, all normalized by the mean width so `quality`
+  // is scale-free: edge agreement, the diagonals, and planarity.
+  const planeErr = maxPlaneOffset / shape.meanWidthM;
+  const quality = clamp01(1 - Math.max(shape.shapeErr, planeErr));
 
-  const relErr = Math.max(edgeErr, diagErr, planeErr);
-  const quality = clamp01(1 - relErr);
-
-  return { sizeM: interpolatingMedian(edges), quality };
+  return { sizeM: shape.widthM, quality };
 }
 
 // --- Dense plane-fit size estimate (WS-A) ------------------------------
@@ -406,14 +441,19 @@ function intersectScreenRayWithPlane(
  * @param samples - interior (and optionally corner) depth reads across the QR
  *   face used for the robust plane fit. Need ≥3 non-collinear usable reads.
  * @param unprojector - built once per depth sample via `createDepthUnprojector`.
+ * @param aspectRatio - height over width of a rectangular planar target;
+ *   `sizeM` is then its width. Default 1 (a QR code).
  * @returns `{ sizeM, quality }`, or `null` when the plane is under-determined
  *   (too few/collinear reads) or a corner ray cannot meet the plane.
+ * @throws RangeError on an invalid `aspectRatio`.
  */
 export function estimateQrSizeFromDepthDense(
   cornerScreens: readonly [ScreenPoint, ScreenPoint, ScreenPoint, ScreenPoint],
   samples: readonly DepthPoint[],
-  unprojector: DepthUnprojector
+  unprojector: DepthUnprojector,
+  aspectRatio = 1
 ): QrSizeObservation | null {
+  assertAspectRatio(aspectRatio, 'qr-size-from-depth');
   const points: Vector3[] = [];
   for (const s of samples) {
     const p = unprojector.unproject(s);
@@ -428,32 +468,16 @@ export function estimateQrSizeFromDepthDense(
     if (!hit) return null;
     corners.push(hit);
   }
-  const [c0, c1, c2, c3] = corners as [Vector3, Vector3, Vector3, Vector3];
+  const shape = quadShape(
+    corners as [Vector3, Vector3, Vector3, Vector3],
+    aspectRatio
+  );
+  if (!shape) return null;
+  // Plane-fit residual, normalized by the width so `quality` stays scale-free.
+  const planeErr = plane.rms / shape.meanWidthM;
+  const quality = clamp01(1 - Math.max(shape.shapeErr, planeErr));
 
-  const edges: [number, number, number, number] = [
-    dist(c0, c1),
-    dist(c1, c2),
-    dist(c2, c3),
-    dist(c3, c0),
-  ];
-  const meanEdge = (edges[0] + edges[1] + edges[2] + edges[3]) / 4;
-  if (!(meanEdge > EPS)) return null;
-
-  const edgeErr =
-    Math.max(...edges.map((e) => Math.abs(e - meanEdge))) / meanEdge;
-  const expectedDiag = meanEdge * Math.SQRT2;
-  const diagErr =
-    Math.max(
-      Math.abs(dist(c0, c2) - expectedDiag),
-      Math.abs(dist(c1, c3) - expectedDiag)
-    ) / expectedDiag;
-  // Plane-fit residual, normalized by the edge so `quality` stays scale-free.
-  const planeErr = plane.rms / meanEdge;
-
-  const relErr = Math.max(edgeErr, diagErr, planeErr);
-  const quality = clamp01(1 - relErr);
-
-  return { sizeM: interpolatingMedian(edges), quality };
+  return { sizeM: shape.widthM, quality };
 }
 
 // --- Running-median accumulator (the Note 3 size lifecycle) ------------

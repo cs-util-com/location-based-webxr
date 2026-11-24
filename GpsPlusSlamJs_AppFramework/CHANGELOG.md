@@ -4,6 +4,18 @@
 
 ### Added
 
+- **Rectangular planar targets**: the QR pose, size and vote modules take a
+  target aspect ratio (height over width, default 1 for a QR code, which is
+  unchanged bit for bit), so a printed rectangular image can share the QR
+  pipeline; `sizeM` is then the rectangle's width.
+  - **`ar/qr/qr-pose`**: `buildObjectPoints(sizeM, aspectRatio?)`,
+    `SolveQrPoseInput.aspectRatio`, `isValidAspectRatio`,
+    `assertAspectRatio`.
+  - `QrParallaxSizeOptions.aspectRatio`, `QrMultiViewPoseOptions.aspectRatio`,
+    `QrGpsVoteInput.aspectRatio`, and a last `aspectRatio` argument on
+    `viewErrorAtRotationPx`, `estimateQrSizeFromDepth` and
+    `estimateQrSizeFromDepthDense`.
+
 - **Nearby targets**: which trackable targets (QR codes now; 2D images,
   3D objects later) are near enough to search for, so a frame-costly
   tracker can skip far-away ones.
@@ -325,6 +337,13 @@
   optional: a blank one no longer fails the write.
 
 ### Fixed
+
+- **The robust plane fit samples every point count** (`ar/qr/qr-size-from-depth`,
+  `fitPlaneRobust`). Its triple sampler overflowed double precision and
+  returned one index whenever the count of depth reads divided 512, so the
+  dense QR size measurer found no plane at 16 or 32 reads and lost its
+  outlier robustness at 48. It now steps an exact 32-bit generator and
+  takes each index from the high bits.
 
 - **`checkGlbInert` measures a model's pictures from the bytes three.js
   loads** (`ar/tour-media`). A buffer with a `data:` URI is measured from
