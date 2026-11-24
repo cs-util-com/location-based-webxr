@@ -535,7 +535,13 @@ function createAnchorSet(
   let lastCam: THREE.Vector3 | null = null;
   const lastTargetInv = target.target().clone().invert();
   let lastTargetVersion = target.version();
-  let roundRobin = 0;
+  // The round robin's place: the ring of the last pick's pass and the
+  // pick's index in it. The next pass starts at the first entry after the
+  // pick that is still in the ring, so an entry removed or added in between
+  // never shifts it (an index into the new ring skipped the next entry, or
+  // wrapped back onto the one just served).
+  let lastRing: readonly Deferred[] = [];
+  let lastPickAt = -1;
   // The classify passes so far: the clock of the out-of-view queue.
   let outPass = 0;
 
@@ -968,6 +974,15 @@ function createAnchorSet(
     return isMember(c) ? memberInView(c, fresh) : keyInView(c, fresh);
   }
 
+  /** Where this pass's round robin starts in `ordered`: after the last pick. */
+  function ringStart(ordered: readonly Deferred[]): number {
+    for (let j = 1; lastPickAt >= 0 && j <= lastRing.length; j += 1) {
+      const at = ordered.indexOf(lastRing[(lastPickAt + j) % lastRing.length]!);
+      if (at >= 0) return at;
+    }
+    return 0;
+  }
+
   /** Pending keys and members by what their cached tests say, in round-robin order. */
   function classifyDeferred(ordered: Deferred[]): {
     out: Deferred[];
@@ -977,8 +992,9 @@ function createAnchorSet(
     const out: Deferred[] = [];
     const build: Deferred[] = [];
     const stale: Deferred[] = [];
+    const start = ringStart(ordered);
     for (let i = 0; i < ordered.length; i += 1) {
-      const c = ordered[(i + roundRobin) % ordered.length]!;
+      const c = ordered[(i + start) % ordered.length]!;
       if (!isDeferredPending(c)) {
         heldInView(c);
         continue;
@@ -1003,7 +1019,8 @@ function createAnchorSet(
     const { out, build, stale } = classifyDeferred(ordered);
     const pick = out[0] ?? build[0] ?? stale[0];
     if (!pick) return;
-    roundRobin = (ordered.indexOf(pick) + 1) % ordered.length;
+    lastRing = ordered;
+    lastPickAt = ordered.indexOf(pick);
     if (isMember(pick)) {
       if (!memberInView(pick, true)) commitMember(pick, 'out-of-view');
       else heldInView(pick);

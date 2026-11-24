@@ -145,7 +145,9 @@ logs `deferral off` once when it is created.
    member's own rule that it never moves for less.
 6. Deferred keys and pending members: each pending key is sorted into "cache invalid", "cached
    test says out", or "in, but the cache is stale"; one key is picked (out
-   first, round robin), its bounds rebuilt if needed, and it commits
+   first, round robin from the entry after the last pick, found by
+   reference in the last pick's ring so a key removed or added in between
+   never shifts the place), its bounds rebuilt if needed, and it commits
    `out-of-view` only when a fresh test agrees. A commit needs the content
    out of view at its current pose in this and the previous view, and at
    its new pose in this view (three tests). A member is tested at its target
@@ -213,7 +215,9 @@ deferredAnchor(arWorldGroup, 'item-42').add(root, {
   frames, out-of-view frames against the queue, a key's queue growing
   as others go out after it (the counting itself, churn within its queue
   and a starved key behind a churning ring over it, is
-  `out-of-view-queue.test.ts`), the count starting over after a follow start
+  `out-of-view-queue.test.ts`), the round robin keeping its place when a
+  key before it is removed (k next after x, not x twice), the count
+  starting over after a follow start
   within epsilon, the observer's `commits`)
   and the pass observer (production passes, stop, a throwing observer).
 - `deferred-anchors.property.test.ts`: random T, look, epoch, camera jump,
