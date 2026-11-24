@@ -14,6 +14,7 @@ import {
   GPS_POINT_SOURCE_SYNTHETIC_QR,
 } from 'gps-plus-slam-js';
 import {
+  ANCHOR_DEFERRAL_AB_PERIOD_S,
   DEV_WORLD_JUMP_PERIOD_S,
   anchorDeferralFromPage,
   createArParentTarget,
@@ -285,10 +286,29 @@ describe('the anchor deferral switch from the page', () => {
     } finally {
       g.location = before;
     }
-    expect(createArParentTarget(fakeStore()).defersAnchors).toBe(true);
+    expect(createArParentTarget(fakeStore()).defersAnchors()).toBe(true);
     expect(
-      createArParentTarget(fakeStore(), { deferAnchors: false }).defersAnchors
+      createArParentTarget(fakeStore(), { deferAnchors: false }).defersAnchors()
     ).toBe(false);
+  });
+
+  // Why: the field test's frame-time comparison runs in ONE session
+  // (`anchors=ab`), so both halves share the scene, the phone's heat and
+  // the GPS; the target must say which half a frame belongs to, on the
+  // session clock, starting with the deferral on.
+  it('parses anchors=ab, and alternates on and off by the session clock', () => {
+    expect(parseAnchorDeferral('?anchors=ab')).toBe('ab');
+    expect(parseAnchorDeferral('?anchors=AB ')).toBe('ab');
+    const target = createArParentTarget(fakeStore(), { deferAnchors: 'ab' });
+    // Before the first tick the session has not started: on.
+    expect(target.defersAnchors()).toBe(true);
+    const p = ANCHOR_DEFERRAL_AB_PERIOD_S;
+    const seen: boolean[] = [];
+    for (const at of [0, p - 0.01, p, 2 * p - 0.01, 2 * p, 3 * p + 1]) {
+      target.tick(100 + at);
+      seen.push(target.defersAnchors());
+    }
+    expect(seen).toEqual([true, true, false, false, true, false]);
   });
 });
 

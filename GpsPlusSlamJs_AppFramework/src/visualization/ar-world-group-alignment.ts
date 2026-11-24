@@ -31,7 +31,9 @@ import {
   createArParentTarget,
   devWorldJumpFromPage,
   registerArParentBinding,
+  type AnchorDeferral,
   type ArParentBinding,
+  type DevWorldJump,
 } from '../ar/ar-parent-target.js';
 
 export interface ArWorldGroupAlignmentOptions {
@@ -39,6 +41,16 @@ export interface ArWorldGroupAlignmentOptions {
   readonly store: SubscribableStore;
   /** The AR world group whose `.matrix` is set to each alignment. */
   readonly arWorldGroup: THREE.Object3D;
+  /**
+   * The synthetic world jump; null for none. Absent: the page's
+   * `?devWorldJumpM` / `?devWorldJumpDeg`, read in development builds only.
+   */
+  readonly devJump?: DevWorldJump | null;
+  /**
+   * The anchor deferral (`AnchorDeferral`). Absent: the page's
+   * `?anchors=`, read in development builds only, else on.
+   */
+  readonly deferAnchors?: AnchorDeferral;
 }
 
 export interface ArWorldGroupAlignmentHandle {
@@ -76,8 +88,9 @@ export function enableArWorldGroupAlignment(
   // separately could disagree, and content would then carry the alignment
   // twice.
   const target = createArParentTarget(options.store, {
-    devJump: devWorldJumpFromPage(),
-    deferAnchors: anchorDeferralFromPage(),
+    devJump:
+      options.devJump === undefined ? devWorldJumpFromPage() : options.devJump,
+    deferAnchors: options.deferAnchors ?? anchorDeferralFromPage(),
   });
   const group = options.arWorldGroup;
   // Version 0 is "no alignment yet": the group keeps its matrix until the

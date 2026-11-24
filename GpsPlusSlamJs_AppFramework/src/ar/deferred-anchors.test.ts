@@ -29,6 +29,7 @@ import {
   registerReleaseReceiver,
   requestAnchorRelease,
 } from './anchor-release';
+import { ANCHOR_DEFERRAL_AB_PERIOD_S } from './ar-parent-target';
 import {
   FRAME_JUMP_THRESHOLD_M,
   WINDOW_MAX_S,
@@ -126,7 +127,12 @@ function tOf(north: number, yawDeg = 0, east = 0): THREE.Matrix4 {
  * group-local pose.
  */
 function session(
-  opts: { mature?: boolean; epochSlice?: boolean; realHierarchy?: boolean } = {}
+  opts: {
+    mature?: boolean;
+    epochSlice?: boolean;
+    realHierarchy?: boolean;
+    deferAnchors?: boolean | 'ab';
+  } = {}
 ) {
   const store = makeStore({
     extentM: opts.mature === false ? 20 : 40,
@@ -135,7 +141,13 @@ function session(
   const scene = new THREE.Scene();
   const group = new THREE.Group();
   scene.add(group);
-  const binding = enableArWorldGroupAlignment({ store, arWorldGroup: group });
+  const binding = enableArWorldGroupAlignment({
+    store,
+    arWorldGroup: group,
+    ...(opts.deferAnchors === undefined
+      ? {}
+      : { deferAnchors: opts.deferAnchors }),
+  });
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
   const basis = new THREE.Group();
   if (opts.realHierarchy === true) {
@@ -1317,5 +1329,145 @@ describe('deferredAnchor: the pass observer', () => {
 
   it('refuses an observer that is not a function', () => {
     expect(() => observeDeferredAnchorPasses(null as never)).toThrow(TypeError);
+  });
+});
+
+/** The `[DeferredAnchors]` commit lines logged while `body` runs. */
+function commitLines(body: () => void): string[] {
+  const lines: string[] = [];
+  const unsubscribe = subscribeToLogs((entry) => {
+    if (entry.tag === 'DeferredAnchors' && entry.message.startsWith('commit '))
+      lines.push(entry.message);
+  });
+  try {
+    body();
+  } finally {
+    unsubscribe();
+  }
+  return lines;
+}
+
+// Why: the field test's criterion "a pending anchor commits within k
+// frames once out of view, k the anchors out of view at once" needs the
+// frames, not only the milliseconds: the commit line and the pass observer
+// carry how many frames the key waited pending, how many of them it was out
+// of view, and the largest queue of keys out of view at once meanwhile.
+describe('deferredAnchor: frames waited', () => {
+  it('reports the frames a key waited pending, and out of view, in its commit line', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(3);
+    s.store.setT(tOf(3, 4));
+    const lines = commitLines(() => {
+      s.run(5);
+      s.look('out');
+      // The first pass out still has the previous view in: held.
+      s.run(2);
+    });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(
+      /^commit out-of-view: a, waited \d+ ms, moved [\d.]+ m, 7 frames pending, out of view 1 frame \(1 queued\)$/
+    );
+  });
+
+  it('counts the frames out of view against the queue of keys out at once', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    deferredAnchor(s.group, 'b').add(contentRoot(new THREE.Vector3(0.5, 0, 0)));
+    s.run(3);
+    s.store.setT(tOf(3, 4));
+    s.run();
+    const lines = commitLines(() => {
+      s.look('out');
+      s.run(3);
+    });
+    // One traversal per pass: the second key waits one frame more.
+    expect(lines.map((l) => l.replace(/^.*, (out of view .*)$/, '$1'))).toEqual(
+      ['out of view 1 frame (2 queued)', 'out of view 2 frames (2 queued)']
+    );
+  });
+
+  it('gives a release commit its pending frames and no out-of-view part', () => {
+    const s = session();
+    s.look('in');
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    s.run(3);
+    s.store.setT(tOf(3, 4));
+    const lines = commitLines(() => {
+      s.run(4);
+      requestAnchorRelease('code-lock');
+      s.run();
+    });
+    expect(lines).toEqual([
+      expect.stringMatching(
+        /^commit release:code-lock: a, waited \d+ ms, moved [\d.]+ m, 4 frames pending$/
+      ),
+    ]);
+  });
+
+  it('hands the pass observer the commits of each pass with their frames', () => {
+    const s = session();
+    deferredAnchor(s.group, 'a').add(contentRoot());
+    const commits: DeferredAnchorPassSample['commits'][number][] = [];
+    const stop = observeDeferredAnchorPasses((sample) => {
+      commits.push(...sample.commits);
+    });
+    try {
+      s.store.setT(tOf(3));
+      // No session camera: nothing is in view.
+      runFrameUpdates(DT, 1);
+      runFrameUpdates(DT, 1 + DT);
+      runFrameUpdates(DT, 1 + 2 * DT);
+    } finally {
+      stop();
+    }
+    expect(commits).toEqual([
+      expect.objectContaining({
+        key: 'a',
+        kind: 'out-of-view',
+        pendingFrames: 2,
+        outFrames: 1,
+        queued: 1,
+      }),
+    ]);
+    expect(commits[0]!.movedM).toBeCloseTo(3, 6);
+  });
+});
+
+// Why: the field test's frame-time comparison (deferral on against off)
+// runs in one session with `anchors=ab`; the set must switch with its
+// target between the two behaviours, both ways, and say so in the log.
+describe('deferredAnchor: the A/B deferral (anchors=ab)', () => {
+  it('holds in view while on, lands in view once off, and holds again once back on', () => {
+    const s = session({ deferAnchors: 'ab' });
+    const p = ANCHOR_DEFERRAL_AB_PERIOD_S;
+    s.look('in');
+    const root = contentRoot();
+    deferredAnchor(s.group, 'a').add(root);
+    s.run(3);
+    const before = root.matrix.clone();
+    const logged: string[] = [];
+    const unsubscribe = subscribeToLogs((entry) => {
+      if (entry.tag === 'DeferredAnchors') logged.push(entry.message);
+    });
+    try {
+      s.store.setT(tOf(3, 4));
+      s.runUntil(p - 0.5);
+      expectMatrixClose(root.matrix, before);
+      s.runUntil(p + 0.5);
+      // Off: it follows, so its world pose is its NUE pose.
+      expectMatrixClose(root.matrix, inv(tOf(3, 4)), 1e-9);
+      s.runUntil(2 * p + 0.5);
+      const held = root.matrix.clone();
+      s.store.setT(tOf(5, 8));
+      s.run(10);
+      expectMatrixClose(root.matrix, held);
+    } finally {
+      unsubscribe();
+    }
+    expect(logged).toContain('deferral off (a/b)');
+    expect(logged).toContain('deferral on (a/b)');
   });
 });

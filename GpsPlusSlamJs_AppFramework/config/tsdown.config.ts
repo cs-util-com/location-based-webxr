@@ -25,6 +25,9 @@ const entryFiles = [
   'src/ar/anchor-visibility.ts',
   // Content anchors that re-place only out of view - deep-imported by apps.
   'src/ar/deferred-anchors.ts',
+  // The deferred anchors' field-test switch parsers - deep-imported by the
+  // Tour Viewer, which reads them behind `?debug=1` in every build.
+  'src/ar/ar-parent-target.ts',
   // AR-space content correction: pure math, the registry that bakes each
   // relocalization jump into tracked objects, the `arContent` watcher that
   // tracks app content automatically, and the one-committer claim -

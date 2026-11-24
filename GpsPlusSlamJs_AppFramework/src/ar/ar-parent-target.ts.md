@@ -17,8 +17,12 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 ## Public API
 
 - `createArParentTarget(store, { devJump?, deferAnchors? }): ArParentTarget`
-  - `defersAnchors`: false only for `deferAnchors: false`; the anchors
-    under this target then follow every change of T at once.
+  - `defersAnchors()`: false for `deferAnchors: false`; the anchors
+    under this target then follow every change of T at once. For
+    `deferAnchors: 'ab'` it alternates by the session clock: true for the
+    first `ANCHOR_DEFERRAL_AB_PERIOD_S` (15 s) after the first `tick`,
+    false for the next, and so on, so one session measures the frame time
+    with the deferral on and off. `RangeError` for any other value.
   - `target()`: T as a `Matrix4` (identity before the first alignment; do
     not mutate). A null or non-finite store alignment is ignored and the
     last T kept.
@@ -48,12 +52,17 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
     lands in one frame, as every change of T does
     (`ar-world-group-alignment.ts.md`).
   - `DEV_WORLD_JUMP_PERIOD_S = 10`.
-- Development-only anchor deferral switch
-  - `parseAnchorDeferral(search)`: false only for `anchors=0` (trimmed);
-    any other value, or none, keeps the deferral on.
+- Anchor deferral switch (`AnchorDeferral = boolean | 'ab'`)
+  - `parseAnchorDeferral(search)`: false for `anchors=0` (trimmed),
+    `'ab'` for `anchors=ab` (any case); any other value, or none, keeps
+    the deferral on.
   - `anchorDeferralFromPage()`: reads `location.search` only under
     `import.meta.env.DEV`, else true; a production build folds the reader
     away. For a frame-time comparison with the deferral on and off.
+- Apps that want the switches in a production build read the address
+  themselves with the two parsers and pass `devJump` / `deferAnchors` to
+  `enableArWorldGroupAlignment` (the Tour Viewer does, behind
+  `?debug=1`); the parsers are a dist entry for that.
 - Binding registry
   - `ArParentBinding { group, target, step, attachPass, onDispose }`.
   - `registerArParentBinding(binding)`: one per group, a newer one
@@ -71,7 +80,8 @@ Internal: no package entry. Reached through `enableArWorldGroupAlignment`
 - `ar-parent-target.test.ts`: T follows the store, bad matrices ignored, the
   epoch read, maturity from device fixes only and sticky, the session clock,
   the dev jump composition and its refusals, the page readers (dev jump
-  and deferral switch), `defersAnchors`, the registry.
+  and deferral switch, `anchors=ab` included), `defersAnchors()` and its
+  A/B alternation at the period edges, the registry.
 - `ar-parent-target.build.test.ts`: bundles the alignment module the way an
   app's production build sees it and asserts the dev jump reader and the
   `anchors` switch are gone
