@@ -15,18 +15,20 @@ import {
   MAX_EXTRAPOLATION_RATIO,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
+  STEADY_RATE_FRACTION,
+  STILL_DISPLACEMENT_M,
   STILL_SPEED_M_PER_S,
   STILL_TURN_DEG_PER_S,
+  STILL_WINDOW_MS,
   VERDICT_TOLERANCES,
-  isStill,
   poseStep,
-  stepRate,
   type AnchorReading,
   type EpisodeEvent,
   type EpisodeKind,
   type FrameStats,
   type NotCounted,
   type PoseStep,
+  type Stillness,
   type TimedPose,
   type TrackerEvent,
   type Verdict,
@@ -54,10 +56,8 @@ function formatStep(s: PoseStep): string {
   return `${s.translationM.toFixed(2)} m / ${s.rotationDeg.toFixed(1)} deg`;
 }
 
-function formatStepFine(s: PoseStep | null): string {
-  return s === null
-    ? 'none'
-    : `${s.translationM.toFixed(3)} m / ${s.rotationDeg.toFixed(2)} deg`;
+function formatStepFine(s: PoseStep): string {
+  return `${s.translationM.toFixed(3)} m / ${s.rotationDeg.toFixed(2)} deg`;
 }
 
 function isEpisode(e: TrackerEvent): e is EpisodeEvent {
@@ -131,6 +131,8 @@ export function onScreenLine(e: TrackerEvent): string {
       return `Could not create the anchor: ${e.message}`;
     case 'frame-error':
       return `A frame failed: ${e.message}`;
+    case 'anchor-read-error':
+      return `An anchor read failed: ${e.message}`;
     case 'session-start':
       return 'AR session started';
     case 'session-end':
@@ -145,14 +147,23 @@ export interface VerdictCounts {
   readonly 'drift correction': number;
   readonly unclear: number;
   /** Not counted, by reason. */
-  readonly moving: number;
+  readonly 'no correction': number;
+  readonly 'unsteady rate': number;
   readonly 'long frame': number;
+  readonly moving: number;
   readonly 'no anchor': number;
   readonly truncated: number;
   readonly settling: number;
 }
 
-const NOT_COUNTED = ['moving', 'long frame', 'no anchor', 'truncated'] as const;
+const NOT_COUNTED = [
+  'no correction',
+  'unsteady rate',
+  'long frame',
+  'moving',
+  'no anchor',
+  'truncated',
+] as const;
 
 /** Episodes of `kind` by their final main-tolerance verdict or exclusion. */
 export function verdictCounts(
@@ -164,8 +175,10 @@ export function verdictCounts(
     'frame switch': 0,
     'drift correction': 0,
     unclear: 0,
-    moving: 0,
+    'no correction': 0,
+    'unsteady rate': 0,
     'long frame': 0,
+    moving: 0,
     'no anchor': 0,
     truncated: 0,
     settling: 0,
@@ -223,10 +236,8 @@ function trackedText(tracked: boolean | null): string {
 
 const at = (t: number) => `[t ${Math.round(t)} ms]`;
 
-function timed(p: TimedPose | null): string {
-  return p === null
-    ? 'none (no rate: D uncompensated)'
-    : `${at(p.t)} ${formatPose(p.pose)}`;
+function timed(p: TimedPose): string {
+  return `${at(p.t)} ${formatPose(p.pose)}`;
 }
 
 function readingLines(r: AnchorReading): string[] {
@@ -241,15 +252,22 @@ function readingLines(r: AnchorReading): string[] {
   ];
 }
 
-/**
- * The camera step per frame before the episode with its rate, and the
- * extrapolation ratio.
- */
-function preStepLine(e: EpisodeEvent): string {
-  const pre = stepRate(e.cameraPrev, e.cameraBefore);
-  if (pre === null) return '  pre-step per frame none (motion unknown)';
-  const ratio = e.dtMs / pre.dtMs;
-  return `  pre-step per frame ${formatStepFine(pre.step)} in ${Math.round(pre.dtMs)} ms, ${pre.speedMPerS.toFixed(2)} m/s / ${pre.turnDegPerS.toFixed(1)} deg/s (${isStill(pre) ? 'still' : 'moving'})${e.compensated ? `; extrapolation ratio ${ratio.toFixed(2)}` : ''}`;
+/** The camera's motion before the episode and its shift at the anchor. */
+function stillnessLine(s: Stillness | null): string {
+  if (s === null)
+    return `  stillness: unknown (under ${STILL_WINDOW_MS} ms of tracked frames before it)`;
+  return `  stillness over ${Math.round(s.spanMs)} ms: ${s.speedMPerS.toFixed(2)} m/s / ${s.turnDegPerS.toFixed(1)} deg/s; anchor ${s.anchorDistanceM.toFixed(2)} m away, moved ${s.displacementM.toFixed(3)} m by that motion over the episode`;
+}
+
+/** The rate frame of a compensated jump, how well it was extrapolated itself, and the extrapolation ratio. */
+function rateLines(e: EpisodeEvent): string[] {
+  const rate = e.cameraPrev;
+  if (rate === null) return [];
+  const own = e.rateUnexplainedStep;
+  const ratio = e.dtMs / (e.cameraBefore.t - rate.t);
+  return [
+    `  rate frame: ${timed(rate)}; its own unexplained step ${own === null ? 'unknown (it had no rate)' : formatStepFine(own)}; extrapolation ratio ${ratio.toFixed(2)}`,
+  ];
 }
 
 function episodeLines(e: EpisodeEvent): string[] {
@@ -266,8 +284,8 @@ function episodeLines(e: EpisodeEvent): string[] {
     : 'raw step, D uncompensated';
   return [
     `${at(e.t)} ${e.kind} ${e.index}: dt ${Math.round(e.dtMs)} ms, camera step ${formatStepFine(e.cameraStep)}, ${step} (${e.stepClass})${state}`,
-    preStepLine(e),
-    `  camera prev: ${timed(e.cameraPrev)}`,
+    stillnessLine(e.stillness),
+    ...rateLines(e),
     `  camera before: ${timed(e.cameraBefore)}`,
     `  camera after: ${formatPose(e.cameraAfter)}`,
     `  D: ${formatPose(e.d)}`,
@@ -290,6 +308,8 @@ function eventLines(e: TrackerEvent): string[] {
       return [`${at(e.t)} could not create the anchor: ${e.message}`];
     case 'frame-error':
       return [`${at(e.t)} a frame failed: ${e.message}`];
+    case 'anchor-read-error':
+      return [`${at(e.t)} an anchor read failed: ${e.message}`];
     case 'session-start':
       return [`${at(e.t)} session start`];
     case 'session-end':
@@ -332,15 +352,19 @@ export function buildLog(input: LogInput): string {
     ...Object.entries(input.environment).map(([k, v]) => `${k}: ${v}`),
     `limits: jump logged when the step left after the motion compensation is above ${JUMP_TRANSLATION_M} m or ${JUMP_ROTATION_DEG} deg; frame gap above ${FRAME_GAP_MS} ms; bands ${BAND_LOWER_M}-${RELOCALIZATION_RULE_M} m below the ${RELOCALIZATION_RULE_M} m rule`,
     `settling: anchor read at ${[0, ...SETTLE_DELAYS_MS].join(', ')} ms after each jump, loss and gap; the ${SETTLE_DELAYS_MS.at(-1)} ms reading is the counted verdict; an episode cut short by the next one is truncated and not counted`,
-    `counted: a loss, a gap or a jump with no rate only when the camera moved at most ${STILL_SPEED_M_PER_S} m/s and ${STILL_TURN_DEG_PER_S} deg/s just before it; a jump only when its frame is at most ${MAX_EXTRAPOLATION_RATIO} times the one before; an episode with no anchor tracked at its last reading is not counted`,
+    `counted: conservative by construction (the events below are the authoritative record to re-judge offline); a loss, a gap or a jump with no rate only when its raw step is over ${JUMP_TRANSLATION_M} m, the camera moved at most ${STILL_SPEED_M_PER_S} m/s and ${STILL_TURN_DEG_PER_S} deg/s over the ${STILL_WINDOW_MS} ms before it, and that motion carried over the episode moves the anchor under ${STILL_DISPLACEMENT_M} m; a jump with a rate only when the rate frame's own unexplained step is under ${STEADY_RATE_FRACTION} of the jump limits and the jump's frame is at most ${MAX_EXTRAPOLATION_RATIO} times the one before; an episode with no anchor tracked at its last reading is not counted`,
     `verdict tolerances: tight ${t(tol.tight)}, main ${t(tol.main)}, loose ${t(tol.loose)}`,
-    'poses: raw WebXR local space; D is motion-compensated for a jump on a frame with a rate (camera prev is the rate frame), else it is the raw step (camera prev then only shows whether the camera was still); an anchor that trackedAnchors does not hold is logged but not judged',
+    'poses: raw WebXR local space; D is motion-compensated for a jump on a frame with a rate (the rate frame is logged with it), else it is the raw step; an anchor that trackedAnchors does not hold is logged but not judged',
     `frames: ${stats.frames}, judged pairs ${stats.dtMs.length}, lost-tracking frames ${stats.lostFrames}`,
     distribution('frame dt ms', stats.dtMs, 1),
     distribution('camera step per frame m', stats.translationM, 4),
     distribution('camera turn per frame deg', stats.rotationDeg, 3),
-    distribution('unexplained step per frame m', stats.unexplainedM, 4),
-    distribution('unexplained turn per frame deg', stats.unexplainedDeg, 3),
+    distribution('unexplained step per steady frame m', stats.unexplainedM, 4),
+    distribution(
+      'unexplained turn per steady frame deg',
+      stats.unexplainedDeg,
+      3
+    ),
     countsLogLine('jumps', verdictCounts(events, 'jump')),
     countsLogLine('tracking losses', verdictCounts(events, 'tracking-loss')),
     countsLogLine('frame gaps', verdictCounts(events, 'frame-gap')),

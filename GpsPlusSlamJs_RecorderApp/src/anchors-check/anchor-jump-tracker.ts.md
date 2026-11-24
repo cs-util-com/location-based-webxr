@@ -8,6 +8,16 @@ gaps. For each of these episodes it computes the jump transform `D`, reads
 the anchor at fixed delays after it and gives a verdict per reading. No DOM,
 no WebXR objects, no three.js.
 
+## The principle: never wrong, not complete
+
+The counted verdict is conservative by construction. An episode counts only
+when its own data prove a correction and leave no doubt that `D` is that
+correction, not the camera's motion or an extrapolation error. The
+on-screen count may leave real episodes out; it must never count a wrong
+one. Every episode, counted or not, is logged in full with the data the
+rules read, so the log stays the authoritative source for re-judging
+offline with other rules.
+
 ## Public API
 
 - Constants:
@@ -18,8 +28,16 @@ no WebXR objects, no three.js.
     stillness limits for counting an uncompensated episode. Rates, not
     steps per frame, so the rule is the same at 30 and 60 Hz (a 1 m/s walk
     at 60 Hz is under 0.02 m per frame).
-  - `MAX_EXTRAPOLATION_RATIO = 3`: the longest frame, in frame intervals,
-    over which a compensated jump is counted.
+  - `STILL_WINDOW_MS = 100`: the shortest run of tracked frames the
+    stillness is measured over.
+  - `STILL_DISPLACEMENT_M`: half the main tolerance (0.05 m), the most the
+    camera's motion before an uncompensated episode may move the anchor
+    over it.
+  - `STEADY_RATE_FRACTION = 0.5`: the rate frame of a counted compensated
+    jump has its own unexplained step under this fraction of the jump
+    limits (0.125 m and 2.5 deg).
+  - `MAX_EXTRAPOLATION_RATIO = 1.5`: the longest frame, in frame intervals,
+    over which a compensated jump is counted (exactly 1.5 counts).
   - `SETTLE_DELAYS_MS = [100, 300, 1000, 2000]`.
   - `BAND_LOWER_M = 0.3`.
   - `RELOCALIZATION_RULE_M = 1`: equal to the framework's
@@ -27,11 +45,6 @@ no WebXR objects, no three.js.
   - `VERDICT_TOLERANCES`: `tight` 0.05 m / 1.5 deg, `main` 0.1 m / 3 deg,
     `loose` 0.25 m / 6 deg.
 - `poseStep(a, b)`: translation (m) and geodesic rotation (deg).
-- `stepRate(a, b)`: the step between two timed poses, its dt, and its
-  speed (m/s) and turn rate (deg/s); `null` when `a` is `null` or the dt
-  is not a positive finite time.
-- `isStill(rate)`: the rate within the stillness limits; `null` is not
-  still.
 - `classifyStep(step)`: `'rotation only'` (translation at most 0.25 m),
   `'under 0.3 m'`, `'0.3-1 m'` or `'at least 1 m'`. Applied to the
   unexplained step.
@@ -43,14 +56,15 @@ no WebXR objects, no three.js.
 - `createAnchorJumpTracker()` returns:
   - `onFrame(sample)`;
   - `notePlaced(t, pose)`, `noteAnchorFailed(t, message)`,
-    `noteFrameError(t, message)`, `noteSession('start' | 'end', t)`;
+    `noteError('frame-error' | 'anchor-read-error', t, message)`,
+    `noteSession('start' | 'end', t)`;
   - `events()`, `snapshot()`, `stats()`.
 - Exported types:
   - `FrameSample`: `t`, `camera`, `anchor`, `anchorTracked`, `marker`. A
     `null` camera means tracking is lost.
-  - `TimedPose`.
-  - `EpisodeEvent`, `EpisodeKind`, `NotCounted` (`'moving'` or
-    `'long frame'`).
+  - `TimedPose`, `Stillness`, `ErrorKind`.
+  - `EpisodeEvent`, `EpisodeKind`, `NotCounted` (`'no correction'`,
+    `'moving'`, `'unsteady rate'` or `'long frame'`).
   - `AnchorReading`.
   - `TrackerEvent`, `FrameStats`, `PoseStep`, `StepClass`, `Verdict`,
     `Tolerance`, `AnchorJumpTracker`.
@@ -61,36 +75,51 @@ no WebXR objects, no three.js.
   pose extrapolated by the motion compensation (`D^-1 * cameraAfter`) to the
   real one. Its angle is `D`'s angle; its translation is what `D` does at
   the camera. `D`'s own translation is not used, because it grows with the
-  distance from the session origin. A steady fast turn or walk logs
-  nothing.
+  distance from the session origin. A steady fast turn or walk logs no
+  compensated jump.
 - **A frame with no known rate** (the first after a start, a loss or a
-  gap) knows only its raw step, and a quick turn passes the limits too. It
-  sets the rate; when its raw step is over the limits it is kept as a
-  candidate. If the next frame then misses its extrapolation by a jump, that
-  miss is the candidate seen again through the rate: the jump is logged at
-  the candidate's frame, uncompensated, and the next frame's own step
-  stands. If the next frame extrapolates well, the candidate was motion and
-  nothing is logged. A loss or a gap between the two drops the candidate.
-- **After a jump, the rate frame is carried into the new frame by `D`.** The
-  rate frame is the one before `cameraBefore`. Carried over this way, the
-  next frame extrapolates at the camera's own speed and does not mistake the
-  jump for velocity. A jump the property test generates over the limits is
-  logged exactly once; one under the limits not at all.
+  gap) knows only its raw step. One over the limits is logged at once, as
+  an uncompensated jump. Either way the frame becomes the next frame's
+  rate: steady motion (a quick turn) is then extrapolated well, and the
+  next frame of a real jump misses by the jump again. That echo is logged
+  too, with an `unsteady rate` (its rate frame had no rate of its own), so
+  it never counts; a second real jump on that frame is logged the same
+  way, never swallowed.
+- **After a jump on a steady rate, the rate frame is carried into the new
+  frame by `D`.** The next frame then extrapolates at the camera's own
+  speed and does not mistake the jump for velocity. After a jump on an
+  unsteady rate the rate itself may hold a jump, so the raw frame is the
+  next rate, as for any frame. A jump the property test generates over the
+  limits is logged exactly once; one under the limits not at all.
 - **`D` comes from the framework's `jumpTransform`**, converted from NUE
   back to the raw WebXR frame, so `D * anchorBefore` is in the anchor's
   frame. For a loss, a gap or a jump on a frame with no rate, `D` is the
   raw step (`compensated: false`): it is the walker's motion plus the
   jump.
-- **Which verdicts count** (`notCounted`):
-  - an uncompensated episode counts only when the camera's speed and turn
-    rate just before it (the step from `cameraPrev` to `cameraBefore`, kept
-    at the loss start, over their dt) are within the stillness limits;
-    otherwise, or when no such step or dt is known, it is `'moving'`. A jump on a frame with no rate therefore never
-    counts;
-  - a compensated jump whose frame is more than `MAX_EXTRAPOLATION_RATIO`
-    times the one before is `'long frame'`: a 200 ms stall at 30 Hz during
-    a turn's onset (300 deg/s^2) leaves about 7 deg unexplained;
-  - not counted episodes are logged in full.
+- **Which verdicts count** (`notCounted`, checked in this order):
+  - an uncompensated episode needs a proven correction: a raw camera
+    translation over `JUMP_TRANSLATION_M`, else `'no correction'` (a still
+    loss with a 1 deg tilt and the anchor 10 m away would otherwise read as
+    a drift correction). Then it needs the camera still, else `'moving'`:
+    - the window is the run of tracked frames before the episode, at least
+      `STILL_WINDOW_MS` long (unknown when shorter: a loss right after a
+      start or another loss is `'moving'`); its speed and turn rate are its
+      net step over its span, within the stillness limits;
+    - that motion carried over the episode, `(speed + turn rate * anchor
+distance) * dt` with the turn rate in rad/s, moves the anchor under
+      `STILL_DISPLACEMENT_M`;
+  - a compensated jump needs a steady rate: the rate frame's own
+    unexplained step known and under `STEADY_RATE_FRACTION` of the limits,
+    else `'unsteady rate'` (a 0.2 m correction under the limits sits in the
+    next frame's rate and, over a frame twice as long, makes a 0.4 m jump
+    that never happened). Then a frame at most `MAX_EXTRAPOLATION_RATIO`
+    times the one before, else `'long frame'` (a 200 ms stall at 30 Hz
+    during a turn's onset, 300 deg/s^2, leaves about 7 deg unexplained);
+  - episodes not counted are logged in full, with the rate frame's own
+    unexplained step and the stillness figures.
+- **Noise floor:** `stats().unexplainedM` and `unexplainedDeg` take only
+  frames on a steady rate that are no jump themselves, so neither a jump
+  nor its echo enters them.
 - **Readings:**
   - Each episode reads the anchor in its own frame (delay 0), then at the
     first frame at or after each of `SETTLE_DELAYS_MS`.
@@ -108,15 +137,18 @@ no WebXR objects, no three.js.
 - **Placement** forgets the last anchor, so a jump right after a re-tap
   never compares the old anchor with the new one.
 - **`noteSession`** closes a pending episode and resets the frame continuity
-  (last frame, rate, loss state). The recorded events stay. Two sessions'
-  frames are never compared.
+  (last frame, rate, stillness window, loss state). The recorded events
+  stay. Two sessions' frames are never compared.
 - **Bad input:**
   - A non-finite or zero-quaternion camera pose counts as a tracking loss.
   - A non-finite anchor pose counts as no anchor.
   - A frame whose time does not advance is skipped.
+  - A stillness figure that is not a number fails the comparison, so it is
+    not still.
 - **State:** the tracker holds transient measurement state for one page
   lifetime in a closure. This is the per-frame hot path; the arrays grow by
-  a few numbers per frame. Nothing is persisted.
+  a few numbers per frame and the stillness window holds about 100 ms of
+  frames. Nothing is persisted.
 
 ## Example
 
@@ -133,28 +165,35 @@ renderer.setAnimationLoop((t, frame) => {
 
 - `anchor-jump-tracker.test.ts` covers:
   - the constants, `poseStep` and the bands, and each verdict;
-  - a smooth walk, a steady fast turn and a sudden turn;
-  - the rate frame in the record, and one jump rather than two when the walk
-    goes on;
+  - a smooth walk, a steady fast turn (only its unrated first pair logged,
+    not counted) and a sudden turn;
+  - the rate frame and its own unexplained step in the record, and one jump
+    rather than two when the walk goes on;
   - a turn 20 m from the origin judged at the camera, not by `D`;
   - a long frame during an accelerating turn, not counted;
-  - a jump on the first frame after a start and after a loss, logged once
-    and uncompensated;
+  - a jump on the first frame after a start and after a loss, logged
+    uncompensated, its echo not counted;
   - readings at every delay, with frame switch, drift correction and a
     lagging anchor;
   - an anchor that is not tracked, and truncation by a second jump;
   - a still tracking loss with a verdict, a walking loss not counted, a
-    walking and a still frame gap, and stillness as a speed: a 1 m/s walk
-    at 60 Hz is moving, a still phone is still, and the speed and turn
-    edges hold, at 30 and 60 Hz;
+    walking and a still frame gap, and stillness as a speed at 30 and
+    60 Hz with the speed and turn edges;
+  - what is counted: a second real jump on the frame after an unrated jump,
+    the echo of an unrated step under the limits, a correction under the
+    limits followed by a frame twice as long, a still loss with no
+    correction (a 1 deg tilt, the anchor 10 m away), the extrapolation
+    ratio at exactly 1.5 and just over, the 100 ms window, the displacement
+    at the anchor, and jumps kept out of the noise floor;
   - the pending flag, a placement mid-window, the session reset, the notes
     and bad input.
 - `anchor-jump-tracker.property.test.ts` covers:
   - for random SE(3) jumps, anchors and smooth camera motion: exactly one
     jump when the step at the camera is over the limits and none when under,
-    the verdict naming the generating model at every delay and every
-    tolerance, and `D` recovered;
-  - steady motion up to about 0.15 m and 20 deg per frame logs nothing;
-  - steady motion up to 3 m/s and 300 deg/s with pose noise (3 mm, 0.15
-    deg) and frame times between 16 and 33 ms logs nothing;
+    counted, the verdict naming the generating model at every delay and
+    every tolerance, and `D` recovered;
+  - steady motion up to about 0.15 m and 20 deg per frame logs nothing but
+    possibly its unrated first pair, never counted;
+  - the same for steady motion up to 3 m/s and 300 deg/s with pose noise
+    (3 mm, 0.15 deg) and frame times between 16 and 33 ms;
   - `poseStep` is symmetric and frame-invariant.

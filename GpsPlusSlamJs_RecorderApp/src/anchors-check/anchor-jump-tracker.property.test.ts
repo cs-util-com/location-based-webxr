@@ -15,6 +15,7 @@ import {
   type EpisodeEvent,
   type FrameSample,
   type PoseStep,
+  type TrackerEvent,
 } from './anchor-jump-tracker';
 
 const unitQuat = fc
@@ -81,6 +82,25 @@ function wantedJumps(step: PoseStep): number | null {
   )
     return 0;
   return null;
+}
+
+/**
+ * What steady motion may log: at most the first frame pair, which has no
+ * rate (a fast turn passes the limits on its raw step), uncompensated and
+ * never counted.
+ */
+function onlyTheUnratedStart(events: readonly TrackerEvent[], t1: number) {
+  const left = events.filter(
+    (e) =>
+      e.kind !== 'session-end' &&
+      !(
+        e.kind === 'jump' &&
+        e.t === t1 &&
+        !e.compensated &&
+        e.notCounted !== null
+      )
+  );
+  return { left, total: events.length };
 }
 
 describe('anchor jump tracker properties', () => {
@@ -182,10 +202,10 @@ describe('anchor jump tracker properties', () => {
               marker: null,
             });
           }
-          expect(tracker.noteSession('end', 500)).toEqual([
-            { kind: 'session-end', t: 500 },
-          ]);
-          expect(tracker.events().map((e) => e.kind)).toEqual(['session-end']);
+          tracker.noteSession('end', 500);
+          const { left, total } = onlyTheUnratedStart(tracker.events(), 16);
+          expect(left).toEqual([]);
+          expect(total).toBeLessThanOrEqual(2);
         }
       )
     );
@@ -253,7 +273,10 @@ describe('anchor jump tracker properties', () => {
             });
           }
           tracker.noteSession('end', t);
-          expect(tracker.events().map((e) => e.kind)).toEqual(['session-end']);
+          const t1 = dts[0]! + dts[1]!;
+          const { left, total } = onlyTheUnratedStart(tracker.events(), t1);
+          expect(left).toEqual([]);
+          expect(total).toBeLessThanOrEqual(2);
         }
       )
     );

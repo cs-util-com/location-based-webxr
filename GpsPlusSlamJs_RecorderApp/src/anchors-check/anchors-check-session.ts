@@ -12,6 +12,7 @@
 import type { Pose } from 'gps-plus-slam-app-framework/ar/qr/qr-pose';
 import {
   createAnchorJumpTracker,
+  type ErrorKind,
   type TrackerEvent,
 } from './anchor-jump-tracker';
 import { buildLog } from './anchor-jump-report';
@@ -124,7 +125,18 @@ export const MESSAGES = Object.freeze({
     'No surface under the ring yet. Aim at the floor until the white ring shows, then tap.',
   ended: 'AR ended. The log is kept: press Copy log.',
   frameFailed: 'A frame failed; the check goes on and the log has it:',
+  anchorReadFailed:
+    'An anchor read failed; the camera is still tracked and the log has it:',
 });
+
+/** Per error kind: its environment line and its on-screen message. */
+const ERRORS: Readonly<Record<ErrorKind, { line: string; message: string }>> = {
+  'frame-error': { line: 'frame errors', message: MESSAGES.frameFailed },
+  'anchor-read-error': {
+    line: 'anchor read errors',
+    message: MESSAGES.anchorReadFailed,
+  },
+};
 
 function toPose(t: XrTransformLike): Pose {
   return {
@@ -176,8 +188,10 @@ export function createAnchorsCheck(
   let anchor: XrAnchorLike | null = null;
   let anchorPose: Pose | null = null;
   let anchorTracked: boolean | null = null;
-  let frameErrors = 0;
-  let firstFrameError = '';
+  const errors: Record<ErrorKind, { count: number; first: string }> = {
+    'frame-error': { count: 0, first: '' },
+    'anchor-read-error': { count: 0, first: '' },
+  };
   let marker: Pose | null = null;
   let lastT = 0;
   let anchorsUsable = false;
@@ -196,7 +210,7 @@ export function createAnchorsCheck(
     try {
       frameBody(t, frame, base);
     } catch (error) {
-      onFrameError(t, errorText(error));
+      onError('frame-error', t, errorText(error));
     }
   }
 
@@ -235,19 +249,21 @@ export function createAnchorsCheck(
       const seen = frame.getPose(anchor.anchorSpace, base);
       return seen ? toPose(seen.transform) : null;
     } catch (error) {
-      onFrameError(t, errorText(error));
+      onError('anchor-read-error', t, errorText(error));
       return null;
     }
   }
 
-  function onFrameError(t: number, message: string): void {
-    frameErrors++;
-    if (frameErrors === 1) firstFrameError = message;
-    environment['frame errors'] = `${frameErrors} (first: ${firstFrameError})`;
-    if (frameErrors !== 1) return;
+  /** Counted per kind; the first of each goes on screen and into the log. */
+  function onError(kind: ErrorKind, t: number, message: string): void {
+    const e = errors[kind];
+    e.count++;
+    if (e.count === 1) e.first = message;
+    environment[ERRORS[kind].line] = `${e.count} (first: ${e.first})`;
+    if (e.count !== 1) return;
     try {
-      report(tracker.noteFrameError(t, message));
-      view.status(`${MESSAGES.frameFailed} ${message}`, 'error');
+      report(tracker.noteError(kind, t, message));
+      view.status(`${ERRORS[kind].message} ${message}`, 'error');
     } catch {
       // The view itself failed; the tracker and the count above hold it.
     }
@@ -314,7 +330,9 @@ export function createAnchorsCheck(
       report(tracker.noteAnchorFailed(lastT, errorText(error)));
       view.status(`Could not create the anchor: ${errorText(error)}`, 'error');
     } finally {
-      placing = false;
+      // A placement of an ended session must not clear a newer one's flag
+      // (session end has already cleared its own).
+      if (session === placingIn) placing = false;
     }
   }
 

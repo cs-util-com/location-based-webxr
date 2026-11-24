@@ -136,20 +136,29 @@ describe('onScreenLine', () => {
   // is the walk, not the anchor; the line must say it is not counted, and
   // give the raw step, since nothing was compensated.
   it('labels a moving loss as not counted, with its raw step', () => {
-    // The log gives the step per frame and its rate.
+    // The log gives the motion over the window before it, and its shift
+    // at the anchor over the loss.
     expect(buildLogFor(walkingLoss())).toContain(
-      'pre-step per frame 0.040 m / 0.00 deg in 33 ms, 1.21 m/s / 0.0 deg/s (moving)'
+      'stillness over 132 ms: 1.21 m/s / 0.0 deg/s; anchor 1.52 m away, moved 0.810 m by that motion over the episode'
     );
     expect(onScreenLine(walkingLoss())).toMatch(
       /^Tracking loss 1 \(0\.7 s\): moving, not counted \(drift correction\) \(.*\); raw step 0\.84 m \/ 0\.0 deg, 0\.3-1 m$/
     );
   });
 
-  it('labels a jump over a long frame as not counted', () => {
+  // Why this matters: each reason an episode is left out must read as such,
+  // with the verdict it would have had.
+  it('labels each reason an episode is not counted', () => {
     const fs = firstEpisode(run({}).events());
-    expect(onScreenLine({ ...fs, notCounted: 'long frame' })).toMatch(
-      /^Jump 1: long frame, not counted \(frame switch\) /
-    );
+    for (const why of [
+      'long frame',
+      'unsteady rate',
+      'no correction',
+    ] as const) {
+      expect(onScreenLine({ ...fs, notCounted: why })).toMatch(
+        new RegExp(`^Jump 1: ${why}, not counted \\(frame switch\\) `)
+      );
+    }
   });
 
   it('describes losses, gaps, placements and notes', () => {
@@ -160,9 +169,12 @@ describe('onScreenLine', () => {
     expect(onScreenLine(tracker.noteAnchorFailed(6, 'no plane')[0]!)).toBe(
       'Could not create the anchor: no plane'
     );
-    expect(onScreenLine(tracker.noteFrameError(7, 'boom')[0]!)).toBe(
+    expect(onScreenLine(tracker.noteError('frame-error', 7, 'boom')[0]!)).toBe(
       'A frame failed: boom'
     );
+    expect(
+      onScreenLine(tracker.noteError('anchor-read-error', 7, 'gone')[0]!)
+    ).toBe('An anchor read failed: gone');
     expect(onScreenLine(tracker.noteSession('start', 8)[0]!)).toBe(
       'AR session started'
     );
@@ -190,8 +202,9 @@ describe('verdictCounts and countsLine', () => {
     const truncated = firstEpisode(cut.events());
     const pending = firstEpisode(run({ framesAfter: 5 }).snapshot());
     const long: EpisodeEvent = { ...fs, notCounted: 'long frame' };
+    const unsteady: EpisodeEvent = { ...fs, notCounted: 'unsteady rate' };
     const counts = verdictCounts(
-      [fs, fs, dc, none, truncated, pending, long],
+      [fs, fs, dc, none, truncated, pending, long, unsteady],
       'jump'
     );
     expect(counts).toEqual({
@@ -199,16 +212,20 @@ describe('verdictCounts and countsLine', () => {
       'frame switch': 2,
       'drift correction': 1,
       unclear: 0,
-      moving: 0,
+      'no correction': 0,
+      'unsteady rate': 1,
       'long frame': 1,
+      moving: 0,
       'no anchor': 1,
       truncated: 1,
       settling: 1,
     } satisfies Record<
       | Verdict
       | 'judged'
-      | 'moving'
+      | 'no correction'
+      | 'unsteady rate'
       | 'long frame'
+      | 'moving'
       | 'no anchor'
       | 'truncated'
       | 'settling',
@@ -229,11 +246,11 @@ describe('verdictCounts and countsLine', () => {
     expect(countsLine([])).toBe('Nothing judged yet.');
     const fs = firstEpisode(run({}).events());
     expect(countsLine([fs, { ...fs, kind: 'tracking-loss' }])).toBe(
-      'Judged: 1 jump (frame switch 1, drift correction 0, unclear 0); 1 tracking loss (frame switch 1, drift correction 0, unclear 0). Not counted: moving 0, long frame 0, no anchor 0, truncated 0.'
+      'Judged: 1 jump (frame switch 1, drift correction 0, unclear 0); 1 tracking loss (frame switch 1, drift correction 0, unclear 0). Not counted: no correction 0, unsteady rate 0, long frame 0, moving 0, no anchor 0, truncated 0.'
     );
     const none = firstEpisode(run({ anchor: false }).events());
     expect(countsLine([none, walkingLoss()])).toBe(
-      'Judged: 0 jumps (frame switch 0, drift correction 0, unclear 0); 0 tracking losses (frame switch 0, drift correction 0, unclear 0). Not counted: moving 1, long frame 0, no anchor 1, truncated 0.'
+      'Judged: 0 jumps (frame switch 0, drift correction 0, unclear 0); 0 tracking losses (frame switch 0, drift correction 0, unclear 0). Not counted: no correction 0, unsteady rate 0, long frame 0, moving 1, no anchor 1, truncated 0.'
     );
   });
 });
@@ -280,14 +297,15 @@ describe('buildLog', () => {
       'anchor read at 0, 100, 300, 1000, 2000 ms',
       'tight 0.05 m / 1.5 deg',
       'frame dt ms: p50 33.0',
-      'unexplained step per frame m:',
-      'jumps judged 1 (frame switch 1, drift correction 0, unclear 0); not counted: moving 0, long frame 0, no anchor 0, truncated 0; settling 0',
-      'counted: a loss, a gap or a jump with no rate only when the camera moved at most 0.3 m/s and 20 deg/s just before it; a jump only when its frame is at most 3 times the one before',
-      'pre-step per frame 0.000 m / 0.00 deg in 33 ms, 0.00 m/s / 0.0 deg/s (still); extrapolation ratio 1.00',
+      'unexplained step per steady frame m:',
+      'jumps judged 1 (frame switch 1, drift correction 0, unclear 0); not counted: no correction 0, unsteady rate 0, long frame 0, moving 0, no anchor 0, truncated 0; settling 0',
+      "counted: conservative by construction (the events below are the authoritative record to re-judge offline); a loss, a gap or a jump with no rate only when its raw step is over 0.25 m, the camera moved at most 0.3 m/s and 20 deg/s over the 100 ms before it, and that motion carried over the episode moves the anchor under 0.05 m; a jump with a rate only when the rate frame's own unexplained step is under 0.5 of the jump limits and the jump's frame is at most 1.5 times the one before",
+      'poses: raw WebXR local space; D is motion-compensated for a jump on a frame with a rate (the rate frame is logged with it), else it is the raw step',
+      'stillness over 132 ms: 0.00 m/s / 0.0 deg/s; anchor 1.55 m away',
+      'rate frame: [t 99 ms] p=(0.000, 1.500, 0.000) q=(0.0000, 0.0000, 0.0000, 1.0000); its own unexplained step 0.000 m / 0.00 deg; extrapolation ratio 1.00',
       'anchor now (tracked yes): p=(1.000',
       'anchor to marker now: 0.600 m',
       'jump 1: dt 33 ms',
-      'camera prev: [t 99 ms] p=(0.000',
       'camera before: [t 132 ms] p=(0.000',
       'camera after: p=(0.600',
       'D: p=(0.600',

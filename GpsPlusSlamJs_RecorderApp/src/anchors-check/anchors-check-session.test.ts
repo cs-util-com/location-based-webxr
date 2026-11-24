@@ -365,6 +365,27 @@ describe('placing', () => {
     expect(h.transforms).toHaveLength(2);
     expect(h.lastStatus()?.text).toBe(MESSAGES.placed);
   });
+
+  // Why this matters: the old session's placement settling late must not
+  // clear the new session's in-progress flag, or a tap during the new
+  // placement starts a second one.
+  it('keeps the new placement in progress when the old one settles late', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -1) });
+    let settleOld!: (a: XrAnchorLike) => void;
+    await h.select({
+      createAnchor: () => new Promise<XrAnchorLike>((r) => (settleOld = r)),
+    });
+    await h.controller.toggle();
+    await h.controller.toggle();
+    h.tick(5000, { hit: pose(0, 0, -1) });
+    await h.select({ createAnchor: () => new Promise<XrAnchorLike>(() => {}) });
+    settleOld({ anchorSpace: 'late', delete: () => undefined });
+    await new Promise((r) => setTimeout(r, 0));
+    await h.select();
+    expect(h.transforms).toHaveLength(2);
+  });
 });
 
 describe('frames', () => {
@@ -408,20 +429,23 @@ describe('frames', () => {
     expect(h.scene.anchor.at(-1)).toEqual(pose(0, 0, -2));
   });
 
-  // Why this matters: an exception in the frame callback would stop the
-  // render loop for good; it is logged once and the next frame runs.
-  it('keeps running when a frame throws, and says so once', async () => {
+  // Why this matters: a getPose that throws must not stop the frame loop;
+  // it is said once, logged, and counted apart from whole-frame errors.
+  it('keeps running when an anchor read throws, and says so once', async () => {
     const h = harness();
     await h.controller.toggle();
     h.tick(0, { hit: pose(0, 0, -2) });
     await h.select();
     expect(() => h.tick(33, { getPoseThrows: true })).not.toThrow();
     expect(() => h.tick(66, { getPoseThrows: true })).not.toThrow();
-    const errors = h.statuses.filter((s) => s.text.includes('A frame failed'));
+    const errors = h.statuses.filter((s) =>
+      s.text.startsWith(MESSAGES.anchorReadFailed)
+    );
     expect(errors).toHaveLength(1);
     const log = h.controller.log();
-    expect(log).toContain('a frame failed: InvalidStateError');
-    expect(log).toContain('frame errors: 2 (first: InvalidStateError)');
+    expect(log).toContain('an anchor read failed: InvalidStateError');
+    expect(log).toContain('anchor read errors: 2 (first: InvalidStateError)');
+    expect(log).not.toContain('frame errors');
     h.tick(99, { anchor: pose(0, 0, -2) });
     expect(h.scene.anchor.at(-1)).toEqual(pose(0, 0, -2));
   });
@@ -439,7 +463,7 @@ describe('frames', () => {
       h.tick(i * 33, { camera: pose(0.8, 1.5, 0), getPoseThrows: true });
     const log = h.controller.log();
     expect(log).toContain('jump 1: dt 33 ms');
-    expect(log).toContain('frame errors: 79 (first: InvalidStateError)');
+    expect(log).toContain('anchor read errors: 79 (first: InvalidStateError)');
   });
 
   // Why this matters: the error path itself must not throw; a view that
@@ -449,7 +473,9 @@ describe('frames', () => {
     await h.controller.toggle();
     expect(() => h.tick(0)).not.toThrow();
     expect(() => h.tick(33)).not.toThrow();
-    expect(h.controller.log()).toContain('a frame failed: list broke');
+    const log = h.controller.log();
+    expect(log).toContain('a frame failed: list broke');
+    expect(log).toContain('frame errors: 1 (first: list broke)');
   });
 
   // Why this matters: an emulated position is ARCore saying tracking is

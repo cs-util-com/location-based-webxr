@@ -29,17 +29,21 @@ its URL. `src/anchors-check/anchors-check-isolation.test.ts` asserts that.
 4. Walk an indoor loop of at least 50 m, several laps. A jump is a camera
    step of more than 0.25 m or 5 deg that your own walking and turning do not
    explain: smooth turns, even quick ones, are fine. One that comes with a
-   stutter (a frame over 3 times the one before) is listed as "long frame"
-   and not counted.
-5. If no jump is listed after a few laps, make a tracking loss: stand still
-   for 2 s, cover the camera for a few seconds while keeping still, uncover
-   it and stay still for 2 s more. A loss taken while moving (over 0.3 m/s or
-   20 deg/s just before it) is listed as "moving" and not counted.
+   stutter (a frame over 1.5 times the one before) is listed as "long frame" and not counted; one right after another jump, a correction
+   or the start is listed as "unsteady rate" and not counted.
+5. If no jump is listed after a few laps, make a tracking loss: rest the
+   phone on something steady for 2 s, cover the camera for about a second
+   without moving the phone, uncover it and keep it there for 2 s more. A
+   loss taken while moving (over 0.3 m/s or 20 deg/s in the 100 ms before
+   it, or slow motion that alone would shift the anchor by 0.05 m over the
+   loss) is listed as "moving", and one across which the world did not move
+   by more than 0.25 m as "no correction"; neither is counted.
 6. Each jump and loss is judged over 2 s (anchor read at 0, 100, 300, 1000
    and 2000 ms); walk on calmly. A second one inside those 2 s cuts the first
    short ("truncated", not counted). Keep going until the counts line shows
-   2 or more judged; it also lists what was not counted (moving, long frame,
-   no anchor, truncated). Return to the mark and note whether the green box
+   2 or more judged; it also lists what was not counted (no correction, unsteady rate, long frame, moving, no anchor, truncated).
+   The count leaves doubtful episodes out on purpose: the log keeps all of
+   them. Return to the mark and note whether the green box
    still sits on it.
 7. Press **Copy log** (it works during AR; the panel takes taps away from the
    scene). If the copy fails, the log appears in a text box to copy by hand.
@@ -51,9 +55,9 @@ Nothing is uploaded or stored.
 - On screen, one line per event:
   `Jump n: <verdict> (<verdict per delay>); unexplained <m> / <deg>, <band>`,
   the same for tracking losses and frame gaps with their `raw step`, with
-  `settling`, `truncated`, `moving`, `long frame` or `no anchor` where it
-  applies. Placements, failed anchors, frame errors and the session lines
-  also show. A counts line shows the judged jumps and losses by verdict and
+  `settling`, `truncated`, `no correction`, `unsteady rate`, `long frame`,
+  `moving` or `no anchor` where it applies. Placements, failed anchors,
+  frame errors, anchor read errors and the session lines also show. A counts line shows the judged jumps and losses by verdict and
   the not counted ones by reason.
 - The log (see `src/anchors-check/anchor-jump-report.ts.md`): device and
   feature lines, the limits and tolerances, the frame dt and per-frame step
@@ -67,9 +71,12 @@ Nothing is uploaded or stored.
   anchor may behave differently and is not measured here.
 - For a tracking loss, a frame gap or a jump on a frame with no rate, `D`
   is uncompensated, so its verdict holds only while the camera stays still
-  across it. Only the step just before it is checked (and a jump on a frame
-  with no rate has none, so it never counts); keeping still after the loss
-  is up to the walker.
+  across it. Only the 100 ms before it can be checked (a jump on a frame
+  with no rate has no such window, so it never counts); keeping still during
+  the loss is up to the walker.
+- The counted verdict is conservative by construction: it may leave real
+  episodes out, but it counts none whose data leave a doubt. The log is the
+  authoritative record, to re-judge offline.
 
 ## Structure
 

@@ -5,6 +5,13 @@
  * fixed delays after it and gives the verdict per reading (does the anchor
  * follow `D`, or keep its coordinates).
  *
+ * The counted verdict is conservative by construction: an episode counts
+ * only when its data prove a correction and leave no doubt that `D` is that
+ * correction, not the camera's own motion or an extrapolation error. The
+ * on-screen count may miss real episodes but must never be wrong; the full
+ * log keeps every episode with its data and stays the authoritative source
+ * for re-judging offline.
+ *
  * No DOM, no WebXR objects, no three.js: the page hands in one plain sample
  * per XR frame. Poses are raw WebXR poses (the `local` reference space).
  *
@@ -16,7 +23,6 @@ import {
   composeRigid,
   invertRigid,
   jumpTransform,
-  type RelocalizationJump,
 } from 'gps-plus-slam-app-framework/ar/ar-space-correction';
 import {
   nueQuaternionToWebXR,
@@ -35,19 +41,29 @@ export const JUMP_ROTATION_DEG = 5;
 export const FRAME_GAP_MS = 500;
 /**
  * An uncompensated episode (a loss, a gap, a jump on a frame with no rate)
- * is counted only when the camera moved at most this fast just before it:
- * otherwise its `D` is mostly the walker's own motion. A speed, not a step
- * per frame, so the rule is the same at 30 and 60 Hz.
+ * is counted only when the camera moved at most this fast over the
+ * `STILL_WINDOW_MS` before it: otherwise its `D` is mostly the walker's own
+ * motion. A speed, not a step per frame, so the rule is the same at 30 and
+ * 60 Hz.
  */
 export const STILL_SPEED_M_PER_S = 0.3;
 /** The same for the rotation. */
 export const STILL_TURN_DEG_PER_S = 20;
+/** The shortest run of tracked frames the stillness is measured over. */
+export const STILL_WINDOW_MS = 100;
 /**
  * A compensated jump is counted only when its frame interval is at most
  * this many times the one before: over a longer frame the extrapolation
  * error of an ordinary acceleration alone can pass the jump limits.
  */
-export const MAX_EXTRAPOLATION_RATIO = 3;
+export const MAX_EXTRAPOLATION_RATIO = 1.5;
+/**
+ * A compensated jump is counted only when the rate frame was itself
+ * extrapolated well: its own unexplained step under this fraction of the
+ * jump limits. A rate that held a correction (or had no rate of its own)
+ * carries that correction into the jump.
+ */
+export const STEADY_RATE_FRACTION = 0.5;
 /**
  * Delays after an episode (jump, loss, gap) at which the anchor is read and
  * judged. In ms, not frames, so the window is the same at 30 and 60 Hz. The
@@ -85,6 +101,13 @@ export const VERDICT_TOLERANCES: {
   loose: Object.freeze({ positionM: 0.25, rotationDeg: 6 }),
 });
 
+/**
+ * An uncompensated episode is counted only when the camera's motion before
+ * it, carried on over the episode, moves the anchor by less than this:
+ * half the main tolerance, so the motion alone cannot decide the verdict.
+ */
+export const STILL_DISPLACEMENT_M = VERDICT_TOLERANCES.main.positionM / 2;
+
 export type Verdict = 'frame switch' | 'drift correction' | 'unclear';
 export type StepClass =
   'rotation only' | 'under 0.3 m' | '0.3-1 m' | 'at least 1 m';
@@ -115,6 +138,19 @@ export interface TimedPose {
   readonly pose: Pose;
 }
 
+/** The camera's motion over the frames before an episode. */
+export interface Stillness {
+  /** From the window's first frame to `cameraBefore`. */
+  readonly spanMs: number;
+  /** The window's net step over its span. */
+  readonly speedMPerS: number;
+  readonly turnDegPerS: number;
+  /** `cameraBefore` to the tracked anchor before; 0 when none. */
+  readonly anchorDistanceM: number;
+  /** `(speed + turn * anchorDistance) * dtMs`: that motion's shift at the anchor. */
+  readonly displacementM: number;
+}
+
 interface AnchorComparison {
   /** The anchor against `D * anchorBefore`. */
   readonly toPredicted: PoseStep;
@@ -141,11 +177,17 @@ export interface AnchorReading {
 export type EpisodeKind = 'jump' | 'tracking-loss' | 'frame-gap';
 
 /**
- * Why a closed episode's verdict is not counted: `moving` (uncompensated
- * and the camera not still before it), `long frame` (extrapolated over more
- * than `MAX_EXTRAPOLATION_RATIO` frame intervals).
+ * Why a closed episode's verdict is not counted:
+ * - `no correction`: uncompensated with a raw step at most
+ *   `JUMP_TRANSLATION_M` (nothing shows that a correction happened);
+ * - `moving`: uncompensated and the camera not shown still before it;
+ * - `unsteady rate`: compensated, but the rate frame's own unexplained step
+ *   is unknown or over `STEADY_RATE_FRACTION` of the jump limits;
+ * - `long frame`: compensated over more than `MAX_EXTRAPOLATION_RATIO`
+ *   frame intervals.
  */
-export type NotCounted = 'moving' | 'long frame';
+export type NotCounted =
+  'no correction' | 'moving' | 'unsteady rate' | 'long frame';
 
 /** A jump, a tracking loss or a frame gap, with its anchor readings. */
 export interface EpisodeEvent {
@@ -155,11 +197,7 @@ export interface EpisodeEvent {
   readonly t: number;
   /** Time since the last tracked frame (the loss or gap length). */
   readonly dtMs: number;
-  /**
-   * The frame before `cameraBefore`: the rate frame of a compensated jump,
-   * and for every episode the step that says whether the camera was still.
-   * `null`: none known.
-   */
+  /** The rate frame of a compensated jump; `null`: uncompensated. */
   readonly cameraPrev: TimedPose | null;
   readonly cameraBefore: TimedPose;
   readonly cameraAfter: Pose;
@@ -172,6 +210,13 @@ export interface EpisodeEvent {
   readonly compensated: boolean;
   /** The step the compensation leaves: extrapolated pose to cameraAfter. */
   readonly unexplainedStep: PoseStep;
+  /**
+   * How well the rate frame was itself extrapolated (its own unexplained
+   * step); `null` when it had no rate, or the episode is uncompensated.
+   */
+  readonly rateUnexplainedStep: PoseStep | null;
+  /** The motion before the episode; `null` under `STILL_WINDOW_MS` of it. */
+  readonly stillness: Stillness | null;
   /** Why the verdict is not counted; `null`: counted when judged in full. */
   readonly notCounted: NotCounted | null;
   readonly stepClass: StepClass;
@@ -196,8 +241,10 @@ interface PlacedEvent {
   readonly pose: Pose;
 }
 
+export type ErrorKind = 'frame-error' | 'anchor-read-error';
+
 interface NoteEvent {
-  readonly kind: 'anchor-failed' | 'frame-error';
+  readonly kind: 'anchor-failed' | ErrorKind;
   readonly t: number;
   readonly message: string;
 }
@@ -217,7 +264,10 @@ export interface FrameStats {
   readonly dtMs: readonly number[];
   readonly translationM: readonly number[];
   readonly rotationDeg: readonly number[];
-  /** The unexplained step, for pairs with a known rate. */
+  /**
+   * The unexplained step: the noise floor, over frames with a steady rate
+   * frame that are no jump themselves.
+   */
   readonly unexplainedM: readonly number[];
   readonly unexplainedDeg: readonly number[];
 }
@@ -228,7 +278,12 @@ export interface AnchorJumpTracker {
   /** A new anchor and marker were placed at `pose`. */
   notePlaced(t: number, pose: Pose): readonly TrackerEvent[];
   noteAnchorFailed(t: number, message: string): readonly TrackerEvent[];
-  noteFrameError(t: number, message: string): readonly TrackerEvent[];
+  /** A frame, or the anchor read alone, threw. */
+  noteError(
+    kind: ErrorKind,
+    t: number,
+    message: string
+  ): readonly TrackerEvent[];
   /**
    * A session started or ended: closes a pending episode and resets the
    * frame continuity (the recorded events stay).
@@ -286,33 +341,52 @@ function isJump(step: PoseStep): boolean {
   );
 }
 
-export interface StepRate {
-  readonly step: PoseStep;
-  readonly dtMs: number;
-  readonly speedMPerS: number;
-  readonly turnDegPerS: number;
+function isSteady(step: PoseStep | null): boolean {
+  return (
+    step !== null &&
+    step.translationM < JUMP_TRANSLATION_M * STEADY_RATE_FRACTION &&
+    step.rotationDeg < JUMP_ROTATION_DEG * STEADY_RATE_FRACTION
+  );
 }
 
-/** The camera's step from `a` to `b` and its rate; `null` when dt is not a positive finite time. */
-export function stepRate(a: TimedPose | null, b: TimedPose): StepRate | null {
-  if (a === null) return null;
-  const dtMs = b.t - a.t;
-  if (!Number.isFinite(dtMs) || !(dtMs > 0)) return null;
-  const step = poseStep(a.pose, b.pose);
+/**
+ * The camera's motion over `window` (tracked frames ending at the frame
+ * before the episode), and what it moves the anchor over `dtMs`. `null`
+ * when the window spans under `STILL_WINDOW_MS`.
+ */
+function stillness(
+  window: readonly TimedPose[],
+  anchor: Pose | null,
+  dtMs: number
+): Stillness | null {
+  const first = window[0];
+  const end = window.at(-1);
+  if (first === undefined || end === undefined) return null;
+  const spanMs = end.t - first.t;
+  if (!(spanMs >= STILL_WINDOW_MS)) return null;
+  const step = poseStep(first.pose, end.pose);
+  const speedMPerS = step.translationM / (spanMs / 1000);
+  const turnDegPerS = step.rotationDeg / (spanMs / 1000);
+  const anchorDistanceM =
+    anchor === null ? 0 : poseStep(end.pose, anchor).translationM;
   return {
-    step,
-    dtMs,
-    speedMPerS: step.translationM / (dtMs / 1000),
-    turnDegPerS: step.rotationDeg / (dtMs / 1000),
+    spanMs,
+    speedMPerS,
+    turnDegPerS,
+    anchorDistanceM,
+    displacementM:
+      (speedMPerS + (turnDegPerS / RAD_TO_DEG) * anchorDistanceM) *
+      (dtMs / 1000),
   };
 }
 
-/** Did the camera move within the stillness limits? Unknown: no. */
-export function isStill(rate: StepRate | null): boolean {
+/** Within every stillness limit; unknown (or NaN): no. */
+function isStill(s: Stillness | null): boolean {
   return (
-    rate !== null &&
-    rate.speedMPerS <= STILL_SPEED_M_PER_S &&
-    rate.turnDegPerS <= STILL_TURN_DEG_PER_S
+    s !== null &&
+    s.speedMPerS <= STILL_SPEED_M_PER_S &&
+    s.turnDegPerS <= STILL_TURN_DEG_PER_S &&
+    s.displacementM < STILL_DISPLACEMENT_M
   );
 }
 
@@ -364,9 +438,24 @@ function compare(
   };
 }
 
-/** The jump transform in the raw WebXR frame (the framework computes it in NUE). */
-function jumpInWebXr(jump: RelocalizationJump): Pose {
-  const d = jumpTransform(jump);
+/**
+ * `D` in the raw WebXR frame (the framework computes it in NUE): motion
+ * compensated from `rate` when given, else the raw step.
+ */
+function jumpAt(
+  t: number,
+  before: TimedPose,
+  rate: TimedPose | null,
+  camera: Pose
+): Pose {
+  const d = jumpTransform({
+    t,
+    tLast: before.t,
+    lastPose: before.pose,
+    tPrev: rate?.t ?? null,
+    prevPose: rate?.pose ?? null,
+    newPose: camera,
+  });
   return {
     position: nueToWebXR(d.position),
     rotation: nueQuaternionToWebXR(d.rotation),
@@ -383,26 +472,39 @@ interface Pending {
   readonly readings: AnchorReading[];
 }
 
-/** The frame before an uncompensated episode, as the tracker last saw it. */
-interface Unrated {
+/** The last tracked frame before an episode, as the tracker saw it. */
+interface FrameBefore {
   readonly before: TimedPose;
-  readonly rate: TimedPose | null;
   readonly seen: Seen;
 }
 
 /** The episode frame's raw inputs. */
 interface EpisodeInput {
   readonly kind: EpisodeKind;
-  readonly t: number;
-  readonly before: TimedPose;
-  readonly rate: TimedPose | null;
+  readonly at: { readonly t: number; readonly marker: Pose | null };
+  readonly from: FrameBefore;
   readonly camera: Pose;
-  readonly d: Pose;
-  readonly compensated: boolean;
-  readonly notCounted: NotCounted | null;
-  readonly anchorBefore: Seen;
   readonly now: Seen;
-  readonly marker: Pose | null;
+  readonly d: Pose;
+  /** The rate frame; `null`: uncompensated. */
+  readonly rate: TimedPose | null;
+  readonly rateUnexplained: PoseStep | null;
+}
+
+/** The counting rule; see `NotCounted`. */
+function notCountedOf(
+  input: EpisodeInput,
+  cameraStep: PoseStep,
+  still: Stillness | null
+): NotCounted | null {
+  const { rate, from, at } = input;
+  if (rate === null) {
+    if (!(cameraStep.translationM > JUMP_TRANSLATION_M)) return 'no correction';
+    return isStill(still) ? null : 'moving';
+  }
+  if (!isSteady(input.rateUnexplained)) return 'unsteady rate';
+  const ratio = (at.t - from.before.t) / (from.before.t - rate.t);
+  return ratio > MAX_EXTRAPOLATION_RATIO ? 'long frame' : null;
 }
 
 export function createAnchorJumpTracker(): AnchorJumpTracker {
@@ -424,21 +526,15 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
   /** The frame before `last`, for the rate; `null` when no rate is known. */
   let prev: TimedPose | null = null;
   let last: TimedPose | null = null;
+  /** `last`'s own unexplained step; `null` when it had no rate. */
+  let lastUnexplained: PoseStep | null = null;
   let lastSeen: Seen = { anchor: null, tracked: null };
-  let lost: Unrated | null = null;
   /**
-   * A frame with no rate whose raw step passed the jump limits: a jump, or
-   * just a quick turn. The next frame tells: steady motion extrapolates
-   * well from it, while after a jump the extrapolation misses by the jump
-   * again.
+   * The tracked frames up to `last` since the last loss, gap or start,
+   * trimmed to just over `STILL_WINDOW_MS`: the stillness window.
    */
-  let candidate: {
-    readonly t: number;
-    readonly marker: Pose | null;
-    readonly from: Unrated;
-    readonly camera: Pose;
-    readonly seen: Seen;
-  } | null = null;
+  let recent: TimedPose[] = [];
+  let lost: FrameBefore | null = null;
   let pending: Pending | null = null;
 
   function finish(p: Pending, isPending: boolean): EpisodeEvent {
@@ -473,38 +569,57 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
 
   function openEpisode(input: EpisodeInput, out: TrackerEvent[]): void {
     closePending(out);
-    const { before, camera, d } = input;
+    const { at, from, camera, d } = input;
+    const { before, seen } = from;
+    const dtMs = at.t - before.t;
+    const cameraStep = poseStep(before.pose, camera);
     const unexplainedStep = poseStep(
       composeRigid(invertRigid(d), camera),
       camera
     );
-    const anchorBefore = input.anchorBefore.anchor;
-    const usable = judged(anchorBefore, input.anchorBefore.tracked);
+    const usable = judged(seen.anchor, seen.tracked);
+    const still = stillness(recent, usable, dtMs);
     counts[input.kind]++;
     const p: Pending = {
       base: {
         kind: input.kind,
         index: counts[input.kind],
-        t: input.t,
-        dtMs: input.t - before.t,
+        t: at.t,
+        dtMs,
         cameraPrev: input.rate,
         cameraBefore: before,
         cameraAfter: camera,
-        cameraStep: poseStep(before.pose, camera),
-        compensated: input.compensated,
+        cameraStep,
+        compensated: input.rate !== null,
         unexplainedStep,
-        notCounted: input.notCounted,
+        rateUnexplainedStep: input.rateUnexplained,
+        stillness: still,
+        notCounted: notCountedOf(input, cameraStep, still),
         stepClass: classifyStep(unexplainedStep),
         d,
-        anchorBefore,
-        anchorBeforeTracked: input.anchorBefore.tracked,
+        anchorBefore: seen.anchor,
+        anchorBeforeTracked: seen.tracked,
         predicted: usable === null ? null : composeRigid(d, usable),
-        marker: input.marker,
+        marker: at.marker,
       },
       readings: [],
     };
     p.readings.push(reading(p, 0, 0, input.now));
     pending = p;
+  }
+
+  /** A loss, a gap or a jump with no rate: `D` is the raw step. */
+  function openUncompensated(
+    kind: EpisodeKind,
+    at: FrameSample,
+    from: FrameBefore,
+    camera: Pose,
+    now: Seen,
+    out: TrackerEvent[]
+  ): void {
+    const d = jumpAt(at.t, from.before, null, camera);
+    const input = { kind, at, from, camera, now, d };
+    openEpisode({ ...input, rate: null, rateUnexplained: null }, out);
   }
 
   /** Take the readings this frame reaches; close the episode after the last. */
@@ -525,66 +640,38 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
     t: number,
     camera: Pose,
     seen: Seen,
-    rate: TimedPose | null
+    rate: TimedPose | null,
+    unexplained: PoseStep | null
   ) {
     prev = rate;
     last = { t, pose: camera };
     lastSeen = seen;
+    lastUnexplained = unexplained;
+    recent.push(last);
+    while (recent.length > 1 && t - recent[1]!.t >= STILL_WINDOW_MS)
+      recent.shift();
+  }
+
+  /** The first frame of a new run of tracked frames: no rate, no window. */
+  function restart(t: number, camera: Pose, seen: Seen): void {
+    recent = [];
+    advance(t, camera, seen, null, null);
   }
 
   function resetFrames(): void {
     prev = null;
     last = null;
+    lastUnexplained = null;
     lastSeen = { anchor: null, tracked: null };
+    recent = [];
     lost = null;
-    candidate = null;
   }
 
   function onLost(out: TrackerEvent[]): void {
     lostFrames++;
     if (lost !== null || last === null) return;
     closePending(out);
-    lost = { before: last, rate: prev, seen: lastSeen };
-    candidate = null;
-  }
-
-  /**
-   * An episode with no usable rate: D is the raw step, so its verdict
-   * counts only when the camera was still before it.
-   */
-  function openUnrated(
-    kind: EpisodeKind,
-    at: { readonly t: number; readonly marker: Pose | null },
-    from: Unrated,
-    camera: Pose,
-    seen: Seen,
-    out: TrackerEvent[]
-  ): void {
-    const { before, rate } = from;
-    const d = jumpInWebXr({
-      t: at.t,
-      tLast: before.t,
-      lastPose: before.pose,
-      tPrev: null,
-      prevPose: null,
-      newPose: camera,
-    });
-    openEpisode(
-      {
-        kind,
-        t: at.t,
-        before,
-        rate,
-        camera,
-        d,
-        compensated: false,
-        notCounted: isStill(stepRate(rate, before)) ? null : 'moving',
-        anchorBefore: from.seen,
-        now: seen,
-        marker: at.marker,
-      },
-      out
-    );
+    lost = { before: last, seen: lastSeen };
   }
 
   function onTracked(
@@ -596,92 +683,59 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
     if (lost !== null) {
       const from = lost;
       lost = null;
-      openUnrated('tracking-loss', sample, from, camera, seen, out);
-      // The episode frame never becomes a rate: the next frame starts it.
-      return advance(sample.t, camera, seen, null);
+      openUncompensated('tracking-loss', sample, from, camera, seen, out);
+      return restart(sample.t, camera, seen);
     }
-    if (last === null) return advance(sample.t, camera, seen, null);
-    const from: TimedPose = last;
-    const dt = sample.t - from.t;
+    if (last === null) return restart(sample.t, camera, seen);
+    const from: FrameBefore = { before: last, seen: lastSeen };
+    const dt = sample.t - last.t;
     if (!(dt > 0)) {
       frames--;
       return;
     }
-    const unrated: Unrated = { before: from, rate: prev, seen: lastSeen };
-    const was = candidate;
-    candidate = null;
     if (dt > FRAME_GAP_MS) {
-      openUnrated('frame-gap', sample, unrated, camera, seen, out);
-      return advance(sample.t, camera, seen, null);
+      openUncompensated('frame-gap', sample, from, camera, seen, out);
+      return restart(sample.t, camera, seen);
     }
-    const step = poseStep(from.pose, camera);
+    const step = poseStep(last.pose, camera);
     stats.dtMs.push(dt);
     stats.translationM.push(step.translationM);
     stats.rotationDeg.push(step.rotationDeg);
     // Without a rate (the first frame after a start, a loss or a gap) only
-    // the raw step is known, and a quick turn passes the limits too. The
-    // frame sets the rate; one over the limits is kept as a candidate.
+    // the raw step is known; one over the limits is logged, uncompensated.
+    // Either way the frame is the next one's rate: steady motion (a quick
+    // turn) is then explained, and the echo of a jump has an unsteady rate.
     if (prev === null) {
       if (isJump(step))
-        candidate = {
-          t: sample.t,
-          marker: sample.marker,
-          from: unrated,
-          camera,
-          seen,
-        };
-      settle(sample.t, seen, out);
-      return advance(sample.t, camera, seen, from);
+        openUncompensated('jump', sample, from, camera, seen, out);
+      else settle(sample.t, seen, out);
+      return advance(sample.t, camera, seen, last, null);
     }
-    const rate: TimedPose = prev;
-    const d = jumpInWebXr({
-      t: sample.t,
-      tLast: from.t,
-      lastPose: from.pose,
-      tPrev: rate.t,
-      prevPose: rate.pose,
-      newPose: camera,
-    });
+    const rate = prev;
+    const d = jumpAt(sample.t, last, rate, camera);
     const unexplained = poseStep(composeRigid(invertRigid(d), camera), camera);
-    stats.unexplainedM.push(unexplained.translationM);
-    stats.unexplainedDeg.push(unexplained.rotationDeg);
+    const steady = isSteady(lastUnexplained);
     if (!isJump(unexplained)) {
+      if (steady) {
+        stats.unexplainedM.push(unexplained.translationM);
+        stats.unexplainedDeg.push(unexplained.rotationDeg);
+      }
       settle(sample.t, seen, out);
-      return advance(sample.t, camera, seen, from);
+      return advance(sample.t, camera, seen, last, unexplained);
     }
-    if (was !== null) {
-      // The candidate was a jump, not motion: this frame only shows it
-      // again, inverted, through the rate. It is logged at its own frame,
-      // uncompensated, and this frame's step is the camera's own.
-      openUnrated('jump', was, was.from, was.camera, was.seen, out);
-      settle(sample.t, seen, out);
-      return advance(sample.t, camera, seen, from);
-    }
-    openEpisode(
-      {
-        kind: 'jump',
-        t: sample.t,
-        before: from,
-        rate,
-        camera,
-        d,
-        compensated: true,
-        notCounted:
-          dt / (from.t - rate.t) > MAX_EXTRAPOLATION_RATIO
-            ? 'long frame'
-            : null,
-        anchorBefore: lastSeen,
-        now: seen,
-        marker: sample.marker,
-      },
-      out
-    );
-    // The frame before the jump, carried into the new frame by D: the next
-    // frame's rate is then the camera's own speed, not the jump.
-    advance(sample.t, camera, seen, {
-      t: from.t,
-      pose: composeRigid(d, from.pose),
-    });
+    const input = {
+      kind: 'jump' as const,
+      at: sample,
+      from,
+      camera,
+      now: seen,
+    };
+    openEpisode({ ...input, d, rate, rateUnexplained: lastUnexplained }, out);
+    // After a jump on a steady rate, the frame before it is carried into the
+    // new frame by D: the next rate is the camera's own speed, not the jump.
+    // An unsteady rate may itself hold a jump, so D is not trusted to carry.
+    const carried = { t: last.t, pose: composeRigid(d, last.pose) };
+    advance(sample.t, camera, seen, steady ? carried : last, unexplained);
   }
 
   function record(out: TrackerEvent[]): readonly TrackerEvent[] {
@@ -708,15 +762,13 @@ export function createAnchorJumpTracker(): AnchorJumpTracker {
       closePending(out);
       // The next frame's anchor is a new one: never compare it with the old.
       lastSeen = { anchor: null, tracked: null };
-      candidate = null;
       if (lost !== null) lost = { ...lost, seen: lastSeen };
       out.push({ kind: 'placed', t, pose });
       return record(out);
     },
     noteAnchorFailed: (t, message) =>
       record([{ kind: 'anchor-failed', t, message }]),
-    noteFrameError: (t, message) =>
-      record([{ kind: 'frame-error', t, message }]),
+    noteError: (kind, t, message) => record([{ kind, t, message }]),
     noteSession(what, t) {
       const out: TrackerEvent[] = [];
       closePending(out);

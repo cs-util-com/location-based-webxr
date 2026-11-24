@@ -34,7 +34,8 @@ tap, feeds each frame to the tracker and keeps the log's environment lines.
   cause on screen and in the log, and the next tap tries again. The session
   is captured before the await: an anchor that arrives after its session
   ended is deleted and ignored. Session end clears the in-progress flag, so
-  a `createAnchor` that never settles cannot block the next session's taps.
+  a `createAnchor` that never settles cannot block the next session's taps; an old placement that settles late
+  leaves the newer one's flag alone.
 - Per frame:
   - the inputs are the viewer pose (`null` when absent or
     `emulatedPosition`), the hit pose, the anchor's `getPose` result and
@@ -47,8 +48,10 @@ tap, feeds each frame to the tracker and keeps the log's environment lines.
     on every frame costs only the anchor (taken as none), never the camera
     tracking;
   - the body runs in a try/catch, because an exception would stop the
-    three.js loop for good. The first error goes on screen and into the
-    log; later ones are counted in the `frame errors` line. The error path
+    three.js loop for good;
+  - frame errors and anchor read errors are counted apart, each with its
+    own `frame errors` or `anchor read errors` line (count and first
+    message). The first of each goes on screen and into the log. The error path
     itself catches a view that throws, so it cannot stop the loop either.
 - The first frame of a session records `session start`.
 - Session end:
@@ -70,7 +73,9 @@ the closure for the page's lifetime; the measurement page has no Redux store
 requested features, a refused session, anchors not granted, the
 `createAnchor` fallback, placement at the hit pose, a failed placement and
 retry, no hit, anchor replacement, a late anchor after the end, a jump end to
-end, an untracked anchor, a throwing frame, an anchor read that throws on
+end, an untracked anchor, a throwing frame, an anchor read that throws (said once, counted apart),
+an anchor read that throws on
 every frame, a view that throws on the error path, an emulated pose as a
 loss, the stop toggle with the session lines, no comparison across a
-restart, a placement that never settles, and a failure after start.
+restart, a placement that never settles, an old placement settling late during a
+new one, and a failure after start.

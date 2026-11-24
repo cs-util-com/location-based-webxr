@@ -12,6 +12,9 @@ import {
   MAX_EXTRAPOLATION_RATIO,
   STILL_SPEED_M_PER_S,
   STILL_TURN_DEG_PER_S,
+  STILL_WINDOW_MS,
+  STILL_DISPLACEMENT_M,
+  STEADY_RATE_FRACTION,
   RELOCALIZATION_RULE_M,
   SETTLE_DELAYS_MS,
   VERDICT_TOLERANCES,
@@ -109,7 +112,10 @@ describe('thresholds', () => {
     expect(SETTLE_DELAYS_MS).toEqual([100, 300, 1000, 2000]);
     expect(STILL_SPEED_M_PER_S).toBe(0.3);
     expect(STILL_TURN_DEG_PER_S).toBe(20);
-    expect(MAX_EXTRAPOLATION_RATIO).toBe(3);
+    expect(STILL_WINDOW_MS).toBe(100);
+    expect(STILL_DISPLACEMENT_M).toBe(VERDICT_TOLERANCES.main.positionM / 2);
+    expect(STEADY_RATE_FRACTION).toBe(0.5);
+    expect(MAX_EXTRAPOLATION_RATIO).toBe(1.5);
     expect(VERDICT_TOLERANCES.tight.positionM).toBeLessThan(
       VERDICT_TOLERANCES.main.positionM
     );
@@ -208,20 +214,22 @@ describe('jump detection', () => {
     expect(stats.frames).toBe(50);
     expect(stats.dtMs).toHaveLength(49);
     expect(stats.translationM[0]).toBeCloseTo(0.04, 12);
-    // The first pair has no rate yet, so 48 compensated pairs.
-    expect(stats.unexplainedM).toHaveLength(48);
+    // The first pair has no rate yet, and the second's rate frame had none
+    // of its own, so 47 pairs on a steady rate.
+    expect(stats.unexplainedM).toHaveLength(47);
     expect(Math.max(...stats.unexplainedM)).toBeLessThan(1e-9);
   });
 
   // Why this matters: a quick wrist turn is 5 deg or more per frame at 30 Hz.
   // Judged on the raw step it reads as a jump, counts towards the stop rule
   // and closes a real jump's window; judged after the motion compensation it
-  // is ordinary motion.
-  it('logs no jump for a steady fast turn', () => {
+  // is ordinary motion. Only the first pair has no rate: it is logged, but
+  // with no translation it proves no correction and is not counted.
+  it('logs no compensated jump for a steady fast turn', () => {
     const samples = Array.from({ length: 40 }, (_, i) =>
       bare(i * FRAME_MS, pose(0, 1.5, 0, i * 6))
     );
-    expect(feed(samples).filter((e) => e.kind === 'jump')).toEqual([]);
+    expect(notCountedOf(samples)).toEqual([[FRAME_MS, false, 'no correction']]);
   });
 
   // Why this matters: a sudden turn with no motion before it is one of the
@@ -244,6 +252,8 @@ describe('jump detection', () => {
     expect(jump?.cameraBefore.t).toBe(9 * FRAME_MS);
     expect(jump?.cameraPrev?.t).toBe(8 * FRAME_MS);
     expect(jump?.cameraPrev?.pose).toEqual(samples[8]!.camera);
+    // How well the rate frame was itself extrapolated, for the steady rule.
+    expect(jump?.rateUnexplainedStep?.translationM).toBeLessThan(1e-9);
   });
 
   // Why this matters: after a jump the camera keeps its own speed; taking
@@ -297,26 +307,25 @@ describe('jump detection', () => {
   });
 
   // Why this matters: the first frame after a start, a loss or a gap has no
-  // rate. A real jump there must be logged as such (uncompensated), and that
-  // frame must not become the rate, or the next frame reads the jump as
-  // velocity and logs a false inverse jump.
-  it('logs a jump on the first frame after a start once, uncompensated', () => {
+  // rate. A real jump there is logged as such (uncompensated). The next
+  // frame reads it as velocity and misses by the jump again: that echo is
+  // logged too, but its rate frame was never extrapolated, so it never
+  // counts.
+  it('logs a jump on the first frame after a start, uncompensated, its echo not counted', () => {
     const shifted = pose(0.8, 1.5, 0);
     const samples = [
       bare(0, pose(0, 1.5, 0)),
-      ...Array.from({ length: SETTLE_SPAN }, (_, i) =>
-        bare((1 + i) * FRAME_MS, shifted)
-      ),
+      ...hold(FRAME_MS, SETTLE_SPAN, shifted),
     ];
-    const events = episodes(feed(samples));
-    expect(events.map((e) => [e.kind, e.t])).toEqual([['jump', FRAME_MS]]);
-    expect(events[0]!.compensated).toBe(false);
-    expect(events[0]!.cameraPrev).toBeNull();
-    // No step before it is known, so it is not shown to be still.
-    expect(events[0]!.notCounted).toBe('moving');
+    // No 100 ms before it are known, so it is not shown to be still.
+    expect(notCountedOf(samples)).toEqual([
+      [FRAME_MS, false, 'moving'],
+      [2 * FRAME_MS, true, 'unsteady rate'],
+    ]);
+    expect(episodes(feed(samples))[0]!.cameraPrev).toBeNull();
   });
 
-  it('logs a jump on the first frame after a loss once, uncompensated', () => {
+  it('logs a jump on the first frame after a loss, uncompensated', () => {
     const still = pose(0, 1.5, 0);
     const shifted = pose(0.8, 1.5, 0);
     const samples = [
@@ -329,10 +338,13 @@ describe('jump detection', () => {
       ),
     ];
     const events = episodes(feed(samples));
-    expect(events.map((e) => [e.kind, e.t, e.truncated])).toEqual([
-      ['tracking-loss', 933, true],
-      ['jump', 966, false],
-    ]);
+    expect(events.map((e) => [e.kind, e.t, e.truncated, e.notCounted])).toEqual(
+      [
+        ['tracking-loss', 933, true, 'no correction'],
+        ['jump', 966, true, 'moving'],
+        ['jump', 999, false, 'unsteady rate'],
+      ]
+    );
     expect(events[1]!.compensated).toBe(false);
     expect(events[1]!.cameraStep.translationM).toBeCloseTo(0.8, 9);
   });
@@ -465,8 +477,15 @@ describe('tracking losses and frame gaps', () => {
     const loss = events[0]!;
     expect(loss.dtMs).toBe(933 - 132);
     expect(loss.cameraBefore.pose).toEqual(still);
-    // The frame before the loss start, for the stillness check.
-    expect(loss.cameraPrev?.t).toBe(99);
+    // The window before the loss start, for the stillness check.
+    expect(loss.stillness).toEqual({
+      spanMs: 132,
+      speedMPerS: 0,
+      turnDegPerS: 0,
+      anchorDistanceM: 2.5,
+      displacementM: 0,
+    });
+    expect(loss.cameraPrev).toBeNull();
     expect(loss.compensated).toBe(false);
     expect(loss.notCounted).toBeNull();
     expect(loss.cameraStep.translationM).toBeCloseTo(2, 9);
@@ -488,7 +507,7 @@ describe('tracking losses and frame gaps', () => {
     ];
     const [loss] = episodes(feed(samples));
     expect(loss?.kind).toBe('tracking-loss');
-    expect(loss?.cameraPrev?.t).toBe(99);
+    expect(loss?.stillness?.speedMPerS).toBeCloseTo(0.16 / 0.132, 9);
     expect(loss?.readings.at(-1)?.comparison?.verdicts.main).toBe(
       'drift correction'
     );
@@ -510,7 +529,10 @@ describe('tracking losses and frame gaps', () => {
       'moving',
     ]);
     const still = walk(5, { anchor: anchor0, speed: 0 });
-    still.push(...walk(SETTLE_SPAN, { t0: 732, speed: 0, anchor: anchor0 }));
+    // Still before, and the world 0.5 m off after: a correction.
+    still.push(
+      ...walk(SETTLE_SPAN, { t0: 732, z0: -0.5, speed: 0, anchor: anchor0 })
+    );
     const [gap] = episodes(feed(still));
     expect(gap?.kind).toBe('frame-gap');
     expect(gap?.notCounted).toBeNull();
@@ -521,9 +543,14 @@ describe('tracking losses and frame gaps', () => {
   // 1 m/s walk at 60 Hz moves under 0.02 m per frame; judged per frame it
   // would pass as still and its loss would count as a false verdict.
   it('reads stillness as a speed, the same at 30 and 60 Hz', () => {
-    /** A loss after 5 frames at `frameMs`, moving at `mPerS` along -z. */
+    /**
+     * A one-frame loss after 150 ms at `frameMs`, moving at `mPerS` along -z;
+     * the world 1 m off after it. The loss is short, so the motion carried
+     * over it stays under the displacement limit and the speed decides.
+     */
     const lossAfter = (frameMs: number, mPerS: number, degPerS = 0) => {
-      const s: FrameSample[] = Array.from({ length: 5 }, (_, i) =>
+      const n = Math.ceil(150 / frameMs);
+      const s: FrameSample[] = Array.from({ length: n }, (_, i) =>
         bare(
           i * frameMs,
           pose(
@@ -534,7 +561,10 @@ describe('tracking losses and frame gaps', () => {
           )
         )
       );
-      s.push(bare(200, null), ...walk(SETTLE_SPAN, { t0: 800, speed: 0 }));
+      s.push(
+        bare(n * frameMs, null),
+        ...hold((n + 1) * frameMs, SETTLE_SPAN, pose(1, 1.5, 0))
+      );
       return episodes(feed(s))[0]?.notCounted;
     };
     expect(lossAfter(1000 / 60, 1)).toBe('moving');
@@ -559,6 +589,161 @@ describe('tracking losses and frame gaps', () => {
       bare(66, pose(0, 0, 0)),
     ]);
     expect(episodes(events).map((e) => e.kind)).toEqual(['tracking-loss']);
+  });
+});
+
+/** `count` frames `frameMs` apart from `t0`, all at `camera`. */
+function hold(
+  t0: number,
+  count: number,
+  camera: Pose,
+  anchor: Pose | null = null,
+  frameMs = FRAME_MS
+): FrameSample[] {
+  return Array.from({ length: count }, (_, i) => ({
+    ...bare(t0 + i * frameMs, camera),
+    anchor,
+    anchorTracked: anchor === null ? null : true,
+    marker: anchor,
+  }));
+}
+
+const notCountedOf = (samples: readonly FrameSample[]) =>
+  episodes(feed(samples)).map((e) => [e.t, e.compensated, e.notCounted]);
+
+describe('what is counted: never wrong, not complete', () => {
+  // Why this matters: a frame with no rate that jumps is logged at once.
+  // The next frame is judged on its own, so a second real jump there is
+  // logged (not swallowed as the first one's echo), and since its rate
+  // frame was never extrapolated itself, neither it nor its echo counts.
+  it('logs a second real jump on the frame after an unrated jump, counting none', () => {
+    const samples = [
+      bare(0, pose(0, 1.5, 0)),
+      bare(33, pose(0.8, 1.5, 0)),
+      ...hold(66, SETTLE_SPAN, pose(0.8, 1.5, 0.8)),
+    ];
+    expect(notCountedOf(samples)).toEqual([
+      [33, false, 'moving'],
+      [66, true, 'unsteady rate'],
+      [99, true, 'unsteady rate'],
+    ]);
+  });
+
+  // Why this matters: a correction under the limits on a frame with no rate
+  // is not logged, but the next frame extrapolates it as velocity and misses
+  // by more than the limits. That echo must not count as a jump.
+  it('does not count the echo of a step under the limits on a frame with no rate', () => {
+    const samples = [
+      bare(0, pose(0, 1.5, 0)),
+      bare(33, pose(0.2, 1.5, 0)),
+      ...hold(66, SETTLE_SPAN, pose(0.1, 1.5, 0)),
+    ];
+    expect(notCountedOf(samples)).toEqual([[66, true, 'unsteady rate']]);
+  });
+
+  // Why this matters: a 0.2 m correction is under the limits, but it is in
+  // the rate of the next frame; over a frame twice as long it is
+  // extrapolated into a 0.4 m "jump" that never happened.
+  it('does not count a jump whose rate frame held a correction under the limits', () => {
+    const samples = [
+      ...hold(0, 10, pose(0, 1.5, 0)),
+      bare(330, pose(0.2, 1.5, 0)),
+      ...hold(396, SETTLE_SPAN, pose(0.2, 1.5, 0)),
+    ];
+    expect(notCountedOf(samples)).toEqual([[396, true, 'unsteady rate']]);
+    const [jump] = episodes(feed(samples));
+    expect(jump?.rateUnexplainedStep?.translationM).toBeCloseTo(0.2, 9);
+  });
+
+  // Why this matters: with no correction across a loss, D is only what the
+  // camera did meanwhile. A 1 deg tilt turns an anchor 10 m away by 0.18 m:
+  // the anchor that stays reads "drift correction" for nothing.
+  it('does not count a still loss with no correction, a 1 deg tilt and the anchor 10 m away', () => {
+    const camera = pose(0, 1.5, 0);
+    const h = Math.PI / 360;
+    const tilted: Pose = {
+      position: camera.position,
+      rotation: [Math.sin(h), 0, 0, Math.cos(h)],
+    };
+    const anchor = pose(0, 0, -10);
+    const samples = [
+      ...hold(0, 10, camera, anchor),
+      bare(330, null),
+      ...hold(600, SETTLE_SPAN, tilted, anchor),
+    ];
+    const [loss] = episodes(feed(samples));
+    expect(loss?.readings.at(-1)?.comparison?.verdicts.main).toBe(
+      'drift correction'
+    );
+    expect(loss?.notCounted).toBe('no correction');
+  });
+
+  // Why this matters: the comparator edge. A frame exactly 1.5 times the
+  // one before is counted, one just over it is not.
+  it('counts a jump over a frame 1.5 times the one before, not over a longer one', () => {
+    const at = (dtMs: number) =>
+      notCountedOf([
+        ...hold(0, 10, pose(0, 1.5, 0), null, 40),
+        ...hold(360 + dtMs, SETTLE_SPAN, pose(0.5, 1.5, 0)),
+      ]).map((e) => e[2]);
+    expect(at(60)).toEqual([null]);
+    expect(at(61)).toEqual(['long frame']);
+  });
+
+  // Why this matters: one still frame pair says little; the camera must be
+  // seen still over at least 100 ms before the loss.
+  it('needs 100 ms of still frames before a loss, not one still pair', () => {
+    const lossAfter = (count: number) =>
+      notCountedOf([
+        ...hold(0, count, pose(0, 1.5, 0)),
+        bare(count * FRAME_MS, null),
+        ...hold(800, SETTLE_SPAN, pose(1, 1.5, 0)),
+      ]).map((e) => e[2]);
+    expect(lossAfter(3)).toEqual(['moving']);
+    expect(lossAfter(5)).toEqual([null]);
+  });
+
+  // Why this matters: over a loss the camera's own motion goes into D. A
+  // 2 deg/s drift over 300 ms moves an anchor 10 m away by 0.1 m, enough to
+  // decide the verdict alone; with the anchor 1 m away it moves 0.01 m.
+  it('does not count a loss whose slow motion alone would move the anchor', () => {
+    const lossWith = (anchorZ: number) => {
+      const anchor = pose(0, 1.5, anchorZ);
+      const turning = Array.from({ length: 10 }, (_, i) => ({
+        ...bare(i * FRAME_MS, pose(0, 1.5, 0, (2 * i * FRAME_MS) / 1000)),
+        anchor,
+        anchorTracked: true,
+        marker: anchor,
+      }));
+      return notCountedOf([
+        ...turning,
+        bare(330, null),
+        ...hold(600, SETTLE_SPAN, pose(1, 1.5, 0), anchor),
+      ]).map((e) => e[2]);
+    };
+    expect(lossWith(-10)).toEqual(['moving']);
+    expect(lossWith(-1)).toEqual([null]);
+  });
+
+  // Why this matters: the unexplained-step distributions are the noise floor
+  // the jump limits are read against; a jump frame, or a frame whose rate
+  // held a jump, would put the jump itself into it.
+  it('keeps jump frames and their echoes out of the noise floor', () => {
+    const statsOf = (samples: readonly FrameSample[]) => {
+      const tracker = createAnchorJumpTracker();
+      for (const s of samples) tracker.onFrame(s);
+      return Math.max(...tracker.stats().unexplainedM);
+    };
+    expect(
+      statsOf(jumpWalk(pose(0.6, 0, 0.2, 3), pose(0, 0, -3), () => null))
+    ).toBeLessThan(1e-9);
+    expect(
+      statsOf([
+        bare(0, pose(0, 1.5, 0)),
+        bare(33, pose(0.2, 1.5, 0)),
+        ...hold(66, 10, pose(0.1, 1.5, 0)),
+      ])
+    ).toBeLessThan(1e-9);
   });
 });
 
@@ -618,10 +803,12 @@ describe('the record around the episodes', () => {
   it('records anchor failures and frame errors', () => {
     const tracker = createAnchorJumpTracker();
     tracker.noteAnchorFailed(5, 'no plane');
-    tracker.noteFrameError(6, 'boom');
+    tracker.noteError('frame-error', 6, 'boom');
+    tracker.noteError('anchor-read-error', 7, 'gone');
     expect(tracker.events()).toEqual([
       { kind: 'anchor-failed', t: 5, message: 'no plane' },
       { kind: 'frame-error', t: 6, message: 'boom' },
+      { kind: 'anchor-read-error', t: 7, message: 'gone' },
     ]);
   });
 
