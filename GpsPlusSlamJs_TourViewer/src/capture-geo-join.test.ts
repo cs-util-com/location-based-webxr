@@ -610,7 +610,8 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
   }
 
   it("places a photo from before the jump where the oracle-corrected photo lands", () => {
-    const [actual] = computeCaptureGeoJoin(relocalized([early]));
+    // The final alignment was fit after the jump (epoch 1).
+    const [actual] = computeCaptureGeoJoin(relocalized([early]), undefined, 1);
     const [expected] = computeCaptureGeoJoin(
       baseState({ points: [{ ...early, ...moved(oracleJumpNue(), early) }] }),
     );
@@ -624,7 +625,7 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
   });
 
   it("leaves a photo from after the jump as captured", () => {
-    const [actual] = computeCaptureGeoJoin(relocalized([late]));
+    const [actual] = computeCaptureGeoJoin(relocalized([late]), undefined, 1);
     const [expected] = computeCaptureGeoJoin(baseState({ points: [late] }));
     expect(poseMismatches(actual, expected)).toEqual([]);
   });
@@ -635,8 +636,37 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
       position: early.position,
       rotation: early.rotation,
     };
-    const poses = computeCaptureGeoJoin(relocalized([timeless, late]));
+    const poses = computeCaptureGeoJoin(
+      relocalized([timeless, late]),
+      undefined,
+      1,
+    );
     expect(poses.map((p) => p.imageFile)).toEqual(["images/late.jpg"]);
+  });
+
+  it("a final alignment fit before the jump places a photo from before it raw", () => {
+    // Why: the final alignment need not postdate the last jump; when it
+    // was fit in epoch 0, an epoch-0 photo needs no correction at all.
+    const [actual] = computeCaptureGeoJoin(relocalized([early]), undefined, 0);
+    const [raw] = computeCaptureGeoJoin(baseState({ points: [early] }));
+    expect(poseMismatches(actual, raw)).toEqual([]);
+  });
+
+  it("drops every photo when the final alignment's fit epoch is unknown", () => {
+    // Why: without its fit epoch no correction is honest; placing the
+    // photos anyway is the silently wrong cloud the drop guards prevent.
+    expect(computeCaptureGeoJoin(relocalized([early, late]))).toEqual([]);
+  });
+
+  it("drops a photo whose picked alignment carries no fit epoch", () => {
+    // Why: as for the final alignment, an unknown epoch is never guessed.
+    const picked = {
+      matrix: translation(2, 0, 3),
+      rotation: [0, 0, 0, 1] as const,
+    };
+    expect(
+      computeCaptureGeoJoin(relocalized([early]), () => picked, 1),
+    ).toEqual([]);
   });
 
   it("keeps a photo with a missing time when the recording never relocalized", () => {
@@ -715,20 +745,72 @@ describe("computeCaptureGeoJoin - across a relocalization", () => {
     expect(computeCaptureGeoJoin(relocalized([early]), () => bad)).toEqual([]);
   });
 
-  it("the pick tracker stamps each pick with the epoch of its moment", () => {
-    // Why: the epoch is what tells the join which raw frame the picked
-    // alignment was solved in.
-    const t = createCapturePickTracker({ extentOf: () => 100 });
-    const at = (n: number) => ({
-      ...baseState(),
-      arSpaceCorrection: {
-        observations: new Array<typeof jump>(n).fill(jump),
-      },
+  it("a walk whose GPS fixes all came before the jump places its early photos with no jump applied", () => {
+    // Why: a relocalization leaves the alignment matrix untouched, so an
+    // alignment fit wholly from epoch-0 fixes is still an epoch-0 one
+    // after the jump. Labelled with the count at the end instead, every
+    // early photo is moved by the whole jump (metres) and still reported
+    // as placed. The expectation is the same walk with no relocalization
+    // recorded at all: nothing here applies the jump. The walk settles
+    // only after the jump, so the photo's pick is a post-jump moment whose
+    // matrix is still the epoch-0 fit.
+    const fit = baseState({ points: [early] });
+    const afterJump: ReplayedJoinState = {
+      ...fit,
+      arSpaceCorrection: { observations: [jump] },
+    };
+    const t = createCapturePickTracker({
+      extentOf: (state) => (state.arSpaceCorrection === undefined ? 0 : 100),
     });
+    t.observe({ type: "gpsData/addGpsPosition" }, fit);
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: early.imageFile } },
+      fit,
+    );
+    t.observe({ type: "arSpaceCorrection/relocalizationObserved" }, afterJump);
+    const finalEpoch = t.fitEpochOf(
+      afterJump.gpsData!.gpsEvents.alignmentMatrix,
+    );
+    expect(finalEpoch).toBe(0);
+    const [viaPick] = computeCaptureGeoJoin(
+      afterJump,
+      (file) => t.alignmentFor(file),
+      finalEpoch,
+    );
+    const [viaFinal] = computeCaptureGeoJoin(afterJump, undefined, finalEpoch);
+    const [unjumped] = computeCaptureGeoJoin(baseState({ points: [early] }));
+    expect(poseMismatches(viaPick, unjumped)).toEqual([]);
+    expect(poseMismatches(viaFinal, unjumped)).toEqual([]);
+  });
+
+  it("the pick tracker labels an alignment refit after the jump with the new epoch, and knows only the last matrix", () => {
+    // Why: the fit epoch follows the matrix, not the moment: a refit after
+    // the jump is an epoch-1 alignment, and a matrix the replay has since
+    // replaced has no epoch the tracker can vouch for.
+    const t = createCapturePickTracker({ extentOf: () => 100 });
+    const before = baseState();
+    const jumped = { ...before, arSpaceCorrection: { observations: [jump] } };
+    const refit = {
+      ...baseState({ matrix: translation(5, 0, 1) }),
+      arSpaceCorrection: { observations: [jump] },
+    };
     t.observe(
       { type: "gpsData/add2dImage", payload: { imageFile: "images/a.jpg" } },
-      at(1),
+      before,
     );
-    expect(t.alignmentFor("images/a.jpg")?.epoch).toBe(1);
+    t.observe({ type: "arSpaceCorrection/relocalizationObserved" }, jumped);
+    t.observe(
+      { type: "gpsData/add2dImage", payload: { imageFile: "images/b.jpg" } },
+      refit,
+    );
+    expect(t.alignmentFor("images/a.jpg")?.epoch).toBe(0);
+    expect(t.alignmentFor("images/b.jpg")?.epoch).toBe(1);
+    expect(t.fitEpochOf(refit.gpsData!.gpsEvents.alignmentMatrix)).toBe(1);
+    expect(t.fitEpochOf(before.gpsData!.gpsEvents.alignmentMatrix)).toBe(
+      undefined,
+    );
+    expect(createCapturePickTracker().fitEpochOf(translation(1, 0, 0))).toBe(
+      undefined,
+    );
   });
 });

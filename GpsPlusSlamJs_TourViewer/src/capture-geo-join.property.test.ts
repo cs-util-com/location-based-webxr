@@ -306,10 +306,15 @@ describe("capture-geo-join - relocalization property", () => {
             },
             odometryPath: { points: pts },
           });
-          const actual = computeCaptureGeoJoin({
-            gpsData: gpsData(points),
-            arSpaceCorrection: { observations },
-          });
+          // The final alignment is fit after the last jump.
+          const actual = computeCaptureGeoJoin(
+            {
+              gpsData: gpsData(points),
+              arSpaceCorrection: { observations },
+            },
+            undefined,
+            observations.length,
+          );
           const expected = computeCaptureGeoJoin({
             gpsData: gpsData(corrected),
           });

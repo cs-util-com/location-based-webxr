@@ -98,4 +98,7 @@ ends in `actions/`), the replay's progress reported to the caller's
 for a capture's; a walk with no capture taken, with GPS that solves and with
 no fix at all; a newer era and captures the replay placed none of; the
 join's own declines (no recording, an old era, an absent or string era, a
-stopped replay).
+stopped replay). A relocalization appended after the walk's last action leaves every
+capture where the walk without it places them, with and without settled
+picks: the final alignment's fit epoch comes from the tracker
+(`fitEpochOf`), never the observation count.

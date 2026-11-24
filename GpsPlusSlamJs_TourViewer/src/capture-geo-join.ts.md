@@ -59,9 +59,18 @@ capture and never runs a join.
   picks each photo's alignment as the first one at or after the photo whose
   session GPS extent reached the shared floor (`state/alignment-maturity`,
   40 m), else the last usable one; a settled pick never moves.
-  `alignmentFor(imageFile)` gives that `{ matrix, rotation }`, or undefined
-  for a photo it never saw. `extentOf` defaults to the framework's
-  `createGpsExtentTracker` over the store's device fixes.
+  `alignmentFor(imageFile)` gives that `{ matrix, rotation, epoch }`, or
+  undefined for a photo it never saw. `extentOf` defaults to the
+  framework's `createGpsExtentTracker` over the store's device fixes.
+  - **The fit epoch follows the matrix, not the moment.** A
+    relocalization leaves `alignmentMatrix` reference-identical, so the
+    tracker remembers the observation count at the last change of that
+    reference and stamps each moment with it: an alignment fit wholly
+    before a jump stays an epoch-0 alignment after it, and its epoch-0
+    captures get no correction. `fitEpochOf(matrix)` gives that epoch for
+    the matrix of the last state observed (the final alignment, after the
+    whole replay), undefined for any other matrix or before anything was
+    observed.
   - **Linear in the walk** (S1 milestone review #10): one shared "latest
     usable" moment is every open photo's pick once it came after the
     photo, and a mature moment settles every open photo at once, so a walk
@@ -73,7 +82,7 @@ capture and never runs a join.
     first solve, which the maturity rule counts as usable once a zero
     exists) is refused by `computeCaptureGeoJoin`'s check, like an unsolved
     final one, and that photo uses the final alignment (review #6).
-- `computeCaptureGeoJoin(state, alignmentFor?): CaptureWorldPose[]` - with
+- `computeCaptureGeoJoin(state, alignmentFor?, finalAlignmentEpoch?): CaptureWorldPose[]` - with
   `alignmentFor`, each capture is placed through its own alignment, checked
   like the final one (16 entries, a unit rotation); a capture without one,
   or whose alignment fails the checks, uses the final alignment, exactly as
@@ -87,15 +96,21 @@ capture and never runs a join.
   - **Across relocalizations** (`state.arSpaceCorrection.observations`
     not empty): each capture is first moved from the raw frame of its own
     epoch `c = epochAt(times, capturedAt)` into the raw frame of the
-    alignment that places it (epoch `a`: the pick's `epoch`, else the
-    last one), by `Delta(a)^-1 * Delta(c)` from `selectCorrectionTrack`,
+    alignment that places it (epoch `a`: the pick's `epoch`, else
+    `finalAlignmentEpoch`), by `Delta(a)^-1 * Delta(c)` from `selectCorrectionTrack`,
     in the replayed state's NUE frame: `p' = T p`, `R_nue' = q_T * R_nue`.
-    A capture without a finite `capturedAt`, or picked at an epoch the
-    recording does not have, is DROPPED: its frame is unknown. Without
-    observations nothing changes, also for captures without a time.
-    Provisional, like the live correction: the alignment at epoch `a` is
-    taken to be valid in that epoch's raw frame, although its GPS pairs
-    were solved from poses of every earlier epoch too.
+    A capture without a finite `capturedAt`, or whose alignment's epoch
+    is unknown (absent) or one the recording does not have, is DROPPED:
+    its frame is unknown, and a guessed one would be placed silently
+    wrong. Without observations nothing changes, also for captures
+    without a time or an epoch.
+  - **The remaining limit: an alignment fit from GPS pairs of mixed
+    epochs.** An alignment refit after a jump is labelled with the new
+    epoch and taken to be valid in that epoch's raw frame, although its
+    GPS pairs were solved from odometry poses of every earlier epoch too
+    (the solve does not correct them). Its placements are off by up to the
+    jump, weighted by the share of pre-jump pairs. Provisional, like the
+    live correction; the cure is a solve over corrected pairs.
   - **Returns FEWER poses than captures when a capture cannot be placed**
     (PR #370 review). A capture whose fused geo has a missing or non-finite
     lat/lon/altitude is DROPPED. It used to default the altitude to 0, and
@@ -155,7 +170,8 @@ capture and never runs a join.
     `debug-captures.ts`), so the constellation is rigid only among photos
     sharing a pick; `computeCaptureGeoJoin(state)` without the argument
     keeps the old end-of-walk behaviour. Each pick carries the
-    relocalization `epoch` of its moment (the observation count).
+    relocalization `epoch` its matrix was fit in (the observation count
+    at the matrix's last change).
 - This module never touches the zip: the caller feeds it `loadSessionMeta()`,
   the action-type list, and the replayed state.
 
@@ -191,5 +207,9 @@ jumps and captures in random epochs, each capture lands where its copy,
 moved by an independent three.js product of the later jumps, lands in a
 recording without jumps. The unit tests pin the oracle case, a capture
 after the jump, the dropped timeless capture, a pick at epoch 0 with one
-jump, a pick at epoch 1 with two jumps (the product order), and an unknown
-pick epoch.
+jump, a pick at epoch 1 with two jumps (the product order), an unknown
+pick epoch, a final alignment fit before the jump (the photo placed raw), a
+final alignment or a pick without a fit epoch (dropped), a walk whose fixes
+all came before the jump settling after it (its photo placed with no jump,
+against the same walk with no relocalization), and the tracker's fit epoch
+following a refit while `fitEpochOf` vouches only for the last matrix.

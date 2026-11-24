@@ -252,8 +252,9 @@ export interface CaptureAlignment {
   readonly matrix: readonly number[];
   readonly rotation: Quat;
   /**
-   * The relocalization epoch the alignment was solved in (the observation
-   * count at that moment); absent: the recording's last epoch.
+   * The relocalization epoch the alignment was fit in: the observation
+   * count when its matrix last changed. Absent: unknown, and a recording
+   * that relocalized drops the capture rather than guess its frame.
    */
   readonly epoch?: number;
 }
@@ -342,9 +343,11 @@ function relocalizationCorrection(state: ReplayedJoinState) {
       const c = this.epochOf(capturedAt);
       return c === undefined ? undefined : this.between(c, a);
     },
-    /** `Delta(a)^-1 * Delta(c)`; `a` defaults to the last epoch. */
-    between(c: number, a: number = n): RigidParts | undefined {
-      if (!Number.isInteger(a) || a < 0 || a > n) return undefined;
+    /** `Delta(a)^-1 * Delta(c)`; undefined for an unknown epoch `a`. */
+    between(c: number, a: number | undefined): RigidParts | undefined {
+      if (a === undefined || !Number.isInteger(a) || a < 0 || a > n) {
+        return undefined;
+      }
       const key = `${String(c)}:${String(a)}`;
       let parts = cache.get(key);
       if (parts === undefined) {
@@ -375,10 +378,17 @@ function relocalizationCorrection(state: ReplayedJoinState) {
  * ({@link createCapturePickTracker}); a capture it does not know, or whose
  * alignment fails the same checks as the final one, uses the final
  * alignment, which is the whole join's behaviour without it.
+ *
+ * `finalAlignmentEpoch` is the relocalization epoch the final alignment
+ * was fit in ({@link CapturePickTracker.fitEpochOf}). It matters only for
+ * a recording that relocalized; there a capture placed through the final
+ * alignment while it is unknown is dropped, never placed in a guessed
+ * frame.
  */
 export function computeCaptureGeoJoin(
   state: ReplayedJoinState,
   alignmentFor?: (imageFile: string) => CaptureAlignment | undefined,
+  finalAlignmentEpoch?: number,
 ): CaptureWorldPose[] {
   const gpsData = state.gpsData;
   if (gpsData === null || gpsData.zero === null) {
@@ -422,11 +432,13 @@ export function computeCaptureGeoJoin(
     } = checkedAlignment(alignmentFor?.(point.imageFile)) ?? {
       matrix,
       quat: alignmentQuat,
+      epoch: finalAlignmentEpoch,
     };
     // Across a relocalization the capture's raw pose is in the frame of
     // its own epoch; it is moved into the frame of the alignment that
-    // places it. A capture whose time is unknown cannot be given a frame
-    // and is dropped, never placed in a guessed one.
+    // places it. A capture whose time, or whose alignment's fit epoch, is
+    // unknown cannot be given a frame and is dropped, never placed in a
+    // guessed one.
     const delta = captureCorrection(correction, point, alignmentEpoch);
     if (delta === undefined) return [];
     const position = movedBy(delta, point.position);
@@ -501,7 +513,8 @@ export function computeCaptureGeoJoin(
 interface CaptureMoment extends AlignmentMoment {
   readonly alignmentMatrix: readonly number[] | null;
   readonly alignmentRotation: Quat | null;
-  /** The relocalization epoch of the moment (the observation count). */
+  /** The relocalization epoch its alignment was fit in: the observation
+   *  count when the matrix last changed, not the moment's own count. */
   readonly epoch: number;
 }
 
@@ -527,6 +540,12 @@ export interface CapturePickTracker {
   ): void;
   /** The photo's picked alignment; undefined for a photo never seen. */
   alignmentFor(imageFile: string): CaptureAlignment | undefined;
+  /**
+   * The epoch the matrix was fit in, when it is the alignment of the last
+   * state observed (the final one, after a whole replay); undefined for
+   * any other matrix, or before anything was observed.
+   */
+  fitEpochOf(matrix: readonly number[]): number | undefined;
 }
 
 /** The recorder's photo action: what a capture of this era is. */
@@ -571,15 +590,26 @@ export function createCapturePickTracker(options?: {
    *  to the per-photo fold of `advanceMatureAlignmentPick`). */
   let latestUsable: { moment: CaptureMoment; seq: number } | null = null;
   let seq = 0;
+  /** The matrix of the last state observed, and the observation count
+   *  when it last changed: a relocalization leaves the matrix
+   *  reference-identical, so an alignment fit before a jump keeps the
+   *  epoch it was fit in. `undefined`: nothing observed yet. */
+  let lastMatrix: readonly number[] | null | undefined;
+  let fitEpoch = 0;
 
   function momentOf(state: PickTrackerState): CaptureMoment {
     const gps = state.gpsData;
+    const alignmentMatrix = gps?.gpsEvents.alignmentMatrix ?? null;
+    if (alignmentMatrix !== lastMatrix) {
+      lastMatrix = alignmentMatrix;
+      fitEpoch = selectArSpaceObservations(state).length;
+    }
     return {
-      alignmentMatrix: gps?.gpsEvents.alignmentMatrix ?? null,
+      alignmentMatrix,
       alignmentRotation: gps?.gpsEvents.alignmentRotation ?? null,
       zero: gps?.zero ?? null,
       gpsExtentM: extentOf(state),
-      epoch: selectArSpaceObservations(state).length,
+      epoch: fitEpoch,
     };
   }
 
@@ -624,6 +654,11 @@ export function createCapturePickTracker(options?: {
         rotation: moment.alignmentRotation,
         epoch: moment.epoch,
       };
+    },
+    fitEpochOf(matrix) {
+      return lastMatrix !== undefined && matrix === lastMatrix
+        ? fitEpoch
+        : undefined;
     },
   };
 }
