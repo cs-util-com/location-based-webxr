@@ -41,11 +41,16 @@ type KeptRunners = Map<string, Promise<MethodRunner>>;
 /** The note a runner loaded for an earlier pair adds to its result. */
 const KEPT_NOTE = "loaded for an earlier pair";
 
+/** A method that runs a model (it has a backend choice), unlike sift.js. */
+const runsModel = (m: BenchMethod): boolean => m.backend !== undefined;
+
 /**
  * Wraps each method so it loads once per worker: the first pair's load
  * is kept in `kept`, later pairs take it with an init time of 0, and the
  * per-pair dispose is a no-op. A load that fails is forgotten, so the
- * next pair tries again.
+ * next pair tries again. At most one model method stays loaded: loading
+ * one first disposes the others' kept sessions, so the peak memory is the
+ * largest model's, not the sum (with two ticked, each pair loads both).
  */
 function keepLoaded(
   methods: readonly BenchMethod[],
@@ -56,6 +61,13 @@ function keepLoaded(
     label: m.label,
     init: async () => {
       const had = kept.get(m.id);
+      if (had === undefined && runsModel(m)) {
+        for (const other of methods) {
+          if (other.id !== m.id && runsModel(other)) {
+            drop(kept, other.id);
+          }
+        }
+      }
       const p = had ?? m.init();
       if (had === undefined) {
         kept.set(m.id, p);
@@ -81,7 +93,13 @@ function drop(kept: KeptRunners, id: string): void {
   const p = kept.get(id);
   kept.delete(id);
   p?.then(
-    (runner) => runner.dispose(),
+    (runner) => {
+      try {
+        runner.dispose();
+      } catch {
+        // A broken session: nothing more to free, and no one to tell.
+      }
+    },
     () => undefined,
   );
 }
@@ -139,9 +157,30 @@ const hasJob = (data: unknown): number | null => {
  * Answers one message: a request is measured and answered with progress
  * lines and then `done` or `failed`. A malformed message that names a job
  * is answered `failed`, so the page does not wait for it; one without a
- * job is dropped. Never rejects.
+ * job is dropped. Never rejects: a throw outside the measuring (a post
+ * that cannot be sent) answers `failed` once more, and a post that throws
+ * then too is given up (the page's timeout ends the job).
  */
 export async function handleMeasure(
+  data: unknown,
+  env: MeasureEnv,
+  post: (answer: MeasureAnswer) => void,
+): Promise<void> {
+  try {
+    await answer(data, env, post);
+  } catch (e) {
+    const job = hasJob(data);
+    if (job !== null) {
+      try {
+        post({ type: "failed", job, message: errorText(e) });
+      } catch {
+        // The page cannot be told; its timeout ends the job.
+      }
+    }
+  }
+}
+
+async function answer(
   data: unknown,
   env: MeasureEnv,
   post: (answer: MeasureAnswer) => void,

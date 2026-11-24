@@ -8,7 +8,7 @@ The benchmark loop: loads each method, runs it per input size with a warm-up and
 
 - `CORRECT_TOL_PX = 3`.
 - `Features { count, descriptorBytes, x, y, payload }` (keypoints in frame pixels; `payload` is the method's own descriptor data).
-- `MethodRunner { backend, downloads, initMs, notes, extract(frame), match(a, b), dispose() }`; `BenchMethod { id, label, init() }`.
+- `MethodRunner { backend, downloads, initMs, notes, extract(frame), match(a, b), dispose() }`; `BenchMethod { id, label, backend?, init() }`: `backend` is the one asked for, on a method that runs a model (ONNX Runtime, LiteRT); SIFT has none.
 - `BenchInput { a, b, warp | null }`; `MethodResult` (with one `SizeResult` per size); `BenchHooks { now, yieldToUi, log, onSize? }`.
 - `Points { x, y }` and `SizeSample { a, b, pairs }`: the keypoints of both frames and the match pairs (`pairs[2k]` an index into `a`, `pairs[2k+1]` into `b`) of the last timed round, in the pixels of the size computed (`SizeResult.width x height`). `SizeResult.sample` is that sample, or null when the size failed.
 - `onSize(method { id, label }, size)`: called as each size finishes (also a failed one), so the page can draw it while the next one runs. It must not throw: a throw ends `runBenchmark` (the method is still disposed). The page catches its own errors inside the hook.
@@ -16,7 +16,7 @@ The benchmark loop: loads each method, runs it per input size with a warm-up and
 
 ## Invariants
 
-- A method that fails to load is recorded as `init: <error>` and the loop goes on with the next; a size that fails is recorded with its error and the next size runs.
+- A method that fails to load is recorded as `init: <error>` with the backend it asked for (`-` when it has no choice), and the loop goes on with the next; a size that fails is recorded with its error and the next size runs.
 - Every loaded method is disposed, also after a failure.
 - A sample owns its arrays: the points and the pairs are copied out of what the method returned, since a method may reuse its buffers on the next call.
 - `yieldToUi` runs between steps so the page can paint and log.
@@ -24,4 +24,4 @@ The benchmark loop: loads each method, runs it per input size with a warm-up and
 
 ## Tests
 
-`bench-run.test.ts` (fake methods, fake clock).
+`bench-run.test.ts` (fake methods, fake clock), including a failed load recording the backend it asked for.

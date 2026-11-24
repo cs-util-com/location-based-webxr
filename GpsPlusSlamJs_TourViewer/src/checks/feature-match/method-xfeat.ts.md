@@ -16,7 +16,7 @@ The XFeat method of the benchmark: the LiteRT export of XFeat run by LiteRT.js o
 - `liteRtApi(mod)`: checks the module has `loadLiteRt`, `loadAndCompile` and `Tensor`.
 - `toFloat32(data, dtype)`: a float32 copy of an output, float16 (16-bit words) converted; always a copy, because the tensor is deleted after reading and its array may be a view on the runtime's memory.
 - `xfeatMaps(outputs)`: the three output maps found by channel count (64, 65, 1), since exporters do not keep their order; each role takes a different output (a `[1, 64, 64, 1]` map fits two roles).
-- `xfeatMethod(backend, precision, deps)`: the `BenchMethod`, labelled `XFeat (LiteRT.js) <backend> <model file>`.
+- `xfeatMethod(backend, precision, deps)`: the `BenchMethod` (with `backend` set to the one asked for), labelled `XFeat (LiteRT.js) <backend> <model file>`.
 
 ## Invariants
 

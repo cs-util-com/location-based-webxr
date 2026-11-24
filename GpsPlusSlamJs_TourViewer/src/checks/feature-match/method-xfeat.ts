@@ -229,6 +229,7 @@ export function xfeatMethod(
 ): BenchMethod {
   return {
     id: `xfeat-${backend}-${precision}`,
+    backend,
     // Named by file: both files are the same size, so "fp16 / fp32" is
     // the file's name, not a confirmed weight precision.
     label: `XFeat (LiteRT.js) ${backend} ${xfeatModelUrl(precision).split("/").pop()!}`,

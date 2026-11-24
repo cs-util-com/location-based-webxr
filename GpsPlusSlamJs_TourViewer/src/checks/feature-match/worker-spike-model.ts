@@ -238,7 +238,7 @@ export function spikeProgress(p: ProgressInput): SpikeProgress {
       within = Math.min(0.9, elapsed / XFEAT_LIMIT_MS);
       leftMs = Math.max(0, XFEAT_LIMIT_MS - elapsed);
       status =
-        "Trying XFeat in a background worker: downloading the XFeat model, this can take a few minutes";
+        "Trying XFeat in a background worker: loading the XFeat model (the first time it downloads, which can take a few minutes)";
       break;
   }
   return {

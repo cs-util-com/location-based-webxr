@@ -15,8 +15,8 @@ Two workers use it:
 
 ## Invariants and defensive measures
 
-- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods (ALIKED's and LightGlue's ONNX sessions, sift.js, the probe's XFeat) are kept for the worker's life in `env.kept` (see `measure-worker-core.ts`). The page starts a new worker after a crash, so a crash also starts with fresh sessions.
-- Messages are handled one after another on a promise chain; the client sends one at a time anyway. Each step is chained for both outcomes (`then(step, step)`), so a rejected step never blocks the messages after it.
+- The models are fetched once per worker (`memoFetch`), not once per pair, and the loaded methods (ALIKED's and LightGlue's ONNX sessions, sift.js, the probe's XFeat) are kept for the worker's life in `env.kept`, at most one model method at a time (see `measure-worker-core.ts`). The page starts a new worker after a crash, so a crash also starts with fresh sessions.
+- Messages are handled one after another on a promise chain; the client sends one at a time anyway. Each step is chained for both outcomes (`then(step, step)`), so a rejected step never blocks the messages after it; `handleMeasure` itself never rejects (a throw outside the measuring still answers the job `failed`), so the page never waits for the timeout.
 - `pick` sees the selection after the core turned XFeat off, so only an explicit `pick` turns XFeat on.
 - Runs only in a worker: it reads `self`, `fetch`, `navigator.gpu` and `performance` of the worker.
 

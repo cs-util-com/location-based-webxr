@@ -233,3 +233,29 @@ describe("buildMethods in a worker", () => {
     expect((await worker!.init()).backend).toBe("js (worker)");
   });
 });
+
+// Why: the measuring worker keeps one model method loaded at a time and
+// the queue reads a failed load's backend; both read `backend`, the one
+// asked for. SIFT (sift.js) has no backend choice and no such field.
+describe("buildMethods, the backend asked for", () => {
+  it("is set on every model method and absent on SIFT", () => {
+    const methods = buildMethods(
+      {
+        sift: true,
+        xfeat: true,
+        aliked: true,
+        siftLightGlue: true,
+        backends: ["webgpu"],
+        precisions: ["fp16"],
+      },
+      deps,
+      "worker",
+    );
+    expect(methods.map((m) => [m.id, m.backend])).toEqual([
+      ["sift", undefined],
+      ["xfeat-webgpu-fp16", "webgpu"],
+      ["aliked-lightglue-webgpu", "webgpu"],
+      ["sift-lightglue-webgpu", "webgpu"],
+    ]);
+  });
+});

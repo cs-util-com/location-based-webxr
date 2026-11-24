@@ -83,3 +83,72 @@ describe("handleMeasure keeps loaded methods, properties", () => {
     );
   });
 });
+
+// Why this test matters: over any run of pairs with any model methods
+// ticked, at most one model method stays loaded between pairs, SIFT is
+// never reloaded, and every model load but the kept one is disposed.
+describe("handleMeasure keeps one model method at a time, properties", () => {
+  it("never keeps two model methods and disposes every other load", async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.array(fc.subarray(["x", "y", "z"]), { minLength: 1, maxLength: 6 }),
+        async (picks) => {
+          const count = new Map<string, { init: number; dispose: number }>();
+          const method = (id: string, model: boolean): BenchMethod => ({
+            id,
+            label: id,
+            ...(model ? { backend: "webgpu" as const } : {}),
+            init: () => {
+              const c = count.get(id) ?? { init: 0, dispose: 0 };
+              count.set(id, c);
+              c.init += 1;
+              return Promise.resolve({
+                backend: model ? "webgpu" : "js",
+                downloads: [],
+                initMs: 1,
+                notes: [],
+                extract: () =>
+                  Promise.resolve({
+                    count: 1,
+                    descriptorBytes: 1,
+                    x: Float32Array.of(0),
+                    y: Float32Array.of(0),
+                    payload: null,
+                  }),
+                match: () => Promise.resolve(Int32Array.of(0, 0)),
+                dispose: () => {
+                  c.dispose += 1;
+                },
+              });
+            },
+          });
+          let pick: string[] = [];
+          let t = 0;
+          const env: MeasureEnv = {
+            decode: () => Promise.resolve(frame),
+            webgpu: () => Promise.resolve(false),
+            build: () => [
+              method("sift", false),
+              ...pick.map((id) => method(id, true)),
+            ],
+            now: () => (t += 1),
+            kept: new Map(),
+          };
+          for (const [i, p] of picks.entries()) {
+            pick = p;
+            await handleMeasure(request(i + 1), env, () => undefined);
+            await Promise.resolve();
+            const models = [...env.kept.keys()].filter((k) => k !== "sift");
+            expect(models.length).toBeLessThanOrEqual(1);
+          }
+          expect(count.get("sift")).toEqual({ init: 1, dispose: 0 });
+          for (const [id, c] of count) {
+            const kept = env.kept.has(id) ? 1 : 0;
+            expect(c.dispose).toBe(c.init - kept);
+          }
+        },
+      ),
+      { numRuns: 50 },
+    );
+  });
+});

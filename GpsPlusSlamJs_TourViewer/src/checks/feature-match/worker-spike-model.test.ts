@@ -199,7 +199,7 @@ describe("spikeProgress", () => {
       "Measuring pair 2 of 2 in the background - camera stuttering",
     );
     expect(at({ kind: "xfeat" }, 0).status).toBe(
-      "Trying XFeat in a background worker: downloading the XFeat model, this can take a few minutes",
+      "Trying XFeat in a background worker: loading the XFeat model (the first time it downloads, which can take a few minutes)",
     );
   });
 

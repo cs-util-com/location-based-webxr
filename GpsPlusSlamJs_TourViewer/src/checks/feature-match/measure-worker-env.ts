@@ -50,8 +50,9 @@ export function serveMeasureWorker(
     ),
     build: (selection) => buildMethods(pick(selection), deps, "worker"),
     now: () => performance.now(),
-    // The loaded methods (ALIKED's and LightGlue's ONNX sessions) live as
-    // long as this worker; the page starts a new worker after a crash.
+    // The loaded methods (sift.js and at most one model method's sessions)
+    // live as long as this worker; the page starts a new worker after a
+    // crash or a WebGPU error.
     kept: new Map(),
   };
 

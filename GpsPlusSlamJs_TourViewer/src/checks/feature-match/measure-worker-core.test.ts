@@ -213,11 +213,15 @@ describe("measureMsOf", () => {
 });
 
 /** A method that counts its loads and disposals; `fail` breaks extracts. */
-function countingMethod(fail: { extract: boolean; init: boolean }) {
+function countingMethod(
+  fail: { extract: boolean; init: boolean },
+  over: { id?: string; backend?: "webgpu" | "wasm"; dispose?: () => void } = {},
+) {
   const count = { init: 0, dispose: 0 };
   const method: BenchMethod = {
-    id: "counted",
+    id: over.id ?? "counted",
     label: "Counted",
+    ...(over.backend === undefined ? {} : { backend: over.backend }),
     init: () => {
       count.init += 1;
       if (fail.init) {
@@ -241,6 +245,7 @@ function countingMethod(fail: { extract: boolean; init: boolean }) {
         match: () => Promise.resolve(Int32Array.of(0, 0)),
         dispose: () => {
           count.dispose += 1;
+          over.dispose?.();
         },
       });
     },
@@ -264,7 +269,10 @@ const resultsOf = (
 // next pair; a worker started again (after a crash) starts empty, and a
 // runner that failed is dropped so a broken session is not kept forever.
 describe("handleMeasure keeps loaded methods across pairs", () => {
-  it("loads a method once for two pairs, and again in a new worker", async () => {
+  // The kept map is the worker's: `serveMeasureWorker` makes one per
+  // worker (not unit-tested, the browser test runs it), so an empty map
+  // stands for a worker started again.
+  it("loads a method once for two pairs, and again with an empty kept map", async () => {
     const fail = { extract: false, init: false };
     const { method, count } = countingMethod(fail);
     const { e } = env({ build: () => [method] });
@@ -276,7 +284,7 @@ describe("handleMeasure keeps loaded methods across pairs", () => {
     // tells the reader of the zip why.
     expect(second[0]!.initMs).toBe(0);
     expect(second[0]!.notes).toContain("loaded for an earlier pair");
-    // A worker started again has its own, empty store of methods.
+    // An empty kept map, as a worker started again has.
     const { e: restarted } = env({ build: () => [method] });
     await run(request({ job: 3 }), restarted);
     expect(count.init).toBe(2);
@@ -319,5 +327,89 @@ describe("handleMeasure keeps loaded methods across pairs", () => {
     fail.init = false;
     resultsOf(await run(request({ job: 2 }), e));
     expect(count).toEqual({ init: 2, dispose: 0 });
+  });
+});
+
+// Why: every kept model method holds its sessions (and their memory), so
+// keeping all ticked ones makes the peak the sum of them; a low-memory
+// phone runs out, the worker restarts and runs out again. The worker keeps
+// at most one model method loaded, the last one used; sift.js stays.
+describe("handleMeasure keeps one model method at a time", () => {
+  it("disposes the other model method before loading the next, and keeps SIFT", async () => {
+    const ok = { extract: false, init: false };
+    const sift = countingMethod(ok, { id: "sift" });
+    const a = countingMethod(ok, { id: "a-webgpu", backend: "webgpu" });
+    const b = countingMethod(ok, { id: "b-webgpu", backend: "webgpu" });
+    const { e } = env({ build: () => [sift.method, a.method, b.method] });
+    await run(request({ job: 1 }), e);
+    await Promise.resolve();
+    expect([...e.kept.keys()]).toEqual(["sift", "b-webgpu"]);
+    expect(a.count).toEqual({ init: 1, dispose: 1 });
+    await run(request({ job: 2 }), e);
+    await Promise.resolve();
+    expect(sift.count).toEqual({ init: 1, dispose: 0 });
+    expect(a.count).toEqual({ init: 2, dispose: 2 });
+    expect(b.count).toEqual({ init: 2, dispose: 1 });
+    expect([...e.kept.keys()]).toEqual(["sift", "b-webgpu"]);
+  });
+});
+
+// Why: the page waits for every job's answer (ten minutes before its
+// timeout); a throw outside the measuring (a post that cannot be sent, a
+// dispose that throws) must still answer the job, never reject or leave
+// an unhandled rejection behind.
+describe("handleMeasure never rejects", () => {
+  it("answers failed when posting the result throws", async () => {
+    const { e } = env();
+    const posted: MeasureAnswer[] = [];
+    await expect(
+      handleMeasure(request({ job: 7 }), e, (a) => {
+        if (a.type === "done") {
+          throw new Error("could not be cloned");
+        }
+        posted.push(a);
+      }),
+    ).resolves.toBeUndefined();
+    expect(posted.at(-1)).toEqual({
+      type: "failed",
+      job: 7,
+      message: "Error: could not be cloned",
+    });
+  });
+
+  it("resolves even when every post throws", async () => {
+    const { e } = env();
+    const decodeFails = env({
+      decode: () => Promise.reject(new Error("not a PNG")),
+    }).e;
+    const post = () => {
+      throw new Error("the port is closed");
+    };
+    await expect(handleMeasure(request({ job: 8 }), e, post)).resolves.toBe(
+      undefined,
+    );
+    await expect(
+      handleMeasure(request({ job: 9 }), decodeFails, post),
+    ).resolves.toBe(undefined);
+    await expect(handleMeasure({ job: 10 }, e, post)).resolves.toBe(undefined);
+  });
+
+  it("swallows a dispose that throws", async () => {
+    const ok = { extract: false, init: false };
+    const { method } = countingMethod(ok, {
+      dispose: () => {
+        throw new Error("session gone");
+      },
+    });
+    let methods: BenchMethod[] = [method];
+    const { e } = env({ build: () => methods });
+    await run(request({ job: 1 }), e);
+    methods = [];
+    const posted = await run(request({ job: 2 }), e);
+    for (let i = 0; i < 5; i++) {
+      await Promise.resolve();
+    }
+    expect(posted.at(-1)?.type).toBe("done");
+    expect(e.kept.size).toBe(0);
   });
 });
