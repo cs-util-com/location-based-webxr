@@ -25,12 +25,15 @@ function sourceFiles(dir: string): string[] {
 describe('the anchors check page is isolated from the recorder', () => {
   // Why this matters: a link would put a test page one tap away in the app
   // people record with.
+  // The pages are listed from disk rather than by name, so a new page is
+  // covered too and no other page's name appears here (the other pages'
+  // own isolation guards search for their names).
   it('is linked from no other page of the app', () => {
-    for (const page of [
-      'index.html',
-      'ar-hittest-test.html',
-      'alignment-timing.html',
-    ]) {
+    const pages = readdirSync(appRoot).filter(
+      (name) => name.endsWith('.html') && name !== 'ar-anchors-check.html'
+    );
+    expect(pages).toContain('index.html');
+    for (const page of pages) {
       expect(readFileSync(resolve(appRoot, page), 'utf8')).not.toContain(
         'ar-anchors-check'
       );
