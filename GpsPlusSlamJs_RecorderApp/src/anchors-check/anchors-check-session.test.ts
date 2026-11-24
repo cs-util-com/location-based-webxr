@@ -77,6 +77,7 @@ function harness(
     features?: readonly string[] | null;
     requestFails?: boolean;
     sceneFails?: boolean;
+    showEventsThrows?: boolean;
     xr?: boolean;
   } = {}
 ) {
@@ -138,7 +139,10 @@ function harness(
     view: {
       status: (text, tone) => statuses.push({ text, tone }),
       setStartState: (s) => states.push(s),
-      showEvents: (events) => shown.push({ events }),
+      showEvents: (events) => {
+        if (opts.showEventsThrows) throw new Error('list broke');
+        shown.push({ events });
+      },
     },
     makeTransform: (p) => {
       transforms.push(p);
@@ -346,6 +350,21 @@ describe('placing', () => {
     expect(h.controller.log()).not.toContain('placed anchor');
     expect(h.lastStatus()?.text).toBe(MESSAGES.ended);
   });
+
+  // Why this matters: a createAnchor that never settles must not leave the
+  // next session unable to place an anchor.
+  it('lets a new session place although the old placement never settled', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -1) });
+    await h.select({ createAnchor: () => new Promise<XrAnchorLike>(() => {}) });
+    await h.controller.toggle();
+    await h.controller.toggle();
+    h.tick(5000, { hit: pose(0, 0, -1) });
+    await h.select();
+    expect(h.transforms).toHaveLength(2);
+    expect(h.lastStatus()?.text).toBe(MESSAGES.placed);
+  });
 });
 
 describe('frames', () => {
@@ -405,6 +424,32 @@ describe('frames', () => {
     expect(log).toContain('frame errors: 2 (first: InvalidStateError)');
     h.tick(99, { anchor: pose(0, 0, -2) });
     expect(h.scene.anchor.at(-1)).toEqual(pose(0, 0, -2));
+  });
+
+  // Why this matters: a getPose that throws on every frame must cost only
+  // the anchor reading, not the camera tracking: jumps are still logged.
+  it('keeps tracking the camera when every anchor read throws', async () => {
+    const h = harness();
+    await h.controller.toggle();
+    h.tick(0, { hit: pose(0, 0, -2) });
+    await h.select();
+    for (let i = 1; i < 6; i++)
+      h.tick(i * 33, { camera: pose(0, 1.5, 0), getPoseThrows: true });
+    for (let i = 6; i < 80; i++)
+      h.tick(i * 33, { camera: pose(0.8, 1.5, 0), getPoseThrows: true });
+    const log = h.controller.log();
+    expect(log).toContain('jump 1: dt 33 ms');
+    expect(log).toContain('frame errors: 79 (first: InvalidStateError)');
+  });
+
+  // Why this matters: the error path itself must not throw; a view that
+  // fails would otherwise stop the render loop from inside the catch.
+  it('survives a view that throws while it reports an error', async () => {
+    const h = harness({ showEventsThrows: true });
+    await h.controller.toggle();
+    expect(() => h.tick(0)).not.toThrow();
+    expect(() => h.tick(33)).not.toThrow();
+    expect(h.controller.log()).toContain('a frame failed: list broke');
   });
 
   // Why this matters: an emulated position is ARCore saying tracking is

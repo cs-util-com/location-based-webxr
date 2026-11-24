@@ -211,9 +211,7 @@ export function createAnchorsCheck(
       lastHit = hitPose(frame, hitSource, base);
       scene.showReticle(lastHit);
     }
-    const seen =
-      anchor === null ? null : frame.getPose(anchor.anchorSpace, base);
-    anchorPose = seen ? toPose(seen.transform) : null;
+    anchorPose = readAnchor(t, frame, base);
     anchorTracked = anchorPose === null ? null : isTracked(frame, anchor);
     scene.showAnchor(anchorTracked === false ? null : anchorPose);
     report(
@@ -227,14 +225,32 @@ export function createAnchorsCheck(
     );
   }
 
+  /**
+   * The anchor's pose. A `getPose` that throws costs only this reading: the
+   * camera is still tracked, with the anchor taken as none.
+   */
+  function readAnchor(t: number, frame: XrFrameLike, base: unknown) {
+    if (anchor === null) return null;
+    try {
+      const seen = frame.getPose(anchor.anchorSpace, base);
+      return seen ? toPose(seen.transform) : null;
+    } catch (error) {
+      onFrameError(t, errorText(error));
+      return null;
+    }
+  }
+
   function onFrameError(t: number, message: string): void {
     frameErrors++;
-    if (frameErrors === 1) {
-      firstFrameError = message;
+    if (frameErrors === 1) firstFrameError = message;
+    environment['frame errors'] = `${frameErrors} (first: ${firstFrameError})`;
+    if (frameErrors !== 1) return;
+    try {
       report(tracker.noteFrameError(t, message));
       view.status(`${MESSAGES.frameFailed} ${message}`, 'error');
+    } catch {
+      // The view itself failed; the tracker and the count above hold it.
     }
-    environment['frame errors'] = `${frameErrors} (first: ${firstFrameError})`;
   }
 
   /** Once per session: does the frame offer `createAnchor` at all? */
@@ -305,6 +321,9 @@ export function createAnchorsCheck(
   function onEnd(): void {
     session = null;
     hitSource = null;
+    // A createAnchor of the old session may never settle; it must not
+    // block the next session's taps (its result is deleted if it comes).
+    placing = false;
     scene.showReticle(null);
     // An anchor dies with its session; a restart begins with a new tap.
     anchor = null;
